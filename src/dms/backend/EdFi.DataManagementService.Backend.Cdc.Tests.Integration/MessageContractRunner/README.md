@@ -67,3 +67,26 @@ and its client version. This uses the same Kafka API as the producer's local siz
 .NET does not reproduce the framing calculation. The broker suite separately exercises
 the measured below/above boundary through the actual source producer. The size estimate
 is not a measurement of the complete network request.
+
+MC-06 adds `converterOnly=true` to invoke the published value converter directly on
+an input schema/value, with the existing key converter and partition observations.
+This mode distinguishes the exact public handshake from reserved-name counterfeits
+(which fail) and other schemas (which delegate). The converter validates the handshake,
+not the JSON body: exact-handshake empty bytes and JSON-null bytes remain bytes.
+
+Negative descriptors can use `{"$javaType":"UUID","value":"<D-format UUID>"}`
+or `STRING`, `INT32`, `INT64`, `BYTES`, `BYTE_BUFFER`, and `MAP` to construct deliberate
+Java runtime-type mismatches. A test-only public Connect `Struct` subclass overrides
+reads and recursive validation only for these tagged fields and required null values;
+ordinary fields retain normal Connect validation. This lets the real transform reject
+invalid runtime values instead of mistaking `Struct.put` rejection for transform evidence.
+No reflection or plugin-private builders are used.
+
+An optional `sourceRecord.diagnosticSentinels` array requests an in-container exception
+audit. Only booleans, lengths, counts, and cause presence leave the container; exception
+text and raw artifact metadata never do. Tests verify the artifact's 128-character
+metadata bound and control-character sanitization, while the runner additionally redacts
+source identities. Synthetic secrets are placed in bodies, row metadata, and non-diagnostic
+source fields; allowed source topic/schema/table/operation identities get oversized
+non-secret values. This does not claim that the artifact redacts its allowed source
+identity fields. An assertion-failure probe separately verifies body-safe .NET diagnostics.

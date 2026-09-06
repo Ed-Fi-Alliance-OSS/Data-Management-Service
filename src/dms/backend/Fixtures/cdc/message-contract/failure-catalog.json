@@ -1,0 +1,3742 @@
+{
+  "formatVersion": 1,
+  "scenarios": [
+    {
+      "name": "CONFIG-MISSING-PROVIDER",
+      "base": "upsert",
+      "mode": "configuration",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "config",
+          "path": [
+            "provider"
+          ],
+          "remove": true
+        }
+      ],
+      "reason": "UNCLASSIFIED_CONFIGURATION"
+    },
+    {
+      "name": "CONFIG-EMPTY-PROVIDER",
+      "base": "upsert",
+      "mode": "configuration",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "config",
+          "path": [
+            "provider"
+          ],
+          "value": ""
+        }
+      ],
+      "reason": "UNCLASSIFIED_CONFIGURATION"
+    },
+    {
+      "name": "CONFIG-MISSING-TARGET-TOPIC",
+      "base": "upsert",
+      "mode": "configuration",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "config",
+          "path": [
+            "target.topic"
+          ],
+          "remove": true
+        }
+      ],
+      "reason": "UNCLASSIFIED_CONFIGURATION"
+    },
+    {
+      "name": "CONFIG-EMPTY-TARGET-TOPIC",
+      "base": "upsert",
+      "mode": "configuration",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "config",
+          "path": [
+            "target.topic"
+          ],
+          "value": ""
+        }
+      ],
+      "reason": "UNCLASSIFIED_CONFIGURATION"
+    },
+    {
+      "name": "CONFIG-MISSING-PROGRESS-TOPIC",
+      "base": "upsert",
+      "mode": "configuration",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "config",
+          "path": [
+            "progress.topic"
+          ],
+          "remove": true
+        }
+      ],
+      "reason": "UNCLASSIFIED_CONFIGURATION"
+    },
+    {
+      "name": "CONFIG-EMPTY-PROGRESS-TOPIC",
+      "base": "upsert",
+      "mode": "configuration",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "config",
+          "path": [
+            "progress.topic"
+          ],
+          "value": ""
+        }
+      ],
+      "reason": "UNCLASSIFIED_CONFIGURATION"
+    },
+    {
+      "name": "CONFIG-PROVIDER",
+      "base": "upsert",
+      "mode": "configuration",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "config",
+          "path": [
+            "provider"
+          ],
+          "value": "unsupported"
+        }
+      ],
+      "reason": "UNCLASSIFIED_CONFIGURATION"
+    },
+    {
+      "name": "CONFIG-PROVIDER-WHITESPACE",
+      "base": "upsert",
+      "mode": "configuration",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "config",
+          "path": [
+            "provider"
+          ],
+          "value": " postgresql"
+        }
+      ],
+      "reason": "UNCLASSIFIED_CONFIGURATION"
+    },
+    {
+      "name": "CONFIG-PROGRESS-MISMATCH",
+      "base": "upsert",
+      "mode": "configuration",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "config",
+          "path": [
+            "progress.topic"
+          ],
+          "value": "other-topic"
+        }
+      ],
+      "reason": "UNCLASSIFIED_CONFIGURATION"
+    },
+    {
+      "name": "SOURCE-WORK-TABLE",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "source",
+            "table"
+          ],
+          "value": "DocumentProjectionWork"
+        }
+      ],
+      "reason": "UNEXPECTED_RETAINED_SOURCE_TABLE"
+    },
+    {
+      "name": "SOURCE-UNKNOWN-TABLE",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "source",
+            "table"
+          ],
+          "value": "OtherTable"
+        }
+      ],
+      "reason": "UNSUPPORTED_SOURCE_TABLE"
+    },
+    {
+      "name": "SOURCE-WRONG-SCHEMA",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "source",
+            "schema"
+          ],
+          "value": "other"
+        }
+      ],
+      "reason": "UNSUPPORTED_SOURCE_SCHEMA"
+    },
+    {
+      "name": "SOURCE-MISSING",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "valueSchema",
+            "fields",
+            "source"
+          ],
+          "remove": true
+        },
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "source"
+          ],
+          "remove": true
+        }
+      ],
+      "reason": "MISSING_SOURCE_METADATA"
+    },
+    {
+      "name": "SOURCE-NULL",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "source"
+          ],
+          "value": null
+        }
+      ],
+      "reason": "MISSING_SOURCE_METADATA"
+    },
+    {
+      "name": "SOURCE-LOGICAL-NAME",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "valueSchema",
+            "fields",
+            "source",
+            "name"
+          ],
+          "value": "contract.UnsupportedSource"
+        }
+      ],
+      "reason": "UNSUPPORTED_SOURCE_METADATA_SHAPE"
+    },
+    {
+      "name": "SOURCE-OPTIONAL",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "valueSchema",
+            "fields",
+            "source",
+            "optional"
+          ],
+          "value": true
+        }
+      ],
+      "reason": "UNSUPPORTED_SOURCE_METADATA_SHAPE"
+    },
+    {
+      "name": "SOURCE-TABLE-OPTIONAL",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "valueSchema",
+            "fields",
+            "source",
+            "fields",
+            "table",
+            "optional"
+          ],
+          "value": true
+        }
+      ],
+      "reason": "UNSUPPORTED_SOURCE_METADATA_SHAPE"
+    },
+    {
+      "name": "SOURCE-TABLE-EMPTY",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "source",
+            "table"
+          ],
+          "value": ""
+        }
+      ],
+      "reason": "MISSING_SOURCE_METADATA"
+    },
+    {
+      "name": "SOURCE-ENVELOPE-SCHEMALESS",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "valueSchema"
+          ],
+          "value": null
+        }
+      ],
+      "reason": "MISSING_SOURCE_METADATA"
+    },
+    {
+      "name": "SOURCE-ENVELOPE-NULL",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "value"
+          ],
+          "value": null
+        }
+      ],
+      "reason": "MISSING_SOURCE_METADATA"
+    },
+    {
+      "name": "SOURCE-ENVELOPE-STRING",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "valueSchema"
+          ],
+          "value": {
+            "type": "STRING",
+            "optional": false
+          }
+        },
+        {
+          "target": "input",
+          "path": [
+            "value"
+          ],
+          "value": "bad-envelope"
+        }
+      ],
+      "reason": "MISSING_SOURCE_METADATA"
+    },
+    {
+      "name": "SOURCE-OP-MISSING",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "valueSchema",
+            "fields",
+            "op"
+          ],
+          "remove": true
+        },
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "op"
+          ],
+          "remove": true
+        }
+      ],
+      "reason": "MISSING_OPERATION_METADATA"
+    },
+    {
+      "name": "SOURCE-OP-NULL",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "op"
+          ],
+          "value": null
+        }
+      ],
+      "reason": "MISSING_OPERATION_METADATA"
+    },
+    {
+      "name": "SOURCE-OP-OPTIONAL",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "valueSchema",
+            "fields",
+            "op",
+            "optional"
+          ],
+          "value": true
+        }
+      ],
+      "reason": "UNSUPPORTED_OPERATION_METADATA_SHAPE"
+    },
+    {
+      "name": "SOURCE-OP-UNKNOWN",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "op"
+          ],
+          "value": "unknown"
+        }
+      ],
+      "reason": "UNKNOWN_OPERATION_CODE"
+    },
+    {
+      "name": "SOURCE-OP-NUMERIC",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "valueSchema",
+            "fields",
+            "op"
+          ],
+          "value": {
+            "type": "INT32",
+            "optional": false
+          }
+        },
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "op"
+          ],
+          "value": 1
+        }
+      ],
+      "reason": "UNSUPPORTED_OPERATION_METADATA_SHAPE"
+    },
+    {
+      "name": "KEY-UPSERT-NULL",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "key"
+          ],
+          "value": null
+        }
+      ],
+      "reason": "MISSING_DOCUMENT_KEY"
+    },
+    {
+      "name": "KEY-UPSERT-RAW-STRING",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "keySchema"
+          ],
+          "value": {
+            "type": "STRING",
+            "optional": false
+          }
+        },
+        {
+          "target": "input",
+          "path": [
+            "key"
+          ],
+          "value": "12345678-1234-1234-1234-123456789abc"
+        }
+      ],
+      "reason": "UNSUPPORTED_DOCUMENT_KEY_SHAPE"
+    },
+    {
+      "name": "KEY-UPSERT-SCHEMALESS-MAP",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "keySchema"
+          ],
+          "value": null
+        }
+      ],
+      "reason": "UNSUPPORTED_DOCUMENT_KEY_SHAPE"
+    },
+    {
+      "name": "KEY-UPSERT-UUID-OBJECT",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "key"
+          ],
+          "value": {
+            "$javaType": "UUID",
+            "value": "12345678-1234-1234-1234-123456789abc"
+          }
+        }
+      ],
+      "reason": "UNSUPPORTED_DOCUMENT_KEY_SHAPE"
+    },
+    {
+      "name": "KEY-UPSERT-BYTES",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "keySchema"
+          ],
+          "value": {
+            "type": "BYTES",
+            "optional": false
+          }
+        },
+        {
+          "target": "input",
+          "path": [
+            "key"
+          ],
+          "value": "AQID"
+        }
+      ],
+      "reason": "UNSUPPORTED_DOCUMENT_KEY_SHAPE"
+    },
+    {
+      "name": "KEY-UPSERT-OPTIONAL-STRUCT",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "keySchema",
+            "optional"
+          ],
+          "value": true
+        }
+      ],
+      "reason": "UNSUPPORTED_DOCUMENT_KEY_SHAPE"
+    },
+    {
+      "name": "KEY-UPSERT-MISSING-FIELD",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "keySchema",
+            "fields"
+          ],
+          "value": {}
+        },
+        {
+          "target": "input",
+          "path": [
+            "key"
+          ],
+          "value": {}
+        }
+      ],
+      "reason": "MISSING_DOCUMENT_UUID"
+    },
+    {
+      "name": "KEY-UPSERT-NULL-UUID",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "key",
+            "DocumentUuid"
+          ],
+          "value": null
+        }
+      ],
+      "reason": "MISSING_DOCUMENT_UUID"
+    },
+    {
+      "name": "KEY-UPSERT-INVALID-UUID",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "key",
+            "DocumentUuid"
+          ],
+          "value": "MC06-SECRET-SENTINEL"
+        }
+      ],
+      "reason": "INVALID_DOCUMENT_UUID"
+    },
+    {
+      "name": "KEY-UPSERT-UUID-OPTIONAL",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "keySchema",
+            "fields",
+            "DocumentUuid",
+            "optional"
+          ],
+          "value": true
+        }
+      ],
+      "reason": "UNSUPPORTED_DOCUMENT_KEY_SHAPE"
+    },
+    {
+      "name": "KEY-UPSERT-UUID-NAME",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "keySchema",
+            "fields",
+            "DocumentUuid",
+            "name"
+          ],
+          "value": "contract.UnsupportedUuid"
+        }
+      ],
+      "reason": "UNSUPPORTED_DOCUMENT_KEY_SHAPE"
+    },
+    {
+      "name": "KEY-UPSERT-UUID-BYTES",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "keySchema",
+            "fields",
+            "DocumentUuid"
+          ],
+          "value": {
+            "type": "BYTES",
+            "optional": false
+          }
+        },
+        {
+          "target": "input",
+          "path": [
+            "key",
+            "DocumentUuid"
+          ],
+          "value": "AQID"
+        }
+      ],
+      "reason": "UNSUPPORTED_DOCUMENT_KEY_SHAPE"
+    },
+    {
+      "name": "KEY-UPSERT-UUID-RUNTIME-OBJECT",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "key",
+            "DocumentUuid"
+          ],
+          "value": {
+            "$javaType": "UUID",
+            "value": "12345678-1234-1234-1234-123456789abc"
+          }
+        }
+      ],
+      "reason": "UNSUPPORTED_DOCUMENT_KEY_SHAPE"
+    },
+    {
+      "name": "KEY-UPSERT-EXTRA-FIELD",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "keySchema",
+            "fields",
+            "DocumentId"
+          ],
+          "value": {
+            "type": "INT64",
+            "optional": false
+          }
+        },
+        {
+          "target": "input",
+          "path": [
+            "key",
+            "DocumentId"
+          ],
+          "value": 1
+        }
+      ],
+      "reason": "UNSUPPORTED_DOCUMENT_KEY_SHAPE"
+    },
+    {
+      "name": "KEY-DELETE-NULL",
+      "base": "delete",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "key"
+          ],
+          "value": null
+        }
+      ],
+      "reason": "MISSING_DOCUMENT_KEY"
+    },
+    {
+      "name": "KEY-DELETE-RAW-STRING",
+      "base": "delete",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "keySchema"
+          ],
+          "value": {
+            "type": "STRING",
+            "optional": false
+          }
+        },
+        {
+          "target": "input",
+          "path": [
+            "key"
+          ],
+          "value": "12345678-1234-1234-1234-123456789abc"
+        }
+      ],
+      "reason": "UNSUPPORTED_DOCUMENT_KEY_SHAPE"
+    },
+    {
+      "name": "KEY-DELETE-SCHEMALESS-MAP",
+      "base": "delete",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "keySchema"
+          ],
+          "value": null
+        }
+      ],
+      "reason": "UNSUPPORTED_DOCUMENT_KEY_SHAPE"
+    },
+    {
+      "name": "KEY-DELETE-UUID-OBJECT",
+      "base": "delete",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "key"
+          ],
+          "value": {
+            "$javaType": "UUID",
+            "value": "12345678-1234-1234-1234-123456789abc"
+          }
+        }
+      ],
+      "reason": "UNSUPPORTED_DOCUMENT_KEY_SHAPE"
+    },
+    {
+      "name": "KEY-DELETE-BYTES",
+      "base": "delete",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "keySchema"
+          ],
+          "value": {
+            "type": "BYTES",
+            "optional": false
+          }
+        },
+        {
+          "target": "input",
+          "path": [
+            "key"
+          ],
+          "value": "AQID"
+        }
+      ],
+      "reason": "UNSUPPORTED_DOCUMENT_KEY_SHAPE"
+    },
+    {
+      "name": "KEY-DELETE-OPTIONAL-STRUCT",
+      "base": "delete",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "keySchema",
+            "optional"
+          ],
+          "value": true
+        }
+      ],
+      "reason": "UNSUPPORTED_DOCUMENT_KEY_SHAPE"
+    },
+    {
+      "name": "KEY-DELETE-MISSING-FIELD",
+      "base": "delete",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "keySchema",
+            "fields"
+          ],
+          "value": {}
+        },
+        {
+          "target": "input",
+          "path": [
+            "key"
+          ],
+          "value": {}
+        }
+      ],
+      "reason": "MISSING_DOCUMENT_UUID"
+    },
+    {
+      "name": "KEY-DELETE-NULL-UUID",
+      "base": "delete",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "key",
+            "DocumentUuid"
+          ],
+          "value": null
+        }
+      ],
+      "reason": "MISSING_DOCUMENT_UUID"
+    },
+    {
+      "name": "KEY-DELETE-INVALID-UUID",
+      "base": "delete",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "key",
+            "DocumentUuid"
+          ],
+          "value": "MC06-SECRET-SENTINEL"
+        }
+      ],
+      "reason": "INVALID_DOCUMENT_UUID"
+    },
+    {
+      "name": "KEY-DELETE-UUID-OPTIONAL",
+      "base": "delete",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "keySchema",
+            "fields",
+            "DocumentUuid",
+            "optional"
+          ],
+          "value": true
+        }
+      ],
+      "reason": "UNSUPPORTED_DOCUMENT_KEY_SHAPE"
+    },
+    {
+      "name": "KEY-DELETE-UUID-NAME",
+      "base": "delete",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "keySchema",
+            "fields",
+            "DocumentUuid",
+            "name"
+          ],
+          "value": "contract.UnsupportedUuid"
+        }
+      ],
+      "reason": "UNSUPPORTED_DOCUMENT_KEY_SHAPE"
+    },
+    {
+      "name": "KEY-DELETE-UUID-BYTES",
+      "base": "delete",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "keySchema",
+            "fields",
+            "DocumentUuid"
+          ],
+          "value": {
+            "type": "BYTES",
+            "optional": false
+          }
+        },
+        {
+          "target": "input",
+          "path": [
+            "key",
+            "DocumentUuid"
+          ],
+          "value": "AQID"
+        }
+      ],
+      "reason": "UNSUPPORTED_DOCUMENT_KEY_SHAPE"
+    },
+    {
+      "name": "KEY-DELETE-UUID-RUNTIME-OBJECT",
+      "base": "delete",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "key",
+            "DocumentUuid"
+          ],
+          "value": {
+            "$javaType": "UUID",
+            "value": "12345678-1234-1234-1234-123456789abc"
+          }
+        }
+      ],
+      "reason": "UNSUPPORTED_DOCUMENT_KEY_SHAPE"
+    },
+    {
+      "name": "KEY-DELETE-EXTRA-FIELD",
+      "base": "delete",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "keySchema",
+            "fields",
+            "DocumentId"
+          ],
+          "value": {
+            "type": "INT64",
+            "optional": false
+          }
+        },
+        {
+          "target": "input",
+          "path": [
+            "key",
+            "DocumentId"
+          ],
+          "value": 1
+        }
+      ],
+      "reason": "UNSUPPORTED_DOCUMENT_KEY_SHAPE"
+    },
+    {
+      "name": "ROW-ABSENT",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "valueSchema",
+            "fields",
+            "after"
+          ],
+          "remove": true
+        },
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "after"
+          ],
+          "remove": true
+        }
+      ],
+      "reason": "MISSING_RETAINED_ROW"
+    },
+    {
+      "name": "ROW-NULL",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "after"
+          ],
+          "value": null
+        }
+      ],
+      "reason": "MISSING_RETAINED_ROW"
+    },
+    {
+      "name": "ROW-REQUIRED",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "valueSchema",
+            "fields",
+            "after",
+            "optional"
+          ],
+          "value": false
+        }
+      ],
+      "reason": "UNSUPPORTED_RETAINED_ROW_SHAPE"
+    },
+    {
+      "name": "ROW-STRING",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "valueSchema",
+            "fields",
+            "after"
+          ],
+          "value": {
+            "type": "STRING",
+            "optional": true
+          }
+        },
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "after"
+          ],
+          "value": "bad-row"
+        }
+      ],
+      "reason": "UNSUPPORTED_RETAINED_ROW_SHAPE"
+    },
+    {
+      "name": "ROW-UUID-MISMATCH",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "after",
+            "DocumentUuid"
+          ],
+          "value": "ffffffff-ffff-ffff-ffff-ffffffffffff"
+        }
+      ],
+      "reason": "DOCUMENT_UUID_MISMATCH"
+    },
+    {
+      "name": "ROW-UUID-MISSING",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "valueSchema",
+            "fields",
+            "after",
+            "fields",
+            "DocumentUuid"
+          ],
+          "remove": true
+        },
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "after",
+            "DocumentUuid"
+          ],
+          "remove": true
+        }
+      ],
+      "reason": "MISSING_DOCUMENT_UUID"
+    },
+    {
+      "name": "ROW-UUID-UNAVAILABLE",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "after",
+            "DocumentUuid"
+          ],
+          "value": "__debezium_unavailable_value"
+        }
+      ],
+      "reason": "INVALID_DOCUMENT_UUID"
+    },
+    {
+      "name": "ROW-UUID-SCHEMA",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "valueSchema",
+            "fields",
+            "after",
+            "fields",
+            "DocumentUuid",
+            "name"
+          ],
+          "value": "contract.UnsupportedUuid"
+        }
+      ],
+      "reason": "UNSUPPORTED_DOCUMENT_UUID_SHAPE"
+    },
+    {
+      "name": "FIELD-PROJECTNAME-MISSING",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "valueSchema",
+            "fields",
+            "after",
+            "fields",
+            "ProjectName"
+          ],
+          "remove": true
+        },
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "after",
+            "ProjectName"
+          ],
+          "remove": true
+        }
+      ],
+      "reason": "MISSING_REQUIRED_FIELD"
+    },
+    {
+      "name": "FIELD-PROJECTNAME-NULL",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "after",
+            "ProjectName"
+          ],
+          "value": null
+        }
+      ],
+      "reason": "MISSING_REQUIRED_FIELD"
+    },
+    {
+      "name": "FIELD-PROJECTNAME-OPTIONAL",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "valueSchema",
+            "fields",
+            "after",
+            "fields",
+            "ProjectName",
+            "optional"
+          ],
+          "value": true
+        }
+      ],
+      "reason": "UNSUPPORTED_REQUIRED_FIELD_SHAPE"
+    },
+    {
+      "name": "FIELD-PROJECTNAME-NAME",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "valueSchema",
+            "fields",
+            "after",
+            "fields",
+            "ProjectName",
+            "name"
+          ],
+          "value": "contract.UnsupportedField"
+        }
+      ],
+      "reason": "UNSUPPORTED_REQUIRED_FIELD_SHAPE"
+    },
+    {
+      "name": "FIELD-PROJECTNAME-EMPTY",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "after",
+            "ProjectName"
+          ],
+          "value": ""
+        }
+      ],
+      "reason": "MISSING_REQUIRED_FIELD"
+    },
+    {
+      "name": "FIELD-PROJECTNAME-BYTES",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "valueSchema",
+            "fields",
+            "after",
+            "fields",
+            "ProjectName"
+          ],
+          "value": {
+            "type": "BYTES",
+            "optional": false
+          }
+        },
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "after",
+            "ProjectName"
+          ],
+          "value": "AQID"
+        }
+      ],
+      "reason": "UNSUPPORTED_REQUIRED_FIELD_SHAPE"
+    },
+    {
+      "name": "FIELD-PROJECTNAME-RUNTIME-MAP",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "after",
+            "ProjectName"
+          ],
+          "value": {
+            "$javaType": "MAP",
+            "value": {
+              "secret": "MC06-SECRET-SENTINEL"
+            }
+          }
+        }
+      ],
+      "reason": "UNSUPPORTED_REQUIRED_FIELD_SHAPE"
+    },
+    {
+      "name": "FIELD-RESOURCENAME-MISSING",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "valueSchema",
+            "fields",
+            "after",
+            "fields",
+            "ResourceName"
+          ],
+          "remove": true
+        },
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "after",
+            "ResourceName"
+          ],
+          "remove": true
+        }
+      ],
+      "reason": "MISSING_REQUIRED_FIELD"
+    },
+    {
+      "name": "FIELD-RESOURCENAME-NULL",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "after",
+            "ResourceName"
+          ],
+          "value": null
+        }
+      ],
+      "reason": "MISSING_REQUIRED_FIELD"
+    },
+    {
+      "name": "FIELD-RESOURCENAME-OPTIONAL",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "valueSchema",
+            "fields",
+            "after",
+            "fields",
+            "ResourceName",
+            "optional"
+          ],
+          "value": true
+        }
+      ],
+      "reason": "UNSUPPORTED_REQUIRED_FIELD_SHAPE"
+    },
+    {
+      "name": "FIELD-RESOURCENAME-NAME",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "valueSchema",
+            "fields",
+            "after",
+            "fields",
+            "ResourceName",
+            "name"
+          ],
+          "value": "contract.UnsupportedField"
+        }
+      ],
+      "reason": "UNSUPPORTED_REQUIRED_FIELD_SHAPE"
+    },
+    {
+      "name": "FIELD-RESOURCENAME-EMPTY",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "after",
+            "ResourceName"
+          ],
+          "value": ""
+        }
+      ],
+      "reason": "MISSING_REQUIRED_FIELD"
+    },
+    {
+      "name": "FIELD-RESOURCENAME-BYTES",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "valueSchema",
+            "fields",
+            "after",
+            "fields",
+            "ResourceName"
+          ],
+          "value": {
+            "type": "BYTES",
+            "optional": false
+          }
+        },
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "after",
+            "ResourceName"
+          ],
+          "value": "AQID"
+        }
+      ],
+      "reason": "UNSUPPORTED_REQUIRED_FIELD_SHAPE"
+    },
+    {
+      "name": "FIELD-RESOURCENAME-RUNTIME-MAP",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "after",
+            "ResourceName"
+          ],
+          "value": {
+            "$javaType": "MAP",
+            "value": {
+              "secret": "MC06-SECRET-SENTINEL"
+            }
+          }
+        }
+      ],
+      "reason": "UNSUPPORTED_REQUIRED_FIELD_SHAPE"
+    },
+    {
+      "name": "FIELD-RESOURCEVERSION-MISSING",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "valueSchema",
+            "fields",
+            "after",
+            "fields",
+            "ResourceVersion"
+          ],
+          "remove": true
+        },
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "after",
+            "ResourceVersion"
+          ],
+          "remove": true
+        }
+      ],
+      "reason": "MISSING_REQUIRED_FIELD"
+    },
+    {
+      "name": "FIELD-RESOURCEVERSION-NULL",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "after",
+            "ResourceVersion"
+          ],
+          "value": null
+        }
+      ],
+      "reason": "MISSING_REQUIRED_FIELD"
+    },
+    {
+      "name": "FIELD-RESOURCEVERSION-OPTIONAL",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "valueSchema",
+            "fields",
+            "after",
+            "fields",
+            "ResourceVersion",
+            "optional"
+          ],
+          "value": true
+        }
+      ],
+      "reason": "UNSUPPORTED_REQUIRED_FIELD_SHAPE"
+    },
+    {
+      "name": "FIELD-RESOURCEVERSION-NAME",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "valueSchema",
+            "fields",
+            "after",
+            "fields",
+            "ResourceVersion",
+            "name"
+          ],
+          "value": "contract.UnsupportedField"
+        }
+      ],
+      "reason": "UNSUPPORTED_REQUIRED_FIELD_SHAPE"
+    },
+    {
+      "name": "FIELD-RESOURCEVERSION-EMPTY",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "after",
+            "ResourceVersion"
+          ],
+          "value": ""
+        }
+      ],
+      "reason": "MISSING_REQUIRED_FIELD"
+    },
+    {
+      "name": "FIELD-RESOURCEVERSION-BYTES",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "valueSchema",
+            "fields",
+            "after",
+            "fields",
+            "ResourceVersion"
+          ],
+          "value": {
+            "type": "BYTES",
+            "optional": false
+          }
+        },
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "after",
+            "ResourceVersion"
+          ],
+          "value": "AQID"
+        }
+      ],
+      "reason": "UNSUPPORTED_REQUIRED_FIELD_SHAPE"
+    },
+    {
+      "name": "FIELD-RESOURCEVERSION-RUNTIME-MAP",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "after",
+            "ResourceVersion"
+          ],
+          "value": {
+            "$javaType": "MAP",
+            "value": {
+              "secret": "MC06-SECRET-SENTINEL"
+            }
+          }
+        }
+      ],
+      "reason": "UNSUPPORTED_REQUIRED_FIELD_SHAPE"
+    },
+    {
+      "name": "FIELD-STREAMETAG-MISSING",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "valueSchema",
+            "fields",
+            "after",
+            "fields",
+            "StreamEtag"
+          ],
+          "remove": true
+        },
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "after",
+            "StreamEtag"
+          ],
+          "remove": true
+        }
+      ],
+      "reason": "MISSING_REQUIRED_FIELD"
+    },
+    {
+      "name": "FIELD-STREAMETAG-NULL",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "after",
+            "StreamEtag"
+          ],
+          "value": null
+        }
+      ],
+      "reason": "MISSING_REQUIRED_FIELD"
+    },
+    {
+      "name": "FIELD-STREAMETAG-OPTIONAL",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "valueSchema",
+            "fields",
+            "after",
+            "fields",
+            "StreamEtag",
+            "optional"
+          ],
+          "value": true
+        }
+      ],
+      "reason": "UNSUPPORTED_REQUIRED_FIELD_SHAPE"
+    },
+    {
+      "name": "FIELD-STREAMETAG-NAME",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "valueSchema",
+            "fields",
+            "after",
+            "fields",
+            "StreamEtag",
+            "name"
+          ],
+          "value": "contract.UnsupportedField"
+        }
+      ],
+      "reason": "UNSUPPORTED_REQUIRED_FIELD_SHAPE"
+    },
+    {
+      "name": "FIELD-STREAMETAG-EMPTY",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "after",
+            "StreamEtag"
+          ],
+          "value": ""
+        }
+      ],
+      "reason": "MISSING_REQUIRED_FIELD"
+    },
+    {
+      "name": "FIELD-STREAMETAG-BYTES",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "valueSchema",
+            "fields",
+            "after",
+            "fields",
+            "StreamEtag"
+          ],
+          "value": {
+            "type": "BYTES",
+            "optional": false
+          }
+        },
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "after",
+            "StreamEtag"
+          ],
+          "value": "AQID"
+        }
+      ],
+      "reason": "UNSUPPORTED_REQUIRED_FIELD_SHAPE"
+    },
+    {
+      "name": "FIELD-STREAMETAG-RUNTIME-MAP",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "after",
+            "StreamEtag"
+          ],
+          "value": {
+            "$javaType": "MAP",
+            "value": {
+              "secret": "MC06-SECRET-SENTINEL"
+            }
+          }
+        }
+      ],
+      "reason": "UNSUPPORTED_REQUIRED_FIELD_SHAPE"
+    },
+    {
+      "name": "FIELD-DOCUMENTJSON-MISSING",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "valueSchema",
+            "fields",
+            "after",
+            "fields",
+            "DocumentJson"
+          ],
+          "remove": true
+        },
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "after",
+            "DocumentJson"
+          ],
+          "remove": true
+        }
+      ],
+      "reason": "MISSING_REQUIRED_FIELD"
+    },
+    {
+      "name": "FIELD-DOCUMENTJSON-NULL",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "after",
+            "DocumentJson"
+          ],
+          "value": null
+        }
+      ],
+      "reason": "MISSING_REQUIRED_FIELD"
+    },
+    {
+      "name": "FIELD-DOCUMENTJSON-OPTIONAL",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "valueSchema",
+            "fields",
+            "after",
+            "fields",
+            "DocumentJson",
+            "optional"
+          ],
+          "value": true
+        }
+      ],
+      "reason": "UNSUPPORTED_REQUIRED_FIELD_SHAPE"
+    },
+    {
+      "name": "FIELD-DOCUMENTJSON-NAME",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "valueSchema",
+            "fields",
+            "after",
+            "fields",
+            "DocumentJson",
+            "name"
+          ],
+          "value": "contract.UnsupportedField"
+        }
+      ],
+      "reason": "UNSUPPORTED_REQUIRED_FIELD_SHAPE"
+    },
+    {
+      "name": "FIELD-DOCUMENTJSON-EMPTY",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "after",
+            "DocumentJson"
+          ],
+          "value": ""
+        }
+      ],
+      "reason": "MISSING_REQUIRED_FIELD"
+    },
+    {
+      "name": "FIELD-DOCUMENTJSON-BYTES",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "valueSchema",
+            "fields",
+            "after",
+            "fields",
+            "DocumentJson"
+          ],
+          "value": {
+            "type": "BYTES",
+            "optional": false
+          }
+        },
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "after",
+            "DocumentJson"
+          ],
+          "value": "AQID"
+        }
+      ],
+      "reason": "UNSUPPORTED_REQUIRED_FIELD_SHAPE"
+    },
+    {
+      "name": "FIELD-DOCUMENTJSON-RUNTIME-MAP",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "after",
+            "DocumentJson"
+          ],
+          "value": {
+            "$javaType": "MAP",
+            "value": {
+              "secret": "MC06-SECRET-SENTINEL"
+            }
+          }
+        }
+      ],
+      "reason": "UNSUPPORTED_REQUIRED_FIELD_SHAPE"
+    },
+    {
+      "name": "FIELD-CONTENTVERSION-MISSING",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "valueSchema",
+            "fields",
+            "after",
+            "fields",
+            "ContentVersion"
+          ],
+          "remove": true
+        },
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "after",
+            "ContentVersion"
+          ],
+          "remove": true
+        }
+      ],
+      "reason": "MISSING_REQUIRED_FIELD"
+    },
+    {
+      "name": "FIELD-CONTENTVERSION-NULL",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "after",
+            "ContentVersion"
+          ],
+          "value": null
+        }
+      ],
+      "reason": "MISSING_REQUIRED_FIELD"
+    },
+    {
+      "name": "FIELD-CONTENTVERSION-OPTIONAL",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "valueSchema",
+            "fields",
+            "after",
+            "fields",
+            "ContentVersion",
+            "optional"
+          ],
+          "value": true
+        }
+      ],
+      "reason": "UNSUPPORTED_REQUIRED_FIELD_SHAPE"
+    },
+    {
+      "name": "FIELD-CONTENTVERSION-NAME",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "valueSchema",
+            "fields",
+            "after",
+            "fields",
+            "ContentVersion",
+            "name"
+          ],
+          "value": "contract.UnsupportedField"
+        }
+      ],
+      "reason": "UNSUPPORTED_REQUIRED_FIELD_SHAPE"
+    },
+    {
+      "name": "FIELD-LASTMODIFIEDAT-MISSING",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "valueSchema",
+            "fields",
+            "after",
+            "fields",
+            "LastModifiedAt"
+          ],
+          "remove": true
+        },
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "after",
+            "LastModifiedAt"
+          ],
+          "remove": true
+        }
+      ],
+      "reason": "MISSING_REQUIRED_FIELD"
+    },
+    {
+      "name": "FIELD-LASTMODIFIEDAT-NULL",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "after",
+            "LastModifiedAt"
+          ],
+          "value": null
+        }
+      ],
+      "reason": "MISSING_REQUIRED_FIELD"
+    },
+    {
+      "name": "FIELD-LASTMODIFIEDAT-OPTIONAL",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "valueSchema",
+            "fields",
+            "after",
+            "fields",
+            "LastModifiedAt",
+            "optional"
+          ],
+          "value": true
+        }
+      ],
+      "reason": "UNSUPPORTED_REQUIRED_FIELD_SHAPE"
+    },
+    {
+      "name": "FIELD-LASTMODIFIEDAT-NAME",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "valueSchema",
+            "fields",
+            "after",
+            "fields",
+            "LastModifiedAt",
+            "name"
+          ],
+          "value": "contract.UnsupportedField"
+        }
+      ],
+      "reason": "UNSUPPORTED_REQUIRED_FIELD_SHAPE"
+    },
+    {
+      "name": "VERSION-INT32",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "valueSchema",
+            "fields",
+            "after",
+            "fields",
+            "ContentVersion"
+          ],
+          "value": {
+            "type": "INT32",
+            "optional": false
+          }
+        },
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "after",
+            "ContentVersion"
+          ],
+          "value": 42
+        }
+      ],
+      "reason": "UNSUPPORTED_REQUIRED_FIELD_SHAPE"
+    },
+    {
+      "name": "VERSION-STRING",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "valueSchema",
+            "fields",
+            "after",
+            "fields",
+            "ContentVersion"
+          ],
+          "value": {
+            "type": "STRING",
+            "optional": false
+          }
+        },
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "after",
+            "ContentVersion"
+          ],
+          "value": "42"
+        }
+      ],
+      "reason": "UNSUPPORTED_REQUIRED_FIELD_SHAPE"
+    },
+    {
+      "name": "VERSION-DECIMAL",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "valueSchema",
+            "fields",
+            "after",
+            "fields",
+            "ContentVersion"
+          ],
+          "value": {
+            "type": "FLOAT64",
+            "optional": false
+          }
+        },
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "after",
+            "ContentVersion"
+          ],
+          "value": 42.5
+        }
+      ],
+      "reason": "UNSUPPORTED_REQUIRED_FIELD_SHAPE"
+    },
+    {
+      "name": "VERSION-INTEGER-OBJECT",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "after",
+            "ContentVersion"
+          ],
+          "value": {
+            "$javaType": "INT32",
+            "value": 42
+          }
+        }
+      ],
+      "reason": "UNSUPPORTED_REQUIRED_FIELD_SHAPE"
+    },
+    {
+      "name": "VERSION-STRING-OBJECT",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "after",
+            "ContentVersion"
+          ],
+          "value": {
+            "$javaType": "STRING",
+            "value": "42"
+          }
+        }
+      ],
+      "reason": "UNSUPPORTED_REQUIRED_FIELD_SHAPE"
+    },
+    {
+      "name": "JSON-MALFORMED",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "after",
+            "DocumentJson"
+          ],
+          "value": "{\"secret\":\"MC06-BODY-SENTINEL\","
+        }
+      ],
+      "reason": "INVALID_DOCUMENT_JSON"
+    },
+    {
+      "name": "JSON-ARRAY",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "after",
+            "DocumentJson"
+          ],
+          "value": "[]"
+        }
+      ],
+      "reason": "INVALID_DOCUMENT_JSON"
+    },
+    {
+      "name": "JSON-NULL",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "after",
+            "DocumentJson"
+          ],
+          "value": "null"
+        }
+      ],
+      "reason": "INVALID_DOCUMENT_JSON"
+    },
+    {
+      "name": "JSON-NUMBER",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "after",
+            "DocumentJson"
+          ],
+          "value": "42"
+        }
+      ],
+      "reason": "INVALID_DOCUMENT_JSON"
+    },
+    {
+      "name": "JSON-STRING",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "after",
+            "DocumentJson"
+          ],
+          "value": "\"MC06-BODY-SENTINEL\""
+        }
+      ],
+      "reason": "INVALID_DOCUMENT_JSON"
+    },
+    {
+      "name": "JSON-TRAILING",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "after",
+            "DocumentJson"
+          ],
+          "value": "{} {}"
+        }
+      ],
+      "reason": "INVALID_DOCUMENT_JSON"
+    },
+    {
+      "name": "JSON-UNAVAILABLE",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "after",
+            "DocumentJson"
+          ],
+          "value": "__debezium_unavailable_value"
+        }
+      ],
+      "reason": "UNAVAILABLE_DOCUMENT_JSON"
+    },
+    {
+      "name": "JSON-ETAG-NULL",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "document",
+          "path": [
+            "_etag"
+          ],
+          "value": null
+        }
+      ],
+      "reason": "DOCUMENT_JSON_HAS_ETAG"
+    },
+    {
+      "name": "JSON-ETAG-STRING",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "document",
+          "path": [
+            "_etag"
+          ],
+          "value": "already-set"
+        }
+      ],
+      "reason": "DOCUMENT_JSON_HAS_ETAG"
+    },
+    {
+      "name": "JSON-ID-MISSING",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "document",
+          "path": [
+            "id"
+          ],
+          "remove": true
+        }
+      ],
+      "reason": "PUBLIC_DOCUMENT_INVARIANT_MISMATCH"
+    },
+    {
+      "name": "JSON-ID-NULL",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "document",
+          "path": [
+            "id"
+          ],
+          "value": null
+        }
+      ],
+      "reason": "PUBLIC_DOCUMENT_INVARIANT_MISMATCH"
+    },
+    {
+      "name": "JSON-ID-NUMBER",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "document",
+          "path": [
+            "id"
+          ],
+          "value": 42
+        }
+      ],
+      "reason": "PUBLIC_DOCUMENT_INVARIANT_MISMATCH"
+    },
+    {
+      "name": "JSON-ID-MISMATCH",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "document",
+          "path": [
+            "id"
+          ],
+          "value": "mismatch"
+        }
+      ],
+      "reason": "PUBLIC_DOCUMENT_INVARIANT_MISMATCH"
+    },
+    {
+      "name": "JSON-LASTMODIFIEDDATE-MISSING",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "document",
+          "path": [
+            "_lastModifiedDate"
+          ],
+          "remove": true
+        }
+      ],
+      "reason": "PUBLIC_DOCUMENT_INVARIANT_MISMATCH"
+    },
+    {
+      "name": "JSON-LASTMODIFIEDDATE-NULL",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "document",
+          "path": [
+            "_lastModifiedDate"
+          ],
+          "value": null
+        }
+      ],
+      "reason": "PUBLIC_DOCUMENT_INVARIANT_MISMATCH"
+    },
+    {
+      "name": "JSON-LASTMODIFIEDDATE-NUMBER",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "document",
+          "path": [
+            "_lastModifiedDate"
+          ],
+          "value": 42
+        }
+      ],
+      "reason": "PUBLIC_DOCUMENT_INVARIANT_MISMATCH"
+    },
+    {
+      "name": "JSON-LASTMODIFIEDDATE-MISMATCH",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "document",
+          "path": [
+            "_lastModifiedDate"
+          ],
+          "value": "mismatch"
+        }
+      ],
+      "reason": "PUBLIC_DOCUMENT_INVARIANT_MISMATCH"
+    },
+    {
+      "name": "TIME-NON-UTC",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "after",
+            "LastModifiedAt"
+          ],
+          "value": "2026-08-01T01:02:03+01:00"
+        }
+      ],
+      "reason": "INVALID_LAST_MODIFIED_AT"
+    },
+    {
+      "name": "TIME-LOCAL",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "after",
+            "LastModifiedAt"
+          ],
+          "value": "2026-08-01T01:02:03"
+        }
+      ],
+      "reason": "INVALID_LAST_MODIFIED_AT"
+    },
+    {
+      "name": "TIME-INVALID",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "after",
+            "LastModifiedAt"
+          ],
+          "value": "MC06-SECRET-SENTINEL"
+        }
+      ],
+      "reason": "INVALID_LAST_MODIFIED_AT"
+    },
+    {
+      "name": "TIME-EMPTY",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "after",
+            "LastModifiedAt"
+          ],
+          "value": ""
+        }
+      ],
+      "reason": "INVALID_LAST_MODIFIED_AT"
+    },
+    {
+      "name": "TIME-UNAVAILABLE",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "after",
+            "LastModifiedAt"
+          ],
+          "value": "__debezium_unavailable_value"
+        }
+      ],
+      "reason": "INVALID_LAST_MODIFIED_AT"
+    },
+    {
+      "name": "TIME-NUMERIC",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "valueSchema",
+            "fields",
+            "after",
+            "fields",
+            "LastModifiedAt"
+          ],
+          "value": {
+            "type": "INT64",
+            "optional": false
+          }
+        },
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "after",
+            "LastModifiedAt"
+          ],
+          "value": 123456
+        }
+      ],
+      "reason": "UNSUPPORTED_REQUIRED_FIELD_SHAPE"
+    },
+    {
+      "name": "TIME-PLAIN",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "valueSchema",
+            "fields",
+            "after",
+            "fields",
+            "LastModifiedAt"
+          ],
+          "value": {
+            "type": "STRING",
+            "optional": false
+          }
+        },
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "after",
+            "LastModifiedAt"
+          ],
+          "value": "2026-08-01T01:02:03Z"
+        }
+      ],
+      "reason": "UNSUPPORTED_REQUIRED_FIELD_SHAPE"
+    },
+    {
+      "name": "TIME-MICRO",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "valueSchema",
+            "fields",
+            "after",
+            "fields",
+            "LastModifiedAt"
+          ],
+          "value": {
+            "type": "INT64",
+            "optional": false,
+            "name": "io.debezium.time.MicroTimestamp",
+            "version": 1
+          }
+        },
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "after",
+            "LastModifiedAt"
+          ],
+          "value": 123456
+        }
+      ],
+      "reason": "UNSUPPORTED_REQUIRED_FIELD_SHAPE"
+    },
+    {
+      "name": "TIME-RUNTIME-NUMBER",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "after",
+            "LastModifiedAt"
+          ],
+          "value": {
+            "$javaType": "INT64",
+            "value": 123456
+          }
+        }
+      ],
+      "reason": "INVALID_LAST_MODIFIED_AT"
+    },
+    {
+      "name": "DIAGNOSTIC-TOPIC",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "sourceTopic"
+          ],
+          "value": "bounded\nmetadata-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        },
+        {
+          "target": "input",
+          "path": [
+            "key",
+            "DocumentUuid"
+          ],
+          "value": "MC06-SECRET-SENTINEL"
+        }
+      ],
+      "reason": "INVALID_DOCUMENT_UUID"
+    },
+    {
+      "name": "DIAGNOSTIC-SCHEMA",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "source",
+            "schema"
+          ],
+          "value": "bounded\nmetadata-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        },
+        {
+          "target": "input",
+          "path": [
+            "key",
+            "DocumentUuid"
+          ],
+          "value": "MC06-SECRET-SENTINEL"
+        }
+      ],
+      "reason": "UNSUPPORTED_SOURCE_SCHEMA"
+    },
+    {
+      "name": "DIAGNOSTIC-TABLE",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "source",
+            "table"
+          ],
+          "value": "bounded\nmetadata-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        },
+        {
+          "target": "input",
+          "path": [
+            "key",
+            "DocumentUuid"
+          ],
+          "value": "MC06-SECRET-SENTINEL"
+        }
+      ],
+      "reason": "UNSUPPORTED_SOURCE_TABLE"
+    },
+    {
+      "name": "DIAGNOSTIC-OP",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "op"
+          ],
+          "value": "bounded\nmetadata-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        },
+        {
+          "target": "input",
+          "path": [
+            "key",
+            "DocumentUuid"
+          ],
+          "value": "MC06-SECRET-SENTINEL"
+        }
+      ],
+      "reason": "UNKNOWN_OPERATION_CODE"
+    },
+    {
+      "name": "CONVERTER-EXACT",
+      "base": "upsert",
+      "mode": "converter",
+      "expected": "bytes",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "keySchema"
+          ],
+          "value": {
+            "type": "STRING",
+            "optional": false
+          }
+        },
+        {
+          "target": "input",
+          "path": [
+            "key"
+          ],
+          "value": "cdc-progress"
+        },
+        {
+          "target": "input",
+          "path": [
+            "valueSchema"
+          ],
+          "value": {
+            "type": "BYTES",
+            "optional": false,
+            "name": "org.edfi.kafka.connect.data.DocumentStateJson",
+            "version": 1
+          }
+        },
+        {
+          "target": "input",
+          "path": [
+            "value"
+          ],
+          "value": "eyJjb250cmFjdFZlcnNpb24iOjF9"
+        }
+      ]
+    },
+    {
+      "name": "CONVERTER-EMPTY",
+      "base": "upsert",
+      "mode": "converter",
+      "expected": "bytes",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "keySchema"
+          ],
+          "value": {
+            "type": "STRING",
+            "optional": false
+          }
+        },
+        {
+          "target": "input",
+          "path": [
+            "key"
+          ],
+          "value": "cdc-progress"
+        },
+        {
+          "target": "input",
+          "path": [
+            "valueSchema"
+          ],
+          "value": {
+            "type": "BYTES",
+            "optional": false,
+            "name": "org.edfi.kafka.connect.data.DocumentStateJson",
+            "version": 1
+          }
+        },
+        {
+          "target": "input",
+          "path": [
+            "value"
+          ],
+          "value": ""
+        }
+      ]
+    },
+    {
+      "name": "CONVERTER-JSON-NULL-BYTES",
+      "base": "upsert",
+      "mode": "converter",
+      "expected": "bytes",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "keySchema"
+          ],
+          "value": {
+            "type": "STRING",
+            "optional": false
+          }
+        },
+        {
+          "target": "input",
+          "path": [
+            "key"
+          ],
+          "value": "cdc-progress"
+        },
+        {
+          "target": "input",
+          "path": [
+            "valueSchema"
+          ],
+          "value": {
+            "type": "BYTES",
+            "optional": false,
+            "name": "org.edfi.kafka.connect.data.DocumentStateJson",
+            "version": 1
+          }
+        },
+        {
+          "target": "input",
+          "path": [
+            "value"
+          ],
+          "value": "bnVsbA=="
+        }
+      ]
+    },
+    {
+      "name": "CONVERTER-NULL-SCHEMA-NULL",
+      "base": "upsert",
+      "mode": "converter",
+      "expected": "null",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "keySchema"
+          ],
+          "value": {
+            "type": "STRING",
+            "optional": false
+          }
+        },
+        {
+          "target": "input",
+          "path": [
+            "key"
+          ],
+          "value": "cdc-progress"
+        },
+        {
+          "target": "input",
+          "path": [
+            "valueSchema"
+          ],
+          "value": null
+        },
+        {
+          "target": "input",
+          "path": [
+            "value"
+          ],
+          "value": null
+        }
+      ]
+    },
+    {
+      "name": "CONVERTER-OPTIONAL",
+      "base": "upsert",
+      "mode": "converter",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "keySchema"
+          ],
+          "value": {
+            "type": "STRING",
+            "optional": false
+          }
+        },
+        {
+          "target": "input",
+          "path": [
+            "key"
+          ],
+          "value": "cdc-progress"
+        },
+        {
+          "target": "input",
+          "path": [
+            "valueSchema"
+          ],
+          "value": {
+            "type": "BYTES",
+            "optional": true,
+            "name": "org.edfi.kafka.connect.data.DocumentStateJson",
+            "version": 1
+          }
+        },
+        {
+          "target": "input",
+          "path": [
+            "value"
+          ],
+          "value": "eyJjb250cmFjdFZlcnNpb24iOjF9"
+        }
+      ],
+      "reason": "UNCLASSIFIED_CONVERSION"
+    },
+    {
+      "name": "CONVERTER-VERSION-MISSING",
+      "base": "upsert",
+      "mode": "converter",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "keySchema"
+          ],
+          "value": {
+            "type": "STRING",
+            "optional": false
+          }
+        },
+        {
+          "target": "input",
+          "path": [
+            "key"
+          ],
+          "value": "cdc-progress"
+        },
+        {
+          "target": "input",
+          "path": [
+            "valueSchema"
+          ],
+          "value": {
+            "type": "BYTES",
+            "optional": false,
+            "name": "org.edfi.kafka.connect.data.DocumentStateJson"
+          }
+        },
+        {
+          "target": "input",
+          "path": [
+            "value"
+          ],
+          "value": "eyJjb250cmFjdFZlcnNpb24iOjF9"
+        }
+      ],
+      "reason": "UNCLASSIFIED_CONVERSION"
+    },
+    {
+      "name": "CONVERTER-VERSION-TWO",
+      "base": "upsert",
+      "mode": "converter",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "keySchema"
+          ],
+          "value": {
+            "type": "STRING",
+            "optional": false
+          }
+        },
+        {
+          "target": "input",
+          "path": [
+            "key"
+          ],
+          "value": "cdc-progress"
+        },
+        {
+          "target": "input",
+          "path": [
+            "valueSchema"
+          ],
+          "value": {
+            "type": "BYTES",
+            "optional": false,
+            "name": "org.edfi.kafka.connect.data.DocumentStateJson",
+            "version": 2
+          }
+        },
+        {
+          "target": "input",
+          "path": [
+            "value"
+          ],
+          "value": "eyJjb250cmFjdFZlcnNpb24iOjF9"
+        }
+      ],
+      "reason": "UNCLASSIFIED_CONVERSION"
+    },
+    {
+      "name": "CONVERTER-RESERVED-STRING",
+      "base": "upsert",
+      "mode": "converter",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "keySchema"
+          ],
+          "value": {
+            "type": "STRING",
+            "optional": false
+          }
+        },
+        {
+          "target": "input",
+          "path": [
+            "key"
+          ],
+          "value": "cdc-progress"
+        },
+        {
+          "target": "input",
+          "path": [
+            "valueSchema"
+          ],
+          "value": {
+            "type": "STRING",
+            "optional": false,
+            "name": "org.edfi.kafka.connect.data.DocumentStateJson",
+            "version": 1
+          }
+        },
+        {
+          "target": "input",
+          "path": [
+            "value"
+          ],
+          "value": "MC06-SECRET-SENTINEL"
+        }
+      ],
+      "reason": "UNCLASSIFIED_CONVERSION"
+    },
+    {
+      "name": "CONVERTER-VALUE-NULL",
+      "base": "upsert",
+      "mode": "converter",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "keySchema"
+          ],
+          "value": {
+            "type": "STRING",
+            "optional": false
+          }
+        },
+        {
+          "target": "input",
+          "path": [
+            "key"
+          ],
+          "value": "cdc-progress"
+        },
+        {
+          "target": "input",
+          "path": [
+            "valueSchema"
+          ],
+          "value": {
+            "type": "BYTES",
+            "optional": false,
+            "name": "org.edfi.kafka.connect.data.DocumentStateJson",
+            "version": 1
+          }
+        },
+        {
+          "target": "input",
+          "path": [
+            "value"
+          ],
+          "value": null
+        }
+      ],
+      "reason": "UNCLASSIFIED_CONVERSION"
+    },
+    {
+      "name": "CONVERTER-VALUE-STRING",
+      "base": "upsert",
+      "mode": "converter",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "keySchema"
+          ],
+          "value": {
+            "type": "STRING",
+            "optional": false
+          }
+        },
+        {
+          "target": "input",
+          "path": [
+            "key"
+          ],
+          "value": "cdc-progress"
+        },
+        {
+          "target": "input",
+          "path": [
+            "valueSchema"
+          ],
+          "value": {
+            "type": "BYTES",
+            "optional": false,
+            "name": "org.edfi.kafka.connect.data.DocumentStateJson",
+            "version": 1
+          }
+        },
+        {
+          "target": "input",
+          "path": [
+            "value"
+          ],
+          "value": {
+            "$javaType": "STRING",
+            "value": "MC06-SECRET-SENTINEL"
+          }
+        }
+      ],
+      "reason": "UNCLASSIFIED_CONVERSION"
+    },
+    {
+      "name": "CONVERTER-VALUE-BYTE-BUFFER",
+      "base": "upsert",
+      "mode": "converter",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "keySchema"
+          ],
+          "value": {
+            "type": "STRING",
+            "optional": false
+          }
+        },
+        {
+          "target": "input",
+          "path": [
+            "key"
+          ],
+          "value": "cdc-progress"
+        },
+        {
+          "target": "input",
+          "path": [
+            "valueSchema"
+          ],
+          "value": {
+            "type": "BYTES",
+            "optional": false,
+            "name": "org.edfi.kafka.connect.data.DocumentStateJson",
+            "version": 1
+          }
+        },
+        {
+          "target": "input",
+          "path": [
+            "value"
+          ],
+          "value": {
+            "$javaType": "BYTE_BUFFER",
+            "value": "eyJjb250cmFjdFZlcnNpb24iOjF9"
+          }
+        }
+      ],
+      "reason": "UNCLASSIFIED_CONVERSION"
+    },
+    {
+      "name": "CONVERTER-UNNAMED-BYTES",
+      "base": "upsert",
+      "mode": "converter",
+      "expected": "delegated",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "keySchema"
+          ],
+          "value": {
+            "type": "STRING",
+            "optional": false
+          }
+        },
+        {
+          "target": "input",
+          "path": [
+            "key"
+          ],
+          "value": "cdc-progress"
+        },
+        {
+          "target": "input",
+          "path": [
+            "valueSchema"
+          ],
+          "value": {
+            "type": "BYTES",
+            "optional": false
+          }
+        },
+        {
+          "target": "input",
+          "path": [
+            "value"
+          ],
+          "value": "eyJjb250cmFjdFZlcnNpb24iOjF9"
+        }
+      ],
+      "expectedJson": "eyJjb250cmFjdFZlcnNpb24iOjF9"
+    },
+    {
+      "name": "CONVERTER-OTHER-NAMED-BYTES",
+      "base": "upsert",
+      "mode": "converter",
+      "expected": "delegated",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "keySchema"
+          ],
+          "value": {
+            "type": "STRING",
+            "optional": false
+          }
+        },
+        {
+          "target": "input",
+          "path": [
+            "key"
+          ],
+          "value": "cdc-progress"
+        },
+        {
+          "target": "input",
+          "path": [
+            "valueSchema"
+          ],
+          "value": {
+            "type": "BYTES",
+            "optional": false,
+            "name": "contract.Other",
+            "version": 1
+          }
+        },
+        {
+          "target": "input",
+          "path": [
+            "value"
+          ],
+          "value": "eyJjb250cmFjdFZlcnNpb24iOjF9"
+        }
+      ],
+      "expectedJson": "eyJjb250cmFjdFZlcnNpb24iOjF9"
+    },
+    {
+      "name": "CONVERTER-STRING",
+      "base": "upsert",
+      "mode": "converter",
+      "expected": "delegated",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "keySchema"
+          ],
+          "value": {
+            "type": "STRING",
+            "optional": false
+          }
+        },
+        {
+          "target": "input",
+          "path": [
+            "key"
+          ],
+          "value": "cdc-progress"
+        },
+        {
+          "target": "input",
+          "path": [
+            "valueSchema"
+          ],
+          "value": {
+            "type": "STRING",
+            "optional": false
+          }
+        },
+        {
+          "target": "input",
+          "path": [
+            "value"
+          ],
+          "value": "progress-value"
+        }
+      ],
+      "expectedJson": "progress-value"
+    },
+    {
+      "name": "CONVERTER-SCHEMALESS-MAP",
+      "base": "upsert",
+      "mode": "converter",
+      "expected": "delegated",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "keySchema"
+          ],
+          "value": {
+            "type": "STRING",
+            "optional": false
+          }
+        },
+        {
+          "target": "input",
+          "path": [
+            "key"
+          ],
+          "value": "cdc-progress"
+        },
+        {
+          "target": "input",
+          "path": [
+            "valueSchema"
+          ],
+          "value": null
+        },
+        {
+          "target": "input",
+          "path": [
+            "value"
+          ],
+          "value": {
+            "progress": true
+          }
+        }
+      ],
+      "expectedJson": {
+        "progress": true
+      }
+    },
+    {
+      "name": "CONVERTER-MALFORMED-DELEGATED",
+      "base": "upsert",
+      "mode": "converter",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "keySchema"
+          ],
+          "value": {
+            "type": "STRING",
+            "optional": false
+          }
+        },
+        {
+          "target": "input",
+          "path": [
+            "key"
+          ],
+          "value": "cdc-progress"
+        },
+        {
+          "target": "input",
+          "path": [
+            "valueSchema"
+          ],
+          "value": {
+            "type": "INT64",
+            "optional": false
+          }
+        },
+        {
+          "target": "input",
+          "path": [
+            "value"
+          ],
+          "value": {
+            "$javaType": "STRING",
+            "value": "MC06-SECRET-SENTINEL"
+          }
+        }
+      ],
+      "reason": "UNCLASSIFIED_CONVERSION"
+    },
+    {
+      "name": "DIAGNOSTIC-ROW-METADATA",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "reason": "INVALID_DOCUMENT_JSON",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "after",
+            "ProjectName"
+          ],
+          "value": "MC06-SECRET-SENTINEL-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        },
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "after",
+            "ResourceName"
+          ],
+          "value": "MC06-SECRET-SENTINEL-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        },
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "after",
+            "ResourceVersion"
+          ],
+          "value": "MC06-SECRET-SENTINEL-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        },
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "after",
+            "StreamEtag"
+          ],
+          "value": "MC06-SECRET-SENTINEL-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        },
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "after",
+            "DocumentJson"
+          ],
+          "value": "{\"body\":\"MC06-BODY-SENTINEL\","
+        }
+      ]
+    }
+  ]
+}

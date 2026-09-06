@@ -686,3 +686,38 @@ NUnit attaches bounded JSON under `TestResults/MessageContractRecordSize`: stabl
 image digest, policy/lengths, calibration, provider fences, task failure category, broker
 bounds and readiness states. Task traces, padded documents, credentials and physical
 source/topic names are omitted. Existing cancellation-safe fixture disposal owns cleanup.
+
+### Malformed records and converter rejection (MC-06)
+
+`failure-catalog.json` is the executable negative-case catalog. Each entry applies ordered
+field-path mutations to a runtime-loaded ordinary E18 upsert or canonical delete. Targets
+are `document` (before DocumentJson encoding), `input`, or `config`; `remove` requires an
+existing field. The positive fixture validator is deliberately bypassed for these malformed
+records. The suite requires the declared configuration/transform/conversion stage, so a
+runner construction failure cannot count as rejection evidence.
+
+`Given_MessageContractFailure` runs every catalog entry for both providers, using stable
+`MC-FAILURE-{PG|SQL}-{name}` IDs. The additional `MC-FAILURE-{PG|SQL}-BASELINE` records prove
+the original shared upsert works. No E18 or authoritative goldens are copied or modified.
+The catalog covers source/work-table rejection, ConfigException, retained upsert/delete
+key types, required row schemas/runtime types, unavailable markers, invalid document JSON
+and embedded metadata, UTC/logical timestamp failures, and direct converter handshakes.
+Artifact-owned reason accessors are asserted for transforms; converter/configuration
+failures use Kafka exception categories with runner-owned stage reasons, never exception prose.
+
+```bash
+CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE='<qualified-image>@sha256:<digest>' \
+CDC_CONNECTOR_TEMPLATE_FAIL_FAST=true \
+dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration \
+  --filter 'Category=CdcMessageContract&FullyQualifiedName~MessageContractFailure' \
+  --logger 'trx;LogFileName=mc06-failure.trx'
+```
+
+Only the pinned Connect image and Docker are required; each provider batch runs in one
+network-disabled container with the existing runner's timeout/cleanup. No provider, broker,
+or worker starts. Evidence under `TestResults/MessageContractFailure` relative to NUnit's
+work directory is attached to each provider's baseline test and copied into the TRX results.
+These attachments retain the
+image digest, stable scenario IDs, failed statuses/reasons, redacted bounded metadata, and
+in-container diagnostic audit results. Successful values and input bodies are excluded.
+This is serialized artifact evidence; MC-18 owns the final invariant manifest and CI wiring.

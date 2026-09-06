@@ -67,7 +67,7 @@ class MessageContractRunner {
             valueConverter.configure(Map.of("schemas.enable", false, "decimal.format", "NUMERIC"), false);
             partitioner.configure(Map.of());
             stage = "transform";
-            SourceRecord output = transform.apply(record);
+            SourceRecord output = scenario.path("converterOnly").asBoolean() ? record : transform.apply(record);
             if (output == null) {
                 result.put("status", "dropped");
                 return result;
@@ -142,6 +142,35 @@ class MessageContractRunner {
             } else {
                 diagnostic.put("reason", "UNCLASSIFIED_" + stage.toUpperCase(Locale.ROOT));
             }
+            if (scenario.get("sourceRecord").has("diagnosticSentinels")) {
+                // Inspect exception text in-container. Never return it, even when this audit fails.
+                String message = String.valueOf(failure.getMessage());
+                boolean sentinelFree = true;
+                boolean metadataSentinelFree = true;
+                int metadataCount = 0;
+                int metadataMaxLength = 0;
+                boolean metadataControlFree = true;
+                Map<String, String> artifactMetadata = failure instanceof DocumentState.TransformationFailureException f
+                    ? f.metadata() : Map.of();
+                for (JsonNode sentinel : scenario.get("sourceRecord").get("diagnosticSentinels")) {
+                    sentinelFree &= !message.contains(sentinel.asText());
+                    for (String item : artifactMetadata.values())
+                        metadataSentinelFree &= !item.contains(sentinel.asText());
+                }
+                for (String item : artifactMetadata.values()) {
+                    metadataCount++;
+                    metadataMaxLength = Math.max(metadataMaxLength, item.length());
+                    metadataControlFree &= item.chars().noneMatch(Character::isISOControl);
+                }
+                ObjectNode audit = diagnostic.putObject("audit");
+                audit.put("messageSentinelFree", sentinelFree);
+                audit.put("metadataSentinelFree", metadataSentinelFree);
+                audit.put("messageLength", message.length());
+                audit.put("metadataCount", metadataCount);
+                audit.put("metadataMaxLength", metadataMaxLength);
+                audit.put("metadataControlFree", metadataControlFree);
+                audit.put("hasCause", failure.getCause() != null);
+            }
         }
         return result;
     }
@@ -176,6 +205,7 @@ class MessageContractRunner {
 
     private static Object value(Schema schema, JsonNode node) {
         if (node == null || node.isNull()) return null;
+        if (node.isObject() && node.has("$javaType")) return runtimeValue(node);
         if (schema == null) return JSON.convertValue(node, Object.class);
         return switch (schema.type()) {
             case STRING -> node.textValue();
@@ -192,9 +222,27 @@ class MessageContractRunner {
                 yield Decimal.LOGICAL_NAME.equals(schema.name()) ? Decimal.toLogical(schema, bytes) : bytes;
             }
             case STRUCT -> {
-                Struct struct = new Struct(schema);
-                node.fields().forEachRemaining(entry -> struct.put(entry.getKey(),
-                    value(schema.field(entry.getKey()).schema(), entry.getValue())));
+                // Public Struct.put validates runtime types before the transform can see them.
+                // A test-only Struct overrides reads for explicitly tagged malformed fields;
+                // all ordinary fields still use Connect's normal construction and validation.
+                Map<String, Object> malformed = new HashMap<>();
+                Struct struct = new Struct(schema) {
+                    @Override public Object getWithoutDefault(String name) {
+                        return malformed.containsKey(name) ? malformed.get(name) : super.getWithoutDefault(name);
+                    }
+                    @Override public void validate() {
+                        // Parent Struct.put recursively validates children. Only explicitly
+                        // malformed fields bypass this earlier Connect construction boundary.
+                        if (malformed.isEmpty()) super.validate();
+                    }
+                };
+                node.fields().forEachRemaining(entry -> {
+                    JsonNode item = entry.getValue();
+                    if (item.isNull() && !schema.field(entry.getKey()).schema().isOptional())
+                        malformed.put(entry.getKey(), null);
+                    else if (item.isObject() && item.has("$javaType")) malformed.put(entry.getKey(), runtimeValue(item));
+                    else struct.put(entry.getKey(), value(schema.field(entry.getKey()).schema(), item));
+                });
                 yield struct;
             }
             case ARRAY -> {
@@ -203,6 +251,20 @@ class MessageContractRunner {
                 yield items;
             }
             case MAP -> throw new IllegalArgumentException();
+        };
+    }
+
+    private static Object runtimeValue(JsonNode descriptor) {
+        JsonNode value = descriptor.get("value");
+        return switch (descriptor.get("$javaType").asText()) {
+            case "UUID" -> UUID.fromString(value.asText());
+            case "STRING" -> value.textValue();
+            case "INT32" -> value.intValue();
+            case "INT64" -> value.longValue();
+            case "BYTES" -> Base64.getDecoder().decode(value.textValue());
+            case "BYTE_BUFFER" -> java.nio.ByteBuffer.wrap(Base64.getDecoder().decode(value.textValue()));
+            case "MAP" -> map(value);
+            default -> throw new IllegalArgumentException();
         };
     }
 
