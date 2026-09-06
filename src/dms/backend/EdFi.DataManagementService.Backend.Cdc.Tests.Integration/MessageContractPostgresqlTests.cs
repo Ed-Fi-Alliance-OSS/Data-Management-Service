@@ -96,61 +96,17 @@ public sealed class Given_MessageContractPostgresql
         await CapturePhaseAsync(fixture, "TRUNCATE", token);
         _source = await fixture.ReadSourceObservationsAsync(token);
         await AssertTopicInventoryAsync(fixture, token);
-        await RetainEvidenceAsync(token);
-        await TestContext.Out.WriteLineAsync(
-            $"Source observations: {_source.Count}; bounded schema/routing metadata only; no provider values retained."
-        );
-    }
-
-    private async Task RetainEvidenceAsync(CancellationToken token)
-    {
-        string directory = Path.Combine(
-            TestContext.CurrentContext.WorkDirectory,
-            "TestResults",
-            "MessageContractPostgresql"
-        );
-        Directory.CreateDirectory(directory);
-        string path = Path.Combine(directory, $"observations-{Guid.NewGuid():N}.json");
-        var evidence = new
-        {
-            ConnectImage = Environment.GetEnvironmentVariable(MessageContractRunner.ImageVariable)
-                ?? string.Empty,
-            Fences = _fences,
-            Source = _source,
-            Scans = new[]
-            {
-                (Kind: "public", Scans: _public),
-                (Kind: "progress", Scans: _progress),
-            }.SelectMany(group =>
-                group.Scans.Select(phase => new
-                {
-                    group.Kind,
-                    Phase = phase.Key,
-                    Bounds = phase.Value.CompletedBoundaries.Select(b => new
-                    {
-                        b.Partition,
-                        b.StartOffset,
-                        b.EndOffset,
-                    }),
-                    Records = phase.Value.Records.Select(r => new
-                    {
-                        r.Partition,
-                        r.Offset,
-                        KeyBytes = r.Key.Bytes.Length,
-                        ValueBytes = r.Value.Bytes.Length,
-                        KafkaNull = r.Value.IsNull,
-                    }),
-                })
-            ),
-        };
-        await File.WriteAllTextAsync(
-            path,
-            JsonSerializer.Serialize(evidence, new JsonSerializerOptions { WriteIndented = true }),
+        await MessageContractProviderObservations.RetainEvidenceAsync(
+            "MessageContractPostgresql",
+            "PostgreSQL",
+            _fences,
+            _source,
+            _public,
+            _progress,
             token
         );
-        TestContext.AddTestAttachment(
-            path,
-            "Bounded PostgreSQL source schemas and broker observation summaries; payloads omitted"
+        await TestContext.Out.WriteLineAsync(
+            $"Source observations: {_source.Count}; bounded schema/routing metadata only; no provider values retained."
         );
     }
 
@@ -161,31 +117,14 @@ public sealed class Given_MessageContractPostgresql
     )
     {
         _fences.Add(await fixture.FencePostgresqlSourceAsync(_request, phase, token));
-        await CaptureAsync(_public, _request.PublicTopicName);
-        await CaptureAsync(_progress, _request.ProgressTopicName);
-        async Task CaptureAsync(Dictionary<string, MessageContractKafkaScan> scans, string topic)
-        {
-            var bounds = await fixture.CaptureKafkaBoundariesAsync(topic, token);
-            if (scans.Count > 0)
-            {
-                var previous = scans.Last().Value.CompletedBoundaries;
-                bounds = bounds
-                    .Select(b =>
-                        b with
-                        {
-                            StartOffset = previous.Single(p => p.Partition == b.Partition).EndOffset,
-                        }
-                    )
-                    .ToArray();
-            }
-            MessageContractKafkaScan scan = await fixture.ConsumeThroughAsync(bounds, token);
-            scans.Add(phase, scan);
-            string kind = topic == _request.PublicTopicName ? "public" : "progress";
-            await TestContext.Out.WriteLineAsync(
-                $"{phase} {kind}: {scan.Records.Count} records; "
-                    + string.Join(", ", bounds.Select(b => $"p{b.Partition}=[{b.StartOffset},{b.EndOffset})"))
-            );
-        }
+        await MessageContractProviderObservations.CapturePhaseAsync(
+            fixture,
+            _request,
+            phase,
+            _public,
+            _progress,
+            token
+        );
     }
 
     [Test]
