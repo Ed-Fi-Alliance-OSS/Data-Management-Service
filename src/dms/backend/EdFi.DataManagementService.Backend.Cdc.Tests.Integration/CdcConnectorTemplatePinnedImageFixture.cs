@@ -2159,6 +2159,7 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
     {
         if (
             partition.ValueKind != JsonValueKind.Object
+            || partition.EnumerateObject().Count() != (request.Provider == CdcProvider.Postgresql ? 1 : 2)
             || !JsonStringPropertyEquals(partition, "server", request.ConnectorName.Value)
         )
         {
