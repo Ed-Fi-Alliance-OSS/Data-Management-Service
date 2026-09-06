@@ -117,9 +117,8 @@ End-offset capture alone never advances durable progress. The caller must supply
 transport observations, not use an end barrier as proof that a scan completed.
 
 `AdvanceTime`, `LoseCheckpoints`, `CorruptCheckpoints`, and `DiscardState` provide
-controlled hooks for the subsequent bootstrap/continuity tasks. Those tasks own
-validity, deadlines, and automatic reconstruction; MC-14 does not advertise valid
-consumer state or implement those policies.
+controlled hooks for bootstrap/continuity coordination. The low-level MC-14 harness
+does not advertise valid consumer state or implement those policies.
 
 Stable fixture scenario properties use `MC-CONSUMER-ORDERING-<shared-case>`,
 `MC-CONSUMER-ORDERING-INT64`, `MC-CONSUMER-ORDERING-DURABILITY`, and
@@ -129,4 +128,41 @@ MC-18 will include these IDs in the story traceability manifest.
 
 ```sh
 dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Unit/EdFi.DataManagementService.Backend.Cdc.Tests.Unit.csproj --filter 'Category=CdcMessageContract&FullyQualifiedName~MessageContractConsumerOrdering'
+```
+
+## Reference consumer bootstrap (MC-15)
+
+`MessageContractConsumerBootstrap.cs` coordinates the MC-14 state application
+harness and is also linked into the integration project. Its bounds callback must
+observe the current assignment, earliest offsets, and exclusive end offsets on
+every attempt. Each attempt freezes those barriers. `StartPartitionScan` starts
+the 24-hour wall-clock budget with the first partition; later partition starts,
+retries, stalls, and delayed persistence share that deadline. Completion at exactly
+24 hours is permitted; one tick later an unfinished attempt is discarded.
+
+Validity requires every partition's durable application and checkpoint to reach
+its captured end. `CompleteScan` consumes an independent transport position for
+empty partitions or compacted gaps; capturing a barrier does not prove scanning.
+No record at the exclusive end is required, and concurrent writes beyond it do not
+move the barrier. Incremental consumption continues at durable next offsets once
+bootstrap succeeds. Already durable writes beyond the barrier need not be replayed
+within the same attempt, even if checkpoint persistence lags those later writes.
+
+`FailBootstrap` and deadline expiry discard all documents, pending writes, and
+checkpoints and observe fresh bounds for a complete scan from current earliest
+offsets. Scan handles carry the attempt identity so delayed callbacks cannot apply
+or checkpoint a discarded attempt. If fresh bounds are unavailable, no scan can
+start using the previous observations. The next attempt gets its own budget when
+its first partition starts scanning.
+
+Stable scenario properties are `MC-CONSUMER-BOOTSTRAP-DURABILITY`,
+`MC-CONSUMER-BOOTSTRAP-OFFSETS`, `MC-CONSUMER-BOOTSTRAP-DEADLINE`, and
+`MC-CONSUMER-BOOTSTRAP-RECOVERY` (`CDC-INV-14`; manifest mapping belongs to MC-18).
+These deterministic timelines use shared serialized envelopes and no wall-clock
+sleeping. They establish bootstrap behavior, not production retained-log capacity.
+Recurring validity renewal and checkpoint/assignment invalidation remain MC-16;
+real Kafka transport evidence remains MC-17.
+
+```sh
+dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Unit/EdFi.DataManagementService.Backend.Cdc.Tests.Unit.csproj --filter 'Category=CdcMessageContract&FullyQualifiedName~MessageContractConsumerBootstrap'
 ```

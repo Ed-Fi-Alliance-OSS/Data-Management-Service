@@ -48,6 +48,10 @@
             Link="MessageContractConsumer.cs"
         />
         <Compile
+            Include="../EdFi.DataManagementService.Backend.Cdc.Tests.Unit/MessageContractConsumerBootstrap.cs"
+            Link="MessageContractConsumerBootstrap.cs"
+        />
+        <Compile
             Include="../EdFi.DataManagementService.Backend.Cdc.Tests.Unit/MessageContractJson.cs"
             Link="MessageContractJson.cs"
         />
