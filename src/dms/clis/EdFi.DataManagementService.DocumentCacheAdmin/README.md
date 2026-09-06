@@ -166,6 +166,31 @@ fallback to the data store's current connection. The physical-source proof above
 option selects which database is inspected, and the fingerprint comparison still decides whether
 the retirement may proceed.
 
+Select the retained generation explicitly with `--generation`, and use the same
+`--cdc-binding-state-path` as setup. A binding record spells the default tenant `default`;
+translate it to `--tenant-key ''` (or omit that option) for the CLI. Literal
+`--tenant-key default` selects a different tenant.
+
+`--confirm cdcBindingRetirement` authorizes destructive removal of that generation.
+`--connector-already-absent` is a separate operator judgement for a connector never
+registered or already removed. The worker cannot tell those cases from an external
+configuration deletion that left committed offsets behind. After reconciling that
+history, the option permits retirement to continue on a missing connector; the proof
+records the offsets as an operator assertion, not a worker observation. It does not
+bypass the original-source guard or a worker failure.
+
+Successful retirement emits a full `CdcCleanupProof` and exits `0`. Refused/incomplete
+retirement emits no proof: in `--json` mode stdout is empty and stderr carries diagnostic
+codes/messages. Exit `10` means a refusal before mutation; `12` means incomplete retryable
+cleanup. Keep the binding and original-source reference for retry after a partial failure,
+including a provider-cleanup timeout. Reissue the same target/generation; each CLI
+invocation generates a new operation ID. The absent-connector judgement may be needed
+once an earlier attempt removed the configuration. Shared worker state is retained,
+and the filesystem store retains a retirement identity record after deleting the selected
+incident/binding. Archive the CLI cleanup proof separately. Follow the
+[retirement procedure](../../../../reference/cdc-documentation/operations-runbook.md#retire-binding-generation)
+for proof inspection, interruption handling, and retained evidence.
+
 When a `cdc` verb produces a contract, its type is selected by the verb rather than
 by the outcome:
 
@@ -353,10 +378,13 @@ Adopt an existing governed-artifact set under a binding record you supply:
 dms-document-cache cdc adopt --data-store-id 1 --binding-json ./binding.json --settings ./appsettings.Production.json --environment Production --json
 ```
 
-Retire a binding and its governed artifacts:
+Retire a selected retained generation and its governed artifacts. The deployment secret
+mechanism must export `CDC_ORIGINAL_SOURCE_CONNECTION` for its original database first;
+only the variable name is passed. This synthetic example maps record tenant `default`
+to the empty CLI tenant and requires prior review of the selected record:
 
 ```bash
-dms-document-cache cdc retire --data-store-id 1 --confirm cdcBindingRetirement --settings ./appsettings.Production.json --environment Production --json
+dms-document-cache cdc retire --tenant-key '' --data-store-id 1 --deployment-key cdc-lab --instance-key ds1 --generation 1 --cdc-binding-state-path /srv/dms-cdc-state --source-connection-variable CDC_ORIGINAL_SOURCE_CONNECTION --confirm cdcBindingRetirement --settings ./appsettings.Production.json --environment Production --json
 ```
 
 Mutating request JSON uses the shared administrative DTO shape:

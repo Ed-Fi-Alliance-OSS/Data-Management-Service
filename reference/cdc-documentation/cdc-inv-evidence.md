@@ -40,6 +40,10 @@ No executable documentation catalog or automated documentation/link tests are us
 | [Continuity](operations-runbook.md#continuity-incident), [adoption](operations-runbook.md#adopt-missing-binding), [replacement](operations-runbook.md#replace-physical-source); T05 | [Continuity](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#source-history-continuity), [binding](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding); CDC-INV-14/15 authoring support | Manual review `T05-continuity`; source, generated help, existing fixture capture | Reviewed; [record and capture mapping](#t05-continuity-review) | T13 assertions; T14/T15 live replay; T16 closure |
 | [Adoption/replacement](operations-runbook.md#adopt-missing-binding); T05 behavior reuse | [Binding](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding); CDC-INV-11/14/15 supporting evidence | `Given_CdcSetupControllerAdoption`, `Given_CdcSetupControllerReplaceSource`, `Given_CdcSetupControllerInitialEnable`; fake provider/Connect/Kafka/lifecycle collaborators | 68 passed / 0 failed / 0 skipped; [44 cases](evidence/t05/controller-results.txt), [24 retry cases](evidence/t05/retry-results.txt) | Not live provider or broker evidence; T13/T14/T15 |
 | [Command output](operations-runbook.md#replace-physical-source); T05 serializer support | [Readiness](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#projection-health-and-deployment-owned-cdc-readiness), [binding](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding); CDC-INV-14/15 | `Given_DocumentCacheAdminCdcJsonContracts`; existing mocked-dispatch CLI cases | 11 passed / 0 failed / 0 skipped; [identities](evidence/t05/cli-json-results.txt), [six capture outcomes](evidence/t05/capture-results.txt) | Production dispatch/default-tenant additions T13; deployed replay T14/T15 |
+| [Retirement](operations-runbook.md#retire-binding-generation); T06 | [Binding lifecycle](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding); CDC-INV-14/15 authoring support | Manual review `T06-retirement`; source/help and existing fixture output | Reviewed; [record and capture mapping](#t06-retirement-review), [retire help](evidence/t06/retire-help.txt) | T17 assertions; T14/T15 live replay; T16 closure |
+| [Retirement cleanup/refusal/retry](operations-runbook.md#retire-binding-generation); T06 behavior reuse | [Binding lifecycle](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding); CDC-INV-11/14/15 supporting evidence | `Given_CdcProviderArtifactTeardown`, `Given_CdcKafkaTeardown`, `Given_CdcSetupControllerRetirement`; mocked provider/Connect/Kafka/lifecycle | 32 passed / 0 failed / 0 skipped; [20 requested-filter cases](evidence/t06/teardown-requested-results.txt), [12 controller cases](evidence/t06/retirement-controller-results.txt) | Provider timeout capture is manual; T17 new assertions; T14/T15 real cleanup |
+| [Retirement CLI boundary](operations-runbook.md#retire-binding-generation); T06 | [Binding lifecycle](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding); CDC-INV-14/15 supporting evidence | `Given_DocumentCacheAdminCdcCommandDispatcher` and `Given_DocumentCacheAdminCdcJsonContracts`; mocked controller/dispatcher, actual CLI executor and serialization | 42 passed / 0 failed / 0 skipped; [31 dispatcher cases](evidence/t06/dispatcher-results.txt), [11 CLI cases](evidence/t06/cli-json-results.txt), [eight captures](evidence/t06/capture-results.txt) | Default-tenant subprocess/retirement matrix T17; live provider/broker replay T14/T15 |
+| [Retained retirement evidence](operations-runbook.md#retire-binding-generation); T06 | [Binding lifecycle](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding); CDC-INV-11/14 supporting evidence | Four exact `Given_LocalCdcStateStore` cases; real temporary filesystem with injected delete failures | 4 passed / 0 failed / 0 skipped; [private-umask case identities](evidence/t06/retirement-store-private-results.txt); initial default-umask run 2 passed / 2 failed, [results](evidence/t06/retirement-store-results.txt) | Not live controller-to-provider retirement; T17/T14/T15 |
 
 <a id="t01-foundation-review"></a>
 ## T01 foundation review
@@ -683,6 +687,119 @@ results and reconciles corrections. No upstream authoring blocker or live pass i
 Manual diff review and `git diff --check` passed. All temporary capture resources remain
 outside Git; no deployment resources were created.
 
+<a id="t06-retirement-review"></a>
+## T06 destructive-retirement review
+
+Reviewed 2026-09-06 against `97542586a904464eb6f31f57e322cb0b7c317599` plus T06
+documentation changes. The pre-existing story edit remains input and outside this commit.
+Starting directory: repository root; Linux/Bash, .NET SDK `10.0.102`. No provider, broker,
+Connect image, or deployment was started or mutated for this task. Raw help, test logs/TRX,
+and fixture streams were captured before normalization under `/tmp/dms-1326-t06`.
+The committed artifacts retain synthetic identity, timestamps, contract fields, diagnostics,
+and output/exit pairs; help's terminal blank line was trimmed, proof JSON was indented,
+and test result extraction omits machine/user paths and run identifiers. Internal diagnostic
+arrays retain CLR property casing and are explicitly **not** CLI stdout contracts.
+
+**Selection:** T13 was assessed first as the next integration point. Its live prerequisites
+were not established: GitHub repository variables provided the pinned connector/provider
+images but no `CDC_CONTROL_BROKER_KAFKA_IMAGE`; the E19-06 API/consumer helper remains
+absent as recorded in T02. No T13 tests or implementation were performed. Selected the
+ready T06 authoring contract instead; T13 remains pending. This is not a failing provider
+exercise or a substitute qualification claim.
+
+**Manual review:** compared [the retirement procedure](operations-runbook.md#retire-binding-generation),
+its [record selection](operations-runbook.md#incident-command-context),
+[local cleanup handoff](operations-runbook.md#local-cleanup), and
+[CLI reference](../../src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin/README.md#commands)
+with generated retire help, command surface/request builder/dispatcher/exit mapper,
+`CdcSetupController.RetireAsync`, Connect stopped-state read-back, Kafka/provider teardown,
+`CdcCleanupProofValidator`, and `LocalCdcBindingStateStore` retirement/deletion ordering.
+Followed new local file/anchor links, including configuration, binding/disclosure owners,
+proof artifacts, and the E18/history handoff. No documentation assertions, Markdown
+execution, executable documentation catalogs, or automated link tests were used.
+
+**Behavior invocations and results:**
+
+```bash
+dotnet run --project src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin -- cdc retire --help
+dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Control.Tests.Unit --filter 'FullyQualifiedName~CdcSetupControllerTeardown|FullyQualifiedName~CdcProviderArtifactTeardown|FullyQualifiedName~CdcKafkaTeardown' --logger 'trx;LogFileName=teardown-requested.trx' --results-directory /tmp/dms-1326-t06
+dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Control.Tests.Unit --no-build --filter Category=CdcSetupControllerTeardown --logger 'trx;LogFileName=retirement-controller.trx' --results-directory /tmp/dms-1326-t06
+dotnet test src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration --filter Category=CdcJsonContract --logger 'trx;LogFileName=cli-json.trx' --results-directory /tmp/dms-1326-t06
+dotnet test src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit --filter FullyQualifiedName~Given_DocumentCacheAdminCdcCommandDispatcher --logger 'trx;LogFileName=dispatcher.trx' --results-directory /tmp/dms-1326-t06
+umask 077
+dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit --no-build --filter 'FullyQualifiedName=EdFi.DataManagementService.Core.Tests.Unit.DocumentCache.Cdc.Given_LocalCdcStateStore.It_refuses_a_binding_for_a_generation_it_already_retired|FullyQualifiedName=EdFi.DataManagementService.Core.Tests.Unit.DocumentCache.Cdc.Given_LocalCdcStateStore.It_refuses_a_retirement_whose_existing_record_names_a_different_binding|FullyQualifiedName=EdFi.DataManagementService.Core.Tests.Unit.DocumentCache.Cdc.Given_LocalCdcStateStore.It_latches_incidents_idempotently_and_deletes_state_after_verified_cleanup|FullyQualifiedName=EdFi.DataManagementService.Core.Tests.Unit.DocumentCache.Cdc.Given_LocalCdcStateStore.It_deletes_incident_before_binding_and_keeps_the_record_when_either_delete_fails' --logger 'trx;LogFileName=retirement-store-private.trx' --results-directory /tmp/dms-1326-t06
+```
+
+The final commands above exited `0`; builds succeeded. The requested FQN filter selects 20 adapter
+cases but misses the controller class `Given_CdcSetupControllerRetirement`; the separate
+category run supplies its 12 cases. Existing CLI/dispatcher suites supply 11/31 cases,
+and the four explicit filesystem cases verify retained history and deletion failure
+ordering. Total **78 passed / 0 failed / 0 skipped** after correcting the filesystem invocation environment.
+No production or test code changed. The initial four-case filesystem command used the same
+filter without `--no-build`, inherited umask `0002`, and wrote `retirement-store.trx`: two
+cases passed and two failed before reaching their intended identity guard. The existing
+`TempCdcStateRoot.WriteRetirement` helper creates directories/files with inherited modes;
+the shipped store correctly classified those records as `LocalStateUnavailable`. Replayed
+with `umask 077`; all four passed. T17 should preserve that environment or correct the
+helper while adding its retirement assertions. No assertion was weakened.
+
+**Captured output:** temporary reflection aid `/tmp/dms-1326-t06/capture/Program.cs` reused
+`Given_CdcSetupControllerRetirement.EnabledBinding`, `CdcSetupControllerHarness`, and
+`Given_DocumentCacheAdminCdcJsonContracts.ContractResult` / `ExecuteAsync`. It called
+the real controller, mapped proof/refusal using the shipped dispatcher rule, and passed
+that result through the actual CLI executor with a substituted dispatcher. This is
+manual fixture capture, not subprocess/provider/broker integration evidence. Its retained
+[outcome list](evidence/t06/capture-results.txt) records stdout/stderr lengths and exits.
+Successful cases have empty stderr; refused/incomplete cases have empty stdout.
+
+| Capture | Existing fixture/setup and exact outcome |
+| --- | --- |
+| [PostgreSQL proof](evidence/t06/retire-postgresql-completed.json) | `Given_CdcSetupControllerRetirement.It_names_every_governed_artifact_of_the_binding_in_the_proof`; `EnabledBinding(Postgresql)`, exit `0`, eight artifacts. |
+| [SQL Server proof](evidence/t06/retire-sqlserver-completed.json) | `.It_retires_a_sql_server_generation_including_its_schema_history_topic`; `EnabledBinding(SqlServer)`, exit `0`, twelve artifacts including history topic/grants and capture/gating artifacts. |
+| [Asserted absence proof](evidence/t06/retire-absent-asserted.json) | `.It_retires_an_acknowledged_absent_connector_on_the_operator_s_own_assertion`; `NotFound` collaborators plus operator assertion, exit `0`; offsets evidence explicitly credits the operator. |
+| [Absent-connector stderr](evidence/t06/retire-absent-refused.stderr.txt), [diagnostics](evidence/t06/retire-absent-refused.diagnostics.json) | `.It_refuses_a_retirement_whose_connector_the_worker_no_longer_has`; same absent evidence in a fresh enabled harness without assertion, exit `10`, `retireRefused`, no proof. |
+| [Wrong-source stderr](evidence/t06/retire-source-refused.stderr.txt), [diagnostics](evidence/t06/retire-source-refused.diagnostics.json) | `.It_refuses_to_retire_a_generation_bound_to_another_physical_source`; retained previous-generation fingerprint against current source, exit `10`, `sourceMismatch`, no proof. |
+| [Connector-failure stderr](evidence/t06/retire-connector-incomplete.stderr.txt), [diagnostics](evidence/t06/retire-connector-incomplete.diagnostics.json) | `.It_leaves_the_binding_record_intact_when_the_connector_could_not_be_removed`; delete-config `Conflict` after offset removal, exit `12`, `retireIncomplete`, no proof. |
+| [Provider-timeout stderr](evidence/t06/retire-provider-timeout.stderr.txt), [diagnostics](evidence/t06/retire-provider-timeout.diagnostics.json) | Existing enabled harness, provider teardown fake waits on the real linked budget cancellation token; `Timeouts.ProviderSetup=10ms` for capture only. Exit `12`, `retireIncomplete`, `providerSetup`, `timedOut`, retryable, no proof. New assertion remains T17. |
+| [Timeout retry proof](evidence/t06/retire-timeout-retry-completed.json) | Same harness/retained generation after timeout; fixture models already-removed connector/Kafka artifacts, operator assertion, and successful provider removal. Exit `0`, mixed `notFound`/`deleted`; no invented partial-success proof. New sequential/live assertions remain T17/T14/T15. |
+
+The initial capture reused the successfully retired harness for the absent-connector
+refusal and correctly got **missing binding** instead. Preserved that raw attempt under
+`raw-initial`, corrected capture setup to a fresh enabled harness, and reviewed the final
+streams above. No source behavior or expected result was changed to fit the prose.
+
+**Material findings/corrections:**
+
+- `--source-connection-variable` selects the original database without publishing its
+  credential; the provider validate-only fingerprint guard runs before fencing. No
+  source-override status/dry-run surface is invented. Dispatcher tests specifically cover
+  the named variable while CMS is unreachable, unset-variable refusal, and secret exclusion.
+- A cleanup timeout is a controller diagnostic, not a partial proof. CLI stderr prints
+  `retireIncomplete` and message; it does not expose the full `observed=timedOut` object.
+  The procedure separates budget expiry during cleanup from failed initial source access.
+- Connector absence is not worker proof that offsets are absent. A retry after removal
+  requires the operator's recorded judgement; a successful capture credits that judgement.
+  “Same operation” retains selection; the CLI generates a new operation ID each invocation.
+- State deletion is ordered: retirement history first, incident next, binding last. The
+  retained `CdcRetirement` is an identity/history record, not the full cleanup proof.
+  Archive the proof separately, and do not claim a retirement record alone proves completion
+  after a lost response. Proof comparison uses a protected pre-mutation record copy because
+  successful retirement removes the live binding. Broader/consumer-group grants and shared
+  worker topics survive.
+- Corrected stale T06 routing and one inherited “adoption pending T05” sentence. Fixed
+  new local anchor references during manual review. Procedure links use actual owning
+  anchors; no command was executed from Markdown.
+
+**Pending:** T17 adds missing real-dispatch/default-tenant and original-source operator
+assertions, provider-timeout/same-selection retry, final state-removal failure and retained
+record capture using the fixture access from T13. T14/T15 supply live PostgreSQL/SQL Server
+retirement proof, source selection, component read-back, and partial-cleanup replays.
+The E19-06 helper dependency remains unmet. T16 reconciles final examples and closes
+pending rows; fixture cleanup never establishes remote/platform purge. The filesystem
+feedback failure was resolved by protected creation permissions; no remaining task-blocking
+failure occurred. Temporary capture resources remain outside Git; the filesystem tests
+dispose their own roots. Manual diff review and `git diff --check` passed.
+
 <a id="pending-delivery"></a>
 ## Pending delivery and verification
 
@@ -698,7 +815,7 @@ actual results before the story is complete.
 | Monitoring/incident routing and status/lag JSON | T03/T12 delivered; T14/T15 live observations | Authoring and existing fixture capture reviewed in [T03](#t03-monitoring-review); additional CLI contracts verified in [T12](#t12-operator-path-review). Deployed endpoint/provider/metrics/fence read-back remains pending; fixture success does not close live evidence. |
 | E18 packaged downstream-history handoff and repair scope | T04/T12 delivered; E18-S08 restamp; T16 reconciliation | [T04 review](#t04-projection-handoff-review): 8 configured integration and 27 history unit cases passed; [T12](#t12-operator-path-review) adds all 36 provider/command/evidence tuples with 144 passing assertions. Dedicated restamp utility/procedure/evidence is absent; E18-S08 handoff unmet. |
 | Continuity, complete-record adoption, physical-source replacement | T05 delivered; T13 assertions; T14/T15 replay | [T05 review](#t05-continuity-review): 68 controller and 11 CLI cases passed; six captured outcomes, help/source/default-tenant/retry review complete. Additional operator assertions and live provider replay pending; T16 closes results. |
-| Destructive retirement, partial failure, timeout and same-operation retry | T06; T17 assertions; T14/T15 replay | Pending. Distinguish successful cleanup proof from incomplete/refused cleanup; preserve shared state and retirement records. |
+| Destructive retirement, partial failure, timeout and same-operation retry | T06 delivered; T17 assertions; T14/T15 replay | [T06 review](#t06-retirement-review): 78 existing behavior cases passed; eight output captures, generated help, original-source/absence/proof/history review complete. Additional operator assertions and live cleanup remain pending. |
 | Security, consumer isolation, sensitive-data containment | T07; T14/T15 replay | Pending. Link authorizer-backed evidence separately from local ACL-disabled results; component cleanup cannot prove platform purge. |
 | Provider retention, consumer continuity, record budget, capacity observations | T08; T14/T15 replay | Pending. Link existing owning evidence; small exercises do not establish production capacity. |
 | Discovery references and final consistency | T09; T16 closure | Pending. Final manual review reconciles all anchors, exact test selections, provider results, artifacts, and limitations. |

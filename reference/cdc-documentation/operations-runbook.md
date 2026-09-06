@@ -83,8 +83,8 @@ destructive local teardown. Store backup access and retention with the deploymen
 operational records.
 
 A backup or redacted connector manifest is not authority to edit binding identity or
-recreate offsets. Missing state requires complete-record `cdc adopt` with live validation;
-that procedure is pending T05. Binding, incident, and retirement behavior remains owned
+recreate offsets. Missing state requires [complete-record adoption](#adopt-missing-binding)
+with live validation. Binding, incident, and retirement behavior remains owned
 by the [binding design](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding).
 
 <a id="procedure-format"></a>
@@ -440,8 +440,9 @@ a failed retirement retains its binding and normally aborts volume deletion, pre
 resources for retry. An absent store is not proof of an absent deployment. Do not discard
 or bypass unreadable state or opt into abandonment as routine cleanup. Keep the root and
 protected post-retirement backup after successful teardown. Close the dedicated PowerShell
-session after collecting evidence to release its token/runtime overrides. Dedicated destructive scope,
-original-source selection, partial cleanup and same-operation retry are pending T06/T17;
+session after collecting evidence to release its token/runtime overrides. Follow
+[guarded retirement](#retire-binding-generation) for destructive scope, original-source
+selection, cleanup-proof inspection, and same-operation retry;
 [the binding owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding)
 defines the limits of cleanup proof, including no platform-purge claim.
 
@@ -663,14 +664,15 @@ Use [the bounded continuity procedure](#continuity-incident): `unknown` requires
 observations before guarded restart; `lost` requires durable latch and independently
 verified fencing of the terminal generation. The procedure separates status, explicit stop,
 and eligible restart. Neither adoption nor source replacement clears terminal loss.
-Detailed destructive retirement remains T06; baseline-replacing repair is
+Use [guarded retirement](#retire-binding-generation) for destructive removal; baseline-replacing repair is
 [deferred](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#contract-change-and-repair-operations).
 
 <a id="incident-command-context"></a>
 ## Select an incident target and preserve evidence
 
 **Scope/effect:** read the operator-selected complete binding record and prepare arguments;
-this does not import or repair state. Use this context for the next three procedures.
+this does not import or repair state. Use this context for continuity, adoption,
+replacement, and retirement.
 Their authority is the [binding owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding)
 and [continuity owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#source-history-continuity).
 
@@ -822,7 +824,7 @@ Keep the same target, generation, and state root and inspect/retry containment a
 reachability. Never restart a terminal generation to see whether it clears. A recreated
 slot/capture instance, offset reset, or same-topic resnapshot cannot establish continuity.
 There is no v1 exact post-admission replacement-baseline recipe. Keep evidence for explicit
-retirement (detailed procedure pending T06) or escalation to the
+[guarded retirement](#retire-binding-generation) or escalation to the
 [deferred repair owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#contract-change-and-repair-operations).
 
 <a id="adopt-missing-binding"></a>
@@ -986,6 +988,172 @@ Once writes have been admitted, initial-enable retry is no longer the restart ro
 [guarded continuity procedures](#continuity-incident). Terminal loss stays terminal and
 requires the [deferred repair handoff](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#contract-change-and-repair-operations).
 T13 assertions and T14/T15 provider replay remain pending; T16 reconciles final evidence.
+
+<a id="retire-binding-generation"></a>
+## Destructively retire one binding generation
+
+**Scope/effect:** permanently remove the selected generation's governed CDC artifacts.
+Use [planned stop](#local-stop-restart) when artifacts should be retained for restart.
+Retirement is a separate operator decision under the
+[binding lifecycle owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding).
+It does not create a replacement baseline or certify deletion from remote broker copies
+or independent consumer stores; [disclosure correction](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#sensitive-data-disclosure-correction)
+requires that separate evidence.
+
+**Starting directory/prerequisites:** repository root, Bash/`jq`, and the
+[incident command context](#incident-command-context), including protected settings,
+the same absolute binding-state root/mount used by setup, and backups of binding,
+incident, and retirement records. Close concurrent controller operations. Retain access
+to the selected generation's original provider database, Kafka admin interface, and
+Connect worker. Retirement does not require the DMS status endpoint or provisioning
+assertions for a new database. Shipped settings and step budgets remain in the
+[configuration catalog](../../docs/CONFIGURATION.md#datamanagementdocumentcachecdc);
+command syntax and exit codes remain in the
+[CLI reference](../../src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin/README.md#commands).
+
+**Target/generation and original-source verification:** select `CDC_RECORD` from the
+durable store for the generation being removed. Recheck every displayed identity field
+before mutation, especially provider, fingerprint, connector, topic, and generation.
+`cdc_generation` selects the retained generation, even if configuration now defaults to
+its replacement. Translate record tenant `default` to CLI `--tenant-key ''` using the
+shared context; passing literal `default` selects another tenant. The retire verb reads
+the stored binding; `--binding-json` is an adoption option, not a retirement input.
+
+Have the deployment secret mechanism export `CDC_ORIGINAL_SOURCE_CONNECTION` with the
+connection for **this generation's original physical database**. Match that secret's
+database identity and protected provisioning/source-fingerprint evidence to
+`CDC_RECORD.physicalSourceFingerprint`. Do not print or put its value in arguments.
+The command below also verifies the live fingerprint before fencing: the shipped
+validate-only provider pass reads the original source and must match the binding.
+There is no retirement dry-run or separate source-override status verb. Missing source
+access or an unproved match leaves retirement incomplete as an operational objective;
+do not certify absence by connecting to the replacement database.
+
+The explicit variable bypasses the CMS connection lookup, which would now return the
+replacement database. An unset or empty variable refuses; it never falls back to CMS.
+For a current generation, omitting the option uses CMS, but the same live fingerprint
+guard still applies. In a one-shot container, inject the named variable through the
+deployment's protected environment and use addresses resolvable in that container;
+a host environment variable alone is not available inside it.
+
+**Mutation:** after the identity/source review, run once and retain both output streams
+and the native exit code. The exact destructive confirmation is `cdcBindingRetirement`.
+
+```bash
+test -n "${CDC_ORIGINAL_SOURCE_CONNECTION:-}"
+retire_record="$incident_dir/retire-binding-before.json"
+cp -- "$CDC_RECORD" "$retire_record"
+retire_assertion=()
+retire_args=(cdc retire "${cdc_target[@]}" --generation "$cdc_generation"
+  --source-connection-variable CDC_ORIGINAL_SOURCE_CONNECTION
+  --confirm cdcBindingRetirement "${cdc_context[@]}")
+retire_exit=0
+dotnet run --no-build --project src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin -- \
+  "${retire_args[@]}" "${retire_assertion[@]}" \
+  >"$incident_dir/retire.stdout" 2>"$incident_dir/retire.stderr" || retire_exit=$?
+printf '%s\n' "$retire_exit" >"$incident_dir/retire.exit"
+cat "$incident_dir/retire.stderr"
+```
+
+**Never-registered/already-removed connector judgement:** the default is no assertion.
+If Connect reports the connector absent, it cannot distinguish one that never registered
+from one deleted outside guarded retirement. Committed offsets can outlive connector
+configuration, so that answer alone does not prove their absence. The operator must
+reconcile the selected connector name and retained registration/cleanup evidence before
+using `--connector-already-absent`. Examples supporting the judgement are an enablement
+that never registered its connector, or an interrupted guarded retirement that deleted
+offsets before deleting the connector. An unexplained external deletion needs investigation.
+
+Once that judgement is recorded, set `retire_assertion=(--connector-already-absent)` and
+reissue the same invocation in a **new** protected `incident_dir`, preserving earlier
+output. This permits the controller to proceed when the worker reports absence; it
+neither deletes unobservable offsets nor proves their absence on the worker's behalf.
+The proof records `connectSourceOffsets.cleanupState=notFound` and an
+`evidenceSummary` beginning `the operator asserted`. It does not bypass source verification
+or treat an unavailable worker as an absent connector. See the
+[binding owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding)
+for the authority and limits of this assertion.
+
+**Expected outcome:** a successful `--json` invocation emits one `CdcCleanupProof`, exit
+`0`, with `cleanupMode=retireBindingGeneration`, complete `bindingIdentity`, `operationId`,
+`verifiedAt`, and `governedArtifacts`. It has no `outcome`, readiness, or partial-progress
+field. Review the captured [PostgreSQL proof](evidence/t06/retire-postgresql-completed.json),
+[SQL Server proof](evidence/t06/retire-sqlserver-completed.json), and
+[asserted-absence proof](evidence/t06/retire-absent-asserted.json); these are fixture output,
+not deployment cleanup results.
+
+| Captured result | CLI output / disposition |
+| --- | --- |
+| Complete cleanup | Proof on stdout, exit `0`. Inspect identity, every artifact, evidence summaries, and retained retirement record. |
+| Wrong physical source, missing binding, provider mismatch, or unacknowledged absent connector | `retireRefused`, exit `10`, empty stdout; stderr carries code/message. Correct evidence/selection or the operator judgement before retry. No proof. |
+| Connector, Kafka, provider, or final state-store step fails | `retireIncomplete`, exit `12`, empty stdout; stderr carries code/message. Preserve surviving state and reconcile what was actually removed. No proof, even if several earlier steps succeeded. |
+| Provider cleanup budget expires | Controller diagnostic `retireIncomplete`, component `providerSetup`, observed `timedOut`, retryable `true`; CLI exit `12`, empty stdout. CLI stderr prints the code/message, not the detailed diagnostic object. An initial source-connect/validation failure occurs before cleanup and instead refuses before mutation. |
+| Caller interruption, process failure, or lost output | No trustworthy completion receipt. Inspect protected records and component evidence; a timeout or missing stdout does not establish rollback. |
+
+The [captured timeout and refusal evidence](cdc-inv-evidence.md#t06-retirement-review)
+distinguishes internal diagnostic observations from the actual CLI streams. Syntax,
+configuration, and unexpected failures use the other
+[CLI exit codes](../../src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin/README.md#exit-codes);
+do not interpret every nonzero exit as partial cleanup.
+
+**Proof and state verification:** only parse a proof after exit `0`. Compare its full
+identity with the protected pre-mutation copy (the live binding is removed on success);
+inspect, rather than discard, each artifact's evidence.
+
+```bash
+if [ "$retire_exit" -eq 0 ]; then
+  jq -e --slurpfile selected "$retire_record" '
+    .cleanupMode == "retireBindingGeneration" and
+    (.bindingIdentity == ($selected[0] |
+      {deploymentKey, tenantKey, dataStoreId, instanceKey, generation, provider,
+       physicalSourceFingerprint, connectorName, topicName}))' "$incident_dir/retire.stdout"
+  jq '{operationId, verifiedAt, bindingIdentity, cleanupMode, governedArtifacts}' \
+    "$incident_dir/retire.stdout"
+fi
+```
+
+The shipped sequence stops the connector with stopped-state read-back, deletes its
+committed source offsets while it still exists, then deletes its configuration. It removes
+the binding's public/progress topics and literal grants, plus SQL Server schema-history
+topic/grants when applicable, then provider capture artifacts. PostgreSQL owns a slot and
+publication; SQL Server owns the three capture instances and gating role named in its
+inventory. Successful proofs account for each governed artifact as `deleted` or `notFound`.
+Broader Kafka grants and consumer-group grants remain deployment-owned; local
+ACL-disabled `notFound` evidence is not production isolation evidence.
+
+The shared Connect offset topic, worker config/status topics, database/source identity,
+canonical/projection tables, and other generations are not this cleanup's artifacts.
+The filesystem store writes a durable `CdcRetirement` identity record before removing
+the selected terminal incident and then the binding. Inspect the matching
+`retirements/<deploymentKey>/<instanceKey>/<generation>.json` under the same state root;
+the corresponding binding/incident files should be absent after successful cleanup.
+The retirement record retains publication history, not the full cleanup proof: archive
+the CLI proof separately with the protected before/after evidence. A failure during final
+state removal can leave a retirement record alongside a binding or incident; the
+retirement record alone is not a completed cleanup receipt. Back up the whole root again
+and preserve it through [local teardown](#local-cleanup).
+
+**Interruption/same-operation retry:** keep the same target, generation, original-source
+reference, and state root. Resolve the failed provider/broker/worker/permission condition,
+then reissue `cdc retire`, adding the absent-connector assertion only after the judgement
+above. The CLI allocates a new `operationId` on each invocation; “same operation” means
+the same retirement selection, not an operator-supplied ID. A provider timeout can occur
+after offsets, connector, and topics were already removed. Its diagnostic reports the
+failed step, not an inventory of completed steps; retained binding/incident records name
+the work, while component read-back and prior attempt evidence establish what remains.
+
+Do not retry enable/restart, rotate generation, restore the binding from a backup, delete
+state files directly, or use broad topic/volume deletion to complete this retirement.
+If the binding is already absent after a lost response, another `cdc retire` refuses for
+missing binding; reconcile the retained retirement record, archived proof if available,
+and component evidence instead of recreating the record. Without source access or proof
+of all governed cleanup, keep the outstanding work explicit. Retirement also preserves
+the historical CDC restriction on
+[offline projection commands](#cache-ahead-containment).
+
+[T06 manual review and existing fixture results](cdc-inv-evidence.md#t06-retirement-review)
+support authoring. T17 owns additional operator-path and timeout/retry assertions;
+T14/T15 own live original-source retirement, read-back, and retained-record replay.
 
 <a id="projection-repair-handoff"></a>
 ## Projection and CDC repair handoff

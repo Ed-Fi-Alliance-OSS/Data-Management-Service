@@ -1,0 +1,1 @@
+retire: retireRefused: CDC retirement requires the connected database to be the bindings own physical source.

@@ -1,0 +1,15 @@
+[
+  {
+    "Code": "retireRefused",
+    "Category": "connectOffsetStoreInvalid",
+    "Severity": "error",
+    "Component": "connectOffsetStore",
+    "ObservedAt": "2026-08-28T09:00:01+00:00",
+    "Message": "CDC retirement cannot observe the committed source offsets of a connector the worker does not have and the shared offset store may still hold them under this name.",
+    "Retryable": false,
+    "ArtifactKind": "cdcRetirement",
+    "ArtifactName": null,
+    "Expected": "a retirement request this deployment can begin",
+    "Observed": "dms-binding-g7"
+  }
+]

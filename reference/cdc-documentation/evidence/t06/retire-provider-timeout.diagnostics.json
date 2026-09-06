@@ -1,0 +1,15 @@
+[
+  {
+    "Code": "retireIncomplete",
+    "Category": "artifactNotRemoved",
+    "Severity": "error",
+    "Component": "providerSetup",
+    "ObservedAt": "2026-08-28T09:00:01+00:00",
+    "Message": "CDC retirement could not remove the bindings provider capture artifacts.",
+    "Retryable": true,
+    "ArtifactKind": "cdcRetirement",
+    "ArtifactName": null,
+    "Expected": "every governed artifact removed before the binding record",
+    "Observed": "timedOut"
+  }
+]

@@ -1,0 +1,7 @@
+retirement-store: 4 cases; Passed=2, Failed=2, NotExecuted=0
+Passed EdFi.DataManagementService.Core.Tests.Unit.DocumentCache.Cdc.Given_LocalCdcStateStore.It_deletes_incident_before_binding_and_keeps_the_record_when_either_delete_fails
+Passed EdFi.DataManagementService.Core.Tests.Unit.DocumentCache.Cdc.Given_LocalCdcStateStore.It_latches_incidents_idempotently_and_deletes_state_after_verified_cleanup
+Failed EdFi.DataManagementService.Core.Tests.Unit.DocumentCache.Cdc.Given_LocalCdcStateStore.It_refuses_a_binding_for_a_generation_it_already_retired
+Expected failure.Kind to be CdcStateStoreFailureKind.InvalidOperation {value: 3}, but found CdcStateStoreFailureKind.LocalStateUnavailable {value: 0}.
+Failed EdFi.DataManagementService.Core.Tests.Unit.DocumentCache.Cdc.Given_LocalCdcStateStore.It_refuses_a_retirement_whose_existing_record_names_a_different_binding
+Expected failure.Kind to be CdcStateStoreFailureKind.InvalidOperation {value: 3}, but found CdcStateStoreFailureKind.LocalStateUnavailable {value: 0}.

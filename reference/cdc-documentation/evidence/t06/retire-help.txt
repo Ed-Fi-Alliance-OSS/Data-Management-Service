@@ -1,0 +1,26 @@
+Description:
+  Retire a binding and its governed artifacts
+
+Usage:
+  dms-document-cache cdc retire [options]
+
+Options:
+  --data-store-id <data-store-id>                            Positive CMS data store identifier
+  --tenant-key <tenant-key>                                  Target tenant key; omitted means the default tenant
+  --cdc-binding-state-path <cdc-binding-state-path>          Root path of the durable CDC binding state store
+  --deployment-key <deployment-key>                          Opaque deployment key contributing to governed artifact names
+  --instance-key <instance-key>                              Opaque instance key contributing to governed artifact names
+  --generation <generation>                                  Positive binding generation
+  --kafka-bootstrap-servers <kafka-bootstrap-servers>        Kafka bootstrap servers the governed topics are provisioned through
+  --connect-base-url <connect-base-url>                      Base URL of the Kafka Connect REST interface
+  --max-record-bytes <max-record-bytes>                      Largest record the pipeline must carry end to end
+  --durability-profile <local|production>                    Durability profile: local or production
+  --connector-already-absent                                 Assert that the connector is already gone; retirement otherwise refuses, because a missing connector leaves its committed source offsets unobservable
+  --source-connection-variable <source-connection-variable>  Name of an environment variable holding the connection string of the database this generation was bound to, for retiring a generation a source replacement superseded; the Configuration Service now names the replacing database. The value is read from the environment, never from the command line, and the retirement still proves the connected database is this generation's own physical source
+  --confirm <confirm>                                        Command confirmation token
+  -?, -h, --help                                             Show help and usage information
+  --json                                                     Write the shared JSON contract document to stdout
+  -v, --verbose                                              Enable verbose (debug-level) logging
+  --settings <settings>                                      Path to a DMS appsettings JSON file
+  --environment <environment>                                DMS environment name used for configuration loading
+  --datastore <postgresql|sqlserver>                         Target datastore provider: postgresql or sqlserver

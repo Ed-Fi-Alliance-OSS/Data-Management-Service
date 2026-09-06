@@ -1,0 +1,15 @@
+[
+  {
+    "Code": "retireIncomplete",
+    "Category": "artifactNotRemoved",
+    "Severity": "error",
+    "Component": "connectorRuntime",
+    "ObservedAt": "2026-08-28T09:00:01+00:00",
+    "Message": "CDC retirement could not delete the connector configuration.",
+    "Retryable": true,
+    "ArtifactKind": "cdcRetirement",
+    "ArtifactName": null,
+    "Expected": "every governed artifact removed before the binding record",
+    "Observed": "Conflict"
+  }
+]

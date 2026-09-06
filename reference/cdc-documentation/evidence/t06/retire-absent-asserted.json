@@ -1,0 +1,67 @@
+{
+  "contractVersion": 1,
+  "operationId": "operation-1",
+  "verifiedAt": "2026-08-28T09:00:01+00:00",
+  "bindingIdentity": {
+    "deploymentKey": "dms",
+    "tenantKey": "default",
+    "dataStoreId": "1",
+    "instanceKey": "binding",
+    "generation": 7,
+    "provider": "postgresql",
+    "physicalSourceFingerprint": "sha256:193c47b34d9751c73d06dbf5ccf2655a1cce46154a4808f152d3db0e91b676bc",
+    "connectorName": "dms-binding-g7",
+    "topicName": "edfi.documents.instance.binding-g7.documents.v1"
+  },
+  "cleanupMode": "retireBindingGeneration",
+  "governedArtifacts": [
+    {
+      "artifactKind": "connectSourceOffsets",
+      "artifactName": "dms-binding-g7",
+      "cleanupState": "notFound",
+      "evidenceSummary": "the operator asserted the connector was already absent so the Kafka Connect worker could not report on its committed source offsets"
+    },
+    {
+      "artifactKind": "kafkaConnectConnector",
+      "artifactName": "dms-binding-g7",
+      "cleanupState": "notFound",
+      "evidenceSummary": "the Kafka Connect worker reported no such governed artifact"
+    },
+    {
+      "artifactKind": "publicTopic",
+      "artifactName": "edfi.documents.instance.binding-g7.documents.v1",
+      "cleanupState": "notFound",
+      "evidenceSummary": "no such governed artifact"
+    },
+    {
+      "artifactKind": "progressTopic",
+      "artifactName": "edfi.documents.instance.binding-g7.documents.v1.cdc-progress",
+      "cleanupState": "notFound",
+      "evidenceSummary": "no such governed artifact"
+    },
+    {
+      "artifactKind": "publicTopicAcls",
+      "artifactName": "edfi.documents.instance.binding-g7.documents.v1",
+      "cleanupState": "notFound",
+      "evidenceSummary": "no such governed artifact"
+    },
+    {
+      "artifactKind": "progressTopicAcls",
+      "artifactName": "edfi.documents.instance.binding-g7.documents.v1.cdc-progress",
+      "cleanupState": "notFound",
+      "evidenceSummary": "no such governed artifact"
+    },
+    {
+      "artifactKind": "postgresqlPublication",
+      "artifactName": "edfi_dms_dms_binding_g7_de1bb4313908_pub",
+      "cleanupState": "notFound",
+      "evidenceSummary": "no such governed artifact"
+    },
+    {
+      "artifactKind": "postgresqlLogicalSlot",
+      "artifactName": "edfi_dms_dms_binding_g7_de1bb4313908_slot",
+      "cleanupState": "notFound",
+      "evidenceSummary": "no such governed artifact"
+    }
+  ]
+}

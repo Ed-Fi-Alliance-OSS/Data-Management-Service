@@ -1,0 +1,8 @@
+retire-postgresql-completed: exit=0; stdoutLength=1974; stderrLength=0; proof=True
+retire-sqlserver-completed: exit=0; stdoutLength=2800; stderrLength=0; proof=True
+retire-absent-asserted: exit=0; stdoutLength=1976; stderrLength=0; proof=True
+retire-absent-refused: exit=10; stdoutLength=0; stderrLength=186; proof=False
+retire-source-refused: exit=10; stdoutLength=0; stderrLength=109; proof=False
+retire-connector-incomplete: exit=12; stdoutLength=0; stderrLength=86; proof=False
+retire-provider-timeout: exit=12; stdoutLength=0; stderrLength=98; proof=False
+retire-timeout-retry-completed: exit=0; stdoutLength=1990; stderrLength=0; proof=True

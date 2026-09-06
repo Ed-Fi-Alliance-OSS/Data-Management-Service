@@ -6,8 +6,9 @@ DMS-1326: configuration, [monitoring/incident routing](operations-runbook.md#mon
 [local provider setup and stop/restart](operations-runbook.md#local-setup),
 [projection/repair handoff](operations-runbook.md#projection-repair-handoff),
 [continuity](operations-runbook.md#continuity-incident),
-[complete-record adoption](operations-runbook.md#adopt-missing-binding), and
-[new-database replacement](operations-runbook.md#replace-physical-source)
+[complete-record adoption](operations-runbook.md#adopt-missing-binding),
+[new-database replacement](operations-runbook.md#replace-physical-source), and
+[guarded retirement](operations-runbook.md#retire-binding-generation)
 are available; remaining authoring and live provider replay are tracked in the
 [evidence index](cdc-inv-evidence.md).
 Pending work is not evidence that an operator procedure has passed.
@@ -54,6 +55,8 @@ tools, executable documentation catalogs, or link-checking tests in this workflo
 
 [T02 setup review](cdc-inv-evidence.md#t02-setup-review) records the selected bootstrap
 behavior tests, generated help, and the unmet E19-06 API-consumer dependency.
+[T06 retirement review](cdc-inv-evidence.md#t06-retirement-review) records guarded cleanup,
+original-source/absence refusals, and fixture timeout/retry output; live replay remains pending.
 
 T01's exact commands and captured results are in the
 [foundation review](cdc-inv-evidence.md#t01-foundation-review). T02–T09 add their command
