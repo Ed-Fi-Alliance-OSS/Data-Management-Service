@@ -89,3 +89,44 @@ without record contents or parser exception details.
 property absence, nulls, and token kinds. Numbers compare using significant digits
 and an arbitrary-precision base-10 exponent, without double/decimal conversion.
 Object ordering and equivalent number spelling/scale are not contract differences.
+
+## Reference consumer ordering (MC-14)
+
+`MessageContractConsumer.cs` lives in the CDC unit test project and is linked into
+its integration test project for later broker conformance scenarios. It accepts
+serialized UTF-8 public key/value bytes with an explicit Kafka-null flag. The
+ordering tests serialize the shared expected envelopes at runtime; this is
+deterministic consumer evidence, not additional transform or broker evidence.
+
+The harness retains the original value bytes and exact signed INT64 version for
+each key. Higher versions replace, lower versions are ignored, and equal versions
+are ignored while byte differences report `ProducerContractViolation`. This byte
+comparison applies to duplicate delivery of one key/version, independently of the
+semantic JSON comparison used for transform goldens. ETags stay opaque. A keyed
+Kafka null removes state, including when no upsert was seen; replay can restore a
+lower version after deletion until a replayed tombstone arrives.
+
+`Stage`, `CompleteApply`, and `CompleteCheckpoint` independently model delivery,
+durable state application, and durable partition next-offset persistence. Ignored
+records and reported producer violations leave state unchanged but can complete a
+delivery checkpoint; the harness reports violations without prescribing an operator
+recovery policy. State contains no per-document offset or permanent delete watermark.
+`Assign` and `CaptureEndOffsets` expose earliest/exclusive-end observations;
+`CompleteScan` accepts actual transport scan positions across empty/compacted gaps.
+End-offset capture alone never advances durable progress. The caller must supply
+transport observations, not use an end barrier as proof that a scan completed.
+
+`AdvanceTime`, `LoseCheckpoints`, `CorruptCheckpoints`, and `DiscardState` provide
+controlled hooks for the subsequent bootstrap/continuity tasks. Those tasks own
+validity, deadlines, and automatic reconstruction; MC-14 does not advertise valid
+consumer state or implement those policies.
+
+Stable fixture scenario properties use `MC-CONSUMER-ORDERING-<shared-case>`,
+`MC-CONSUMER-ORDERING-INT64`, `MC-CONSUMER-ORDERING-DURABILITY`, and
+`MC-CONSUMER-ORDERING-WIRE-BOUNDARY`. Test method names identify the individual
+assertions. Correction scenarios provide ordering evidence for `CDC-INV-14`;
+MC-18 will include these IDs in the story traceability manifest.
+
+```sh
+dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Unit/EdFi.DataManagementService.Backend.Cdc.Tests.Unit.csproj --filter 'Category=CdcMessageContract&FullyQualifiedName~MessageContractConsumerOrdering'
+```

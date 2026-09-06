@@ -44,6 +44,10 @@
             Link="MessageContractFixtureCatalog.cs"
         />
         <Compile
+            Include="../EdFi.DataManagementService.Backend.Cdc.Tests.Unit/MessageContractConsumer.cs"
+            Link="MessageContractConsumer.cs"
+        />
+        <Compile
             Include="../EdFi.DataManagementService.Backend.Cdc.Tests.Unit/MessageContractJson.cs"
             Link="MessageContractJson.cs"
         />
