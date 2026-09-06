@@ -10,7 +10,8 @@
         "DocumentUuid": {
           "type": "STRING",
           "optional": false,
-          "name": "io.debezium.data.Uuid"
+          "name": "io.debezium.data.Uuid",
+          "version": 1
         }
       }
     }
@@ -32,7 +33,8 @@
       "DocumentUuid": {
         "type": "STRING",
         "optional": false,
-        "name": "io.debezium.data.Uuid"
+        "name": "io.debezium.data.Uuid",
+        "version": 1
       }
     }
   },
@@ -76,7 +78,8 @@
             "type": "STRING",
             "optional": false
           }
-        }
+        },
+        "name": "io.debezium.connector.postgresql.Source"
       },
       "op": {
         "type": "STRING",

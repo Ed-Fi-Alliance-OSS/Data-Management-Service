@@ -7,7 +7,7 @@ The shared public fixture's `document` property contains the body, not an envelo
 
 Provider files describe test-only SourceRecord inputs, not the public wire contract.
 `MessageContractFixtureCatalog` expands each template into a self-contained JSON
-record for the future Java runner. The expectation is independently assembled from
+record for the Java runner. The expectation is independently assembled from
 E18 metadata and its public body, never from transformed output.
 
 Template vocabulary (format version 1):
@@ -24,6 +24,8 @@ Template vocabulary (format version 1):
 - `keySchema`/`key`, `valueSchema`/`value`, and each ordered header's `schema`/`value`
   are schema/value pairs. `sourcePartition`, `sourceOffset`, `sourceTopic`,
   `timestamp` (INT64 milliseconds or null), and `operation` describe source metadata.
+- Provider source structs carry the required `io.debezium.connector.<provider>.Source`
+  name. Debezium UUID/JSON/timestamp logical schemas explicitly carry version 1.
 - PostgreSQL uses logical UUID/JSON/ZonedTimestamp strings and a server partition.
   SQL Server uses plain UUID/JSON strings, IsoTimestamp, and server/database partition
   identity. Both pin `__debezium_unavailable_value`. The baseline PostgreSQL delete
@@ -34,8 +36,8 @@ Template vocabulary (format version 1):
 unit and integration build/publish outputs. The loader first resolves `Fixtures`
 from the supplied artifact directory, then supports checkout-relative resolution.
 The integration project links the test helpers; no production project consumes them.
-Future runner source/resources belong to the integration project and must likewise
-be copied to its output. MC-02 owns that runner and pinned-image execution.
+The integration project's `MessageContractRunner/README.md` describes the MC-02
+image-only runner, its resource packaging, observations, and prerequisite diagnostics.
 
 Schema/value validation checks representability as Connect data, not transform
 acceptance: a plain string under an incorrect logical schema can be structurally

@@ -31,8 +31,21 @@
     </ItemGroup>
     <Import Project="../Fixtures/cdc/message-contract/MessageContractFixtures.props" />
     <ItemGroup>
+        <None
+            Update="MessageContractRunner/**/*"
+            CopyToOutputDirectory="PreserveNewest"
+            CopyToPublishDirectory="PreserveNewest"
+        />
+    </ItemGroup>
+    <ItemGroup>
         <!-- Share test-only fixture helpers without referencing another test assembly. -->
-        <Compile Include="../EdFi.DataManagementService.Backend.Cdc.Tests.Unit/MessageContractFixtureCatalog.cs" Link="MessageContractFixtureCatalog.cs" />
-        <Compile Include="../EdFi.DataManagementService.Backend.Cdc.Tests.Unit/MessageContractJson.cs" Link="MessageContractJson.cs" />
+        <Compile
+            Include="../EdFi.DataManagementService.Backend.Cdc.Tests.Unit/MessageContractFixtureCatalog.cs"
+            Link="MessageContractFixtureCatalog.cs"
+        />
+        <Compile
+            Include="../EdFi.DataManagementService.Backend.Cdc.Tests.Unit/MessageContractJson.cs"
+            Link="MessageContractJson.cs"
+        />
     </ItemGroup>
 </Project>

@@ -30,7 +30,8 @@
         "DocumentUuid": {
           "type": "STRING",
           "optional": false,
-          "name": "io.debezium.data.Uuid"
+          "name": "io.debezium.data.Uuid",
+          "version": 1
         },
         "ContentVersion": {
           "type": "INT64",
@@ -39,12 +40,14 @@
         "LastModifiedAt": {
           "type": "STRING",
           "optional": false,
-          "name": "io.debezium.time.ZonedTimestamp"
+          "name": "io.debezium.time.ZonedTimestamp",
+          "version": 1
         },
         "DocumentJson": {
           "type": "STRING",
           "optional": false,
-          "name": "io.debezium.data.Json"
+          "name": "io.debezium.data.Json",
+          "version": 1
         }
       }
     }
@@ -66,7 +69,8 @@
       "DocumentUuid": {
         "type": "STRING",
         "optional": false,
-        "name": "io.debezium.data.Uuid"
+        "name": "io.debezium.data.Uuid",
+        "version": 1
       }
     }
   },
@@ -110,7 +114,8 @@
             "type": "STRING",
             "optional": false
           }
-        }
+        },
+        "name": "io.debezium.connector.postgresql.Source"
       },
       "op": {
         "type": "STRING",

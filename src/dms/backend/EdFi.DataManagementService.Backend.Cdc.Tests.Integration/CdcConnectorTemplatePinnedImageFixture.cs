@@ -424,10 +424,9 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
 
     public async Task AssertKafkaMurmur2PartitionerVectorsAsync(CancellationToken cancellationToken)
     {
-        const string javaProbe = """
+        string javaProbe = $$"""
             set -eu
-            class_path="$(find /kafka /opt/kafka /usr/share/java /usr/share/confluent-hub-components /debezium -name '*.jar' 2>/dev/null | tr '\n' ':')"
-            test -n "${class_path}"
+            {{CdcPinnedImageJavaRuntime.ClassPathScript}}
             cat >/tmp/CdcTemplatePartitionerProbe.java <<'JAVA'
             import java.nio.charset.StandardCharsets;
             import java.util.ArrayList;
@@ -1825,16 +1824,9 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
         string classNameArguments = string.Join(" ", classNames.Select(SingleQuote));
         string script = $$"""
             set -eu
-            class_path="$(find /kafka /opt/kafka /usr/share/java /usr/share/confluent-hub-components /debezium -name '*.jar' 2>/dev/null | tr '\n' ':')"
-            test -n "${class_path}"
+            {{CdcPinnedImageJavaRuntime.ClassPathScript}}
             cat >/tmp/CdcTemplateClassProbe.java <<'JAVA'
-            public class CdcTemplateClassProbe {
-                public static void main(String[] args) throws Exception {
-                    for (String className : args) {
-                        Class.forName(className);
-                    }
-                }
-            }
+            {{CdcPinnedImageJavaRuntime.ClassProbeSource}}
             JAVA
             java -cp "${class_path}" /tmp/CdcTemplateClassProbe.java {{classNameArguments}}
             """;
@@ -2964,7 +2956,19 @@ internal sealed class DockerCli : IDockerCli
         process.Start();
         Task<string> stdout = process.StandardOutput.ReadToEndAsync(cancellationToken);
         Task<string> stderr = process.StandardError.ReadToEndAsync(cancellationToken);
-        await process.WaitForExitAsync(cancellationToken);
+        try
+        {
+            await process.WaitForExitAsync(cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+            }
+            await process.WaitForExitAsync(CancellationToken.None);
+            throw;
+        }
 
         return new DockerCommandResult(
             process.ExitCode,

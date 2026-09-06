@@ -124,6 +124,26 @@ public class Given_MessageContractFixtureCatalog
         LogicalName(fields.GetProperty("LastModifiedAt")).Should().Be(timeName);
         fields.GetProperty("ContentVersion").GetProperty("type").GetString().Should().Be("INT64");
         record
+            .GetProperty("valueSchema")
+            .GetProperty("fields")
+            .GetProperty("source")
+            .GetProperty("name")
+            .GetString()
+            .Should()
+            .Be($"io.debezium.connector.{provider}.Source");
+        foreach (
+            JsonElement schema in new[]
+            {
+                record.GetProperty("keySchema").GetProperty("fields").GetProperty("DocumentUuid"),
+                fields.GetProperty("DocumentUuid"),
+                fields.GetProperty("DocumentJson"),
+                fields.GetProperty("LastModifiedAt"),
+            }.Where(schema => schema.TryGetProperty("name", out _))
+        )
+        {
+            schema.GetProperty("version").GetInt32().Should().Be(1);
+        }
+        record
             .GetProperty("sourcePartition")
             .TryGetProperty("database", out _)
             .Should()

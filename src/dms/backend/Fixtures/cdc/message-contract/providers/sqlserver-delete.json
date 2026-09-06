@@ -76,7 +76,8 @@
             "type": "STRING",
             "optional": false
           }
-        }
+        },
+        "name": "io.debezium.connector.sqlserver.Source"
       },
       "op": {
         "type": "STRING",
