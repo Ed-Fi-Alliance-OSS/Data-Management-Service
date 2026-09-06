@@ -433,7 +433,7 @@ internal sealed class CdcConnectorObservationMapper(
         string? changeLsn = null;
         long? eventSerialNo = null;
 
-        if (offset is { } committedOffset && !isNull)
+        if (offset is { ValueKind: JsonValueKind.Object } committedOffset && !isNull)
         {
             if (provider == CdcProvider.Postgresql)
             {
@@ -594,6 +594,7 @@ internal sealed class CdcConnectorObservationMapper(
     {
         if (
             partition.ValueKind != JsonValueKind.Object
+            || partition.EnumerateObject().Count() != (provider == CdcProvider.Postgresql ? 1 : 2)
             || !string.Equals(ReadString(partition, "server"), connectorName, StringComparison.Ordinal)
         )
         {

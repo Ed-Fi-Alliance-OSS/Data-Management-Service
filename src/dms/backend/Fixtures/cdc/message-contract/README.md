@@ -207,3 +207,40 @@ and serialized shared envelopes without sleeps or broker capacity claims.
 ```sh
 dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Unit/EdFi.DataManagementService.Backend.Cdc.Tests.Unit.csproj --filter 'Category=CdcMessageContract&FullyQualifiedName~MessageContractConsumerContinuity'
 ```
+
+## Initial admission (MC-11)
+
+MC-11's admission fixtures use the production `CdcInitialAdmissionEvaluator`,
+`ICdcConnectorObservationMapper`, and both `ICdcProviderSourcePositionAdapter`
+implementations. Fixed provisioning, binding, and healthy source-history evidence
+is supplied directly; only the synchronous observation methods execute. No database,
+Kafka client, Connect worker, or provisioning controller runs. The CDC unit project
+references the control library to resolve these implementations through public DI.
+
+`Given_MessageContractAdmission` varies one admission requirement from a separately
+asserted admitted baseline. The sequence is first caught-up projection, barrier
+capture, committed offset, barrier success, healthy source history, second caught-up
+projection, and acceptable lag. Stale evidence means a prior operation or an invalid
+sequence; these tests introduce no observation-age policy. A missing barrier cannot
+be replaced by RUNNING status, low lag, or elapsed time. A failed task blocks admission
+even when the previously observed barrier and lag remain healthy.
+
+`Given_MessageContractAdmissionOffset` maps raw committed offset descriptors and
+passes their observations through the real provider adapters into admission. It
+checks PostgreSQL unsigned `lsn_proc` boundaries and SQL Server's lexicographic
+`commit_lsn/change_lsn/event_serial_no` tuple against the heartbeat after-image ending
+in `2`. Fixed normalized expectations include equality, dominance of each tuple
+member, and positions behind the barrier. Malformed/scalar/null/snapshot offsets,
+wrong or ambiguous source partitions, mismatched observation envelopes, topic end
+offsets, and heartbeat values cannot stand in for committed source progress. Every
+other admission step is asserted satisfied in these offset scenarios.
+
+Stable fixture `ScenarioId` properties are
+`MC-ADMISSION-{Postgresql|SqlServer}-{case}` and
+`MC-ADMISSION-OFFSET-{Postgresql|SqlServer}-{case}`; their executable `Scenarios()`
+sources enumerate the cases for MC-18 traceability to `CDC-INV-10`. These are
+observation-contract tests; broker acknowledgement remains MC-12 evidence.
+
+```sh
+dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Unit/EdFi.DataManagementService.Backend.Cdc.Tests.Unit.csproj --filter 'Category=CdcMessageContract&FullyQualifiedName~MessageContractAdmission'
+```
