@@ -492,3 +492,53 @@ record lengths/null flags. Containers and their source-observation file are remo
 by the existing fixture's independent cleanup, including setup failures. Optional local
 prerequisite skips never count as provider/broker evidence; fail-fast qualification
 requires actual execution.
+
+## Broker consumer conformance (MC-17)
+
+`Given_MessageContractConsumerBroker` connects the same test-only
+`MessageContractConsumerBootstrap` / `MessageContractConsumer` used by MC-14–16 to
+real Kafka reads. It uses the existing PostgreSQL pinned-image fixture to create an
+isolated public topic with three fixed partitions, `cleanup.policy=compact`, and an
+explicit `delete.retention.ms >= 604800000`. The actual byte observer's fetch limits
+are checked against the binding's record budget; automatic offset commit/store are
+disabled. Provider setup and Docker cleanup remain in the existing fixture.
+
+Four E18 document cases supply synthetic public envelopes at runtime. A direct
+Confluent byte producer sends higher/lower/identical-duplicate upserts and true Kafka
+null tombstones on two explicitly assigned partitions; the third partition stays
+empty. This suite supplies broker-to-consumer evidence. It does not register a source
+connector, qualify provider capture or the Java transform, exercise API/projector
+workflows, wait for compaction, or measure production retention/capacity. The broker
+and earliest/exclusive end offsets are real; persistence completion and the 24-hour
+clock are controlled in the shared in-memory test harness.
+
+Stable executable scenario IDs:
+
+- `MC-CONSUMER-BROKER-BOOTSTRAP-DURABILITY`: full reads leave state invalid; a delayed
+  tombstone apply blocks scanning/checkpointing; the empty partition must also have
+  a completed durable checkpoint before bootstrap becomes valid.
+- `MC-CONSUMER-BROKER-ORDERING`: four keys, two active partitions, stale and duplicate
+  results, true deletes, and complete independently expected reconstructed state.
+- `MC-CONSUMER-BROKER-IDLE-RENEWAL`: after 23 controlled hours, unchanged real Kafka
+  ends require fresh scan/checkpoint completion on every partition to renew proof.
+- `MC-CONSUMER-BROKER-CONTINUATION`: new higher-version state and a tombstone are read
+  starting at the previous durable next offsets, without replaying bootstrap.
+- `MC-CONSUMER-BROKER-CHECKPOINT-MISSING` and
+  `MC-CONSUMER-BROKER-CHECKPOINT-CORRUPT`: discard all state and checkpoints, reject
+  stale callbacks, observe fresh broker bounds, rescan every partition from earliest,
+  and reconstruct the expected final state through the same bootstrap harness.
+
+Configure `CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE` with the qualified immutable digest,
+`CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE`, and `CDC_CONNECTOR_TEMPLATE_REDPANDA_IMAGE`
+as for MC-07/08, then run:
+
+```sh
+CDC_CONNECTOR_TEMPLATE_FAIL_FAST=true dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/EdFi.DataManagementService.Backend.Cdc.Tests.Integration.csproj --filter 'Category=CdcMessageContract&FullyQualifiedName~MessageContractConsumerBroker' --logger trx
+```
+
+NUnit attaches bounded JSON from `TestResults/MessageContractConsumerBroker` containing
+the image digest, phase/attempt, real scanned bounds, record offsets/lengths/null flags,
+and durable state/checkpoint transitions. Public bodies, keys and physical topic names
+are omitted. Prerequisite skips are not passes; fail-fast qualification requires the
+broker run. Existing fixture cleanup removes owned containers and topics on success
+or failure unless the explicit keep-containers diagnostic setting is enabled.

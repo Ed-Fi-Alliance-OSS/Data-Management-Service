@@ -284,20 +284,25 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
             _ => "UNKNOWN",
         };
 
-    private IConsumer<byte[], byte[]> CreateByteConsumer() => new ConsumerBuilder<byte[], byte[]>(
-            new ConsumerConfig
-            {
-                BootstrapServers = HostKafkaBootstrapServers,
-                GroupId = $"{_resourcePrefix}-observer-{Guid.NewGuid():N}",
-                EnableAutoCommit = false,
-                EnableAutoOffsetStore = false,
-                EnablePartitionEof = true,
-                AutoOffsetReset = AutoOffsetReset.Error,
-                AllowAutoCreateTopics = false,
-                MaxPartitionFetchBytes = 70_000_000,
-                FetchMaxBytes = 140_000_000,
-            }
-        ).SetLogHandler((_, _) => { }).SetErrorHandler((_, _) => { }).Build();
+    internal ConsumerConfig CreateByteConsumerConfig() =>
+        new()
+        {
+            BootstrapServers = HostKafkaBootstrapServers,
+            GroupId = $"{_resourcePrefix}-observer-{Guid.NewGuid():N}",
+            EnableAutoCommit = false,
+            EnableAutoOffsetStore = false,
+            EnablePartitionEof = true,
+            AutoOffsetReset = AutoOffsetReset.Error,
+            AllowAutoCreateTopics = false,
+            MaxPartitionFetchBytes = 70_000_000,
+            FetchMaxBytes = 140_000_000,
+        };
+
+    private IConsumer<byte[], byte[]> CreateByteConsumer() =>
+        new ConsumerBuilder<byte[], byte[]>(CreateByteConsumerConfig())
+            .SetLogHandler((_, _) => { })
+            .SetErrorHandler((_, _) => { })
+            .Build();
 
     public Task<IReadOnlyList<MessageContractKafkaBoundary>> CaptureKafkaBoundariesAsync(
         string topic,
