@@ -1,0 +1,132 @@
+Passed	DMS-1323 CDC infrastructure opt-in.binding state store root resolution.defaults to the Git-ignored eng/docker-compose/.cdc-state root
+Passed	DMS-1323 CDC infrastructure opt-in.binding state store root resolution.keeps an absolute path the caller supplied
+Passed	DMS-1323 CDC infrastructure opt-in.binding state store root resolution.resolves a relative path against the caller's working directory, not the compose directory
+Passed	DMS-1323 CDC infrastructure opt-in.binding state store root resolution.orders the switch above the environment, the environment above the file, and the file above the default
+Passed	DMS-1323 CDC infrastructure opt-in.binding state store root resolution.resolves a relative environment value against the compose project directory
+Passed	DMS-1323 CDC infrastructure opt-in.connector fencing across a normal stop.fences every binding's connector before a normal stop, and not only on the CDC opt-in
+Passed	DMS-1323 CDC infrastructure opt-in.connector fencing across a normal stop.fences before the compose down, while the worker is still reachable
+Passed	DMS-1323 CDC infrastructure opt-in.connector fencing across a normal stop.builds a stop that names the record's own binding and asserts nothing a retirement would
+Passed	DMS-1323 CDC infrastructure opt-in.connector fencing across a normal stop.issues no separate fence on the destructive path, whose retirement stops the connector itself
+Passed	DMS-1323 CDC infrastructure opt-in.binding state store root enforcement.exports the resolved root so Compose mounts the store the script created and retires from
+Passed	DMS-1323 CDC infrastructure opt-in.binding state store root enforcement.resolves the root from the env file Compose is given, after the overlays have composed it
+Passed	DMS-1323 CDC infrastructure opt-in.binding state store root enforcement.no longer carries a state-root resolver of its own
+Passed	DMS-1323 CDC infrastructure opt-in.Kafka and Kafka Connect infrastructure.treats -EnableKafkaCdc as an infrastructure opt-in alongside -EnableKafka and -EnableKafkaUI
+Passed	DMS-1323 CDC infrastructure opt-in.Kafka and Kafka Connect infrastructure.selects and starts Kafka and Kafka Connect on either database engine
+Passed	DMS-1323 CDC infrastructure opt-in.Kafka and Kafka Connect infrastructure.keeps the kafka-postgresql-source Connect service name
+Passed	DMS-1323 CDC infrastructure opt-in.Kafka and Kafka Connect infrastructure.adds only the Kafka UI for -EnableKafkaUI, on either engine
+Passed	DMS-1323 CDC infrastructure opt-in.Kafka and Kafka Connect infrastructure.never lets the Kafka UI opt-in imply the CDC opt-in
+Passed	DMS-1323 bootstrap CDC phase.opt-in shapes the wrapper refuses.rejects -EnableKafkaCdc on the published start path, which does not declare it
+Passed	DMS-1323 bootstrap CDC phase.opt-in shapes the wrapper refuses.rejects -EnableKafkaCdc with -InfraOnly
+Passed	DMS-1323 bootstrap CDC phase.opt-in shapes the wrapper refuses.rejects -EnableKafkaCdc under the keycloak identity provider
+Passed	DMS-1323 bootstrap CDC phase.opt-in shapes the wrapper refuses.rejects -EnableKafkaCdc with -NoDataStore, which reuses a data store this run did not create
+Passed	DMS-1323 bootstrap CDC phase.opt-in shapes the wrapper refuses.rejects -EnableKafkaCdc with -SchoolYearRange, which configures several data stores
+Passed	DMS-1323 bootstrap CDC phase.opt-in shapes the wrapper refuses.rejects -CdcBindingStatePath without the opt-in
+Passed	DMS-1323 bootstrap CDC phase.binding state root path resolution.normalizes a relative -CdcBindingStatePath before the Push-Location that would reinterpret it
+Passed	DMS-1323 bootstrap CDC phase.binding state root path resolution.hands the start phases and the bind mount the same value
+Passed	DMS-1323 bootstrap CDC phase.binding state root path resolution.derives the state root written into the env file through the shared resolver
+Passed	DMS-1323 bootstrap CDC phase.binding state root path resolution.resolves the root before it is written and after the derived-file guard
+Passed	DMS-1323 bootstrap CDC phase.runtime settings written before the DMS start.writes the projection target, the status role, and the state root
+Passed	DMS-1323 bootstrap CDC phase.runtime settings written before the DMS start.keeps the default tenant's blank key
+Passed	DMS-1323 bootstrap CDC phase.runtime settings written before the DMS start.writes them into the effective env file ahead of the DMS start
+Passed	DMS-1323 bootstrap CDC phase.runtime settings written before the DMS start.never writes them into the caller's own env file
+Passed	DMS-1323 bootstrap CDC phase.phase ordering.keeps the phase's own behavior out of the orchestration wrapper
+Passed	DMS-1323 bootstrap CDC phase.phase ordering.reads the phase result structurally rather than parsing its output
+Passed	DMS-1323 bootstrap CDC phase.phase ordering.runs the CDC phase after the DMS start and before any seed delivery
+Passed	DMS-1323 bootstrap CDC phase.phase ordering.proves the status endpoint answers for the operator credential before enabling anything
+Passed	DMS-1323 bootstrap CDC phase.phase ordering.names the two configuration faults the preflight can see
+Passed	DMS-1323 bootstrap CDC phase.instance-database creation evidence.asserts creation only when the datastore volume did not already exist
+Passed	DMS-1323 bootstrap CDC phase.instance-database creation evidence.withholds the assertion when Docker cannot answer
+Passed	DMS-1323 bootstrap CDC phase.instance-database creation evidence.looks for the major-versioned SQL Server volume the compose file declares
+Passed	DMS-1323 bootstrap CDC phase.instance-database creation evidence.observes the volume before the stack is started, not after
+Passed	DMS-1323 bootstrap CDC phase.instance-database creation evidence.never derives the creation assertion from the -NoDataStore switch
+Passed	DMS-1323 bootstrap CDC phase.cdc enable invocation.runs the tool as a one-shot container on the dms network
+Passed	DMS-1323 bootstrap CDC phase.cdc enable invocation.names the compose file by absolute path, not relative to the caller
+Passed	DMS-1323 bootstrap CDC phase.cdc enable invocation.carries the target, the local deployment policy, and the mounted state root
+Passed	DMS-1323 bootstrap CDC phase.cdc enable invocation.omits --tenant-key for the default tenant
+Passed	DMS-1323 bootstrap CDC phase.cdc enable invocation.allocates the generation past every one the store has held, retirements included
+Passed	DMS-1323 bootstrap CDC phase.cdc enable invocation.reuses the generation of the live binding record, so a partial enable is reissuable
+Passed	DMS-1323 bootstrap CDC phase.cdc enable invocation.refuses to choose between two live binding records for the instance key
+Passed	DMS-1323 bootstrap CDC phase.cdc enable invocation.refuses to allocate a generation over a record it cannot read as one
+Passed	DMS-1323 bootstrap CDC phase.cdc enable invocation.allocates from the store the setup container will be given, resolved as Compose resolves it
+Passed	DMS-1323 bootstrap CDC phase.cdc enable invocation.reads the generation from the store the phase resolves, not from a fixed value
+Passed	DMS-1323 bootstrap CDC phase.cdc enable invocation.lifts a fence through the guarded restart rather than leaving the enable to start it
+Passed	DMS-1323 bootstrap CDC phase.cdc enable invocation.builds a restart that carries the token by name and the binding's own generation
+Passed	DMS-1323 bootstrap CDC phase.cdc enable invocation.names the same binding keys the enable builder allocates the generation under
+Passed	DMS-1323 bootstrap CDC phase.cdc enable invocation.passes an explicit tenant key when one is configured
+Passed	DMS-1323 bootstrap CDC phase.cdc enable invocation.supplies the evidence flags for a database this run created
+Passed	DMS-1323 bootstrap CDC phase.cdc enable invocation.withholds the evidence flags for a data store this run neither created nor ever enabled
+Passed	DMS-1323 bootstrap CDC phase.cdc enable invocation.supplies the evidence flags when the operator asserts a reissue of an interrupted enable
+Passed	DMS-1323 bootstrap CDC phase.cdc enable invocation.withholds the evidence flags for a live binding record the operator did not assert a reissue of
+Passed	DMS-1323 bootstrap CDC phase.cdc enable invocation.refuses an asserted reissue when the store holds no live binding record to resume
+Passed	DMS-1323 bootstrap CDC phase.cdc enable invocation.runs the provider setup as the engine's own administrative principal
+Passed	DMS-1323 bootstrap CDC phase.cdc enable invocation.follows POSTGRES_USER when the stack configures a custom administrator
+Passed	DMS-1323 bootstrap CDC phase.cdc enable invocation.keeps the sa account for SQL Server regardless of POSTGRES_USER
+Passed	DMS-1323 bootstrap CDC phase.cdc enable invocation.supplies the connector principal every cdc verb requires
+Passed	DMS-1323 bootstrap CDC phase.cdc enable invocation.supplies every provider connection property the connector template requires
+Passed	DMS-1323 bootstrap CDC phase.cdc enable invocation.names the SQL Server catalog property and host for the mssql engine
+Passed	DMS-1323 bootstrap CDC phase.cdc enable invocation.references the connector password rather than rendering it
+Passed	DMS-1323 bootstrap CDC phase.cdc enable invocation.creates the connector database principal before the enable
+Passed	DMS-1323 bootstrap CDC phase.cdc enable invocation.resolves the captured database from the caller, else the engine's configured datastore name
+Passed	DMS-1323 bootstrap CDC phase.cdc enable invocation.hands the operator token to the tool through the environment, not the command line
+Passed	DMS-1323 bootstrap CDC phase.cdc enable invocation.supplies the token value around the run and puts the variable back afterwards
+Passed	DMS-1323 bootstrap CDC phase.compose delivery for the DocumentCache settings.passes the projection target and status role to the dms service on both stacks
+Passed	DMS-1323 bootstrap CDC phase.compose delivery for the DocumentCache settings.passes the projection target to the cdc setup container as well as to the dms service
+Passed	DMS-1323 bootstrap CDC phase.compose delivery for the DocumentCache settings.leaves every per-run CDC variable blank in the tracked environment sample
+Passed	DMS-1323 bootstrap CDC phase.compose delivery for the DocumentCache settings.keeps the CDC setup container out of every compose command but its own
+Passed	DMS-1323 Connect pinning, metrics bridge, and destructive teardown.Kafka Connect image pinned by digest.takes the CDC image from an environment variable and keeps the :pre default for the non-CDC path
+Passed	DMS-1323 Connect pinning, metrics bridge, and destructive teardown.Kafka Connect image pinned by digest.hardcodes no digest anywhere
+Passed	DMS-1323 Connect pinning, metrics bridge, and destructive teardown.Kafka Connect image pinned by digest.rejects an unset image rather than falling back to a tag
+Passed	DMS-1323 Connect pinning, metrics bridge, and destructive teardown.Kafka Connect image pinned by digest.rejects a tag-qualified image
+Passed	DMS-1323 Connect pinning, metrics bridge, and destructive teardown.Kafka Connect image pinned by digest.claims only the digest form it actually enforces
+Passed	DMS-1323 Connect pinning, metrics bridge, and destructive teardown.Kafka Connect image pinned by digest.accepts a digest-qualified image
+Passed	DMS-1323 Connect pinning, metrics bridge, and destructive teardown.Kafka Connect image pinned by digest.validates the value Compose would resolve, not the env file's own text
+Passed	DMS-1323 Connect pinning, metrics bridge, and destructive teardown.Kafka Connect image pinned by digest.requires the digest only for the CDC opt-in
+Passed	DMS-1323 Connect pinning, metrics bridge, and destructive teardown.JMX-over-HTTP metrics bridge.enables Jolokia on the Connect service
+Passed	DMS-1323 Connect pinning, metrics bridge, and destructive teardown.JMX-over-HTTP metrics bridge.publishes the bridge on loopback only
+Passed	DMS-1323 Connect pinning, metrics bridge, and destructive teardown.JMX-over-HTTP metrics bridge.never uses the Prometheus JMX exporter branch
+Passed	DMS-1323 Connect pinning, metrics bridge, and destructive teardown.shared Connect offset store provisioned before the worker.declares the provisioning step
+Passed	DMS-1323 Connect pinning, metrics bridge, and destructive teardown.shared Connect offset store provisioned before the worker.provisions the store before every up that starts the Connect worker
+Passed	DMS-1323 Connect pinning, metrics bridge, and destructive teardown.shared Connect offset store provisioned before the worker.starts Kafka on its own first and provisions the store against it
+Passed	DMS-1323 Connect pinning, metrics bridge, and destructive teardown.shared Connect offset store provisioned before the worker.sets the explicit topic-level policy the control plane validates
+Passed	DMS-1323 Connect pinning, metrics bridge, and destructive teardown.shared Connect offset store provisioned before the worker.names the same topic the worker and the control plane name
+Passed	DMS-1323 Connect pinning, metrics bridge, and destructive teardown.connector source credential.activates the env config provider on the Connect worker
+Passed	DMS-1323 Connect pinning, metrics bridge, and destructive teardown.connector source credential.exposes the referenced secret under the name the connector configuration references
+Passed	DMS-1323 Connect pinning, metrics bridge, and destructive teardown.connector source credential.keeps the worker's password default and the principal's password default in step
+Passed	DMS-1323 Connect pinning, metrics bridge, and destructive teardown.connector source credential.resolves the connector password the way kafka.yml interpolates it
+Passed	DMS-1323 Connect pinning, metrics bridge, and destructive teardown.connector source credential.keeps the principal NAME on the file-only resolver
+Passed	DMS-1323 Connect pinning, metrics bridge, and destructive teardown.connector source credential.creates the principal as a dedicated login rather than the administrative one
+Passed	DMS-1323 Connect pinning, metrics bridge, and destructive teardown.binding state store root the setup container writes through.mounts, declares, and passes one and the same container path
+Passed	DMS-1323 Connect pinning, metrics bridge, and destructive teardown.binding state store root the setup container writes through.tightens the mounted root before the tool runs
+Passed	DMS-1323 Connect pinning, metrics bridge, and destructive teardown.binding state store root the setup container writes through.clears only the two bits the store rejects
+Passed	DMS-1323 Connect pinning, metrics bridge, and destructive teardown.destructive teardown ordering.retires the bindings before the compose down removes the volumes
+Passed	DMS-1323 Connect pinning, metrics bridge, and destructive teardown.destructive teardown ordering.retires only on volume removal, so a normal stop retains every artifact
+Passed	DMS-1323 Connect pinning, metrics bridge, and destructive teardown.destructive teardown ordering.takes the local endpoints and record-size policy from one shared resolver
+Passed	DMS-1323 Connect pinning, metrics bridge, and destructive teardown.destructive teardown ordering.names the binding state root it retires from when nothing named one
+Passed	DMS-1323 Connect pinning, metrics bridge, and destructive teardown.destructive teardown ordering.decides that from the state observed before the run exports its own root
+Passed	DMS-1323 Connect pinning, metrics bridge, and destructive teardown.destructive teardown ordering.hands the retirement the run's resolved state root, engine, and compose project
+Passed	DMS-1323 Connect pinning, metrics bridge, and destructive teardown.destructive teardown ordering.delegates the ordered sequence to the control plane rather than restating it
+Passed	DMS-1323 Connect pinning, metrics bridge, and destructive teardown.destructive teardown ordering.refuses the teardown when the binding store cannot be enumerated
+Passed	DMS-1323 Connect pinning, metrics bridge, and destructive teardown.destructive teardown ordering.runs the one-shot container as the host user on Linux so the store stays readable
+Passed	DMS-1323 Connect pinning, metrics bridge, and destructive teardown.destructive teardown ordering.retains the binding record of a failed retirement and fails the teardown with it
+Passed	DMS-1323 Connect pinning, metrics bridge, and destructive teardown.destructive teardown ordering.reports an unretired binding and proceeds only when the operator abandons the state
+Passed	DMS-1323 Connect pinning, metrics bridge, and destructive teardown.binding discovery from the durable state store.returns nothing when the state store holds no binding
+Passed	DMS-1323 Connect pinning, metrics bridge, and destructive teardown.binding discovery from the durable state store.reads the target from the record rather than from its path
+Passed	DMS-1323 Connect pinning, metrics bridge, and destructive teardown.binding discovery from the durable state store.maps the record's default-tenant token back to the E18 tenant key
+Passed	DMS-1323 Connect pinning, metrics bridge, and destructive teardown.binding discovery from the durable state store.leaves every other tenant key in both spaces alone
+Passed	DMS-1323 Connect pinning, metrics bridge, and destructive teardown.binding discovery from the durable state store.omits --tenant-key for a record carrying the default-tenant token
+Passed	DMS-1323 Connect pinning, metrics bridge, and destructive teardown.binding discovery from the durable state store.retires a superseding generation before the one it superseded
+Passed	DMS-1323 Connect pinning, metrics bridge, and destructive teardown.binding discovery from the durable state store.refuses the discovery for a record it cannot read instead of skipping it
+Passed	DMS-1323 Connect pinning, metrics bridge, and destructive teardown.binding discovery from the durable state store.refuses the discovery for a record that names no complete binding target
+Passed	DMS-1323 E2E harness CDC opt-in.parameter surface and the unchanged default run.declares -EnableKafkaCdc
+Passed	DMS-1323 E2E harness CDC opt-in.parameter surface and the unchanged default run.adds nothing to a run that does not ask for CDC
+Passed	DMS-1323 E2E harness CDC opt-in.parameter surface and the unchanged default run.never enables Kafka unconditionally
+Passed	DMS-1323 E2E harness CDC opt-in.forwarded to both start phases.forwards the opt-in to the infrastructure phase and the DMS phase
+Passed	DMS-1323 E2E harness CDC opt-in.forwarded to both start phases.binds the splatted switch through the shared schema guard
+Passed	DMS-1323 E2E harness CDC opt-in.runtime settings before the DMS start, without touching the tracked env file.configures the projection target and status role ahead of the DMS phase
+Passed	DMS-1323 E2E harness CDC opt-in.runtime settings before the DMS start, without touching the tracked env file.delivers them through the process environment and restores it afterward
+Passed	DMS-1323 E2E harness CDC opt-in.runtime settings before the DMS start, without touching the tracked env file.resolves the binding state root through the shared resolver rather than naming one
+Passed	DMS-1323 E2E harness CDC opt-in.runtime settings before the DMS start, without touching the tracked env file.names the CDC target from the configure phase's structured result
+Passed	DMS-1323 E2E harness CDC opt-in.runtime settings before the DMS start, without touching the tracked env file.refuses the shapes a single binding cannot cover
+Passed	DMS-1323 E2E harness CDC opt-in.capture registered against the freshly provisioned database.runs the enable after the DMS start and before setup reports completion
+Passed	DMS-1323 E2E harness CDC opt-in.capture registered against the freshly provisioned database.runs the shared CDC phase command rather than a copy of the workflow
+Passed=131 Failed=0 Skipped=0 NotRun=38

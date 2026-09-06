@@ -2,9 +2,10 @@
 
 Start with the [operations runbook](operations-runbook.md#prerequisites) for deployment
 prerequisites and procedure conventions. This reference set is being delivered in
-DMS-1326: configuration, [monitoring/incident routing](operations-runbook.md#monitoring)
+DMS-1326: configuration, [monitoring/incident routing](operations-runbook.md#monitoring),
+[local provider setup and stop/restart](operations-runbook.md#local-setup),
 and the [projection/repair handoff](operations-runbook.md#projection-repair-handoff)
-are available; provider exercises and recovery procedures remain pending in the
+are available; live provider replay and recovery authoring remain pending in the
 [evidence index](cdc-inv-evidence.md).
 Pending work is not evidence that an operator procedure has passed.
 
@@ -47,6 +48,9 @@ fixtures. Follow each new local file link and anchor from the containing documen
 read command paths from the stated starting directory. Record findings and corrections
 in the evidence index. There are no automated documentation tests, Markdown execution
 tools, executable documentation catalogs, or link-checking tests in this workflow.
+
+[T02 setup review](cdc-inv-evidence.md#t02-setup-review) records the selected bootstrap
+behavior tests, generated help, and the unmet E19-06 API-consumer dependency.
 
 T01's exact commands and captured results are in the
 [foundation review](cdc-inv-evidence.md#t01-foundation-review). T02–T09 add their command

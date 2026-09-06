@@ -1,0 +1,37 @@
+$ErrorActionPreference = 'Stop'
+Import-Module Pester -RequiredVersion 5.7.1
+$config = New-PesterConfiguration
+$config.Run.Path = './eng/docker-compose/tests/BootstrapEnableKafkaCdc.Tests.ps1'
+$config.Run.PassThru = $true
+$config.Filter.FullName = @(
+    'DMS-1323 CDC infrastructure opt-in.binding state store root resolution.*'
+    'DMS-1323 CDC infrastructure opt-in.connector fencing across a normal stop.*'
+    'DMS-1323 CDC infrastructure opt-in.binding state store root enforcement.*'
+    'DMS-1323 CDC infrastructure opt-in.Kafka and Kafka Connect infrastructure.*'
+    'DMS-1323 bootstrap CDC phase.opt-in shapes the wrapper refuses.*'
+    'DMS-1323 bootstrap CDC phase.binding state root path resolution.*'
+    'DMS-1323 bootstrap CDC phase.runtime settings written before the DMS start.*'
+    'DMS-1323 bootstrap CDC phase.phase ordering.*'
+    'DMS-1323 bootstrap CDC phase.instance-database creation evidence.*'
+    'DMS-1323 bootstrap CDC phase.cdc enable invocation.*'
+    'DMS-1323 bootstrap CDC phase.compose delivery for the DocumentCache settings.*'
+    'DMS-1323 Connect pinning, metrics bridge, and destructive teardown.Kafka Connect image pinned by digest.*'
+    'DMS-1323 Connect pinning, metrics bridge, and destructive teardown.JMX-over-HTTP metrics bridge.*'
+    'DMS-1323 Connect pinning, metrics bridge, and destructive teardown.shared Connect offset store provisioned before the worker.*'
+    'DMS-1323 Connect pinning, metrics bridge, and destructive teardown.connector source credential.*'
+    'DMS-1323 Connect pinning, metrics bridge, and destructive teardown.binding state store root the setup container writes through.*'
+    'DMS-1323 Connect pinning, metrics bridge, and destructive teardown.destructive teardown ordering.*'
+    'DMS-1323 Connect pinning, metrics bridge, and destructive teardown.binding discovery from the durable state store.*'
+    'DMS-1323 E2E harness CDC opt-in.parameter surface and the unchanged default run.*'
+    'DMS-1323 E2E harness CDC opt-in.forwarded to both start phases.*'
+    'DMS-1323 E2E harness CDC opt-in.runtime settings before the DMS start, without touching the tracked env file.*'
+    'DMS-1323 E2E harness CDC opt-in.capture registered against the freshly provisioned database.runs the enable after the DMS start and before setup reports completion'
+    'DMS-1323 E2E harness CDC opt-in.capture registered against the freshly provisioned database.runs the shared CDC phase command rather than a copy of the workflow'
+)
+$config.Output.Verbosity = 'Detailed'
+$config.TestResult.Enabled = $true
+$config.TestResult.OutputPath = '/tmp/dms-1326-t02/bootstrap-results.xml'
+$result = Invoke-Pester -Configuration $config
+$result.Tests | Where-Object { $_.Executed } | ForEach-Object { "$($_.Result)`t$($_.ExpandedPath)" } | Set-Content /tmp/dms-1326-t02/selected-results.txt
+"Passed=$($result.PassedCount) Failed=$($result.FailedCount) Skipped=$($result.SkippedCount) NotRun=$($result.NotRunCount)" | Add-Content /tmp/dms-1326-t02/selected-results.txt
+if ($result.FailedCount -gt 0 -or $result.PassedCount -eq 0) { exit 1 }

@@ -2,7 +2,7 @@
 
 This runbook covers the shipped deployment-owned CDC operator surface for PostgreSQL and
 SQL Server. Begin with the prerequisites below. Monitoring and incident routing are available below;
-provider setup exercises and recovery procedures are still pending in
+provider setup exercises are available below; recovery procedures remain pending in
 [delivery and evidence](cdc-inv-evidence.md#pending-delivery). Do not infer a runnable
 recovery procedure from a planned section.
 
@@ -125,9 +125,328 @@ and [readiness](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#v1-r
 Routine observation uses existing status and indexed queue facts. Explicit O(N) scrub
 is separately admitted expensive work, not a health probe. Reuse
 [E18 projection procedures](../document-cache-documentation/operations-runbook.md) for
-queue/poison, enqueue failure, lifecycle, rebuild, and scrub; CDC handoff reconciliation
-is pending T04. Current/historical CDC state disqualifies simple internal-only toggles;
+queue/poison, enqueue failure, lifecycle, rebuild, and scrub; follow the
+[CDC repair handoff](#projection-repair-handoff). Current/historical CDC state disqualifies simple internal-only toggles;
 stopping a connector does not clear downstream publication history.
+
+<a id="local-setup"></a>
+## Fresh local provider exercises
+
+**Scope/effect:** disposable `dms-local` setup, including database creation, generated
+schema provisioning, explicit projector configuration, provider capture/grants, generated
+connector registration, and initial admission. Run the providers sequentially: the Compose
+project, network, and container names are shared. Never point this exercise at an operator
+source. The E2E provisioner **drops and recreates both named E2E databases**. A second setup
+is another destructive provisioning run, not a connector restart or enable retry.
+
+**Starting directory/prerequisites:** a dedicated PowerShell 7 session, repository directory
+`src/dms/tests/EdFi.DataManagementService.Tests.E2E`; Docker, .NET SDK, package access,
+and the [deployment prerequisites](#prerequisites). Use the tracked
+[`.env.e2e`](../../eng/docker-compose/.env.e2e) as the prepared environment's starting
+point; `./.env.e2e` resolves through the wrapper to that Compose file. It selects the
+self-contained identity provider and schema packages. Put any customized credentials in
+an access-restricted environment file and pass its absolute path. Supply
+`QUALIFIED_CDC_CONNECT_IMAGE` externally with the **qualified** Ed-Fi image reference
+ending in its real `@sha256:` digest, and `DMS_CDC_CONNECTOR_PASSWORD` through the local
+secret environment. The wrapper checks digest syntax; that alone does not qualify an image.
+Do not print either the environment or the rendered Compose configuration into evidence.
+
+Before switching branches/providers, retire and tear down the previous disposable stack
+using its own engine, effective environment, and state root; see
+[cleanup handoff](#local-cleanup). Keep unrelated deployments out of `dms-local`.
+Hold external writers closed throughout initial setup, including while DMS is reachable.
+Kafka UI (`-EnableKafkaUI`) supplies no CDC enablement authority.
+
+<a id="local-postgresql"></a>
+### PostgreSQL
+
+Use a disposable PostgreSQL server/volume with logical replication available, a setup
+administrator with publication/slot/grant authority, and a separate connector login.
+The shipped phase provisions that login and the provider workflow generates the capture
+artifacts. Do not run provider setup SQL or submit hand-authored connector JSON. Follow
+[PostgreSQL's design owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#postgresql).
+From the E2E directory in the PowerShell session described above:
+
+```powershell
+$engine = 'postgresql'
+$cdcEnv = './.env.e2e'
+$env:E2E_DATABASE_NAME = 'cdc_lab_pg'
+$env:E2E_SNAPSHOT_DATABASE_NAME = 'cdc_lab_pg_snapshot'
+$env:DMS_CDC_BINDING_STATE_PATH = '/var/tmp/cdc-lab-postgresql-state'
+$env:DMS_CDC_CONNECT_IMAGE = $env:QUALIFIED_CDC_CONNECT_IMAGE
+pwsh ./setup-local-dms.ps1 -EnvironmentFile $cdcEnv -DatabaseEngine postgresql -EnableKafkaCdc
+$setupExit = $LASTEXITCODE
+```
+
+These Linux host paths must be durable and private to the exercise operator. Do not reuse
+an existing database with either synthetic name. Retain the environment exports in this
+session for observation and cleanup. Continue with [shared verification](#local-setup-verification).
+
+<a id="local-sqlserver"></a>
+### SQL Server
+
+Use the local SQL Server 2025 Compose service, its setup administrator, and a separate
+connector login. Confirm capture infrastructure and snapshot-isolation prerequisites;
+initialization/validation of RCSI and nested triggers follows the
+[E18 provider procedure](../document-cache-documentation/operations-runbook.md#sql-server-prerequisite-failure-correction).
+The generated provider workflow owns CDC objects and grants; no independent capture
+creation is part of this exercise. Follow [SQL Server's design owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#sql-server).
+From the same E2E starting directory, after the other provider's cleanup:
+
+```powershell
+$engine = 'mssql'
+$cdcEnv = './.env.e2e'
+$env:E2E_DATABASE_NAME = 'cdc_lab_mssql'
+$env:E2E_SNAPSHOT_DATABASE_NAME = 'cdc_lab_mssql_snapshot'
+$env:DMS_CDC_BINDING_STATE_PATH = '/var/tmp/cdc-lab-mssql-state'
+$env:DMS_CDC_CONNECT_IMAGE = $env:QUALIFIED_CDC_CONNECT_IMAGE
+pwsh ./setup-local-dms.ps1 -EnvironmentFile $cdcEnv -DatabaseEngine mssql -EnableKafkaCdc
+$setupExit = $LASTEXITCODE
+```
+
+Keep the **resolved engine-overlay environment path** printed by setup. For both providers,
+assign that printed absolute path to `$cdcEnv` before subsequent commands; do not infer
+its name. The published `start-published-dms.ps1` does not accept `-EnableKafkaCdc`.
+[Local `bootstrap-local-dms.ps1`](../../eng/docker-compose/bootstrap-local-dms.ps1) also
+supports opt-in with `-IdentityProvider self-contained -EnableKafkaCdc` and an explicit
+`-CdcBindingStatePath`, but is a different full provisioning entry point. Do not run it
+on top of this E2E exercise. `start-local-dms.ps1 -EnableKafkaCdc` alone starts infrastructure;
+it does not configure the projector or admit a database. `build-dms.ps1 E2ETest` has no
+`-EnableKafkaCdc` parameter and cannot substitute for this CDC setup.
+
+<a id="local-setup-verification"></a>
+### Shared setup verification and state selection
+
+**Expected result:** setup exits `0` after its enable phase succeeds. The one-shot CLI
+emits `CdcAdmission` JSON (`admitted`, `notAdmitted`, or `unknown`); successful admission
+exits `0`, admission not opened is `12`, invalid/missing/mismatched binding is `10`, and
+store access failure is `11`. Preserve the CLI JSON, native exit, and wrapper diagnostics
+separately. Wrapper progress text and its internal `Status=Enabled` phase result are not
+CDC status contracts. Admission examples are source/help-reviewed here; serialized live
+admission evidence is **pending T14/T15**, not invented. Compare later status with the
+[existing serialized status fixtures](cdc-inv-evidence.md#t03-monitoring-review).
+
+**Target/generation:** setup derives exactly one non-route-qualified target from the CMS
+configure result and puts it into both DMS and the control-plane environment **before**
+DMS starts. Inspect the printed target and the durable record; do not assume ID `1`.
+Local binding keys are `deploymentKey=local`, `instanceKey=ds<DataStoreId>`. The allocator
+uses an existing live generation for retry, or allocates above every live/retired generation.
+A fresh store begins at `1`. A record's `tenantKey=default` maps to the empty E18 CLI key;
+the discovery helper below performs this translation. Passing literal `default` as
+`--tenant-key` selects a tenant the deployment does not have.
+
+**State persistence:** precedence is explicit `-CdcBindingStatePath` where supported,
+then ambient `DMS_CDC_BINDING_STATE_PATH`, then the selected environment file, then
+`eng/docker-compose/.cdc-state`. Relative explicit paths use the caller's directory;
+relative environment/file paths use the Compose directory. The resolver returns an
+absolute path and wrappers export it for the `/state` bind mount. E2E setup has **no**
+`-CdcBindingStatePath` parameter, so these examples retain an absolute ambient value.
+The one-shot tool uses `--cdc-binding-state-path /state`; a direct host CLI would use the
+host path. Preserve the entire root, including `bindings`, `incidents`, and `retirements`,
+in an access-restricted backup after each operation has settled. Follow
+[permissions and missing-state diagnosis](#deployment-state); do not edit records.
+
+**Commands:** remain in the E2E PowerShell session, with `$cdcEnv` now the absolute
+**effective** path printed by setup. This uses exported shipped argument builders to run
+packaged `dms-document-cache cdc` verbs through the same one-shot service as setup/teardown.
+It adds no provider or controller implementation. The dedicated state root must contain
+exactly one live binding for this fresh exercise; stop to investigate any other shape.
+
+```powershell
+$composeRoot = (Resolve-Path '../../../../eng/docker-compose').Path
+Import-Module "$composeRoot/env-utility.psm1" -Force
+Import-Module "$composeRoot/cdc-enable.psm1" -Force
+Import-Module "$composeRoot/cdc-teardown.psm1" -Force
+$envValues = ReadValuesFromEnvFile $cdcEnv
+$stateRoot = Resolve-CdcBindingStateRoot -EnvValues $envValues
+$bindings = @(Get-CdcRetirableBinding -BindingStateRoot $stateRoot)
+if ($bindings.Count -ne 1) { throw 'Expected one live exercise binding; inspect state.' }
+$binding = $bindings[0]
+$record = Get-Content -LiteralPath $binding.RecordPath -Raw | ConvertFrom-Json
+$binding | Select-Object DeploymentKey, TenantKey, DataStoreId, InstanceKey, Generation
+$runtime = Get-CdcRuntimeEnvOverride -TenantKey $binding.TenantKey `
+    -DataStoreId $binding.DataStoreId -BindingStateRootPath $stateRoot
+foreach ($name in $runtime.Keys) {
+    [Environment]::SetEnvironmentVariable($name, [string]$runtime[$name])
+}
+$principal = Get-CdcConnectorPrincipalConfiguration -EnvValues $envValues
+$sourceDatabase = $env:E2E_DATABASE_NAME
+$verbArgs = @('--data-store-id', $binding.DataStoreId,
+    '--deployment-key', $binding.DeploymentKey, '--instance-key', $binding.InstanceKey,
+    '--generation', [string]$binding.Generation)
+if ($binding.TenantKey) { $verbArgs += @('--tenant-key', $binding.TenantKey) }
+$containerEnv = @(Get-CdcConnectorEnvArgument -DatabaseEngine $engine `
+    -SourceDatabaseName $sourceDatabase -ConnectorPrincipal $principal)
+$containerEnv += @('-e', 'DataManagement__DocumentCache__Cdc__DmsBearerToken')
+if ([string]::IsNullOrWhiteSpace($env:CDC_OPERATOR_TOKEN)) {
+    throw 'Supply the current DocumentCache operator token through CDC_OPERATOR_TOKEN.'
+}
+$env:DataManagement__DocumentCache__Cdc__DmsBearerToken = $env:CDC_OPERATOR_TOKEN
+$statusArgs = Get-CdcSetupComposeArgument -ComposeProjectName dms-local `
+    -EnvironmentFile $cdcEnv -DatabaseEngine $engine -VerbName status `
+    -EnvironmentArgument $containerEnv -VerbArgument $verbArgs
+& docker @statusArgs
+$statusExit = $LASTEXITCODE
+```
+
+Supply a current `CDC_OPERATOR_TOKEN` from the configured DocumentCache operator identity
+before that status invocation; the token goes into the container by environment-variable
+**name**, not command-line value. The E2E wrapper restores its transient runtime environment
+on exit; the explicit target export above preserves the same configuration for subsequent
+one-shot runs. Verify it agrees with the running DMS target, rather than treating this
+export as evidence that the running projector was configured.
+
+The control plane joins `dms`: provider hosts are `dms-postgresql:5432` or
+`dms-mssql:1433`, broker `dms-kafka1:9092`, Connect `kafka-postgresql-source:8083` on
+**both** providers, and DMS `ed-fi-api:8080`. A host CLI cannot assume these names resolve;
+a localhost broker port alone does not fix the broker's advertised container address.
+The worker resolves the generated `${env:CDC_DATABASE_PASSWORD}` reference. Keep the
+connector password consistent with the local secret environment and retain generated
+redacted artifacts for review. See the [credential catalog](../../docs/CONFIGURATION.md#datamanagementdocumentcachecdc)
+and [lag bridge procedure](#inspect-lag) for address overrides and unavailable metrics.
+
+**Verification/retry:** inspect `readiness`, `primaryBlockingCategory`, and each target's
+component evidence; status `notReady`/`unknown` can exit `0`. Follow
+[status containment semantics](#observe-cdc) and [incident routing](#incident-routing).
+If initial enable was interrupted, keep admission closed and preserve the same source,
+target, generation, state, and original provisioning evidence. Do not rerun E2E setup
+as recovery: it drops the database. The shipped `enable-kafka-cdc.ps1` phase supports
+`-DatabaseCreatedByThisRun $false -ResumeInterruptedEnable` with the same explicit
+`-ComposeProjectName`, `-EnvironmentFile`, `-TenantKey`, `-DataStoreId`, `-DatabaseEngine`,
+and `-SourceDatabaseName`. Use it only when an existing live record belongs to an enable
+that **never finished and never admitted writes**. The full bootstrap wrapper calls that
+assertion `-ResumeInterruptedCdcEnable`. A live record or currently empty database does
+not prove it. If state is missing or admission history is uncertain, stop and use the
+[continuity route](#route-continuity-incident); adoption instructions belong to T05.
+
+<a id="local-api-smoke"></a>
+### API upsert/delete observation handoff — unmet E19-06 dependency
+
+After admitted setup and acceptable current evidence, use the
+[E19-06 API/consumer harness](../design/backend-redesign/epics/19-cdc-kafka/06-e2e-kafka-scenarios.md)
+against the **same provisioned database**, target, generated topic, and generation. It
+must capture API upsert/delete responses and the resulting public consumer records using
+its own consumer helpers. Set test-process `AppSettings__DataStoreDatabaseName` to the
+chosen `E2E_DATABASE_NAME`; on Linux clear unsupported `NODE_OPTIONS` for `dotnet test`.
+
+That relational API-to-Kafka harness and its exact test filter are absent in this checkout.
+The setup wrapper exists, but no runnable smoke command or successful API/broker result
+can be supplied here. **The API smoke exercise remains unmet**, assigned to E19-06;
+T14/T15 must record the upstream exact test identities, nonzero counts, and provider
+results when available. Do not substitute ordinary resource tests, handcrafted provider
+writes, message fixtures, or a new shell consumer. Retain setup evidence and proceed only
+to the bounded component stop/restart exercise if its own prerequisites are satisfied.
+
+<a id="local-stop-restart"></a>
+## Planned connector stop and guarded restart
+
+**Scope/effect:** fence only the selected connector and restart its worker without deleting
+artifacts. Preserve connector configuration, committed offsets, provider capture artifacts,
+public/progress/history topics, shared worker state, and all deployment records. These
+steps do not toggle projection or close API writer admission. Budget the planned downtime
+against provider retention; stopping the worker alone does not fence its persisted running
+target. Follow [continuity](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#source-history-continuity).
+
+**Starting directory/prerequisites:** same E2E PowerShell session and effective environment,
+state, `$binding`, `$record`, `$principal`, and `$statusArgs` from shared verification.
+Connect must still be reachable, the operator token current, and this must be the only
+controller. Set `$connectHostUri` to the worker's published host URL (default
+`http://localhost:8083`, or the actual `CONNECT_SOURCE_PORT`). The following GET is a
+bounded diagnostic; only the shipped CLI mutates connector target state.
+
+```powershell
+$stopArgs = Get-CdcStopArgument -ComposeProjectName dms-local `
+    -EnvironmentFile $cdcEnv -DatabaseEngine $engine `
+    -BindingRecord $binding -ConnectorPrincipal $principal
+& docker @stopArgs
+$stopExit = $LASTEXITCODE
+$connectHostUri = 'http://localhost:8083'
+$connectorPath = [Uri]::EscapeDataString($record.connectorName)
+$stopped = Invoke-RestMethod "$connectHostUri/connectors/$connectorPath/status" -TimeoutSec 30
+if ($stopExit -ne 0 -or $stopped.connector.state -ne 'STOPPED') {
+    throw 'Stop not verified; retain evidence and resolve containment before restarting the worker.'
+}
+```
+
+**Expected result/verification:** `cdc stop` emits `CdcStatus` JSON. Exit `0` means the
+stop applied or the connector was absent; absence alone cannot pass this planned registered
+connector exercise. The adapter issues the persisted stop and waits for `STOPPED` read-back;
+the additional GET records it before the planned worker restart. The status can still
+be `notReady`/`unknown`; [T12 serialized CLI fixtures](evidence/t12/cdc-contract-captures.json)
+show successful stop/restart without readiness, with mocked dispatch only. Exit `10`
+means refusal, `11` state-store failure; retain diagnostics and inspect current state.
+A timeout or lost response does not prove that no stop was applied.
+
+Only after that verification, restart the existing worker container, then confirm that
+its persisted stop survived **before** issuing guarded restart:
+
+```powershell
+docker restart kafka-postgresql-source
+$workerExit = $LASTEXITCODE
+$stillStopped = Invoke-RestMethod "$connectHostUri/connectors/$connectorPath/status" -TimeoutSec 30
+if ($workerExit -ne 0 -or $stillStopped.connector.state -ne 'STOPPED') {
+    throw 'Worker restart has no verified fence; investigate containment.'
+}
+$restartArgs = Get-CdcRestartArgument -ComposeProjectName dms-local `
+    -EnvironmentFile $cdcEnv -DatabaseEngine $engine -TenantKey $binding.TenantKey `
+    -DataStoreId $binding.DataStoreId -SourceDatabaseName $sourceDatabase `
+    -Generation $binding.Generation -ConnectorPrincipal $principal
+& docker @restartArgs
+$restartExit = $LASTEXITCODE
+& docker @statusArgs
+$statusExit = $LASTEXITCODE
+```
+
+If Connect is still starting, retain the failed GET and repeat that bounded observation
+when reachable; do not advance to restart on a missing response. Guarded `cdc restart`
+requires affirmative continuity and its artifact prerequisites. A successful applied
+restart exits `0` even if subsequent `CdcStatus` is `notReady`/`unknown`; inspect the
+separate status and component evidence. A refused restart (`10`) leaves the fence in
+place; diagnose its reason before retrying the same target/generation. It never clears
+terminal history loss. Do not reset offsets, recreate capture, or directly resume through
+Connect to make the check pass. Live fence persistence/read-back remains T14/T15 evidence.
+
+**Full local stop alternative and interruption:** from this same directory,
+`pwsh "$composeRoot/start-local-dms.ps1" -d -EnableKafkaCdc -EnableConfig -DatabaseEngine $engine -EnvironmentFile $cdcEnv -CdcBindingStatePath $stateRoot`
+fences discovered bindings while Connect is reachable, then stops the stack without
+`-v`. Verify each registered connector as above before planned shutdown. The wrapper can
+warn `CDC stop: dms-document-cache cdc stop failed ... Its connector may resume publishing`
+and still proceed. If that warning occurred, **do not start the worker again without
+containment verification**: recover reachability under deployment-controlled isolation
+and prove the fence, routing unavailable or lost evidence through
+[continuity containment](#route-continuity-incident). A post-start status poll alone may
+be too late because the worker restores persisted running connectors automatically.
+Preserve warnings, stop result, record, and last read-back. Restarting existing containers
+retains their runtime settings; reprovisioning with `setup-local-dms.ps1` does not.
+
+<a id="local-cleanup"></a>
+## Disposable cleanup and retirement-history handoff
+
+**Scope/effect:** destructive, unlike planned stop. From the same E2E PowerShell session,
+use the setup-printed teardown command with its **same effective environment and engine**,
+while retaining `DMS_CDC_BINDING_STATE_PATH=$stateRoot`. Before issuing it, back up binding,
+incident, and retirement records and confirm the stack/databases are the disposable target.
+
+```powershell
+pwsh ./teardown-local-dms.ps1 -EnvironmentFile $cdcEnv -DatabaseEngine $engine
+$teardownExit = $LASTEXITCODE
+```
+
+The wrapper delegates `-d -v` to the engine-aware local lifecycle path. It retires bindings
+before deleting volumes, names each record's generation, and retains retirement history
+in the host state root. Inspect per-binding `CdcCleanupProof` outcomes and final exit;
+a failed retirement retains its binding and normally aborts volume deletion, preserving
+resources for retry. An absent store is not proof of an absent deployment. Do not discard
+or bypass unreadable state or opt into abandonment as routine cleanup. Keep the root and
+protected post-retirement backup after successful teardown. Close the dedicated PowerShell
+session after collecting evidence to release its token/runtime overrides. Dedicated destructive scope,
+original-source selection, partial cleanup and same-operation retry are pending T06/T17;
+[the binding owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding)
+defines the limits of cleanup proof, including no platform-purge claim.
+
+[Authoring review and exact behavior-test results](cdc-inv-evidence.md#t02-setup-review)
+support these procedures. No live provider setup, API smoke, stop/restart, or cleanup
+success is claimed until the T14/T15 replays supply it.
 
 <a id="monitoring"></a>
 ## Monitoring scope

@@ -35,6 +35,8 @@ No executable documentation catalog or automated documentation/link tests are us
 | [Packaged rejection](operations-runbook.md#cache-ahead-containment); T12 | [History gate](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#projection-administration); CDC-INV-14/15 | `Given_DocumentCacheAdminPackagedHistoryRejections(provider,command,evidence)`; 36 real-provider CLI tuples, synthetic durable state, four assertions each | 144 passed; [matrix](evidence/t12/operator-matrix.txt), [exact identities](evidence/t12/operator-path-results.txt), [review/captures](#t12-operator-path-review) | Live replay T14/T15; final reconciliation T16 |
 | [Observe CDC](operations-runbook.md#observe-cdc); T12 | [Status owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#projection-health-and-deployment-owned-cdc-readiness); CDC-INV-15 | `Given_DocumentCacheAdminCdcJsonContracts` (11 mocked-dispatch cases), `Given_DocumentCacheAdminCdcShippedComposition` (3 PostgreSQL composition/diagnostic cases); boundaries below | 14 passed; [results](evidence/t12/operator-path-results.txt), [status captures](evidence/t12/cdc-contract-captures.json) | No SQL Server CDC-status or live capture claim; T14/T15 |
 | [History interpretation](operations-runbook.md#projection-repair-handoff); T12 reuse | [Binding/history owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding); CDC-INV-14/15 support | Existing CLI dispatcher/service-registration and CDC history/registration unit cases, including both provider registrations; five existing real-provider Runbook cases | 70 unit + 5 integration passed; [review and exact selections](#t12-operator-path-review) | E18 internal-only successes remain test-only; restamp E18-S08; live replay T14/T15 |
+| [Provider setup/state](operations-runbook.md#local-setup), [API handoff](operations-runbook.md#local-api-smoke), [planned stop/restart](operations-runbook.md#local-stop-restart), [cleanup](operations-runbook.md#local-cleanup); T02 | [Bootstrap](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#local-bootstrap-and-ci), [binding](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding); CDC-INV-14/15 authoring support | Manual review `T02-setup`; source/generated help and existing T03/T12 JSON, no provider access | Reviewed; [findings, help, replay commands and dependency](#t02-setup-review) | E19-06 API harness unmet; T14/T15 live replay; T16 reconciliation |
+| [Setup/state/stop](operations-runbook.md#local-setup-verification); T02 wrapper behavior | [Initial admission](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#enablement-and-initial-readiness-sequence), [continuity](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#source-history-continuity); CDC-INV-14/15 supporting evidence | Explicit Pester FullName selection from `BootstrapEnableKafkaCdc.Tests.ps1`; exact 131 case identities in artifact, temporary filesystem/mocked Docker and source-surface assertions | 131 passed / 0 failed / 0 skipped; [results](evidence/t02/bootstrap-results.txt), [invocation](evidence/t02/bootstrap-invocation.txt) | Not provider/image/broker qualification; T14/T15 live admission/fence/cleanup evidence |
 
 <a id="t01-foundation-review"></a>
 ## T01 foundation review
@@ -439,6 +441,114 @@ and replacement assertions T13, retirement operator assertions T17, final reconc
 T16, and the absent restamp handoff E18-S08. Repeat these tests only against disposable
 provider targets; the synthetic retirement proof is not an operator command or purge evidence.
 
+<a id="t02-setup-review"></a>
+## T02 setup, state, and planned-stop review
+
+Reviewed 2026-09-06 against source revision
+`bee7c3f74f857c2ab1bcb39f33c6412cb3f11188` plus T02 documentation changes. The pre-existing
+story edit remains outside this task's commit. Linux/Bash; PowerShell `7.4.10`, Pester
+`5.7.1`, .NET SDK `10.0.102`. No provider, broker, Connect image, or DMS deployment was
+started or accessed. Existing resources were untouched; the selected fixtures used
+Pester's disposable filesystem and mocked Docker commands. No deployment cleanup applied.
+
+**Evidence layer/result:** manual source/help/fixture comparison plus existing bootstrap
+behavior tests. Final selection: **131 passed, 0 failed, 0 skipped, 38 not selected**;
+exit `0`. [Exact executed names/results](evidence/t02/bootstrap-results.txt) and
+[full invocation with explicit `Filter.FullName` selection](evidence/t02/bootstrap-invocation.txt)
+are retained. The invocation is a transcript of behavior-test selection, not an executable
+documentation catalog or a test of this runbook. The full mixed suite was not run.
+
+The first selection passed 132 cases, excluding the operator/story documentation Describe
+and the E2E teardown documentation context. Further manual inspection found that one
+otherwise behavioral E2E provisioning case also asserted a provisioner's help comment
+(`drops if present, then recreates`). Removed that case from the final selection and
+reran; no new tests or production changes were needed. Only the final 131-case selection
+supports this authoring result. Raw initial/final logs and XML remain under
+`/tmp/dms-1326-t02`; that temporary directory is not durable evidence.
+
+**Starting directory/commands executed:** repository root, no target/generation and no
+operational side effects. Save the exact invocation transcript to the named temporary
+script before replaying the Pester command:
+
+```bash
+pwsh -NoProfile -File /tmp/dms-1326-t02/run-bootstrap-tests.ps1
+dotnet run --no-restore --project src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin -- cdc enable --help
+dotnet run --no-restore --project src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin -- cdc status --help
+dotnet run --no-restore --project src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin -- cdc stop --help
+dotnet run --no-restore --project src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin -- cdc restart --help
+```
+
+All four help commands built successfully and exited `0`, with empty stderr and no JSON
+contract. Captured [enable](evidence/t02/cdc-enable-help.txt),
+[status](evidence/t02/cdc-status-help.txt), [stop](evidence/t02/cdc-stop-help.txt), and
+[restart](evidence/t02/cdc-restart-help.txt) output before normalizing only trailing blank
+lines. Test-result extraction retains exact names/outcomes and omits transient user paths,
+run IDs, and durations. No credentials or deployment payloads appear in committed artifacts.
+
+**Manual comparison completed:** setup entry scripts, E2E configure/provision/start order,
+`cdc-enable.psm1`, `enable-kafka-cdc.ps1`, `cdc-teardown.psm1`, the binding-root and local
+policy resolvers in `env-utility.psm1`, `cdc-setup.yml`, `kafka.yml`, CLI command surface
+and exit-code mapping, connector renderer inputs, `CdcConnectRestAdapter` stop read-back,
+and controller stop/restart paths. Followed new local procedure, source, design, and evidence
+links/anchors and checked command paths from the E2E directory. No automated documentation,
+link, or Markdown execution tests were added. Findings incorporated into the runbook:
+
+- E2E setup resolves `./.env.e2e` to the Compose file, applies the engine overlay, configures
+  a single explicit target before DMS starts, and restores temporary runtime environment
+  settings on exit. Later one-shot observations need the same target exports. Keep the
+  printed effective file path and the ambient absolute state root for all later commands.
+- E2E provisioner drops/recreates both named databases. A setup rerun cannot be a restart
+  or an interrupted-enable retry. Bootstrap's resume assertion and the enable phase's
+  differently named switch require a live record and never-opened admission history.
+- Published `start-published-dms.ps1` accepts no CDC switch. The local infrastructure
+  switch starts services; the bootstrap/E2E orchestrator supplies actual enablement.
+  `build-dms.ps1 E2ETest` is not a CDC opt-in surface.
+- Generated connector source properties, env-provider password reference, and local policy
+  come from shipped builders. `kafka-postgresql-source` is the worker on both providers;
+  container-advertised broker names do not become host-resolvable merely by publishing a port.
+- Planned stop must land while Connect is reachable. The adapter waits for `STOPPED`;
+  stop success still needs the registered connector's read-back for this exercise because
+  absent-connector success cannot prove a persisted fence. Local full stop may warn and
+  proceed after fencing fails; a later worker startup can resume publication before status.
+- Teardown retains host retirement history and normally refuses volume removal after a
+  failed retirement. No binding edits, abandonment shortcut, or platform-purge promise.
+
+**Existing serialized fixtures reused, not rerun:** [T03 controller/status review](#t03-monitoring-review)
+and [T12 CLI contracts](#t12-operator-path-review), especially
+[stop/restart success without readiness](evidence/t12/cdc-contract-captures.json).
+They establish JSON field/exit-code interpretation with fake collaborators, not live
+admission, worker persistence, provider capture, or API smoke. Fresh admission JSON remains
+pending T14/T15; no synthetic operational output was written to fill that gap.
+
+**Provider replay commands — recorded, not executed here:** from
+`src/dms/tests/EdFi.DataManagementService.Tests.E2E`, in the prepared PowerShell sessions
+from [PostgreSQL](operations-runbook.md#local-postgresql) or
+[SQL Server](operations-runbook.md#local-sqlserver), respectively:
+
+```powershell
+pwsh ./setup-local-dms.ps1 -EnvironmentFile $cdcEnv -DatabaseEngine postgresql -EnableKafkaCdc
+pwsh ./setup-local-dms.ps1 -EnvironmentFile $cdcEnv -DatabaseEngine mssql -EnableKafkaCdc
+```
+
+These are separate, sequential exercises, each with its own synthetic database/snapshot
+names and persistent root. T14/T15 own actual qualified image/digest/provider versions,
+resolved environment and mount capture, admission/status JSON and exits, API observations,
+planned-stop read-back before/after worker restart, guarded restart, and cleanup results.
+The [shared commands](operations-runbook.md#local-setup-verification),
+[stop/restart](operations-runbook.md#local-stop-restart), and
+[matching teardown](operations-runbook.md#local-cleanup) retain the same target/generation.
+No evidence row here claims those commands have been run against a provider.
+
+**Unmet E19-06 handoff:** the E2E setup wrapper exists, but inspection of
+`src/dms/tests/EdFi.DataManagementService.Tests.E2E` found no relational Kafka feature,
+API-to-Kafka fixture, or topic-consumer helper supplying the required upsert/delete smoke.
+The [E19-06 story](../design/backend-redesign/epics/19-cdc-kafka/06-e2e-kafka-scenarios.md)
+owns those missing capabilities. There is therefore no exact API test filter to record
+and no API pass count. T14/T15 must obtain that upstream harness and record its concrete
+filter with nonzero results; ordinary resource tests and lower-layer message fixtures
+cannot substitute. The authoring contract explicitly permits this pending dependency.
+T16 reconciles all pending results before story completion; T06/T17 own detailed retirement.
+
 <a id="pending-delivery"></a>
 ## Pending delivery and verification
 
@@ -450,7 +560,7 @@ actual results before the story is complete.
 
 | Pending scope | Authoring / evidence owner | Result and required handoff |
 | --- | --- | --- |
-| Fresh PostgreSQL/SQL Server setup, API upsert/delete, planned stop/guarded restart | T02; T14/T15 live replay | Pending. Record qualified image, exact wrapper arguments, persistent mount, and E19-06 harness identities; an absent upstream harness is an unmet dependency. |
+| Fresh PostgreSQL/SQL Server setup, API upsert/delete, planned stop/guarded restart | T02 delivered; T14/T15 live replay | [T02 review](#t02-setup-review): 131 bootstrap behavior cases passed; help/source/fixture authoring complete. E19-06 API consumer harness absent, dependency unmet. Actual provider/image/API/fence/cleanup results pending T14/T15. |
 | Monitoring/incident routing and status/lag JSON | T03/T12 delivered; T14/T15 live observations | Authoring and existing fixture capture reviewed in [T03](#t03-monitoring-review); additional CLI contracts verified in [T12](#t12-operator-path-review). Deployed endpoint/provider/metrics/fence read-back remains pending; fixture success does not close live evidence. |
 | E18 packaged downstream-history handoff and repair scope | T04/T12 delivered; E18-S08 restamp; T16 reconciliation | [T04 review](#t04-projection-handoff-review): 8 configured integration and 27 history unit cases passed; [T12](#t12-operator-path-review) adds all 36 provider/command/evidence tuples with 144 passing assertions. Dedicated restamp utility/procedure/evidence is absent; E18-S08 handoff unmet. |
 | Continuity, complete-record adoption, physical-source replacement | T05; T13 assertions; T14/T15 replay | Pending. Record exact case identities, default-tenant translation, outcome/exit code, preserved generation, and retry evidence. |
