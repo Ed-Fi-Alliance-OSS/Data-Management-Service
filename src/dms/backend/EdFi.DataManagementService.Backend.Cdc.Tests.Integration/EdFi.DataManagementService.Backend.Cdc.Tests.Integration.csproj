@@ -42,6 +42,10 @@
     <ItemGroup>
         <!-- Share test-only fixture helpers without referencing another test assembly. -->
         <Compile
+            Include="../EdFi.DataManagementService.Backend.Cdc.Tests.Unit/MessageContractTraceabilityTests.cs"
+            Link="MessageContractTraceabilityTests.cs"
+        />
+        <Compile
             Include="../EdFi.DataManagementService.Backend.Cdc.Tests.Unit/MessageContractAdmissionFixture.cs"
             Link="MessageContractAdmissionFixture.cs"
         />

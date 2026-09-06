@@ -599,6 +599,16 @@ jobs:
       - name: Run Unit Tests
         run: ./build-dms.ps1 UnitTest -Configuration ${{ env.CONFIGURATION }}
 
+      # build-dms.ps1 UnitTest includes the deterministic CdcMessageContract unit suites.
+      # The shared discovery check and harness prerequisite tests also live in the integration
+      # assembly; run that Docker-free slice here, including draft PRs, from downloaded output.
+      - name: Run CDC Message Contract Deterministic Integration Checks
+        run: >-
+          dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/bin/${{ env.CONFIGURATION }}/net10.0/EdFi.DataManagementService.Backend.Cdc.Tests.Integration.dll
+          --filter "Category=CdcMessageContract&Category!=DatabaseIntegration"
+          --results-directory TestResults/cdc-message-contract-unit
+          --logger "trx;LogFileName=cdc-message-contract-deterministic.trx"
+
       - name: Run Instance Fixture Unit Tests
         # The InstanceFixtureUnit [TestFixture] tests live in the Instance Management E2E project (so
         # they can share its fixture types) but are pure unit tests that need no Docker. build-dms.ps1
@@ -761,6 +771,21 @@ jobs:
               if (-not (Test-Path $path)) {
                 throw "Required integration test artifact is missing: $path"
               }
+            }
+          }
+
+          $cdcOutput = Join-Path $artifactRoot "backend-cdc"
+          $cdcResources = @(
+            "MessageContractRunner/MessageContractRunner.java",
+            "MessageContractRunner/MessageContractSourceObserver.java",
+            "MessageContractRunner/MessageContractProducerProxy.java",
+            "Fixtures/cdc/message-contract/catalog.json",
+            "Fixtures/cdc/message-contract/failure-catalog.json",
+            "Fixtures/cdc/message-contract/traceability.json"
+          )
+          foreach ($resource in $cdcResources) {
+            if (-not (Test-Path (Join-Path $cdcOutput $resource))) {
+              throw "Required CDC message-contract artifact is missing: $resource"
             }
           }
 
@@ -1334,13 +1359,18 @@ jobs:
           use-actions-summary: "true"
 
   run-backend-cdc-connector-template-smoke-tests:
-    name: Run Backend CDC Connector Template Smoke Tests
+    name: Qualify CDC Message Contract (${{ matrix.provider }})
     needs:
       - detect-fresh-build-changes
       - build-integration-test-assemblies
     # Qualification lane only. Normal PR and merge-queue CI intentionally skip this Docker
-    # pinned-image smoke lane unless it is launched explicitly.
+    # pinned-image lane unless launched explicitly. Both providers run serialized and broker evidence.
     if: github.event_name == 'workflow_dispatch'
+    strategy:
+      fail-fast: false
+      matrix:
+        provider: [PostgresqlIntegration, MssqlIntegration]
+    timeout-minutes: 60
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -1370,7 +1400,8 @@ jobs:
           name: dms-integration-test-assemblies
           path: TestArtifacts/integration-test-assemblies
 
-      - name: Validate CDC Connector Template Smoke Settings
+      - name: Validate CDC Qualification Settings
+        id: cdc-settings
         run: |
           $requiredImageVariables = @(
             "CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE",
@@ -1381,29 +1412,56 @@ jobs:
 
           foreach ($variableName in $requiredImageVariables) {
             if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($variableName))) {
-              throw "$variableName must be set for the required CDC connector template smoke lane."
+              throw "$variableName must be set for the required CDC qualification lane."
             }
           }
 
-          if (-not $env:CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE.Contains("@sha256:")) {
-            throw "CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE must be an immutable digest reference containing '@sha256:'."
+          if ($env:CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE -notmatch '^[a-z0-9][a-z0-9./:_-]*@sha256:[a-f0-9]{64}$') {
+            throw "CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE must be an immutable sha256 digest reference."
           }
+          $results = "TestResults/cdc-qualification/${{ matrix.provider }}"
+          New-Item -ItemType Directory -Force -Path $results | Out-Null
+          $env:CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE | Set-Content "$results/connect-image.txt"
+          Copy-Item "TestArtifacts/integration-test-assemblies/backend-cdc/Fixtures/cdc/message-contract/traceability.json" "$results/traceability.json"
 
-      - name: Run Backend CDC Connector Template Smoke Tests
+      - name: Verify Packaged Scenario Traceability
         run: |
           dotnet test ${{ env.TEST_ASSEMBLY }} `
-            -v normal `
-            --results-directory "./src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/TestResults" `
-            --filter "Category=CdcConnectorTemplateSmoke" `
-            --logger "trx;LogFileName=EdFi.DataManagementService.Backend.Cdc.Tests.Integration.ConnectorTemplateSmoke.trx" `
-            --logger "console" `
-            --nologo
+            --filter "Category=CdcMessageContract&FullyQualifiedName~MessageContractTraceability" `
+            --results-directory "TestResults/cdc-qualification/${{ matrix.provider }}" `
+            --logger "trx;LogFileName=traceability.trx" --nologo
 
-      - name: Upload Backend CDC Connector Template Smoke Test Results
+      - name: Qualify Serialized Message Contracts
+        run: |
+          dotnet test ${{ env.TEST_ASSEMBLY }} `
+            --filter "Category=CdcMessageContractSerialized&Category=${{ matrix.provider }}" `
+            --results-directory "TestResults/cdc-qualification/${{ matrix.provider }}" `
+            --logger "trx;LogFileName=serialized.trx" --nologo
+
+      - name: Qualify Broker Message Contracts and Existing Template Smoke Tests
+        if: ${{ !cancelled() && steps.cdc-settings.outcome == 'success' }}
+        run: |
+          dotnet test ${{ env.TEST_ASSEMBLY }} `
+            --filter "(Category=CdcMessageContractKafka|Category=CdcConnectorTemplateSmoke)&Category=${{ matrix.provider }}" `
+            --results-directory "TestResults/cdc-qualification/${{ matrix.provider }}" `
+            --logger "trx;LogFileName=kafka-and-template-smoke.trx" --nologo
+
+      - name: Retain CDC Qualification Evidence
+        uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5
+        if: always()
+        with:
+          name: cdc-message-contract-${{ matrix.provider }}
+          path: |
+            TestResults/cdc-qualification/${{ matrix.provider }}/
+            TestArtifacts/integration-test-assemblies/backend-cdc/TestResults/MessageContract*/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Report CDC Qualification Test Results
         uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2 # v3.0.0
         if: (success() || failure())
         with:
-          name: Backend CDC Connector Template Smoke Tests
+          name: CDC Message Contract (${{ matrix.provider }})
           path: "**/*.trx"
           path-replace-backslashes: "true"
           reporter: dotnet-trx

@@ -721,3 +721,97 @@ These attachments retain the
 image digest, stable scenario IDs, failed statuses/reasons, redacted bounded metadata, and
 in-container diagnostic audit results. Successful values and input bodies are excluded.
 This is serialized artifact evidence; MC-18 owns the final invariant manifest and CI wiring.
+
+## Traceability and qualification (MC-18)
+
+`traceability.json` maps every discovered message-contract test case in both CDC
+assemblies to the eight invariants assigned to DMS-1324. Design links and explicit
+exclusions describe the evidence boundary. Each entry stores the NUnit fixture and
+case name (including provider and parameter arguments) and a stable `MC-TEST-` ID:
+20 uppercase SHA-256 hex digits of its UTF-8 fully qualified NUnit name. Existing
+`MC-UPSERT-*`, `MC-FAILURE-*`, consumer and broker scenario IDs remain in their
+runner/fixture evidence. The manifest's IDs distinguish individual assertions and
+parameter variants within those scenarios; they contain no record values.
+
+`Given_MessageContractTraceability` is compiled into both assemblies and invokes
+NUnit discovery without fixture setup. It rejects missing/stale case references,
+duplicate test IDs or JSON properties, invalid IDs, empty mappings, unassigned or
+uncovered invariants and missing execution categories. A deleted test cannot leave
+passing manifest-only evidence. The infrastructure tests themselves are the sole
+message-contract exclusion. When adding/renaming cases, review their fully qualified
+NUnit names and update the mapping and digest explicitly; tests never rewrite the
+manifest. Run **both** assemblies' traceability checks to validate the entire set.
+
+Normal PR `build-dms.ps1 UnitTest` includes all deterministic message-contract unit
+tests. The same lane runs the integration assembly's deterministic message-contract
+slice, including discovery, from downloaded build output, without Docker. Local:
+
+```sh
+unit=src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Unit/EdFi.DataManagementService.Backend.Cdc.Tests.Unit.csproj
+integration=src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/EdFi.DataManagementService.Backend.Cdc.Tests.Integration.csproj
+dotnet test "$unit" --filter 'Category=CdcMessageContract'
+dotnet test "$integration" --filter 'Category=CdcMessageContract&Category!=DatabaseIntegration'
+dotnet test "$integration" --list-tests --filter 'Category=CdcMessageContract'
+```
+
+The existing workflow-dispatch connector qualification lane now runs a PostgreSQL /
+SQL Server matrix. Each provider runs packaged traceability, serialized image-only
+contracts, broker contracts and the existing template smoke tests. Repository
+variables retain their existing names; supply these environment settings locally:
+
+```sh
+export CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE='edfialliance/ed-fi-kafka-connect@sha256:12257c36a8d27b19d1da8dda4ccba56b651714231813fa3128c314ea9eb3fb89'
+export CDC_CONNECTOR_TEMPLATE_REDPANDA_IMAGE='<qualified broker image>'
+export CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE='<qualified PostgreSQL image>'
+export CDC_CONNECTOR_TEMPLATE_SQLSERVER_2025_IMAGE='<qualified SQL Server 2025 image>'
+export CDC_CONNECTOR_TEMPLATE_FAIL_FAST=true
+export CDC_CONNECTOR_TEMPLATE_KEEP_CONTAINERS=false
+dotnet test "$integration" --filter 'Category=CdcMessageContract' --logger trx
+# Image-only execution needs only CONNECT_IMAGE; it starts no provider/broker/worker.
+dotnet test "$integration" --filter 'Category=CdcMessageContractSerialized' --logger trx
+# Existing standalone smoke selection remains supported.
+dotnet test "$integration" --filter 'Category=CdcConnectorTemplateSmoke' --logger trx
+```
+
+Docker must be available; SQL Server must be 2025 (the fixture checks major version
+17). Missing prerequisites skip locally with a sanitized reason when fail-fast is
+unset; explicit qualification fails. Fixture-only execution is never broker evidence.
+Startup, timeout and cancellation cleanup use the existing fixture owners. Temporary
+containers/networks/volumes are removed independently even after failed startup;
+image-only runners remove their container and temporary files. Keep-containers is
+an optional local diagnostic setting, disabled in qualification. Do not tear down
+unrelated Docker stacks to run this suite.
+
+The existing `dms-integration-test-assemblies` artifact's `backend-cdc/` directory
+contains the complete test output: DLL/deps/runtimeconfig/test adapter, native Kafka
+client libraries, Java runner/observer/proxy, CDC JSON descriptors/manifest, README,
+and referenced E18 `expected-*.json` files. Consumer helpers are compiled into the
+integration assembly. Copy/download the **whole directory**, not just its DLL.
+No checkout, NuGet restore or developer absolute path is needed at execution time:
+
+```sh
+assembly="$PWD/TestArtifacts/integration-test-assemblies/backend-cdc/EdFi.DataManagementService.Backend.Cdc.Tests.Integration.dll"
+dotnet test "$assembly" --filter 'Category=CdcMessageContract&FullyQualifiedName~MessageContractTraceability'
+# Run each provider; the unit lane separately runs deterministic non-provider cases.
+for provider in PostgresqlIntegration MssqlIntegration; do
+  dotnet test "$assembly" \
+    --filter "(Category=CdcMessageContract|Category=CdcConnectorTemplateSmoke)&Category=$provider" \
+    --results-directory "TestResults/cdc-qualification/$provider" \
+    --logger "trx;LogFileName=qualification.trx"
+done
+```
+
+CI retains `cdc-message-contract-PostgresqlIntegration` and
+`cdc-message-contract-MssqlIntegration` artifacts for 14 days. They include separate
+traceability/serialized/Kafka-and-smoke TRX files, the validated Connect image digest,
+stable discovery IDs/categories, and NUnit attachments with bounded provider
+positions, frozen broker bounds, offsets, acknowledgement/retry/sizing observations
+and sanitized failure reasons. Detailed JSON originates under the NUnit work
+directory's `TestResults/MessageContract*/` (beside the DLL in the downloaded
+layout); TRX attachments are also copied beside
+the results. Some fixture-level evidence is not exported by the TRX adapter, so CI
+uploads the work-directory JSON tree as well as TRX and its attachments.
+Attachments intentionally omit document bodies, credentials, connection
+strings and physical tenant/topic identities. Test names and the checked-in manifest
+connect IDs to executable cases; success requires the relevant TRX results, not
+merely the discovery attachment.

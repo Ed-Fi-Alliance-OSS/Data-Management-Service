@@ -1,5 +1,8 @@
 <Project>
   <ItemGroup>
+    <Content Include="$(MSBuildThisFileDirectory)README.md"
+             Link="Fixtures/cdc/message-contract/README.md"
+             CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="$(MSBuildThisFileDirectory)**/*.json"
              Link="Fixtures/cdc/message-contract/%(RecursiveDir)%(Filename)%(Extension)"
              CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
