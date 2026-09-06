@@ -566,6 +566,21 @@ above and do not claim another exact baseline.
 The barrier is transient status evidence and is not persisted in or used to mutate the
 immutable binding.
 
+A capture that waits for evidence the binding's own connector produces is attempted only
+while that connector can produce it. The SQL Server procedure below waits for a heartbeat
+after-image the connector's own action query writes, so against a connector that is not
+running — no running task, or a connector the worker holds `STOPPED`, `PAUSED`, or `FAILED` —
+it is not attempted and the barrier is reported unknown, which is the same result the wait
+reaches and the honest one either way. Observational status and restart therefore report an
+uncaptured barrier at once rather than after the capture timeout; restart in particular is
+issued against exactly those connector states, and the barrier is neither one of its
+artifact prerequisites nor an input to source-history continuity, so waiting for it would
+delay a decision it cannot inform. The catch-up evidence a resumed connector goes on to
+produce belongs to the next status observation. The PostgreSQL procedure reads the server's
+current WAL position and does not depend on the connector, so it is unaffected. The initial
+readiness sequence above always captures: it reaches step 5 with the connector registered
+and started, which is when waiting for catch-up is the point.
+
 **PostgreSQL adapter**
 
 After the projection-health response selected by the applicable readiness sequence,
@@ -1494,6 +1509,14 @@ Local bootstrap exposes an explicit opt-in such as `-EnableKafkaCdc`.
 - The local default binding state root is `eng/docker-compose/.cdc-state`; an explicit
   `-CdcBindingStatePath` may select another persistent deployment-owned location. It is
   never placed in `.bootstrap/bootstrap-manifest.json`.
+- Every reader of that root resolves it once, from one precedence, and the resolved value is
+  what the container mount receives: an explicit path outranks an ambient
+  `DMS_CDC_BINDING_STATE_PATH`, which outranks the environment file's own value, which
+  outranks the default. Resolving is not sufficient on its own — the resolved value is
+  exported so Compose interpolates the mount from it. A deployment where the store the
+  enablement writes and the store the retirement enumerates can differ is a deployment whose
+  destructive teardown reports nothing to retire and then removes the artifacts a surviving
+  binding record still governs.
 - Mutable lifecycle, projection work, caught-up state, and CDC binding progress remain
   outside the bootstrap manifest. DMS startup itself has no authority to enable tracking.
 - Binding reservation and registration are idempotent for an exact binding match and

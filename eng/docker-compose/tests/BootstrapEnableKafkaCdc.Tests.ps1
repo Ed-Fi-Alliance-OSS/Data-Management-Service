@@ -34,31 +34,10 @@ Describe "DMS-1323 CDC infrastructure opt-in" {
             )
         }
 
-        # start-local-dms.ps1 is a straight-line script that starts Docker, so the state-root
-        # resolver is lifted out of the real file and exercised directly - the same technique the
-        # sibling suites use to reach in-script helpers.
-        function script:Get-ScriptFunctionText {
-            param(
-                [Parameter(Mandatory)]
-                [string]
-                $FunctionName
-            )
-
-            $functionAst = (Get-StartScriptAst).FindAll(
-                { param($node)
-                    $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
-                    $node.Name -eq $FunctionName },
-                $true
-            ) | Select-Object -First 1
-
-            if ($null -eq $functionAst) {
-                throw "Function '$FunctionName' was not found in '$script:startScriptPath'."
-            }
-
-            return $functionAst.Extent.Text
-        }
-
-        . ([scriptblock]::Create((Get-ScriptFunctionText -FunctionName "Resolve-CdcBindingStateRoot")))
+        # The state-root resolver is no longer lifted out of this script by AST: it lives in
+        # env-utility as the ONE resolver the start script, the enable phase, and the destructive
+        # teardown all call, so it is exercised here as the module function it is.
+        Import-Module (Join-Path $script:sourceDockerComposeRoot "env-utility.psm1") -Force
     }
 
     Context "parameter surface" {
@@ -79,10 +58,25 @@ Describe "DMS-1323 CDC infrastructure opt-in" {
     }
 
     Context "binding state store root resolution" {
+        BeforeEach {
+            $script:previousAmbientStateRoot =
+                [System.Environment]::GetEnvironmentVariable("DMS_CDC_BINDING_STATE_PATH")
+            Remove-Item -LiteralPath "Env:DMS_CDC_BINDING_STATE_PATH" -ErrorAction SilentlyContinue
+        }
+
+        AfterEach {
+            if ($null -eq $script:previousAmbientStateRoot) {
+                Remove-Item -LiteralPath "Env:DMS_CDC_BINDING_STATE_PATH" -ErrorAction SilentlyContinue
+            }
+            else {
+                $env:DMS_CDC_BINDING_STATE_PATH = $script:previousAmbientStateRoot
+            }
+        }
+
         It "defaults to the Git-ignored eng/docker-compose/.cdc-state root" {
             $resolved = Resolve-CdcBindingStateRoot `
+                -EnvValues @{} `
                 -Path "" `
-                -DockerComposeRoot $script:sourceDockerComposeRoot `
                 -WorkingDirectory ([System.IO.Path]::GetTempPath())
 
             $resolved | Should -Be ([System.IO.Path]::GetFullPath((Join-Path $script:sourceDockerComposeRoot ".cdc-state")))
@@ -95,8 +89,8 @@ Describe "DMS-1323 CDC infrastructure opt-in" {
             $absolute = Join-Path ([System.IO.Path]::GetTempPath()) "dms-1323-state-root"
 
             Resolve-CdcBindingStateRoot `
+                -EnvValues @{} `
                 -Path $absolute `
-                -DockerComposeRoot $script:sourceDockerComposeRoot `
                 -WorkingDirectory ([System.IO.Path]::GetTempPath()) |
                 Should -Be ([System.IO.Path]::GetFullPath($absolute))
         }
@@ -105,12 +99,94 @@ Describe "DMS-1323 CDC infrastructure opt-in" {
             $workingDirectory = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath())
 
             $resolved = Resolve-CdcBindingStateRoot `
+                -EnvValues @{} `
                 -Path "cdc-state" `
-                -DockerComposeRoot $script:sourceDockerComposeRoot `
                 -WorkingDirectory $workingDirectory
 
             $resolved | Should -Be ([System.IO.Path]::GetFullPath((Join-Path $workingDirectory "cdc-state")))
             $resolved | Should -Not -BeLike "*docker-compose*"
+        }
+
+        It "orders the switch above the environment, the environment above the file, and the file above the default" {
+            # The one precedence every reader of the store takes. Before this was single-sourced the
+            # start script read only the switch while Compose and the enable phase read the
+            # environment, so a switch naming one directory and an environment naming another split
+            # the store in two - enablement wrote one, teardown enumerated the other, found no
+            # binding to retire, and went on to remove the volumes anyway.
+            $ambient = Join-Path ([System.IO.Path]::GetTempPath()) "dms-1323-ambient-root"
+            $fromFile = Join-Path ([System.IO.Path]::GetTempPath()) "dms-1323-file-root"
+            $fromSwitch = Join-Path ([System.IO.Path]::GetTempPath()) "dms-1323-switch-root"
+            $envValues = @{ DMS_CDC_BINDING_STATE_PATH = $fromFile }
+
+            $env:DMS_CDC_BINDING_STATE_PATH = $ambient
+
+            Resolve-CdcBindingStateRoot -EnvValues $envValues -Path $fromSwitch |
+                Should -Be ([System.IO.Path]::GetFullPath($fromSwitch))
+
+            Resolve-CdcBindingStateRoot -EnvValues $envValues -Path "" |
+                Should -Be ([System.IO.Path]::GetFullPath($ambient))
+
+            Remove-Item -LiteralPath "Env:DMS_CDC_BINDING_STATE_PATH" -ErrorAction SilentlyContinue
+
+            Resolve-CdcBindingStateRoot -EnvValues $envValues -Path "" |
+                Should -Be ([System.IO.Path]::GetFullPath($fromFile))
+
+            Resolve-CdcBindingStateRoot -EnvValues @{} -Path "" |
+                Should -Be ([System.IO.Path]::GetFullPath((Join-Path $script:sourceDockerComposeRoot ".cdc-state")))
+        }
+
+        It "resolves a relative environment value against the compose project directory" {
+            # Compose resolves the cdc-setup.yml mount source relative to its own project directory,
+            # which is eng/docker-compose - not relative to whoever invoked the script.
+            $env:DMS_CDC_BINDING_STATE_PATH = "./.cdc-state"
+
+            Resolve-CdcBindingStateRoot -EnvValues @{} -Path "" |
+                Should -Be ([System.IO.Path]::GetFullPath((Join-Path $script:sourceDockerComposeRoot ".cdc-state")))
+        }
+    }
+
+    Context "binding state store root enforcement" {
+        It "exports the resolved root so Compose mounts the store the script created and retires from" {
+            # Resolving alone is not enough: Compose reads the mount source out of the environment,
+            # so a switch naming directory A against an exported directory B would still mount B
+            # while this script created and enumerated A. The export is what collapses the two.
+            $resolutionIndex = $script:startScriptText.IndexOf('$cdcBindingStateRoot = Resolve-CdcBindingStateRoot')
+            $exportIndex = $script:startScriptText.IndexOf('$env:DMS_CDC_BINDING_STATE_PATH = $cdcBindingStateRoot')
+            $createIndex = $script:startScriptText.IndexOf('New-Item -ItemType Directory -Path $cdcBindingStateRoot')
+            $retireIndex = $script:startScriptText.IndexOf('-BindingStateRoot $cdcBindingStateRoot')
+
+            $resolutionIndex | Should -BeGreaterThan -1
+            $exportIndex | Should -BeGreaterThan $resolutionIndex
+            $createIndex | Should -BeGreaterThan $exportIndex
+            $retireIndex | Should -BeGreaterThan $exportIndex
+
+            # And under the two shapes that reach the CDC path at all, which are the same two
+            # -CdcBindingStatePath is accepted for. Asserted rather than left to the line's presence:
+            # an export the run never reaches enforces nothing.
+            $script:startScriptText |
+                Should -Match '(?m)^if \(\$EnableKafkaCdc -or \$d\) \{\r?\n\s*\$env:DMS_CDC_BINDING_STATE_PATH = \$cdcBindingStateRoot\r?\n\}'
+        }
+
+        It "resolves the root from the env file Compose is given, after the overlays have composed it" {
+            # The overlay steps reassign $EnvironmentFile, so a resolution that ran before them would
+            # read a different file than the one Compose interpolates the mount source from.
+            $envValuesIndex = $script:startScriptText.IndexOf('$envValues = ReadValuesFromEnvFile $EnvironmentFile')
+            $resolutionIndex = $script:startScriptText.IndexOf('$cdcBindingStateRoot = Resolve-CdcBindingStateRoot')
+
+            $envValuesIndex | Should -BeGreaterThan -1
+            $resolutionIndex | Should -BeGreaterThan $envValuesIndex
+            $script:startScriptText | Should -Match '\$cdcBindingStateRoot = Resolve-CdcBindingStateRoot[^\n]*\n\s*-EnvValues \$envValues'
+        }
+
+        It "no longer carries a state-root resolver of its own" {
+            # One resolver, in env-utility. A copy here is how the start script and the enable phase
+            # came to read the same setting two different ways.
+            (Get-StartScriptAst).FindAll(
+                { param($node)
+                    $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+                    $node.Name -like "*BindingStateRoot*" },
+                $true
+            ) | Should -BeNullOrEmpty
         }
     }
 
@@ -190,6 +266,9 @@ Describe "DMS-1323 bootstrap CDC phase" {
 
         Import-Module $script:wrapperPath -Force
         Import-Module (Join-Path $script:sourceDockerComposeRoot "cdc-enable.psm1") -Force
+        # Resolve-CdcBindingStateRoot lives in env-utility: one resolver for the start script, the
+        # enable phase, and the teardown, so no two of them can name different directories.
+        Import-Module (Join-Path $script:sourceDockerComposeRoot "env-utility.psm1") -Force
 
         # Searches the wrapper and the CDC phase module. The CDC phase's own behavior lives in
         # cdc-enable.psm1 and the sequencing in bootstrap-wrapper.psm1, and a test that asserts on a
@@ -543,10 +622,24 @@ Describe "DMS-1323 bootstrap CDC phase" {
         It "runs the tool as a one-shot container on the dms network" {
             # The instance database is registered in CMS under its container alias and the broker
             # advertises dms-kafka1:9092, so a host-side process reaches neither.
-            ($script:createdRunArguments -join " ") | Should -BeLike "*compose -f cdc-setup.yml*"
+            ($script:createdRunArguments -join " ") | Should -BeLike "*compose -f *cdc-setup.yml*"
             ($script:createdRunArguments -join " ") | Should -BeLike "*run --rm --build*"
             $script:createdRunArguments | Should -Contain "cdc-setup"
             $script:createdRunArguments | Should -Contain "enable"
+        }
+
+        It "names the compose file by absolute path, not relative to the caller" {
+            # enable-kafka-cdc.ps1 is a phase command invoked from wherever the operator stands and
+            # nothing in the CDC path changes directories, so a bare "cdc-setup.yml" resolved only
+            # because the bootstrap wrapper had pushed to eng/docker-compose first. From the
+            # repository root the phase reached principal provisioning - a database mutation - and
+            # only then failed on a compose file Compose could not find.
+            $composeFileIndex = [array]::IndexOf([object[]]$script:createdRunArguments, "-f")
+            $composeFileIndex | Should -BeGreaterThan -1
+
+            $composeFile = $script:createdRunArguments[$composeFileIndex + 1]
+            [System.IO.Path]::IsPathRooted($composeFile) | Should -BeTrue
+            $composeFile | Should -Be (Join-Path $script:sourceDockerComposeRoot "cdc-setup.yml")
         }
 
         It "carries the target, the local deployment policy, and the mounted state root" {
@@ -669,18 +762,26 @@ Describe "DMS-1323 bootstrap CDC phase" {
         It "allocates from the store the setup container will be given, resolved as Compose resolves it" {
             # The mount source is DMS_CDC_BINDING_STATE_PATH, and an ambient value wins over the env
             # file's own text - so the generation must be read from that store, not from the default.
+            #
+            # Re-imported here rather than relying on the Describe's import: the cdc-enable functions
+            # these cases call each `Import-Module env-utility -Force` into their own module scope,
+            # and the -Force removes this scope's copy along the way. Production is unaffected - the
+            # phase calls the resolver from inside that same module scope.
+            Import-Module (Join-Path $script:sourceDockerComposeRoot "env-utility.psm1") -Force
+
+
             $root = Join-Path ([System.IO.Path]::GetTempPath()) "dms-1323-generation-$([System.Guid]::NewGuid().ToString('n'))"
             $previous = [System.Environment]::GetEnvironmentVariable('DMS_CDC_BINDING_STATE_PATH')
             try {
                 $env:DMS_CDC_BINDING_STATE_PATH = $root
 
-                Resolve-CdcHostBindingStateRoot -EnvValues @{ DMS_CDC_BINDING_STATE_PATH = "./ignored" } |
+                Resolve-CdcBindingStateRoot -EnvValues @{ DMS_CDC_BINDING_STATE_PATH = "./ignored" } |
                     Should -Be ([System.IO.Path]::GetFullPath($root))
 
                 # An absent key falls back to the same ./.cdc-state default the compose file
                 # declares, as an absolute host path rather than a path relative to the caller.
                 Remove-Item -LiteralPath "Env:DMS_CDC_BINDING_STATE_PATH" -ErrorAction SilentlyContinue
-                $default = Resolve-CdcHostBindingStateRoot -EnvValues @{}
+                $default = Resolve-CdcBindingStateRoot -EnvValues @{}
                 [System.IO.Path]::IsPathRooted($default) | Should -BeTrue
                 $default | Should -BeLike "*.cdc-state"
             }
@@ -701,7 +802,7 @@ Describe "DMS-1323 bootstrap CDC phase" {
             # hands it to the argument builder; a hardcoded generation here is the defect this guards.
             $phaseText = Get-WrapperFunctionText -FunctionName "Invoke-CdcEnablePhase"
 
-            $phaseText | Should -Match '-BindingStateRoot \(Resolve-CdcHostBindingStateRoot -EnvValues \$envValues\)'
+            $phaseText | Should -Match '-BindingStateRoot \(Resolve-CdcBindingStateRoot -EnvValues \$envValues\)'
             (Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "cdc-enable.psm1") -Raw) |
                 Should -Not -Match '"--generation", "1"'
         }
@@ -1397,6 +1498,63 @@ Describe "DMS-1323 Connect pinning, metrics bridge, and destructive teardown" {
                 Should -Match "(?m)^DMS_CDC_CONNECTOR_PRINCIPAL=$([regex]::Escape($connectorPrincipal.PrincipalName))\s*$"
         }
 
+        It "resolves the connector password the way kafka.yml interpolates it" {
+            # kafka.yml renders the worker's CDC_DATABASE_PASSWORD from
+            # ${DMS_CDC_CONNECTOR_PASSWORD:-...}, where Compose gives an exported value precedence
+            # over the env file. Read file-only here, provision-cdc-principal.ps1 created the
+            # principal with the file's password while Connect authenticated with the exported one,
+            # and enablement failed at provider setup with nothing naming the cause.
+            $previous = [System.Environment]::GetEnvironmentVariable("DMS_CDC_CONNECTOR_PASSWORD")
+            try {
+                $env:DMS_CDC_CONNECTOR_PASSWORD = "Exported_Dms1!"
+
+                (Get-CdcConnectorPrincipalConfiguration `
+                        -EnvValues @{ DMS_CDC_CONNECTOR_PASSWORD = "FromFile_Dms1!" }).Password |
+                    Should -Be "Exported_Dms1!"
+
+                Remove-Item -LiteralPath "Env:DMS_CDC_CONNECTOR_PASSWORD" -ErrorAction SilentlyContinue
+
+                # Nothing exported: the file's own value, and then the documented default.
+                (Get-CdcConnectorPrincipalConfiguration `
+                        -EnvValues @{ DMS_CDC_CONNECTOR_PASSWORD = "FromFile_Dms1!" }).Password |
+                    Should -Be "FromFile_Dms1!"
+                (Get-CdcConnectorPrincipalConfiguration -EnvValues @{}).Password |
+                    Should -Be "EdFi_Dms1!"
+            }
+            finally {
+                if ($null -eq $previous) {
+                    Remove-Item -LiteralPath "Env:DMS_CDC_CONNECTOR_PASSWORD" -ErrorAction SilentlyContinue
+                }
+                else {
+                    $env:DMS_CDC_CONNECTOR_PASSWORD = $previous
+                }
+            }
+        }
+
+        It "keeps the principal NAME on the file-only resolver" {
+            # The password crosses a Compose boundary and the name does not: no compose file
+            # interpolates DMS_CDC_CONNECTOR_PRINCIPAL, so a direct phase invocation stays
+            # independent of ambient state for it.
+            $previous = [System.Environment]::GetEnvironmentVariable("DMS_CDC_CONNECTOR_PRINCIPAL")
+            try {
+                $env:DMS_CDC_CONNECTOR_PRINCIPAL = "ambient_connector"
+
+                (Get-CdcConnectorPrincipalConfiguration `
+                        -EnvValues @{ DMS_CDC_CONNECTOR_PRINCIPAL = "file_connector" }).PrincipalName |
+                    Should -Be "file_connector"
+
+                $script:kafkaComposeText | Should -Not -Match 'DMS_CDC_CONNECTOR_PRINCIPAL'
+            }
+            finally {
+                if ($null -eq $previous) {
+                    Remove-Item -LiteralPath "Env:DMS_CDC_CONNECTOR_PRINCIPAL" -ErrorAction SilentlyContinue
+                }
+                else {
+                    $env:DMS_CDC_CONNECTOR_PRINCIPAL = $previous
+                }
+            }
+        }
+
         It "creates the principal as a dedicated login rather than the administrative one" {
             # Debezium would otherwise read the source as a superuser, and on SQL Server `sa`
             # resolves to `dbo`, which cannot be added to the gating role provider setup grants.
@@ -1508,13 +1666,26 @@ Describe "DMS-1323 Connect pinning, metrics bridge, and destructive teardown" {
             $wrapperModuleText | Should -Not -Match '"--kafka-bootstrap-servers", "dms-kafka1:9092"'
         }
 
-        It "names the binding state root it retires from when the path was not supplied" {
-            # An omitted -CdcBindingStatePath is permitted on a teardown run, so a stack started
-            # with a custom root would otherwise be retired from the empty default silently.
+        It "names the binding state root it retires from when nothing named one" {
+            # A teardown that named no root at all - not the switch, not the env file, not the
+            # environment - retires from the default, so a stack started against a custom root
+            # would otherwise be retired from an empty store silently. A teardown that DID name
+            # one is silent: it and the start run resolved that name through the same precedence.
             $script:startScriptText |
-                Should -Match '(?s)if \(\[string\]::IsNullOrWhiteSpace\(\$CdcBindingStatePath\)\) \{(?:(?!
+                Should -Match '(?s)if \(-not \$cdcBindingStateRootWasNamed\) \{(?:(?!
 ?
         \}).)*default binding state store at'
+        }
+
+        It "decides that from the state observed before the run exports its own root" {
+            # The export makes DMS_CDC_BINDING_STATE_PATH present for every later reader, so
+            # asking the environment afterwards would answer yes on every run and the warning
+            # would never fire. The three sources are read once, at resolution time.
+            $namedIndex = $script:startScriptText.IndexOf('$cdcBindingStateRootWasNamed =')
+            $exportIndex = $script:startScriptText.IndexOf('$env:DMS_CDC_BINDING_STATE_PATH = $cdcBindingStateRoot')
+
+            $namedIndex | Should -BeGreaterThan -1
+            $exportIndex | Should -BeGreaterThan $namedIndex
         }
 
         It "hands the retirement the run's resolved state root, engine, and compose project" {
@@ -1842,10 +2013,21 @@ Describe "DMS-1323 Connect pinning, metrics bridge, and destructive teardown" {
         }
 
         It "runs the tool as a one-shot container on the dms network" {
-            ($script:retireArguments -join " ") | Should -BeLike "*compose -f cdc-setup.yml*"
+            ($script:retireArguments -join " ") | Should -BeLike "*compose -f *cdc-setup.yml*"
             ($script:retireArguments -join " ") | Should -BeLike "*run --rm --build*"
             $script:retireArguments | Should -Contain "cdc-setup"
             $script:retireArguments | Should -Contain "retire"
+        }
+
+        It "names the compose file by absolute path, as the enable path does" {
+            # Both verbs compose through the same builder, so the retirement a destructive teardown
+            # runs is anchored by the same change - and a teardown that could not find its compose
+            # file would report every binding unretirable while `down -v` removed the volumes anyway.
+            $composeFileIndex = [array]::IndexOf([object[]]$script:retireArguments, "-f")
+            $composeFileIndex | Should -BeGreaterThan -1
+
+            [System.IO.Path]::IsPathRooted($script:retireArguments[$composeFileIndex + 1]) |
+                Should -BeTrue
         }
 
         It "carries the exact retirement confirmation token" {

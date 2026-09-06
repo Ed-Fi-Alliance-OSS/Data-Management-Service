@@ -231,43 +231,6 @@ function Get-CdcConnectorEnvArgument {
     return $arguments
 }
 
-function Resolve-CdcHostBindingStateRoot {
-    <#
-    .SYNOPSIS
-        The host path of the durable binding state store the setup container will be given.
-
-    .DESCRIPTION
-        Read the way Compose reads it, because Compose is what turns it into the /state bind mount:
-        an ambient DMS_CDC_BINDING_STATE_PATH wins over the env file's own text, and an absent or
-        blank value falls back to the same ./.cdc-state default cdc-setup.yml declares. A relative
-        value resolves against this directory, which is the compose project directory the mount
-        source is relative to.
-
-        Resolved here rather than taken as a parameter from the phase's callers: the generation this
-        phase allocates has to be read from the very store the container will write to, and the env
-        file plus the ambient environment are the only authorities on which one that is.
-    #>
-    [CmdletBinding()]
-    [OutputType([string])]
-    param(
-        [hashtable]
-        $EnvValues
-    )
-
-    Import-Module (Join-Path $PSScriptRoot "env-utility.psm1") -Force
-
-    $configured = Get-ComposeResolvedEnvValue `
-        -EnvironmentValues $EnvValues `
-        -Name "DMS_CDC_BINDING_STATE_PATH" `
-        -DefaultValue "./.cdc-state"
-
-    if ([System.IO.Path]::IsPathRooted($configured)) {
-        return [System.IO.Path]::GetFullPath($configured)
-    }
-
-    return [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot $configured))
-}
-
 function Get-CdcEnableGenerationPlan {
     <#
     .SYNOPSIS
@@ -453,9 +416,18 @@ function Get-CdcSetupComposeArgument {
 
     $localPolicy = Get-LocalCdcDeploymentPolicy
 
+    # Rooted at this module's directory rather than left relative to the caller's. Nothing in the CDC
+    # path changes directories - enable-kafka-cdc.ps1 is a phase command invoked from wherever the
+    # operator stands, and Invoke-CdcEnablePhase pushes nowhere - so a bare 'cdc-setup.yml' resolved
+    # only because the bootstrap wrapper happens to have pushed to $PSScriptRoot first. Invoked from
+    # the repository root the phase reached principal provisioning and THEN failed on a compose file
+    # Compose could not find, which is a mutation followed by a path error. Compose takes the project
+    # directory from this file's own directory, so the '${DMS_CDC_BINDING_STATE_PATH:-./.cdc-state}'
+    # mount default keeps resolving against eng/docker-compose - the same directory
+    # Resolve-CdcBindingStateRoot resolves it against.
     $composeArguments = @(
         "compose",
-        "-f", "cdc-setup.yml",
+        "-f", (Join-Path $PSScriptRoot "cdc-setup.yml"),
         "--env-file", $EnvironmentFile,
         "-p", $ComposeProjectName,
         "run", "--rm", "--build"
@@ -761,7 +733,7 @@ function Invoke-CdcEnablePhase {
         -DatabaseCreatedByThisRun $DatabaseCreatedByThisRun `
         -ResumeInterruptedEnable:$ResumeInterruptedEnable `
         -SourceDatabaseName $resolvedSourceDatabaseName `
-        -BindingStateRoot (Resolve-CdcHostBindingStateRoot -EnvValues $envValues) `
+        -BindingStateRoot (Resolve-CdcBindingStateRoot -EnvValues $envValues) `
         -ConnectorPrincipal $connectorPrincipal
 
     Write-Information "CDC phase: enabling CDC for data store $DataStoreId." -InformationAction Continue
@@ -915,7 +887,6 @@ Export-ModuleMember -Function `
     Get-CdcConnectorPrincipalEnvArgument, `
     Get-CdcConnectorEnvArgument, `
     Get-CdcSetupComposeArgument, `
-    Resolve-CdcHostBindingStateRoot, `
     Get-CdcEnableGenerationPlan, `
     Get-CdcEnableArgument, `
     Invoke-CdcEnablePhase, `

@@ -255,41 +255,6 @@ if ($AbandonCdcBindingState -and -not ($d -and $v)) {
     throw "-AbandonCdcBindingState requires -d -v. It permits the destructive volume removal to proceed when a CDC binding did not retire, which is the only workflow that removes a binding record."
 }
 
-function Resolve-CdcBindingStateRoot {
-    <#
-    .SYNOPSIS
-    Resolves the durable CDC binding state store root for this run.
-
-    .DESCRIPTION
-    An omitted -CdcBindingStatePath resolves to eng/docker-compose/.cdc-state, which is Git-ignored;
-    a relative path resolves against the caller's working directory rather than this script's
-    directory, matching how -EnvironmentFile is resolved. The result is always absolute, so every
-    later phase and any teardown name the same store.
-    #>
-    param(
-        [string]
-        $Path,
-
-        [Parameter(Mandatory)]
-        [string]
-        $DockerComposeRoot,
-
-        [Parameter(Mandatory)]
-        [string]
-        $WorkingDirectory
-    )
-
-    if ([string]::IsNullOrWhiteSpace($Path)) {
-        return [System.IO.Path]::GetFullPath((Join-Path $DockerComposeRoot ".cdc-state"))
-    }
-
-    if ([System.IO.Path]::IsPathRooted($Path)) {
-        return [System.IO.Path]::GetFullPath($Path)
-    }
-
-    return [System.IO.Path]::GetFullPath((Join-Path $WorkingDirectory $Path))
-}
-
 function Assert-CdcConnectImagePinnedByDigest {
     <#
     .SYNOPSIS
@@ -350,10 +315,6 @@ else {
     # teardown - work on a clean checkout with no hand-created .env, matching the phase commands.
     $EnvironmentFile = Resolve-LocalSettingsEnvironmentFile -Path "" -DockerComposeRoot $PSScriptRoot
 }
-$cdcBindingStateRoot = Resolve-CdcBindingStateRoot `
-    -Path $CdcBindingStatePath `
-    -DockerComposeRoot $PSScriptRoot `
-    -WorkingDirectory $originalLocation.Path
 # The base env file, before any overlay composition below reassigns $EnvironmentFile to a derived path.
 # A continuation that recomposes the environment from its own switches - the fresh wrapper run the
 # -InfraOnly guidance prints - must start from THIS file, not from a derived one it would then compose
@@ -413,6 +374,35 @@ else {
     $EnvironmentFile = Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine $DatabaseEngine -BaseEnvironmentFile $EnvironmentFile -DockerComposeRoot $PSScriptRoot -SkipMssqlCmsDatabaseValidation:($databaseOnlyStartup -or $d -or $SeparateConfigDatabase)
 }
 $envValues = ReadValuesFromEnvFile $EnvironmentFile
+
+# Resolved HERE rather than beside the other parameter normalization above, because it is resolved
+# from the env file Compose will be given - the overlay-composed one $EnvironmentFile has by now
+# become - and not from the switch alone. env-utility owns the precedence: an explicit
+# -CdcBindingStatePath, then an ambient DMS_CDC_BINDING_STATE_PATH, then the file, then ./.cdc-state.
+#
+# Then EXPORTED, which is the half that makes the resolution binding. Compose reads the state store's
+# bind-mount source out of the environment, so a run whose switch named one directory while the
+# environment named another created and reported one store, mounted a second, and - on the teardown
+# below - enumerated the first, found no binding to retire, and carried on into `down -v` over the
+# artifacts the second store's surviving record still governed. With the value exported, the
+# directory this script creates, the store the setup container mounts, the store the enable phase
+# allocates its generation from, and the store the retirement reads are one directory by
+# construction. Scoped to the two shapes that reach the CDC path at all, which are the same two
+# -CdcBindingStatePath is accepted for.
+$cdcBindingStateRoot = Resolve-CdcBindingStateRoot `
+    -EnvValues $envValues `
+    -Path $CdcBindingStatePath `
+    -WorkingDirectory $originalLocation.Path
+# Whether anything named a root before this script resolved one, read BEFORE the export below makes
+# the answer yes for every later reader. Only the teardown drift warning needs it.
+$cdcBindingStateRootWasNamed =
+    (-not [string]::IsNullOrWhiteSpace($CdcBindingStatePath)) -or
+    $envValues.ContainsKey("DMS_CDC_BINDING_STATE_PATH") -or
+    ($null -ne [System.Environment]::GetEnvironmentVariable("DMS_CDC_BINDING_STATE_PATH"))
+if ($EnableKafkaCdc -or $d) {
+    $env:DMS_CDC_BINDING_STATE_PATH = $cdcBindingStateRoot
+}
+
 if (-not $databaseOnlyStartup) {
     # Identity/CMS/DMS settings are application concerns. Keeping them outside DbOnly means an
     # unrelated malformed identity value cannot block the database + readiness diagnostic slice.
@@ -582,13 +572,15 @@ if ($d) {
         # instance database it must reach are still running. A normal stop (-d without -v) retains
         # the binding, connector, offsets, topics, ACLs, and provider capture artifacts.
         Import-Module (Join-Path $PSScriptRoot "cdc-teardown.psm1") -Force
-        if ([string]::IsNullOrWhiteSpace($CdcBindingStatePath)) {
-            # The path is optional on a teardown run, so an omitted one is drift rather than an
-            # error: a stack started with a custom root would be retired from the empty default,
-            # which reports nothing to retire and then removes every volume anyway. The root this
-            # run resolved is named here so that mismatch is visible before the down, since the
-            # script cannot know what the start run passed.
-            Write-Output "CDC teardown will retire from the default binding state store at '$cdcBindingStateRoot' (no -CdcBindingStatePath was supplied). A stack started with -CdcBindingStatePath must be torn down with the same path."
+        if (-not $cdcBindingStateRootWasNamed) {
+            # Nothing named a root - not the switch, not the env file this teardown was given, not
+            # the environment (asked before this run's own export). The default is what will be
+            # retired from, and a stack started against a custom root would be retired from an empty
+            # store, reporting nothing to retire and then removing every volume anyway. Named here so
+            # the mismatch is visible before the down, since the script cannot know what the start run
+            # passed. A run that DID name a root is silent: it and the start run resolved that name
+            # through the same precedence, so they cannot land on different directories.
+            Write-Output "CDC teardown will retire from the default binding state store at '$cdcBindingStateRoot' (neither -CdcBindingStatePath nor DMS_CDC_BINDING_STATE_PATH named one). A stack started against a different binding state root must be torn down against that same root."
         }
         # Throws when a discovered binding did not retire, which is what keeps the compose down below
         # from removing the volumes holding the artifacts that binding's surviving record still names.

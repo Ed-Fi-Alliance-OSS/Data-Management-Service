@@ -767,6 +767,75 @@ public class Given_CdcSetupControllerRestart
     }
 
     /// <summary>
+    /// The provider barrier capture is never asked to wait on a connector that cannot advance the
+    /// source, because the evidence it waits for is evidence that connector produces.
+    /// </summary>
+    /// <remarks>
+    /// SQL Server's capture polls the capture instance for a heartbeat after-image past the sequence it
+    /// read at the start, and those rows come from the connector's own <c>heartbeat.action.query</c>. A
+    /// connector the worker holds STOPPED or PAUSED — which is exactly what a restart is issued against
+    /// — writes none, so the capture spent the whole <c>Timeouts.ProviderBarrier</c> (ten minutes by
+    /// default) before the resume was so much as issued, and then reported the uncaptured barrier it
+    /// could have reported at once. The barrier is no restart prerequisite and no input to the
+    /// continuity classification, so the wait informed nothing it delayed.
+    /// </remarks>
+    [TestCase("STOPPED")]
+    [TestCase("PAUSED")]
+    [TestCase("FAILED")]
+    public async Task It_does_not_wait_for_barrier_evidence_a_connector_that_is_not_running_cannot_produce(
+        string connectorState
+    )
+    {
+        CdcSetupControllerHarness harness = Given_CdcSetupControllerStatus.EnabledBinding(
+            CdcProvider.SqlServer
+        );
+        harness.ConnectorStatus = CdcSetupControllerHarness.RunningConnector(
+            connectorState: connectorState,
+            taskState: connectorState
+        );
+
+        await harness.RestartAsync();
+
+        harness.BarrierCaptureRequests.Should().ContainSingle().Which.ConnectorCanAdvance.Should().BeFalse();
+    }
+
+    /// <summary>
+    /// A connector reported RUNNING whose task is not running produces no heartbeat either, so the wait
+    /// is declined on the task's state rather than on the connector's alone.
+    /// </summary>
+    [Test]
+    public async Task It_does_not_wait_for_barrier_evidence_when_no_task_is_running()
+    {
+        CdcSetupControllerHarness harness = Given_CdcSetupControllerStatus.EnabledBinding(
+            CdcProvider.SqlServer
+        );
+        harness.ConnectorStatus = CdcSetupControllerHarness.RunningConnector(
+            connectorState: "RUNNING",
+            taskState: "FAILED"
+        );
+
+        await harness.RestartAsync();
+
+        harness.BarrierCaptureRequests.Should().ContainSingle().Which.ConnectorCanAdvance.Should().BeFalse();
+    }
+
+    /// <summary>
+    /// A running connector still gets the full capture: catch-up evidence is what a status against a
+    /// healthy binding is for, and this decides only how long to wait, never what is reported.
+    /// </summary>
+    [Test]
+    public async Task It_captures_a_fresh_barrier_against_a_running_connector()
+    {
+        CdcSetupControllerHarness harness = Given_CdcSetupControllerStatus.EnabledBinding(
+            CdcProvider.SqlServer
+        );
+
+        await harness.StatusAsync();
+
+        harness.BarrierCaptureRequests.Should().ContainSingle().Which.ConnectorCanAdvance.Should().BeTrue();
+    }
+
+    /// <summary>
     /// A running connector is restarted, not resumed: resume clears a target state it is not in, and
     /// restarting its tasks is what the verb is for.
     /// </summary>

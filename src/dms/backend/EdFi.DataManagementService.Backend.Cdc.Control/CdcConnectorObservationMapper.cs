@@ -568,7 +568,13 @@ internal sealed class CdcConnectorObservationMapper(
             : CdcConnectRestAdapter.UnclassifiedErrorCategory;
     }
 
-    private static CdcConnectorRuntimeState ToRuntimeState(string? state) =>
+    /// <summary>
+    /// The worker's own state token as the observation vocabulary names it. Public because the setup
+    /// controller decides from a raw status - read before the offsets an observation needs - whether a
+    /// connector can still produce the evidence a provider barrier capture waits on, and a second
+    /// spelling of these tokens there is how the two would come to disagree about what STOPPED means.
+    /// </summary>
+    public static CdcConnectorRuntimeState ToRuntimeState(string? state) =>
         state?.ToUpperInvariant() switch
         {
             "RUNNING" => CdcConnectorRuntimeState.Running,

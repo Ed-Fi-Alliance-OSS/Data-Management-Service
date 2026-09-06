@@ -608,6 +608,74 @@ function Get-DocumentCacheStatusOperatorRole {
     return "dms-document-cache-operator"
 }
 
+function Resolve-CdcBindingStateRoot {
+    <#
+    .SYNOPSIS
+        The one host path of the durable CDC binding state store, for every reader in the deployment.
+
+    .DESCRIPTION
+        Four things must name the same directory or a teardown destroys what an enablement bound: the
+        start script that creates it, the cdc-setup.yml bind mount Compose renders, the enable phase
+        that allocates a generation from it, and the destructive teardown that retires from it. They
+        used to resolve it three different ways - the start script from its switch alone, the enable
+        phase with Compose precedence, Compose itself by interpolation - so a switch naming directory
+        A while the environment named directory B left the enablement writing B, the teardown
+        inspecting A, finding nothing to retire, and proceeding to `down -v` over the artifacts B's
+        surviving record still governed. This is that resolution, in one place.
+
+        Precedence, highest first:
+
+          - An explicit -Path. This is the operator's own -CdcBindingStatePath and it outranks the
+            environment because it is the more specific instruction. A caller that honours it must
+            also EXPORT the result as DMS_CDC_BINDING_STATE_PATH before invoking Compose - resolving
+            it here is not enough, since Compose reads the mount source from the environment and would
+            otherwise still mount the ambient or file value. start-local-dms.ps1 does exactly that.
+          - An ambient DMS_CDC_BINDING_STATE_PATH, then the env file's own value, then the
+            ./.cdc-state default - which is Compose's own interpolation order for the mount source
+            cdc-setup.yml declares, read here through the shared Compose-equivalent resolver.
+
+        The result is always absolute. A relative -Path resolves against -WorkingDirectory (the
+        caller's own directory, matching how -EnvironmentFile is resolved) and defaults to the current
+        location when that is omitted; a relative environment or file value resolves against
+        eng/docker-compose, which is the compose project directory the mount source is relative to.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [hashtable]
+        $EnvValues,
+
+        [string]
+        $Path = "",
+
+        [string]
+        $WorkingDirectory = ""
+    )
+
+    if (-not [string]::IsNullOrWhiteSpace($Path)) {
+        if ([System.IO.Path]::IsPathRooted($Path)) {
+            return [System.IO.Path]::GetFullPath($Path)
+        }
+
+        $base =
+            if ([string]::IsNullOrWhiteSpace($WorkingDirectory)) { (Get-Location).Path }
+            else { $WorkingDirectory }
+
+        return [System.IO.Path]::GetFullPath((Join-Path $base $Path))
+    }
+
+    $configured = Get-ComposeResolvedEnvValue `
+        -EnvironmentValues $EnvValues `
+        -Name "DMS_CDC_BINDING_STATE_PATH" `
+        -DefaultValue "./.cdc-state"
+
+    if ([System.IO.Path]::IsPathRooted($configured)) {
+        return [System.IO.Path]::GetFullPath($configured)
+    }
+
+    return [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot $configured))
+}
+
 function Get-CdcConnectorPrincipalConfiguration {
     <#
     .SYNOPSIS
@@ -637,6 +705,17 @@ function Get-CdcConnectorPrincipalConfiguration {
         password. PasswordReference is the '${env:...}' form itself, composed here by
         concatenation rather than interpolation because that is also PowerShell's own
         environment-variable syntax and a double-quoted string would expand it on the host.
+
+        The two values are read through DIFFERENT resolvers, and the difference is which of them
+        crosses a Compose boundary. The password does: kafka.yml renders it as
+        `CDC_DATABASE_PASSWORD: ${DMS_CDC_CONNECTOR_PASSWORD:-EdFi_Dms1!}`, where Compose
+        interpolation gives an exported value precedence over the env file's own text - so it is
+        resolved the same way here, or provision-cdc-principal.ps1 would create the principal with the
+        file's password while the worker authenticated with the exported one and enablement failed at
+        provider setup with nothing naming the cause. The principal name crosses no such boundary: no
+        compose file interpolates DMS_CDC_CONNECTOR_PRINCIPAL, it travels to the control plane and to
+        the connector configuration as an argument this module composes, and the file-only resolver is
+        what keeps a direct phase invocation independent of ambient state.
     #>
     param(
         [hashtable]$EnvValues
@@ -646,7 +725,7 @@ function Get-CdcConnectorPrincipalConfiguration {
 
     return @{
         PrincipalName       = Get-EnvValue -EnvValues $EnvValues -Name "DMS_CDC_CONNECTOR_PRINCIPAL" -DefaultValue "dms_connector"
-        Password            = Get-EnvValue -EnvValues $EnvValues -Name "DMS_CDC_CONNECTOR_PASSWORD" -DefaultValue "EdFi_Dms1!"
+        Password            = Get-ComposeResolvedEnvValue -EnvironmentValues $EnvValues -Name "DMS_CDC_CONNECTOR_PASSWORD" -DefaultValue "EdFi_Dms1!"
         PasswordEnvVariable = $passwordEnvVariable
         PasswordReference   = '${env:' + $passwordEnvVariable + '}'
     }

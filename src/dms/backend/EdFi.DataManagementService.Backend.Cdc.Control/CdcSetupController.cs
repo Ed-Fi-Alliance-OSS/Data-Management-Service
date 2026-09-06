@@ -450,50 +450,24 @@ internal sealed class CdcSetupController(
         // replacement reads its own clock in the same position for the same reason.
         DateTimeOffset probedAt = timeProvider.GetUtcNow();
 
-        CdcRetryClassification? retryClassification = null;
-        if (firstAttempt)
+        CdcBindingEligibility bindingEligibility = ClassifyBindingEligibility(
+            request.OperationId,
+            probedAt,
+            target.ToTargetIdentity(),
+            eligibility,
+            provisioningProof,
+            bindingRead.State,
+            firstAttempt
+        );
+        if (!bindingEligibility.CanBind)
         {
-            CdcInitialEnablePreBindingEligibilityResult preBinding =
-                CdcInitialEnableRetryClassifier.EvaluatePreBindingEligibility(
-                    new(
-                        request.OperationId,
-                        probedAt,
-                        probedAt,
-                        target.ToTargetIdentity(),
-                        eligibility.PhysicalSourceFingerprint,
-                        provisioningProof,
-                        eligibility
-                    )
-                );
-            if (!preBinding.CanCreateBinding)
-            {
-                return Blocked(
-                    RejectionStep(preBinding.Rejection, timeProvider.GetUtcNow()),
-                    preBinding.Rejection?.Diagnostics ?? preBinding.Diagnostics
-                );
-            }
-        }
-        else
-        {
-            CdcRetry retry = CdcInitialEnableRetryClassifier.EvaluateRetry(
-                new(
-                    request.OperationId,
-                    probedAt,
-                    probedAt,
-                    target.ToTargetIdentity(),
-                    eligibility.PhysicalSourceFingerprint,
-                    provisioningProof,
-                    eligibility,
-                    bindingRead.State
-                )
+            return Blocked(
+                RejectionStep(bindingEligibility.Rejection, timeProvider.GetUtcNow()),
+                bindingEligibility.Diagnostics
             );
-            if (retry.Action != CdcRetryAction.Proceed)
-            {
-                return Blocked(RejectionStep(retry, timeProvider.GetUtcNow()), retry.Diagnostics);
-            }
-
-            retryClassification = retry.RetryClassification;
         }
+
+        CdcRetryClassification? retryClassification = bindingEligibility.RetryClassification;
 
         if (eligibility.PhysicalSourceFingerprint is not { } physicalSourceFingerprint)
         {
@@ -2233,47 +2207,17 @@ internal sealed class CdcSetupController(
         bool replacementFirstAttempt =
             replacementRead.Status == CdcControlPlaneOperationStatus.BindingMissing;
 
-        bool canBind;
-        string classificationObserved;
-        IReadOnlyList<CdcDiagnostic> classificationDiagnostics;
-        if (replacementFirstAttempt)
-        {
-            CdcInitialEnablePreBindingEligibilityResult preBinding =
-                CdcInitialEnableRetryClassifier.EvaluatePreBindingEligibility(
-                    new(
-                        request.OperationId,
-                        probedAt,
-                        probedAt,
-                        targetIdentity,
-                        eligibility.PhysicalSourceFingerprint,
-                        provisioningProof,
-                        eligibility
-                    )
-                );
-            canBind = preBinding.CanCreateBinding;
-            classificationObserved = ClassificationObserved(preBinding.Rejection);
-            classificationDiagnostics = preBinding.Rejection?.Diagnostics ?? preBinding.Diagnostics;
-        }
-        else
-        {
-            CdcRetry retry = CdcInitialEnableRetryClassifier.EvaluateRetry(
-                new(
-                    request.OperationId,
-                    probedAt,
-                    probedAt,
-                    targetIdentity,
-                    eligibility.PhysicalSourceFingerprint,
-                    provisioningProof,
-                    eligibility,
-                    replacementRead.State
-                )
-            );
-            canBind = retry.Action == CdcRetryAction.Proceed;
-            classificationObserved = ClassificationObserved(retry);
-            classificationDiagnostics = retry.Diagnostics;
-        }
+        CdcBindingEligibility replacementEligibility = ClassifyBindingEligibility(
+            request.OperationId,
+            probedAt,
+            targetIdentity,
+            eligibility,
+            provisioningProof,
+            replacementRead.State,
+            replacementFirstAttempt
+        );
 
-        if (!canBind)
+        if (!replacementEligibility.CanBind)
         {
             return Refused(
                 request.OperationId,
@@ -2281,8 +2225,8 @@ internal sealed class CdcSetupController(
                 CdcDiagnosticCategory.InvalidObservation,
                 CdcDiagnosticComponent.Retry,
                 "CDC source replacement requires a replacing source the enablement sequence can bind.",
-                classificationObserved,
-                classificationDiagnostics
+                ClassificationObserved(replacementEligibility.Rejection),
+                replacementEligibility.Diagnostics
             );
         }
 
@@ -2416,6 +2360,84 @@ internal sealed class CdcSetupController(
                 cancellationToken
             )
             .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Whether the enablement sequence can bind this source, decided by the classifier the binding
+    /// state selects, with the rejection and the diagnostics that decision carries.
+    /// </summary>
+    private readonly record struct CdcBindingEligibility(
+        bool CanBind,
+        CdcRetry? Rejection,
+        CdcRetryClassification? RetryClassification,
+        IReadOnlyList<CdcDiagnostic> Diagnostics
+    );
+
+    /// <summary>
+    /// Which of the two initial-enablement classifiers applies to this attempt, and its verdict.
+    /// </summary>
+    /// <remarks>
+    /// The choice is the binding record's, never the caller's: an attempt with no record is
+    /// pre-binding and one with a record is a retry over the lifecycle that record names. A preflight
+    /// fixed on the unbound classifier refuses exactly the shape a reissue presents — tracking already
+    /// activated, which <c>RejectUnboundTracking</c> rejects — and a preflight fixed on the retry
+    /// classifier has no record to classify from.
+    ///
+    /// Shared by the enablement sequence and the source replacement's preflight, which run it at
+    /// different points relative to the cutover barrier and report a refusal in their own shapes: the
+    /// enablement as a rejection step, the replacement as a refusal naming what was observed. Only the
+    /// classifier selection is shared, so the two call sites stay where they are — the replacement
+    /// runs before it fences anything, and the enablement classifies for itself because it is also
+    /// entered directly.
+    /// </remarks>
+    private static CdcBindingEligibility ClassifyBindingEligibility(
+        string operationId,
+        DateTimeOffset probedAt,
+        CdcTargetIdentity targetIdentity,
+        InitialCdcEligibilityObservation eligibility,
+        InitialCdcProvisioningProof? provisioningProof,
+        CdcBindingStateContract? bindingState,
+        bool firstAttempt
+    )
+    {
+        if (firstAttempt)
+        {
+            CdcInitialEnablePreBindingEligibilityResult preBinding =
+                CdcInitialEnableRetryClassifier.EvaluatePreBindingEligibility(
+                    new(
+                        operationId,
+                        probedAt,
+                        probedAt,
+                        targetIdentity,
+                        eligibility.PhysicalSourceFingerprint,
+                        provisioningProof,
+                        eligibility
+                    )
+                );
+
+            return new(
+                preBinding.CanCreateBinding,
+                preBinding.Rejection,
+                null,
+                preBinding.Rejection?.Diagnostics ?? preBinding.Diagnostics
+            );
+        }
+
+        CdcRetry retry = CdcInitialEnableRetryClassifier.EvaluateRetry(
+            new(
+                operationId,
+                probedAt,
+                probedAt,
+                targetIdentity,
+                eligibility.PhysicalSourceFingerprint,
+                provisioningProof,
+                eligibility,
+                bindingState
+            )
+        );
+
+        bool canBind = retry.Action == CdcRetryAction.Proceed;
+        return new(canBind, canBind ? null : retry, retry.RetryClassification, retry.Diagnostics);
     }
 
     /// <summary>
@@ -3337,14 +3359,37 @@ internal sealed class CdcSetupController(
             .GetConnectorConfigAsync(inventory.ConnectorName, cancellationToken)
             .ConfigureAwait(false);
 
+        // Read here rather than beside the offsets below, because whether a fresh barrier can be
+        // captured at all is this status's answer to give. The SQL Server capture waits for a heartbeat
+        // after-image past the sequence it reads, and those rows are written by the connector's own
+        // heartbeat.action.query - so against a connector that is not running it waited the entire
+        // Timeouts.ProviderBarrier and then reported the uncaptured barrier it could have reported at
+        // once. Restart shares this collection, so that wait ran before every resume of a fenced
+        // connector, which is the one case restart exists for. The same single Connect status call as
+        // before: read once, here, and reused for the runtime observation below.
+        CdcConnectResult<CdcConnectorStatus> connectorStatus = await connectClient
+            .GetConnectorStatusAsync(inventory.ConnectorName, cancellationToken)
+            .ConfigureAwait(false);
+
         // One barrier capture and one observation of it: a status is what the target is now, so a
         // connector that has not yet committed past the position the source is at reports exactly that
         // rather than being waited on. The barrier is captured before the committed offset is read, so
         // an offset at or past it is evidence the connector passed a position the source had already
         // reached rather than one it reached afterwards.
+        //
+        // A connector that cannot advance yields no barrier evidence, and the capture now says so at
+        // once instead of waiting for it. That is the same uncaptured result the wait produced, so the
+        // barrier is reported Unknown either way and nothing downstream classifies differently - only
+        // the latency changes. The catch-up evidence a resumed connector does produce is collected by
+        // the next status, against a connector that is running.
         CdcProviderBarrierCaptureResult capturedBarrier = await sourcePositions
             .CaptureBarrierAsync(
-                BarrierCapture(request.ConnectionString, binding, controlOptions),
+                BarrierCapture(
+                    request.ConnectionString,
+                    binding,
+                    controlOptions,
+                    ConnectorCanAdvanceSource(connectorStatus)
+                ),
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -3373,9 +3418,7 @@ internal sealed class CdcSetupController(
             ConnectorRuntime = observationMapper.MapRuntime(
                 context,
                 binding,
-                await connectClient
-                    .GetConnectorStatusAsync(inventory.ConnectorName, cancellationToken)
-                    .ConfigureAwait(false),
+                connectorStatus,
                 committedOffsets
             ),
         };
@@ -3905,15 +3948,41 @@ internal sealed class CdcSetupController(
     /// operator raised for exactly that source, and the raised value would have no effect on the step
     /// it was raised for.
     /// </remarks>
+    /// <summary>
+    /// Whether the connector the worker just reported can still move the source forward, and so whether
+    /// a capture that waits on connector-produced evidence has anything to wait for.
+    /// </summary>
+    /// <remarks>
+    /// A running connector with a running task, and nothing else. The evidence in question is the
+    /// heartbeat row the connector's task writes; a connector the worker holds STOPPED or PAUSED writes
+    /// none until something resumes it, a FAILED one writes none at all, and a task that is not running
+    /// writes none whatever the connector says. Each of those is a shape a restart is issued against,
+    /// which is why the wait had to go rather than be narrowed to one state.
+    ///
+    /// A status the worker did not answer is treated the same way: an unreadable runtime is not evidence
+    /// that the connector is running, and spending a capture timeout against a worker that is not
+    /// answering buys nothing either. This decides only how long to wait — the observation the status
+    /// reports is the mapper's, from this same read.
+    /// </remarks>
+    private static bool ConnectorCanAdvanceSource(CdcConnectResult<CdcConnectorStatus> connectorStatus) =>
+        connectorStatus is { Succeeded: true, Value: { } status }
+        && CdcConnectorObservationMapper.ToRuntimeState(status.ConnectorState)
+            == CdcConnectorRuntimeState.Running
+        && status.Tasks.Any(task =>
+            CdcConnectorObservationMapper.ToRuntimeState(task.State) == CdcConnectorRuntimeState.Running
+        );
+
     private static CdcProviderBarrierCaptureRequest BarrierCapture(
         string connectionString,
         CdcBinding binding,
-        CdcControlOptions controlOptions
+        CdcControlOptions controlOptions,
+        bool connectorCanAdvance = true
     ) =>
         new(connectionString, binding)
         {
             CaptureWaitTimeout = controlOptions.Timeouts.ProviderBarrier,
             PollInterval = controlOptions.Timeouts.PollInterval,
+            ConnectorCanAdvance = connectorCanAdvance,
         };
 
     /// <summary>

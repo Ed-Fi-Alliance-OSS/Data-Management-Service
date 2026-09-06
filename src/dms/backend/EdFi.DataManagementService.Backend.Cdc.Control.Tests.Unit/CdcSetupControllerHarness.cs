@@ -359,7 +359,13 @@ internal sealed class CdcSetupControllerHarness
                     A<CancellationToken>._
                 )
             )
-            .ReturnsLazily(() => Task.FromResult(CapturedBarrier ?? CaptureBarrier()));
+            .ReturnsLazily(
+                (CdcProviderBarrierCaptureRequest request, CancellationToken _) =>
+                {
+                    BarrierCaptureRequests.Add(request);
+                    return Task.FromResult(CapturedBarrier ?? CaptureBarrier());
+                }
+            );
         A.CallTo(() => SourcePositions.ObserveProviderBarrier(A<CdcProviderBarrierObservationRequest>._))
             .ReturnsLazily((CdcProviderBarrierObservationRequest request) => ObserveBarrier(request));
         A.CallTo(() =>
@@ -524,6 +530,18 @@ internal sealed class CdcSetupControllerHarness
     /// the configured value would report a repartitioned topic as conforming.
     /// </summary>
     public List<int> VerifiedPartitionCounts { get; } = [];
+
+    /// <summary>
+    /// Every provider barrier capture request, in the order the passes ran.
+    /// </summary>
+    /// <remarks>
+    /// Recorded because whether the capture may wait is the caller's to decide and cannot be seen in
+    /// the result: the SQL Server capture waits for a heartbeat after-image the connector's own task
+    /// writes, so against a connector that is not running the wait ran to the full barrier timeout and
+    /// produced the same uncaptured barrier it produces at once. Restart shares the status collection,
+    /// so that wait preceded every resume of a fenced connector.
+    /// </remarks>
+    public List<CdcProviderBarrierCaptureRequest> BarrierCaptureRequests { get; } = [];
 
     /// <summary>Recorded in <see cref="ProviderEvidenceOrder"/> by the connector-offset fake.</summary>
     public const string ConnectOffsetRead = "connectOffset";

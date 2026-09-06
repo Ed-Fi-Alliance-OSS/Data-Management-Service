@@ -52,6 +52,26 @@ internal sealed class MssqlCdcSourcePositionAdapter(
             );
         }
 
+        // The wait below is for a heartbeat after-image past the sequence read at its start, and those
+        // rows come from the connector's own heartbeat.action.query. A connector the caller observed
+        // stopped or paused writes none, so waiting produces the same uncaptured barrier as this - only
+        // after the full capture timeout, which a restart of that very connector then spent before it
+        // could issue its resume. Reported as unavailable rather than as a reached or unreached barrier,
+        // because no position was observed either way.
+        if (!request.ConnectorCanAdvance)
+        {
+            diagnostics.LocalStateUnavailable(
+                HeartbeatSequencePath,
+                "CDC SQL Server provider barrier capture was not attempted: the connector is not running, "
+                    + "so no heartbeat can advance the capture instance past its current sequence."
+            );
+            return CdcProviderBarrierCaptureResult.Failure(
+                CdcProvider.SqlServer,
+                capturedAt,
+                diagnostics.Diagnostics
+            );
+        }
+
         cancellationToken.ThrowIfCancellationRequested();
 
         try
