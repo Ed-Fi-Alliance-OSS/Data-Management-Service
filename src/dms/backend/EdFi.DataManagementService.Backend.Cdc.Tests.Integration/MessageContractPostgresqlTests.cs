@@ -6,9 +6,6 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using Confluent.Kafka;
-using Confluent.Kafka.Admin;
-using EdFi.DataManagementService.Backend.Cdc.Tests.Unit;
 using EdFi.DataManagementService.Backend.Ddl;
 using FluentAssertions;
 using NUnit.Framework;
@@ -95,7 +92,7 @@ public sealed class Given_MessageContractPostgresql
         await fixture.TruncatePostgresqlDocumentsAsync(token);
         await CapturePhaseAsync(fixture, "TRUNCATE", token);
         _source = await fixture.ReadSourceObservationsAsync(token);
-        await AssertTopicInventoryAsync(fixture, token);
+        await MessageContractProviderAssertions.AssertTopicInventoryAsync(fixture, _request, token);
         await MessageContractProviderObservations.RetainEvidenceAsync(
             "MessageContractPostgresql",
             "PostgreSQL",
@@ -132,7 +129,11 @@ public sealed class Given_MessageContractPostgresql
     public void It_publishes_complete_shared_snapshot_and_live_envelopes_on_fixed_key_partitions()
     {
         _public["SNAPSHOT"].Records.Should().HaveCount(1);
-        AssertUpsert(_public["SNAPSHOT"].Records.Single(), _rows[0]);
+        MessageContractProviderAssertions.AssertUpsert(
+            _request,
+            _public["SNAPSHOT"].Records.Single(),
+            _rows[0]
+        );
         _public["LIVE"].Records.Should().HaveCount(7);
         foreach (MessageContractProviderRow row in _rows.Skip(1).Concat(_updates))
         {
@@ -145,7 +146,7 @@ public sealed class Given_MessageContractPostgresql
                         .GetProperty("contentVersion")
                         .GetInt64() == row.Expected.GetProperty("contentVersion").GetInt64()
                 );
-            AssertUpsert(record, row);
+            MessageContractProviderAssertions.AssertUpsert(_request, record, row);
         }
         foreach (MessageContractProviderRow row in _rows)
         {
@@ -164,9 +165,24 @@ public sealed class Given_MessageContractPostgresql
         foreach (JsonElement input in cache)
         {
             AssertUuidKey(input);
-            AssertSchema(input.GetProperty("jsonSchema"), "STRING", "io.debezium.data.Json", 1);
-            AssertSchema(input.GetProperty("timeSchema"), "STRING", "io.debezium.time.ZonedTimestamp", 1);
-            AssertSchema(input.GetProperty("versionSchema"), "INT64", "", 0);
+            MessageContractProviderAssertions.AssertSchema(
+                input.GetProperty("jsonSchema"),
+                "STRING",
+                "io.debezium.data.Json",
+                1
+            );
+            MessageContractProviderAssertions.AssertSchema(
+                input.GetProperty("timeSchema"),
+                "STRING",
+                "io.debezium.time.ZonedTimestamp",
+                1
+            );
+            MessageContractProviderAssertions.AssertSchema(
+                input.GetProperty("versionSchema"),
+                "INT64",
+                "",
+                0
+            );
         }
     }
 
@@ -295,68 +311,18 @@ public sealed class Given_MessageContractPostgresql
         }
     }
 
-    private async Task AssertTopicInventoryAsync(
-        CdcConnectorTemplatePinnedImageFixture fixture,
-        CancellationToken token
-    )
-    {
-        using IAdminClient admin = new AdminClientBuilder(
-            new AdminClientConfig { BootstrapServers = fixture.HostKafkaBootstrapServers }
-        )
-            .SetLogHandler((_, _) => { })
-            .Build();
-        foreach (string topic in new[] { _request.PublicTopicName, _request.ProgressTopicName })
-        {
-            var config = await admin.DescribeConfigsAsync([
-                new ConfigResource { Type = ResourceType.Topic, Name = topic },
-            ]);
-            config.Single().Entries["cleanup.policy"].Value.Should().Be("compact");
-            long.Parse(config.Single().Entries["delete.retention.ms"].Value)
-                .Should()
-                .BeGreaterThanOrEqualTo(604800000);
-            var bounds = await fixture.CaptureKafkaBoundariesAsync(topic, token);
-            bounds.Should().HaveCount(topic == _request.PublicTopicName ? 7 : 1);
-        }
-        Metadata metadata = admin.GetMetadata(TimeSpan.FromSeconds(10));
-        metadata
-            .Topics.Select(t => t.Topic)
-            .Where(t =>
-                t.StartsWith(_request.ConnectorName.Value + ".", StringComparison.Ordinal)
-                || t.StartsWith("__debezium-heartbeat.", StringComparison.Ordinal)
-            )
-            .Should()
-            .BeEmpty("raw source topics must not be produced");
-    }
-
-    private void AssertUpsert(MessageContractKafkaRecord record, MessageContractProviderRow row)
-    {
-        record.Topic.Should().Be(_request.PublicTopicName);
-        record.Partition.Should().Be(row.Partition);
-        record.Key.IsNull.Should().BeFalse();
-        record.Key.Bytes.Should().Equal(Encoding.UTF8.GetBytes(row.Uuid));
-        record.Value.IsNull.Should().BeFalse();
-        record.Headers.Should().BeEmpty();
-        MessageContractJson.ShouldEqual(
-            JsonSerializer.Deserialize<JsonElement>(record.Value.Bytes),
-            row.Expected
-        );
-    }
-
     private static void AssertUuidKey(JsonElement input)
     {
         input.GetProperty("keyIsStruct").GetBoolean().Should().BeTrue();
         input.GetProperty("keyFieldCount").GetInt32().Should().Be(1);
         input.GetProperty("uuid").GetString().Should().NotBeNullOrEmpty();
         input.GetProperty("schemaIsDms").GetBoolean().Should().BeTrue();
-        AssertSchema(input.GetProperty("keyUuidSchema"), "STRING", "io.debezium.data.Uuid", 1);
-    }
-
-    private static void AssertSchema(JsonElement schema, string type, string name, int version)
-    {
-        schema.GetProperty("type").GetString().Should().Be(type);
-        schema.GetProperty("name").GetString().Should().Be(name);
-        schema.GetProperty("version").GetInt32().Should().Be(version);
-        schema.GetProperty("optional").GetBoolean().Should().BeFalse();
+        MessageContractProviderAssertions.AssertSchema(
+            input.GetProperty("keyUuidSchema"),
+            "STRING",
+            "io.debezium.data.Uuid",
+            1
+        );
     }
 
     private static string Kind(JsonElement input) => input.GetProperty("kind").GetString()!;
