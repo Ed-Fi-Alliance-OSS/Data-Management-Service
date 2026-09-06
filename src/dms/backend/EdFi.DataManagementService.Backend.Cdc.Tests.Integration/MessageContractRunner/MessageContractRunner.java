@@ -174,7 +174,11 @@ class MessageContractRunner {
             case INT64 -> node.longValue();
             case FLOAT32 -> node.floatValue();
             case FLOAT64 -> node.doubleValue();
-            case BYTES -> Base64.getDecoder().decode(node.textValue());
+            case BYTES -> {
+                byte[] bytes = Base64.getDecoder().decode(node.textValue());
+                // Descriptors encode physical bytes; Connect logical decimals use BigDecimal.
+                yield Decimal.LOGICAL_NAME.equals(schema.name()) ? Decimal.toLogical(schema, bytes) : bytes;
+            }
             case STRUCT -> {
                 Struct struct = new Struct(schema);
                 node.fields().forEachRemaining(entry -> struct.put(entry.getKey(),

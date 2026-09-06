@@ -348,3 +348,38 @@ continues to support debugging.
 ```sh
 dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration --filter 'Category=CdcMessageContractKafka'
 ```
+
+## Serialized progress (MC-05)
+
+`Given_MessageContractProgress` derives provider source schemas, partitions, and offsets
+from the existing catalog and executes one image-only batch per provider. It replaces
+cache rows with heartbeat singleton descriptors; no materialized document golden is copied.
+The 114 stable runner scenario IDs use `MC-PROGRESS-{PG|SQL}-` followed by:
+
+- `RELATIONAL-{C|U|R|D|T}-{STRUCTURED|NULL|STRING|INVALID-PUBLIC-UUID}`:
+  every heartbeat operation replaces the source key, preserves the complete value/schema,
+  ordered duplicate and nullable headers, source partition/offset, and Connect timestamp.
+- `NATIVE-{STRUCT|STRING|SCHEMALESS|NULL|TYPED-NULL|DECIMAL}-{STRUCTURED|NULL|STRING|INVALID-PUBLIC-UUID}`:
+  exact native topic recognition, non-null value preservation, and native-null substitution
+  with required STRING `native-heartbeat`. Decimal uses physical bytes `MDk=` (unscaled
+  12345, scale 2) and independently expects numeric JSON `123.45`, proving NUMERIC delegation.
+- `COLLISION-{HEARTBEAT|UPSERT|DROP}`: a relational prefix starting with
+  `__debezium-heartbeat` still follows relational metadata and operation routing.
+- `SERVER-{MISSING|EMPTY|NULL|NUMBER|OBJECT}` and
+  `TOPIC-{EMPTY-SUFFIX|MISMATCH|EXTRA-SUFFIX|CASE|DELIMITER}`: malformed native-looking
+  identities fail at the transform boundary with stable artifact reasons and no output.
+
+Every retained progress scenario asserts the binding-derived `.cdc-progress` topic,
+required STRING schema/key, literal hex bytes for `cdc-progress`, and partition zero with
+one partition. Full serialized JSON comparison proves `schemas.enable=false`; progress
+values do not use the public logical-byte handshake. Native and negative variants use the
+runner's supported null-schema vocabulary directly, beyond the catalog's schema-backed
+materialized-record validator. These tests establish serialized behavior; broker produce
+acknowledgement and committed provider offsets remain the provider/broker suites' evidence.
+
+```sh
+dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration --filter 'Category=CdcMessageContract&FullyQualifiedName~MessageContractProgress'
+```
+
+Only the qualified `CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE` is required; use
+`CDC_CONNECTOR_TEMPLATE_FAIL_FAST=true` in qualification lanes.

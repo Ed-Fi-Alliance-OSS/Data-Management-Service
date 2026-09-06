@@ -32,6 +32,10 @@ Temporary input and output files are deleted; a cleanup failure is explicit.
 The request contains ordered `scenarios`, each with `scenarioId`, an expanded
 `sourceRecord`, `transformConfig`, and positive `partitionCount`. Schema descriptors use
 the shared fixture vocabulary. Null schemas allow schemaless/native heartbeat inputs.
+BYTES descriptors contain base64 physical bytes. For the standard Connect Decimal
+logical schema, the runner uses Connect's `Decimal.toLogical` to construct the required
+`BigDecimal`; its observed value is a JSON number. This lets progress tests distinguish
+`decimal.format=NUMERIC` delegation from base64 encoding without implementing a converter.
 The result contains format version 1 and matching, ordered observations:
 
 - `retained` has a `record` with topic, recursive key/value schemas, Connect key/value,
