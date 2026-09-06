@@ -1,0 +1,24 @@
+Description:
+  Ed-Fi DMS DocumentCache administration tool
+
+Usage:
+  dms-document-cache [command] [options]
+
+Options:
+  --json                              Write the shared JSON contract document to stdout
+  -v, --verbose                       Enable verbose (debug-level) logging
+  --settings <settings>               Path to a DMS appsettings JSON file
+  --environment <environment>         DMS environment name used for configuration loading
+  --datastore <postgresql|sqlserver>  Target datastore provider: postgresql or sqlserver
+  -?, -h, --help                      Show help and usage information
+  --version                           Show version information
+
+Commands:
+  status               Inspect one DocumentCache target
+  activate-new-empty   Activate DocumentCache on a new empty target
+  activate-offline     Activate DocumentCache with writers offline
+  deactivate-offline   Deactivate DocumentCache with writers offline
+  rebuild-online       Rebuild DocumentCache while online
+  scrub                Run DocumentCache integrity scrub
+  recover-cache-ahead  Recover from a required cache-ahead state
+  cdc                  Deployment-owned CDC binding operations for one DocumentCache target

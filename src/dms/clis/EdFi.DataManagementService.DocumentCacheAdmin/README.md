@@ -37,8 +37,11 @@ The CLI loads DMS configuration from the normal settings and environment provide
 `--settings <path>` and `--environment <name>` for non-secret configuration selection, and
 use `--datastore postgresql|sqlserver` only to override the provider value for the current
 run. Connection strings, CMS credentials, client secrets, and other secrets must come from
-settings, environment variables, user secrets, or the deployment secret provider. The CLI
-does not expose secret-bearing command-line options.
+protected settings or environment variables. The CLI does not directly load user secrets
+or remote secret providers; deployment automation must resolve those into its loaded
+configuration sources. The CLI does not expose secret-bearing command-line options.
+See the [CDC configuration catalog](../../../../docs/CONFIGURATION.md#datamanagementdocumentcachecdc)
+for exact precedence, required settings, defaults, and binding-state path resolution.
 
 The tool package includes the default Ed-Fi ApiSchema workspace and uses it when
 `AppSettings:UseApiSchemaPath` is absent or `false`. Set `AppSettings:UseApiSchemaPath=true`
@@ -49,7 +52,7 @@ The `cdc` verbs read the deployment's CDC control-plane settings from
 `DataManagement:DocumentCache:Cdc`. Each `cdc` option below overrides one key in that
 section for the current run only. Keys that have no command-line option — topic prefix,
 partition count, the principals, and the Kafka Connect worker settings — come only from
-settings, environment variables, user secrets, or the deployment secret provider.
+settings or environment variables.
 
 The connector is named to two authorities that do not share a naming scheme, so it has two
 principal settings and they are not interchangeable. `ConnectorDatabasePrincipal` is the

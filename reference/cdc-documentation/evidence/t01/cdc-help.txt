@@ -1,0 +1,22 @@
+Description:
+  Deployment-owned CDC binding operations for one DocumentCache target
+
+Usage:
+  dms-document-cache cdc [command] [options]
+
+Options:
+  -?, -h, --help                      Show help and usage information
+  --json                              Write the shared JSON contract document to stdout
+  -v, --verbose                       Enable verbose (debug-level) logging
+  --settings <settings>               Path to a DMS appsettings JSON file
+  --environment <environment>         DMS environment name used for configuration loading
+  --datastore <postgresql|sqlserver>  Target datastore provider: postgresql or sqlserver
+
+Commands:
+  enable          Enable CDC on a target created for this provisioning
+  status          Report deployment-owned CDC readiness for one binding
+  restart         Restart the binding's connector after affirmative continuity evidence
+  stop            Stop the binding's connector, leaving it fenced across a planned stop
+  adopt           Adopt an operator-supplied binding around a complete governed artifact set
+  replace-source  Replace the physical source behind an enabled target
+  retire          Retire a binding and its governed artifacts
