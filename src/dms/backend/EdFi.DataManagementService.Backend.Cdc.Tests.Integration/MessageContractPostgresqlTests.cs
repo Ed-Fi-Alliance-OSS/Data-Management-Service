@@ -26,8 +26,8 @@ public sealed class Given_MessageContractPostgresql
     private IReadOnlyList<JsonElement> _source = null!;
     private readonly Dictionary<string, MessageContractKafkaScan> _public = [];
     private readonly Dictionary<string, MessageContractKafkaScan> _progress = [];
-    private readonly List<ProviderRow> _rows = [];
-    private readonly List<ProviderRow> _updates = [];
+    private IReadOnlyList<MessageContractProviderRow> _rows = null!;
+    private IReadOnlyList<MessageContractProviderRow> _updates = null!;
     private readonly List<MessageContractPostgresqlFence> _fences = [];
 
     [OneTimeSetUp]
@@ -40,7 +40,7 @@ public sealed class Given_MessageContractPostgresql
         _request = await fixture.CreateRequestAsync(token, partitionCount: 7);
         await fixture.AssertPostgresqlCaptureInventoryAsync(token);
         await fixture.InstallSourceObserverAsync(token);
-        LoadRows();
+        (_rows, _updates) = MessageContractProviderRows.Load("postgresql", "2026-08-01T23:59:59.999999Z");
         await fixture.WriteMaterializedRowAsync(_rows[0].CacheRow, false, token);
         CdcConnectorTemplateResult rendered = fixture.Render(_request);
         rendered
@@ -62,11 +62,11 @@ public sealed class Given_MessageContractPostgresql
         await fixture.AssertObservedConnectorConfigAsync(rendered, token);
         await CapturePhaseAsync(fixture, "SNAPSHOT", token);
 
-        foreach (ProviderRow row in _rows.Skip(1))
+        foreach (MessageContractProviderRow row in _rows.Skip(1))
         {
             await fixture.WriteMaterializedRowAsync(row.CacheRow, false, token);
         }
-        foreach (ProviderRow row in _updates)
+        foreach (MessageContractProviderRow row in _updates)
         {
             await fixture.WriteMaterializedRowAsync(row.CacheRow, true, token);
         }
@@ -87,7 +87,7 @@ public sealed class Given_MessageContractPostgresql
         await CapturePhaseAsync(fixture, "WORK", token);
         await fixture.AssertPostgresqlCaptureInventoryAsync(token);
 
-        foreach (ProviderRow row in _rows)
+        foreach (MessageContractProviderRow row in _rows)
         {
             await fixture.DeleteCanonicalRowAsync(row.DocumentId, token);
         }
@@ -154,63 +154,6 @@ public sealed class Given_MessageContractPostgresql
         );
     }
 
-    private void LoadRows()
-    {
-        MessageContractFixture[] shared = MessageContractFixtureCatalog
-            .LoadAll(AppContext.BaseDirectory)
-            .Where(f =>
-                f.SourceRecord.GetProperty("provider").GetString() == "postgresql"
-                && f.SourceRecord.GetProperty("operation").GetString() == "c"
-            )
-            .DistinctBy(f => f.MaterializedCase)
-            .ToArray();
-        shared.Should().HaveCount(4);
-        string root = MessageContractFixtureCatalog.ResolveFixtureRoot(AppContext.BaseDirectory);
-        using JsonDocument vectors = JsonDocument.Parse(
-            File.ReadAllText(Path.Combine(root, "cdc/message-contract/partition-vectors.json"))
-        );
-        JsonElement[] keys = vectors.RootElement.GetProperty("vectors").EnumerateArray().ToArray();
-        for (int index = 0; index < shared.Length; index++)
-        {
-            JsonNode cache = JsonNode.Parse(shared[index].CacheRow.GetRawText())!;
-            JsonNode expected = JsonNode.Parse(shared[index].ExpectedEnvelope.GetRawText())!;
-            string uuid = keys[index].GetProperty("uuid").GetString()!;
-            int partition = keys[index]
-                .GetProperty("partitions")
-                .EnumerateArray()
-                .Single(p => p.GetProperty("count").GetInt32() == 7)
-                .GetProperty("expected")
-                .GetInt32();
-            cache["documentUuid"] = uuid;
-            cache["documentJson"]!["id"] = uuid;
-            expected["documentUuid"] = uuid;
-            expected["document"]!["id"] = uuid;
-            _rows.Add(
-                new(
-                    JsonSerializer.SerializeToElement(cache),
-                    JsonSerializer.SerializeToElement(expected),
-                    partition
-                )
-            );
-            long version = cache["contentVersion"]!.GetValue<long>() + 1000;
-            cache["contentVersion"] = version;
-            cache["streamEtag"] = $"opaque-live-{version}";
-            cache["lastModifiedAt"] = "2026-08-01T23:59:59.999999Z";
-            cache["documentJson"]!["_lastModifiedDate"] = "2026-08-01T23:59:59Z";
-            expected["contentVersion"] = version;
-            expected["lastModifiedAt"] = "2026-08-01T23:59:59Z";
-            expected["document"]!["_lastModifiedDate"] = "2026-08-01T23:59:59Z";
-            expected["document"]!["_etag"] = $"opaque-live-{version}";
-            _updates.Add(
-                new(
-                    JsonSerializer.SerializeToElement(cache),
-                    JsonSerializer.SerializeToElement(expected),
-                    partition
-                )
-            );
-        }
-    }
-
     private async Task CapturePhaseAsync(
         CdcConnectorTemplatePinnedImageFixture fixture,
         string phase,
@@ -252,7 +195,7 @@ public sealed class Given_MessageContractPostgresql
         _public["SNAPSHOT"].Records.Should().HaveCount(1);
         AssertUpsert(_public["SNAPSHOT"].Records.Single(), _rows[0]);
         _public["LIVE"].Records.Should().HaveCount(7);
-        foreach (ProviderRow row in _rows.Skip(1).Concat(_updates))
+        foreach (MessageContractProviderRow row in _rows.Skip(1).Concat(_updates))
         {
             MessageContractKafkaRecord record = _public["LIVE"]
                 .Records.Single(r =>
@@ -265,7 +208,7 @@ public sealed class Given_MessageContractPostgresql
                 );
             AssertUpsert(record, row);
         }
-        foreach (ProviderRow row in _rows)
+        foreach (MessageContractProviderRow row in _rows)
         {
             var records = _public
                 .Values.SelectMany(s => s.Records)
@@ -293,7 +236,7 @@ public sealed class Given_MessageContractPostgresql
     public void It_emits_one_true_tombstone_per_canonical_delete_and_drops_excluded_operations()
     {
         _public["DELETE"].Records.Should().HaveCount(4);
-        foreach (ProviderRow row in _rows)
+        foreach (MessageContractProviderRow row in _rows)
         {
             var record = _public["DELETE"]
                 .Records.Single(r => Encoding.UTF8.GetString(r.Key.Bytes) == row.Uuid);
@@ -446,7 +389,7 @@ public sealed class Given_MessageContractPostgresql
             .BeEmpty("raw source topics must not be produced");
     }
 
-    private void AssertUpsert(MessageContractKafkaRecord record, ProviderRow row)
+    private void AssertUpsert(MessageContractKafkaRecord record, MessageContractProviderRow row)
     {
         record.Topic.Should().Be(_request.PublicTopicName);
         record.Partition.Should().Be(row.Partition);
@@ -480,12 +423,4 @@ public sealed class Given_MessageContractPostgresql
     private static string Kind(JsonElement input) => input.GetProperty("kind").GetString()!;
 
     private static string Operation(JsonElement input) => input.GetProperty("operation").GetString()!;
-
-    private sealed record ProviderRow(JsonElement CacheRow, JsonElement Expected, int Partition)
-    {
-        public long DocumentId => CacheRow.GetProperty("documentId").GetInt64();
-        public string Uuid => CacheRow.GetProperty("documentUuid").GetString()!;
-
-        public override string ToString() => $"Provider fixture row in partition {Partition}";
-    }
 }
