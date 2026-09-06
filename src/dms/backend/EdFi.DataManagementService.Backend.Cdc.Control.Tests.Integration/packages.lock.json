@@ -495,6 +495,7 @@
       "edfi.datamanagementservice.backend.cdc.tests.integration": {
         "type": "Project",
         "dependencies": {
+          "Confluent.Kafka": "[2.6.1, )",
           "EdFi.DataManagementService.Backend.Cdc": "[1.0.0, )",
           "FluentAssertions": "[6.12.1, )",
           "Microsoft.Data.SqlClient": "[6.1.4, )",

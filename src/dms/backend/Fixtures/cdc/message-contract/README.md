@@ -244,3 +244,63 @@ observation-contract tests; broker acknowledgement remains MC-12 evidence.
 ```sh
 dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Unit/EdFi.DataManagementService.Backend.Cdc.Tests.Unit.csproj --filter 'Category=CdcMessageContract&FullyQualifiedName~MessageContractAdmission'
 ```
+
+## Provider and Kafka fixture (MC-07)
+
+`CdcConnectorTemplatePinnedImageFixture` remains the resource owner. Its message
+contract partial adds parameterized canonical/cache writes, transactional paired
+writes, cache/canonical deletes, work insertion, and heartbeat advancement. Both
+providers now use the full cache/canonical column inventory. PostgreSQL uses
+uuid/jsonb/timestamptz; SQL Server uses uniqueidentifier/nvarchar(max)/datetime2(7).
+Cache `DocumentId` is its primary key and cascading foreign key to `Document`;
+cache `DocumentUuid` has no index. The fixture supplies IDs explicitly and omits
+unrelated DMS tables/triggers. Provider setup creates the heartbeat and capture
+artifacts and validates all source column types, ordinals and nullability against
+the expanded inventory. Live catalog assertions additionally verify the cache keys.
+The control integration fixture's existing PostgreSQL SQL/inventory helpers now
+receive these same expanded definitions.
+
+`CaptureKafkaBoundariesAsync` observes each partition's earliest and exclusive end
+offsets. `ConsumeThroughAsync` accepts those frozen bounds (or caller-supplied start
+offsets) and returns records only in `[start, end)`, plus completed scan bounds. It
+uses explicit assignment, byte deserializers, and consumer positions/EOF to scan
+through gaps. Empty ranges complete without requiring a record. All partitions
+must finish; timeout, cancellation, unavailable bounds, or Kafka errors cannot
+be interpreted as absence. Records after a frozen end are excluded. The observer
+commits no consumer offsets. `MessageContractKafkaBytes.IsNull` distinguishes a
+Kafka null from empty bytes and from bytes spelling JSON `null`; headers preserve
+order, duplicate names and null values. Broker timestamps remain broker metadata.
+
+A loopback-only external broker listener supports the .NET byte client; Connect
+continues using its internal Docker listener. `TryReadCommittedSourceOffsetAsync`
+uses the existing Connect REST offset parser and provider-specific normalization
+and comparison contracts. `ReadConnectorStatusAsync` exposes bounded state names,
+without task traces. `RestartRegisteredConnectorAsync` extracts the existing REST
+restart operation for focused scenarios; the original smoke restart still checks
+retained offsets and template read-back. Topic ends and progress values are **not**
+provider positions. A negative source-routing test must establish the appropriate
+committed provider barrier before capturing Kafka ends; a completed Kafka scan
+alone cannot prove that Connect has processed a particular source mutation.
+
+`MC-KAFKA-HARNESS-PG` and `MC-KAFKA-HARNESS-SQL` qualify this shared harness with the
+four E18 rows, live schema/key inspection, connector status/offset/restart calls,
+and a controlled three-partition byte-observation topic. That topic covers null,
+empty, JSON-null and binary values, duplicate/null/binary headers, an empty
+partition, frozen-end exclusion, invalid retained bounds, and cancellation. Shared
+row availability permits snapshot/capture replay; provider routing and ordering
+assertions remain MC-08/09. Categories are `DatabaseIntegration`,
+`CdcMessageContract`, `CdcMessageContractKafka`, and the relevant provider category.
+
+Set `CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE` to the qualified immutable sha256 image,
+`CDC_CONNECTOR_TEMPLATE_REDPANDA_IMAGE`, and the relevant
+`CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE` or
+`CDC_CONNECTOR_TEMPLATE_SQLSERVER_2025_IMAGE`. Set
+`CDC_CONNECTOR_TEMPLATE_FAIL_FAST=true` in qualification lanes. Missing local
+prerequisites retain the sanitized skip policy. Containers/networks are isolated;
+cleanup attempts every resource with independent timeouts, including assertion or
+cancellation failures during startup. The existing explicit keep-containers option
+continues to support debugging.
+
+```sh
+dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration --filter 'Category=CdcMessageContractKafka'
+```
