@@ -13,12 +13,13 @@ public enum MessageContractBootstrapState
 }
 
 /// <summary>Fences delayed transport/persistence callbacks from a discarded bootstrap attempt.</summary>
-public sealed record MessageContractConsumerScan(int Attempt, int Partition, long NextOffset);
+public sealed record MessageContractConsumerScan(int Attempt, int Partition, long NextOffset, int Proof = 0);
 
 /// <summary>
 /// Test-only bootstrap coordinator over the serialized-record consumer. The bounds callback supplies
 /// current broker observations on every full restart; completion requires independent scan and durable
-/// checkpoint observations. Recurring continuity proofs belong to the subsequent conformance task.
+/// checkpoint observations. Incremental continuity renews that proof without discarding valid state;
+/// every uncertainty or expired deadline uses the same full-bootstrap restart path.
 /// </summary>
 public sealed class MessageContractConsumerBootstrap
 {
@@ -27,6 +28,9 @@ public sealed class MessageContractConsumerBootstrap
     private readonly MessageContractConsumer _consumer;
     private readonly Func<IReadOnlyList<MessageContractPartitionBounds>> _observeBounds;
     private readonly HashSet<int> _scanningPartitions = [];
+    private readonly HashSet<int> _renewalScannedPartitions = [];
+    private readonly HashSet<int> _renewalCheckpointedPartitions = [];
+    private int _proof;
     private bool _hasBounds;
 
     public MessageContractConsumerBootstrap(
@@ -43,6 +47,11 @@ public sealed class MessageContractConsumerBootstrap
     public bool IsValid => State == MessageContractBootstrapState.Valid;
     public int Attempt { get; private set; }
     public DateTimeOffset Now => _consumer.Now;
+    public bool RenewalInProgress { get; private set; }
+
+    // Meaningful only while valid. Capture/start/retry cannot extend this completed proof's interval.
+    public DateTimeOffset ProofCompletedAt { get; private set; }
+    public DateTimeOffset RenewalDeadline => ProofCompletedAt + Budget;
 
     // Meaningful once the first partition has started scanning in this attempt.
     public DateTimeOffset StartedAt { get; private set; }
@@ -68,7 +77,7 @@ public sealed class MessageContractConsumerBootstrap
             State = MessageContractBootstrapState.Scanning;
         }
         _scanningPartitions.Add(partition);
-        return new(Attempt, partition, DurableNextOffsets[partition]);
+        return new(Attempt, partition, DurableNextOffsets[partition], _proof);
     }
 
     public void Stage(MessageContractConsumerScan scan, MessageContractConsumerRecord record)
@@ -84,7 +93,9 @@ public sealed class MessageContractConsumerBootstrap
     public MessageContractConsumerApplyResult CompleteApply(MessageContractConsumerScan scan)
     {
         RequireCurrentScan(scan);
-        return _consumer.CompleteApply(scan.Partition);
+        var result = _consumer.CompleteApply(scan.Partition);
+        ObserveRenewalScan(scan);
+        return result;
     }
 
     /// <summary>Requires a real transport position, including scans through compacted gaps.</summary>
@@ -92,6 +103,7 @@ public sealed class MessageContractConsumerBootstrap
     {
         RequireCurrentScan(scan);
         _consumer.CompleteScan(scan.Partition, nextOffset);
+        ObserveRenewalScan(scan);
     }
 
     public void CompleteCheckpoint(MessageContractConsumerScan scan, long nextOffset)
@@ -109,6 +121,71 @@ public sealed class MessageContractConsumerBootstrap
         )
         {
             State = MessageContractBootstrapState.Valid;
+            ProofCompletedAt = Now;
+        }
+        if (
+            RenewalInProgress
+            && scan.Proof == _proof
+            && _renewalScannedPartitions.Contains(scan.Partition)
+            && nextOffset >= Barriers[scan.Partition].EndOffset
+        )
+        {
+            _renewalCheckpointedPartitions.Add(scan.Partition);
+            if (_renewalCheckpointedPartitions.Count == Barriers.Count)
+            {
+                ProofCompletedAt = Now;
+                RenewalInProgress = false;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Captures fresh exclusive ends for the entire assignment. Each partition then needs a scan/apply
+    /// and checkpoint completion under a new scan handle, even when its end has not changed. Older
+    /// callbacks may finish ordinary incremental work but cannot certify this new proof.
+    /// </summary>
+    public void BeginRenewal(IReadOnlyDictionary<int, long> endOffsets)
+    {
+        if (!IsValid || RenewalInProgress)
+        {
+            throw new InvalidOperationException(
+                "Consumer renewal requires valid state and no active renewal."
+            );
+        }
+        try
+        {
+            _consumer.CaptureEndOffsets(endOffsets);
+        }
+        catch (InvalidOperationException)
+        {
+            Restart();
+            throw;
+        }
+        _proof++;
+        _renewalScannedPartitions.Clear();
+        _renewalCheckpointedPartitions.Clear();
+        RenewalInProgress = true;
+    }
+
+    public void LoseCheckpoints()
+    {
+        _consumer.LoseCheckpoints();
+        Restart();
+    }
+
+    public void CorruptCheckpoints()
+    {
+        _consumer.CorruptCheckpoints();
+        Restart();
+    }
+
+    public void ReportUncertainProgress() => Restart();
+
+    public void ObserveAssignment(IReadOnlyList<int> partitions)
+    {
+        if (partitions.Count != Barriers.Count || !partitions.ToHashSet().SetEquals(Barriers.Keys))
+        {
+            Restart();
         }
     }
 
@@ -116,7 +193,10 @@ public sealed class MessageContractConsumerBootstrap
     {
         _consumer.AdvanceTime(elapsed);
         // Completion at exactly 24 hours is permitted. Time spent waiting for persistence counts.
-        if (State == MessageContractBootstrapState.Scanning && Now > Deadline)
+        if (
+            (State == MessageContractBootstrapState.Scanning && Now > Deadline)
+            || (IsValid && Now > RenewalDeadline)
+        )
         {
             Restart();
         }
@@ -135,12 +215,28 @@ public sealed class MessageContractConsumerBootstrap
     {
         // Revoke and discard before observing new bounds, even if that observation fails.
         State = MessageContractBootstrapState.AwaitingScan;
+        RenewalInProgress = false;
+        ProofCompletedAt = default;
         _hasBounds = false;
         Attempt++;
         _scanningPartitions.Clear();
+        _renewalScannedPartitions.Clear();
+        _renewalCheckpointedPartitions.Clear();
         _consumer.DiscardState();
         _consumer.Assign(_observeBounds());
         _hasBounds = true;
+    }
+
+    private void ObserveRenewalScan(MessageContractConsumerScan scan)
+    {
+        if (
+            RenewalInProgress
+            && scan.Proof == _proof
+            && DurableNextOffsets[scan.Partition] >= Barriers[scan.Partition].EndOffset
+        )
+        {
+            _renewalScannedPartitions.Add(scan.Partition);
+        }
     }
 
     private void RequireCurrentScan(MessageContractConsumerScan scan)

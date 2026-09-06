@@ -160,9 +160,50 @@ Stable scenario properties are `MC-CONSUMER-BOOTSTRAP-DURABILITY`,
 `MC-CONSUMER-BOOTSTRAP-RECOVERY` (`CDC-INV-14`; manifest mapping belongs to MC-18).
 These deterministic timelines use shared serialized envelopes and no wall-clock
 sleeping. They establish bootstrap behavior, not production retained-log capacity.
-Recurring validity renewal and checkpoint/assignment invalidation remain MC-16;
-real Kafka transport evidence remains MC-17.
+Recurring validity renewal and checkpoint/assignment invalidation are covered by
+MC-16 below; real Kafka transport evidence remains MC-17.
 
 ```sh
 dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Unit/EdFi.DataManagementService.Backend.Cdc.Tests.Unit.csproj --filter 'Category=CdcMessageContract&FullyQualifiedName~MessageContractConsumerBootstrap'
+```
+
+## Reference consumer continuity (MC-16)
+
+The same `MessageContractConsumerBootstrap` coordinator maintains a durable proof
+completion time and a separate renewal deadline after bootstrap. `BeginRenewal`
+accepts freshly observed exclusive ends for the entire assignment and freezes that
+vector. Capturing ends, starting/retrying scans, or ordinary incremental checkpoints
+cannot extend validity. Each partition must complete a scan or durable apply through
+its barrier, followed by checkpoint persistence, before the entire proof renews.
+An idle partition explicitly scans its unchanged position and checkpoints it; no
+new record is required. A partial renewal preserves valid state within the previous
+proof's interval. Completion at exactly 24 hours is permitted; one tick later the
+proof expires, even during downtime or when no renewal was started.
+
+Start new partition scan handles after each capture. Handles include a proof
+generation so old callbacks can finish incremental work without certifying a newer
+proof. Apply and checkpoint completion remain separately controlled; an unflushed
+write or checkpoint through a captured barrier cannot count as completion. Work
+beyond an already completed barrier does not move that barrier.
+
+`LoseCheckpoints`, `CorruptCheckpoints`, `ReportUncertainProgress`, unexpected
+`ObserveAssignment` results, invalid barrier observations, and expired proofs all
+use the existing full-bootstrap restart path. It revokes validity and discards all
+documents, pending writes, checkpoints, and renewal evidence before observing fresh
+assignment/earliest/end bounds. A failed observation cannot fall back to old bounds.
+Recovery timelines reconstruct empty retained logs after tombstones have disappeared,
+proving stale documents are removed by discarding state, not by waiting for another
+delete. Healthy state and checkpoints can continue incrementally within the interval;
+the controllable clock includes downtime, and no uncertain checkpoint is resumed.
+This models durable state in the harness; it does not implement process persistence
+or a supported runtime consumer.
+
+Stable scenario properties are `MC-CONSUMER-CONTINUITY-DURABILITY`,
+`MC-CONSUMER-CONTINUITY-IDLE`, `MC-CONSUMER-CONTINUITY-DEADLINE`,
+`MC-CONSUMER-CONTINUITY-RECOVERY`, and `MC-CONSUMER-CONTINUITY-OBSERVATIONS`
+(`CDC-INV-14`; manifest mapping remains MC-18). These tests use deterministic clocks
+and serialized shared envelopes without sleeps or broker capacity claims.
+
+```sh
+dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Unit/EdFi.DataManagementService.Backend.Cdc.Tests.Unit.csproj --filter 'Category=CdcMessageContract&FullyQualifiedName~MessageContractConsumerContinuity'
 ```
