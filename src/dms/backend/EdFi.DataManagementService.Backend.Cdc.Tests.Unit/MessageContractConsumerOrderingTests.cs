@@ -447,6 +447,19 @@ public class Given_MessageContractConsumerOrdering_durability
     }
 
     [Test]
+    public void It_rejects_ends_below_durable_progress_before_changing_any_partition_barrier()
+    {
+        _consumer.CompleteScan(1, 32);
+        var previous = _consumer.Assignment.Values.ToArray();
+        Action capture = () => _consumer.CaptureEndOffsets(new Dictionary<int, long> { [0] = 25, [1] = 31 });
+        capture
+            .Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("Invalid consumer end-offset observation.");
+        _consumer.Assignment.Values.Should().BeEquivalentTo(previous);
+    }
+
+    [Test]
     public void It_accepts_transport_scan_positions_across_compacted_gaps()
     {
         _consumer.CompleteApply(0);

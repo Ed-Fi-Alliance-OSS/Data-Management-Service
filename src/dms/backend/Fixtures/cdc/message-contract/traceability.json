@@ -2113,6 +2113,20 @@
     },
     {
       "assembly": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit",
+      "fixture": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_renewal_after_incremental_progress",
+      "invariants": [
+        "CDC-INV-13"
+      ],
+      "tests": {
+        "MC-TEST-34007A25AAEE612EF61D": "It_discards_state_and_restarts_every_partition_when_the_end_contradicts_durable_progress",
+        "MC-TEST-248BCFCD594E207A9DDF": "It_rejects_delayed_callbacks_from_the_invalidated_attempt(\"checkpoint\")",
+        "MC-TEST-E704351B3F9A0C5372EA": "It_rejects_delayed_callbacks_from_the_invalidated_attempt(\"scan\")",
+        "MC-TEST-1C76DA5C1830AAC50C25": "It_renews_from_ends_at_or_above_durable_progress(12)",
+        "MC-TEST-9E0B60E4C2FF405E0784": "It_renews_from_ends_at_or_above_durable_progress(13)"
+      }
+    },
+    {
+      "assembly": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit",
       "fixture": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_renewal_durability",
       "invariants": [
         "CDC-INV-13"
@@ -2262,7 +2276,8 @@
         "MC-TEST-6A248DC061A95772C9C5": "It_keeps_partition_completion_independent_and_accepts_an_empty_partition",
         "MC-TEST-00EF6EEF85A1D0B7BBA7": "It_refuses_checkpoint_regression",
         "MC-TEST-E2634A57477A7BB36FB2": "It_refuses_to_checkpoint_an_unfinished_state_write",
-        "MC-TEST-E18C8778F188345F1B08": "It_refuses_to_scan_past_an_unfinished_state_write"
+        "MC-TEST-E18C8778F188345F1B08": "It_refuses_to_scan_past_an_unfinished_state_write",
+        "MC-TEST-1F497890369E292A0576": "It_rejects_ends_below_durable_progress_before_changing_any_partition_barrier"
       }
     },
     {

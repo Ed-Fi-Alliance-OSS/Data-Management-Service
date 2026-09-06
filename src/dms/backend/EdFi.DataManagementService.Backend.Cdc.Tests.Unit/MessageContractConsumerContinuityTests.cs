@@ -529,6 +529,107 @@ public class Given_MessageContractConsumerContinuity_fault_recovery(MessageContr
 
 [TestFixture]
 [Category("CdcMessageContract")]
+[Property("ScenarioId", "MC-CONSUMER-CONTINUITY-DURABLE-ENDS")]
+public class Given_MessageContractConsumerContinuity_renewal_after_incremental_progress
+{
+    private MessageContractConsumerBootstrap _consumer = null!;
+    private MessageContractConsumerScan _oldScan = null!;
+    private MessageContractPartitionBounds[] _bounds = [];
+    private int _observations;
+
+    [SetUp]
+    public void Setup()
+    {
+        _observations = 0;
+        _bounds = [new(0, 10, 11), new(1, 30, 30)];
+        _consumer = MessageContractConsumerContinuityData.Valid(() =>
+        {
+            _observations++;
+            return _bounds;
+        });
+        _oldScan = _consumer.StartPartitionScan(0);
+        MessageContractConsumerBootstrapData.Apply(_consumer, _oldScan, 11);
+        _consumer.CompleteCheckpoint(_oldScan, 12);
+        _consumer.AdvanceTime(TimeSpan.FromHours(1));
+    }
+
+    [Test]
+    public void It_discards_state_and_restarts_every_partition_when_the_end_contradicts_durable_progress()
+    {
+        _consumer.IsValid.Should().BeTrue();
+        _consumer.Documents.Should().ContainSingle();
+        _consumer.Barriers[0].EndOffset.Should().Be(11);
+        _consumer.DurableNextOffsets[0].Should().Be(12);
+        _consumer.Checkpoints[0].Should().Be(12);
+
+        RejectStaleEnd();
+
+        _consumer.IsValid.Should().BeFalse();
+        _consumer.State.Should().Be(MessageContractBootstrapState.AwaitingScan);
+        _consumer.Documents.Should().BeEmpty();
+        _consumer.Checkpoints.Should().BeEmpty();
+        _consumer.RenewalInProgress.Should().BeFalse();
+        _consumer.Attempt.Should().Be(2);
+        _observations.Should().Be(2);
+        _consumer.Barriers.Values.Should().BeEquivalentTo(_bounds);
+        foreach (var partition in _bounds)
+        {
+            _consumer
+                .StartPartitionScan(partition.Partition)
+                .NextOffset.Should()
+                .Be(partition.EarliestOffset);
+        }
+    }
+
+    [TestCase("scan")]
+    [TestCase("checkpoint")]
+    public void It_rejects_delayed_callbacks_from_the_invalidated_attempt(string callback)
+    {
+        RejectStaleEnd();
+        _consumer.StartPartitionScan(0);
+        Action delayed =
+            callback == "scan"
+                ? () => _consumer.CompleteScan(_oldScan, 12)
+                : () => _consumer.CompleteCheckpoint(_oldScan, 12);
+        delayed
+            .Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("Consumer scan belongs to an inactive bootstrap attempt.");
+        _consumer.IsValid.Should().BeFalse();
+        _consumer.Checkpoints.Should().BeEmpty();
+        _consumer.DurableNextOffsets[0].Should().Be(5);
+    }
+
+    [TestCase(12)]
+    [TestCase(13)]
+    public void It_renews_from_ends_at_or_above_durable_progress(long end)
+    {
+        _consumer.BeginRenewal(new Dictionary<int, long> { [0] = end, [1] = 30 });
+        _consumer.StartPartitionScan(0).NextOffset.Should().Be(12);
+        MessageContractConsumerBootstrapData.ScanAndCheckpoint(_consumer, 0, end);
+        _consumer.RenewalInProgress.Should().BeTrue();
+        MessageContractConsumerBootstrapData.ScanAndCheckpoint(_consumer, 1, 30);
+        _consumer.RenewalInProgress.Should().BeFalse();
+        _consumer.IsValid.Should().BeTrue();
+        _consumer.Attempt.Should().Be(1);
+        _consumer.Documents.Should().ContainSingle();
+        _consumer.ProofCompletedAt.Should().Be(_consumer.Now);
+    }
+
+    private void RejectStaleEnd()
+    {
+        // Lower fresh earliest offsets also ensure old callbacks cannot pass via numeric validation alone.
+        _bounds = [new(0, 5, 11), new(1, 20, 30)];
+        Action capture = () => _consumer.BeginRenewal(new Dictionary<int, long> { [0] = 11, [1] = 30 });
+        capture
+            .Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("Invalid consumer end-offset observation.");
+    }
+}
+
+[TestFixture]
+[Category("CdcMessageContract")]
 [Property("ScenarioId", "MC-CONSUMER-CONTINUITY-OBSERVATIONS")]
 public class Given_MessageContractConsumerContinuity_uncertain_barrier_observations
 {

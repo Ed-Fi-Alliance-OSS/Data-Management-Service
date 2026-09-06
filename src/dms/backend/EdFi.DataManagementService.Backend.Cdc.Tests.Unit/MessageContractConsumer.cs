@@ -109,7 +109,9 @@ public sealed class MessageContractConsumer(DateTimeOffset now)
         if (
             endOffsets.Count != _assignment.Count
             || _assignment.Values.Any(p =>
-                !endOffsets.TryGetValue(p.Partition, out long end) || end < p.EndOffset
+                !endOffsets.TryGetValue(p.Partition, out long end)
+                || end < p.EndOffset
+                || end < _durableNextOffsets[p.Partition]
             )
         )
         {
