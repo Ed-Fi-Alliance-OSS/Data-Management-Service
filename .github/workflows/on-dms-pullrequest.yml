@@ -605,6 +605,7 @@ jobs:
       - name: Run CDC Message Contract Deterministic Integration Checks
         run: >-
           dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/bin/${{ env.CONFIGURATION }}/net10.0/EdFi.DataManagementService.Backend.Cdc.Tests.Integration.dll
+          --no-build
           --filter "Category=CdcMessageContract&Category!=DatabaseIntegration"
           --results-directory TestResults/cdc-message-contract-unit
           --logger "trx;LogFileName=cdc-message-contract-deterministic.trx"
@@ -1426,11 +1427,9 @@ jobs:
 
       - name: Pull Qualified CDC Connect Image
         id: cdc-connect-image
-        run: |
-          docker pull "$env:CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE"
-          if ($LASTEXITCODE -ne 0) {
-            throw "Failed to pull CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE for CDC qualification."
-          }
+        uses: ./.github/actions/pull-ci-images
+        with:
+          images: ${{ env.CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE }}
 
       - name: Verify Packaged Scenario Traceability
         run: |
