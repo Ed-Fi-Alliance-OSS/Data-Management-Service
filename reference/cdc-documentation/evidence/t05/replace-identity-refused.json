@@ -1,0 +1,255 @@
+{
+  "contractVersion": 1,
+  "operationId": "operation-1",
+  "observedAt": "2026-08-28T09:00:03+00:00",
+  "targetIdentity": {
+    "deploymentKey": "dms",
+    "tenantKey": "default",
+    "dataStoreId": "1",
+    "instanceKey": "binding",
+    "generation": 7,
+    "provider": "postgresql"
+  },
+  "admissionState": "unknown",
+  "primaryBlockingCategory": "statusObservationUnavailable",
+  "steps": {
+    "binding": {
+      "state": "unknown",
+      "category": "statusObservationUnavailable",
+      "observedAt": "2026-08-28T09:00:03+00:00",
+      "message": "binding state unavailable"
+    },
+    "guardedTrackingActivation": {
+      "state": "unknown",
+      "category": "statusObservationUnavailable",
+      "observedAt": "2026-08-28T09:00:03+00:00",
+      "message": "guarded tracking activation unavailable"
+    },
+    "providerSetup": {
+      "state": "unknown",
+      "category": "statusObservationUnavailable",
+      "observedAt": null,
+      "message": "providerSetup observation unavailable"
+    },
+    "connectorAndTopicValidation": {
+      "state": "unknown",
+      "category": "statusObservationUnavailable",
+      "observedAt": null,
+      "message": "connector/topic validation unavailable"
+    },
+    "firstProjectionCaughtUp": {
+      "state": "unknown",
+      "category": "statusObservationUnavailable",
+      "observedAt": null,
+      "message": "firstProjectionCaughtUp observation unavailable"
+    },
+    "providerBarrier": {
+      "state": "unknown",
+      "category": "statusObservationUnavailable",
+      "observedAt": null,
+      "message": "providerBarrier observation unavailable"
+    },
+    "sourceHistory": {
+      "state": "unknown",
+      "category": "statusObservationUnavailable",
+      "observedAt": null,
+      "message": "sourceHistory observation unavailable"
+    },
+    "secondProjectionCaughtUp": {
+      "state": "unknown",
+      "category": "statusObservationUnavailable",
+      "observedAt": null,
+      "message": "projection observation unavailable"
+    },
+    "lag": {
+      "state": "unknown",
+      "category": "statusObservationUnavailable",
+      "observedAt": null,
+      "message": "lag observation unavailable"
+    }
+  },
+  "diagnostics": [
+    {
+      "code": "replaceSourceRefused",
+      "category": "sourceMismatch",
+      "severity": "error",
+      "component": "providerSetup",
+      "observedAt": "2026-08-28T09:00:03+00:00",
+      "message": "CDC source replacement requires the replacing sources identity to have been rotated away from the generation it replaces.",
+      "retryable": false,
+      "artifactKind": "cdcSourceReplacement",
+      "artifactName": null,
+      "expected": "a replaceable source and a new binding generation",
+      "observed": "retained"
+    },
+    {
+      "code": "missingRequiredField",
+      "category": "missingRequiredField",
+      "severity": "error",
+      "component": "observationValidation",
+      "observedAt": "2026-08-28T09:00:03+00:00",
+      "message": "Missing required field projection.",
+      "retryable": false,
+      "artifactKind": null,
+      "artifactName": null,
+      "expected": null,
+      "observed": null
+    },
+    {
+      "code": "missingRequiredField",
+      "category": "missingRequiredField",
+      "severity": "error",
+      "component": "observationValidation",
+      "observedAt": "2026-08-28T09:00:03+00:00",
+      "message": "Missing required field providerSetup.",
+      "retryable": false,
+      "artifactKind": null,
+      "artifactName": null,
+      "expected": null,
+      "observed": null
+    },
+    {
+      "code": "missingRequiredField",
+      "category": "missingRequiredField",
+      "severity": "error",
+      "component": "observationValidation",
+      "observedAt": "2026-08-28T09:00:03+00:00",
+      "message": "Missing required field providerBarrier.",
+      "retryable": false,
+      "artifactKind": null,
+      "artifactName": null,
+      "expected": null,
+      "observed": null
+    },
+    {
+      "code": "missingRequiredField",
+      "category": "missingRequiredField",
+      "severity": "error",
+      "component": "observationValidation",
+      "observedAt": "2026-08-28T09:00:03+00:00",
+      "message": "Missing required field sourceHistory.",
+      "retryable": false,
+      "artifactKind": null,
+      "artifactName": null,
+      "expected": null,
+      "observed": null
+    },
+    {
+      "code": "missingRequiredField",
+      "category": "missingRequiredField",
+      "severity": "error",
+      "component": "observationValidation",
+      "observedAt": "2026-08-28T09:00:03+00:00",
+      "message": "Missing required field kafkaPolicy.",
+      "retryable": false,
+      "artifactKind": null,
+      "artifactName": null,
+      "expected": null,
+      "observed": null
+    },
+    {
+      "code": "missingRequiredField",
+      "category": "missingRequiredField",
+      "severity": "error",
+      "component": "observationValidation",
+      "observedAt": "2026-08-28T09:00:03+00:00",
+      "message": "Missing required field connectOffsetStore.",
+      "retryable": false,
+      "artifactKind": null,
+      "artifactName": null,
+      "expected": null,
+      "observed": null
+    },
+    {
+      "code": "missingRequiredField",
+      "category": "missingRequiredField",
+      "severity": "error",
+      "component": "observationValidation",
+      "observedAt": "2026-08-28T09:00:03+00:00",
+      "message": "Missing required field connectorConfig.",
+      "retryable": false,
+      "artifactKind": null,
+      "artifactName": null,
+      "expected": null,
+      "observed": null
+    },
+    {
+      "code": "missingRequiredField",
+      "category": "missingRequiredField",
+      "severity": "error",
+      "component": "observationValidation",
+      "observedAt": "2026-08-28T09:00:03+00:00",
+      "message": "Missing required field connectorRuntime.",
+      "retryable": false,
+      "artifactKind": null,
+      "artifactName": null,
+      "expected": null,
+      "observed": null
+    },
+    {
+      "code": "missingRequiredField",
+      "category": "missingRequiredField",
+      "severity": "error",
+      "component": "observationValidation",
+      "observedAt": "2026-08-28T09:00:03+00:00",
+      "message": "Missing required field lag.",
+      "retryable": false,
+      "artifactKind": null,
+      "artifactName": null,
+      "expected": null,
+      "observed": null
+    },
+    {
+      "code": "missingRequiredField",
+      "category": "missingRequiredField",
+      "severity": "error",
+      "component": "observationValidation",
+      "observedAt": "2026-08-28T09:00:03+00:00",
+      "message": "Missing required field provisioningProof.",
+      "retryable": false,
+      "artifactKind": null,
+      "artifactName": null,
+      "expected": null,
+      "observed": null
+    },
+    {
+      "code": "missingRequiredField",
+      "category": "missingRequiredField",
+      "severity": "error",
+      "component": "observationValidation",
+      "observedAt": "2026-08-28T09:00:03+00:00",
+      "message": "Missing required field eligibilityObservation.",
+      "retryable": false,
+      "artifactKind": null,
+      "artifactName": null,
+      "expected": null,
+      "observed": null
+    },
+    {
+      "code": "missingRequiredField",
+      "category": "missingRequiredField",
+      "severity": "error",
+      "component": "observationValidation",
+      "observedAt": "2026-08-28T09:00:03+00:00",
+      "message": "Missing required field firstProjectionCaughtUp.",
+      "retryable": false,
+      "artifactKind": null,
+      "artifactName": null,
+      "expected": null,
+      "observed": null
+    },
+    {
+      "code": "statusObservationUnavailable",
+      "category": "statusObservationUnavailable",
+      "severity": "error",
+      "component": "observationValidation",
+      "observedAt": "2026-08-28T09:00:03+00:00",
+      "message": "CDC initial-enable classification requires a resolved physical source fingerprint.",
+      "retryable": true,
+      "artifactKind": null,
+      "artifactName": null,
+      "expected": null,
+      "observed": null
+    }
+  ]
+}

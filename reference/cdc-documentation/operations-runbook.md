@@ -1,8 +1,9 @@
 # CDC Operations Runbook
 
 This runbook covers the shipped deployment-owned CDC operator surface for PostgreSQL and
-SQL Server. Begin with the prerequisites below. Monitoring and incident routing are available below;
-provider setup exercises are available below; recovery procedures remain pending in
+SQL Server. Begin with the prerequisites below, then use the provider setup, monitoring,
+continuity, adoption, and new-database replacement procedures. Remaining authoring and
+live replay are tracked in
 [delivery and evidence](cdc-inv-evidence.md#pending-delivery). Do not infer a runnable
 recovery procedure from a planned section.
 
@@ -317,7 +318,7 @@ and `-SourceDatabaseName`. Use it only when an existing live record belongs to a
 that **never finished and never admitted writes**. The full bootstrap wrapper calls that
 assertion `-ResumeInterruptedCdcEnable`. A live record or currently empty database does
 not prove it. If state is missing or admission history is uncertain, stop and use the
-[continuity route](#route-continuity-incident); adoption instructions belong to T05.
+[continuity route](#route-continuity-incident) or [complete-record adoption](#adopt-missing-binding).
 
 <a id="local-api-smoke"></a>
 ### API upsert/delete observation handoff — unmet E19-06 dependency
@@ -594,8 +595,7 @@ successful stop. Absence of `statusIncidentFenceNotApplied` is not fresh stopped
 read-back. On the next bounded poll, inspect the new runtime evidence; if needed, have the
 Connect operator read the governed connector's persisted `STOPPED` target state and task
 states through the authenticated management interface, preserving only sanitized state
-fields. Do not restart a worker while containment is unverified. Detailed stop/restart
-and live read-back exercises remain T02/T14/T15.
+fields. Do not restart a worker while containment is unverified. Use the [planned stop/restart exercise](#local-stop-restart); live read-back remains T14/T15.
 
 **Interruption/retry:** a timeout can occur after latching or stopping; it is not rollback.
 Preserve the same binding/generation/store and retry the observation after correcting
@@ -637,8 +637,8 @@ and the deployment record. Check network context, qualified image, rendered conn
 settings, declared consumers, and shared-offset policy with the responsible platform
 owner. Do not edit binding identity to match drift or delete shared offsets. Retry
 [CDC observation](#observe-cdc) after an authorized correction; a healthy component does
-not replace continuity evidence. Provider setup exercises are pending T02, security
-procedures T07, and retention/capacity guidance T08 in the [delivery index](cdc-inv-evidence.md#pending-delivery).
+not replace continuity evidence. [Provider setup exercises](#local-setup) are authored; security
+procedures T07 and retention/capacity guidance T08 remain pending in the [delivery index](cdc-inv-evidence.md#pending-delivery).
 
 <a id="route-binding-incident"></a>
 ### Binding and physical-source incident routing
@@ -648,28 +648,344 @@ logical target/generation. A missing record is different from an unreadable stor
 inspect diagnostics and permissions without recreating state. Compare the deployment's
 binding with current source evidence, retaining opaque fingerprints in the incident
 record. A backup alone is not authority to restore a controller record or edit its source.
-Complete-record adoption and physical-source replacement procedures are pending T05/T13;
-use the [binding owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding)
-and [pending handoff](cdc-inv-evidence.md#pending-delivery). Until resolved, no readiness
-or safe restart is established. Correct an invocation/root error and repeat
-[the same-generation observation](#observe-cdc).
+After correcting an invocation/root error, repeat [the same-generation observation](#observe-cdc).
+For a truly missing binding with a complete retained artifact set, follow
+[complete-record adoption](#adopt-missing-binding). For a planned new-database cutover,
+follow [physical-source replacement](#replace-physical-source); a changed fingerprint alone
+is not authorization to replace or adopt. Until resolved, readiness and safe restart are
+unproved. The [binding owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding)
+owns both boundaries.
 
 <a id="route-continuity-incident"></a>
 ### Continuity incident routing
 
-For `unknown`, preserve evidence, correct the unavailable provider/Connect observation,
-and repeat [bounded CDC status](#observe-cdc). Unknown does not itself latch a proved loss;
-a start/resume still requires affirmative continuity. For `lost`, verify durable latching
-and subsequent stopped-state read-back independently, addressing `localStateUnavailable`
-and `statusIncidentFenceNotApplied` with the state-store/Connect operators. Re-poll the
-same generation to retry containment. Do not restart it to see whether the error clears.
+Use [the bounded continuity procedure](#continuity-incident): `unknown` requires restored
+observations before guarded restart; `lost` requires durable latch and independently
+verified fencing of the terminal generation. The procedure separates status, explicit stop,
+and eligible restart. Neither adoption nor source replacement clears terminal loss.
+Detailed destructive retirement remains T06; baseline-replacing repair is
+[deferred](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#contract-change-and-repair-operations).
 
-Loss stays terminal even if provider artifacts reappear or lag becomes small. No v1
-same-topic resnapshot, offset reset, or baseline-replacing recovery is supported. Detailed
-continuity and destructive-retirement procedures remain T05/T06 work; this section routes
-the incident, not a recovery authorization. Follow the
-[continuity owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#source-history-continuity)
-and [deferred repair boundary](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#contract-change-and-repair-operations).
+<a id="incident-command-context"></a>
+## Select an incident target and preserve evidence
+
+**Scope/effect:** read the operator-selected complete binding record and prepare arguments;
+this does not import or repair state. Use this context for the next three procedures.
+Their authority is the [binding owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding)
+and [continuity owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#source-history-continuity).
+
+**Starting directory/prerequisites:** repository root, Bash with `jq`, built CLI, protected
+`CDC_SETTINGS`, `CDC_PROVIDER=postgresql` or `sqlserver`, and the exact absolute
+`CDC_STATE_ROOT` from [deployment state](#deployment-state). Confirm that CMS resolves the
+intended physical database and that the CLI can reach the broker, Connect, and (for status,
+restart, and replacement) DMS status endpoint. Use [configured secret references](#prerequisites);
+a host process needs host-resolvable addresses, even when setup used a one-shot container.
+One controller owns this root; do not overlap operations.
+
+**Target/generation:** set `CDC_RECORD` to the selected existing binding record for a
+continuity incident or outgoing replacement generation. For adoption, select the complete
+operator-supplied record retained independently of the missing state store. Review its
+provenance and all fields against deployment records before using it. A redacted connector
+manifest is not a binding record. Do not copy a fixture into a deployment or fill missing
+identity from topics, offsets, or guessed fingerprints.
+
+```bash
+set -euo pipefail
+umask 077
+incident_dir=$(mktemp -d)
+jq '{version, deploymentKey, tenantKey, dataStoreId, instanceKey, generation,
+     provider, physicalSourceFingerprint, connectorName, topicName,
+     partitionCount, partitionerAlgorithm, contractVersion}' "$CDC_RECORD"
+cdc_tenant=$(jq -er '.tenantKey' "$CDC_RECORD")
+if [ "$cdc_tenant" = default ]; then cdc_tenant=''; fi
+cdc_generation=$(jq -er '.generation' "$CDC_RECORD")
+cdc_target=(--tenant-key "$cdc_tenant"
+  --data-store-id "$(jq -er '.dataStoreId' "$CDC_RECORD")"
+  --deployment-key "$(jq -er '.deploymentKey' "$CDC_RECORD")"
+  --instance-key "$(jq -er '.instanceKey' "$CDC_RECORD")")
+cdc_context=(--cdc-binding-state-path "$CDC_STATE_ROOT"
+  --settings "$CDC_SETTINGS" --environment Production --datastore "$CDC_PROVIDER" --json)
+```
+
+For example, a record for synthetic `cdc-lab`, tenant `default`, data store `42`, instance
+`school-year-lab`, generation `1` selects CLI `--tenant-key '' --data-store-id 42
+--deployment-key cdc-lab --instance-key school-year-lab --generation 1`. The record keeps
+`default`; only the CLI argument becomes empty. Literal `--tenant-key default` names a
+tenant the deployment does not have. Use the translation for **every** CDC verb.
+
+**Expected result/verification:** `jq` and shell selection exit `0` and print identity
+fields, not a CDC outcome. Stop on a read/parse error. Manually confirm every selected
+field, including provider, against configuration, current physical-source evidence, and
+state-root/mount provenance. Command flags do not rewrite the supplied adoption record;
+its identity governs the import. Preserve protected copies of records, observations,
+native exit codes, and sanitized platform evidence with timestamps. Keep the original
+records immutable and retain binding, incident, and retirement history.
+
+**Interruption/retry:** these reads mutate no deployment state. Re-establish the same
+selection if the shell ends. Each command below captures its native exit independently;
+use a new incident directory for a later attempt so earlier evidence is not overwritten.
+[T05 evidence and pending live replay](cdc-inv-evidence.md#t05-continuity-review).
+
+<a id="continuity-incident"></a>
+## Unknown continuity and terminal history loss
+
+**Scope/effect:** status observes the selected generation and, on proved loss, durably
+latches and fences it. An explicit stop fences only its connector; restart requests a start
+after the shipped continuity and artifact guards. These operations preserve connector
+configuration, committed offsets, topics, provider capture artifacts, and deployment
+history. They do not change ordinary DMS API routing. Follow
+[continuity](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#source-history-continuity)
+and [operational readiness scope](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#v1-readiness-scope).
+
+**Starting directory/prerequisites and selection:** use the repository-root Bash
+[incident context](#incident-command-context), with the existing binding and generation.
+Verify an incident is not actually a wrong root/mount or physical-source mismatch using
+[binding routing](#route-binding-incident). Configure bounded provider/Connect timeouts via
+the [catalog](../../docs/CONFIGURATION.md#cdc-timeouts-and-durable-state); collect one
+observation per attempt, not an unbounded retry loop.
+
+```bash
+if dotnet run --no-build --project src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin -- \
+  cdc status "${cdc_target[@]}" --generation "$cdc_generation" "${cdc_context[@]}" \
+  > "$incident_dir/status.json" 2> "$incident_dir/status.stderr.txt"; then
+  status_exit=0
+else
+  status_exit=$?
+fi
+```
+
+**Expected result/decision:** `CdcStatus.readiness` may be `ready`, `notReady`, or `unknown`,
+all with exit `0` when an answer was produced. Inspect the target identity, all components,
+and diagnostics as in [CDC observation](#observe-cdc). Specifically:
+
+- `sourceHistory.continuity=unknown`: retain evidence, correct unavailable provider/Connect
+  access or observation inputs, then repeat status for the same generation. Unknown does
+  not itself prove loss or latch an incident. Keep failed/stopped connectors stopped; do
+  not start/resume until the existing guards can affirm continuity. A running connector,
+  small lag, or the expected artifact name alone is insufficient evidence.
+- `sourceHistory.continuity=lost`: preserve the terminal generation. Inspect
+  `incidentLatched`, `statusSourceHistoryLatchNotDurable`, `localStateUnavailable`, and
+  `statusIncidentFenceNotApplied`. Restore store access for a failed latch and Connect
+  access for a failed fence, then re-poll the same generation to retry containment. Later
+  polls retain the original latch. No restart, adoption, or replacement clears this loss.
+- `healthy`: this is one component's evidence. Any binding, provider, policy, offset-store,
+  or connector-configuration refusal still blocks a guarded restart.
+
+**Explicit containment command:** if publication must be stopped, run this while Connect
+is reachable, with the same binding. This is an operator action, not a prerequisite to
+[adoption](#adopt-missing-binding), which requires an already-running artifact set.
+
+```bash
+if dotnet run --no-build --project src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin -- \
+  cdc stop "${cdc_target[@]}" --generation "$cdc_generation" "${cdc_context[@]}" \
+  > "$incident_dir/stop.json" 2> "$incident_dir/stop.stderr.txt"; then
+  stop_exit=0
+else
+  stop_exit=$?
+fi
+```
+
+**Stop verification:** applied stop or an absent connector exits `0`; a fence not attempted
+or not applied exits `10`. The returned `CdcStatus` can remain `notReady` or `unknown`.
+Inspect `stopNotAttempted` / `stopNotApplied` diagnostics and have the Connect
+operator verify the named connector's persisted `STOPPED` target state and tasks. A loss
+latch or accepted stop alone does not prove persisted containment. The runtime component
+in a status response was collected before its automatic fence; do not read it as fresh
+post-fence evidence. Follow [planned worker stop/restart](#local-stop-restart) before
+stopping the worker; its startup can restore a running connector before any status poll.
+
+**Guarded restart command — only for a nonterminal generation:** after observations have
+been restored and continuity can be proved, use this for the stopped/failed connector.
+The controller rechecks continuity and artifacts at execution; an earlier healthy poll
+is not authorization to use Connect's direct start/resume surface.
+
+```bash
+if dotnet run --no-build --project src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin -- \
+  cdc restart "${cdc_target[@]}" --generation "$cdc_generation" "${cdc_context[@]}" \
+  > "$incident_dir/restart.json" 2> "$incident_dir/restart.stderr.txt"; then
+  restart_exit=0
+else
+  restart_exit=$?
+fi
+```
+
+**Restart verification:** applied restart exits `0` even if returned readiness is
+`notReady`/`unknown`; `restartNotAttempted` or `restartNotApplied` exits `10`. Missing
+contracts require stderr and the [CLI exit reference](../../src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin/README.md#exit-codes).
+Repeat bounded status afterward to observe current component evidence, without treating
+restart success as end-to-end readiness. [Captured stop/restart contracts](evidence/t12/cdc-contract-captures.json)
+and [loss/fence observations](cdc-inv-evidence.md#t03-monitoring-review) are fixture evidence;
+live provider/worker read-back remains T14/T15.
+
+**Interruption/retry:** timeout is not rollback; latching or fencing may have committed.
+Keep the same target, generation, and state root and inspect/retry containment after fixing
+reachability. Never restart a terminal generation to see whether it clears. A recreated
+slot/capture instance, offset reset, or same-topic resnapshot cannot establish continuity.
+There is no v1 exact post-admission replacement-baseline recipe. Keep evidence for explicit
+retirement (detailed procedure pending T06) or escalation to the
+[deferred repair owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#contract-change-and-repair-operations).
+
+<a id="adopt-missing-binding"></a>
+## Adopt a complete record after missing-state diagnosis
+
+**Scope/effect:** `cdc adopt` validates an existing complete governed artifact set and
+atomically imports its operator-supplied binding. It provisions no provider objects,
+topics, ACLs, offsets, or connector configuration. It is not initial enablement and
+cannot infer missing identity. Authority:
+[binding/adoption](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding).
+
+**Starting directory/prerequisites and selection:** use the repository-root Bash
+[incident context](#incident-command-context) with `CDC_RECORD` naming the full proposed
+binding JSON, not a status response, manifest, or proof wrapper. First rule out a wrong
+state root/mount, permissions, or inaccessible storage. A trusted backup may supply the
+complete proposed record, but has no import authority without live validation. Keep any
+surviving incident/retirement history; do not delete state to create a missing-record case.
+Review provider, target, both opaque keys, generation, fingerprint, governed names,
+partition count/algorithm, and versions against the intended deployment.
+
+The existing connector **and its sole task must already be running**, with its committed
+streaming offset under the matching source partition and healthy retained history. A
+stopped, paused, failed, absent, or incomplete artifact set is refused. Do not stop first
+as a generic adoption step, or start a stopped connector without continuity authority to
+make it adoptable. Missing binding plus an unsafe/stopped artifact set has no repair path
+through this verb; keep containment and escalate to the binding/repair owner. On a lost
+history adoption refuses without importing or latching an incident, so adoption refusal
+itself supplies no containment guarantee. The DMS status endpoint is not an adoption
+prerequisite; provider, Connect, broker, policy, and durable-state access still are.
+
+```bash
+if dotnet run --no-build --project src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin -- \
+  cdc adopt "${cdc_target[@]}" --generation "$cdc_generation" "${cdc_context[@]}" \
+  --binding-json "$CDC_RECORD" \
+  > "$incident_dir/adopt.stdout.txt" 2> "$incident_dir/adopt.stderr.txt"; then
+  adopt_exit=0
+else
+  adopt_exit=$?
+fi
+```
+
+**Expected result:** success exits `0` and stdout is a `CdcAdoptionProof`, with
+`contractVersion`, `operationId`, `verifiedAt`, complete `binding`, and
+`verificationResults`. It has no `outcome=completed` field. Every issued verification is
+`exactMatch`, including physical source, provider artifacts, topics, ACLs, complete Kafka
+policy/record budget, shared offset store, connector, configuration, streaming offsets,
+and source history. See [actual proof](evidence/t05/adopt-completed.json).
+A controller refusal exits `10` (`rejectedNoMutation` internally), emits **no JSON proof
+and no stdout contract**, and writes diagnostic code/message lines to stderr even with
+`--json`: [stopped-connector capture](evidence/t05/adopt-stopped-refused.stderr.txt).
+This also applies when the controller could not persist the import; do not infer a generic
+store-error exit from a diagnostic category. Invalid input JSON is `64`; early process
+errors follow the [CLI reference](../../src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin/README.md#exit-codes).
+
+**Verification:** compare the proof's entire binding with the independently supplied
+record and read the durable record back from the intended root. The live checks validate
+policy; the proof does not grant permissions or repair drift. Then run bounded
+[CDC status](#continuity-incident) with that exact selection when the status endpoint is
+available. Import success is not a current readiness or consumer-baseline certificate.
+
+**Interruption/retry:** retain the complete input, surviving state, and raw protected
+output. Check whether import committed, then reissue with the identical record and target
+after resolving observation/permission failures. The atomic import requires an existing
+record to match exactly; a mismatch is not an overwrite opportunity. Never infer offsets
+from a backup, recreate slots/capture instances, edit identity, or use enablement to adopt
+orphan artifacts. [T05 review](cdc-inv-evidence.md#t05-continuity-review) supports authoring;
+additional assertions T13 and real provider replay T14/T15 remain pending.
+
+<a id="replace-physical-source"></a>
+## Replace a source through the new-database workflow
+
+**Scope/effect:** this is a planned publication cutover for a target previously enabled
+through the v1 new-database workflow. It fences the explicitly named outgoing connector,
+then runs initial enablement for a higher generation on a different physical source.
+The old generation is retained, including its connector configuration and offsets, for
+later guarded retirement. Every per-generation governed name is new; shared Connect
+worker state remains shared. It is not a restore utility, identity-rotation tool,
+cache-ahead repair, terminal-history-loss recovery, or same-topic reset. Authority:
+[source binding/replacement](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding)
+and [initial readiness](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#enablement-and-initial-readiness-sequence).
+
+**Starting directory/prerequisites:** repository-root Bash and the
+[incident context](#incident-command-context), with `CDC_RECORD` selecting the outgoing
+binding. Preserve its original-source secret reference for retirement; once CMS resolves
+the replacement, that current connection cannot prove cleanup of the outgoing database.
+Arrange external writer admission and configuration handoffs with the deployment owner.
+The CLI consumes the explicit provisioning assertions below; it does not install a runtime
+writer gate or repoint CMS for the operator.
+
+The replacement database must have been created for this CDC provisioning and have never
+admitted a canonical write. Its source identity must **already** differ from the outgoing
+fingerprint; rotation is outside this command. A copied/restored identity does not qualify,
+and this runbook supplies no manual rotation SQL. Obtain the new-database provisioning
+handoff before running the command; if it is absent, the prerequisite is unmet. Configure
+CMS to resolve this target to that replacement, the same provider, explicit projection
+targets, DMS status access, qualified image, credentials, and durable root. Check the
+outgoing generation has no terminal incident and the replacement has a clear cache-ahead
+latch. Do not rerun destructive E2E setup over an established deployment as a cutover tool.
+
+**Target/generations:** review outgoing and proposed new identities before mutation.
+Use explicit higher `--generation`, never a generation inferred by deleting state. This
+synthetic example replaces `1` with `2`; set `cdc_new_generation=2` only after verifying
+that selection against all retained bindings/retirements and governed artifacts. Other
+live generations of this target, including retained older bindings not named by this
+replacement, can refuse the preflight; use their retain/retire disposition with the binding
+owner instead of bypassing it. A first attempt requires the new generation's artifact
+names to be unused. A retry preserves its already-created exact binding.
+
+```bash
+cdc_previous_generation=$cdc_generation
+cdc_new_generation=2
+if dotnet run --no-build --project src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin -- \
+  cdc replace-source "${cdc_target[@]}" "${cdc_context[@]}" \
+  --previous-generation "$cdc_previous_generation" --generation "$cdc_new_generation" \
+  --confirm cdcSourceReplacement \
+  --database-creation-mode created-for-initial-cdc-provisioning \
+  --write-admission closed-never-opened \
+  > "$incident_dir/replace.json" 2> "$incident_dir/replace.stderr.txt"; then
+  replace_exit=0
+else
+  replace_exit=$?
+fi
+```
+
+**Expected result/verification:** the shared result is `CdcAdmission`, not `CdcStatus` or
+a cleanup proof. `admissionState=admitted` exits `0`; `notAdmitted` and `unknown` exit `12`
+when returned by the admission controller, including refusals settled before fencing.
+Inspect all `steps` and `diagnostics`, not only `primaryBlockingCategory` or the exit code.
+Early invocation/configuration failures may produce no admission contract.
+
+| Captured fixture | Outcome / exit | Decision evidence |
+| --- | --- | --- |
+| [Replacement admitted](evidence/t05/replace-admitted.json) | `admitted` / `0` | New generation's identity, satisfied admission steps, no diagnostics. |
+| [Existing bound Tracking retry](evidence/t05/replace-resumed.json) | `admitted` / `0` | Same new generation resumed after binding/activation committed. |
+| [Outgoing fence refused](evidence/t05/replace-fence-refused.json) | `unknown` / `12` | `replaceSourceRefused`, `connectorNotRunning`, `retryable=true`; outgoing publication may continue. |
+| [Source identity unchanged](evidence/t05/replace-identity-refused.json) | `unknown` / `12` | `replaceSourceRefused`, `sourceMismatch`, `retryable=false`; missing prerequisite, not an automatic retry. |
+
+The refusal captures include additional `missingRequiredField` diagnostics from admission
+classification before evidence collection; these are preserved, not omitted to make a
+refusal look ready. All captures use synthetic default tenant/data store `1`, old generation
+`6`, new `7`, and fake collaborators; they are not results from the example's `1` to `2`
+cutover. [Capture provenance](cdc-inv-evidence.md#t05-continuity-review).
+
+After admission, verify the outgoing connector's persisted fence, retained old record and
+artifacts, and the new record's different fingerprint and governed names. Observe bounded
+`cdc status` with `--generation "$cdc_new_generation"` using the same context. Keep the
+old selection for later original-source retirement. Coordinate independent consumer
+namespace/bootstrap evidence with the [consumer owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#public-consumer-bootstrap);
+the command does not migrate consumer stores. New status is eventual operational evidence,
+not an exact post-admission baseline guarantee.
+
+**Interruption/retry:** read both generations and Connect's actual state before acting.
+A timeout after the fence can leave the outgoing connector stopped with no admitted new
+generation. Keep external write admission closed. Reissue the same replacement with the
+same previous/new generations and provisioning assertions only while those assertions
+remain true; the controller revalidates and can resume the new generation's exact binding
+in `Disabled` or eligible empty `Tracking`. Do not fall back to `cdc enable`: the retained
+outgoing binding requires the replacement's fence context. Do not rotate identity again,
+advance generation to evade a refusal, or automatically restart the outgoing connector.
+Once writes have been admitted, initial-enable retry is no longer the restart route; use
+[guarded continuity procedures](#continuity-incident). Terminal loss stays terminal and
+requires the [deferred repair handoff](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#contract-change-and-repair-operations).
+T13 assertions and T14/T15 provider replay remain pending; T16 reconciles final evidence.
 
 <a id="projection-repair-handoff"></a>
 ## Projection and CDC repair handoff

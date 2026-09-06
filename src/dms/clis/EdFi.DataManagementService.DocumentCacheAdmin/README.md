@@ -166,15 +166,20 @@ fallback to the data store's current connection. The physical-source proof above
 option selects which database is inspected, and the fingerprint comparison still decides whether
 the retirement may proceed.
 
-Each `cdc` verb writes one shared CDC contract document, selected by the verb rather than
+When a `cdc` verb produces a contract, its type is selected by the verb rather than
 by the outcome:
 
 | Verb | Shared contract | Reported outcome values |
 | --- | --- | --- |
-| `cdc enable` | `CdcAdmission` | `admitted`, `notAdmitted`, `unknown` |
+| `cdc enable`, `cdc replace-source` | `CdcAdmission` | `admitted`, `notAdmitted`, `unknown` |
 | `cdc status`, `cdc restart`, `cdc stop` | `CdcStatus` | `ready`, `notReady`, `unknown` |
-| `cdc adopt` | `CdcAdoptionProof` | `completed`, `rejectedNoMutation` |
+| `cdc adopt` | `CdcAdoptionProof` on success; no contract on refusal | `completed`; refusal is `rejectedNoMutation` internally |
 | `cdc retire` | `CdcCleanupProof` | `completed`, `rejectedNoMutation`, `incompleteRetryable` |
+
+A successful adoption proof has `binding` and `verificationResults`, not an `outcome`
+property. When adoption refuses, `--json` leaves stdout empty and writes diagnostic
+code/message lines to stderr; no partial or rejected proof is issued. See the
+[complete-record adoption procedure](../../../../reference/cdc-documentation/operations-runbook.md#adopt-missing-binding).
 
 Without `--json`, a `cdc` verb prints its outcome followed by the governed names it
 operated on — connector name, provider, data store identifier, the opaque instance key,
@@ -194,9 +199,10 @@ no deployment key configured. Nothing in those records states that a target was 
 published, so the provider never reports `internalOnly` and these three commands are rejected
 in every case. Treat `downstreamHistoryPresentOrUnknown` as the expected outcome.
 
-All commands support `--json`. In JSON mode, stdout contains exactly one shared contract
-document and no prose. Logs, warnings, progress, and sanitized diagnostics go to stderr or
-configured log sinks. Status effective settings and administrative command durations use
+All commands support `--json`. In JSON mode, stdout contains one shared contract
+document when produced and no prose. A CDC refusal that produces no contract leaves
+stdout empty and reports diagnostics on stderr. Logs, warnings, progress, and sanitized
+diagnostics go to stderr or configured log sinks. Status effective settings and administrative command durations use
 numeric `*Seconds` JSON fields; administrative command results expose elapsed workflow time
 as `elapsedCommandTimeSeconds`.
 
@@ -411,6 +417,13 @@ The `cdc` verbs use the same codes, classified from the shared CDC contract they
 | A retirement, restart, or stop refused before it changed anything. | 10 |
 | The binding state store could not be read or written. | 11 |
 | Write admission did not open, or a retirement removed only part of the artifact set. | 12 |
+
+For `cdc replace-source`, a returned `CdcAdmission` with `notAdmitted` or `unknown`
+exits `12`, including a controller refusal settled before fencing. Inspect its diagnostics:
+`replaceSourceRefused` with `retryable=false` requires prerequisite correction, not an
+automatic retry merely because the process exited `12`. An adoption controller refusal
+(including a refused durable import) exits `10` with no proof; early invocation/configuration
+failures follow their own codes. See [replacement outcomes and retries](../../../../reference/cdc-documentation/operations-runbook.md#replace-physical-source).
 
 Write admission that did not open is retryable rather than a rejection: the binding record
 is made durable before any external artifact is created, so such a run may already have

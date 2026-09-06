@@ -1,0 +1,6 @@
+adopt-completed: exit=0; stderrLength=0
+adopt-stopped-refused: exit=10; stderrLength=130
+replace-admitted: exit=0; stderrLength=0
+replace-resumed: exit=0; stderrLength=0
+replace-fence-refused: exit=12; stderrLength=0
+replace-identity-refused: exit=12; stderrLength=0

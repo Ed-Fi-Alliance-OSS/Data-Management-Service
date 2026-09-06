@@ -4,8 +4,11 @@ Start with the [operations runbook](operations-runbook.md#prerequisites) for dep
 prerequisites and procedure conventions. This reference set is being delivered in
 DMS-1326: configuration, [monitoring/incident routing](operations-runbook.md#monitoring),
 [local provider setup and stop/restart](operations-runbook.md#local-setup),
-and the [projection/repair handoff](operations-runbook.md#projection-repair-handoff)
-are available; live provider replay and recovery authoring remain pending in the
+[projection/repair handoff](operations-runbook.md#projection-repair-handoff),
+[continuity](operations-runbook.md#continuity-incident),
+[complete-record adoption](operations-runbook.md#adopt-missing-binding), and
+[new-database replacement](operations-runbook.md#replace-physical-source)
+are available; remaining authoring and live provider replay are tracked in the
 [evidence index](cdc-inv-evidence.md).
 Pending work is not evidence that an operator procedure has passed.
 
