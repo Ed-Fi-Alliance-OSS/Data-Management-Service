@@ -90,6 +90,50 @@ property absence, nulls, and token kinds. Numbers compare using significant digi
 and an arbitrary-precision base-10 exponent, without double/decimal conversion.
 Object ordering and equivalent number spelling/scale are not contract differences.
 
+## Serialized routing (MC-04)
+
+`Given_MessageContractRouting` derives provider inputs from the shared ordinary
+upsert and canonical-delete fixtures. Each image-only batch runs deletes before
+upserts, with a fresh transform per record. Missing `before` schema/value, explicit
+null, and a before row lacking `DocumentUuid` all preserve the authoritative key.
+Available matching UUIDs normalize case; conflicts fail with the artifact's stable
+reason. The unavailable marker succeeds only in the pinned SQL Server delete
+before field. PostgreSQL, optional/counterfeit logical before schemas, and cache
+upsert keys/rows cannot use that exception.
+
+The complete excluded-operation matrix is cache delete/truncate and canonical
+create/update/read/truncate. Each runs with valid, malformed, and null keys,
+proving classification drops the record before retained-key validation. A dropped
+observation has neither a public/progress record nor a failure. Tombstones assert
+exact `kafka-null` observations, null value/schema, empty headers, null Connect
+timestamp, and the same lowercase UTF-8 UUID bytes/partition as an upsert.
+
+`partition-vectors.json` records four UUIDs at 1, 3, 7, 10, and 17 partitions.
+Expectations were calculated independently with a standalone Python implementation
+of Kafka's Murmur2 (seed `0x9747b28c`, multiplier `0x5bd1e995`, little-endian words,
+32-bit overflow, positive mask `0x7fffffff`, then partition-count remainder).
+Unsigned hashes for TEMPLATE/MIXED/MAX/VERSIONED are respectively `2849317978`,
+`1821684602`, `3935097074`, and `210376136`; this includes both sign-bit cases.
+The calculation also reproduced all four existing template-probe vectors.
+TEMPLATE at 10 partitions is the existing
+`CdcConnectorTemplatePinnedImageFixture.AssertKafkaMurmur2PartitionerVectorsAsync`
+UUID expectation (partition 0). Tests load fixed expectations; they never derive
+expected partitions from the published partitioner. Every UUID/count runs through
+both real upsert and delete transformation/conversion, including uppercase source
+UUIDs. These synthetic identity variants retain the shared opaque ETag.
+
+Stable runner IDs use `MC-ROUTING-{PG|SQL}-DELETE-{case}`,
+`MC-ROUTING-{PG|SQL}-UPSERT-UNAVAILABLE-{KEY|ROW}`,
+`MC-ROUTING-{PG|SQL}-DROP-{DOCUMENTCACHE|DOCUMENT}-{operation}-{VALID|INVALID|NULL}`,
+`MC-ROUTING-{PG|SQL}-VECTOR-{vector-id}-{count}-{UPSERT|DELETE}`, and
+`MC-ROUTING-{PG|SQL}-BASELINE-UPSERT`. The executable case sources enumerate the
+suffixes; MC-18 owns their invariant mapping. Both provider suites use the same
+categories/prerequisites as MC-03 and start no provider, broker, or Connect worker.
+
+```sh
+dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/EdFi.DataManagementService.Backend.Cdc.Tests.Integration.csproj --filter 'Category=CdcMessageContract&FullyQualifiedName~MessageContractRouting'
+```
+
 ## Reference consumer ordering (MC-14)
 
 `MessageContractConsumer.cs` lives in the CDC unit test project and is linked into
