@@ -316,9 +316,15 @@ try {
 
         $cdcTargetDataStoreId = [long]$configuredDataStoreIds[0]
         $cdcTargetTenantKey = [string]$configuredDataStore.Tenant
-        # The default durable binding state store, which is also the root the destructive teardown
-        # (-d -v, through teardown-local-dms.ps1) resolves and retires from.
-        $cdcBindingStateRoot = [System.IO.Path]::GetFullPath((Join-Path $dockerComposeDir ".cdc-state"))
+        # The durable binding state store, resolved through the one shared resolver rather than named
+        # here. It is also the root the destructive teardown (-d -v, through teardown-local-dms.ps1)
+        # retires from, and that teardown is a separate process that receives no root: it re-resolves
+        # from the same env file and the same ambient value, so the only way the two can agree is for
+        # this side to resolve the same way. A literal here silently replaced an environment-configured
+        # root for the run - the enablement wrote its binding under the literal, the finally below put
+        # the configured value back, and the teardown then found nothing to retire and carried on into
+        # `down -v` over the artifacts the surviving record still governed.
+        $cdcBindingStateRoot = Resolve-CdcBindingStateRoot -EnvValues $envValues
 
         $cdcRuntimeSettings = Get-CdcRuntimeEnvOverride `
             -TenantKey $cdcTargetTenantKey `

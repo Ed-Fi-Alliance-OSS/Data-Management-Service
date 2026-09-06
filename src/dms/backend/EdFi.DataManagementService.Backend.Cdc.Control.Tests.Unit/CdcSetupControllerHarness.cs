@@ -691,6 +691,9 @@ internal sealed class CdcSetupControllerHarness
     public Task<CdcStatus> RestartAsync() =>
         Controller().RestartAsync(TargetRequest(_provider), CancellationToken.None);
 
+    public Task<CdcStatus> StopAsync() =>
+        Controller().StopAsync(TargetRequest(_provider), CancellationToken.None);
+
     public Task<CdcContractReadResult<CdcCleanupProof>> RetireAsync() =>
         Controller()
             .RetireAsync(

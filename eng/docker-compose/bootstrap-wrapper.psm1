@@ -1226,16 +1226,6 @@ function Invoke-BootstrapWrapper {
             }
 
             $cdcTargetDataStoreId = [long]$configuredDataStoreIds[0]
-            # Absolute by now whenever it was supplied: a relative value was normalized against the
-            # caller's working directory before the Push-Location above, so this is the same path
-            # the start phases received and created.
-            $cdcBindingStateRootPath =
-                if ([string]::IsNullOrWhiteSpace($CdcBindingStatePath)) {
-                    [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".cdc-state"))
-                }
-                else {
-                    [System.IO.Path]::GetFullPath($CdcBindingStatePath)
-                }
 
             # The settings are written into this run's own derived env file. If derivation did not
             # happen, the only file to write to would be the caller's own, and this wrapper's
@@ -1246,7 +1236,21 @@ function Invoke-BootstrapWrapper {
 
             # The derived env file is the wrapper's to write; WHICH settings CDC needs in it is the
             # phase's, so the overrides are asked for rather than composed here.
+            Import-Module (Join-Path $PSScriptRoot "env-utility.psm1") -Force
             Import-Module (Join-Path $PSScriptRoot "cdc-enable.psm1") -Force
+
+            # The one shared resolver, not a second copy of its precedence. -CdcBindingStatePath is
+            # absolute by now whenever it was supplied - a relative value was normalized against the
+            # caller's working directory before the Push-Location above - so it reaches the resolver
+            # as the same path the start phases receive and create. What the local copy was missing is
+            # the rest of the order: with no switch it fell straight to ./.cdc-state, consulting
+            # neither an ambient DMS_CDC_BINDING_STATE_PATH nor the env file, and then wrote that
+            # answer into the derived env file below. A base env file naming a custom root was
+            # therefore overwritten for the run, leaving a later teardown against that base file
+            # retiring from the custom root, finding nothing, and removing the volumes anyway.
+            $cdcBindingStateRootPath = Resolve-CdcBindingStateRoot `
+                -EnvValues (ReadValuesFromEnvFile -EnvironmentFile $effectiveEnvFile) `
+                -Path $CdcBindingStatePath
 
             Write-DerivedEnvFile `
                 -BaseEnvironmentFile $effectiveEnvFile `

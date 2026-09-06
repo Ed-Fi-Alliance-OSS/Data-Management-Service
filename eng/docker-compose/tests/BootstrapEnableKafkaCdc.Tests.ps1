@@ -13,6 +13,10 @@ Describe "DMS-1323 CDC infrastructure opt-in" {
         $script:startScriptPath = Join-Path $script:sourceDockerComposeRoot "start-local-dms.ps1"
         $script:startScriptText = Get-Content -LiteralPath $script:startScriptPath -Raw
 
+        # The planned fence the normal stop issues is built here, so this Describe drives the builder
+        # as well as reading the script that calls it.
+        Import-Module (Join-Path $script:sourceDockerComposeRoot "cdc-teardown.psm1") -Force
+
         function script:Get-StartScriptAst {
             $parseErrors = $null
             $ast = [System.Management.Automation.Language.Parser]::ParseFile(
@@ -142,6 +146,68 @@ Describe "DMS-1323 CDC infrastructure opt-in" {
 
             Resolve-CdcBindingStateRoot -EnvValues @{} -Path "" |
                 Should -Be ([System.IO.Path]::GetFullPath((Join-Path $script:sourceDockerComposeRoot ".cdc-state")))
+        }
+    }
+
+    Context "connector fencing across a normal stop" {
+        It "fences every binding's connector before a normal stop, and not only on the CDC opt-in" {
+            # A Kafka Connect worker restores every connector its config topic holds at a RUNNING
+            # target state as soon as it starts, and that topic is on the broker volume a normal stop
+            # retains - so without a persisted fence the next start resumes publishing before any
+            # continuity check can run, which is a start cdc-streaming.md requires to be guarded.
+            # Not conditioned on $EnableKafkaCdc, because the worker starts on any Kafka opt-in
+            # ($enableKafkaInfrastructure): a stack that enabled CDC once and is restarted with only
+            # -EnableKafka would otherwise resume its connector with no CDC code on the path.
+            $script:startScriptText |
+                Should -Match '(?s)if \(-not \$v\) \{.*?Invoke-CdcConnectorFence'
+            $script:startScriptText | Should -Match 'Invoke-CdcConnectorFence[^\n]*\n\s*-BindingStateRoot \$cdcBindingStateRoot'
+        }
+
+        It "fences before the compose down, while the worker is still reachable" {
+            $fenceIndex = $script:startScriptText.IndexOf('Invoke-CdcConnectorFence')
+            $downIndex = $script:startScriptText.IndexOf('docker compose $files --env-file $EnvironmentFile -p dms-local down $downArgs')
+
+            $fenceIndex | Should -BeGreaterThan -1
+            $downIndex | Should -BeGreaterThan $fenceIndex
+        }
+
+        It "builds a stop that names the record's own binding and asserts nothing a retirement would" {
+            $record = [pscustomobject]@{
+                DataStoreId   = 2
+                TenantKey     = "district-a"
+                DeploymentKey = "local"
+                InstanceKey   = "ds2"
+                Generation    = 5
+                RecordPath    = "/state/bindings/local/ds2/5.json"
+            }
+
+            $arguments = Get-CdcStopArgument `
+                -ComposeProjectName "dms-local" `
+                -EnvironmentFile "/tmp/.env.derived" `
+                -BindingRecord $record `
+                -DatabaseEngine "postgresql"
+
+            $arguments | Should -Contain "stop"
+            $arguments | Should -Contain "--generation"
+            $arguments | Should -Contain "5"
+            $arguments | Should -Contain "--tenant-key"
+            $arguments | Should -Contain "district-a"
+
+            # Nothing is removed, so there is no confirmation to give; and nothing here depends on
+            # the connector's committed offsets being observable, so there is nothing to assert
+            # about a connector the worker no longer holds.
+            $arguments | Should -Not -Contain "--confirm"
+            $arguments | Should -Not -Contain "--connector-already-absent"
+            # Provisioning evidence is a claim about enablement.
+            $arguments | Should -Not -Contain "--database-creation-mode"
+            $arguments | Should -Not -Contain "--write-admission"
+        }
+
+        It "issues no separate fence on the destructive path, whose retirement stops the connector itself" {
+            # -d -v retires, and the retirement's own first act is to stop the connector before it
+            # deletes it. A fence first would be a second stop of the same connector.
+            $script:startScriptText | Should -Match '(?s)if \(\$v\) \{.*?Invoke-CdcDestructiveTeardown'
+            ([regex]::Matches($script:startScriptText, 'Invoke-CdcConnectorFence')).Count | Should -Be 1
         }
     }
 
@@ -438,6 +504,29 @@ Describe "DMS-1323 bootstrap CDC phase" {
             $script:wrapperText | Should -Match '\$startArgs\.CdcBindingStatePath = \$CdcBindingStatePath'
             $script:wrapperText | Should -Match '\$dmsStartArgs\.CdcBindingStatePath = \$CdcBindingStatePath'
             $script:wrapperText | Should -Not -Match 'callerWorkingDirectory'
+        }
+
+        It "derives the state root written into the env file through the shared resolver" {
+            # The wrapper's own copy answered only the empty-vs-supplied question and fell straight to
+            # ./.cdc-state, so an ambient DMS_CDC_BINDING_STATE_PATH or a base env file naming a custom
+            # root was overwritten in the derived file this run hands Compose. The teardown reads the
+            # BASE file, so it then retired from the custom root, found nothing, and removed the
+            # volumes anyway.
+            $script:wrapperText |
+                Should -Match '\$cdcBindingStateRootPath = Resolve-CdcBindingStateRoot[^\n]*\n\s*-EnvValues \(ReadValuesFromEnvFile -EnvironmentFile \$effectiveEnvFile\)[^\n]*\n\s*-Path \$CdcBindingStatePath'
+            $script:wrapperText | Should -Not -Match 'Join-Path \$PSScriptRoot "\.cdc-state"'
+        }
+
+        It "resolves the root before it is written and after the derived-file guard" {
+            # The guard is what establishes that there is a per-run file to write at all; resolving
+            # first would do the work only to throw. The write must then see the resolved value.
+            $guardIndex = $script:wrapperText.IndexOf('-EnableKafkaCdc requires the per-run derived environment file')
+            $resolutionIndex = $script:wrapperText.IndexOf('$cdcBindingStateRootPath = Resolve-CdcBindingStateRoot')
+            $writeIndex = $script:wrapperText.IndexOf('-BindingStateRootPath $cdcBindingStateRootPath')
+
+            $guardIndex | Should -BeGreaterThan -1
+            $resolutionIndex | Should -BeGreaterThan $guardIndex
+            $writeIndex | Should -BeGreaterThan $resolutionIndex
         }
     }
 
@@ -802,9 +891,65 @@ Describe "DMS-1323 bootstrap CDC phase" {
             # hands it to the argument builder; a hardcoded generation here is the defect this guards.
             $phaseText = Get-WrapperFunctionText -FunctionName "Invoke-CdcEnablePhase"
 
-            $phaseText | Should -Match '-BindingStateRoot \(Resolve-CdcBindingStateRoot -EnvValues \$envValues\)'
+            # Resolved once into a variable, because the phase now has two readers of that store -
+            # the argument builder that allocates the generation, and the plan that decides whether
+            # this run resumes a binding the control plane already holds. Two resolutions is how the
+            # store came to be read two different ways before.
+            $phaseText | Should -Match '\$bindingStateRoot = Resolve-CdcBindingStateRoot -EnvValues \$envValues'
+            $phaseText | Should -Match '-BindingStateRoot \$bindingStateRoot'
+            ([regex]::Matches($phaseText, 'Resolve-CdcBindingStateRoot')).Count | Should -Be 1
             (Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "cdc-enable.psm1") -Raw) |
                 Should -Not -Match '"--generation", "1"'
+        }
+
+        It "lifts a fence through the guarded restart rather than leaving the enable to start it" {
+            # A run over a live binding record does not start the connector: it is already registered
+            # with an exact-match configuration, so it is not re-created, and STOPPED is a target
+            # state the worker persists. `cdc restart` is what lifts it, and it is the guarded lift -
+            # it resumes only against affirmative continuity and the four artifact prerequisites,
+            # which is exactly the check the worker's own auto-resume skipped.
+            $phaseText = Get-WrapperFunctionText -FunctionName "Invoke-CdcEnablePhase"
+
+            $phaseText | Should -Match '(?s)if \(\$generationPlan\.ResumesLiveBinding\) \{.*?Get-CdcRestartArgument'
+            # A declined restart is the correct outcome of unproved continuity, not a phase failure.
+            $phaseText | Should -Match '(?s)Get-CdcRestartArgument.*?Write-Warning'
+            $phaseText | Should -Not -Match '(?s)Get-CdcRestartArgument[\s\S]*?throw '
+        }
+
+        It "builds a restart that carries the token by name and the binding's own generation" {
+            $arguments = Get-CdcRestartArgument `
+                -ComposeProjectName "dms-local" `
+                -EnvironmentFile "/tmp/.env.derived" `
+                -TenantKey "" `
+                -DataStoreId 4 `
+                -DatabaseEngine "postgresql" `
+                -SourceDatabaseName "edfi_datastore" `
+                -Generation 3
+
+            $arguments | Should -Contain "restart"
+            $arguments | Should -Contain "--generation"
+            $arguments | Should -Contain "3"
+            $arguments | Should -Contain "--instance-key"
+            $arguments | Should -Contain "ds4"
+
+            # The token travels by name only: `docker compose run -e NAME` forwards whatever the
+            # invoking process holds, so the value never becomes an argument of the docker client.
+            $arguments | Should -Contain "DataManagement__DocumentCache__Cdc__DmsBearerToken"
+            # No provisioning evidence: those flags are a claim about enablement.
+            $arguments | Should -Not -Contain "--database-creation-mode"
+            $arguments | Should -Not -Contain "--write-admission"
+            $arguments | Should -Not -Contain "--confirm"
+        }
+
+        It "names the same binding keys the enable builder allocates the generation under" {
+            # Two callers naming different keys would identify different bindings, so the keys are
+            # single-sourced rather than restated.
+            $bindingKey = Get-CdcLocalBindingKey -DataStoreId 9
+
+            $bindingKey.DeploymentKey | Should -Be "local"
+            $bindingKey.InstanceKey | Should -Be "ds9"
+            (Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "cdc-enable.psm1") -Raw) |
+                Should -Not -Match '\$instanceKey = "ds\$DataStoreId"'
         }
 
         It "passes an explicit tenant key when one is configured" {
@@ -2229,6 +2374,18 @@ Describe "DMS-1323 E2E harness CDC opt-in" {
             $script:e2eSetupText | Should -Not -Match 'Write-DerivedEnvFile'
             $script:e2eSetupText | Should -Not -Match 'Set-Content[^\r\n]*\$resolvedEnvironmentFile'
             $script:e2eSetupText | Should -Not -Match 'Out-File[^\r\n]*\$resolvedEnvironmentFile'
+        }
+
+        It "resolves the binding state root through the shared resolver rather than naming one" {
+            # The teardown wrapper is a separate process and receives no root: it re-resolves from the
+            # same env file and the same ambient value. So a literal here does not merely differ in
+            # style - it replaces an environment-configured root for the run, and the finally block
+            # then restores the configured value for the teardown, which finds no binding to retire
+            # and goes on to remove the volumes the surviving record's artifacts live in.
+            $script:e2eSetupText |
+                Should -Match '\$cdcBindingStateRoot = Resolve-CdcBindingStateRoot -EnvValues \$envValues'
+            $script:e2eSetupText | Should -Not -Match 'Join-Path \$dockerComposeDir "\.cdc-state"'
+            $script:e2eSetupText | Should -Not -Match "Join-Path \`$dockerComposeDir '\.cdc-state'"
         }
 
         It "names the CDC target from the configure phase's structured result" {

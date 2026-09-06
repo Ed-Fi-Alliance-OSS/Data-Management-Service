@@ -697,6 +697,17 @@ The deployment-owned status has three continuity outcomes:
   and keeps combined readiness false. The latch cannot be cleared by later artifact
   recreation, offset mutation, a healthy-looking lag value, or a snapshot.
 
+A Kafka Connect worker restarting is a connector start like any other, and the rule above admits
+no exception for it. The worker persists each connector's target state and restores every
+connector standing at a running one as soon as it starts, so a deployment that stops and starts
+its worker resumes publishing with no continuity check possible — nothing can run before a worker
+that has already resumed. Deployment automation therefore leaves connectors at a stopped target
+state across a planned stop and resumes them afterwards through the guarded restart, which applies
+the continuity check and the artifact prerequisites the worker's own restore does not. The fence is
+issued while the worker is still reachable, is applied whether or not the stop was requested by CDC
+automation, and removes nothing: a stop that does not apply leaves no artifact unprotected, because
+the guarded restart re-checks continuity on the way back regardless.
+
 Latching and fencing are separate obligations. The latch is written once, from the proof that
 established the loss; a later check that reads it back re-proves nothing and writes nothing. The
 fence follows the classified continuity instead, so every check that finds the continuity lost

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+﻿// SPDX-License-Identifier: Apache-2.0
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
@@ -34,6 +34,7 @@ internal static class DocumentCacheAdminCommandSurface
     public const string CdcEnableVerbName = "enable";
     public const string CdcStatusVerbName = "status";
     public const string CdcRestartVerbName = "restart";
+    public const string CdcStopVerbName = "stop";
     public const string CdcAdoptVerbName = "adopt";
     public const string CdcReplaceSourceVerbName = "replace-source";
     public const string CdcRetireVerbName = "retire";
@@ -117,6 +118,7 @@ internal static class DocumentCacheAdminCommandSurface
         CdcEnableVerbName,
         CdcStatusVerbName,
         CdcRestartVerbName,
+        CdcStopVerbName,
         CdcAdoptVerbName,
         CdcReplaceSourceVerbName,
         CdcRetireVerbName,
@@ -637,6 +639,7 @@ internal static class DocumentCacheAdminCommandSurface
             CdcEnableVerbName => "Enable CDC on a target created for this provisioning",
             CdcStatusVerbName => "Report deployment-owned CDC readiness for one binding",
             CdcRestartVerbName => "Restart the binding's connector after affirmative continuity evidence",
+            CdcStopVerbName => "Stop the binding's connector, leaving it fenced across a planned stop",
             CdcAdoptVerbName => "Adopt an operator-supplied binding around a complete governed artifact set",
             CdcReplaceSourceVerbName => "Replace the physical source behind an enabled target",
             CdcRetireVerbName => "Retire a binding and its governed artifacts",

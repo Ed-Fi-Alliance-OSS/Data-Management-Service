@@ -1019,7 +1019,15 @@ Teardown is where the distinction matters:
 
 * `./start-local-dms.ps1 -d` (or `./bootstrap-local-dms.ps1 -d`) stops the stack and
   **retains** the binding record, the connector, its committed offsets, the governed topics
-  and ACLs, and the provider capture artifacts.
+  and ACLs, and the provider capture artifacts. It first stops the connector, leaving it
+  fenced. Kafka Connect keeps each connector's target state in a topic on the broker volume
+  this stop retains, and a worker starts every connector it finds at a running target state
+  as soon as it comes back — before anything can check that the source history needed to
+  resume from the committed offset still exists, which is a check that must happen before a
+  connector starts, never after. The fence is what holds that start open; the next
+  `-EnableKafkaCdc` run lifts it with `cdc restart`, which resumes only against affirmative
+  continuity evidence. The fence is applied whether or not the run being stopped asked for
+  CDC, because the worker starts on any Kafka opt-in.
 * `./start-local-dms.ps1 -d -v` retires the binding first and then removes the volumes: it
   stops the connector, deletes its committed offsets while it is stopped, deletes the
   connector, then the governed topics and ACLs and the provider capture artifacts, and

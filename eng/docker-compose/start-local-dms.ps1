@@ -565,12 +565,34 @@ if ($d) {
     else {
         Write-Output "Shutting down"
     }
+    if (-not $v) {
+        # A normal stop retains the binding, connector, offsets, topics, ACLs, and provider capture
+        # artifacts - including the Connect config topic on the broker volume, which is where the
+        # worker keeps each connector's target state. It restores every connector standing at a
+        # RUNNING target state as soon as it starts again, so without this the next start resumes
+        # publishing before anything checks source-history continuity, which cdc-streaming.md
+        # requires to be proved before every connector start or resume after initial enablement.
+        # Fencing here is the only place that check can be kept: nothing can run before a worker
+        # that has already resumed. `cdc restart` lifts the fence through the continuity gate.
+        #
+        # Runs BEFORE the compose down, while the worker is still reachable, and NOT under
+        # $EnableKafkaCdc: the worker starts on any Kafka opt-in ($enableKafkaInfrastructure), so a
+        # stack that enabled CDC once and is restarted with only -EnableKafka would otherwise resume
+        # its connector with no CDC code on the path. A fence that does not apply warns rather than
+        # failing the shutdown - nothing has been removed for it to leave unprotected.
+        Import-Module (Join-Path $PSScriptRoot "cdc-teardown.psm1") -Force
+        Invoke-CdcConnectorFence `
+            -BindingStateRoot $cdcBindingStateRoot `
+            -ComposeProjectName "dms-local" `
+            -EnvironmentFile $EnvironmentFile `
+            -DatabaseEngine $DatabaseEngine | Out-Null
+    }
     if ($v) {
         # Destructive volume removal is the only local workflow allowed to remove a CDC binding
         # record, and only in the same pass that removes every artifact the record governs. The
         # retirement therefore runs BEFORE the compose down, while the connector, broker, and
-        # instance database it must reach are still running. A normal stop (-d without -v) retains
-        # the binding, connector, offsets, topics, ACLs, and provider capture artifacts.
+        # instance database it must reach are still running. No fence is issued first: the
+        # retirement's own first act is to stop the connector, and it goes on to delete it.
         Import-Module (Join-Path $PSScriptRoot "cdc-teardown.psm1") -Force
         if (-not $cdcBindingStateRootWasNamed) {
             # Nothing named a root - not the switch, not the env file this teardown was given, not

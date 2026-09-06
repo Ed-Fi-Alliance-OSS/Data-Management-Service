@@ -233,6 +233,15 @@ of its own.
   more than one configured data store, route-qualified data stores, a data store the run did
   not create, and an identity provider whose clients cannot carry the DocumentCache status
   role.
+- A normal stop of the local stack fences every binding's connector, and the next CDC run
+  resumes it through the guarded restart. Kafka Connect persists each connector's target
+  state in a topic on the broker volume a normal stop retains, so a worker that comes back
+  restores every connector standing at a running one before any continuity check could run -
+  a connector start the owning design requires to be guarded, and one nothing can guard
+  after the fact. The fence runs before the compose down, while the worker is still
+  reachable, and is not conditioned on the CDC opt-in of the run that is stopping: the worker
+  starts on any Kafka opt-in at all. A fence that does not apply warns rather than failing
+  the shutdown, because a normal stop removes nothing for it to leave unprotected.
 - The control-plane verbs run as a one-shot container on the local compose network rather
   than on the host. The instance database is registered in the Configuration Service under
   its container alias and the broker advertises a container-internal listener, so a

@@ -1,4 +1,4 @@
-# Ed-Fi DocumentCache Administration CLI
+﻿# Ed-Fi DocumentCache Administration CLI
 
 `EdFi.Api.DocumentCacheAdmin` packages the `dms-document-cache` .NET tool for Ed-Fi DMS
 DocumentCache status and administration workflows. It reuses the DMS target registry,
@@ -114,6 +114,7 @@ The `cdc` verb group carries the deployment-owned CDC binding operations:
 | `cdc enable` | Enable CDC on a target created for this provisioning. | None | `--database-creation-mode`, `--write-admission` |
 | `cdc status` | Report deployment-owned CDC readiness for one binding. | None | None |
 | `cdc restart` | Restart the binding's connector after affirmative continuity evidence. | None | None |
+| `cdc stop` | Stop the binding's connector, so the worker holds it fenced across a planned stop. Removes nothing. | None | None |
 | `cdc adopt` | Adopt an operator-supplied binding around a complete governed artifact set. | None | `--binding-json` |
 | `cdc replace-source` | Replace the physical source behind an enabled target with a new binding generation. | `cdcSourceReplacement` | `--database-creation-mode`, `--write-admission`, `--previous-generation` |
 | `cdc retire` | Retire a binding and its governed artifacts. | `cdcBindingRetirement` | None |
@@ -168,7 +169,7 @@ by the outcome:
 | Verb | Shared contract | Reported outcome values |
 | --- | --- | --- |
 | `cdc enable` | `CdcAdmission` | `admitted`, `notAdmitted`, `unknown` |
-| `cdc status`, `cdc restart` | `CdcStatus` | `ready`, `notReady`, `unknown` |
+| `cdc status`, `cdc restart`, `cdc stop` | `CdcStatus` | `ready`, `notReady`, `unknown` |
 | `cdc adopt` | `CdcAdoptionProof` | `completed`, `rejectedNoMutation` |
 | `cdc retire` | `CdcCleanupProof` | `completed`, `rejectedNoMutation`, `incompleteRetryable` |
 
@@ -402,8 +403,9 @@ The `cdc` verbs use the same codes, classified from the shared CDC contract they
 | Write admission opened, adoption completed, or retirement completed. | 0 |
 | A readiness answer of any kind from `cdc status`, including `notReady` and `unknown`. | 0 |
 | A restart the worker applied, whatever the connector reports afterwards. | 0 |
+| A stop the worker applied, or a connector it no longer holds. A fenced target is not ready; the fence still succeeded. | 0 |
 | The binding is missing, does not match, or the operation is invalid for it. | 10 |
-| A retirement or restart refused before it changed anything. | 10 |
+| A retirement, restart, or stop refused before it changed anything. | 10 |
 | The binding state store could not be read or written. | 11 |
 | Write admission did not open, or a retirement removed only part of the artifact set. | 12 |
 
@@ -411,7 +413,7 @@ Write admission that did not open is retryable rather than a rejection: the bind
 is made durable before any external artifact is created, so such a run may already have
 mutated deployment state, and every `cdc` verb is built to be reissued unchanged. A partial
 retirement leaves the binding record in place for the same reason, and is completed by being
-reissued. A retirement or restart that changed nothing is a rejection instead: reissuing it
+reissued. A retirement, restart, or stop that changed nothing is a rejection instead: reissuing it
 unchanged repeats a request that was wrong the first time. A readiness report from `cdc status`
 is a success whatever it reports, because the command answered; only a status that could not be
 produced at all fails.

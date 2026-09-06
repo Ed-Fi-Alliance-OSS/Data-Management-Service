@@ -470,6 +470,27 @@ public static class CdcRestartDiagnosticCodes
     public const string NotApplied = "restartNotApplied";
 }
 
+/// <summary>
+/// The two ways a planned fence leaves the connector where it found it.
+/// </summary>
+/// <remarks>
+/// Stop reports the shared status contract for the same reason restart does, and needs the same
+/// distinction from it: a connector reported as not running reads identically whether this verb
+/// fenced it, whether the worker refused the request, and whether the verb never issued one. Only the
+/// last two leave a connector that may still be publishing, and only they are the operator's to act
+/// on before the stack goes down around it.
+/// </remarks>
+public static class CdcFenceDiagnosticCodes
+{
+    /// <summary>
+    /// A stop that was never issued, because no durable binding record named a connector to act on.
+    /// </summary>
+    public const string NotAttempted = "stopNotAttempted";
+
+    /// <summary>A stop the Kafka Connect worker refused.</summary>
+    public const string NotApplied = "stopNotApplied";
+}
+
 public sealed record CdcCleanupProof(
     [property: JsonRequired] int ContractVersion,
     [property: JsonRequired] string OperationId,

@@ -1044,4 +1044,144 @@ public class Given_CdcSetupControllerRestart
                     .MustHaveHappened()
             );
     }
+
+    /// <summary>
+    /// The planned fence. A Kafka Connect worker restores every connector its config topic holds at a
+    /// running target state the moment it starts, and `cdc-streaming.md` requires source-history
+    /// continuity to be proved before every connector start — a proof no check can supply after the
+    /// worker has already resumed. Stopping the connector before a planned stop is what leaves the next
+    /// start a guarded one.
+    /// </summary>
+    [Test]
+    public async Task It_fences_the_connector_so_the_worker_persists_a_stopped_target_state()
+    {
+        CdcSetupControllerHarness harness = Given_CdcSetupControllerStatus.EnabledBinding();
+
+        await harness.StopAsync();
+
+        using var _ = new AssertionScope();
+        A.CallTo(() => harness.Connect.StopConnectorAsync(A<string>._, A<CancellationToken>._))
+            .MustHaveHappenedOnceExactly()
+            .Then(
+                A.CallTo(() => harness.Connect.GetConnectorStatusAsync(A<string>._, A<CancellationToken>._))
+                    .MustHaveHappened()
+            );
+        A.CallTo(() => harness.Connect.RestartConnectorAsync(A<string>._, A<CancellationToken>._))
+            .MustNotHaveHappened();
+        A.CallTo(() => harness.Connect.ResumeConnectorAsync(A<string>._, A<CancellationToken>._))
+            .MustNotHaveHappened();
+    }
+
+    /// <summary>
+    /// Stopping removes nothing and resets nothing, so it takes none of the gates a restart takes: a
+    /// binding whose continuity is unknown or lost is exactly the one that most needs fencing. It is
+    /// also the one whose artifact prerequisites cannot be proved, so gating on them would refuse the
+    /// fence precisely when it matters.
+    /// </summary>
+    [Test]
+    public async Task It_fences_without_the_continuity_and_artifact_gates_a_restart_takes()
+    {
+        CdcSetupControllerHarness harness = Given_CdcSetupControllerStatus.EnabledBinding(
+            CdcProvider.SqlServer
+        );
+        harness.SchemaHistoryState = CdcSqlServerSchemaHistoryState.Unreadable;
+
+        CdcStatus status = await harness.StopAsync();
+
+        using var _ = new AssertionScope();
+        Given_CdcSetupControllerStatus
+            .Target(status)
+            .SourceHistory.Continuity.Should()
+            .NotBe(CdcSourceHistoryContinuity.Healthy);
+        A.CallTo(() => harness.Connect.StopConnectorAsync(A<string>._, A<CancellationToken>._))
+            .MustHaveHappened();
+        Given_CdcSetupControllerStatus
+            .Target(status)
+            .Diagnostics.Should()
+            .NotContain(diagnostic => diagnostic.Code == "stopNotAttempted");
+    }
+
+    /// <summary>
+    /// Nothing durable names the connector, so there is nothing this verb may act on. Automation never
+    /// infers a binding from the artifacts that happen to exist, and reporting a fence it did not apply
+    /// would tell a shutdown sequence the connector is safe when it is not.
+    /// </summary>
+    [Test]
+    public async Task It_issues_no_fence_when_no_binding_record_names_a_connector()
+    {
+        CdcSetupControllerHarness harness = new();
+
+        CdcStatus status = await harness.StopAsync();
+
+        using var _ = new AssertionScope();
+        Given_CdcSetupControllerStatus
+            .Target(status)
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic => diagnostic.Code == "stopNotAttempted");
+        A.CallTo(() => harness.Connect.StopConnectorAsync(A<string>._, A<CancellationToken>._))
+            .MustNotHaveHappened();
+    }
+
+    /// <summary>
+    /// Already where the verb would leave it. The adapter's stop reads the connector state back until
+    /// the worker reports STOPPED, so re-issuing would spend the stop budget waiting for a transition
+    /// that has already happened.
+    /// </summary>
+    [Test]
+    public async Task It_leaves_a_connector_the_worker_already_holds_stopped_alone()
+    {
+        CdcSetupControllerHarness harness = Given_CdcSetupControllerStatus.EnabledBinding();
+        harness.ConnectorStatus = CdcSetupControllerHarness.RunningConnector(
+            connectorState: "STOPPED",
+            taskState: "STOPPED"
+        );
+
+        await harness.StopAsync();
+
+        A.CallTo(() => harness.Connect.StopConnectorAsync(A<string>._, A<CancellationToken>._))
+            .MustNotHaveHappened();
+    }
+
+    /// <summary>
+    /// A worker holding no connector under this name is the end state the verb exists to reach, so a 404
+    /// is not a request that failed to apply. Reporting it as one would fail a shutdown over a connector
+    /// that is already gone.
+    /// </summary>
+    [Test]
+    public async Task It_treats_a_connector_the_worker_does_not_hold_as_already_fenced()
+    {
+        CdcSetupControllerHarness harness = Given_CdcSetupControllerStatus.EnabledBinding();
+        harness.Stop = new(CdcConnectOutcome.NotFound, new(404, "no such connector", false));
+
+        CdcStatus status = await harness.StopAsync();
+
+        Given_CdcSetupControllerStatus
+            .Target(status)
+            .Diagnostics.Should()
+            .NotContain(diagnostic => diagnostic.Code == "stopNotApplied");
+    }
+
+    /// <summary>
+    /// A refused stop leaves a connector that may still be publishing, and the state read back afterwards
+    /// cannot say so: a connector still running reads identically whether the worker refused the request
+    /// or accepted it and has not settled yet. Only the caller can act on the difference, and it is about
+    /// to take the stack down around it.
+    /// </summary>
+    [Test]
+    public async Task It_reports_a_fence_the_worker_did_not_apply()
+    {
+        CdcSetupControllerHarness harness = Given_CdcSetupControllerStatus.EnabledBinding();
+        harness.Stop = new(CdcConnectOutcome.Conflict, new(409, "rebalance in progress", true));
+
+        CdcStatus status = await harness.StopAsync();
+
+        using var _ = new AssertionScope();
+        CdcDiagnostic diagnostic = Given_CdcSetupControllerStatus
+            .Target(status)
+            .Diagnostics.Should()
+            .ContainSingle(candidate => candidate.Code == "stopNotApplied")
+            .Subject;
+        diagnostic.Component.Should().Be(CdcDiagnosticComponent.ConnectorRuntime);
+        diagnostic.Observed.Should().Be(nameof(CdcConnectOutcome.Conflict));
+    }
 }

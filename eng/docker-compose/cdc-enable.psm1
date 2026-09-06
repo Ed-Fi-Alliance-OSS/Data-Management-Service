@@ -569,8 +569,9 @@ function Get-CdcEnableArgument {
     # allocated from the store rather than fixed at 1: a target's first binding gets 1, and one whose
     # earlier generation was retired gets the next, because the retirement record outlives the
     # binding it removed and the control plane never rebinds a retired generation.
-    $deploymentKey = "local"
-    $instanceKey = "ds$DataStoreId"
+    $bindingKey = Get-CdcLocalBindingKey -DataStoreId $DataStoreId
+    $deploymentKey = $bindingKey.DeploymentKey
+    $instanceKey = $bindingKey.InstanceKey
     $generationPlan = Get-CdcEnableGenerationPlan `
         -BindingStateRoot $BindingStateRoot `
         -DeploymentKey $deploymentKey `
@@ -617,6 +618,121 @@ function Get-CdcEnableArgument {
         -EnvironmentFile $EnvironmentFile `
         -DatabaseEngine $DatabaseEngine `
         -VerbName "enable" `
+        -EnvironmentArgument $environmentArguments `
+        -VerbArgument $verbArguments
+}
+
+function Get-CdcLocalBindingKey {
+    <#
+    .SYNOPSIS
+    The two opaque artifact-name keys the local CDC opt-in binds a data store under.
+
+    .DESCRIPTION
+    They only have to be stable for the binding they name, but three callers must agree on them or
+    they name different bindings: the enable builder, the generation allocation that reads the store
+    those keys index, and the guarded restart that lifts a fence on the binding they identify. So
+    they are resolved here rather than restated at each one.
+    #>
+    [CmdletBinding()]
+    [OutputType([hashtable])]
+    param(
+        [Parameter(Mandatory)]
+        [long]
+        $DataStoreId
+    )
+
+    return @{ DeploymentKey = "local"; InstanceKey = "ds$DataStoreId" }
+}
+
+function Get-CdcRestartArgument {
+    <#
+    .SYNOPSIS
+    The docker compose argument list that runs `dms-document-cache cdc restart` for one binding.
+
+    .DESCRIPTION
+    The guarded lift of a fence. `cdc restart` resumes a connector the worker is holding STOPPED or
+    PAUSED, but only against affirmative source-history continuity and the four artifact
+    prerequisites the enablement proves before it registers a connector at all - which is exactly the
+    check a Kafka Connect worker's own auto-resume skips.
+
+    It carries the same environment the enable does and for the same reasons: the operator token by
+    NAME with no value, because restart reads the projection status endpoint and the token must not
+    become an argument of the docker client; and the connector's own database connection properties,
+    because the restart compares the registered connector configuration against the template composed
+    from them, which cannot be composed without them.
+
+    It carries no provisioning evidence. Those flags assert that a database was created for an
+    initial CDC provisioning and has admitted no write, which is a claim about enablement; a restart
+    of an established binding neither needs nor may assert it.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Returns the argument list for one invocation; the plural noun reflects the return shape.')]
+    [CmdletBinding()]
+    [OutputType([object[]])]
+    param(
+        [Parameter(Mandatory)]
+        [string]
+        $ComposeProjectName,
+
+        [Parameter(Mandatory)]
+        [string]
+        $EnvironmentFile,
+
+        [Parameter(Mandatory)]
+        [AllowEmptyString()]
+        [string]
+        $TenantKey,
+
+        [Parameter(Mandatory)]
+        [long]
+        $DataStoreId,
+
+        [Parameter(Mandatory)]
+        [ValidateSet("postgresql", "mssql")]
+        [string]
+        $DatabaseEngine,
+
+        [Parameter(Mandatory)]
+        [string]
+        $SourceDatabaseName,
+
+        [Parameter(Mandatory)]
+        [long]
+        $Generation,
+
+        [hashtable]
+        $ConnectorPrincipal
+    )
+
+    Import-Module (Join-Path $PSScriptRoot "env-utility.psm1") -Force
+
+    if ($null -eq $ConnectorPrincipal) {
+        $ConnectorPrincipal = Get-CdcConnectorPrincipalConfiguration -EnvValues @{}
+    }
+
+    $environmentArguments = @("-e", $script:CdcDmsBearerTokenVariableName)
+    $environmentArguments += Get-CdcConnectorEnvArgument `
+        -DatabaseEngine $DatabaseEngine `
+        -SourceDatabaseName $SourceDatabaseName `
+        -ConnectorPrincipal $ConnectorPrincipal
+
+    $verbArguments = @("--data-store-id", "$DataStoreId")
+
+    if (-not [string]::IsNullOrWhiteSpace($TenantKey)) {
+        $verbArguments += @("--tenant-key", $TenantKey)
+    }
+
+    $bindingKey = Get-CdcLocalBindingKey -DataStoreId $DataStoreId
+    $verbArguments += @(
+        "--deployment-key", $bindingKey.DeploymentKey,
+        "--instance-key", $bindingKey.InstanceKey,
+        "--generation", "$Generation"
+    )
+
+    return Get-CdcSetupComposeArgument `
+        -ComposeProjectName $ComposeProjectName `
+        -EnvironmentFile $EnvironmentFile `
+        -DatabaseEngine $DatabaseEngine `
+        -VerbName "restart" `
         -EnvironmentArgument $environmentArguments `
         -VerbArgument $verbArguments
 }
@@ -724,6 +840,18 @@ function Invoke-CdcEnablePhase {
         -DatabaseName $resolvedSourceDatabaseName `
         -DatabaseEngine $DatabaseEngine
 
+    $bindingStateRoot = Resolve-CdcBindingStateRoot -EnvValues $envValues
+
+    # Read here as well as inside the enable builder, from the same store through the same function,
+    # because the phase needs the same answer for a second decision: whether this run is over a
+    # binding the control plane already holds, and therefore whether the connector has to be resumed
+    # through the guarded restart after the enable rather than started by it.
+    $bindingKey = Get-CdcLocalBindingKey -DataStoreId $DataStoreId
+    $generationPlan = Get-CdcEnableGenerationPlan `
+        -BindingStateRoot $bindingStateRoot `
+        -DeploymentKey $bindingKey.DeploymentKey `
+        -InstanceKey $bindingKey.InstanceKey
+
     $composeArguments = Get-CdcEnableArgument `
         -ComposeProjectName $ComposeProjectName `
         -EnvironmentFile $EnvironmentFile `
@@ -733,7 +861,7 @@ function Invoke-CdcEnablePhase {
         -DatabaseCreatedByThisRun $DatabaseCreatedByThisRun `
         -ResumeInterruptedEnable:$ResumeInterruptedEnable `
         -SourceDatabaseName $resolvedSourceDatabaseName `
-        -BindingStateRoot (Resolve-CdcBindingStateRoot -EnvValues $envValues) `
+        -BindingStateRoot $bindingStateRoot `
         -ConnectorPrincipal $connectorPrincipal
 
     Write-Information "CDC phase: enabling CDC for data store $DataStoreId." -InformationAction Continue
@@ -754,6 +882,45 @@ function Invoke-CdcEnablePhase {
 
     if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
         throw "dms-document-cache cdc enable failed with exit code $LASTEXITCODE."
+    }
+
+    # The guarded lift of the fence the previous normal stop applied. A first enablement starts its
+    # own connector, but a run over a live binding record does not: the connector is already
+    # registered with an exact-match configuration, so it is not re-created, and STOPPED is a target
+    # state the worker persists - the enable would leave it fenced and report the target not ready
+    # with nothing having asked it to resume.
+    #
+    # It is `cdc restart` rather than anything this phase decides, because resuming is exactly what
+    # must be guarded: it lifts the fence only against affirmative source-history continuity and the
+    # four artifact prerequisites, which is the check the worker's own auto-resume skipped and the
+    # reason the fence is applied at all. A restart that declines is not a phase failure - a
+    # connector that stays fenced is the correct outcome of unproved continuity, and `cdc status`
+    # says why - so its exit code is reported rather than thrown on.
+    if ($generationPlan.ResumesLiveBinding) {
+        $restartArguments = Get-CdcRestartArgument `
+            -ComposeProjectName $ComposeProjectName `
+            -EnvironmentFile $EnvironmentFile `
+            -TenantKey $TenantKey `
+            -DataStoreId $DataStoreId `
+            -DatabaseEngine $DatabaseEngine `
+            -SourceDatabaseName $resolvedSourceDatabaseName `
+            -Generation $generationPlan.Generation `
+            -ConnectorPrincipal $connectorPrincipal
+
+        Write-Information "CDC phase: resuming the connector of generation $($generationPlan.Generation) through the guarded restart." -InformationAction Continue
+        $global:LASTEXITCODE = 0
+
+        [Environment]::SetEnvironmentVariable($script:CdcDmsBearerTokenVariableName, $operatorToken)
+        try {
+            & docker @restartArguments
+        }
+        finally {
+            [Environment]::SetEnvironmentVariable($script:CdcDmsBearerTokenVariableName, $previousBearerToken)
+        }
+
+        if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
+            Write-Warning "CDC phase: dms-document-cache cdc restart declined to resume the connector of generation $($generationPlan.Generation) (exit code $LASTEXITCODE). It stays fenced, which is the correct outcome when source-history continuity is not proved. Run 'cdc status' for the evidence."
+        }
     }
 
     # The phase result, in the shape command-boundaries.md requires of a phase command: a
@@ -888,6 +1055,8 @@ Export-ModuleMember -Function `
     Get-CdcConnectorEnvArgument, `
     Get-CdcSetupComposeArgument, `
     Get-CdcEnableGenerationPlan, `
+    Get-CdcLocalBindingKey, `
+    Get-CdcRestartArgument, `
     Get-CdcEnableArgument, `
     Invoke-CdcEnablePhase, `
     Wait-CdcHttpEndpoint, `

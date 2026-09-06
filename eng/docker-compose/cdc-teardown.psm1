@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: Apache-2.0
+﻿# SPDX-License-Identifier: Apache-2.0
 # Licensed to the Ed-Fi Alliance under one or more agreements.
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
@@ -408,8 +408,185 @@ function Invoke-CdcDestructiveTeardown {
     return @($results)
 }
 
+function Get-CdcStopArgument {
+    <#
+    .SYNOPSIS
+        The docker compose argument list that runs `dms-document-cache cdc stop` for one binding.
+
+    .DESCRIPTION
+        The planned fence, issued before a normal stop of the local stack. It is the retirement's
+        argument list minus the two things only a retirement may say: the confirmation token, because
+        nothing is removed, and --connector-already-absent, because nothing here depends on the
+        connector's committed offsets being observable.
+
+        Everything else is the same for the same reasons - the one-shot container on the dms network,
+        the connector principal every cdc verb requires, no operator credential, and the binding's own
+        generation and artifact-name keys rather than a guess at them.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Returns the argument list for one invocation; the plural noun reflects the return shape.')]
+    [CmdletBinding()]
+    [OutputType([object[]])]
+    param(
+        [Parameter(Mandatory)]
+        [string]
+        $ComposeProjectName,
+
+        [Parameter(Mandatory)]
+        [string]
+        $EnvironmentFile,
+
+        [Parameter(Mandatory)]
+        $BindingRecord,
+
+        [Parameter(Mandatory)]
+        [ValidateSet("postgresql", "mssql")]
+        [string]
+        $DatabaseEngine,
+
+        [hashtable]
+        $ConnectorPrincipal
+    )
+
+    Import-Module (Join-Path $PSScriptRoot "env-utility.psm1") -Force
+    Import-Module (Join-Path $PSScriptRoot "cdc-enable.psm1") -Force
+
+    if ($null -eq $ConnectorPrincipal) {
+        $ConnectorPrincipal = Get-CdcConnectorPrincipalConfiguration -EnvValues @{}
+    }
+
+    $environmentArguments = @(
+        Get-CdcConnectorPrincipalEnvArgument -ConnectorPrincipal $ConnectorPrincipal
+    )
+
+    $verbArguments = @("--data-store-id", "$($BindingRecord.DataStoreId)")
+
+    if (-not [string]::IsNullOrWhiteSpace($BindingRecord.TenantKey)) {
+        $verbArguments += @("--tenant-key", [string]$BindingRecord.TenantKey)
+    }
+
+    $verbArguments += @(
+        "--deployment-key", [string]$BindingRecord.DeploymentKey,
+        "--instance-key", [string]$BindingRecord.InstanceKey,
+        "--generation", "$($BindingRecord.Generation)"
+    )
+
+    return Get-CdcSetupComposeArgument `
+        -ComposeProjectName $ComposeProjectName `
+        -EnvironmentFile $EnvironmentFile `
+        -DatabaseEngine $DatabaseEngine `
+        -VerbName "stop" `
+        -EnvironmentArgument $environmentArguments `
+        -VerbArgument $verbArguments
+}
+
+function Invoke-CdcConnectorFence {
+    <#
+    .SYNOPSIS
+        Fences every binding's connector before the caller stops the stack, without removing anything.
+
+    .DESCRIPTION
+        A Kafka Connect worker restores every connector its config topic holds at a running target
+        state as soon as it starts, and that topic lives on the broker volume a normal stop retains.
+        So a stack stopped without -v and started again resumes publishing before any check can run,
+        while cdc-streaming.md requires source-history continuity to be proved before every connector
+        start or resume after initial enablement. Nothing can prove it after the fact: the worker has
+        already resumed. A fence the worker persists is what leaves the next start a guarded one, and
+        the guarded restart is what lifts it.
+
+        This is why the fence is not conditioned on the CDC opt-in of the run that is stopping. The
+        worker starts on any Kafka opt-in at all, so a stack that enabled CDC once and is later
+        restarted with only -EnableKafka would otherwise resume the connector with no CDC code on the
+        path to check anything.
+
+        Unlike the destructive teardown, a fence that did not apply does NOT fail the caller. A normal
+        stop removes nothing, so no artifact is left unprotected by a fence that did not land, and the
+        guarded restart re-checks continuity on the way back up regardless. Failing the shutdown over
+        it would trade a warning for a developer who cannot stop their stack.
+
+        Returns one result object per binding it attempted, so the caller and the tests can see which
+        connectors were fenced and which were not.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Teardown phase helper, consistent with the sibling teardown invocations; no -WhatIf surface.')]
+    [CmdletBinding()]
+    [OutputType([object[]])]
+    param(
+        [Parameter(Mandatory)]
+        [string]
+        $BindingStateRoot,
+
+        [Parameter(Mandatory)]
+        [string]
+        $ComposeProjectName,
+
+        [Parameter(Mandatory)]
+        [string]
+        $EnvironmentFile,
+
+        [Parameter(Mandatory)]
+        [ValidateSet("postgresql", "mssql")]
+        [string]
+        $DatabaseEngine
+    )
+
+    $bindings = @(Get-CdcRetirableBinding -BindingStateRoot $BindingStateRoot)
+    if ($bindings.Count -eq 0) {
+        return @()
+    }
+
+    Import-Module (Join-Path $PSScriptRoot "env-utility.psm1") -Force
+
+    $envValues = ReadValuesFromEnvFile $EnvironmentFile
+    $connectorPrincipal = Get-CdcConnectorPrincipalConfiguration -EnvValues $envValues
+
+    # Same reason the retirement exports it: the setup container mounts the state store from
+    # DMS_CDC_BINDING_STATE_PATH, and Compose gives an ambient value precedence over the env file.
+    $previousStatePath = [System.Environment]::GetEnvironmentVariable('DMS_CDC_BINDING_STATE_PATH')
+    $results = @()
+    try {
+        $env:DMS_CDC_BINDING_STATE_PATH = $BindingStateRoot
+
+        foreach ($binding in $bindings) {
+            Write-Information "CDC stop: fencing the connector of generation $($binding.Generation) of data store $($binding.DataStoreId) so it stays stopped across the restart." -InformationAction Continue
+
+            $composeArguments = Get-CdcStopArgument `
+                -ComposeProjectName $ComposeProjectName `
+                -EnvironmentFile $EnvironmentFile `
+                -BindingRecord $binding `
+                -DatabaseEngine $DatabaseEngine `
+                -ConnectorPrincipal $connectorPrincipal
+
+            $global:LASTEXITCODE = 0
+            & docker @composeArguments
+            $fenced = -not ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0)
+
+            if (-not $fenced) {
+                Write-Warning "CDC stop: dms-document-cache cdc stop failed for generation $($binding.Generation) of data store $($binding.DataStoreId) (exit code $LASTEXITCODE). Its connector may resume publishing when this stack is started again, before source-history continuity is checked; run 'cdc status' after the next start."
+            }
+
+            $results += [pscustomobject]@{
+                DataStoreId = $binding.DataStoreId
+                Generation  = $binding.Generation
+                RecordPath  = $binding.RecordPath
+                Fenced      = $fenced
+            }
+        }
+    }
+    finally {
+        if ($null -eq $previousStatePath) {
+            Remove-Item -LiteralPath "Env:DMS_CDC_BINDING_STATE_PATH" -ErrorAction SilentlyContinue
+        }
+        else {
+            $env:DMS_CDC_BINDING_STATE_PATH = $previousStatePath
+        }
+    }
+
+    return @($results)
+}
+
 Export-ModuleMember -Function `
     ConvertTo-CdcE18TenantKey, `
     Get-CdcRetirableBinding, `
     Get-CdcRetireArgument, `
+    Get-CdcStopArgument, `
+    Invoke-CdcConnectorFence, `
     Invoke-CdcDestructiveTeardown

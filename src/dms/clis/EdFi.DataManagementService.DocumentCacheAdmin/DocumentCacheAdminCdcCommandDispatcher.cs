@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+﻿// SPDX-License-Identifier: Apache-2.0
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
@@ -191,6 +191,9 @@ internal interface IDocumentCacheAdminCdcCommandDispatcher
 /// DocumentCache status and mutating commands reach the Configuration Service through the target
 /// registry refresh their own executor branch runs first; the cdc branch dispatches straight here,
 /// and <see cref="IConnectionStringProvider"/> reads an in-memory cache with no lazy load behind it.
+/// That load is scoped to the branch that reads the Configuration Service: a verb that names its own
+/// source connection resolves the instance database without it and must not depend on that service
+/// being reachable.
 /// </remarks>
 internal sealed class DocumentCacheAdminCdcCommandDispatcher(
     ICdcSetupController controller,
@@ -212,13 +215,6 @@ internal sealed class DocumentCacheAdminCdcCommandDispatcher(
         DateTimeOffset now = timeProvider.GetUtcNow();
         CdcProvider provider = sourcePositions.Provider;
         string connectionString;
-
-        // Before the connection string is read, because the read alone cannot produce one: an
-        // unloaded tenant answers exactly as an absent data store does.
-        if (await LoadDataStoresAsync(request, cancellationToken).ConfigureAwait(false) is { } loadRefusal)
-        {
-            return loadRefusal;
-        }
 
         // Which database this invocation runs against. Normally the Configuration Service's own answer
         // for the target; for a retirement the operator may name an environment variable holding a
@@ -254,35 +250,54 @@ internal sealed class DocumentCacheAdminCdcCommandDispatcher(
 
             connectionString = overriddenConnectionString;
         }
-        else if (
-            connectionStringProvider.GetConnectionString(
-                request.TargetKey.DataStoreId,
-                NullableTenant(request.TargetKey.TenantKey)
-            ) is
-            { Length: > 0 } resolvedConnectionString
-        )
-        {
-            connectionString = resolvedConnectionString;
-        }
         else
         {
-            // The identifiers are the operator's own invocation arguments and the surrogate is already
-            // the safe form of them, so naming the target here publishes nothing new.
+            // The data-store load belongs to this branch alone, because this is the only branch that
+            // asks the Configuration Service anything. An explicit source connection names the
+            // database itself, so loading ahead of the choice would refuse a retirement whose
+            // binding, source database, and governed artifacts are all reachable, for a service it
+            // never reads - and would contradict this method's own rule that a named variable means
+            // the Configuration Service is not consulted at all.
             //
-            // The code deliberately says "instance database" rather than naming a connection string.
-            // CdcDiagnostic sanitizes its own code field, and "connectionString" is one of the
-            // fragments it treats as a secret - a code carrying it is replaced by "redacted" in the
-            // shared contract and in stderr alike, leaving an operator with no stable token to match
-            // the one refusal they most need to act on.
-            return Refused(
-                request.VerbName,
-                "cdcInstanceDatabaseUnresolved",
-                CdcDiagnosticCategory.SourceMismatch,
-                CdcDiagnosticComponent.ProviderSetup,
-                "CDC operation could not resolve the instance database for the invocation target.",
-                "absent",
-                now
-            );
+            // Still before the connection string is read, because the read alone cannot produce one:
+            // an unloaded tenant answers exactly as an absent data store does.
+            if (
+                await LoadDataStoresAsync(request, cancellationToken).ConfigureAwait(false) is { } loadRefusal
+            )
+            {
+                return loadRefusal;
+            }
+
+            if (
+                connectionStringProvider.GetConnectionString(
+                    request.TargetKey.DataStoreId,
+                    NullableTenant(request.TargetKey.TenantKey)
+                ) is
+                { Length: > 0 } resolvedConnectionString
+            )
+            {
+                connectionString = resolvedConnectionString;
+            }
+            else
+            {
+                // The identifiers are the operator's own invocation arguments and the surrogate is
+                // already the safe form of them, so naming the target here publishes nothing new.
+                //
+                // The code deliberately says "instance database" rather than naming a connection
+                // string. CdcDiagnostic sanitizes its own code field, and "connectionString" is one
+                // of the fragments it treats as a secret - a code carrying it is replaced by
+                // "redacted" in the shared contract and in stderr alike, leaving an operator with no
+                // stable token to match the one refusal they most need to act on.
+                return Refused(
+                    request.VerbName,
+                    "cdcInstanceDatabaseUnresolved",
+                    CdcDiagnosticCategory.SourceMismatch,
+                    CdcDiagnosticComponent.ProviderSetup,
+                    "CDC operation could not resolve the instance database for the invocation target.",
+                    "absent",
+                    now
+                );
+            }
         }
 
         CdcContractReadResult<CdcProviderSetupInputs> setupInputs = await providerSetupInputsFactory
@@ -327,6 +342,10 @@ internal sealed class DocumentCacheAdminCdcCommandDispatcher(
                     .RestartAsync(TargetRequest(invocation), cancellationToken)
                     .ConfigureAwait(false)
             ),
+            DocumentCacheAdminCommandSurface.CdcStopVerbName => Stop(
+                invocation,
+                await controller.StopAsync(TargetRequest(invocation), cancellationToken).ConfigureAwait(false)
+            ),
             DocumentCacheAdminCommandSurface.CdcAdoptVerbName => await AdoptAsync(
                     invocation,
                     now,
@@ -362,6 +381,12 @@ internal sealed class DocumentCacheAdminCdcCommandDispatcher(
     /// That refresh also resolves projection-target membership, which the cdc verbs deliberately do
     /// not require: retirement runs against a stack whose DMS is already gone, and the explicit
     /// projection-target proof is the enablement's own step against raw configuration.
+    ///
+    /// Called only from the branch that then asks <see cref="IConnectionStringProvider"/> for the
+    /// instance database. An invocation carrying
+    /// <see cref="DocumentCacheAdminCdcCommandRequest.SourceConnectionVariable"/> reads the database
+    /// from the environment instead and never consults the Configuration Service, so issuing this
+    /// ahead of that choice would make a reachable teardown fail on an unreachable service.
     /// </remarks>
     private async Task<DocumentCacheAdminCdcCommandResult?> LoadDataStoresAsync(
         DocumentCacheAdminCdcCommandRequest request,
@@ -602,6 +627,37 @@ internal sealed class DocumentCacheAdminCdcCommandDispatcher(
     /// Everything else was applied, and the connector state that follows is an outcome to observe
     /// rather than a request to reissue — which is exactly what the readiness mapping reports.
     /// </remarks>
+    /// <summary>
+    /// Classifies a planned fence the same way a restart is classified, and for the same reason: the
+    /// status contract alone does not say whether this verb acted.
+    /// </summary>
+    /// <remarks>
+    /// A stop that was never issued, or one the worker refused, leaves a connector that may still be
+    /// publishing - which is the opposite of what the caller asked for, and is the caller's to act on
+    /// before it takes the stack down around it. Exiting 0 on either would report a fence that is not
+    /// there.
+    /// </remarks>
+    private static DocumentCacheAdminCdcCommandResult Stop(Invocation invocation, CdcStatus status)
+    {
+        bool fenced = !status.Targets.Any(target =>
+            target.Diagnostics.Any(diagnostic =>
+                diagnostic.Code is CdcFenceDiagnosticCodes.NotAttempted or CdcFenceDiagnosticCodes.NotApplied
+            )
+        );
+
+        // A fenced connector is not a ready one, so the readiness mapping the sibling verbs take would
+        // report this verb's own success as a failure. The outcome still carries the readiness, which
+        // is what the status contract says; only the exit code is the fence's.
+        return DocumentCacheAdminCdcCommandResult.ForContract(
+            invocation.Request.VerbName,
+            status,
+            fenced ? DocumentCacheAdminExitCodes.Success : DocumentCacheAdminExitCodes.RejectedNoMutation,
+            LowerCamel(status.Readiness.ToString()),
+            "cdcStop",
+            invocation.GovernedNames
+        );
+    }
+
     private static DocumentCacheAdminCdcCommandResult Restart(Invocation invocation, CdcStatus status)
     {
         bool started = !status.Targets.Any(target =>

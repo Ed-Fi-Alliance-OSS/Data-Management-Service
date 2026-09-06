@@ -176,6 +176,46 @@ public sealed class Given_DocumentCacheAdminCdcCommandDispatcher
         result.ExitCode.Should().Be(DocumentCacheAdminExitCodes.Success);
     }
 
+    /// <summary>
+    /// A planned fence that landed exits 0, even though the connector it just stopped is by definition
+    /// not ready. Classifying it by readiness the way its sibling verbs are would report this verb's
+    /// own success as a failure and fail the shutdown sequence that issued it.
+    /// </summary>
+    [Test]
+    public async Task It_reports_an_applied_fence_as_successful_though_a_fenced_target_is_not_ready()
+    {
+        A.CallTo(() => _controller.StopAsync(A<CdcTargetOperationRequest>._, A<CancellationToken>._))
+            .Returns(Status(CdcReadiness.NotReady));
+
+        DocumentCacheAdminCdcCommandResult result = await ExecuteAsync(
+            Request(DocumentCacheAdminCommandSurface.CdcStopVerbName)
+        );
+
+        using AssertionScope assertions = new();
+        result.ExitCode.Should().Be(DocumentCacheAdminExitCodes.Success);
+        result.Outcome.Should().Be("notReady", "the contract still reports the readiness it observed");
+        A.CallTo(() => _controller.StopAsync(A<CdcTargetOperationRequest>._, A<CancellationToken>._))
+            .MustHaveHappenedOnceExactly();
+    }
+
+    /// <summary>
+    /// A fence the worker refused leaves a connector that may still be publishing, which is the
+    /// opposite of what the caller asked for and is theirs to act on before the stack goes down around
+    /// it. Exiting 0 would report a fence that is not there.
+    /// </summary>
+    [Test]
+    public async Task It_reports_a_fence_that_did_not_apply_as_rejected_before_mutation()
+    {
+        A.CallTo(() => _controller.StopAsync(A<CdcTargetOperationRequest>._, A<CancellationToken>._))
+            .Returns(UnappliedFence());
+
+        DocumentCacheAdminCdcCommandResult result = await ExecuteAsync(
+            Request(DocumentCacheAdminCommandSurface.CdcStopVerbName)
+        );
+
+        result.ExitCode.Should().Be(DocumentCacheAdminExitCodes.RejectedNoMutation);
+    }
+
     [Test]
     public async Task It_adopts_under_the_operator_supplied_binding_record()
     {
@@ -362,6 +402,50 @@ public sealed class Given_DocumentCacheAdminCdcCommandDispatcher
         // The Configuration Service's own answer is not consulted at all: falling back to it would run
         // the teardown against the replacing database, which is the mistake the override prevents.
         A.CallTo(() => _connectionStrings.GetConnectionString(A<long>._, A<string?>._))
+            .MustNotHaveHappened();
+    }
+
+    /// <summary>
+    /// "Not consulted at all" includes the load that fills the cache behind the read. The whole point
+    /// of the override is a superseded generation whose database the deployment's data store no longer
+    /// names: its binding, its source database, and its governed artifacts are all reachable, so the
+    /// retirement must not fail on a Configuration Service it never reads.
+    /// </summary>
+    [Test]
+    public async Task It_retires_against_a_named_source_connection_while_the_data_stores_are_unreachable()
+    {
+        const string VariableName = "DMS_TEST_SUPERSEDED_SOURCE_WITHOUT_CMS";
+        const string SupersededConnectionString = "Host=superseded.internal;Username=dms;Password=other";
+
+        A.CallTo(() => _dataStores.LoadDataStores(A<string?>._, A<CancellationToken>._))
+            .ThrowsAsync(new InvalidOperationException("Unable to connect to Configuration Service."));
+        A.CallTo(() => _controller.RetireAsync(A<CdcTargetOperationRequest>._, A<CancellationToken>._))
+            .Returns(CdcContractReadResult<CdcCleanupProof>.Success(CleanupProof()));
+
+        Environment.SetEnvironmentVariable(VariableName, SupersededConnectionString);
+        DocumentCacheAdminCdcCommandResult result;
+        try
+        {
+            result = await ExecuteAsync(
+                Request(
+                    DocumentCacheAdminCommandSurface.CdcRetireVerbName,
+                    sourceConnectionVariable: VariableName
+                )
+            );
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(VariableName, null);
+        }
+
+        result.Diagnostics.Should().NotContain(diagnostic => diagnostic.Code == "cdcDataStoresUnavailable");
+        CapturedRequest<CdcTargetOperationRequest>(nameof(ICdcSetupController.RetireAsync))
+            .ConnectionString.Should()
+            .Be(SupersededConnectionString);
+
+        // Never issued, rather than issued and its failure tolerated: a load this path does not need
+        // is a Configuration Service round trip a teardown should not be waiting on either.
+        A.CallTo(() => _dataStores.LoadDataStores(A<string?>._, A<CancellationToken>._))
             .MustNotHaveHappened();
     }
 
@@ -880,6 +964,35 @@ public sealed class Given_DocumentCacheAdminCdcCommandDispatcher
                 ),
             ]
         );
+    }
+
+    /// <summary>A stop the worker refused, carrying the diagnostic that says so.</summary>
+    private static CdcStatus UnappliedFence()
+    {
+        CdcStatus declined = DeclinedRestart();
+        CdcTargetStatus target = declined.Targets[0];
+
+        return declined with
+        {
+            Targets =
+            [
+                target with
+                {
+                    Diagnostics =
+                    [
+                        new CdcDiagnostic(
+                            CdcDiagnosticCategory.ConnectorNotRunning,
+                            DateTimeOffset.UnixEpoch,
+                            "$.connectorRuntime",
+                            "CDC stop could not fence the connector."
+                        )
+                        {
+                            Code = CdcFenceDiagnosticCodes.NotApplied,
+                        },
+                    ],
+                },
+            ],
+        };
     }
 
     private static CdcStatus Status(CdcReadiness readiness) =>

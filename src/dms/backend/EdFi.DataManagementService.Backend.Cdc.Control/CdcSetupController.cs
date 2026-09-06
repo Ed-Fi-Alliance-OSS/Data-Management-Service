@@ -151,6 +151,24 @@ public interface ICdcSetupController
     /// resuming it, and a proved loss stops it. No offset is ever reset and nothing is re-snapshotted
     /// into the existing public topic.
     /// </summary>
+    /// <summary>
+    /// Stops the binding's connector, so the worker persists a fenced target state that survives its
+    /// own restart. Nothing else changes: no governed artifact is removed, no offset is reset or
+    /// deleted, and the binding record is untouched, so the generation stays enabled and is resumed
+    /// through <see cref="RestartAsync"/> and its continuity gate.
+    /// </summary>
+    /// <remarks>
+    /// This is the planned counterpart to the fences the control plane applies on its own. A worker
+    /// restores every connector its config topic holds at a running target state as soon as it starts,
+    /// and that start is a start like any other: `cdc-streaming.md` requires source-history continuity
+    /// to be proved before it, and no check can run before a worker that has already resumed. Leaving
+    /// the connector fenced across a planned stop is what keeps the next start a guarded one.
+    /// </remarks>
+    Task<CdcStatus> StopAsync(
+        CdcTargetOperationRequest request,
+        CancellationToken cancellationToken = default
+    );
+
     Task<CdcStatus> RestartAsync(
         CdcTargetOperationRequest request,
         CancellationToken cancellationToken = default
@@ -1118,6 +1136,98 @@ internal sealed class CdcSetupController(
     /// is reported as its own diagnostic on the connector runtime rather than being left to be inferred
     /// from the state that is read back afterwards.
     /// </remarks>
+    public async Task<CdcStatus> StopAsync(
+        CdcTargetOperationRequest request,
+        CancellationToken cancellationToken = default
+    )
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(request.ProviderSetup);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.ConnectionString);
+
+        CdcCollectedTargetObservations collected = await CollectTargetObservationsAsync(
+                request,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        // No gate of its own, unlike the restart below. Stopping a connector removes nothing, resets
+        // nothing, and can only reduce what is published, so there is no state of the deployment in
+        // which refusing to fence is the safer answer. The one thing it needs is a record naming the
+        // connector: automation never infers a binding from the artifacts that happen to exist.
+        if (collected is not { BindingRecord: { } binding, Inventory: { } inventory, Context: { } context })
+        {
+            return Compose(
+                collected.Evaluation with
+                {
+                    StateStoreDiagnostics =
+                    [
+                        StatusStep(
+                            CdcFenceDiagnosticCodes.NotAttempted,
+                            CdcDiagnosticCategory.BindingMissing,
+                            CdcDiagnosticComponent.Binding,
+                            "CDC stop issued no connector request: the durable binding record is what "
+                                + "names the connector, and no artifact stands in for it.",
+                            collected.BindingRecord is null ? "no binding record" : "no recovered inventory",
+                            timeProvider.GetUtcNow()
+                        ),
+                        .. collected.Evaluation.StateStoreDiagnostics,
+                    ],
+                }
+            );
+        }
+
+        // Already where this verb would leave it. Re-issuing would be harmless, but the read-back the
+        // adapter performs waits for a state transition that is not going to happen, so a shutdown
+        // sequence would pay the stop budget for nothing.
+        if (collected.Evaluation.ConnectorRuntime?.ConnectorState is CdcConnectorRuntimeState.Stopped)
+        {
+            logger.LogDebug("CDC stop left the connector alone: the worker already holds it STOPPED.");
+            return Compose(collected.Evaluation);
+        }
+
+        CdcConnectResult fence = await connectClient
+            .StopConnectorAsync(inventory.ConnectorName, cancellationToken)
+            .ConfigureAwait(false);
+        logger.LogDebug("CDC stop asked the worker to fence the connector: {Outcome}.", fence.Outcome);
+
+        // Re-read for the same reason the restart does: the reported status must describe the
+        // connector this verb left behind, not the one observed before it acted.
+        CdcTargetStatusEvaluationInput evaluation = collected.Evaluation with
+        {
+            ConnectorRuntime = observationMapper.MapRuntime(
+                context,
+                binding,
+                await connectClient
+                    .GetConnectorStatusAsync(inventory.ConnectorName, cancellationToken)
+                    .ConfigureAwait(false),
+                await connectClient
+                    .GetConnectorOffsetsAsync(inventory.ConnectorName, cancellationToken)
+                    .ConfigureAwait(false)
+            ),
+        };
+
+        // A worker holding no connector under this name is the end state this verb exists to reach, so
+        // it is not a request that failed to apply. Every other outcome leaves a connector that may
+        // still be publishing, which is exactly what the caller must be told.
+        if (fence.Succeeded || fence.Outcome == CdcConnectOutcome.NotFound)
+        {
+            return Compose(evaluation);
+        }
+
+        return Compose(
+            WithUnappliedConnectorAction(
+                evaluation,
+                inventory,
+                fence,
+                CdcFenceDiagnosticCodes.NotApplied,
+                CdcDiagnosticCategory.ConnectorNotRunning,
+                "CDC stop could not fence the connector, which may still be publishing.",
+                "the connector stopped at a target state the worker persists across its own restart"
+            )
+        );
+    }
+
     public async Task<CdcStatus> RestartAsync(
         CdcTargetOperationRequest request,
         CancellationToken cancellationToken = default
