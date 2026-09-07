@@ -556,6 +556,77 @@ public sealed class Given_CdcControlBrokerBackedStack
 
     [Test]
     [Order(16)]
+    public async Task It_adopts_only_the_complete_binding_that_matches_the_live_streaming_stack()
+    {
+        using CancellationTokenSource cancellation = new(OperationTimeout);
+        string stateRoot = Path.Combine(Path.GetTempPath(), $"cdc-adoption-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(stateRoot);
+        if (!OperatingSystem.IsWindows())
+        {
+            File.SetUnixFileMode(
+                stateRoot,
+                UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute
+            );
+        }
+
+        try
+        {
+            CdcBinding binding = _fixture.BuildBinding();
+            CdcContractReadResult<CdcAdoptionProof> mismatch = await _fixture.AdoptAsync(
+                binding with
+                {
+                    PartitionCount = binding.PartitionCount + 1,
+                },
+                stateRoot,
+                cancellation.Token
+            );
+            mismatch.Succeeded.Should().BeFalse();
+            mismatch.Contract.Should().BeNull();
+            mismatch.Diagnostics.Should().Contain(d => d.Code == "adoptVerificationNotExactMatch");
+            Directory.GetFiles(stateRoot, "*.json", SearchOption.AllDirectories).Should().BeEmpty();
+            await TestContext.Out.WriteLineAsync(
+                System.Text.Json.JsonSerializer.Serialize(mismatch.Diagnostics)
+            );
+
+            CdcContractReadResult<CdcAdoptionProof> adopted = await _fixture.AdoptAsync(
+                binding,
+                stateRoot,
+                cancellation.Token
+            );
+            adopted
+                .Succeeded.Should()
+                .BeTrue("{0}", string.Join("; ", adopted.Diagnostics.Select(d => d.Message)));
+            adopted.Contract.Should().NotBeNull();
+            adopted.Contract!.Binding.Should().Be(binding);
+            adopted
+                .Contract.VerificationResults.Should()
+                .HaveCount(Enum.GetValues<CdcAdoptionVerificationKind>().Length);
+            adopted
+                .Contract.VerificationResults.Should()
+                .OnlyContain(v => v.State == CdcAdoptionVerificationState.ExactMatch);
+            await TestContext.Out.WriteLineAsync(CdcJsonContract.Serialize(adopted.Contract));
+            Directory.GetFiles(stateRoot, "*.json", SearchOption.AllDirectories).Should().NotBeEmpty();
+
+            CdcContractReadResult<CdcAdoptionProof> retried = await _fixture.AdoptAsync(
+                binding,
+                stateRoot,
+                cancellation.Token
+            );
+            retried.Succeeded.Should().BeTrue();
+            retried.Contract!.Binding.Should().Be(binding);
+            (await _fixture.Connect.GetConnectorStatusAsync(binding.ConnectorName, cancellation.Token))
+                .Value!.ConnectorState.Should()
+                .Be("RUNNING");
+            (await _fixture.TopicExistsAsync(binding.TopicName)).Should().BeTrue();
+        }
+        finally
+        {
+            Directory.Delete(stateRoot, recursive: true);
+        }
+    }
+
+    [Test]
+    [Order(17)]
     public async Task It_reads_the_debezium_source_lag_current_value_and_every_quantile_over_jolokia()
     {
         using CancellationTokenSource cancellation = new(OperationTimeout);
@@ -572,7 +643,7 @@ public sealed class Given_CdcControlBrokerBackedStack
     }
 
     [Test]
-    [Order(17)]
+    [Order(18)]
     public async Task It_restarts_the_running_connector_and_returns_it_to_running()
     {
         using CancellationTokenSource cancellation = new(OperationTimeout);
@@ -594,7 +665,7 @@ public sealed class Given_CdcControlBrokerBackedStack
     }
 
     [Test]
-    [Order(18)]
+    [Order(19)]
     public async Task It_requires_a_stopped_connector_before_its_committed_offsets_can_be_deleted()
     {
         using CancellationTokenSource cancellation = new(OperationTimeout);
@@ -630,7 +701,7 @@ public sealed class Given_CdcControlBrokerBackedStack
     }
 
     [Test]
-    [Order(19)]
+    [Order(20)]
     public async Task It_deletes_exactly_the_binding_governed_artifacts_and_leaves_the_shared_offset_store()
     {
         using CancellationTokenSource cancellation = new(OperationTimeout);

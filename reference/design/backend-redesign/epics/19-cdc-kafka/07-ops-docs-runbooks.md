@@ -55,15 +55,16 @@ Publish verified operator guidance for the implemented relational CDC capability
 - Document that a binding record spells the default tenant as `default` while every `cdc` verb
   takes the E18 tenant key, where the default tenant is the empty string. An operator driving a
   verb from a record maps it back, and a record's own `default` passed through as `--tenant-key`
-  names a tenant the deployment does not have.
+  is rejected before dispatch. The token is reserved case-insensitively for binding records;
+  the CDC CLI does not support a named tenant called `default`.
 - State that projector downtime permits canonical writes to queue work, while enqueue
   failure rejects the complete canonical transaction. Projection status never gates
   ordinary API routing.
 - Document only the implemented restart, recovery, containment, source-replacement, and
   destructive-retirement commands.
 - Cross-link E18 projection/restamp guidance and the design-owned deferred workflows.
-- Add documentation checks against command help, templates, status output, and test
-  fixtures.
+- Manually verify documentation against command help, templates, status output, and test
+  fixtures. There must be no automated tests of documentation in this story.
 
 ## Resolved Runbook Scope and Implementation Guidance
 
@@ -216,12 +217,23 @@ or a second specification of CDC behavior.
 
 ### Documentation Verification and Evidence Reuse
 
-- Extend the existing `DocumentCacheAdmin.Tests.Unit` command-surface/exit-code tests and
-  `eng/docker-compose/tests/BootstrapEnableKafkaCdc.Tests.ps1` for examples and settings
-  drift. Use a small explicit catalog of documented command examples and referenced JSON
-  fields, not a general Markdown execution framework. Check argument parsing/help,
-  option/default correspondence, shared-contract serialization, and local links/anchors;
-  do not make prose snapshots or keyword presence the evidence for behavioral correctness.
+- There must be no automated tests of documentation. Do not add, extend, or require tests
+  that read or assert documentation contents, extract or execute Markdown snippets, compare
+  documentation-bound catalogs, check documented settings/defaults or JSON fields, validate
+  documentation links/anchors, or assert prose snapshots or keywords. Existing documentation
+  assertions in reused suites must not be selected as this story's verification or acceptance
+  evidence.
+- Manually compare documented commands with generated help and the shipped command surface,
+  settings/defaults with `CdcControlOptions` and its validator, and JSON examples with actual
+  serialized fixture output. Manually follow local links and anchors, including evidence
+  targets. Record the reviewed revision, procedure anchors, findings, corrections, and result
+  in the evidence index; do not create an executable documentation catalog or drift checker.
+- Reuse existing command-surface/exit-code and bootstrap behavior tests as supporting
+  evidence. Select only tests of product behavior from mixed suites such as
+  `eng/docker-compose/tests/BootstrapEnableKafkaCdc.Tests.ps1`, and record the exact selection.
+  Automated tests of actual CLI parsing, configuration validation, serialization, wrappers,
+  and provider behavior are allowed when their inputs and assertions are independent of
+  documentation. Comparing their results with the runbook is a manual verification step.
 - Extend `src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration`
   around `Given_DocumentCacheAdminRunbookWorkflows`, the CDC JSON-contract fixtures, and
   shipped-composition fixtures. Reuse provider and broker fixtures from the existing CDC
@@ -238,11 +250,12 @@ or a second specification of CDC behavior.
   Reuse E18's provider prerequisite, rebuild/reset, and scrub evidence rather than duplicating
   it. Capture the revision, tool/image versions, command outcome, sanitized output, and
   relevant test artifacts. A missing provider, qualified image, or broker is an unmet
-  prerequisite, not a passing exercise; keep fast documentation checks separately runnable.
+  prerequisite, not a passing exercise. Keep the manual documentation review checklist
+  separate from commands for automated behavior tests and provider exercises.
 - Review the final prose manually for decision clarity, secret/payload disclosure, and
   unsupported recovery promises. The acceptance handoff includes the documented commands
-  to run the checks and exercise suites plus actual results; it does not require running a
-  destructive procedure against an operator's existing deployment.
+  for behavior tests and exercise suites, the manual review checklist, and actual results;
+  it does not require running a destructive procedure against an operator's existing deployment.
 
 ## Acceptance Evidence
 
@@ -253,11 +266,12 @@ or a second specification of CDC behavior.
   classification without a renewed-readiness guarantee for any other lifecycle,
   activation correction-and-retry, restart without source scan, reset/rebuild crash
   recovery, and work-table capture exclusion.
-- Documentation tests detect drift from the shipped configuration, status, and lifecycle
-  surfaces.
-- Documentation checks or exercised runbook scenarios cover the rejected active, historical,
-  unknown, missing, and mismatched downstream-history evidence for the E18 command gate, and
-  record that v1 ships no evidence shape that admits it.
+- Recorded manual review verifies documentation against the shipped configuration, status,
+  and lifecycle surfaces, including commands, examples, and local links/anchors. No automated
+  tests inspect or assert documentation as part of this story.
+- Manual documentation review and exercised runbook scenarios cover the rejected active,
+  historical, unknown, missing, and mismatched downstream-history evidence for the E18 command
+  gate, and record that v1 ships no evidence shape that admits it.
 - Every behavioral, security, recovery, or compatibility statement links to its owning
   design section instead of reproducing its normative algorithm or value table.
 - Destructive procedures are verified against the implemented guarded operations.

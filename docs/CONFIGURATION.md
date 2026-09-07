@@ -127,8 +127,9 @@ preflight reads that membership before the CLI's invocation target override;
 `--data-store-id` alone does not establish projector configuration. `TenantKey` is empty
 for the default tenant and `DataStoreId` is positive. A CDC binding record spells that
 tenant `default`; translate it back to the empty key (or omit `--tenant-key`) for the CLI.
-Literal `--tenant-key default` names a different, nonexistent deployment tenant. Target
-configuration neither changes durable lifecycle nor opens writer admission; read
+Every CDC verb rejects `--tenant-key default` (case-insensitively) before dispatch: the
+token is reserved for binding records, so named tenants called `default` are unsupported
+by the CDC CLI. Target configuration neither changes durable lifecycle nor opens writer admission; read
 acceleration is independently optional.
 
 ### CDC identity, endpoints, and policy

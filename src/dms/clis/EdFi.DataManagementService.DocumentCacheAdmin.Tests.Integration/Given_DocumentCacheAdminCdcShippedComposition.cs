@@ -181,6 +181,51 @@ public sealed class Given_DocumentCacheAdminCdcShippedComposition
         );
     }
 
+    [TestCase("")]
+    [TestCase("default")]
+    public async Task It_requires_the_cli_default_tenant_translation_for_a_cdc_target(string tenantKey)
+    {
+        await using DocumentCacheAdminCliTarget target =
+            await DocumentCacheAdminCliTarget.CreatePostgresqlAsync();
+        await using DocumentCacheAdminCliProcessHarness harness =
+            await DocumentCacheAdminCliProcessHarness.CreateAsync(target);
+        using TemporaryBindingStateRoot stateRoot = new();
+        List<string> arguments = [.. CdcStatusArguments(target, stateRoot)];
+        arguments.AddRange(["--tenant-key", tenantKey]);
+
+        DocumentCacheAdminCliProcessResult result = await harness.RunAsync(arguments.ToArray());
+
+        await TestContext.Out.WriteLineAsync(
+            JsonSerializer.Serialize(
+                new
+                {
+                    tenantKey,
+                    result.ExitCode,
+                    result.StandardOutput,
+                    result.StandardError,
+                }
+            )
+        );
+        if (tenantKey.Length == 0)
+        {
+            result.ExitCode.Should().Be(0);
+            CdcJsonContract.Deserialize<CdcStatus>(result.StandardOutput).Succeeded.Should().BeTrue();
+        }
+        else
+        {
+            result
+                .ExitCode.Should()
+                .Be(
+                    DocumentCacheAdminExitCodes.ArgumentError,
+                    "the record spelling default is reserved and is not the CLI default tenant key"
+                );
+            result
+                .StandardOutput.Should()
+                .BeEmpty("an invalid tenant argument must not produce CDC target status");
+            result.StandardError.Should().Contain("omit --tenant-key or pass an empty string");
+        }
+    }
+
     private static string[] CdcStatusArguments(
         DocumentCacheAdminCliTarget target,
         TemporaryBindingStateRoot stateRoot

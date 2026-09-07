@@ -234,7 +234,8 @@ Local binding keys are `deploymentKey=local`, `instanceKey=ds<DataStoreId>`. The
 uses an existing live generation for retry, or allocates above every live/retired generation.
 A fresh store begins at `1`. A record's `tenantKey=default` maps to the empty E18 CLI key;
 the discovery helper below performs this translation. Passing literal `default` as
-`--tenant-key` selects a tenant the deployment does not have.
+`--tenant-key` is rejected before dispatch. Every CDC verb reserves this token
+case-insensitively; named tenants called `default` are unsupported by the CDC CLI.
 
 **State persistence:** precedence is explicit `-CdcBindingStatePath` where supported,
 then ambient `DMS_CDC_BINDING_STATE_PATH`, then the selected environment file, then
@@ -713,8 +714,8 @@ cdc_context=(--cdc-binding-state-path "$CDC_STATE_ROOT"
 For example, a record for synthetic `cdc-lab`, tenant `default`, data store `42`, instance
 `school-year-lab`, generation `1` selects CLI `--tenant-key '' --data-store-id 42
 --deployment-key cdc-lab --instance-key school-year-lab --generation 1`. The record keeps
-`default`; only the CLI argument becomes empty. Literal `--tenant-key default` names a
-tenant the deployment does not have. Use the translation for **every** CDC verb.
+`default`; only the CLI argument becomes empty. Literal `--tenant-key default` is
+rejected before dispatch. Use the translation for **every** CDC verb.
 
 **Expected result/verification:** `jq` and shell selection exit `0` and print identity
 fields, not a CDC outcome. Stop on a read/parse error. Manually confirm every selected
@@ -1017,7 +1018,8 @@ durable store for the generation being removed. Recheck every displayed identity
 before mutation, especially provider, fingerprint, connector, topic, and generation.
 `cdc_generation` selects the retained generation, even if configuration now defaults to
 its replacement. Translate record tenant `default` to CLI `--tenant-key ''` using the
-shared context; passing literal `default` selects another tenant. The retire verb reads
+shared context; passing literal `default` is rejected before dispatch, including with
+`--source-connection-variable`. The retire verb reads
 the stored binding; `--binding-json` is an adoption option, not a retirement input.
 
 Have the deployment secret mechanism export `CDC_ORIGINAL_SOURCE_CONNECTION` with the

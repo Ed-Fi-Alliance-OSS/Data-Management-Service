@@ -10,6 +10,7 @@ using Confluent.Kafka.Admin;
 using EdFi.DataManagementService.Backend.Cdc.Tests.Integration;
 using EdFi.DataManagementService.Backend.Ddl;
 using FluentAssertions;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -751,7 +752,7 @@ internal sealed class CdcControlBrokerFixture : IAsyncDisposable
             .Inventory
         ?? throw new InvalidOperationException("The broker-backed CDC artifact names are invalid.");
 
-    private CoreCdc.CdcBinding BuildBinding() =>
+    internal CoreCdc.CdcBinding BuildBinding() =>
         new(
             CoreCdc.CdcJsonContract.CurrentContractVersion,
             DeploymentKey,
@@ -1138,6 +1139,53 @@ internal sealed class CdcControlBrokerFixture : IAsyncDisposable
         throw new InvalidOperationException(
             "The pinned Kafka Connect worker did not answer its REST endpoint within the allotted time."
         );
+    }
+
+    // Adoption observes the existing streaming stack and writes only the supplied state root.
+    // Activation is forbidden: this fixture has no DMS projector or initial-admission authority.
+    internal async Task<CoreCdc.CdcContractReadResult<CoreCdc.CdcAdoptionProof>> AdoptAsync(
+        CoreCdc.CdcBinding binding,
+        string stateRoot,
+        CancellationToken cancellationToken
+    )
+    {
+        IConfiguration configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(
+                new Dictionary<string, string?> { ["AppSettings:Datastore"] = "postgresql" }
+            )
+            .Build();
+        await using ServiceProvider services = new ServiceCollection()
+            .AddLogging()
+            .AddDmsCdcControl(configuration)
+            .AddSingleton<IOptions<CdcControlOptions>>(Options.Create(ControlOptions))
+            .Configure<CoreCdc.CdcBindingStateStoreOptions>(options => options.RootPath = stateRoot)
+            .AddSingleton<IDocumentCacheGuardedNewEmptyActivationCommand, ForbiddenActivation>()
+            .BuildServiceProvider();
+        await using AsyncServiceScope scope = services.CreateAsyncScope();
+        return await scope
+            .ServiceProvider.GetRequiredService<ICdcSetupController>()
+            .AdoptAsync(
+                new CdcAdoptRequest(
+                    OperationId,
+                    binding,
+                    ProviderAdminConnectionString,
+                    new CdcProviderSetupInputs(
+                        "postgres",
+                        PinnedImage.ConnectorDatabaseUser,
+                        PinnedImage.BuildRequiredSourceTableInventory(CdcProvider.Postgresql),
+                        PinnedImage.BuildDmsManagedTableInventory(CdcProvider.Postgresql)
+                    )
+                ),
+                cancellationToken
+            );
+    }
+
+    private sealed class ForbiddenActivation : IDocumentCacheGuardedNewEmptyActivationCommand
+    {
+        public Task<Core.DocumentCache.DocumentCacheAdministrativeCommandResult> ExecuteAsync(
+            Core.DocumentCache.DocumentCacheGuardedNewEmptyActivationRequest request,
+            CancellationToken cancellationToken = default
+        ) => throw new InvalidOperationException("Adoption must not activate the source database.");
     }
 
     private async Task<CdcProviderSetupResult> RunProviderSetupAsync(CancellationToken cancellationToken)

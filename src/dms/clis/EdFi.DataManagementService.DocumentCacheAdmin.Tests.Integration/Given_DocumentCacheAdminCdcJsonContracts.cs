@@ -139,6 +139,80 @@ public sealed class Given_DocumentCacheAdminCdcJsonContracts
     }
 
     [Test]
+    public async Task It_emits_no_adoption_proof_when_live_verification_is_refused()
+    {
+        CdcDiagnostic diagnostic = new(
+            "adoptVerificationNotExactMatch",
+            CdcDiagnosticCategory.ConnectorConfigInvalid,
+            CdcDiagnosticSeverity.Error,
+            CdcDiagnosticComponent.ConnectorConfig,
+            DateTimeOffset.UnixEpoch,
+            "Live connector configuration does not match the supplied binding.",
+            retryable: false
+        );
+        (int exitCode, string stdout, string stderr) = await ExecuteAsync(
+            "adopt",
+            DocumentCacheAdminCdcCommandResult.Refused(
+                "adopt",
+                DocumentCacheAdminExitCodes.RejectedNoMutation,
+                "rejectedNoMutation",
+                "cdcAdopt",
+                [diagnostic]
+            ),
+            jsonOutput: true
+        );
+
+        exitCode.Should().Be(10);
+        stdout.Should().BeEmpty();
+        stderr.Should().Contain(diagnostic.Code).And.Contain(diagnostic.Message);
+        AssertNoSecrets(stderr);
+        await TestContext.Out.WriteLineAsync(
+            System.Text.Json.JsonSerializer.Serialize(
+                new
+                {
+                    exitCode,
+                    stdout,
+                    stderr,
+                }
+            )
+        );
+    }
+
+    // Mocked dispatch: controller admission decisions and mutation ordering live in the sibling suites.
+    [TestCase(CdcAdmissionState.Admitted, 0, "admitted")]
+    [TestCase(CdcAdmissionState.Unknown, 12, "unknown")]
+    public async Task It_preserves_replacement_admission_and_interruption_in_the_cli_output(
+        CdcAdmissionState state,
+        int expectedExitCode,
+        string outcome
+    )
+    {
+        CdcAdmission expected = Admission(state);
+        (int exitCode, string stdout, string stderr) = await ExecuteAsync(
+            "replace-source",
+            ContractResult("replace-source", expected, expectedExitCode, outcome),
+            jsonOutput: true
+        );
+
+        exitCode.Should().Be(expectedExitCode);
+        stderr.Should().BeEmpty();
+        CdcContractReadResult<CdcAdmission> read = CdcJsonContract.Deserialize<CdcAdmission>(stdout);
+        read.Succeeded.Should().BeTrue();
+        read.Contract.Should().BeEquivalentTo(expected);
+        AssertNoSecrets(stdout);
+        await TestContext.Out.WriteLineAsync(
+            System.Text.Json.JsonSerializer.Serialize(
+                new
+                {
+                    exitCode,
+                    stdout,
+                    stderr,
+                }
+            )
+        );
+    }
+
+    [Test]
     public async Task It_round_trips_the_cleanup_proof_for_retire()
     {
         (int exitCode, string stdout, string stderr) = await ExecuteAsync(

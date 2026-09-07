@@ -580,6 +580,59 @@ public sealed class Given_DocumentCacheAdminCdcCommandSurface
 
     private static IEnumerable<string> CdcVerbNameCases() => DocumentCacheAdminCommandSurface.CdcVerbNames;
 
+    [TestFixtureSource(typeof(Given_DocumentCacheAdminCdcCommandSurface), nameof(CdcVerbNameCases))]
+    [Parallelizable]
+    [Category("CommandSurface")]
+    public sealed class Given_CdcTenantKey(string verbName)
+    {
+        private readonly Dictionary<string, ParseResult> _results = new();
+
+        [SetUp]
+        public void Setup()
+        {
+            List<string> arguments = [.. VerbArgs(verbName)];
+            if (verbName == DocumentCacheAdminCommandSurface.CdcRetireVerbName)
+            {
+                arguments.AddRange([
+                    DocumentCacheAdminCommandSurface.SourceConnectionVariableOptionName,
+                    "DMS_SUPERSEDED_SOURCE",
+                ]);
+            }
+
+            _results["omitted"] = Parse([.. arguments]);
+            string[] tenantKeys = ["", "district-a", "default", "DEFAULT", "Default"];
+            foreach (string tenantKey in tenantKeys)
+            {
+                _results[tenantKey] = Parse([
+                    .. arguments,
+                    DocumentCacheAdminCommandSurface.TenantKeyOptionName,
+                    tenantKey,
+                ]);
+            }
+        }
+
+        [TestCase("omitted")]
+        [TestCase("")]
+        [TestCase("district-a")]
+        public void It_accepts_the_default_tenant_and_ordinary_named_tenants(string tenantKey)
+        {
+            _results[tenantKey].Errors.Should().BeEmpty();
+        }
+
+        [TestCase("default")]
+        [TestCase("DEFAULT")]
+        [TestCase("Default")]
+        public void It_rejects_the_reserved_binding_token_with_translation_guidance(string tenantKey)
+        {
+            _results[tenantKey]
+                .Errors.Should()
+                .ContainSingle()
+                .Which.Message.Should()
+                .Contain("reserved")
+                .And.Contain("omit --tenant-key or pass an empty string");
+        }
+    }
+
     /// <summary>A minimally valid invocation of one cdc verb.</summary>
     /// <summary>
     /// The downstream-publication-history provider reads the deployment key straight from

@@ -202,6 +202,11 @@ Operator guidance for the confirmation token, `--connector-already-absent`, and 
 binding record's tenant token back into a verb's `--tenant-key` is in the
 [guarded retirement procedure](../../../../cdc-documentation/operations-runbook.md#retire-binding-generation).
 
+Every CDC verb rejects `--tenant-key default` case-insensitively during argument validation,
+including retirement with an explicit source connection. This token is reserved for binding
+records; the default CLI tenant is omitted or empty. Named tenants called `default` are
+unsupported by the CDC CLI.
+
 This story owns how the controller spends its budgets and classifies its steps. Every provider
 pass runs under the configured provider-setup budget — the create pass, the validate-only pass
 each verb composes its evidence from, and the retirement's own artifact teardown — because the

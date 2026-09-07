@@ -10,6 +10,7 @@ using System.Globalization;
 using System.Numerics;
 using EdFi.DataManagementService.Backend.Cdc.Control;
 using EdFi.DataManagementService.Core.DocumentCache;
+using EdFi.DataManagementService.Core.DocumentCache.Cdc;
 
 namespace EdFi.DataManagementService.DocumentCacheAdmin;
 
@@ -762,6 +763,22 @@ internal static class DocumentCacheAdminCommandSurface
 
     private static void ValidateCdcCommandOptions(CommandResult result, string verbName)
     {
+        // Target keys compare tenant names case-insensitively. Reserve the binding token here,
+        // before dispatch, including retirement invocations that bypass the Configuration Service.
+        if (
+            string.Equals(
+                result.GetValue<string?>(TenantKeyOptionName),
+                CdcTargetValidator.DefaultBindingTenantKey,
+                StringComparison.OrdinalIgnoreCase
+            )
+        )
+        {
+            result.AddError(
+                $"'{CdcTargetValidator.DefaultBindingTenantKey}' is reserved for the CDC binding-record "
+                    + $"tenant spelling. For the default tenant, omit {TenantKeyOptionName} or pass an empty string."
+            );
+        }
+
         if (ExpectedCdcConfirmationOptionValue(verbName) is { } expectedConfirmation)
         {
             ValidateRequiredExactOption(
