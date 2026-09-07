@@ -134,6 +134,7 @@ public enum IdentityResultStatus
     Incomplete,
     InvalidProperties,
     NotFound,
+    JobFailed,
 }
 
 public sealed record IdentityError
@@ -204,10 +205,11 @@ public interface IIdentityService
 `IdentityResult` has no request-token member.
 Only find and search can return `IdentityAsyncResult`, so tokens are impossible from create, get-by-id, and results.
 `FindAsync` and `SearchAsync` may return `Success`, `InvalidProperties`, or `NotFound`; `Incomplete` is valid only from `ResultsAsync`.
-If a provider returns `Incomplete` from any operation other than `ResultsAsync`, DMS treats it as provider contract misuse.
-A `RequestToken` is meaningful only on `Success`; DMS ignores any token returned alongside `InvalidProperties` or `NotFound`.
+`JobFailed` is also valid only from `ResultsAsync`: it reports a definitively failed accepted job, not a failure to retrieve the job's state. It requires no payload, and DMS ignores any supplied payload or errors, emitting the fixed sanitized terminal problem defined below.
+If a provider returns `Incomplete` or `JobFailed` from any operation other than `ResultsAsync`, DMS treats it as provider contract misuse.
+A `RequestToken` is meaningful only on `Success`; DMS ignores any token returned alongside `InvalidProperties` or `NotFound`. Returning `JobFailed` from find/search is misuse regardless of any token.
 `IdentityError` entries are projected only for `InvalidProperties`.
-Upstream provider failures are signaled by throwing; DMS logs the exception and returns a sanitized identity-upstream-failure problem without provider error details in the client response.
+Failures of an operation call to obtain an answer are signaled by throwing; DMS logs the exception and returns a sanitized identity-upstream-failure problem without provider error details in the client response. A known terminal job failure is an answer and uses `JobFailed` instead.
 
 `ClientId` is the authenticated client's `client_id`, taken from `ClientAuthorizations.ClientId`.
 It is required rather than nullable because every identity operation is authenticated, so there is no request shape in which it is absent.
@@ -215,8 +217,27 @@ It is stable across token refresh, unlike the token's `jti`, which makes it usab
 `TraceId` is a per-request correlation value and is not an ownership key, a cache key, or an idempotency key.
 
 `IdentityCapabilities` is deployment-wide in the first contract.
+Its getter must be inexpensive, perform no I/O, and return a stable value across requests and instances of the registration for the configured deployment. An upstream outage does not change capabilities. DMS reads the getter once per request after activation and uses that captured value for the requested-operation gate and the results-capability invariant; configuration changes requiring a different capability set take effect on restart.
 Per-tenant or per-route-qualifier restrictions are enforced by provider methods returning `NotFound` or `InvalidProperties`.
 A later context-aware capability method must be added either as a default interface member or in a new interface/package versioning path; adding a required member to the published plugin-implemented interface is a breaking change.
+
+### Context Equality
+
+Namespace mapping and async job ownership use the following v1 equivalence rules. These are explicit identity contract choices, consistent with DMS route matching; the identity pipeline does not inherit datastore authorization or select a datastore to establish them.
+
+| Context component | Equality rule |
+| --- | --- |
+| `Tenant` | `StringComparer.OrdinalIgnoreCase` for names; null denotes single-tenant mode and equals only null, not an empty string or a named tenant |
+| Route qualifier names | `StringComparer.OrdinalIgnoreCase`; equivalent names represent one key |
+| Route qualifier values | `StringComparer.OrdinalIgnoreCase`; no trimming or additional Unicode normalization |
+| Qualifier dictionary | Same set of names and corresponding equivalent values, independent of enumeration/insertion order; a missing qualifier is different from a present qualifier |
+| `ClientId` | `StringComparer.Ordinal`, case-sensitive and unchanged from the authenticated claim |
+
+DMS preserves tenant and qualifier spelling in `IdentityRequestContext`; providers must apply these equality rules rather than raw tuple/string equality or the comparer of an arbitrary supplied dictionary. DMS constructs the qualifier map with case-insensitive keys and rejects configuration containing qualifier names that collide under that comparer; it must not silently overwrite a qualifier. Provider persistence must preserve the same equivalence, with unambiguous composite-key encoding and no culture-dependent casing. No new public normalization/helper type is required.
+
+Equivalent tenant/qualifier contexts must select the same identity namespace. A provider may deliberately map other, non-equivalent contexts to a shared namespace, but async ownership still checks the complete issuing tenant/qualifier/client context under these rules. `TraceId` is excluded. These rules do not case-fold or rewrite UniqueIds or job tokens; those values retain their own documented semantics, and DMS continues passing them through unchanged.
+
+Tests vary tenant spelling, qualifier-name/value casing, and dictionary order while preserving job ownership and namespace selection. They also distinguish null tenant from a named tenant, missing/extra qualifiers, different qualifier values, and client IDs differing only by case. Case-variant client IDs must be tested at the provider boundary if the token issuer cannot provision such a pair; HTTP tests use valid authorized clients so host rejection does not substitute for provider isolation.
 
 ## Request Obligations
 
@@ -296,8 +317,8 @@ The API-surface and fixture stories prove the schema and examples include the st
 
 Provider success with a missing payload is contract misuse and maps to provider-contract-violation `502`.
 Provider success with a payload whose shape does not match the documented schema is still served verbatim; that is a provider bug, not a host validation failure.
-Provider integration failures are represented by exceptions, not by an `IdentityResultStatus` value.
-Non-cancelled provider exceptions map to identity-upstream-failure `502`; provider-supplied diagnostic detail belongs in logs, not in the client response.
+Operation-call integration failures are represented by exceptions; a definitively failed accepted job is represented by results-only `IdentityResultStatus.JobFailed`, not a new success-payload wire `Status`.
+Non-cancelled operation-call exceptions map to identity-upstream-failure `502`; request-time activation/getter failures instead use the provider-configuration `500` defined below. Provider-supplied diagnostic detail belongs in Debug logs, not in the client response.
 
 ### UniqueId Issuance Constraints
 
@@ -391,11 +412,21 @@ It declares:
 - `200` `Location` for incomplete results, where the value points back to the current poll URL;
 - no create `Location`, because the chosen DMS create behavior is `200` with the unique-id string body.
 
+Every declared identity operation response includes `Cache-Control: no-store`. OpenAPI also declares provider-configuration `500` on all operations and the distinct terminal-job `502` problem on results, alongside the existing failure types. Results `200` continues to allow only complete/incomplete search-response payloads; terminal failure uses `application/problem+json` with `type: urn:ed-fi:api:identities:job-failed`. These headers and alternatives are part of the wire baseline.
+
 ### Wire Contract Versioning
 
 The payload schemas are part of the public identity contract even though payloads cross the C# boundary as `JsonNode`. Story 02 stamps the served document with `x-edfi-identity-contract-version`, equal to the `EdFi.Api.Identity` contract version, and produces a deterministic wire-contract baseline from the host-owned OpenAPI document. The baseline covers operation paths, request/response schemas and their referenced components, status codes, media types, headers, security requirements, and pinned examples. Normalize ordering and replace only deployment-specific `servers` values and the injected OAuth `tokenUrl` with fixed placeholders; exclude the version stamp from the baseline comparison while asserting it separately. Security scheme/flow names, scopes, requirements, schema constraints, and descriptions remain covered.
 
-Story 04 gates both package publication and DMS release against the immutable baseline recorded for the last published contract version. An unchanged contract version requires an unchanged baseline, even when the nupkg itself is unchanged. A contract version increment requires a reviewed compatibility diff and continued validation of the prior request/response examples; removing fields or operations, narrowing accepted values, or adding required fields fails the additive-only v1 policy. A breaking wire change needs a separately designed contract/API version, not merely a package version bump. Tests deliberately change a schema while leaving exported C# types unchanged and prove the release gate fails, and prove runtime server and token URL changes do not fail it. The version-to-baseline association is retained with release verification artifacts; no second schema copy in the package or separately published conformance package is required.
+Story 04 gates both package publication and DMS release against the immutable baseline recorded for the last published contract version. An unchanged contract version requires an unchanged baseline, even when the nupkg itself is unchanged. A contract version increment requires a reviewed compatibility diff in each direction below; prior request/response examples remain regression checks but do not establish compatibility on their own. A breaking wire change needs a separately designed contract/API version, not merely a package version bump. The version-to-baseline association is retained with release verification artifacts; no second schema copy in the package or separately published conformance package is required.
+
+| Consumer of the change | Required compatibility |
+| --- | --- |
+| Existing HTTP clients | Previously valid requests remain accepted, and responses to existing operations remain within the previously promised shapes, value sets, status/problem alternatives, and header semantics. Reject narrower request acceptance, new mandatory request fields, removal of guaranteed response fields, widened response enums, or new response alternatives unless the published contract already explicitly permits them |
+| Existing identity providers on a newer compatible host | Providers remain loadable/callable under the plugin version policy, previously valid result/status combinations and payloads remain conforming, and no new required implementation member, input-handling obligation, or stricter output/context obligation is imposed. Extra host-accepted request values are not automatically safe for old providers; preserve their existing input contract |
+| New identity providers | Providers target a host-supported identity contract version and must produce responses compatible with that version's HTTP clients. A newer package does not imply an older host can load it or understand new statuses; the plugin loader's version admission rules continue to apply |
+
+“Additive” describes compatibility in all applicable directions, not merely adding a field or enum member. For example, adding a response enum value can break an old client while removing one can invalidate an old provider's output. Fail the gate for these changes even after a v1 version increment. Tests cover narrower request acceptance, widened response enums/new alternatives, new required provider members, and stricter provider-output obligations, as well as host-only schema mutation at an unchanged version. Deployment server/token URL substitutions remain excluded as specified above. A semantic diff requires explicit review when automation cannot establish compatibility; passing example validation alone is never the approval criterion.
 
 The first publication establishes the reviewed baseline when no prior identity contract has been published. After that, a missing or unreadable published baseline fails verification rather than silently treating the current document as a new initial baseline.
 
@@ -589,6 +620,18 @@ This preserves the "enabled with no plugin" behavior: all five operations return
 - mapping result status to HTTP;
 - enforcing required-value invariants and request-token usability.
 
+### Provider Execution and Exception Boundary
+
+The sanitized provider boundary covers three call sites: request-scoped activation (including constructors, dependency activation, and registration factories), the `Capabilities` getter, and each identity operation invocation. The capability middleware uses this boundary for activation/getter access before the handler; an exception wrapper only inside `IdentityHandler` is insufficient. Keep each protected call narrow so unrelated host validation, authorization, or response-mapping failures are not relabeled as provider failures.
+
+- Activation or capability-getter failure while the request is live returns `500` with `type: urn:ed-fi:api:identities:provider-configuration`, title `Identity provider configuration failure`, and detail `The identity provider could not be initialized or its capabilities evaluated.` Do not include exception messages, dependency names, or constructor arguments in the response. No operation is invoked after either failure.
+- An exception from an operation invocation while the request is live remains `502` with `type: urn:ed-fi:api:identities:upstream-failure`. It establishes no terminal job state.
+- Check request cancellation before activation, getter access, and invocation. `OperationCanceledException` after request cancellation propagates with no replacement problem response; provider-controlled exception messages must not leak through outer cancellation logging either. If outer logging would serialize the original exception, propagate a sanitized `OperationCanceledException` carrying the request token without the provider message or inner exception, retaining the original only at `Debug`. A live-request cancellation exception follows the relevant failure classification above.
+
+For all three call sites, host failure-level logs contain only exception type, stage, operation, trace id, and stack frames; the message and full exception object are restricted to `Debug`. Do not store the raw exception in `RequestInfo.CaughtException` or rethrow it into a logger that emits the complete exception at the failure level; do not use `Exception.ToString()` as a stack trace because it includes messages and inner exceptions. This specifies host handling of request-time provider execution, not an enforcement mechanism for logs a fully trusted plugin writes itself or a change to plugin-loader startup policy.
+
+Tests exercise a throwing registration factory/constructor, throwing capability getter, and throwing operation, including nested exceptions containing sentinel person data. Assert classifications, no invocation after activation/getter failure, and absence of those messages in the client response and every non-Debug host log. Verify the getter is read once and both capability checks use its captured value. Test cancellation at these boundaries as well.
+
 The four inbound protocol checks are:
 
 1. media type;
@@ -626,8 +669,8 @@ Asserting only the structured property leaves the rendered message — which is 
 
 The instruction elsewhere in this design to log provider exceptions rather than return them carries the same obligation in the other direction.
 A provider's exception message is upstream text that DMS does not control and may quote a submitted name, birth date, or identifier.
-Identity's exception logging therefore records the exception type, the operation, the trace id, and the provider's stack trace, and records the exception message at `Debug` rather than at the `Error` level used for the request-failure event.
-This keeps the default production log free of upstream-supplied person data while leaving a deliberate, operator-enabled channel for diagnosing a misbehaving provider.
+Identity's host exception logging follows the provider boundary above for activation, capability evaluation, and invocation: exception type, stage, operation, trace id, and stack frames at the failure level, with messages/full exceptions only at `Debug`.
+This prevents those host error paths from exposing upstream exception messages at the default production level while leaving an operator-enabled diagnostic channel; it cannot constrain a plugin's own logging.
 
 ## Provider Lifetime and Resolution
 
@@ -709,7 +752,7 @@ A provider must:
 - bind each accepted job to the `Tenant`, `RouteQualifiers`, and `ClientId` of the request that created it, and treat a poll whose context does not match as `NotFound` rather than returning the job;
 - keep results retrievable for a documented retention period, and answer a poll after expiry as `NotFound`;
 - answer repeated polls of an unexpired complete job with the same result, because polling is a `GET` and clients may retry it;
-- represent a job that failed terminally as its own answer rather than as an indefinite `Incomplete`, either by returning the failure through `InvalidProperties` or by throwing so DMS reports identity-upstream-failure `502`;
+- represent a definitively failed accepted job with results-only `JobFailed` as specified below; `InvalidProperties` remains a diagnosis of invalid client input, and an exception fetching job state is not a terminal answer;
 - make results retrievable from any replica that serves the same deployment, or document that the integration is single-replica only;
 - document whether accepted jobs survive a provider restart.
 
@@ -720,6 +763,16 @@ A provider whose upstream system shares results within a tenant must still gate 
 Request cancellation does not cancel an accepted job.
 Once find or search has returned an async `Success` with a token, DMS has already answered `202` and the client's connection is irrelevant to the job.
 Cancellation propagation applies to the provider call in flight, not to work the provider accepted on a call that already returned.
+
+### Terminal Job Failure Versus Failed Poll
+
+`ResultsAsync` returns `JobFailed` only after the provider establishes that the accepted job has failed permanently. DMS maps it to `502 application/problem+json` with `type: urn:ed-fi:api:identities:job-failed`, title `Identity job failed`, and detail `The accepted identity request failed permanently. Stop polling this job.` No provider payload, error message, token, or `Location` is returned. The problem `type`, rather than the HTTP status alone, is the portable terminal signal; it is distinct from both upstream-failure and provider-contract-violation `502`s.
+
+The provider retains the terminal state for its documented job retention period and returns the same terminal classification on repeated authorized polls while that state is retrievable. Per-request trace identifiers may differ. Ownership checks apply before revealing terminal state; mismatched contexts return `NotFound`, and expired jobs return `NotFound`. If the terminal record itself cannot be read during an outage, the poll can fail with upstream-failure rather than pretending to know its state.
+
+An exception during polling means that poll did not obtain a job answer. DMS returns the ordinary sanitized upstream-failure problem without declaring the job failed or deleting it. A temporary poll failure must leave an otherwise unexpired job retrievable when the dependency recovers. Clients may retry a failed poll under their bounded retry policy, but an upstream-failure `502` does not guarantee the failure is temporary or that a later poll will succeed. A terminal response tells the client to stop polling, not to resubmit the original request automatically.
+
+The fixture tests separately prove a transient retrieval failure followed by successful polling of the same token, a terminal failure repeated with the stable terminal type, ownership denial for a terminal job, and expiry. `JobFailed` on create/get/find/search returns provider-contract-violation `502`; it does not expand their success payloads or add a host job store.
 
 ### Timeout, Retry, and Idempotency
 
@@ -768,21 +821,30 @@ Story 03 demonstrates a fixture create that records an issuance and then throws 
 | `Incomplete` from any operation except results | yes | `502` with `urn:ed-fi:api:identities:provider-contract-violation` |
 | Results `Success` | yes | `200`, body is provider payload |
 | Results `Incomplete` | yes | `200`, body is provider payload, `Location` points to current poll URL |
+| Results `JobFailed` | yes | `502` with `urn:ed-fi:api:identities:job-failed`, fixed sanitized terminal problem, no `Location` |
+| `JobFailed` from any operation except results | yes | `502` with `urn:ed-fi:api:identities:provider-contract-violation` |
 | Any operation `InvalidProperties` | yes | `400`, provider errors projected, payload ignored |
 | Provider `NotFound` for get-by-id subject miss, results token miss, or provider-owned context refusal | yes | `404` with `urn:ed-fi:api:identities:not-found` |
 | `Success` or `Incomplete` missing required payload | yes | `502` with `urn:ed-fi:api:identities:provider-contract-violation` |
 | Find/Search `Success` with both payload and token, or neither | yes | `502` with `urn:ed-fi:api:identities:provider-contract-violation` |
 | Find/Search `Success` with unusable token | yes | `502` with `urn:ed-fi:api:identities:provider-contract-violation`, no `Location` |
 | `RequestToken` returned while `Results` capability is absent | yes | `502` with `urn:ed-fi:api:identities:provider-contract-violation` |
-| Provider throws while request is live | yes | `502` with `urn:ed-fi:api:identities:upstream-failure`, exception logged and not returned |
-| Provider throws `OperationCanceledException` after request cancellation | yes | rethrow so the host abandons the aborted response |
+| Provider activation or capability getter throws while request is live | activation/getter only; no operation | `500` with `urn:ed-fi:api:identities:provider-configuration`, sanitized host logging |
+| Provider operation throws while request is live | yes | `502` with `urn:ed-fi:api:identities:upstream-failure`, sanitized host logging; no terminal job conclusion |
+| Provider activation/getter/operation throws `OperationCanceledException` after request cancellation | affected stage only | propagate cancellation with sanitized diagnostics so the host abandons the aborted response |
 
 The unsupported-operation `404`, tenant-not-found `404`, identity-not-found `404`, and feature-off `404` must be distinguishable by route presence or problem-detail `type` in tests.
-Provider-contract-violation `502` and identity-upstream-failure `502` must also be distinguishable by problem-detail `type`.
+Provider-contract-violation, identity-upstream-failure, and terminal-job-failure `502`s must also be distinguishable by problem-detail `type`. Provider-configuration `500` is distinct from the host's authorization security-configuration failure.
 
 The problem-detail namespace is `urn:ed-fi:api:identities:*` rather than `urn:ed-fi:api:identity:*` because DMS already uses `urn:ed-fi:api:identity-conflict` for a document's natural-key identity, an unrelated concept, and `identities` matches this API's route and name.
 The upstream-failure problem title identifies Identity Management as the failing subsystem and omits provider exception details.
 `IdentityError` values are not returned for upstream failures; provider details remain in structured logs.
+
+### HTTP Response Caching
+
+Every host-generated response for an enabled, mapped identity operation carries `Cache-Control: no-store`, including pending/complete polls, `202`, no-match results, and error responses such as authentication/authorization failures, tenant/identity/operation-not-supported `404`s, and provider failures. Install this frontend policy before body extraction and Core execution, and ensure it applies when later error handling replaces the response. A final response-header callback can enforce it without adding payload inspection. HTTP tests assert the header on successful, early-rejected, and exception-mapped responses, including repeated polls.
+
+The policy covers the five operation endpoints, not identity metadata/Discovery, unrelated routes, disabled-feature fallback responses, or requests rejected by the HTTP server before reaching the application. It follows the response directive in [RFC 9111 section 5.2.2.5](https://www.rfc-editor.org/rfc/rfc9111.html#section-5.2.2.5). It prevents compliant private and shared HTTP caches from storing/reusing these responses; it does not delete copies retained by client applications or guarantee that already delivered results disappear when provider retention expires. Provider retention continues to describe server-side job retrievability.
 
 ### Cross-Origin Access to `Location`
 
@@ -886,6 +948,10 @@ The identity API surface story declares it as a dependency.
 Unit tests:
 
 - capability matrix for all five operations and unsupported-operation `404`;
+- provider factory/constructor, capability-getter, and operation exceptions, including nested/cancelled exceptions: correct sanitized `500`/`502` types, no operation after activation/getter failure, and no provider message in non-Debug host logs;
+- one captured capability value serves the gate and results invariant, with no extra getter read;
+- context comparison covers equivalent tenant/qualifier casing, qualifier order, null tenant, missing/extra qualifiers, and case-distinct client IDs; configuration rejects colliding qualifier names;
+- results-only `JobFailed` needs no payload, ignores supplied payload/errors, emits the terminal problem without `Location`, and is misuse on every other operation;
 - identity-not-found `404` uses `urn:ed-fi:api:identities:not-found`, distinct from operation-unsupported, tenant-not-found, and feature-off `404`;
 - find/search no-match returns `200` with an empty `Responses` array in the corresponding response group;
 - operation-to-action authorization, capability checks, and ordering;
@@ -927,6 +993,7 @@ Unit tests:
 Integration tests:
 
 - disabled routes and disabled metadata absent;
+- `Cache-Control: no-store` on all mapped identity operation responses, including early authentication/validation/capability failures, success/pending/complete polls, `404`, terminal failure, and mapped exceptions; unrelated routes and metadata are not changed;
 - enabled without plugin starts and returns operation-unsupported `404`;
 - real HTTP routing for `identities/results` and `identities/results/{token}`;
 - async `Location` followed by polling returns the original token to provider;
@@ -947,6 +1014,8 @@ E2E tests:
 - fixture plugin loaded through the plugin infrastructure once DMS-1499 exists;
 - full create, get-by-id, find, search, and results flows;
 - synchronous find/search fixture payloads are complete; pending work yields a token;
+- transient poll failure preserves the same job for successful retry; terminal job failure has its own stable problem type while retained/accessible, applies ownership checks, and becomes `NotFound` after expiry;
+- case/order-equivalent contexts retrieve the same namespace/job, while different client IDs and non-equivalent contexts cannot redeem it;
 - a lost-create-response fixture recovers its original issuance via its documented exact-key lookup with no second create; an unresolved outcome stops for operator reconciliation;
 - independent fixture namespaces may reuse an id without returning the other namespace's person, while a shared namespace resolves that id consistently;
 - custom properties pass through both directions;
@@ -961,6 +1030,8 @@ E2E tests:
 
 No tests are run by this spike because it changes design documents only.
 
+Package/release verification in story 04 covers compatibility in both the client and provider directions, including widened response enums/new alternatives and stricter provider obligations even when all prior examples still validate. The new `JobFailed` status and problem types are part of the initial unpublished v1 contract; this design does not treat adding them after publication as automatically compatible.
+
 ## Divergence Ledger
 
 | # | Subject | ODS/API behavior | DMS behavior | Reason |
@@ -968,7 +1039,7 @@ No tests are run by this spike because it changes design documents only.
 | D-1 | Capability miss | `501` on all operations | `404` with identity-specific problem type | Jira requires unsupported operations to return `404` |
 | D-2 | Create success | code returns `201` with `Location`; document declares `200` | `200`, unique-id string body, no `Location` | Jira and published document agree on `200` |
 | D-3 | GetById score | filters on `Score == 100` | no score inspection | matching/scoring is plugin-owned |
-| D-4 | `502` body | may return exception object | problem+json without exception detail | avoid leaking implementation details |
+| D-4 | `502` body | may return exception object | problem+json without exception detail, with separate problem types for failed polling and known terminal job failure | avoid leaking implementation details and distinguish an unanswered poll from a terminal job |
 | D-5 | Error body shape | ODS-specific error response shapes | DMS problem+json | one host failure shape |
 | D-6 | Authorization granularity | claim presence only | `Create` for create, `Read` for the rest, and the matched action's strategy list must be exactly `NoFurtherAuthorizationRequired` or the request fails closed as invalid security configuration | avoid granting writes from a read-only claim, and avoid silently ignoring a strategy an operator configured in CMS on a surface that has no relational authorization context to evaluate it |
 | D-7 | Feature disabled | mapped route can answer `403` | route and metadata absent | Jira requires API/OpenAPI absence |

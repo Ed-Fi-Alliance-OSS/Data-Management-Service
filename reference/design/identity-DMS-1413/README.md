@@ -31,6 +31,8 @@ It covers:
 - service-claim authorization, the authorization-strategy policy, client-to-tenant binding, and tenant/route-qualifier boundaries;
 - request parsing, duplicate-property rejection, async token handling and length limits, validation-error projection, and response mapping;
 - provider lifetime and resolution, async job obligations, and UniqueId issuance constraints;
+- case/order rules for context equality, mandatory job ownership, terminal job failure versus failed polling, and `no-store` on identity operation responses;
+- sanitization of request-time provider activation, capability evaluation, and invocation, with compatibility rules for HTTP clients and provider implementations;
 - identifier exposure in request logs and cross-origin access to the async `Location` header;
 - an implementation story graph and test strategy;
 - the divergence ledger against ODS/API 7.3 and remaining risks.
