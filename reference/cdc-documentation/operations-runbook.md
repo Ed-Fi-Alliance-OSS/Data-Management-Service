@@ -1482,9 +1482,11 @@ readiness and no runtime API writer gate; projection status does not stop ordina
    topics/grants and provider capture artifacts, then live binding state, retaining
    retirement history. Shared worker topics and consumer-group grants survive.
 
-   Exit `0` returns a `CdcTeardownProof`; compare its identity with the pre-mutation record
-   and inspect every `governedArtifacts` entry. Refusal `10` or incomplete cleanup `12`
-   provides no proof on stdout. Follow the retirement procedure's same-selection retry
+   Exit `0` with `--json` returns a `CdcCleanupProof`; follow the
+   [retirement proof guidance](#retire-binding-generation) to compare its identity with
+   the pre-mutation record and inspect every `governedArtifacts` entry.
+   Refusal `10` or incomplete cleanup `12` provides no proof on stdout.
+   Follow the retirement procedure's same-selection retry
    after resolving prerequisites and reconciling surviving artifacts. A new invocation
    has a new operation ID; retain all attempts under the incident identity. Do not delete
    record files or broader topics/volumes as a shortcut.

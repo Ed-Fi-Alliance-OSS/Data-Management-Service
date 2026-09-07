@@ -24,6 +24,7 @@ No executable documentation catalog or automated documentation/link tests are us
 
 | Runbook anchor / review | Design owner / invariants | Exact identity and layer | Result / artifact | Remaining owner |
 | --- | --- | --- | --- | --- |
+| [Sensitive-data containment](operations-runbook.md#sensitive-data-containment); T19 | [Disclosure correction](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#sensitive-data-disclosure-correction); CDC-INV-15 authoring support | Manual review `T19-cleanup-proof`; shipped CLI serialization and existing PostgreSQL fixture capture | Corrected receipt to `CdcCleanupProof` and linked proof inspection; [reviewed revision and findings](#t19-cleanup-proof-review) | Platform and downstream purge evidence remains deployment-owned; no new live result claimed |
 | [Default-tenant translation](operations-runbook.md#incident-command-context); T21 | [Binding identity](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding); CDC-INV-14/15 authoring support | Manual review `T21-default-tenant`; CLI validator, parser cases, argument-error mapping, configuration catalog | Corrected CLI reference to reserved-token rejection; [reviewed revision and findings](#t21-default-tenant-review) | No new parser behavior or live result claimed |
 | [Credentials and isolation](operations-runbook.md#cdc-security); T18 | [Security](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#security-telemetry-and-operations); CDC-INV-15 authoring support | Manual review `T18-consumer-group`; options class, blank-group validator, configuration catalog | Corrected consumer group key; [reviewed revision and findings](#t18-consumer-group-review) | No live isolation or provider result claimed |
 | [Retirement](operations-runbook.md#retire-binding-generation); T20 CI selection | [Binding lifecycle](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding); CDC-INV-14/15, supporting CDC-INV-11 | Existing `Category=CdcControlBrokerBacked`: 21 `Given_CdcControlBrokerBackedStack` cases and three `Given_CdcControlRetirementOperator` scenarios; real PostgreSQL/Kafka/Connect/filesystem | 24 executed/passed, 0 failed/skipped; [commands, exact results, fixture corrections and reviewed revision](evidence/t20/README.md) | Local reproduction of the existing CI selection; deployment/API/purge evidence remains separate |
@@ -58,6 +59,32 @@ No executable documentation catalog or automated documentation/link tests are us
 | [Retention/capacity](operations-runbook.md#retention-and-capacity), [consumer continuity](operations-runbook.md#consumer-continuity), [record increase](operations-runbook.md#increase-record-size), [overhead](operations-runbook.md#pipeline-overhead); T08 | [Operations](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#security-telemetry-and-operations), [topic/record contract](../design/backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md); CDC-INV-14/15 authoring, CDC-INV-07/11 support | Manual review `T08-capacity`; source and sibling assertions, native metadata/tool reference review | Reviewed; [findings and pending observations](#t08-capacity-review) | T14/T15 live inspection; independent consumer/platform qualification; T16 closure |
 | [Policy and size inspection](operations-runbook.md#increase-record-size); T08 behavior reuse | [Record size](../design/backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#record-size), [offset store](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#kafka-connect-offset-store); CDC-INV-07/11/15 support | `Given_CdcKafkaRecordSize`, `Given_CdcKafkaTopicPolicy`, `Given_CdcKafkaOffsetStore`, `Given_CdcKafkaSchemaHistory`; fake Kafka admin/record readers | 82 passed / 0 failed / 0 skipped; [exact identities](evidence/t08/policy-results.txt) | No live provider, broker or consumer capacity claim; T14/T15/T16 |
 | [CDC operator entry point](README.md), setup/discovery links; T09 | [Documentation disposition](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#documentation-audit-and-disposition); CDC-INV-14/15 authoring support | Manual review `T09-discovery`; shipped wrappers, CI lane configuration, source, existing help and evidence | Reviewed; [audit and corrections](#t09-discovery-review); no new test execution or live result | T13/T17 assertions; T14/T15 replay; T16 final reconciliation |
+
+<a id="t19-cleanup-proof-review"></a>
+## T19 sensitive-data cleanup receipt correction
+
+Reviewed 2026-09-06 from the repository root against revision
+`18746a3afaea3c7b354618a2f0fc410ab122dc66` plus this documentation correction.
+Manually compared [sensitive-data containment](operations-runbook.md#sensitive-data-containment)
+with `WriteCdcResultAsync` and the `CdcCleanupProof` branch in
+[DocumentCacheAdminCommandExecutor.cs](../../src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin/DocumentCacheAdminCommandExecutor.cs),
+the retirement result mapping in
+[DocumentCacheAdminCdcCommandDispatcher.cs](../../src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin/DocumentCacheAdminCdcCommandDispatcher.cs),
+and the existing [T06 PostgreSQL completion capture](evidence/t06/retire-postgresql-completed.json).
+The JSON receipt contains `cleanupMode=retireBindingGeneration`, `bindingIdentity`,
+`operationId`, `verifiedAt`, and `governedArtifacts`; the contract is `CdcCleanupProof`.
+
+Corrected `CdcTeardownProof` to `CdcCleanupProof`, made the `--json` condition explicit,
+and followed the new [retirement proof guidance](operations-runbook.md#retire-binding-generation)
+link through its expected outcome and proof/state verification instructions. Preserved
+the separate platform and downstream deletion-evidence requirement: successful cleanup
+does not prove remote or consumer purge, and missing required confirmation keeps the
+incident open.
+
+Manual source/capture/diff and linked-anchor review completed; `git diff --check`
+passed. No automated documentation assertions, builds, tests, or live operations were
+needed or run for this prose-only correction. Existing fixture evidence retains its
+recorded scope.
 
 <a id="t21-default-tenant-review"></a>
 ## T21 default-tenant CLI reference correction
