@@ -89,49 +89,56 @@ internal sealed class RepresentationRestampCommand(
                     IsolationLevel.Serializable,
                     async (session, transactionCancellationToken) =>
                     {
-                        DocumentCacheAdministrativeCommandResult? lifecycleFailure =
-                            await RequireLifecycleAsync(
-                                    context,
-                                    request.Mode,
+                        try
+                        {
+                            DocumentCacheAdministrativeCommandResult? lifecycleFailure =
+                                await RequireLifecycleAsync(
+                                        context,
+                                        request.Mode,
+                                        session,
+                                        transactionCancellationToken
+                                    )
+                                    .ConfigureAwait(false);
+                            if (lifecycleFailure is not null)
+                            {
+                                return PreviewTransaction.Failed(lifecycleFailure);
+                            }
+
+                            long boundary = await store
+                                .GetMaxChangeVersionAsync(session, transactionCancellationToken)
+                                .ConfigureAwait(false);
+                            RepresentationRestampSelection selection = await store
+                                .ResolveSelectionAsync(
                                     session,
+                                    canonicalScope,
+                                    PageSize(context),
                                     transactionCancellationToken
                                 )
                                 .ConfigureAwait(false);
-                        if (lifecycleFailure is not null)
-                        {
-                            return PreviewTransaction.Failed(lifecycleFailure);
+                            DocumentCacheRepresentationRestampOperation operation = new(
+                                Guid.NewGuid(),
+                                ContractVersion,
+                                request.TargetKey,
+                                context.TargetContext.TargetExecutionContext.PhysicalSourceFingerprint,
+                                selection.CanonicalScope,
+                                request.Reason,
+                                request.Mode,
+                                Math.Max(0, boundary),
+                                selection.PreviewDocumentCount,
+                                0,
+                                DocumentCacheRepresentationRestampOperationState.Draft,
+                                timeProvider.GetUtcNow(),
+                                timeProvider.GetUtcNow()
+                            );
+                            await store
+                                .CreateDraftAsync(session, operation, transactionCancellationToken)
+                                .ConfigureAwait(false);
+                            return PreviewTransaction.Succeeded(operation);
                         }
-
-                        long boundary = await store
-                            .GetMaxChangeVersionAsync(session, transactionCancellationToken)
-                            .ConfigureAwait(false);
-                        RepresentationRestampSelection selection = await store
-                            .ResolveSelectionAsync(
-                                session,
-                                canonicalScope,
-                                PageSize(context),
-                                transactionCancellationToken
-                            )
-                            .ConfigureAwait(false);
-                        DocumentCacheRepresentationRestampOperation operation = new(
-                            Guid.NewGuid(),
-                            ContractVersion,
-                            request.TargetKey,
-                            context.TargetContext.TargetExecutionContext.PhysicalSourceFingerprint,
-                            selection.CanonicalScope,
-                            request.Reason,
-                            request.Mode,
-                            Math.Max(0, boundary),
-                            selection.PreviewDocumentCount,
-                            0,
-                            DocumentCacheRepresentationRestampOperationState.Draft,
-                            timeProvider.GetUtcNow(),
-                            timeProvider.GetUtcNow()
-                        );
-                        await store
-                            .CreateDraftAsync(session, operation, transactionCancellationToken)
-                            .ConfigureAwait(false);
-                        return PreviewTransaction.Succeeded(operation);
+                        catch (RepresentationRestampValidationException exception)
+                        {
+                            return PreviewTransaction.Failed(Failure(context, exception));
+                        }
                     },
                     result => result.Commit,
                     cancellationScope.Token,
@@ -249,70 +256,79 @@ internal sealed class RepresentationRestampCommand(
                         IsolationLevel.Serializable,
                         async (session, transactionCancellationToken) =>
                         {
-                            DocumentCacheAdministrativeCommandResult? lifecycleFailure =
-                                await RequireLifecycleAsync(
-                                        context,
-                                        operation.Mode,
-                                        session,
-                                        transactionCancellationToken
-                                    )
-                                    .ConfigureAwait(false);
-                            if (lifecycleFailure is not null)
+                            try
                             {
-                                return PageTransaction.Failed(lifecycleFailure);
-                            }
-
-                            RepresentationRestampPage page = await store
-                                .SelectNextPageAsync(
-                                    session,
-                                    operation,
-                                    PageSize(context),
-                                    transactionCancellationToken
-                                )
-                                .ConfigureAwait(false);
-                            if (page.IsEmpty)
-                            {
-                                long remaining = await store
-                                    .CountRemainingEligibleAsync(
-                                        session,
-                                        operation,
-                                        transactionCancellationToken
-                                    )
-                                    .ConfigureAwait(false);
-                                if (
-                                    operation.CommittedDocumentCount + remaining
-                                    != operation.PreviewDocumentCount
-                                )
+                                DocumentCacheAdministrativeCommandResult? lifecycleFailure =
+                                    await RequireLifecycleAsync(
+                                            context,
+                                            operation.Mode,
+                                            session,
+                                            transactionCancellationToken
+                                        )
+                                        .ConfigureAwait(false);
+                                if (lifecycleFailure is not null)
                                 {
-                                    return PageTransaction.FromReconciliationFailure(remaining);
+                                    return PageTransaction.Failed(lifecycleFailure);
                                 }
 
-                                await store
-                                    .MarkCompletedAsync(
+                                RepresentationRestampPage page = await store
+                                    .SelectNextPageAsync(
                                         session,
-                                        operation.OperationId,
+                                        operation,
+                                        PageSize(context),
                                         transactionCancellationToken
                                     )
                                     .ConfigureAwait(false);
-                                return PageTransaction.FromCompleted(remaining);
-                            }
+                                if (page.IsEmpty)
+                                {
+                                    long remaining = await store
+                                        .CountRemainingEligibleAsync(
+                                            session,
+                                            operation,
+                                            transactionCancellationToken
+                                        )
+                                        .ConfigureAwait(false);
+                                    if (
+                                        operation.CommittedDocumentCount + remaining
+                                        != operation.PreviewDocumentCount
+                                    )
+                                    {
+                                        return PageTransaction.FromReconciliationFailure(remaining);
+                                    }
 
-                            context.EnterPhase(DocumentCacheAdministrativeCommandPhase.StampDocuments);
-                            RepresentationRestampPageCommit commit = await store
-                                .StampPageAsync(session, page, transactionCancellationToken)
-                                .ConfigureAwait(false);
-                            commit.RequireSelectedPage(page);
-                            long committed = checked(operation.CommittedDocumentCount + commit.Page.Count);
-                            await store
-                                .UpdateProgressAsync(
-                                    session,
-                                    operation.OperationId,
-                                    committed,
-                                    DocumentCacheRepresentationRestampOperationState.Incomplete,
-                                    transactionCancellationToken
-                                )
-                                .ConfigureAwait(false);
-                            return PageTransaction.Stamped(committed);
+                                    await store
+                                        .MarkCompletedAsync(
+                                            session,
+                                            operation.OperationId,
+                                            transactionCancellationToken
+                                        )
+                                        .ConfigureAwait(false);
+                                    return PageTransaction.FromCompleted(remaining);
+                                }
+
+                                context.EnterPhase(DocumentCacheAdministrativeCommandPhase.StampDocuments);
+                                RepresentationRestampPageCommit commit = await store
+                                    .StampPageAsync(session, page, transactionCancellationToken)
+                                    .ConfigureAwait(false);
+                                commit.RequireSelectedPage(page);
+                                long committed = checked(
+                                    operation.CommittedDocumentCount + commit.Page.Count
+                                );
+                                await store
+                                    .UpdateProgressAsync(
+                                        session,
+                                        operation.OperationId,
+                                        committed,
+                                        DocumentCacheRepresentationRestampOperationState.Incomplete,
+                                        transactionCancellationToken
+                                    )
+                                    .ConfigureAwait(false);
+                                return PageTransaction.Stamped(committed);
+                            }
+                            catch (RepresentationRestampValidationException exception)
+                            {
+                                return PageTransaction.Failed(Failure(context, exception));
+                            }
                         },
                         result => result.Commit,
                         cancellationScope.Token,
@@ -448,6 +464,11 @@ internal sealed class RepresentationRestampCommand(
             message,
             context.Mutated
         );
+
+    private static DocumentCacheAdministrativeCommandResult Failure(
+        DocumentCacheAdministrativeCommandExecutionContext context,
+        RepresentationRestampValidationException exception
+    ) => Failure(context, exception.Classification, exception.DiagnosticCategory, exception.Message);
 
     private static DocumentCacheAdministrativeCommandResult Result(
         DocumentCacheAdministrativeCommandExecutionContext context,

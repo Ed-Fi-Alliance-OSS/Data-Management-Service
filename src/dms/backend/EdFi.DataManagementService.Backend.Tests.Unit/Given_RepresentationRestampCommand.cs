@@ -235,6 +235,168 @@ public class Given_RepresentationRestampCommand
     }
 
     [Test]
+    public async Task It_maps_preview_scope_validation_failures_to_the_typed_restamp_classification()
+    {
+        Harness harness = CreateHarness();
+        DocumentCacheRepresentationRestampPreviewRequest request = PreviewRequest();
+        A.CallTo(() =>
+                harness.Store.GetMaxChangeVersionAsync(A<IRelationalWriteSession>._, A<CancellationToken>._)
+            )
+            .Returns(41);
+        A.CallTo(() =>
+                harness.Store.ResolveSelectionAsync(
+                    A<IRelationalWriteSession>._,
+                    A<DocumentCacheRepresentationRestampScope>._,
+                    A<int>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Returns(
+                Task.FromException<RepresentationRestampSelection>(
+                    new RepresentationRestampValidationException(
+                        DocumentCacheAdministrativeCommandClassification.InvalidRepresentationRestampScope,
+                        DocumentCacheAdministrativeDiagnosticCategory.InvalidRepresentationRestampScope,
+                        "Representation restamp resource scope did not resolve to a compiled resource key."
+                    )
+                )
+            );
+
+        DocumentCacheAdministrativeCommandResult result = await harness.Command.ExecuteAsync(request);
+
+        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.FailedNoMutation);
+        result
+            .Classification.Should()
+            .Be(DocumentCacheAdministrativeCommandClassification.InvalidRepresentationRestampScope);
+        result.RepresentationRestampResult.Should().BeNull();
+        A.CallTo(() =>
+                harness.Store.CreateDraftAsync(
+                    A<IRelationalWriteSession>._,
+                    A<DocumentCacheRepresentationRestampOperation>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+    }
+
+    [Test]
+    public async Task It_maps_execute_mapping_validation_failures_to_the_typed_restamp_classification()
+    {
+        Harness harness = CreateHarness();
+        Guid operationId = Guid.NewGuid();
+        A.CallTo(() =>
+                harness.Store.LoadAsync(A<IRelationalWriteSession>._, operationId, A<CancellationToken>._)
+            )
+            .Returns(
+                Operation(
+                    operationId,
+                    DocumentCacheRepresentationRestampOperationState.Incomplete,
+                    previewDocumentCount: 2,
+                    committedDocumentCount: 1
+                )
+            );
+        A.CallTo(() =>
+                harness.Store.SelectNextPageAsync(
+                    A<IRelationalWriteSession>._,
+                    A<DocumentCacheRepresentationRestampOperation>._,
+                    A<int>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Returns(
+                Task.FromException<RepresentationRestampPage>(
+                    new RepresentationRestampValidationException(
+                        DocumentCacheAdministrativeCommandClassification.InvalidRepresentationRestampMapping,
+                        DocumentCacheAdministrativeDiagnosticCategory.InvalidRepresentationRestampMapping,
+                        "Representation restamp document resource is missing compiled metadata."
+                    )
+                )
+            );
+
+        DocumentCacheAdministrativeCommandResult result = await harness.Command.ExecuteAsync(
+            ExecuteRequest(operationId)
+        );
+
+        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.FailedNoMutation);
+        result
+            .Classification.Should()
+            .Be(DocumentCacheAdministrativeCommandClassification.InvalidRepresentationRestampMapping);
+        AssertIncompleteRestampResult(
+            result,
+            operationId,
+            committedDocumentCount: 1,
+            remaining: null,
+            previewDocumentCount: 2
+        );
+        A.CallTo(() =>
+                harness.Store.StampPageAsync(
+                    A<IRelationalWriteSession>._,
+                    A<RepresentationRestampPage>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+    }
+
+    [Test]
+    public async Task It_maps_execute_mirror_validation_failures_to_the_typed_restamp_classification()
+    {
+        Harness harness = CreateHarness();
+        Guid operationId = Guid.NewGuid();
+        RepresentationRestampPage page = Page(1);
+        A.CallTo(() =>
+                harness.Store.LoadAsync(A<IRelationalWriteSession>._, operationId, A<CancellationToken>._)
+            )
+            .Returns(
+                Operation(
+                    operationId,
+                    DocumentCacheRepresentationRestampOperationState.Draft,
+                    previewDocumentCount: 1
+                )
+            );
+        A.CallTo(() =>
+                harness.Store.SelectNextPageAsync(
+                    A<IRelationalWriteSession>._,
+                    A<DocumentCacheRepresentationRestampOperation>._,
+                    A<int>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Returns(page);
+        A.CallTo(() =>
+                harness.Store.StampPageAsync(A<IRelationalWriteSession>._, page, A<CancellationToken>._)
+            )
+            .Returns(
+                Task.FromException<RepresentationRestampPageCommit>(
+                    new RepresentationRestampValidationException(
+                        DocumentCacheAdministrativeCommandClassification.InvalidRepresentationRestampMirror,
+                        DocumentCacheAdministrativeDiagnosticCategory.InvalidRepresentationRestampMirror,
+                        "Representation restamp document resource has no unique compiled document-stamping mirror route."
+                    )
+                )
+            );
+
+        DocumentCacheAdministrativeCommandResult result = await harness.Command.ExecuteAsync(
+            ExecuteRequest(operationId)
+        );
+
+        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.FailedNoMutation);
+        result
+            .Classification.Should()
+            .Be(DocumentCacheAdministrativeCommandClassification.InvalidRepresentationRestampMirror);
+        AssertIncompleteRestampResult(result, operationId, committedDocumentCount: 0, remaining: null);
+        A.CallTo(() =>
+                harness.Store.UpdateProgressAsync(
+                    A<IRelationalWriteSession>._,
+                    operationId,
+                    A<long>._,
+                    A<DocumentCacheRepresentationRestampOperationState>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+    }
+
+    [Test]
     public async Task It_rejects_mode_mismatch_before_selecting_a_page()
     {
         Harness harness = CreateHarness(

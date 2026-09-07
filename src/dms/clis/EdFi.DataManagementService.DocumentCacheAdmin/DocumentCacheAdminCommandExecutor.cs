@@ -569,7 +569,8 @@ internal static class DocumentCacheAdminCommandExecutor
             result.CacheAheadRecoveryRequired,
             timeoutDiagnostics,
             result.OfflineWriterAdmission,
-            result.ElapsedCommandTime
+            result.ElapsedCommandTime,
+            result.RepresentationRestampResult
         );
     }
 
@@ -661,6 +662,18 @@ internal static class DocumentCacheAdminCommandExecutor
                 $"  lifecycle={FormatNullableEnum(result.Lifecycle)} cacheAheadRecoveryRequired={FormatNullableBoolean(result.CacheAheadRecoveryRequired)} elapsedCommandTimeSeconds={FormatNullableDurationSeconds(result.ElapsedCommandTime)}"
             )
             .ConfigureAwait(false);
+
+        if (result.RepresentationRestampResult is { } restampResult)
+        {
+            await standardOutput
+                .WriteLineAsync(
+                    string.Create(
+                        CultureInfo.InvariantCulture,
+                        $"  restamp operationId={restampResult.OperationId} state={restampResult.State} mode={restampResult.Mode} preRestampBoundary={restampResult.PreRestampBoundary} previewDocumentCount={restampResult.PreviewDocumentCount} committedDocumentCount={restampResult.CommittedDocumentCount} remainingEligibleDocumentCount={FormatNullableLong(restampResult.RemainingEligibleDocumentCount)} physicalSourceFingerprint={DocumentCacheAdminOutput.FingerprintPresence(restampResult.PhysicalSourceFingerprint)} claimLevel={restampResult.ClaimLevel}"
+                    )
+                )
+                .ConfigureAwait(false);
+        }
 
         foreach (DocumentCacheAdministrativePhaseDiagnostic diagnostic in result.PhaseDiagnostics)
         {

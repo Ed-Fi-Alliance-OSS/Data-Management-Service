@@ -436,7 +436,9 @@ public sealed class PostgresqlRepresentationRestampStore(
             .ConfigureAwait(false);
         if (documents.Length != scope.DocumentUuids.Length)
         {
-            throw new InvalidOperationException(
+            throw ValidationFailure(
+                DocumentCacheAdministrativeCommandClassification.InvalidRepresentationRestampScope,
+                DocumentCacheAdministrativeDiagnosticCategory.InvalidRepresentationRestampScope,
                 "Representation restamp UUID scope contains a document UUID that does not resolve uniquely to a current document."
             );
         }
@@ -498,7 +500,11 @@ public sealed class PostgresqlRepresentationRestampStore(
                     Parameter("pageSize", pageSize, NpgsqlDbType.Integer),
                 ]
             ),
-            _ => throw new InvalidOperationException("Representation restamp scope type is unsupported."),
+            _ => throw ValidationFailure(
+                DocumentCacheAdministrativeCommandClassification.InvalidRepresentationRestampScope,
+                DocumentCacheAdministrativeDiagnosticCategory.InvalidRepresentationRestampScope,
+                "Representation restamp scope type is unsupported."
+            ),
         };
 
         return await ReadSelectedDocumentsAsync(session, command, cancellationToken).ConfigureAwait(false);
@@ -545,7 +551,11 @@ public sealed class PostgresqlRepresentationRestampStore(
                     Parameter("boundary", boundary, NpgsqlDbType.Bigint),
                 ]
             ),
-            _ => throw new InvalidOperationException("Representation restamp scope type is unsupported."),
+            _ => throw ValidationFailure(
+                DocumentCacheAdministrativeCommandClassification.InvalidRepresentationRestampScope,
+                DocumentCacheAdministrativeDiagnosticCategory.InvalidRepresentationRestampScope,
+                "Representation restamp scope type is unsupported."
+            ),
         };
         return await ExecuteScalarAsync<long>(session, command, cancellationToken).ConfigureAwait(false);
     }
@@ -702,7 +712,9 @@ public sealed class PostgresqlRepresentationRestampStore(
         QualifiedResourceName resource = new(scope.ProjectName, scope.ResourceName);
         if (!mappingSet.ResourceKeyIdByResource.TryGetValue(resource, out short resourceKeyId))
         {
-            throw new InvalidOperationException(
+            throw ValidationFailure(
+                DocumentCacheAdministrativeCommandClassification.InvalidRepresentationRestampScope,
+                DocumentCacheAdministrativeDiagnosticCategory.InvalidRepresentationRestampScope,
                 "Representation restamp resource scope did not resolve to a compiled resource key."
             );
         }
@@ -715,7 +727,9 @@ public sealed class PostgresqlRepresentationRestampStore(
     {
         if (!mappingSet.ResourceKeyById.TryGetValue(resourceKeyId, out ResourceKeyEntry? resourceKey))
         {
-            throw new InvalidOperationException(
+            throw ValidationFailure(
+                DocumentCacheAdministrativeCommandClassification.InvalidRepresentationRestampMapping,
+                DocumentCacheAdministrativeDiagnosticCategory.InvalidRepresentationRestampMapping,
                 "Representation restamp document resource key is not present in the compiled mapping set."
             );
         }
@@ -730,13 +744,17 @@ public sealed class PostgresqlRepresentationRestampStore(
             );
         if (model is null)
         {
-            throw new InvalidOperationException(
+            throw ValidationFailure(
+                DocumentCacheAdministrativeCommandClassification.InvalidRepresentationRestampMapping,
+                DocumentCacheAdministrativeDiagnosticCategory.InvalidRepresentationRestampMapping,
                 "Representation restamp document resource is missing compiled metadata."
             );
         }
         if (model.ResourceKey.ResourceKeyId != resourceKeyId)
         {
-            throw new InvalidOperationException(
+            throw ValidationFailure(
+                DocumentCacheAdministrativeCommandClassification.InvalidRepresentationRestampMapping,
+                DocumentCacheAdministrativeDiagnosticCategory.InvalidRepresentationRestampMapping,
                 "Representation restamp document resource key does not match compiled resource metadata."
             );
         }
@@ -756,7 +774,9 @@ public sealed class PostgresqlRepresentationRestampStore(
         );
         if (trigger?.MirrorStampTargetTable is not { } mirrorTarget)
         {
-            throw new InvalidOperationException(
+            throw ValidationFailure(
+                DocumentCacheAdministrativeCommandClassification.InvalidRepresentationRestampMirror,
+                DocumentCacheAdministrativeDiagnosticCategory.InvalidRepresentationRestampMirror,
                 "Representation restamp document resource has no unique compiled document-stamping mirror route."
             );
         }
@@ -804,6 +824,12 @@ public sealed class PostgresqlRepresentationRestampStore(
             : throw new InvalidOperationException(
                 $"Representation restamp manifest contains an invalid {fieldName}."
             );
+
+    private static RepresentationRestampValidationException ValidationFailure(
+        DocumentCacheAdministrativeCommandClassification classification,
+        DocumentCacheAdministrativeDiagnosticCategory diagnosticCategory,
+        string message
+    ) => new(classification, diagnosticCategory, message);
 
     private static void ValidatePageSize(int pageSize)
     {

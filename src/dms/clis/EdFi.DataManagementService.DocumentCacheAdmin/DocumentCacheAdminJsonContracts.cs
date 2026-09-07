@@ -162,6 +162,11 @@ internal static class DocumentCacheAdminJsonRequestParser
             DocumentCacheAdminCommandSurface.RestampPreviewCommandName,
             StringComparison.Ordinal
         );
+        if (isPreview && !TryValidateRestampPreviewRawMode(rootElement, out failure))
+        {
+            return false;
+        }
+
         if (!isPreview && !TryValidateRawConfirmationToken(rootElement, contract, out failure))
         {
             return false;
@@ -279,6 +284,19 @@ internal static class DocumentCacheAdminJsonRequestParser
         {
             failure =
                 $"Request JSON property 'offlineWriterAdmission' must be '{DocumentCacheOfflineWriterAdmission.ClosedAndDrainedJsonValue}'.";
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool TryValidateRestampPreviewRawMode(JsonElement rootElement, out string? failure)
+    {
+        failure = null;
+
+        if (!rootElement.TryGetProperty("mode", out _))
+        {
+            failure = "Request JSON property 'mode' is required in request.";
             return false;
         }
 

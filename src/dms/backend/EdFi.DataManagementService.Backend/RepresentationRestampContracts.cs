@@ -21,6 +21,17 @@ public interface IDocumentCacheRepresentationRestampCommand
     );
 }
 
+public sealed class RepresentationRestampValidationException(
+    DocumentCacheAdministrativeCommandClassification classification,
+    DocumentCacheAdministrativeDiagnosticCategory diagnosticCategory,
+    string message
+) : Exception(message)
+{
+    public DocumentCacheAdministrativeCommandClassification Classification { get; } = classification;
+
+    public DocumentCacheAdministrativeDiagnosticCategory DiagnosticCategory { get; } = diagnosticCategory;
+}
+
 public static class RepresentationRestampOperationAdmission
 {
     public static bool CanExecute(DocumentCacheRepresentationRestampOperationState state) =>
