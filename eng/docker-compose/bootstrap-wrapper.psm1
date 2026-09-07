@@ -1308,9 +1308,17 @@ function Invoke-BootstrapWrapper {
                 throw "enable-kafka-cdc.ps1 failed with exit code $LASTEXITCODE."
             }
 
-            # Read structurally rather than scraped from the phase's own output.
-            if ($null -eq $cdcResult -or $cdcResult.Status -ne "Enabled") {
+            # Read structurally rather than scraped from the phase's own output. "Declined" is a
+            # normal restart whose guarded resume the control plane refused: the connector stays
+            # fenced, which is the correct outcome of unproved source-history continuity rather than
+            # a bootstrap failure. It is reported rather than passed over as an enabled target,
+            # which is the distinction the phase result exists to carry.
+            if ($null -eq $cdcResult -or $cdcResult.Status -notin @("Enabled", "Declined")) {
                 throw "enable-kafka-cdc.ps1 returned no enablement result for data store $cdcTargetDataStoreId."
+            }
+
+            if ($cdcResult.Status -eq "Declined") {
+                Write-Warning "CDC: the guarded restart declined to resume the connector of generation $($cdcResult.Generation) for data store $cdcTargetDataStoreId. It stays fenced, which is the correct outcome when source-history continuity is not proved. Run 'cdc status' for the evidence."
             }
         }
 

@@ -498,13 +498,18 @@ function Invoke-CdcConnectorFence {
         restarted with only -EnableKafka would otherwise resume the connector with no CDC code on the
         path to check anything.
 
-        Unlike the destructive teardown, a fence that did not apply does NOT fail the caller. A normal
-        stop removes nothing, so no artifact is left unprotected by a fence that did not land, and the
-        guarded restart re-checks continuity on the way back up regardless. Failing the shutdown over
-        it would trade a warning for a developer who cannot stop their stack.
+        A fence that did not apply STOPS the caller, exactly as an unretired binding stops the
+        destructive teardown. The guarded restart is not a fallback for it: the worker restores an
+        unfenced connector as it starts, ahead of anything that could gate it, so a stack stopped
+        around one would resume publishing before source-history continuity could be checked. The
+        stack is left running instead, which is the state the fence can still be retried from.
+        Discovery failing is the same refusal, and comes from Get-CdcRetirableBinding itself - a
+        binding that was never enumerated is one whose connector was never asked to stop.
 
-        Returns one result object per binding it attempted, so the caller and the tests can see which
-        connectors were fenced and which were not.
+        Returns one result object per binding it attempted, and NOTHING else: the CLI's own stdout is
+        routed to the information stream, because a native command left on the output stream emits
+        into this function's output too, and a caller reading `Fenced` structurally would find the
+        container's JSON interleaved with the result objects.
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Teardown phase helper, consistent with the sibling teardown invocations; no -WhatIf surface.')]
     [CmdletBinding()]
@@ -556,18 +561,18 @@ function Invoke-CdcConnectorFence {
                 -ConnectorPrincipal $connectorPrincipal
 
             $global:LASTEXITCODE = 0
-            & docker @composeArguments
-            $fenced = -not ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0)
-
-            if (-not $fenced) {
-                Write-Warning "CDC stop: dms-document-cache cdc stop failed for generation $($binding.Generation) of data store $($binding.DataStoreId) (exit code $LASTEXITCODE). Its connector may resume publishing when this stack is started again, before source-history continuity is checked; run 'cdc status' after the next start."
-            }
+            & docker @composeArguments | Write-Information -InformationAction Continue
+            $exitCode = if ($LASTEXITCODE -is [int]) { [int]$LASTEXITCODE } else { 0 }
 
             $results += [pscustomobject]@{
-                DataStoreId = $binding.DataStoreId
-                Generation  = $binding.Generation
-                RecordPath  = $binding.RecordPath
-                Fenced      = $fenced
+                DeploymentKey = $binding.DeploymentKey
+                TenantKey     = $binding.TenantKey
+                InstanceKey   = $binding.InstanceKey
+                DataStoreId   = $binding.DataStoreId
+                Generation    = $binding.Generation
+                RecordPath    = $binding.RecordPath
+                Fenced        = ($exitCode -eq 0)
+                ExitCode      = $exitCode
             }
         }
     }
@@ -578,6 +583,27 @@ function Invoke-CdcConnectorFence {
         else {
             $env:DMS_CDC_BINDING_STATE_PATH = $previousStatePath
         }
+    }
+
+    # Every discovered binding, or none of the shutdown. Named individually because the caller has to
+    # know WHICH connector is still at a running target state to act on it, and a count alone would
+    # send them looking through a store they may have several bindings in.
+    $unfenced = @($results | Where-Object { -not $_.Fenced })
+    if ($unfenced.Count -gt 0) {
+        $unfencedDescription = ($unfenced | ForEach-Object {
+                # The default tenant is the empty E18 key, and quoting an empty string reads as a
+                # value the operator failed to supply rather than as the tenant they are on.
+                $tenantDescription = if ([string]::IsNullOrEmpty($_.TenantKey)) {
+                    "the default tenant"
+                }
+                else {
+                    "tenant '$($_.TenantKey)'"
+                }
+
+                "generation $($_.Generation) of data store $($_.DataStoreId) ($tenantDescription, deployment '$($_.DeploymentKey)', instance '$($_.InstanceKey)', exit code $($_.ExitCode))"
+            }) -join '; '
+
+        throw "CDC stop: $($unfenced.Count) of $($results.Count) binding(s) were not fenced: $unfencedDescription. Kafka Connect restores every connector standing at a running target state as soon as its worker starts, so the stack is left running rather than stopped around connectors that would resume publishing before source-history continuity could be checked. Run 'cdc status' for the evidence, fence the binding, and retry the shutdown."
     }
 
     return @($results)

@@ -309,7 +309,30 @@ public sealed class CdcControlTimeoutOptions
     public TimeSpan PollInterval { get; set; } = TimeSpan.FromSeconds(2);
 }
 
-public sealed class CdcControlOptionsValidator : IValidateOptions<CdcControlOptions>
+/// <summary>
+/// How much of the control-plane configuration a host's invocation actually depends on.
+/// </summary>
+/// <remarks>
+/// Every verb that inspects or provisions the target reads the complete configuration, and validating
+/// it up front is what keeps a sequence from failing halfway through with artifacts already created.
+/// A planned fence reads almost none of it: it takes the connector name from the durable binding
+/// record and asks Kafka Connect to stop that connector. Holding it to the complete set would make an
+/// absent record size, Kafka bootstrap list, or database principal the reason a reachable worker was
+/// never asked to stop publishing — which is the failure a fence exists to survive rather than one it
+/// may be prevented by.
+/// </remarks>
+public enum CdcControlOptionsValidationScope
+{
+    /// <summary>Every setting a provisioning or observing verb reads.</summary>
+    Complete = 0,
+
+    /// <summary>Only what reaching the Kafka Connect worker requires.</summary>
+    PlannedFence = 1,
+}
+
+public sealed class CdcControlOptionsValidator(
+    CdcControlOptionsValidationScope scope = CdcControlOptionsValidationScope.Complete
+) : IValidateOptions<CdcControlOptions>
 {
     public ValidateOptionsResult Validate(string? name, CdcControlOptions options)
     {
@@ -317,34 +340,58 @@ public sealed class CdcControlOptionsValidator : IValidateOptions<CdcControlOpti
 
         List<string> failures = [];
 
-        ValidateArtifactIdentity(options, failures);
-        ValidateEndpoints(options, failures);
-        ValidateRecordSize(options, failures);
-        ValidateIntervals(options, failures);
-        ValidateAcls(options, failures);
-        ValidateAdminClientSecurity(options, failures);
-        ValidateProjectionStatusAccess(options, failures);
+        // What a planned fence actually reads: the address and budgets the Connect adapter reaches the
+        // worker through, and the identity that names the target whose binding record holds the
+        // connector name. Validated in every scope, because a verb that can name no target and reach
+        // no worker can do nothing this control plane is for.
+        RequireHttpUri(options.ConnectBaseUri, nameof(CdcControlOptions.ConnectBaseUri), failures);
         ValidateTimeouts(options.Timeouts, failures);
+        ValidateTargetIdentity(options, failures);
+
+        if (scope == CdcControlOptionsValidationScope.Complete)
+        {
+            ValidateProvisioningIdentity(options, failures);
+            ValidateEndpoints(options, failures);
+            ValidateRecordSize(options, failures);
+            ValidateIntervals(options, failures);
+            ValidateAcls(options, failures);
+            ValidateAdminClientSecurity(options, failures);
+            ValidateProjectionStatusAccess(options, failures);
+        }
 
         return failures.Count == 0 ? ValidateOptionsResult.Success : ValidateOptionsResult.Fail(failures);
     }
 
-    private static void ValidateArtifactIdentity(CdcControlOptions options, List<string> failures)
+    /// <summary>
+    /// The identity that names one binding generation of one target. Every verb reads it, including a
+    /// planned fence: it is what the binding record is looked up by, and the record is where the
+    /// connector name comes from.
+    /// </summary>
+    private static void ValidateTargetIdentity(CdcControlOptions options, List<string> failures)
     {
         RequireText(options.DeploymentKey, nameof(CdcControlOptions.DeploymentKey), failures);
         RequireText(options.InstanceKey, nameof(CdcControlOptions.InstanceKey), failures);
         RequireText(options.TopicPrefix, nameof(CdcControlOptions.TopicPrefix), failures);
+
+        if (options.Generation <= 0)
+        {
+            failures.Add($"{nameof(CdcControlOptions.Generation)} must be positive.");
+        }
+    }
+
+    /// <summary>
+    /// The principals a provider-setup pass authenticates and grants as, and the topic shape a
+    /// provisioning pass creates. Nothing a fence reads: stopping a connector authenticates to Kafka
+    /// Connect alone and creates nothing.
+    /// </summary>
+    private static void ValidateProvisioningIdentity(CdcControlOptions options, List<string> failures)
+    {
         RequireText(options.SetupPrincipal, nameof(CdcControlOptions.SetupPrincipal), failures);
         RequireText(
             options.ConnectorDatabasePrincipal,
             nameof(CdcControlOptions.ConnectorDatabasePrincipal),
             failures
         );
-
-        if (options.Generation <= 0)
-        {
-            failures.Add($"{nameof(CdcControlOptions.Generation)} must be positive.");
-        }
 
         if (options.PartitionCount <= 0)
         {
@@ -361,8 +408,6 @@ public sealed class CdcControlOptionsValidator : IValidateOptions<CdcControlOpti
             nameof(CdcControlOptions.ConnectOffsetStorageTopic),
             failures
         );
-        RequireHttpUri(options.ConnectBaseUri, nameof(CdcControlOptions.ConnectBaseUri), failures);
-
         if (!string.IsNullOrWhiteSpace(options.ConnectMetricsBaseUri))
         {
             RequireHttpUri(

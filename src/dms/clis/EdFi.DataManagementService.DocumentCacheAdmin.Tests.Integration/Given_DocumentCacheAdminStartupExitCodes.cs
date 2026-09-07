@@ -210,6 +210,164 @@ public sealed class Given_DocumentCacheAdminStartupExitCodes
         result.StandardError.Should().Contain(DocumentCacheAdminCommandSurface.DataStoreIdOptionName);
     }
 
+    /// <summary>
+    /// The packaged CLI, invoked for the planned fence against a deployment whose effective-schema
+    /// inputs will not initialize and whose CDC configuration is missing everything a provisioning or
+    /// observing verb reads.
+    /// </summary>
+    /// <remarks>
+    /// The control case below proves those same settings really do refuse a sibling verb. What this
+    /// asserts is that the fence is not refused with them: it reaches the control plane, reads the
+    /// durable binding state store, and reports a cdc result rather than a configuration error. Which
+    /// result it reports is not the point - the store this run names is empty, so there is no binding
+    /// and therefore no connector to fence - the point is that the verb got as far as being able to
+    /// say so.
+    /// </remarks>
+    [Test]
+    public async Task It_reaches_the_planned_fence_though_the_schema_and_cdc_configuration_are_unusable()
+    {
+        string settingsPath = CreateFenceOnlySettingsFile();
+        string bindingStateRoot = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}-cdc-state");
+        Directory.CreateDirectory(bindingStateRoot);
+
+        try
+        {
+            ProcessResult result = await RunPlannedFenceAsync(settingsPath, bindingStateRoot);
+
+            result
+                .StandardError.Should()
+                .NotContain(
+                    "DocumentCache configuration error",
+                    "the fence reads neither the effective schema nor the configuration the other verbs are validated against"
+                );
+            result.ExitCode.Should().NotBe(DocumentCacheAdminExitCodes.ConfigurationError);
+            result.ExitCode.Should().NotBe(DocumentCacheAdminExitCodes.UnexpectedFailure);
+            JsonNode
+                .Parse(result.StandardOutput)
+                .Should()
+                .NotBeNull("the fence reports the shared cdc result contract on stdout");
+        }
+        finally
+        {
+            TryDelete(settingsPath);
+            TryDeleteDirectory(bindingStateRoot);
+        }
+    }
+
+    /// <summary>
+    /// The control for the case above: the same settings refuse a verb that does read the effective
+    /// schema, so the fence's success there is the boundary change rather than settings that were
+    /// usable all along.
+    /// </summary>
+    [Test]
+    public async Task It_returns_configuration_error_for_a_cdc_status_on_the_same_unusable_settings()
+    {
+        string settingsPath = CreateFenceOnlySettingsFile();
+        string bindingStateRoot = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}-cdc-state");
+        Directory.CreateDirectory(bindingStateRoot);
+
+        try
+        {
+            ProcessResult result = await RunDocumentCacheAdminAsync(
+                DocumentCacheAdminCommandSurface.CdcCommandName,
+                DocumentCacheAdminCommandSurface.CdcStatusVerbName,
+                DocumentCacheAdminCommandSurface.DataStoreIdOptionName,
+                "1",
+                DocumentCacheAdminCommandSurface.DeploymentKeyOptionName,
+                "local",
+                DocumentCacheAdminCommandSurface.InstanceKeyOptionName,
+                "ds1",
+                DocumentCacheAdminCommandSurface.GenerationOptionName,
+                "1",
+                DocumentCacheAdminCommandSurface.CdcBindingStatePathOptionName,
+                bindingStateRoot,
+                DocumentCacheAdminCommandSurface.DatastoreOptionName,
+                DocumentCacheAdminCommandSurface.PostgresqlDatastoreOptionValue,
+                DocumentCacheAdminCommandSurface.SettingsOptionName,
+                settingsPath,
+                DocumentCacheAdminCommandSurface.JsonOptionName
+            );
+
+            result.ExitCode.Should().Be(DocumentCacheAdminExitCodes.ConfigurationError);
+        }
+        finally
+        {
+            TryDelete(settingsPath);
+            TryDeleteDirectory(bindingStateRoot);
+        }
+    }
+
+    private static Task<ProcessResult> RunPlannedFenceAsync(string settingsPath, string bindingStateRoot) =>
+        RunDocumentCacheAdminAsync(
+            DocumentCacheAdminCommandSurface.CdcCommandName,
+            DocumentCacheAdminCommandSurface.CdcStopVerbName,
+            DocumentCacheAdminCommandSurface.DataStoreIdOptionName,
+            "1",
+            DocumentCacheAdminCommandSurface.DeploymentKeyOptionName,
+            "local",
+            DocumentCacheAdminCommandSurface.InstanceKeyOptionName,
+            "ds1",
+            DocumentCacheAdminCommandSurface.GenerationOptionName,
+            "1",
+            DocumentCacheAdminCommandSurface.CdcBindingStatePathOptionName,
+            bindingStateRoot,
+            DocumentCacheAdminCommandSurface.DatastoreOptionName,
+            DocumentCacheAdminCommandSurface.PostgresqlDatastoreOptionValue,
+            DocumentCacheAdminCommandSurface.SettingsOptionName,
+            settingsPath,
+            DocumentCacheAdminCommandSurface.JsonOptionName
+        );
+
+    /// <summary>
+    /// A deployment in the state a planned fence exists to survive: an API schema path that will not
+    /// load, and a CDC section carrying only the Connect address the fence reaches the worker through
+    /// and the identity that names the binding it looks up. Every setting a provisioning or observing
+    /// verb reads — the principals, the Kafka bootstrap list, the record size, the offset topic — is
+    /// absent.
+    /// </summary>
+    private static string CreateFenceOnlySettingsFile()
+    {
+        JsonObject settings = CreateValidSettings();
+        JsonObject appSettings = settings["AppSettings"]!.AsObject();
+        JsonObject documentCacheSettings = settings["DataManagement"]!.AsObject()[
+            "DocumentCache"
+        ]!.AsObject();
+
+        appSettings["UseApiSchemaPath"] = true;
+        appSettings["ApiSchemaPath"] = Path.Combine(
+            Path.GetTempPath(),
+            $"{Guid.NewGuid():N}-no-such-api-schema"
+        );
+        documentCacheSettings["Cdc"] = new JsonObject
+        {
+            ["ConnectBaseUri"] = "http://127.0.0.1:1",
+            ["TopicPrefix"] = "edfi.dms",
+        };
+
+        string settingsPath = Path.Combine(
+            Path.GetTempPath(),
+            $"{Guid.NewGuid():N}-document-cache-admin-fence-settings.json"
+        );
+        File.WriteAllText(settingsPath, settings.ToJsonString());
+        return settingsPath;
+    }
+
+    private static void TryDeleteDirectory(string path)
+    {
+        try
+        {
+            Directory.Delete(path, recursive: true);
+        }
+        catch (IOException)
+        {
+            // Best-effort temp-directory cleanup.
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // Best-effort temp-directory cleanup.
+        }
+    }
+
     private static async Task<ProcessResult> RunDocumentCacheAdminAsync(params string[] arguments)
     {
         using var process = new Process();

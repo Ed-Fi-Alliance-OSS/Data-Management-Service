@@ -705,8 +705,15 @@ that has already resumed. Deployment automation therefore leaves connectors at a
 state across a planned stop and resumes them afterwards through the guarded restart, which applies
 the continuity check and the artifact prerequisites the worker's own restore does not. The fence is
 issued while the worker is still reachable, is applied whether or not the stop was requested by CDC
-automation, and removes nothing: a stop that does not apply leaves no artifact unprotected, because
-the guarded restart re-checks continuity on the way back regardless.
+automation, and removes nothing. It requires only the durable binding record that names the connector
+and a reachable worker: an unreachable instance database, an unavailable configuration service, and
+an unusable schema input each leave the fence obtainable and therefore still owed, and no observation
+those inputs would have supplied is what permits a stop. A planned stop proceeds only once every
+binding the deployment holds is proved fenced; a fence that did not apply refuses it and names each
+binding whose connector is still at a running target state. The guarded restart does not cover that
+gap - the worker restores an unfenced connector as it starts, ahead of anything that could gate it -
+and a binding discovery that failed is the same refusal, because a binding never enumerated is one
+whose connector was never asked to stop.
 
 Latching and fencing are separate obligations. The latch is written once, from the proof that
 established the loss; a later check that reads it back re-proves nothing and writes nothing. The
@@ -714,7 +721,10 @@ fence follows the classified continuity instead, so every check that finds the c
 leaves the connector stopped - a stop the worker refused, or a process that exited between the
 durable latch and the stop, would otherwise leave it publishing indefinitely, since no later
 check raises a second proof and restart declines a lost continuity rather than acting on it. A
-connector already observed stopped is left alone.
+connector already observed stopped is left alone. Containing a loss the binding record already
+latches is attempted from that record alone and independently of the observations made around it: a
+check that could not reach the instance database, could not compose its connector template, or could
+not complete any other collection still owes the stop it may be the last to attempt.
 
 This latch affects CDC publication readiness only and does not change DMS request routing.
 A failure for one binding does not stop unrelated bindings.
@@ -1004,7 +1014,12 @@ Before first-write admission, initial-enable retry classifies durable state as f
 
 These rules apply only to a controller-proven, not-yet-admitted initial workflow. A normal
 restart after admission exact-matches the binding and validates existing artifacts instead
-of applying the empty-table retry classification.
+of applying the empty-table retry classification, and it acquires none of the initial
+workflow's requirements by doing so: it proves source-history continuity and the artifact
+prerequisites, and asserts no provisioning evidence at all. That exact match is also what
+separates it from a source the deployment recreated underneath a live record. Such a record
+cannot match a fingerprint the new database has never carried, so the pairing is a lifecycle
+conflict to be retired rather than a restart to be retried.
 
 V1 never reassigns an existing topic or connector generation to a different physical
 database. Guarded source replacement is supported only for a database previously enabled
@@ -1581,12 +1596,34 @@ Local bootstrap exposes an explicit opt-in such as `-EnableKafkaCdc`.
   heartbeat/capture progress, provider-barrier catch-up, or lag failed. A timeout never
   opens writes as ready.
 - E2E setup creates a fresh database, provisions its current schema, and registers capture
-  against that same database before issuing writes it expects to consume.
+  against that same database before issuing writes it expects to consume. Registration must
+  reach successful initial admission for that database, and a declined or refused enablement
+  fails the setup: a suite that writes into a source nothing is capturing produces an absence of
+  messages indistinguishable from a projection defect.
+- A live binding record for a target whose physical database the run has just created is a
+  conflicting lifecycle state rather than a restart, and automation refuses it. That record was
+  admitted against a source which no longer exists, so neither reusing its generation nor
+  asserting an interrupted enablement over it is supported by anything the run observed. The
+  refusal directs the operator to retire the old generation first, and is raised before the
+  database is recreated wherever the sequence allows, while the source that record still governs
+  remains available to retire.
 - A normal local stop retains the binding, connector, Kafka offsets, ACLs, provider capture
   artifacts, and every governed topic. Destructive local volume teardown removes the
   connector; its offsets; public, progress, and SQL Server schema-history topics and ACLs;
   the PostgreSQL slot/publication or SQL Server capture instances/jobs; and any other
   governed artifact before deleting terminal incident state and the binding record last.
+
+Local and E2E automation resolves one operation for each situation it can be in, from the durable
+binding state store and the run's own creation evidence, before any verb runs:
+
+| Situation | Required operation |
+| --- | --- |
+| Fresh database, no live binding record | Initial enable carrying both provisioning tokens; its admission must succeed before any write |
+| Live binding record plus an explicit never-opened assertion | Enable retry alone, under the recorded generation; the sequence resumes the connector it finds |
+| Previously admitted source, exact binding record | Guarded restart alone |
+| Live binding record over a source this run recreated | Refused; the old generation is retired before the target is enabled again |
+| Planned shutdown while bindings exist | Every binding proved fenced before the stack stops |
+| Source-history loss the record already latches | Containment attempted from that record, independently of the other observations |
 
 Production-like automation may repeat this workflow only while initially provisioning each
 new deployment-selected CDC database and while it can prove that the database has not been

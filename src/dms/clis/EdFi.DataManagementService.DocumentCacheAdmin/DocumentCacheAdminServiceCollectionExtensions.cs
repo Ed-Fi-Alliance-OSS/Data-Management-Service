@@ -18,11 +18,18 @@ namespace EdFi.DataManagementService.DocumentCacheAdmin;
 
 internal static class DocumentCacheAdminServiceCollectionExtensions
 {
+    /// <param name="plannedFenceOnly">
+    /// True when this invocation is the planned fence, which reads the durable binding record and
+    /// Kafka Connect and nothing else. The CDC control plane is then held to the fence's own
+    /// configuration rather than to the complete set, so a deployment missing settings the fence never
+    /// reads can still stop a connector that is still publishing.
+    /// </param>
     public static IServiceCollection AddDocumentCacheAdminRuntimeServices(
         this IServiceCollection services,
         IConfiguration configuration,
         ILogger logger,
-        DocumentCacheTargetKey invocationTarget
+        DocumentCacheTargetKey invocationTarget,
+        bool plannedFenceOnly = false
     )
     {
         ArgumentNullException.ThrowIfNull(services);
@@ -60,7 +67,12 @@ internal static class DocumentCacheAdminServiceCollectionExtensions
         // runtime services below do, so the configuration is passed through rather than the branch being
         // repeated. Its own options are validated on first resolution, which happens only on a cdc verb,
         // so a DocumentCache-only invocation is unaffected by CDC configuration it does not use.
-        services.AddDmsCdcControl(configuration);
+        services.AddDmsCdcControl(
+            configuration,
+            plannedFenceOnly
+                ? CdcControlOptionsValidationScope.PlannedFence
+                : CdcControlOptionsValidationScope.Complete
+        );
         services.AddScoped<IDocumentCacheAdminCdcCommandDispatcher, DocumentCacheAdminCdcCommandDispatcher>();
 
         string datastore = configuration.GetSection("AppSettings:Datastore").Value ?? string.Empty;

@@ -79,10 +79,26 @@ try
         return DocumentCacheAdminExitCodes.ConfigurationError;
     }
 
+    // The planned fence, decided from the parsed command before any service is registered. It reads
+    // the durable binding record and asks Kafka Connect to stop the connector that record names, so
+    // the effective-schema initialization below and the configuration the other verbs are validated
+    // against are dependencies it does not have. Carrying them anyway is what made an unusable schema
+    // input or an incomplete control-plane configuration the reason a reachable worker was never
+    // asked to stop publishing.
+    bool plannedFenceOnly =
+        DocumentCacheAdminCommandSurface.CdcVerbName(parseResult)
+        == DocumentCacheAdminCommandSurface.CdcStopVerbName;
+
     var serviceCollection = new ServiceCollection();
     try
     {
-        ConfigureServices(serviceCollection, configuration, verbose, validInvocationTarget.TargetKey);
+        ConfigureServices(
+            serviceCollection,
+            configuration,
+            verbose,
+            validInvocationTarget.TargetKey,
+            plannedFenceOnly
+        );
     }
     catch (Exception exception) when (IsServiceConfigurationFailure(exception))
     {
@@ -92,17 +108,20 @@ try
 
     await using ServiceProvider serviceProvider = serviceCollection.BuildServiceProvider();
 
-    try
+    if (!plannedFenceOnly)
     {
-        await DocumentCacheAdminRuntimeInitializer.InitializeAsync(
-            serviceProvider,
-            processCancellationSource.Token
-        );
-    }
-    catch (Exception exception) when (IsServiceConfigurationFailure(exception))
-    {
-        await WriteConfigurationFailureAsync(exception);
-        return DocumentCacheAdminExitCodes.ConfigurationError;
+        try
+        {
+            await DocumentCacheAdminRuntimeInitializer.InitializeAsync(
+                serviceProvider,
+                processCancellationSource.Token
+            );
+        }
+        catch (Exception exception) when (IsServiceConfigurationFailure(exception))
+        {
+            await WriteConfigurationFailureAsync(exception);
+            return DocumentCacheAdminExitCodes.ConfigurationError;
+        }
     }
 
     int exitCode = await DocumentCacheAdminCommandExecutor.ExecuteAsync(
@@ -140,7 +159,8 @@ void ConfigureServices(
     IServiceCollection services,
     IConfiguration configuration,
     bool enableVerbose,
-    EdFi.DataManagementService.Core.Configuration.DocumentCacheTargetKey invocationTarget
+    EdFi.DataManagementService.Core.Configuration.DocumentCacheTargetKey invocationTarget,
+    bool fenceOnly
 )
 {
     var logConfiguration = new LoggerConfiguration().MinimumLevel.Is(
@@ -173,7 +193,7 @@ void ConfigureServices(
 
     Log.Logger = logConfiguration.CreateLogger();
 
-    services.AddDocumentCacheAdminRuntimeServices(configuration, Log.Logger, invocationTarget);
+    services.AddDocumentCacheAdminRuntimeServices(configuration, Log.Logger, invocationTarget, fenceOnly);
 
     services.AddLogging(loggingBuilder =>
     {

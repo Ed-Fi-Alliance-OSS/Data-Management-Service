@@ -578,8 +578,13 @@ if ($d) {
         # Runs BEFORE the compose down, while the worker is still reachable, and NOT under
         # $EnableKafkaCdc: the worker starts on any Kafka opt-in ($enableKafkaInfrastructure), so a
         # stack that enabled CDC once and is restarted with only -EnableKafka would otherwise resume
-        # its connector with no CDC code on the path. A fence that does not apply warns rather than
-        # failing the shutdown - nothing has been removed for it to leave unprotected.
+        # its connector with no CDC code on the path.
+        #
+        # Throws when a discovered binding was not fenced, or when the store could not be enumerated,
+        # which is what keeps the compose down below from stopping the stack around a connector the
+        # worker would restore at a running target state on the way back up. The result objects are
+        # discarded here because the throw is the verdict; the transcript already carries the CLI's
+        # own output on the information stream.
         Import-Module (Join-Path $PSScriptRoot "cdc-teardown.psm1") -Force
         Invoke-CdcConnectorFence `
             -BindingStateRoot $cdcBindingStateRoot `

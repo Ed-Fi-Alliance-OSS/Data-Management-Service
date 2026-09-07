@@ -159,7 +159,15 @@ if (-not $PSCmdlet.ShouldProcess($connectorPrincipal.PrincipalName, "Create the 
 Write-Output "Creating the CDC connector database principal '$($connectorPrincipal.PrincipalName)' for '$DatabaseName' ($DatabaseEngine)..."
 
 if ($DatabaseEngine -eq "mssql") {
-    $saPassword = Get-EnvValue -EnvValues $envValues -Name "MSSQL_SA_PASSWORD" -DefaultValue "abcdefgh1!"
+    # Read the way Compose reads it, because Compose is what started the server this authenticates
+    # against: mssql.yml passes MSSQL_SA_PASSWORD to the container, and Compose gives an exported
+    # value precedence over the env file's own text. A file-only read here would authenticate with
+    # the file's password against a server started with the exported one, and the principal this
+    # script exists to create would never be created.
+    $saPassword = Get-ComposeResolvedEnvValue `
+        -EnvironmentValues $envValues `
+        -Name "MSSQL_SA_PASSWORD" `
+        -DefaultValue "abcdefgh1!"
 
     $loginSql = Get-CdcPrincipalMssqlLoginSql `
         -PrincipalName $connectorPrincipal.PrincipalName `
@@ -178,7 +186,14 @@ if ($DatabaseEngine -eq "mssql") {
     }
 }
 else {
-    $postgresUser = Get-EnvValue -EnvValues $envValues -Name "POSTGRES_USER" -DefaultValue "postgres"
+    # Same rule, same reason: postgresql.yml passes ${POSTGRES_USER:-postgres} to the container, so
+    # an exported administrator is the account the cluster actually has. The sibling start and
+    # provisioning scripts already resolve it this way; this one is held to the same resolver so a
+    # custom administrator cannot start the stack correctly and then fail CDC provisioning alone.
+    $postgresUser = Get-ComposeResolvedEnvValue `
+        -EnvironmentValues $envValues `
+        -Name "POSTGRES_USER" `
+        -DefaultValue "postgres"
 
     $roleSql = Get-CdcPrincipalPostgresqlSql `
         -PrincipalName $connectorPrincipal.PrincipalName `

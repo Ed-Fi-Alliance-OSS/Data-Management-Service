@@ -211,6 +211,175 @@ Describe "DMS-1323 CDC infrastructure opt-in" {
         }
     }
 
+    Context "the fence the normal stop issues, driven end to end" {
+        # Real invocations of Invoke-CdcConnectorFence against a real binding state store, with only
+        # the docker client mocked. Driven rather than read for the same reason the enable phase is:
+        # whether a refused fence stops the shutdown is a property of the executed function, and a
+        # source-text assertion cannot tell a branch that exists from one control reaches.
+        BeforeAll {
+            function script:New-FenceBindingRecord {
+                <#
+                .SYNOPSIS
+                    Writes one live binding record into the store the fence discovers from.
+                #>
+                param(
+                    [Parameter(Mandatory)]
+                    [string]
+                    $BindingStateRoot,
+
+                    [Parameter(Mandatory)]
+                    [long]
+                    $Generation,
+
+                    [long]
+                    $DataStoreId = 1
+                )
+
+                $instanceDirectory = Join-Path (Join-Path (Join-Path $BindingStateRoot "bindings") "local") "ds$DataStoreId"
+                New-Item -ItemType Directory -Path $instanceDirectory -Force | Out-Null
+
+                @{
+                    deploymentKey = "local"
+                    tenantKey     = "default"
+                    dataStoreId   = "$DataStoreId"
+                    instanceKey   = "ds$DataStoreId"
+                    generation    = $Generation
+                } |
+                    ConvertTo-Json -Depth 5 |
+                    Set-Content -LiteralPath (Join-Path $instanceDirectory "$Generation.json") -Encoding utf8
+            }
+
+            function script:Invoke-FenceUnderTest {
+                return Invoke-CdcConnectorFence `
+                    -BindingStateRoot $script:cdcFenceStateRoot `
+                    -ComposeProjectName "dms-local" `
+                    -EnvironmentFile $script:cdcFenceEnvironmentFile `
+                    -DatabaseEngine "postgresql" `
+                    -InformationAction SilentlyContinue `
+                    -WarningAction SilentlyContinue
+            }
+
+            function script:Get-FenceStopInvocation {
+                return , @($script:cdcFenceInvocations | Where-Object { $_ -like "*cdc-setup cdc stop *" })
+            }
+        }
+
+        BeforeEach {
+            $script:cdcFenceStateRoot = Join-Path ([System.IO.Path]::GetTempPath()) "dms-1323-fence-$([System.Guid]::NewGuid().ToString('n'))"
+            New-Item -ItemType Directory -Path $script:cdcFenceStateRoot -Force | Out-Null
+            $script:cdcFenceEnvironmentFile = Join-Path $script:cdcFenceStateRoot ".env"
+            "DMS_CDC_BINDING_STATE_PATH=$script:cdcFenceStateRoot" |
+                Set-Content -LiteralPath $script:cdcFenceEnvironmentFile -Encoding utf8
+
+            # Pinned ambiently as well as in the file, for the same reason the enable-phase suite
+            # pins it: the resolver gives an ambient value precedence, and a sibling suite that left
+            # one set would point these runs at its own store.
+            $script:cdcFencePreviousStateRoot =
+                [System.Environment]::GetEnvironmentVariable("DMS_CDC_BINDING_STATE_PATH")
+            $env:DMS_CDC_BINDING_STATE_PATH = $script:cdcFenceStateRoot
+
+            $script:cdcFenceInvocations = New-Object System.Collections.ArrayList
+
+            # The generations the worker refuses to stop. Everything else is fenced.
+            $script:cdcFenceRefusedGenerations = @()
+
+            Mock -ModuleName cdc-teardown docker {
+                $invocation = $args -join " "
+                [void]$script:cdcFenceInvocations.Add($invocation)
+                $global:LASTEXITCODE = 0
+
+                foreach ($refusedGeneration in $script:cdcFenceRefusedGenerations) {
+                    if ($invocation -like "*--generation $refusedGeneration*") {
+                        $global:LASTEXITCODE = 10
+                    }
+                }
+
+                # The CLI writes the shared JSON contract to its stdout. Emitted so the routing that
+                # keeps it off this function's OUTPUT stream is actually exercised: a mock that
+                # printed nothing would hide exactly the defect the enable phase already hit, where
+                # a native command's output arrived interleaved with its caller's own return value.
+                return '{"contractVersion":1,"readiness":"notReady"}'
+            }
+        }
+
+        AfterEach {
+            if ($null -eq $script:cdcFencePreviousStateRoot) {
+                Remove-Item -LiteralPath "Env:DMS_CDC_BINDING_STATE_PATH" -ErrorAction SilentlyContinue
+            }
+            else {
+                $env:DMS_CDC_BINDING_STATE_PATH = $script:cdcFencePreviousStateRoot
+            }
+
+            Remove-Item -LiteralPath $script:cdcFenceStateRoot -Recurse -Force -ErrorAction SilentlyContinue
+        }
+
+        It "fences every discovered binding and permits the shutdown when all of them land" {
+            New-FenceBindingRecord -BindingStateRoot $script:cdcFenceStateRoot -Generation 3
+            New-FenceBindingRecord -BindingStateRoot $script:cdcFenceStateRoot -Generation 4 -DataStoreId 2
+
+            $results = @(Invoke-FenceUnderTest)
+
+            $results.Count | Should -Be 2
+            @($results | Where-Object { -not $_.Fenced }) | Should -BeNullOrEmpty
+            (Get-FenceStopInvocation).Count | Should -Be 2
+        }
+
+        It "refuses the shutdown when one binding among several was not fenced, and names it" {
+            # The worker refused this one stop. Kafka Connect restores that connector at its running
+            # target state as soon as the worker comes back, so stopping the stack around it would
+            # resume publishing before continuity could be checked - and the guarded restart cannot
+            # gate what has already resumed.
+            New-FenceBindingRecord -BindingStateRoot $script:cdcFenceStateRoot -Generation 3
+            New-FenceBindingRecord -BindingStateRoot $script:cdcFenceStateRoot -Generation 4 -DataStoreId 2
+            $script:cdcFenceRefusedGenerations = @(4)
+
+            { Invoke-FenceUnderTest } | Should -Throw "*generation 4 of data store 2*"
+
+            # Every binding is still attempted: one refusal does not leave the others unasked.
+            (Get-FenceStopInvocation).Count | Should -Be 2
+        }
+
+        It "names the deployment, tenant, and instance of a binding it could not fence" {
+            New-FenceBindingRecord -BindingStateRoot $script:cdcFenceStateRoot -Generation 3
+            $script:cdcFenceRefusedGenerations = @(3)
+
+            { Invoke-FenceUnderTest } |
+                Should -Throw "*the default tenant, deployment 'local', instance 'ds1', exit code 10*"
+        }
+
+        It "permits the shutdown when the store holds no binding at all" {
+            $results = @(Invoke-FenceUnderTest)
+
+            $results | Should -BeNullOrEmpty
+            (Get-FenceStopInvocation).Count | Should -Be 0
+        }
+
+        It "returns only structured results, so the JSON the CLI prints cannot reach the caller" {
+            New-FenceBindingRecord -BindingStateRoot $script:cdcFenceStateRoot -Generation 3
+
+            $results = @(Invoke-FenceUnderTest)
+
+            $results.Count | Should -Be 1
+            @($results | Where-Object { $_ -is [string] }) | Should -BeNullOrEmpty
+            $results[0].Fenced | Should -BeOfType [bool]
+            $results[0].Fenced | Should -BeTrue
+        }
+
+        It "refuses the shutdown when a binding record in the store cannot be read" {
+            # Unreadable is not absent. A record that cannot be parsed may name live governed
+            # artifacts, so the discovery stops rather than reporting an empty store and letting the
+            # stack come down around them - and no connector is asked to stop on that evidence.
+            $instanceDirectory = Join-Path (Join-Path (Join-Path $script:cdcFenceStateRoot "bindings") "local") "ds1"
+            New-Item -ItemType Directory -Path $instanceDirectory -Force | Out-Null
+            "this is not a binding record" |
+                Set-Content -LiteralPath (Join-Path $instanceDirectory "3.json") -Encoding utf8
+
+            { Invoke-FenceUnderTest } | Should -Throw "*is not a readable binding record*"
+
+            (Get-FenceStopInvocation).Count | Should -Be 0
+        }
+    }
+
     Context "binding state store root enforcement" {
         It "exports the resolved root so Compose mounts the store the script created and retires from" {
             # Resolving alone is not enough: Compose reads the mount source out of the environment,
@@ -648,7 +817,7 @@ Describe "DMS-1323 bootstrap CDC phase" {
             # The same contract configure-local-data-store.ps1 has with the wrapper: a phase returns
             # an object, and the caller never scrapes human-readable output to recover it.
             $script:wrapperText | Should -Match '\$cdcResult = & "\$PSScriptRoot/enable-kafka-cdc\.ps1" @cdcArgs'
-            $script:wrapperText | Should -Match '\$cdcResult\.Status -ne "Enabled"'
+            $script:wrapperText | Should -Match '\$cdcResult\.Status -notin @\("Enabled", "Declined"\)'
 
             $phaseScriptText = Get-Content -LiteralPath (
                 Join-Path $script:sourceDockerComposeRoot "enable-kafka-cdc.ps1"
@@ -658,7 +827,9 @@ Describe "DMS-1323 bootstrap CDC phase" {
             $phaseModuleText = Get-Content -LiteralPath (
                 Join-Path $script:sourceDockerComposeRoot "cdc-enable.psm1"
             ) -Raw
-            $phaseModuleText | Should -Match '(?m)^\s+Status\s+= "Enabled"'
+            # The status the phase reports is chosen from the shape it ran, so a normal restart the
+            # control plane declined cannot be returned as an enabled target.
+            $phaseModuleText | Should -Match '(?m)^\s+Status\s+= if \(\$phaseMode -eq "NormalRestart" -and -not \$connectorResumed\)'
         }
 
         It "runs the CDC phase after the DMS start and before any seed delivery" {
@@ -1456,10 +1627,13 @@ Describe "DMS-1323 bootstrap CDC phase" {
             $script:cdcPhaseInvocations = New-Object System.Collections.ArrayList
             $script:cdcPhaseTokenWhileRunning = New-Object System.Collections.ArrayList
             $script:cdcPhaseRestartExitCode = 0
+            $script:cdcPhaseAgentPassword = $null
 
             Mock -ModuleName cdc-enable Wait-CdcHttpEndpoint { }
             Mock -ModuleName cdc-enable Assert-CdcDocumentCacheStatusEndpoint { }
-            Mock -ModuleName cdc-enable Assert-CdcMssqlAgentRunning { }
+            Mock -ModuleName cdc-enable Assert-CdcMssqlAgentRunning {
+                $script:cdcPhaseAgentPassword = $SaPassword
+            }
             Mock -ModuleName cdc-enable Get-DmsToken { return "operator-token" }
             Mock -ModuleName cdc-enable Resolve-DockerLocalDmsBaseUrl { return "http://localhost:8080" }
             Mock -ModuleName cdc-enable docker {
@@ -1556,16 +1730,21 @@ Describe "DMS-1323 bootstrap CDC phase" {
             $restart[0] | Should -Not -BeLike "*--write-admission*"
         }
 
-        It "runs the enable under the recorded generation and then the restart for an asserted interrupted enable" {
+        It "runs the enable alone under the recorded generation for an asserted interrupted enable" {
             # The narrow retry path, and the only one that may reuse a live generation: the operator
             # asserts that the enablement never finished. It reruns the enable under that generation
-            # and then lifts the fence, because an enable over a live binding does not re-create a
-            # connector already registered with an exact-match configuration.
+            # and nothing else. The enablement sequence returns a connector it found and exact-matched
+            # to its running target state itself, so a restart afterwards would tear down the tasks
+            # that had just proved the provider barrier - and against a retry that did not reach
+            # readiness the guarded restart declines anyway, because an enablement that has committed
+            # no first offset has no healthy continuity to lift a fence on.
             New-PhaseBindingRecord -BindingStateRoot $script:cdcPhaseStateRoot -Generation 3
 
             $result = Invoke-PhaseUnderTest -DatabaseCreatedByThisRun $false -ResumeInterruptedEnable
 
             $result.PhaseMode | Should -Be "InterruptedEnableRetry"
+            $result.Status | Should -Be "Enabled"
+            $result.ConnectorResumed | Should -BeNullOrEmpty
 
             $enable = Get-PhaseInvocation -Verb "enable"
             $enable.Count | Should -Be 1
@@ -1573,10 +1752,35 @@ Describe "DMS-1323 bootstrap CDC phase" {
             $enable[0] | Should -BeLike "*--database-creation-mode created-for-initial-cdc-provisioning*"
             $enable[0] | Should -BeLike "*--write-admission closed-never-opened*"
 
-            (Get-PhaseInvocation -Verb "restart").Count | Should -Be 1
+            (Get-PhaseInvocation -Verb "restart").Count | Should -Be 0
+        }
 
-            $script:cdcPhaseInvocations.IndexOf($enable[0]) |
-                Should -BeLessThan $script:cdcPhaseInvocations.IndexOf((Get-PhaseInvocation -Verb "restart")[0])
+        It "refuses a live binding record over a source this run created, rather than routing it" {
+            # The shape the E2E harness produces: a binding state store that outlives the stack, and
+            # a database recreated under it. The record was admitted against a source that no longer
+            # exists, so no verb can serve it - a first enablement is refused while the generation is
+            # live, and a restart cannot exact-match a fingerprint the new database never carried.
+            New-PhaseBindingRecord -BindingStateRoot $script:cdcPhaseStateRoot -Generation 3
+
+            { Invoke-PhaseUnderTest -DatabaseCreatedByThisRun $true } |
+                Should -Throw "*conflicting lifecycle state rather than a restart*"
+
+            # And nothing is asked of the control plane on the way to that refusal.
+            $script:cdcPhaseInvocations |
+                Where-Object { $_ -like "*cdc-setup cdc *" } |
+                Should -BeNullOrEmpty
+        }
+
+        It "leaves the operator's explicit interrupted-enable assertion over a created database alone" {
+            # The refusal above is scoped to a run that asserted nothing. -ResumeInterruptedEnable is
+            # the operator's own claim, and the control plane validates it against the fingerprint the
+            # record carries - a better answer than this phase guessing on their behalf.
+            New-PhaseBindingRecord -BindingStateRoot $script:cdcPhaseStateRoot -Generation 3
+
+            $result = Invoke-PhaseUnderTest -DatabaseCreatedByThisRun $true -ResumeInterruptedEnable
+
+            $result.PhaseMode | Should -Be "InterruptedEnableRetry"
+            (Get-PhaseInvocation -Verb "enable").Count | Should -Be 1
         }
 
         It "refuses an interrupted-enable assertion the store holds no live binding for" {
@@ -1590,16 +1794,17 @@ Describe "DMS-1323 bootstrap CDC phase" {
                 Should -BeNullOrEmpty
         }
 
-        It "reports a declined restart without failing the phase" {
+        It "reports a declined restart as declined rather than as an enabled target" {
             # A connector that stays fenced is the correct outcome of unproved source-history
-            # continuity, and `cdc status` carries the evidence. Failing the bootstrap over it would
-            # make the guard look like a defect.
+            # continuity, and `cdc status` carries the evidence, so the phase does not throw. But it
+            # does not report an enabled target either: a caller reading the result structurally has
+            # to be able to tell an admitted target from a resume the control plane refused.
             New-PhaseBindingRecord -BindingStateRoot $script:cdcPhaseStateRoot -Generation 2
             $script:cdcPhaseRestartExitCode = 1
 
             $result = Invoke-PhaseUnderTest -DatabaseCreatedByThisRun $false
 
-            $result.Status | Should -Be "Enabled"
+            $result.Status | Should -Be "Declined"
             $result.ConnectorResumed | Should -BeFalse
             (Get-PhaseInvocation -Verb "restart").Count | Should -Be 1
         }
@@ -1612,20 +1817,96 @@ Describe "DMS-1323 bootstrap CDC phase" {
             # asserted here and not just the value.
             New-PhaseBindingRecord -BindingStateRoot $script:cdcPhaseStateRoot -Generation 4
 
-            $result = Invoke-PhaseUnderTest -DatabaseCreatedByThisRun $false -ResumeInterruptedEnable
+            $result = Invoke-PhaseUnderTest -DatabaseCreatedByThisRun $false
 
             $result.Status | Should -Be "Enabled"
             $result.ConnectorResumed | Should -BeOfType [bool]
             $result.ConnectorResumed | Should -BeTrue
         }
 
+        It "returns exactly one structured result, whatever the commands it runs printed" {
+            # The phase result is read structurally by the bootstrap wrapper and the E2E harness. Two
+            # things it runs print to stdout - the control-plane container and the principal
+            # provisioning script, which also runs psql or sqlcmd through `docker exec` - and either
+            # left on the output stream would reach the caller as an array with the result somewhere
+            # inside it.
+            New-PhaseBindingRecord -BindingStateRoot $script:cdcPhaseStateRoot -Generation 5
+
+            $result = @(Invoke-PhaseUnderTest -DatabaseCreatedByThisRun $false)
+
+            $result.Count | Should -Be 1
+            @($result | Where-Object { $_ -is [string] }) | Should -BeNullOrEmpty
+            $result[0].PhaseMode | Should -Be "NormalRestart"
+        }
+
+        It "creates the connector principal as the administrator Compose actually started the server with" {
+            # postgresql.yml passes ${POSTGRES_USER:-postgres} to the container, and Compose gives an
+            # exported value precedence over the env file. Read file-only, this provisioning
+            # authenticated as an account the cluster does not have - on a stack that had started
+            # correctly under the exported one.
+            $previousUser = [System.Environment]::GetEnvironmentVariable("POSTGRES_USER")
+            $env:POSTGRES_USER = "custom_admin"
+
+            try {
+                Invoke-PhaseUnderTest -DatabaseCreatedByThisRun $true | Out-Null
+            }
+            finally {
+                if ($null -eq $previousUser) {
+                    Remove-Item -LiteralPath "Env:POSTGRES_USER" -ErrorAction SilentlyContinue
+                }
+                else {
+                    $env:POSTGRES_USER = $previousUser
+                }
+            }
+
+            $principalRuns = @($script:cdcPhaseInvocations | Where-Object { $_ -like "*psql -U *" })
+            $principalRuns.Count | Should -Be 1
+            $principalRuns[0] | Should -BeLike "*psql -U custom_admin *"
+        }
+
+        It "authenticates the SQL Server principal and Agent probe with the password Compose resolves" {
+            # Both cross the same boundary: mssql.yml passes MSSQL_SA_PASSWORD to the container, so an
+            # exported override is the password the running server actually has.
+            $previousPassword = [System.Environment]::GetEnvironmentVariable("MSSQL_SA_PASSWORD")
+            $env:MSSQL_SA_PASSWORD = "Ambient1!Password"
+
+            try {
+                Invoke-PhaseUnderTest -DatabaseEngine "mssql" -DatabaseCreatedByThisRun $true | Out-Null
+            }
+            finally {
+                if ($null -eq $previousPassword) {
+                    Remove-Item -LiteralPath "Env:MSSQL_SA_PASSWORD" -ErrorAction SilentlyContinue
+                }
+                else {
+                    $env:MSSQL_SA_PASSWORD = $previousPassword
+                }
+            }
+
+            $script:cdcPhaseAgentPassword | Should -Be "Ambient1!Password"
+            @(
+                $script:cdcPhaseInvocations |
+                    Where-Object { $_ -like "*SQLCMDPASSWORD=Ambient1!Password*" }
+            ).Count | Should -BeGreaterThan 0
+        }
+
+        It "falls back to the env file, and then to the documented default, for the same settings" {
+            # The precedence is Compose's own: ambient, then the file, then the default. Nothing here
+            # is exported, and the file names neither setting, so both land on their defaults.
+            Invoke-PhaseUnderTest -DatabaseCreatedByThisRun $true | Out-Null
+
+            $principalRuns = @($script:cdcPhaseInvocations | Where-Object { $_ -like "*psql -U *" })
+            $principalRuns.Count | Should -Be 1
+            $principalRuns[0] | Should -BeLike "*psql -U postgres *"
+        }
+
         It "holds the operator token only while a run is in flight" {
             # The flag names a variable with no value, so something has to hold it while the container
             # starts - and nothing may hold it afterwards, on the restart-only path no less than on
-            # the enable one.
+            # the enable one. Both paths are driven here, in the one run each of them is.
             New-PhaseBindingRecord -BindingStateRoot $script:cdcPhaseStateRoot -Generation 1
 
             Invoke-PhaseUnderTest -DatabaseCreatedByThisRun $false -ResumeInterruptedEnable | Out-Null
+            Invoke-PhaseUnderTest -DatabaseCreatedByThisRun $false | Out-Null
 
             $script:cdcPhaseTokenWhileRunning.Count | Should -Be 2
             $script:cdcPhaseTokenWhileRunning | Should -Not -Contain $null
@@ -2835,6 +3116,32 @@ Describe "DMS-1323 E2E harness CDC opt-in" {
             $script:e2eSetupText | Should -Not -Match 'cdc-setup\.yml'
             $script:e2eSetupText | Should -Not -Match '"cdc", "enable"'
             $script:e2eSetupText | Should -Not -Match 'Get-DmsToken'
+        }
+
+        It "requires the initial admission it asked for, rather than discarding the phase result" {
+            # The phase exits zero for outcomes that are correct for other shapes and wrong for this
+            # one, so the exit code is not the signal. Discarded, the result could not say which
+            # shape ran at all, and a suite that wrote into a source nothing was capturing would look
+            # exactly like a projection defect.
+            $script:e2eSetupText | Should -Match '\$cdcPhaseResult = & "\$dockerComposeDir/enable-kafka-cdc\.ps1"'
+            $script:e2eSetupText | Should -Not -Match 'enable-kafka-cdc\.ps1"[\s\S]{0,600}?\| Out-Null'
+            $script:e2eSetupText |
+                Should -Match '\$cdcPhase\.PhaseMode -ne "InitialEnable" -or \$cdcPhase\.Status -ne "Enabled"'
+        }
+
+        It "refuses a surviving live binding before it recreates the database that binding names" {
+            # A record admitted against the source this run is about to replace is a conflicting
+            # lifecycle state, not a restart. Raised before the provisioning so the retirement it
+            # directs the operator to can still run against the source the record was bound to.
+            # The invocation, not the .DESCRIPTION header that quotes the same phase commands.
+            $refusalIndex = $script:e2eSetupText.IndexOf('$cdcGenerationPlan.ResumesLiveBinding')
+            $provisionIndex = $script:e2eSetupText.IndexOf(
+                './provision-e2e-database.ps1 -EnvironmentFile $resolvedEnvironmentFile'
+            )
+
+            $refusalIndex | Should -BeGreaterThan -1
+            $provisionIndex | Should -BeGreaterThan $refusalIndex
+            $script:e2eSetupText | Should -Match 'holds a live binding record'
         }
     }
 

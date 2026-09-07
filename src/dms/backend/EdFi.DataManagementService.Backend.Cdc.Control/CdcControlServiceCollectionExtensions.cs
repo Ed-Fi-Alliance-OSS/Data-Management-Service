@@ -41,9 +41,16 @@ public static class CdcControlServiceCollectionExtensions
     /// provider extensions, each of which chains into the core method itself. Calling the core method
     /// alone compiles and then fails at resolution time.
     /// </remarks>
+    /// <param name="validationScope">
+    /// How much of <see cref="CdcControlOptions"/> this host's invocation is held to. A host that only
+    /// fences a connector names <see cref="CdcControlOptionsValidationScope.PlannedFence"/>, so
+    /// configuration it never reads cannot refuse the one operation that must survive an unhealthy
+    /// deployment.
+    /// </param>
     public static IServiceCollection AddDmsCdcControl(
         this IServiceCollection services,
-        IConfiguration configuration
+        IConfiguration configuration,
+        CdcControlOptionsValidationScope validationScope = CdcControlOptionsValidationScope.Complete
     )
     {
         ArgumentNullException.ThrowIfNull(services);
@@ -55,7 +62,9 @@ public static class CdcControlServiceCollectionExtensions
             .Bind(configuration.GetSection(CdcControlOptions.SectionName))
             .ValidateOnStart();
         services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IValidateOptions<CdcControlOptions>, CdcControlOptionsValidator>()
+            ServiceDescriptor.Singleton<IValidateOptions<CdcControlOptions>>(
+                new CdcControlOptionsValidator(validationScope)
+            )
         );
         services
             .AddOptions<CoreCdc.CdcBindingStateStoreOptions>()

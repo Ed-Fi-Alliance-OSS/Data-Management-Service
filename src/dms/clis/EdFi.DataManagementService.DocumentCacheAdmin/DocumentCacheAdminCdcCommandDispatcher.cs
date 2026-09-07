@@ -194,6 +194,12 @@ internal interface IDocumentCacheAdminCdcCommandDispatcher
 /// That load is scoped to the branch that reads the Configuration Service: a verb that names its own
 /// source connection resolves the instance database without it and must not depend on that service
 /// being reachable.
+///
+/// <c>stop</c> is dispatched ahead of all of it. Fencing a connector acts on the durable binding
+/// record and Kafka Connect, so the Configuration Service's answer for the instance database and the
+/// provider-setup inputs derived from the effective schema are inputs to observing the target rather
+/// than to stopping its connector. Resolving them first is what left a reachable worker unasked
+/// whenever either was unavailable — the moment a connector most needs fencing.
 /// </remarks>
 internal sealed class DocumentCacheAdminCdcCommandDispatcher(
     ICdcSetupController controller,
@@ -214,6 +220,28 @@ internal sealed class DocumentCacheAdminCdcCommandDispatcher(
 
         DateTimeOffset now = timeProvider.GetUtcNow();
         CdcProvider provider = sourcePositions.Provider;
+
+        // Dispatched before the resolutions below, which fencing has no use for. Its own request
+        // carries the target identity alone, and the controller reads the connector name from the
+        // durable binding record that identity names.
+        if (request.VerbName == DocumentCacheAdminCommandSurface.CdcStopVerbName)
+        {
+            return Stop(
+                request,
+                GovernedNames(request, provider),
+                await controller
+                    .StopAsync(
+                        new CdcPlannedFenceRequest(
+                            NewToken(),
+                            request.TargetKey.TenantKey,
+                            request.TargetKey.DataStoreId
+                        ),
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false)
+            );
+        }
+
         string connectionString;
 
         // Which database this invocation runs against. Normally the Configuration Service's own answer
@@ -341,10 +369,6 @@ internal sealed class DocumentCacheAdminCdcCommandDispatcher(
                 await controller
                     .RestartAsync(TargetRequest(invocation), cancellationToken)
                     .ConfigureAwait(false)
-            ),
-            DocumentCacheAdminCommandSurface.CdcStopVerbName => Stop(
-                invocation,
-                await controller.StopAsync(TargetRequest(invocation), cancellationToken).ConfigureAwait(false)
             ),
             DocumentCacheAdminCommandSurface.CdcAdoptVerbName => await AdoptAsync(
                     invocation,
@@ -637,7 +661,11 @@ internal sealed class DocumentCacheAdminCdcCommandDispatcher(
     /// before it takes the stack down around it. Exiting 0 on either would report a fence that is not
     /// there.
     /// </remarks>
-    private static DocumentCacheAdminCdcCommandResult Stop(Invocation invocation, CdcStatus status)
+    private static DocumentCacheAdminCdcCommandResult Stop(
+        DocumentCacheAdminCdcCommandRequest request,
+        DocumentCacheAdminCdcGovernedNames? governedNames,
+        CdcStatus status
+    )
     {
         bool fenced = !status.Targets.Any(target =>
             target.Diagnostics.Any(diagnostic =>
@@ -647,14 +675,16 @@ internal sealed class DocumentCacheAdminCdcCommandDispatcher(
 
         // A fenced connector is not a ready one, so the readiness mapping the sibling verbs take would
         // report this verb's own success as a failure. The outcome still carries the readiness, which
-        // is what the status contract says; only the exit code is the fence's.
+        // is what the status contract says; only the exit code is the fence's. Classified from the
+        // fence's own evidence for the same reason: health observations this verb may not have been
+        // able to collect are not what says whether the connector was stopped.
         return DocumentCacheAdminCdcCommandResult.ForContract(
-            invocation.Request.VerbName,
+            request.VerbName,
             status,
             fenced ? DocumentCacheAdminExitCodes.Success : DocumentCacheAdminExitCodes.RejectedNoMutation,
             LowerCamel(status.Readiness.ToString()),
             "cdcStop",
-            invocation.GovernedNames
+            governedNames
         );
     }
 

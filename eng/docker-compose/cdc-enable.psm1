@@ -950,17 +950,29 @@ function Invoke-CdcEnablePhase {
     # setup creates are driven by Agent jobs, so a stopped Agent yields a capture that exists and
     # never advances.
     if ($DatabaseEngine -eq "mssql") {
+        # The probe authenticates to the running container, so it reads the password Compose gave
+        # that container rather than the env file's own text - an exported override wins there, and a
+        # file-only read would fail the probe on a stack that is running correctly.
         Assert-CdcMssqlAgentRunning -SaPassword (
-            Get-EnvValue -EnvValues $envValues -Name "MSSQL_SA_PASSWORD" -DefaultValue "abcdefgh1!"
+            Get-ComposeResolvedEnvValue `
+                -EnvironmentValues $envValues `
+                -Name "MSSQL_SA_PASSWORD" `
+                -DefaultValue "abcdefgh1!"
         )
     }
 
     # Before the enable, and after the database exists: provider setup grants this principal its
     # capture access and refuses when it is missing.
+    # Routed to the information stream, because this phase returns ONE structured result and the
+    # script below prints its own progress - as do the psql and sqlcmd runs it makes through
+    # `docker exec`. Left on the output stream they are returned to the caller alongside the result
+    # object, and a caller reading that result structurally receives an array of progress lines with
+    # the result somewhere inside it. It is the same output-mixing that made a verb's exit code
+    # arrive as an array, in the one other place this phase runs an external command.
     & "$PSScriptRoot/provision-cdc-principal.ps1" `
         -EnvironmentFile $EnvironmentFile `
         -DatabaseName $resolvedSourceDatabaseName `
-        -DatabaseEngine $DatabaseEngine
+        -DatabaseEngine $DatabaseEngine | Write-Information -InformationAction Continue
 
     $bindingStateRoot = Resolve-CdcBindingStateRoot -EnvValues $envValues
 
@@ -974,19 +986,36 @@ function Invoke-CdcEnablePhase {
         -DeploymentKey $bindingKey.DeploymentKey `
         -InstanceKey $bindingKey.InstanceKey
 
-    # Which of the three shapes this run is, decided HERE - before any verb runs - because the three
-    # need different commands and none can recover from another's failure. The store has already
-    # answered both facts the choice needs, so nothing is inferred from how a command failed.
+    # A live binding record over a source THIS RUN created is none of the three shapes below, and it
+    # is refused here rather than routed into one of them. That record was admitted against a
+    # physical source which no longer exists: a first enablement is refused while its generation is
+    # live; an interrupted-enable retry would assert an enablement this caller has no standing to
+    # claim; and a normal restart would exact-match the record against a source whose fingerprint
+    # cannot match it. The E2E harness is the caller that reaches this - it recreates its database
+    # every run against a binding state store that outlives it - and the surviving generation still
+    # governs a connector, topics, and consumer state that have to be retired rather than silently
+    # rebound.
     #
-    #   InitialEnable          No live binding record. `cdc enable`, carrying the provisioning tokens
-    #                          only when this run created the database. A run that merely found an
-    #                          existing database carries neither and is refused by the command
-    #                          surface, which is the correct outcome for a target this deployment
-    #                          never enabled.
+    # Scoped to a run that made no explicit assertion. -ResumeInterruptedEnable is the operator's own
+    # claim that the enablement never finished, and it is theirs to make: the control plane validates
+    # it against the physical-source fingerprint the record carries and refuses on a mismatch, with
+    # the evidence, which is a better answer than this phase guessing on the caller's behalf.
+    if ($generationPlan.ResumesLiveBinding -and $DatabaseCreatedByThisRun -and -not $ResumeInterruptedEnable) {
+        throw "CDC phase: the binding state store holds a live binding record (generation $($generationPlan.Generation)) for data store $DataStoreId, but this run created the instance database it would be bound to. That record was admitted against a source which no longer exists, so this is a conflicting lifecycle state rather than a restart. Retire generation $($generationPlan.Generation) before enabling this target again."
+    }
+
+    # Which of the three remaining shapes this run is, decided HERE - before any verb runs - because
+    # the three need different commands and none can recover from another's failure. The store has
+    # already answered both facts the choice needs, so nothing is inferred from how a command failed.
+    #
+    #   InitialEnable          No live binding record. `cdc enable` ALONE, carrying the provisioning
+    #                          tokens only when this run created the database. A run that merely
+    #                          found an existing database carries neither and is refused by the
+    #                          command surface, which is the correct outcome for a target this
+    #                          deployment never enabled.
     #   InterruptedEnableRetry A live binding record plus the operator's -ResumeInterruptedCdcEnable
-    #                          assertion. `cdc enable` again under the generation that record names,
-    #                          then the guarded restart, because an enable over a live binding does
-    #                          not start a connector the worker is holding at a stopped target state.
+    #                          assertion. `cdc enable` ALONE, again under the generation that record
+    #                          names.
     #   NormalRestart          A live binding record and no such assertion. `cdc restart` ALONE.
     #
     # The last one is why the choice is made up front rather than discovered. `cdc restart` used to
@@ -1001,10 +1030,12 @@ function Invoke-CdcEnablePhase {
     # it re-proves source-history continuity and the four artifact prerequisites, and it resumes a
     # connector the worker holds STOPPED.
     #
-    # A run that created the database over a live binding record is a NormalRestart too, not a first
-    # enablement: the control plane holds that generation, so an enable against it is a first attempt
-    # against a live one and is refused. The restart is what reports it, on the fingerprint of the
-    # source that actually answered rather than on this phase's guess about which database it is.
+    # And it is why the retry runs the enable ALONE. The enablement sequence returns a connector it
+    # found and exact-matched to its running target state itself, so a restart afterwards is not what
+    # lifts the fence; issuing one against a retry that just reached readiness tears down the tasks
+    # that had only now proved the provider barrier, and against one that did not, the guarded
+    # restart declines anyway - an enablement that has committed no first offset has no healthy
+    # continuity to lift a fence on.
     $phaseMode =
         if (-not $generationPlan.ResumesLiveBinding) { "InitialEnable" }
         elseif ($ResumeInterruptedEnable) { "InterruptedEnableRetry" }
@@ -1093,21 +1124,21 @@ function Invoke-CdcEnablePhase {
         }
     }
 
-    # The guarded lift of the fence the previous normal stop applied, issued for both shapes that run
-    # over a live binding record. On a NormalRestart it is the only verb this phase runs; on an
-    # InterruptedEnableRetry it follows the enable, because the connector that enable found is already
-    # registered with an exact-match configuration and is therefore not re-created, and STOPPED is a
-    # target state the worker persists - the enable would leave it fenced and report the target not
-    # ready with nothing having asked it to resume.
+    # The guarded lift of the fence the previous normal stop applied, and the only verb a
+    # NormalRestart runs. It is not issued for the other two shapes: an enablement starts the
+    # connector it registers, and one that finds a connector already registered returns it to its
+    # running target state itself - so on those paths a restart would either be redundant or tear
+    # down the tasks that had just proved readiness.
     #
     # It is `cdc restart` rather than anything this phase decides, because resuming is exactly what
     # must be guarded: it lifts the fence only against affirmative source-history continuity and the
     # four artifact prerequisites, which is the check the worker's own auto-resume skipped and the
-    # reason the fence is applied at all. A restart that declines is not a phase failure - a connector
-    # that stays fenced is the correct outcome of unproved continuity, and `cdc status` says why - so
-    # its exit code is reported rather than thrown on.
+    # reason the fence is applied at all. A restart that declines does not throw - a connector that
+    # stays fenced is the correct outcome of unproved continuity, and `cdc status` says why - but it
+    # is not reported as an enabled target either: the phase result names the decline so a caller
+    # reading it structurally cannot mistake the two.
     $connectorResumed = $null
-    if ($generationPlan.ResumesLiveBinding) {
+    if ($phaseMode -eq "NormalRestart") {
         $restartArguments = Get-CdcRestartArgument `
             -ComposeProjectName $ComposeProjectName `
             -EnvironmentFile $EnvironmentFile `
@@ -1146,9 +1177,18 @@ function Invoke-CdcEnablePhase {
         # that cannot tell them apart cannot tell a normal restart from a first enablement either.
         PhaseMode                = $phaseMode
         # Whether the guarded restart resumed the connector. $null when no restart was issued, which
-        # is every first enablement - those start their own connector.
+        # is every enablement and every enable retry - those start or resume their own connector.
         ConnectorResumed         = $connectorResumed
-        Status                   = "Enabled"
+        # What this run left behind. "Declined" is a normal restart whose guarded resume the control
+        # plane refused: nothing failed, and nothing was enabled either. A caller that reads this
+        # structurally - the bootstrap wrapper, the E2E harness - must be able to tell that apart
+        # from an admitted target without parsing the transcript.
+        Status                   = if ($phaseMode -eq "NormalRestart" -and -not $connectorResumed) {
+            "Declined"
+        }
+        else {
+            "Enabled"
+        }
     }
 }
 

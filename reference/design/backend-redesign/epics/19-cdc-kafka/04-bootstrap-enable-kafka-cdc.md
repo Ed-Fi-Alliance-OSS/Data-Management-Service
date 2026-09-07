@@ -109,10 +109,15 @@ controller, its adapters, and the entry points that invoke them.
   no-consumer deployments grant no instance-consumer access, and ACL items report
   `NotApplicable` when the broker has no authorizer.
 - Both database principals — the setup principal and the connector principal — are required for
-  every cdc verb whether or not the broker has an authorizer, and options validation refuses at
-  start-up rather than mid-sequence when either is absent. Every verb runs a provider-setup pass
-  as the setup principal, and that pass reports the source grants held by the connector
-  principal, so neither is conditional on Kafka. Only the Connect worker principal is
+  every cdc verb that inspects or provisions the source, whether or not the broker has an
+  authorizer, and options validation refuses at start-up rather than mid-sequence when either is
+  absent. Those verbs run a provider-setup pass as the setup principal, and that pass reports the
+  source grants held by the connector principal, so neither is conditional on Kafka. `stop` is the
+  exception and requires neither, because fencing is not an inspection: it needs the durable
+  binding record that names the connector and a reachable worker, and nothing else. It may not be
+  made to depend on the instance database, the Configuration Service, effective-schema
+  initialization, or the configuration the other verbs validate - those are exactly the failures
+  during which a connector most needs stopping. Only the Connect worker principal is
   ACL-conditional: nothing outside the Kafka grants names it. The setup principal is verified
   against the identity the connection authenticated as, so the local bootstrap resolves it from
   the same effective configuration that registers the data store — `POSTGRES_USER` for
@@ -240,27 +245,38 @@ of its own.
   a connector start the owning design requires to be guarded, and one nothing can guard
   after the fact. The fence runs before the compose down, while the worker is still
   reachable, and is not conditioned on the CDC opt-in of the run that is stopping: the worker
-  starts on any Kafka opt-in at all. A fence that does not apply warns rather than failing
-  the shutdown, because a normal stop removes nothing for it to leave unprotected.
+  starts on any Kafka opt-in at all. Every binding the store holds is proved fenced before the
+  compose down runs: a fence that did not apply, or a discovery that could not enumerate the
+  bindings, refuses the shutdown and names the bindings still standing at a running target state.
+  The guarded restart is not a fallback for that - the worker restores an unfenced connector as it
+  starts, ahead of anything that could gate it.
 - The phase chooses its verb from the binding state store before it runs anything, because the
   three shapes a run can be need different commands and none can recover from another's
   failure. No live binding record is a first enablement and runs `cdc enable`, carrying the
   provisioning evidence only when the run created the instance database. A live binding record
-  plus the operator's explicit resume assertion is the interrupted-enable retry: `cdc enable`
-  again under the generation that record names, then the guarded restart. The retry does not
-  depend on that restart to reach readiness, and could not: the enablement's own provider
-  barrier is unreachable while the connector the previous stop fenced is stopped, and the
-  guarded restart refuses on anything but healthy continuity, which an enablement that never
-  committed a first offset does not have. The enablement sequence therefore returns a connector
-  it found and exact-matched to its running target state itself, which the owning design's
-  continuity rule already admits: it governs starts and resumes AFTER initial enablement, and a
-  retry that has admitted no writes is still the initial one. A live binding record
-  and no such assertion is a normal restart of an already-admitted binding, and it runs
-  `cdc restart` ALONE - it can assert no provisioning evidence, and the owning design has a
-  post-admission restart exact-match the binding and validate existing artifacts rather than
-  apply the initial-enable retry classification. Running the enable first and reaching the
-  restart afterwards cannot serve that third shape: the enable fails argument parsing without
-  the evidence, and the control plane refuses it with the evidence over a populated database.
+  plus the operator's explicit resume assertion is the interrupted-enable retry, and it runs
+  `cdc enable` ALONE under the generation that record names. No restart follows it, and none
+  could serve it: the guarded restart refuses on anything but healthy continuity, which an
+  enablement that never committed a first offset does not have, and issuing it after a retry that
+  did reach readiness would tear down the tasks that had just proved the provider barrier. The
+  enablement sequence returns a connector it found and exact-matched to its running target state
+  itself, which the owning design's continuity rule already admits: that rule governs starts and
+  resumes AFTER initial enablement, and a retry that has admitted no writes is still the initial
+  one. A live binding record and no such assertion is a normal restart of an already-admitted
+  binding, and it runs `cdc restart` ALONE - it can assert no provisioning evidence, and the
+  owning design has a post-admission restart exact-match the binding and validate existing
+  artifacts rather than apply the initial-enable retry classification. Running the enable first
+  and reaching the restart afterwards cannot serve that third shape: the enable fails argument
+  parsing without the evidence, and the control plane refuses it with the evidence over a
+  populated database.
+- A run that created the instance database while a live binding record for the target survives is
+  refused outright rather than routed to any of those three. That record was admitted against a
+  source which no longer exists, so the pairing is none of them: a first enablement is refused
+  while the generation is live, an interrupted-enable retry asserts an enablement this run has no
+  standing to claim, and a normal restart would exact-match the record against a source whose
+  fingerprint cannot match it. The phase names the retirement the operator has to run first, and
+  raises the refusal before the database is recreated wherever the sequence allows, while the
+  source that record governs is still there to retire.
 - On SQL Server the opt-in enables SQL Server Agent and the phase proves it is running before
   provisioning anything, and the connector carries the local TLS settings its driver needs.
   Both are properties of the deployment rather than of the control plane: capture and cleanup
@@ -324,12 +340,29 @@ of its own.
   a retirement's host-side binding discovery reads the records through are never touched.
 - E2E setup creates a fresh database, provisions its current schema, and registers capture
   against that same database before the suite issues any write, so the initial enablement is
-  admitted with write admission still closed.
+  admitted with write admission still closed. It requires that admission to have succeeded: the
+  phase result is read structurally rather than discarded, and an enablement that was refused or
+  declined ends the setup instead of leaving the suite to write into a source nothing is
+  capturing.
 
 ## Acceptance Evidence
 
 - Script and integration tests cover the setup, retry, rejection, timeout, restart,
   guarded lifecycle, and teardown cases defined by the integration design.
+- Phase tests drive every situation the entry points route or refuse - first enablement, the
+  interrupted-enable retry, the normal restart, and the recreated-source refusal - through the
+  phase command itself, including a refusal that exits nonzero while printing valid JSON, and
+  prove that a refusal ends the setup rather than being reported as an enabled target.
+- Shutdown tests prove that one unfenced binding among several prevents the compose down and is
+  named in the failure, that a fully fenced set permits it, that the no-binding case permits it,
+  and that a run without the CDC opt-in is held to the same rule. They also prove that the JSON
+  the control-plane container prints cannot reach the result stream the caller inspects.
+- Fencing tests cover the packaged CLI rather than the control plane alone: an unavailable
+  Configuration Service, an unusable schema input, an unreachable instance database, malformed
+  connector template inputs, an already-stopped connector, an absent connector, a refused stop,
+  and an unreadable read-back each leave `stop` able to fence, or reporting why the worker did
+  not. A latched incident is contained on a later invocation even when that invocation's own
+  observations fail.
 - Partial/retry tests prove the binding is durable before guarded activation: an exact
   binding with lifecycle `Disabled` and a clear latch retries activation; an exact binding
   with lifecycle `Tracking`, a clear latch, and empty tables resumes setup; and a set

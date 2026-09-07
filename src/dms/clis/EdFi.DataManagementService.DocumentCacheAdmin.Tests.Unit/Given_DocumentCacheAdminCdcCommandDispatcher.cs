@@ -184,7 +184,7 @@ public sealed class Given_DocumentCacheAdminCdcCommandDispatcher
     [Test]
     public async Task It_reports_an_applied_fence_as_successful_though_a_fenced_target_is_not_ready()
     {
-        A.CallTo(() => _controller.StopAsync(A<CdcTargetOperationRequest>._, A<CancellationToken>._))
+        A.CallTo(() => _controller.StopAsync(A<CdcPlannedFenceRequest>._, A<CancellationToken>._))
             .Returns(Status(CdcReadiness.NotReady));
 
         DocumentCacheAdminCdcCommandResult result = await ExecuteAsync(
@@ -194,8 +194,67 @@ public sealed class Given_DocumentCacheAdminCdcCommandDispatcher
         using AssertionScope assertions = new();
         result.ExitCode.Should().Be(DocumentCacheAdminExitCodes.Success);
         result.Outcome.Should().Be("notReady", "the contract still reports the readiness it observed");
-        A.CallTo(() => _controller.StopAsync(A<CdcTargetOperationRequest>._, A<CancellationToken>._))
+        A.CallTo(() => _controller.StopAsync(A<CdcPlannedFenceRequest>._, A<CancellationToken>._))
             .MustHaveHappenedOnceExactly();
+    }
+
+    /// <summary>
+    /// The planned fence is dispatched before the Configuration Service is asked for the target's
+    /// instance database and before the provider-setup inputs are derived from the effective schema.
+    /// Both are inputs to observing the target; the fence acts on the connector the durable binding
+    /// record names.
+    /// </summary>
+    [Test]
+    public async Task It_fences_without_loading_data_stores_or_deriving_provider_setup_inputs()
+    {
+        A.CallTo(() => _controller.StopAsync(A<CdcPlannedFenceRequest>._, A<CancellationToken>._))
+            .Returns(Status(CdcReadiness.NotReady));
+
+        DocumentCacheAdminCdcCommandResult result = await ExecuteAsync(
+            Request(DocumentCacheAdminCommandSurface.CdcStopVerbName)
+        );
+
+        using AssertionScope assertions = new();
+        result.ExitCode.Should().Be(DocumentCacheAdminExitCodes.Success);
+        A.CallTo(() => _dataStores.LoadDataStores(A<string?>._, A<CancellationToken>._))
+            .MustNotHaveHappened();
+        A.CallTo(() => _connectionStrings.GetConnectionString(A<long>._, A<string?>._)).MustNotHaveHappened();
+        A.CallTo(() => _setupInputsFactory.CreateAsync(A<CoreCdc.CdcProvider>._, A<CancellationToken>._))
+            .MustNotHaveHappened();
+    }
+
+    /// <summary>
+    /// And the same holds when those inputs are not merely unused but unusable, which is the state a
+    /// deployment is in at the moment a connector most needs fencing.
+    /// </summary>
+    [Test]
+    public async Task It_fences_though_the_configuration_service_and_the_provider_inputs_are_unusable()
+    {
+        A.CallTo(() => _dataStores.LoadDataStores(A<string?>._, A<CancellationToken>._))
+            .Throws(new InvalidOperationException("the Configuration Service is unreachable"));
+        A.CallTo(() => _setupInputsFactory.CreateAsync(A<CoreCdc.CdcProvider>._, A<CancellationToken>._))
+            .Returns(
+                CdcContractReadResult<CdcProviderSetupInputs>.Failure([
+                    new CdcDiagnostic(
+                        "cdcProviderSetupInputs",
+                        CdcDiagnosticCategory.ProviderSetupInvalid,
+                        CdcDiagnosticSeverity.Error,
+                        CdcDiagnosticComponent.ProviderSetup,
+                        DateTimeOffset.UtcNow,
+                        "The effective schema could not supply the provider-setup inputs.",
+                        false,
+                        observed: "unavailable"
+                    ),
+                ])
+            );
+        A.CallTo(() => _controller.StopAsync(A<CdcPlannedFenceRequest>._, A<CancellationToken>._))
+            .Returns(Status(CdcReadiness.NotReady));
+
+        DocumentCacheAdminCdcCommandResult result = await ExecuteAsync(
+            Request(DocumentCacheAdminCommandSurface.CdcStopVerbName)
+        );
+
+        result.ExitCode.Should().Be(DocumentCacheAdminExitCodes.Success);
     }
 
     /// <summary>
@@ -206,7 +265,7 @@ public sealed class Given_DocumentCacheAdminCdcCommandDispatcher
     [Test]
     public async Task It_reports_a_fence_that_did_not_apply_as_rejected_before_mutation()
     {
-        A.CallTo(() => _controller.StopAsync(A<CdcTargetOperationRequest>._, A<CancellationToken>._))
+        A.CallTo(() => _controller.StopAsync(A<CdcPlannedFenceRequest>._, A<CancellationToken>._))
             .Returns(UnappliedFence());
 
         DocumentCacheAdminCdcCommandResult result = await ExecuteAsync(

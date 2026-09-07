@@ -264,37 +264,11 @@ try {
 
     $dataStoreConfiguration | Out-Host
 
-    Write-Host "`nProvisioning E2E database '$e2eDatabaseName'..." -ForegroundColor Cyan
-    Invoke-WithDmsEnvironmentFileSchemaAuthority -Action {
-        ./provision-e2e-database.ps1 -EnvironmentFile $resolvedEnvironmentFile -DatabaseEngine $DatabaseEngine -DatabaseName $e2eDatabaseName
-    }
-
-    if ($LASTEXITCODE -ne 0) {
-        Write-Error "Failed to provision E2E database '$e2eDatabaseName'. Exit code: $LASTEXITCODE"
-        exit $LASTEXITCODE
-    }
-
-    # The snapshot database gets the same generated DDL as the primary and is then left empty. It is
-    # provisioned after the primary so a failure here cannot leave a half-configured primary behind.
-    Write-Host "`nProvisioning E2E snapshot database '$e2eSnapshotDatabaseName'..." -ForegroundColor Cyan
-    Invoke-WithDmsEnvironmentFileSchemaAuthority -Action {
-        ./provision-e2e-database.ps1 -EnvironmentFile $resolvedEnvironmentFile -DatabaseEngine $DatabaseEngine -DatabaseName $e2eSnapshotDatabaseName
-    }
-
-    if ($LASTEXITCODE -ne 0) {
-        Write-Error "Failed to provision E2E snapshot database '$e2eSnapshotDatabaseName'. Exit code: $LASTEXITCODE"
-        exit $LASTEXITCODE
-    }
-
     if ($EnableKafkaCdc) {
-        # The projection target and the status role are read at DMS startup, so they are configured
-        # here - after provisioning, before the DMS start. Without the target the enable workflow's
-        # first proof fails closed and the projector has nothing to drain; without the role the
-        # status endpoint is never mapped and the caught-up read would see a 404.
+        # Resolved BEFORE the database below is created, because the refusal at the end of this block
+        # is about that creation and can only be raised while the source the binding record was
+        # admitted against is still the one this target points at.
         #
-        # They are delivered through the process environment rather than by editing the selected env
-        # file: Compose gives an ambient value precedence over --env-file, and .env.e2e is a tracked
-        # file this wrapper must leave exactly as it found it. The finally block restores them.
         # Same structured-result contract the bootstrap wrapper enforces (command-boundaries.md
         # Section 3.4): the CDC target is read from one result object, never from a stream that also
         # carried progress text.
@@ -326,6 +300,59 @@ try {
         # `down -v` over the artifacts the surviving record still governed.
         $cdcBindingStateRoot = Resolve-CdcBindingStateRoot -EnvValues $envValues
 
+        # A live binding record for this target was admitted against the database the provisioning
+        # below is about to replace, and the generation it names still governs a connector, topics,
+        # and consumer state. That is a conflicting lifecycle state rather than a restart: the record
+        # cannot exact-match a physical source that has never carried its fingerprint, and nothing
+        # this run observed gives it standing to assert an interrupted enablement over it.
+        #
+        # Raised here rather than left to the enable phase so the retirement it names can still run
+        # against the source the record was actually bound to. The phase refuses the same shape on
+        # its own account, for a caller that reaches it another way.
+        $cdcBindingKey = Get-CdcLocalBindingKey -DataStoreId $cdcTargetDataStoreId
+        $cdcGenerationPlan = Get-CdcEnableGenerationPlan `
+            -BindingStateRoot $cdcBindingStateRoot `
+            -DeploymentKey $cdcBindingKey.DeploymentKey `
+            -InstanceKey $cdcBindingKey.InstanceKey
+
+        if ($cdcGenerationPlan.ResumesLiveBinding) {
+            throw "The CDC binding state store at '$cdcBindingStateRoot' holds a live binding record (generation $($cdcGenerationPlan.Generation)) for data store $cdcTargetDataStoreId, and this run is about to recreate the instance database that generation is bound to. Retire it first with 'teardown-local-dms.ps1' (or './start-local-dms.ps1 -d -v'), which removes the connector, topics, and provider capture artifacts the record still governs, then rerun this setup."
+        }
+    }
+
+    Write-Host "`nProvisioning E2E database '$e2eDatabaseName'..." -ForegroundColor Cyan
+    Invoke-WithDmsEnvironmentFileSchemaAuthority -Action {
+        ./provision-e2e-database.ps1 -EnvironmentFile $resolvedEnvironmentFile -DatabaseEngine $DatabaseEngine -DatabaseName $e2eDatabaseName
+    }
+
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "Failed to provision E2E database '$e2eDatabaseName'. Exit code: $LASTEXITCODE"
+        exit $LASTEXITCODE
+    }
+
+    # The snapshot database gets the same generated DDL as the primary and is then left empty. It is
+    # provisioned after the primary so a failure here cannot leave a half-configured primary behind.
+    Write-Host "`nProvisioning E2E snapshot database '$e2eSnapshotDatabaseName'..." -ForegroundColor Cyan
+    Invoke-WithDmsEnvironmentFileSchemaAuthority -Action {
+        ./provision-e2e-database.ps1 -EnvironmentFile $resolvedEnvironmentFile -DatabaseEngine $DatabaseEngine -DatabaseName $e2eSnapshotDatabaseName
+    }
+
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "Failed to provision E2E snapshot database '$e2eSnapshotDatabaseName'. Exit code: $LASTEXITCODE"
+        exit $LASTEXITCODE
+    }
+
+    if ($EnableKafkaCdc) {
+        # The projection target and the status role are read at DMS startup, so they are configured
+        # here - after provisioning, before the DMS start. Without the target the enable workflow's
+        # first proof fails closed and the projector has nothing to drain; without the role the
+        # status endpoint is never mapped and the caught-up read would see a 404.
+        #
+        # They are delivered through the process environment rather than by editing the selected env
+        # file: Compose gives an ambient value precedence over --env-file, and .env.e2e is a tracked
+        # file this wrapper must leave exactly as it found it. The finally block restores them.
+        # The target and the binding state root they name were resolved before the provisioning
+        # above, where the lifecycle-conflict refusal that reads them belongs.
         $cdcRuntimeSettings = Get-CdcRuntimeEnvOverride `
             -TenantKey $cdcTargetTenantKey `
             -DataStoreId $cdcTargetDataStoreId `
@@ -368,14 +395,29 @@ try {
         # plain bootstrap run registers, and the connector connects to the source directly.
         # The phase command, not an orchestration module's exported function: the same entry point
         # the bootstrap wrapper invokes, so the two paths cannot drift.
-        & "$dockerComposeDir/enable-kafka-cdc.ps1" `
+        $cdcPhaseResult = & "$dockerComposeDir/enable-kafka-cdc.ps1" `
             -ComposeProjectName "dms-local" `
             -EnvironmentFile $resolvedEnvironmentFile `
             -TenantKey $cdcTargetTenantKey `
             -DataStoreId $cdcTargetDataStoreId `
             -DatabaseEngine $DatabaseEngine `
             -DatabaseCreatedByThisRun $true `
-            -SourceDatabaseName $e2eDatabaseName | Out-Null
+            -SourceDatabaseName $e2eDatabaseName
+
+        # Read structurally, never discarded. This run created its own database and needs capture
+        # registered against that database before the suite issues a write; a suite writing into a
+        # source nothing is capturing produces an absence of messages indistinguishable from a
+        # projection defect, and the phase exits zero for outcomes that are correct for other shapes
+        # and wrong for this one.
+        $cdcPhaseResults = @($cdcPhaseResult)
+        if ($cdcPhaseResults.Count -ne 1) {
+            throw "enable-kafka-cdc.ps1 must return exactly one structured result object. Returned $($cdcPhaseResults.Count)."
+        }
+
+        $cdcPhase = $cdcPhaseResults[0]
+        if ($cdcPhase.PhaseMode -ne "InitialEnable" -or $cdcPhase.Status -ne "Enabled") {
+            throw "CDC enablement did not admit the database this run created for data store $($cdcTargetDataStoreId): the phase reported mode '$($cdcPhase.PhaseMode)' and status '$($cdcPhase.Status)'. The E2E suite requires initial admission against its own source before it issues any write. Run 'cdc status' for the evidence."
+        }
     }
 
     # Pass the fully resolved environment file (data-standard then engine overlay) so teardown uses the

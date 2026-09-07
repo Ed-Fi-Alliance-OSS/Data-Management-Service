@@ -113,14 +113,16 @@ internal sealed class CdcSetupControllerHarness
 
         A.CallTo(() => Projection.CollectAsync(A<CdcObservationContext>._, A<CancellationToken>._))
             .ReturnsLazily(
-                (CdcObservationContext context, CancellationToken _) =>
-                    Task.FromResult(
-                        CdcProjectionCorrelationObservationMapper.Map(
-                            context,
-                            CurrentProjectionStatus(),
-                            _clock.GetUtcNow()
+                (CdcObservationContext context, CancellationToken token) =>
+                    ProjectionReadsBlockAfterPreflight && Interlocked.Increment(ref _projectionReads) > 1
+                        ? BlockUntilCancelledAsync<CdcProjectionCorrelationObservation>(token)
+                        : Task.FromResult(
+                            CdcProjectionCorrelationObservationMapper.Map(
+                                context,
+                                CurrentProjectionStatus(),
+                                _clock.GetUtcNow()
+                            )
                         )
-                    )
             );
 
         A.CallTo(() => Bindings.ReadBindingAsync(A<CdcBindingIdentity>._, A<CancellationToken>._))
@@ -647,6 +649,25 @@ internal sealed class CdcSetupControllerHarness
     /// <summary>The operator's assertion that the connector this retirement names is already gone.</summary>
     public bool ConnectorAlreadyAbsent { get; set; }
 
+    /// <summary>
+    /// Whether the projector stops answering once the enablement's own status preflight has been
+    /// served. Models the case a polling step's budget exists for: an endpoint that accepts the
+    /// request and then does not respond, leaving the step no observation at all rather than an
+    /// unsatisfied one to fall back on. Scoped past the preflight because that read is issued under
+    /// the caller's token alone and is not the poll under test.
+    /// </summary>
+    public bool ProjectionReadsBlockAfterPreflight { get; set; }
+
+    private int _projectionReads;
+
+    /// <summary>
+    /// Whether the deployment's provider connection properties are malformed, which is what leaves the
+    /// connector template inputs uncomposable. A blank property value is rejected by the template
+    /// contract, so the status refuses at the composition step rather than at any observation before
+    /// it.
+    /// </summary>
+    public bool MalformedConnectorTemplateInputs { get; set; }
+
     /// <summary>How the worker answers a deletion of the connector configuration.</summary>
     public CdcConnectResult DeleteConnector { get; set; } = new(CdcConnectOutcome.Succeeded, null);
 
@@ -682,8 +703,8 @@ internal sealed class CdcSetupControllerHarness
             PollInterval = TimeSpan.FromMilliseconds(1),
         };
 
-    public Task<CdcAdmission> EnableAsync() =>
-        Controller().EnableAsync(Request(_provider), CancellationToken.None);
+    public Task<CdcAdmission> EnableAsync(CancellationToken cancellationToken = default) =>
+        Controller().EnableAsync(Request(_provider), cancellationToken);
 
     public Task<CdcStatus> StatusAsync() =>
         Controller().StatusAsync(TargetRequest(_provider), CancellationToken.None);
@@ -691,8 +712,13 @@ internal sealed class CdcSetupControllerHarness
     public Task<CdcStatus> RestartAsync() =>
         Controller().RestartAsync(TargetRequest(_provider), CancellationToken.None);
 
-    public Task<CdcStatus> StopAsync() =>
-        Controller().StopAsync(TargetRequest(_provider), CancellationToken.None);
+    /// <param name="withStatusEvidence">
+    /// Whether the caller supplies the optional instance-database connection and provider-setup inputs
+    /// the reported status is collected from. False is the shape a deployment shutdown issues: the
+    /// fence is expected to land from the binding record alone.
+    /// </param>
+    public Task<CdcStatus> StopAsync(bool withStatusEvidence = true) =>
+        Controller().StopAsync(PlannedFenceRequest(_provider, withStatusEvidence), CancellationToken.None);
 
     public Task<CdcContractReadResult<CdcCleanupProof>> RetireAsync() =>
         Controller()
@@ -808,6 +834,23 @@ internal sealed class CdcSetupControllerHarness
 
         return new(OperationId, TenantKey, DataStoreId, ConnectionString, enable.ProviderSetup);
     }
+
+    /// <summary>
+    /// One planned fence of the default target's connector. The optional status evidence is what a
+    /// caller that has it supplies so the reported status covers the whole target; the fence itself
+    /// reads the durable binding record and Kafka Connect either way.
+    /// </summary>
+    public static CdcPlannedFenceRequest PlannedFenceRequest(
+        CoreCdc.CdcProvider provider = CoreCdc.CdcProvider.Postgresql,
+        bool withStatusEvidence = true
+    ) =>
+        withStatusEvidence
+            ? new(OperationId, TenantKey, DataStoreId)
+            {
+                StatusConnectionString = ConnectionString,
+                StatusProviderSetup = Request(provider).ProviderSetup,
+            }
+            : new(OperationId, TenantKey, DataStoreId);
 
     /// <summary>
     /// One operator request to adopt the artifact set the default target already holds, under the
@@ -1485,10 +1528,12 @@ internal sealed class CdcSetupControllerHarness
                 _provider == CoreCdc.CdcProvider.SqlServer
                     ? CdcControlTemplateTestData.SqlServerPollInterval
                     : null,
-            ProviderConnectionProperties = new Dictionary<string, string>(
-                CdcControlTemplateTestData.BuildConnectionProperties(_ddlProvider),
-                StringComparer.Ordinal
-            ),
+            ProviderConnectionProperties = MalformedConnectorTemplateInputs
+                ? new Dictionary<string, string>(StringComparer.Ordinal) { ["database.hostname"] = "  " }
+                : new Dictionary<string, string>(
+                    CdcControlTemplateTestData.BuildConnectionProperties(_ddlProvider),
+                    StringComparer.Ordinal
+                ),
             DmsBaseUrl = "http://localhost:8080",
             DmsBearerToken = "token",
             Timeouts = Timeouts,
@@ -1506,6 +1551,19 @@ internal sealed class CdcSetupControllerHarness
         }
 
         return new ConfigurationBuilder().AddInMemoryCollection(settings).Build();
+    }
+
+    /// <summary>
+    /// A read that answers only when its own token is cancelled, whether by the step's budget or by the
+    /// caller.
+    /// </summary>
+    private static async Task<TObservation> BlockUntilCancelledAsync<TObservation>(
+        CancellationToken cancellationToken
+    )
+    {
+        await Task.Delay(Timeout.Infinite, cancellationToken).ConfigureAwait(false);
+
+        throw new OperationCanceledException(cancellationToken);
     }
 
     /// <summary>

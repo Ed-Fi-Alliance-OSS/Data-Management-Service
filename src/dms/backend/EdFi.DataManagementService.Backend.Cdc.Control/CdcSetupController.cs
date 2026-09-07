@@ -77,6 +77,33 @@ public sealed record CdcTargetOperationRequest(
 }
 
 /// <summary>
+/// One planned fence of a target's connector: the target identity, and nothing else the fence itself
+/// depends on.
+/// </summary>
+/// <remarks>
+/// Fencing needs the durable binding record that names the connector and a reachable Kafka Connect
+/// worker. It inspects no source, provisions nothing, and removes nothing, so this request carries
+/// neither an instance-database connection nor provider-setup inputs the way the observing verbs'
+/// request does - and the entry point that composes it must not resolve either on the way here.
+/// Those inputs are exactly what is missing at the moment a connector most needs stopping: a
+/// Configuration Service that is down, a schema input that will not initialize, an instance database
+/// that has gone away. None of them changes whether the worker can be asked to stop publishing.
+///
+/// <see cref="StatusConnectionString"/> and <see cref="StatusProviderSetup"/> are the optional
+/// evidence a caller that HAS them supplies, so the status reported alongside the fence describes the
+/// whole target rather than the connector alone. They never gate the fence: a collection that fails
+/// after the connector is fenced leaves a proved fence proved.
+/// </remarks>
+public sealed record CdcPlannedFenceRequest(string OperationId, string TenantKey, long DataStoreId)
+{
+    /// <summary>The instance database the optional status observations are collected against.</summary>
+    public string? StatusConnectionString { get; init; }
+
+    /// <summary>The provider-setup inputs the optional status observations are validated with.</summary>
+    public CdcProviderSetupInputs? StatusProviderSetup { get; init; }
+}
+
+/// <summary>
 /// One operator request to replace the physical source behind an already enabled target. The generation
 /// being replaced is named explicitly; the generation replacing it is the one
 /// <see cref="CdcControlOptions"/> configures, and it must advance past it.
@@ -146,12 +173,6 @@ public interface ICdcSetupController
     );
 
     /// <summary>
-    /// Restarts the binding's connector, but only against affirmative source-history continuity
-    /// evidence. Continuity that is unknown leaves the connector as it is rather than starting or
-    /// resuming it, and a proved loss stops it. No offset is ever reset and nothing is re-snapshotted
-    /// into the existing public topic.
-    /// </summary>
-    /// <summary>
     /// Stops the binding's connector, so the worker persists a fenced target state that survives its
     /// own restart. Nothing else changes: no governed artifact is removed, no offset is reset or
     /// deleted, and the binding record is untouched, so the generation stays enabled and is resumed
@@ -163,12 +184,19 @@ public interface ICdcSetupController
     /// and that start is a start like any other: `cdc-streaming.md` requires source-history continuity
     /// to be proved before it, and no check can run before a worker that has already resumed. Leaving
     /// the connector fenced across a planned stop is what keeps the next start a guarded one.
+    ///
+    /// Its request carries the target identity alone, because that is all the fence acts from. The
+    /// status this reports is composed from whatever optional evidence the caller supplied and
+    /// whatever of it could be collected; neither decides whether the connector was fenced.
     /// </remarks>
-    Task<CdcStatus> StopAsync(
-        CdcTargetOperationRequest request,
-        CancellationToken cancellationToken = default
-    );
+    Task<CdcStatus> StopAsync(CdcPlannedFenceRequest request, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Restarts the binding's connector, but only against affirmative source-history continuity
+    /// evidence. Continuity that is unknown leaves the connector as it is rather than starting or
+    /// resuming it, and a proved loss stops it. No offset is ever reset and nothing is re-snapshotted
+    /// into the existing public topic.
+    /// </summary>
     Task<CdcStatus> RestartAsync(
         CdcTargetOperationRequest request,
         CancellationToken cancellationToken = default
@@ -1088,6 +1116,34 @@ internal sealed class CdcSetupController(
                     );
                 },
                 observation => observation.BarrierState == CdcProviderBarrierState.Reached,
+                // Composed from the same inputs the poll body uses, with whatever committed offset was
+                // last mapped - none, when the budget was spent before a single read. The adapter
+                // reports an unreached barrier from that, which is exactly what a step that observed
+                // nothing may say.
+                () =>
+                    sourcePositions.ObserveProviderBarrier(
+                        new(
+                            request.OperationId,
+                            binding,
+                            firstCaughtUp.ProjectionObservedAt,
+                            capturedBarrier,
+                            // The offset last mapped, or the unavailable one a budget spent before a
+                            // single read leaves behind. Never absent: the barrier is observed FROM a
+                            // committed offset, so "none was read" is itself an offset observation.
+                            offsetObservation
+                                ?? observationMapper.MapOffset(
+                                    context,
+                                    binding,
+                                    sqlServerCatalogName,
+                                    new CdcConnectResult<CdcConnectorOffsets>(
+                                        CdcConnectOutcome.Unavailable,
+                                        null,
+                                        null
+                                    )
+                                ),
+                            expectedSourcePartitionHash
+                        )
+                    ),
                 controlOptions.Timeouts.ProviderBarrier,
                 controlOptions.Timeouts.PollInterval,
                 cancellationToken
@@ -1223,7 +1279,12 @@ internal sealed class CdcSetupController(
         ArgumentException.ThrowIfNullOrWhiteSpace(request.ConnectionString);
 
         CdcCollectedTargetObservations collected = await CollectTargetObservationsAsync(
-                request,
+                request.OperationId,
+                request.TenantKey,
+                request.DataStoreId,
+                request.ConnectionString,
+                request.ProviderSetup,
+                connectorAlreadyFenced: false,
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -1250,16 +1311,24 @@ internal sealed class CdcSetupController(
     /// from the state that is read back afterwards.
     /// </remarks>
     public async Task<CdcStatus> StopAsync(
-        CdcTargetOperationRequest request,
+        CdcPlannedFenceRequest request,
         CancellationToken cancellationToken = default
     )
     {
         ArgumentNullException.ThrowIfNull(request);
-        ArgumentNullException.ThrowIfNull(request.ProviderSetup);
-        ArgumentException.ThrowIfNullOrWhiteSpace(request.ConnectionString);
 
-        CdcCollectedTargetObservations collected = await CollectTargetObservationsAsync(
-                request,
+        // The durable facts alone, which is everything the fence acts from: no instance-database
+        // connection is opened, no provider-setup pass is run, and no connector template is composed
+        // on the way here. Each of those is an observation about the target rather than permission to
+        // stop it, and each of them failing is a moment at which the connector needs stopping more,
+        // not less.
+        CdcCollectedTargetObservations resolved = await CollectTargetObservationsAsync(
+                request.OperationId,
+                request.TenantKey,
+                request.DataStoreId,
+                connectionString: null,
+                providerSetup: null,
+                connectorAlreadyFenced: false,
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -1268,17 +1337,10 @@ internal sealed class CdcSetupController(
         // nothing, and can only reduce what is published, so there is no state of the deployment in
         // which refusing to fence is the safer answer. The one thing it needs is a record naming the
         // connector: automation never infers a binding from the artifacts that happen to exist.
-        //
-        // That is also why this reads the durable binding and the names recovered from it rather than
-        // a complete observation. Collection carries both onto its refusals, so an instance database
-        // that could not be reached - or a connector template that could not be composed - no longer
-        // stops this verb from asking a reachable worker to fence a connector both it and the record
-        // agree on. Health observations inform the status this reports; they are not permission to
-        // stop.
-        if (collected is not { BindingRecord: { } binding, Inventory: { } inventory, Context: { } context })
+        if (resolved is not { BindingRecord: { } binding, Inventory: { } inventory, Context: { } context })
         {
             return Compose(
-                collected.Evaluation with
+                resolved.Evaluation with
                 {
                     StateStoreDiagnostics =
                     [
@@ -1288,64 +1350,197 @@ internal sealed class CdcSetupController(
                             CdcDiagnosticComponent.Binding,
                             "CDC stop issued no connector request: the durable binding record is what "
                                 + "names the connector, and no artifact stands in for it.",
-                            collected.BindingRecord is null ? "no binding record" : "no recovered inventory",
+                            resolved.BindingRecord is null ? "no binding record" : "no recovered inventory",
                             timeProvider.GetUtcNow()
                         ),
-                        .. collected.Evaluation.StateStoreDiagnostics,
+                        .. resolved.Evaluation.StateStoreDiagnostics,
                     ],
                 }
             );
         }
 
-        // Already where this verb would leave it. Re-issuing would be harmless, but the read-back the
-        // adapter performs waits for a state transition that is not going to happen, so a shutdown
-        // sequence would pay the stop budget for nothing.
-        if (collected.Evaluation.ConnectorRuntime?.ConnectorState is CdcConnectorRuntimeState.Stopped)
+        // Read from Kafka Connect alone, so it stays inside the fence's own dependency set, and read
+        // BEFORE the fence rather than after it. A connector the worker already holds STOPPED is
+        // exactly where this verb would leave it, and the adapter's stop reads the state back until
+        // the worker reports that transition - so re-issuing would spend the stop budget waiting for
+        // one that has already happened, once for every binding a deployment shutdown fences.
+        CdcConnectorRuntimeObservation observedRuntime = await ReadConnectorRuntimeAsync(
+                context,
+                binding,
+                inventory,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        // Fenced BEFORE any optional observation, so nothing collected afterwards can turn a proved
+        // fence into a failure or prevent one that was still obtainable.
+        CdcConnectorFenceOutcome fence = await FenceConnectorAsync(
+                inventory,
+                observedRuntime.ConnectorState,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        // The status this verb reports, collected only when the caller supplied the inputs it needs.
+        // The collection is told the connector is already fenced so it issues no second stop of its
+        // own, and its own failures are reported as the observations they are.
+        CdcTargetStatusEvaluationInput evaluation;
+        if (
+            request.StatusConnectionString is { Length: > 0 } statusConnectionString
+            && request.StatusProviderSetup is { } statusProviderSetup
+        )
         {
-            logger.LogDebug("CDC stop left the connector alone: the worker already holds it STOPPED.");
-            return Compose(collected.Evaluation);
+            evaluation = (
+                await CollectTargetObservationsAsync(
+                        request.OperationId,
+                        request.TenantKey,
+                        request.DataStoreId,
+                        statusConnectionString,
+                        statusProviderSetup,
+                        connectorAlreadyFenced: true,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false)
+            ).Evaluation;
+        }
+        else
+        {
+            // Re-read for the same reason the restart does: the reported status must describe the
+            // connector this verb left behind rather than the one observed before it acted. A fence
+            // that issued no request left it exactly as it was already read.
+            CdcConnectorRuntimeObservation reportedRuntime = observedRuntime;
+            if (fence.Request is not null)
+            {
+                reportedRuntime = await ReadConnectorRuntimeAsync(
+                        context,
+                        binding,
+                        inventory,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+            }
+
+            evaluation = resolved.Evaluation with { ConnectorRuntime = reportedRuntime };
+        }
+
+        return Compose(
+            fence.Fenced ? evaluation : WithFenceRefusal(evaluation, inventory, fence, cancellationToken)
+        );
+    }
+
+    /// <summary>
+    /// Reads one connector's runtime from Kafka Connect and nothing else.
+    /// </summary>
+    /// <remarks>
+    /// Its own operation because the planned fence reads the runtime twice - once to decide whether a
+    /// stop is owed at all, and once to describe what the stop left behind - and because both reads
+    /// have to stay inside the dependency set that makes a fence obtainable when the rest of the
+    /// deployment is not.
+    /// </remarks>
+    private async Task<CdcConnectorRuntimeObservation> ReadConnectorRuntimeAsync(
+        CdcObservationContext context,
+        CdcBinding binding,
+        CdcArtifactInventory inventory,
+        CancellationToken cancellationToken
+    ) =>
+        observationMapper.MapRuntime(
+            context,
+            binding,
+            await connectClient
+                .GetConnectorStatusAsync(inventory.ConnectorName, cancellationToken)
+                .ConfigureAwait(false),
+            await connectClient
+                .GetConnectorOffsetsAsync(inventory.ConnectorName, cancellationToken)
+                .ConfigureAwait(false)
+        );
+
+    /// <summary>
+    /// Asks the worker to fence one connector, and reports whether the connector ended up fenced.
+    /// </summary>
+    /// <remarks>
+    /// The one fencing operation in this control plane. Planned stop, the fence that follows a
+    /// classified continuity loss, and the containment of a loss the binding record already latches
+    /// all reach the worker through it, so the three cannot drift on what counts as fenced.
+    ///
+    /// A connector the worker does not hold answers <c>NotFound</c>, which is the end state this
+    /// exists to reach rather than a request that failed to apply. A connector already OBSERVED
+    /// stopped is left alone - that is the state this asks for, and the adapter's read-back would
+    /// otherwise wait out its budget for a transition that is not going to happen. An unread runtime
+    /// is not such an observation, so a caller holding none asks anyway.
+    /// </remarks>
+    private async Task<CdcConnectorFenceOutcome> FenceConnectorAsync(
+        CdcArtifactInventory inventory,
+        CdcConnectorRuntimeState? observedState,
+        CancellationToken cancellationToken
+    )
+    {
+        if (observedState == CdcConnectorRuntimeState.Stopped)
+        {
+            logger.LogDebug("CDC fence left the connector alone: the worker already holds it STOPPED.");
+            return new(true, null);
         }
 
         CdcConnectResult fence = await connectClient
             .StopConnectorAsync(inventory.ConnectorName, cancellationToken)
             .ConfigureAwait(false);
-        logger.LogDebug("CDC stop asked the worker to fence the connector: {Outcome}.", fence.Outcome);
+        logger.LogDebug("CDC fence asked the worker to stop the connector: {Outcome}.", fence.Outcome);
 
-        // Re-read for the same reason the restart does: the reported status must describe the
-        // connector this verb left behind, not the one observed before it acted.
-        CdcTargetStatusEvaluationInput evaluation = collected.Evaluation with
-        {
-            ConnectorRuntime = observationMapper.MapRuntime(
-                context,
-                binding,
-                await connectClient
-                    .GetConnectorStatusAsync(inventory.ConnectorName, cancellationToken)
-                    .ConfigureAwait(false),
-                await connectClient
-                    .GetConnectorOffsetsAsync(inventory.ConnectorName, cancellationToken)
-                    .ConfigureAwait(false)
-            ),
-        };
+        return new(fence.Succeeded || fence.Outcome == CdcConnectOutcome.NotFound, fence);
+    }
 
-        // A worker holding no connector under this name is the end state this verb exists to reach, so
-        // it is not a request that failed to apply. Every other outcome leaves a connector that may
-        // still be publishing, which is exactly what the caller must be told.
-        if (fence.Succeeded || fence.Outcome == CdcConnectOutcome.NotFound)
+    /// <summary>
+    /// Reports a planned fence the worker did not apply, on whichever evidence this invocation holds.
+    /// </summary>
+    /// <remarks>
+    /// The connector runtime carries it whenever one was read, which is where the sibling refused
+    /// lifecycle requests are reported. A stop whose optional status collection was refused before it
+    /// reached the runtime has no such place to hang it, and the refusal is the one thing the caller
+    /// must not lose, so it is carried in the status's own step diagnostics instead.
+    /// </remarks>
+    private CdcTargetStatusEvaluationInput WithFenceRefusal(
+        CdcTargetStatusEvaluationInput evaluation,
+        CdcArtifactInventory inventory,
+        CdcConnectorFenceOutcome fence,
+        CancellationToken cancellationToken
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        const string Message = "CDC stop could not fence the connector, which may still be publishing.";
+
+        if (fence.Request is not { } request)
         {
-            return Compose(evaluation);
+            return evaluation;
         }
 
-        return Compose(
-            WithUnappliedConnectorAction(
+        if (evaluation.ConnectorRuntime is not null)
+        {
+            return WithUnappliedConnectorAction(
                 evaluation,
                 inventory,
-                fence,
+                request,
                 CdcFenceDiagnosticCodes.NotApplied,
                 CdcDiagnosticCategory.ConnectorNotRunning,
-                "CDC stop could not fence the connector, which may still be publishing.",
+                Message,
                 "the connector stopped at a target state the worker persists across its own restart"
-            )
-        );
+            );
+        }
+
+        return evaluation with
+        {
+            StateStoreDiagnostics =
+            [
+                StatusStep(
+                    CdcFenceDiagnosticCodes.NotApplied,
+                    CdcDiagnosticCategory.ConnectorNotRunning,
+                    CdcDiagnosticComponent.ConnectorRuntime,
+                    Message,
+                    request.Outcome.ToString(),
+                    timeProvider.GetUtcNow()
+                ),
+                .. evaluation.StateStoreDiagnostics,
+            ],
+        };
     }
 
     public async Task<CdcStatus> RestartAsync(
@@ -1358,7 +1553,12 @@ internal sealed class CdcSetupController(
         ArgumentException.ThrowIfNullOrWhiteSpace(request.ConnectionString);
 
         CdcCollectedTargetObservations collected = await CollectTargetObservationsAsync(
-                request,
+                request.OperationId,
+                request.TenantKey,
+                request.DataStoreId,
+                request.ConnectionString,
+                request.ProviderSetup,
+                connectorAlreadyFenced: false,
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -3333,20 +3533,37 @@ internal sealed class CdcSetupController(
     /// missing or is not this target's. What was collected is reported and the remaining observations
     /// are absent, which the evaluators report as unavailable rather than as satisfied.
     /// </remarks>
+    /// <param name="connectionString">
+    /// The instance database the observations below are collected against, or null to stop after the
+    /// durable facts. A planned fence passes null: every observation those inputs unlock is a report
+    /// about the target rather than permission to act on the connector its own record names.
+    /// </param>
+    /// <param name="providerSetup">
+    /// The provider-setup inputs the validate-only pass runs with, or null for the same reason.
+    /// </param>
+    /// <param name="connectorAlreadyFenced">
+    /// Whether this invocation has already asked the worker to stop this connector. The fences below
+    /// are then already satisfied, so they issue no duplicate request for the one call.
+    /// </param>
     private async Task<CdcCollectedTargetObservations> CollectTargetObservationsAsync(
-        CdcTargetOperationRequest request,
+        string operationId,
+        string tenantKey,
+        long dataStoreIdentifier,
+        string? connectionString,
+        CdcProviderSetupInputs? providerSetup,
+        bool connectorAlreadyFenced,
         CancellationToken cancellationToken
     )
     {
         CdcControlOptions controlOptions = options.Value;
         DateTimeOffset now = timeProvider.GetUtcNow();
         CoreCdc.CdcProvider provider = eligibilityProbe.Provider;
-        string dataStoreId = request.DataStoreId.ToString(CultureInfo.InvariantCulture);
+        string dataStoreId = dataStoreIdentifier.ToString(CultureInfo.InvariantCulture);
 
         CdcTargetStatusEvaluationInput evaluation = new(
-            request.OperationId,
+            operationId,
             now,
-            UnvalidatedTargetIdentity(controlOptions, request.TenantKey, dataStoreId, provider),
+            UnvalidatedTargetIdentity(controlOptions, tenantKey, dataStoreId, provider),
             null
         );
 
@@ -3377,7 +3594,7 @@ internal sealed class CdcSetupController(
             };
 
         CdcTargetValidationResult targetValidation = CdcTargetValidator.Validate(
-            TargetInput(controlOptions, request.TenantKey, dataStoreId, provider)
+            TargetInput(controlOptions, tenantKey, dataStoreId, provider)
         );
         if (targetValidation.Target is not { } target)
         {
@@ -3478,11 +3695,29 @@ internal sealed class CdcSetupController(
         // itself names. It used to be composed after provider setup, which made a database this
         // control plane could not reach the reason an operation could not identify its own connector.
         CdcObservationContext context = new(
-            request.OperationId,
+            operationId,
             target.ToTargetIdentity(),
             binding.PhysicalSourceFingerprint
         );
         resolvedContext = context;
+
+        // Everything above came from the binding state store and the record it holds. A caller that
+        // supplied no instance-database connection and no provider-setup inputs asked for exactly
+        // that much, and returning here is what keeps it independent of every observation below - an
+        // unreachable database, a nonconforming provider artifact, a connector template that will not
+        // compose. The planned fence is that caller.
+        if (
+            connectionString is not { Length: > 0 } instanceConnectionString
+            || providerSetup is not { } setupInputs
+        )
+        {
+            return new(evaluation)
+            {
+                Context = context,
+                BindingRecord = binding,
+                Inventory = inventory,
+            };
+        }
 
         // The provider artifacts are inspected without being changed, and the same pass reports the
         // fingerprint of the source that actually answered. The binding is compared against that
@@ -3491,7 +3726,7 @@ internal sealed class CdcSetupController(
         (DbConnection? openedConnection, string? connectionRefusal) =
             await OpenProviderConnectionWithinBudgetAsync(
                     provider,
-                    request.ConnectionString,
+                    instanceConnectionString,
                     cancellationToken
                 )
                 .ConfigureAwait(false);
@@ -3516,10 +3751,13 @@ internal sealed class CdcSetupController(
             // for the one call. Both are idempotent and the second is what reports the outcome, so the
             // duplicate costs a round-trip rather than correctness - and dropping the containment to
             // avoid it would put the guarantee above at the mercy of which verb happened to poll.
-            IReadOnlyList<CdcDiagnostic> containment =
-                bindingRead.State.State == CdcBindingState.IncidentLatched
-                    ? await ContainLatchedIncidentAsync(inventory, cancellationToken).ConfigureAwait(false)
-                    : [];
+            IReadOnlyList<CdcDiagnostic> containment = await ContainLatchedIncidentAsync(
+                    bindingRead.State.State,
+                    inventory,
+                    connectorAlreadyFenced,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
 
             return Blocked(
                 StatusStep(
@@ -3538,7 +3776,7 @@ internal sealed class CdcSetupController(
 
         CdcProviderSetupResult validated = await SetupProviderWithinBudgetAsync(
                 ProviderSetupRequest(
-                    request.ProviderSetup,
+                    setupInputs,
                     provider,
                     binding.PhysicalSourceFingerprint,
                     inventory,
@@ -3551,7 +3789,7 @@ internal sealed class CdcSetupController(
 
         CdcProviderSetupObservationMapping providerSetupObservation =
             CdcProviderSetupResultMapper.MapValidateOnlyResult(
-                request.OperationId,
+                operationId,
                 timeProvider.GetUtcNow(),
                 binding,
                 validated
@@ -3600,6 +3838,13 @@ internal sealed class CdcSetupController(
             )
         )
         {
+            // The same containment obligation the unreachable-provider exit above carries, and the
+            // only other exit that reaches it: this one holds the durable incident read from the
+            // record and the connector name recovered from it, and nothing further down this
+            // collection runs to attempt the stop. A status returning here while the record latches a
+            // loss would otherwise leave the connector publishing against a source it cannot resume
+            // from for as long as the template inputs stayed malformed - every later status returns
+            // at this same line, and the fence that follows a classified continuity is never reached.
             return Blocked(
                 StatusStep(
                     "statusConnectorInputsInvalid",
@@ -3609,7 +3854,13 @@ internal sealed class CdcSetupController(
                     templateRejection,
                     timeProvider.GetUtcNow()
                 ),
-                []
+                await ContainLatchedIncidentAsync(
+                        bindingRead.State.State,
+                        inventory,
+                        connectorAlreadyFenced,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false)
             );
         }
 
@@ -3643,7 +3894,7 @@ internal sealed class CdcSetupController(
         CdcProviderBarrierCaptureResult capturedBarrier = await sourcePositions
             .CaptureBarrierAsync(
                 BarrierCapture(
-                    request.ConnectionString,
+                    instanceConnectionString,
                     binding,
                     controlOptions,
                     ConnectorCanAdvanceSource(connectorStatus)
@@ -3689,7 +3940,7 @@ internal sealed class CdcSetupController(
         {
             ProviderBarrier = sourcePositions.ObserveProviderBarrier(
                 new(
-                    request.OperationId,
+                    operationId,
                     binding,
                     projection.ProjectionObservedAt,
                     capturedBarrier,
@@ -3726,7 +3977,7 @@ internal sealed class CdcSetupController(
         CdcSourceHistoryClassificationResult sourceHistory = await sourcePositions
             .ObserveSourceHistoryAsync(
                 new(
-                    request.OperationId,
+                    operationId,
                     binding,
                     providerSetupObservation.ProviderSetup,
                     offsetObservation,
@@ -3735,8 +3986,8 @@ internal sealed class CdcSetupController(
                     // be classified as a retained-history gap - which this path latches durably and
                     // fences the connector for.
                     await ReadCorrelatedProviderHistoryAsync(
-                            request.OperationId,
-                            request.ProviderSetup,
+                            operationId,
+                            setupInputs,
                             provider,
                             binding,
                             inventory,
@@ -3772,7 +4023,12 @@ internal sealed class CdcSetupController(
         // raises a candidate, and restart declines a lost continuity rather than acting on it.
         if (sourceHistory.Observation.Continuity == CdcSourceHistoryContinuity.Lost)
         {
-            evaluation = await FenceLostSourceHistoryAsync(evaluation, inventory, cancellationToken)
+            evaluation = await FenceLostSourceHistoryAsync(
+                    evaluation,
+                    inventory,
+                    connectorAlreadyFenced,
+                    cancellationToken
+                )
                 .ConfigureAwait(false);
         }
 
@@ -3824,32 +4080,31 @@ internal sealed class CdcSetupController(
     private async Task<CdcTargetStatusEvaluationInput> FenceLostSourceHistoryAsync(
         CdcTargetStatusEvaluationInput evaluation,
         CdcArtifactInventory inventory,
+        bool connectorAlreadyFenced,
         CancellationToken cancellationToken
     )
     {
-        if (evaluation.ConnectorRuntime?.ConnectorState == CdcConnectorRuntimeState.Stopped)
+        if (connectorAlreadyFenced)
         {
             return evaluation;
         }
 
-        CdcConnectResult fence = await connectClient
-            .StopConnectorAsync(inventory.ConnectorName, cancellationToken)
+        CdcConnectorFenceOutcome fence = await FenceConnectorAsync(
+                inventory,
+                evaluation.ConnectorRuntime?.ConnectorState,
+                cancellationToken
+            )
             .ConfigureAwait(false);
 
-        if (fence.Succeeded || fence.Outcome == CdcConnectOutcome.NotFound)
+        if (fence.Fenced || fence.Request is not { } refusedRequest)
         {
             return evaluation;
         }
-
-        logger.LogDebug(
-            "CDC status could not fence the connector carrying a lost source history: {Outcome}.",
-            fence.Outcome
-        );
 
         return WithUnappliedConnectorAction(
             evaluation,
             inventory,
-            fence,
+            refusedRequest,
             "statusIncidentFenceNotApplied",
             CdcDiagnosticCategory.SourceHistoryLost,
             "CDC status proved a source-history loss but could not fence the connector that carries it.",
@@ -3874,23 +4129,28 @@ internal sealed class CdcSetupController(
     /// does not hold answers <c>NotFound</c>, which is not a failure to fence.
     /// </remarks>
     private async Task<IReadOnlyList<CdcDiagnostic>> ContainLatchedIncidentAsync(
+        CdcBindingState bindingState,
         CdcArtifactInventory inventory,
+        bool connectorAlreadyFenced,
         CancellationToken cancellationToken
     )
     {
-        CdcConnectResult fence = await connectClient
-            .StopConnectorAsync(inventory.ConnectorName, cancellationToken)
-            .ConfigureAwait(false);
-
-        if (fence.Succeeded || fence.Outcome == CdcConnectOutcome.NotFound)
+        if (bindingState != CdcBindingState.IncidentLatched || connectorAlreadyFenced)
         {
             return [];
         }
 
-        logger.LogDebug(
-            "CDC status could not fence the connector carrying a latched source-history loss: {Outcome}.",
-            fence.Outcome
-        );
+        CdcConnectorFenceOutcome fence = await FenceConnectorAsync(
+                inventory,
+                observedState: null,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        if (fence.Fenced || fence.Request is not { } refusedRequest)
+        {
+            return [];
+        }
 
         return
         [
@@ -3900,7 +4160,7 @@ internal sealed class CdcSetupController(
                 CdcDiagnosticComponent.ConnectorRuntime,
                 "CDC status could not fence the connector carrying the source-history loss the binding "
                     + "record already latches.",
-                fence.Outcome.ToString(),
+                refusedRequest.Outcome.ToString(),
                 timeProvider.GetUtcNow()
             ),
         ];
@@ -4038,45 +4298,122 @@ internal sealed class CdcSetupController(
         PollAsync(
             token => projectionCorrelation.CollectAsync(context, token),
             IsCaughtUp,
+            () => UnobservedProjection(context),
             controlOptions.Timeouts.ProjectionCaughtUp,
             controlOptions.Timeouts.PollInterval,
             cancellationToken
         );
 
     /// <summary>
-    /// Polls one step until its evidence is satisfied or its budget is spent, returning what was last
-    /// observed either way. Elapsed time is never evidence, so a spent budget ends the wait rather than
-    /// standing in for the observation it was waiting on.
+    /// The projection evidence a step reports when its budget expired before any observation was made
+    /// at all.
     /// </summary>
     /// <remarks>
-    /// The budget bounds real elapsed time, not just the decision between observations: each wait is
-    /// clamped to what the budget has left, and every observation after the first is issued under that
-    /// remainder. Without both, an observation or a delay begun just inside the deadline would run its
-    /// own full step timeout past it, and a slow-answering step would spend that timeout on every one of
-    /// its polls - the budget would bound the number of reads rather than the time they take.
+    /// A step that spent its whole budget without reading the projector once has observed nothing, and
+    /// the one thing it may not report is a caught-up projector. It reports the same unavailable
+    /// evidence a status read that could not be answered produces, so the shape reaching the evaluator
+    /// is the one it already classifies rather than a second vocabulary for "no evidence".
+    /// </remarks>
+    private CdcProjectionCorrelationObservation UnobservedProjection(CdcObservationContext context) =>
+        CdcProjectionCorrelationObservationMapper.Map(
+            context,
+            new CdcProjectionStatusReadResult(
+                CdcProjectionStatusReadOutcome.Unavailable,
+                null,
+                "The DMS DocumentCache status endpoint was not observed within this step's own budget."
+            ),
+            timeProvider.GetUtcNow()
+        );
+
+    /// <summary>
+    /// Polls one step until its evidence is satisfied or its budget is spent, returning what was last
+    /// observed inside that budget. Elapsed time is never evidence, so a spent budget ends the wait
+    /// rather than standing in for the observation it was waiting on.
+    /// </summary>
+    /// <param name="unobserved">
+    /// The evidence to report when the budget was spent without a single observation being made inside
+    /// it. There is then nothing to fall back on, and the one thing the step may not report is the
+    /// satisfied state it was waiting for.
+    /// </param>
+    /// <remarks>
+    /// The budget bounds real elapsed time, and it bounds EVERY observation including the first: each
+    /// read is issued under what the budget has left, and each wait between reads is clamped to the
+    /// same remainder. Without that, an observation begun just inside the deadline would run its own
+    /// full step timeout past it, and a first read that never answered would hang the step for as long
+    /// as its own transport allowed - the budget would bound the number of reads rather than the time
+    /// they take. The first read used to be the exception, issued under the caller's token alone, which
+    /// is exactly the shape that left it unbounded.
     ///
-    /// The first observation is the exception, and is issued under the caller's token alone: the step
-    /// has to report what it observed, and a first observation cancelled by the budget would leave
-    /// nothing to report but the elapsed time this method refuses to treat as evidence. Every later
-    /// observation has the one before it to fall back on, so cutting one off costs no evidence.
+    /// The deadline is checked again after each observation RETURNS, and for a satisfied one no less
+    /// than an unsatisfied one. An answer that arrived outside the budget is not the answer this step
+    /// was allowed to wait for, and admitting one would let a slow step report readiness the deadline
+    /// had already refused it. Cancellation alone cannot express that: a read cut off by the budget and
+    /// one that returned an instant past it are the same overrun.
+    ///
+    /// Caller cancellation stays distinct from the budget throughout. The two tokens are linked so a
+    /// read can be cut off by either, and only a cancellation the caller did not request is caught here
+    /// - a caller that cancelled gets its <see cref="OperationCanceledException"/> rather than a step
+    /// result composed from evidence it no longer wants.
     /// </remarks>
     private async Task<TObservation> PollAsync<TObservation>(
         Func<CancellationToken, Task<TObservation>> observe,
         Func<TObservation, bool> satisfied,
+        Func<TObservation> unobserved,
         TimeSpan budget,
         TimeSpan pollInterval,
         CancellationToken cancellationToken
     )
     {
         DateTimeOffset deadline = timeProvider.GetUtcNow() + budget;
-        TObservation observation = await observe(cancellationToken).ConfigureAwait(false);
+        TObservation lastObservation = default!;
+        bool observedInsideBudget = false;
 
-        while (!satisfied(observation))
+        while (true)
         {
             TimeSpan remaining = deadline - timeProvider.GetUtcNow();
             if (remaining <= TimeSpan.Zero)
             {
+                break;
+            }
+
+            TObservation observation;
+            using (CancellationTokenSource remainingBudget = new(remaining, timeProvider))
+            using (
+                CancellationTokenSource observeCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+                    cancellationToken,
+                    remainingBudget.Token
+                )
+            )
+            {
+                try
+                {
+                    observation = await observe(observeCancellation.Token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+                {
+                    // Cut off by this step's own budget rather than by the caller.
+                    break;
+                }
+            }
+
+            if (timeProvider.GetUtcNow() >= deadline)
+            {
+                // Returned outside the budget, so it is not this step's answer.
+                break;
+            }
+
+            lastObservation = observation;
+            observedInsideBudget = true;
+
+            if (satisfied(observation))
+            {
                 return observation;
+            }
+
+            remaining = deadline - timeProvider.GetUtcNow();
+            if (remaining <= TimeSpan.Zero)
+            {
+                break;
             }
 
             await Task.Delay(
@@ -4085,30 +4422,11 @@ internal sealed class CdcSetupController(
                     cancellationToken
                 )
                 .ConfigureAwait(false);
-
-            remaining = deadline - timeProvider.GetUtcNow();
-            if (remaining <= TimeSpan.Zero)
-            {
-                return observation;
-            }
-
-            using CancellationTokenSource remainingBudget = new(remaining, timeProvider);
-            using CancellationTokenSource observeCancellation =
-                CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, remainingBudget.Token);
-
-            try
-            {
-                observation = await observe(observeCancellation.Token).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-            {
-                // Cut off by this step's own budget rather than by the caller, so the observation before
-                // it is what the step actually observed.
-                return observation;
-            }
         }
 
-        return observation;
+        // The last thing actually observed inside the budget, which is honest evidence that the step
+        // was not satisfied; or the caller's unavailable evidence when there was no such observation.
+        return observedInsideBudget ? lastObservation : unobserved();
     }
 
     /// <summary>
@@ -4973,6 +5291,19 @@ internal sealed class CdcSetupController(
     /// nonconforming provider artifact, or a connector template that would not compose therefore does
     /// not cost an operation the ability to identify the connector its own record names.
     /// </remarks>
+    /// <summary>
+    /// What one request to fence a connector reached.
+    /// </summary>
+    /// <param name="Fenced">
+    /// Whether the connector ended up at a stopped target state. True for a stop the worker applied,
+    /// for a connector already observed stopped, and for one the worker does not hold at all.
+    /// </param>
+    /// <param name="Request">
+    /// The Connect request that was issued, or null when none was: a connector already observed
+    /// stopped needs none, and there is then no refusal to report.
+    /// </param>
+    private sealed record CdcConnectorFenceOutcome(bool Fenced, CdcConnectResult? Request);
+
     private sealed record CdcCollectedTargetObservations(CdcTargetStatusEvaluationInput Evaluation)
     {
         public CdcObservationContext? Context { get; init; }
