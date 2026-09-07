@@ -24,6 +24,7 @@ No executable documentation catalog or automated documentation/link tests are us
 
 | Runbook anchor / review | Design owner / invariants | Exact identity and layer | Result / artifact | Remaining owner |
 | --- | --- | --- | --- | --- |
+| [Credentials and isolation](operations-runbook.md#cdc-security); T18 | [Security](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#security-telemetry-and-operations); CDC-INV-15 authoring support | Manual review `T18-consumer-group`; options class, blank-group validator, configuration catalog | Corrected consumer group key; [reviewed revision and findings](#t18-consumer-group-review) | No live isolation or provider result claimed |
 | [Retirement](operations-runbook.md#retire-binding-generation); T20 CI selection | [Binding lifecycle](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding); CDC-INV-14/15, supporting CDC-INV-11 | Existing `Category=CdcControlBrokerBacked`: 21 `Given_CdcControlBrokerBackedStack` cases and three `Given_CdcControlRetirementOperator` scenarios; real PostgreSQL/Kafka/Connect/filesystem | 24 executed/passed, 0 failed/skipped; [commands, exact results, fixture corrections and reviewed revision](evidence/t20/README.md) | Local reproduction of the existing CI selection; deployment/API/purge evidence remains separate |
 | [SQL Server setup](operations-runbook.md#local-sqlserver), [status handoff](operations-runbook.md#local-setup-verification), [restart](operations-runbook.md#local-stop-restart); T15 prerequisite review | [Local bootstrap](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#local-bootstrap-and-ci); CDC-INV-14/15 | `T15-sqlserver-prerequisites`; manual source inspection only | E19-04 poll-interval container input fixed; blocked on the E19-06 API harness; [trace and disposition](#t15-sqlserver-prerequisite-review). No live exercise or test result | E19-06 harness; then T15 replay and T16 reconciliation |
 | [Retirement](operations-runbook.md#retire-binding-generation); T17 | [Binding lifecycle](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding); CDC-INV-14/15, supporting CDC-INV-11 | `Given_CdcControlRetirementOperator`, `Given_DocumentCacheAdminRetirementSourceSelection`, selected `Given_DocumentCacheAdminCdcJsonContracts`; separate live broker, packaged two-provider CLI, and mocked-dispatch layers | 16 new integration cases passed; 187 reused unit cases passed; [exact results, captures and manual review](evidence/t17/README.md) | T14/T15 runbook replay; T16 final reconciliation; platform purge remains deployment-owned |
@@ -56,6 +57,26 @@ No executable documentation catalog or automated documentation/link tests are us
 | [Retention/capacity](operations-runbook.md#retention-and-capacity), [consumer continuity](operations-runbook.md#consumer-continuity), [record increase](operations-runbook.md#increase-record-size), [overhead](operations-runbook.md#pipeline-overhead); T08 | [Operations](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#security-telemetry-and-operations), [topic/record contract](../design/backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md); CDC-INV-14/15 authoring, CDC-INV-07/11 support | Manual review `T08-capacity`; source and sibling assertions, native metadata/tool reference review | Reviewed; [findings and pending observations](#t08-capacity-review) | T14/T15 live inspection; independent consumer/platform qualification; T16 closure |
 | [Policy and size inspection](operations-runbook.md#increase-record-size); T08 behavior reuse | [Record size](../design/backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#record-size), [offset store](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#kafka-connect-offset-store); CDC-INV-07/11/15 support | `Given_CdcKafkaRecordSize`, `Given_CdcKafkaTopicPolicy`, `Given_CdcKafkaOffsetStore`, `Given_CdcKafkaSchemaHistory`; fake Kafka admin/record readers | 82 passed / 0 failed / 0 skipped; [exact identities](evidence/t08/policy-results.txt) | No live provider, broker or consumer capacity claim; T14/T15/T16 |
 | [CDC operator entry point](README.md), setup/discovery links; T09 | [Documentation disposition](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#documentation-audit-and-disposition); CDC-INV-14/15 authoring support | Manual review `T09-discovery`; shipped wrappers, CI lane configuration, source, existing help and evidence | Reviewed; [audit and corrections](#t09-discovery-review); no new test execution or live result | T13/T17 assertions; T14/T15 replay; T16 final reconciliation |
+
+<a id="t18-consumer-group-review"></a>
+## T18 consumer group configuration correction
+
+Reviewed 2026-09-06 from the repository root against revision
+`5108b9ce5f2239d626142793cc94533bf2972ef0` plus this documentation correction.
+Manually compared the runbook's consumer credential row with `CdcConsumerOptions`
+and `ValidateAcls` in
+[CdcControlOptions.cs](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Control/CdcControlOptions.cs)
+and the `Consumers` row in the
+[configuration catalog](../../docs/CONFIGURATION.md#cdc-principals-and-credentials).
+The shipped property is `ConsumerGroup`, initialized to an empty string; validation
+rejects any consumer with a blank principal or consumer group. The runbook's `.GroupId`
+therefore failed to identify the required configuration property. Corrected the row to
+name `Consumers[].Principal` and `Consumers[].ConsumerGroup` explicitly, matching the
+catalog. No configuration alias or product behavior changed.
+
+Manual source/catalog/diff and linked-anchor review completed; `git diff --check`
+passed. No automated documentation assertions, builds, tests, or live operations were
+needed or run for this prose-only correction.
 
 <a id="t01-foundation-review"></a>
 ## T01 foundation review
