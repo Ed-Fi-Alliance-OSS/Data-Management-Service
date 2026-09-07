@@ -195,7 +195,12 @@ public sealed class Given_DocumentCacheAdminCdcShippedComposition
 
         DocumentCacheAdminCliProcessResult result = await harness.RunAsync(arguments.ToArray());
 
-        await TestContext.Out.WriteLineAsync(
+        string artifactPath = Path.Combine(
+            TestContext.CurrentContext.WorkDirectory,
+            $"cdc-tenant-{(tenantKey.Length == 0 ? "empty" : tenantKey)}.json"
+        );
+        await File.WriteAllTextAsync(
+            artifactPath,
             JsonSerializer.Serialize(
                 new
                 {
@@ -206,6 +211,7 @@ public sealed class Given_DocumentCacheAdminCdcShippedComposition
                 }
             )
         );
+        TestContext.AddTestAttachment(artifactPath);
         if (tenantKey.Length == 0)
         {
             result.ExitCode.Should().Be(0);

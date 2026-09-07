@@ -443,8 +443,8 @@ internal sealed partial class CdcControlBrokerFixture : IAsyncDisposable
     /// Sets an explicit topic-level configuration override, which is how a deployment supplies the
     /// governed values the Connect worker does not set on the internal topics it creates for itself.
     /// The write is acknowledged before every broker has applied it, so the override is read back
-    /// until it is the value a describe reports - otherwise the observation under test still sees the
-    /// unset value and reports the nonconformance the override was supplied to clear.
+    /// until a describe reports both the value and its topic-level source. The inherited broker
+    /// default can have the same value before the explicit override becomes visible.
     /// </summary>
     public async Task SetTopicConfigAsync(string topicName, string configName, string value)
     {
@@ -472,6 +472,7 @@ internal sealed partial class CdcControlBrokerFixture : IAsyncDisposable
             if (
                 entries.TryGetValue(configName, out ConfigEntryResult? entry)
                 && string.Equals(entry.Value, value, StringComparison.Ordinal)
+                && entry.Source == ConfigSource.DynamicTopicConfig
             )
             {
                 return;
@@ -1149,18 +1150,7 @@ internal sealed partial class CdcControlBrokerFixture : IAsyncDisposable
         CancellationToken cancellationToken
     )
     {
-        IConfiguration configuration = new ConfigurationBuilder()
-            .AddInMemoryCollection(
-                new Dictionary<string, string?> { ["AppSettings:Datastore"] = "postgresql" }
-            )
-            .Build();
-        await using ServiceProvider services = new ServiceCollection()
-            .AddLogging()
-            .AddDmsCdcControl(configuration)
-            .AddSingleton<IOptions<CdcControlOptions>>(Options.Create(ControlOptions))
-            .Configure<CoreCdc.CdcBindingStateStoreOptions>(options => options.RootPath = stateRoot)
-            .AddSingleton<IDocumentCacheGuardedNewEmptyActivationCommand, ForbiddenActivation>()
-            .BuildServiceProvider();
+        await using ServiceProvider services = CreateObservationServices(stateRoot, ControlOptions);
         await using AsyncServiceScope scope = services.CreateAsyncScope();
         return await scope
             .ServiceProvider.GetRequiredService<ICdcSetupController>()
@@ -1180,12 +1170,68 @@ internal sealed partial class CdcControlBrokerFixture : IAsyncDisposable
             );
     }
 
+    // Deliberately incomplete operator evidence: the real controller must refuse before fencing
+    // the live outgoing generation. This supplies no substitute initial-provisioning authority.
+    internal async Task<CoreCdc.CdcAdmission> ReplaceWithoutProvisioningEvidenceAsync(
+        CoreCdc.CdcBinding previousBinding,
+        string stateRoot,
+        CancellationToken cancellationToken
+    )
+    {
+        CdcControlOptions replacementOptions = WithControlOptions(options =>
+            options.Generation = previousBinding.Generation + 1
+        );
+        await using ServiceProvider services = CreateObservationServices(stateRoot, replacementOptions);
+        await using AsyncServiceScope scope = services.CreateAsyncScope();
+        return await scope
+            .ServiceProvider.GetRequiredService<ICdcSetupController>()
+            .ReplaceSourceAsync(
+                new CdcReplaceSourceRequest(
+                    OperationId,
+                    "",
+                    1,
+                    ProviderAdminConnectionString,
+                    previousBinding.Generation,
+                    new CdcProvisioningProofEvidence(OperationId, null, null),
+                    new CdcProviderSetupInputs(
+                        "postgres",
+                        PinnedImage.ConnectorDatabaseUser,
+                        PinnedImage.BuildRequiredSourceTableInventory(CdcProvider.Postgresql),
+                        PinnedImage.BuildDmsManagedTableInventory(CdcProvider.Postgresql)
+                    )
+                ),
+                cancellationToken
+            );
+    }
+
+    private static ServiceProvider CreateObservationServices(
+        string stateRoot,
+        CdcControlOptions controlOptions
+    )
+    {
+        IConfiguration configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(
+                new Dictionary<string, string?> { ["AppSettings:Datastore"] = "postgresql" }
+            )
+            .Build();
+        return new ServiceCollection()
+            .AddLogging()
+            .AddDmsCdcControl(configuration)
+            .AddSingleton<IOptions<CdcControlOptions>>(Options.Create(controlOptions))
+            .Configure<CoreCdc.CdcBindingStateStoreOptions>(options => options.RootPath = stateRoot)
+            .AddSingleton<IDocumentCacheGuardedNewEmptyActivationCommand, ForbiddenActivation>()
+            .BuildServiceProvider();
+    }
+
     private sealed class ForbiddenActivation : IDocumentCacheGuardedNewEmptyActivationCommand
     {
         public Task<Core.DocumentCache.DocumentCacheAdministrativeCommandResult> ExecuteAsync(
             Core.DocumentCache.DocumentCacheGuardedNewEmptyActivationRequest request,
             CancellationToken cancellationToken = default
-        ) => throw new InvalidOperationException("Adoption must not activate the source database.");
+        ) =>
+            throw new InvalidOperationException(
+                "This observation fixture must not activate the source database."
+            );
     }
 
     private async Task<CdcProviderSetupResult> RunProviderSetupAsync(CancellationToken cancellationToken)

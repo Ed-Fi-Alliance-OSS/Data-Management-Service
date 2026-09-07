@@ -1,0 +1,6 @@
+{
+  "tenantKey": "default",
+  "ExitCode": 64,
+  "StandardOutput": "",
+  "StandardError": "default is reserved for the CDC binding-record tenant spelling. For the default tenant omit --tenant-key or pass an empty string.\n"
+}

@@ -38,9 +38,12 @@ No executable documentation catalog or automated documentation/link tests are us
 | [History interpretation](operations-runbook.md#projection-repair-handoff); T12 reuse | [Binding/history owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding); CDC-INV-14/15 support | Existing CLI dispatcher/service-registration and CDC history/registration unit cases, including both provider registrations; five existing real-provider Runbook cases | 70 unit + 5 integration passed; [review and exact selections](#t12-operator-path-review) | E18 internal-only successes remain test-only; restamp E18-S08; live replay T14/T15 |
 | [Provider setup/state](operations-runbook.md#local-setup), [API handoff](operations-runbook.md#local-api-smoke), [planned stop/restart](operations-runbook.md#local-stop-restart), [cleanup](operations-runbook.md#local-cleanup); T02 | [Bootstrap](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#local-bootstrap-and-ci), [binding](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding); CDC-INV-14/15 authoring support | Manual review `T02-setup`; source/generated help and existing T03/T12 JSON, no provider access | Reviewed; [findings, help, replay commands and dependency](#t02-setup-review) | E19-06 API harness unmet; T14/T15 live replay; T16 reconciliation |
 | [Setup/state/stop](operations-runbook.md#local-setup-verification); T02 wrapper behavior | [Initial admission](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#enablement-and-initial-readiness-sequence), [continuity](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#source-history-continuity); CDC-INV-14/15 supporting evidence | Explicit Pester FullName selection from `BootstrapEnableKafkaCdc.Tests.ps1`; exact 131 case identities in artifact, temporary filesystem/mocked Docker and source-surface assertions | 131 passed / 0 failed / 0 skipped; [results](evidence/t02/bootstrap-results.txt), [invocation](evidence/t02/bootstrap-invocation.txt) | Not provider/image/broker qualification; T14/T15 live admission/fence/cleanup evidence |
-| [Continuity](operations-runbook.md#continuity-incident), [adoption](operations-runbook.md#adopt-missing-binding), [replacement](operations-runbook.md#replace-physical-source); T05 | [Continuity](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#source-history-continuity), [binding](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding); CDC-INV-14/15 authoring support | Manual review `T05-continuity`; source, generated help, existing fixture capture | Reviewed; [record and capture mapping](#t05-continuity-review) | T13 assertions; T14/T15 live replay; T16 closure |
-| [Adoption/replacement](operations-runbook.md#adopt-missing-binding); T05 behavior reuse | [Binding](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding); CDC-INV-11/14/15 supporting evidence | `Given_CdcSetupControllerAdoption`, `Given_CdcSetupControllerReplaceSource`, `Given_CdcSetupControllerInitialEnable`; fake provider/Connect/Kafka/lifecycle collaborators | 68 passed / 0 failed / 0 skipped; [44 cases](evidence/t05/controller-results.txt), [24 retry cases](evidence/t05/retry-results.txt) | Not live provider or broker evidence; T13/T14/T15 |
-| [Command output](operations-runbook.md#replace-physical-source); T05 serializer support | [Readiness](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#projection-health-and-deployment-owned-cdc-readiness), [binding](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding); CDC-INV-14/15 | `Given_DocumentCacheAdminCdcJsonContracts`; existing mocked-dispatch CLI cases | 11 passed / 0 failed / 0 skipped; [identities](evidence/t05/cli-json-results.txt), [six capture outcomes](evidence/t05/capture-results.txt) | Production dispatch/default-tenant additions T13; deployed replay T14/T15 |
+| [Continuity](operations-runbook.md#continuity-incident), [adoption](operations-runbook.md#adopt-missing-binding), [replacement](operations-runbook.md#replace-physical-source); T05 | [Continuity](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#source-history-continuity), [binding](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding); CDC-INV-14/15 authoring support | Manual review `T05-continuity`; source, generated help, existing fixture capture | Reviewed; [record and capture mapping](#t05-continuity-review) | [T13 assertions delivered](#t13-adoption-replacement-review); T14/T15 live replay; T16 closure |
+| [Adoption/replacement](operations-runbook.md#adopt-missing-binding); T05 behavior reuse | [Binding](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding); CDC-INV-11/14/15 supporting evidence | `Given_CdcSetupControllerAdoption`, `Given_CdcSetupControllerReplaceSource`, `Given_CdcSetupControllerInitialEnable`; fake provider/Connect/Kafka/lifecycle collaborators | 68 passed / 0 failed / 0 skipped; [44 cases](evidence/t05/controller-results.txt), [24 retry cases](evidence/t05/retry-results.txt) | [T13 layered evidence](#t13-adoption-replacement-review); successful live replacement still pending E19-06 and T14/T15 |
+| [Command output](operations-runbook.md#replace-physical-source); T05 serializer support | [Readiness](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#projection-health-and-deployment-owned-cdc-readiness), [binding](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding); CDC-INV-14/15 | `Given_DocumentCacheAdminCdcJsonContracts`; existing mocked-dispatch CLI cases | 11 passed / 0 failed / 0 skipped; [identities](evidence/t05/cli-json-results.txt), [six capture outcomes](evidence/t05/capture-results.txt) | [T13 dispatch/default-tenant additions delivered](#t13-adoption-replacement-review); deployed replay T14/T15 |
+| [Adoption](operations-runbook.md#adopt-missing-binding), [replacement](operations-runbook.md#replace-physical-source); T13 live control | Binding/adoption and provisioning owners; CDC-INV-14/15 | Ordered `Given_CdcControlBrokerBackedStack` selection: real PostgreSQL, Kafka authorizer, pinned Connect, production controller/store | [Results and captures](#t13-adoption-replacement-review) | No DMS/API/consumer admission; successful live cutover pending E19-06 and T14/T15 |
+| [Replacement refusals](operations-runbook.md#replace-physical-source); T13 packaged CLI | Binding/provisioning owners; CDC-INV-14/15 | `Given_DocumentCacheAdminSourceReplacementRejections`: two providers × three scenarios × three assertions; real process/store, synthetic outgoing binding | 18 passed; [identities](evidence/t13/cli-operator-results.txt), [captures](#t13-adoption-replacement-review) | Only unchanged-identity cases probe the database; no live connector/cutover |
+| [Default-tenant translation](operations-runbook.md#incident-command-context); T13 packaged CLI | Target selection; CDC-INV-14/15 | Shipped PostgreSQL composition, empty versus literal `default`; all-verb case-insensitive rejection reused from CLI unit suite | 2 passed; [empty](evidence/t13/cdc-tenant-empty.json), [reserved](evidence/t13/cdc-tenant-default.json) | Empty-binding status returns before provider/broker observation; not adoption success |
 | [Retirement](operations-runbook.md#retire-binding-generation); T06 | [Binding lifecycle](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding); CDC-INV-14/15 authoring support | Manual review `T06-retirement`; source/help and existing fixture output | Reviewed; [record and capture mapping](#t06-retirement-review), [retire help](evidence/t06/retire-help.txt) | T17 assertions; T14/T15 live replay; T16 closure |
 | [Retirement cleanup/refusal/retry](operations-runbook.md#retire-binding-generation); T06 behavior reuse | [Binding lifecycle](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding); CDC-INV-11/14/15 supporting evidence | `Given_CdcProviderArtifactTeardown`, `Given_CdcKafkaTeardown`, `Given_CdcSetupControllerRetirement`; mocked provider/Connect/Kafka/lifecycle | 32 passed / 0 failed / 0 skipped; [20 requested-filter cases](evidence/t06/teardown-requested-results.txt), [12 controller cases](evidence/t06/retirement-controller-results.txt) | Provider timeout capture is manual; T17 new assertions; T14/T15 real cleanup |
 | [Retirement CLI boundary](operations-runbook.md#retire-binding-generation); T06 | [Binding lifecycle](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding); CDC-INV-14/15 supporting evidence | `Given_DocumentCacheAdminCdcCommandDispatcher` and `Given_DocumentCacheAdminCdcJsonContracts`; mocked controller/dispatcher, actual CLI executor and serialization | 42 passed / 0 failed / 0 skipped; [31 dispatcher cases](evidence/t06/dispatcher-results.txt), [11 CLI cases](evidence/t06/cli-json-results.txt), [eight captures](evidence/t06/capture-results.txt) | Default-tenant subprocess/retirement matrix T17; live provider/broker replay T14/T15 |
@@ -684,7 +687,7 @@ identities/outcomes and omits transient TRX IDs, user paths, and durations.
   outside this procedure. Stop/restart preserves existing artifacts and requires separate
   fence/readiness interpretation.
 
-**Pending handoff:** T13 adds missing operator-path assertions, including explicit CLI
+**Historical handoff (now addressed by [T13](#t13-adoption-replacement-review)):** T13 adds missing operator-path assertions, including explicit CLI
 record/default-tenant and interruption paths; T14/T15 run disposable PostgreSQL/SQL Server
 continuity, adoption, replacement and retirement replays and capture real tool/image
 versions, original-source retention, read-back, outcomes, and cleanup. The E19-06 API
@@ -1150,7 +1153,7 @@ actual results before the story is complete.
 | Fresh PostgreSQL/SQL Server setup, API upsert/delete, planned stop/guarded restart | T02 delivered; T14/T15 live replay | [T02 review](#t02-setup-review): 131 bootstrap behavior cases passed; help/source/fixture authoring complete. E19-06 API consumer harness absent, dependency unmet. Actual provider/image/API/fence/cleanup results pending T14/T15. |
 | Monitoring/incident routing and status/lag JSON | T03/T12 delivered; T14/T15 live observations | Authoring and existing fixture capture reviewed in [T03](#t03-monitoring-review); additional CLI contracts verified in [T12](#t12-operator-path-review). Deployed endpoint/provider/metrics/fence read-back remains pending; fixture success does not close live evidence. |
 | E18 packaged downstream-history handoff and repair scope | T04/T12 delivered; E18-S08 restamp; T16 reconciliation | [T04 review](#t04-projection-handoff-review): 8 configured integration and 27 history unit cases passed; [T12](#t12-operator-path-review) adds all 36 provider/command/evidence tuples with 144 passing assertions. Dedicated restamp utility/procedure/evidence is absent; E18-S08 handoff unmet. |
-| Continuity, complete-record adoption, physical-source replacement | T05 delivered; T13 assertions; T14/T15 replay | [T05 review](#t05-continuity-review): 68 controller and 11 CLI cases passed; six captured outcomes, help/source/default-tenant/retry review complete. Additional operator assertions and live provider replay pending; T16 closes results. |
+| Continuity, complete-record adoption, physical-source replacement | T05/T13 delivered; E19-06 dependency; T14/T15 replay | [T13 review](#t13-adoption-replacement-review): controller/CLI assertions, live adoption and replacement refusal, both-provider packaged refusals, exact commands and captures recorded. Successful live replacement/API handoff remains unmet; T16 closes provider replay results. |
 | Destructive retirement, partial failure, timeout and same-operation retry | T06/T17 delivered; T14/T15 replay | [T17 results](evidence/t17/README.md): registered/never-registered PostgreSQL broker cleanup, injected provider timeout and retry, shared worker state/retirement history; packaged source selection and refusal for both providers; CLI proof/output contracts. Provider runbook replay remains T14/T15. |
 | Security, consumer isolation, sensitive-data containment | T07 delivered; T14/T15 replay | [T07 review](#t07-security-review): 150 unit cases passed; source/help/fixture review and absent-purge walkthrough complete. Live provider/authorizer/fence/deletion replay pending; platform purge and independent consumer stores remain deployment-owned. |
 | Provider retention, consumer continuity, record budget, capacity observations | T08 delivered; T14/T15 replay | [T08 review](#t08-capacity-review): 82 policy tests passed; bounded inspection/source review complete. Live queries/tool output, consumer reports and coordinated rollout observations pending. Production qualification remains separately owned/unassigned. |
@@ -1161,3 +1164,143 @@ their sibling stories/suites. Start with the
 [CDC contract-to-evidence ownership table](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#contract-to-evidence-traceability)
 and the [E18 evidence matrix](../document-cache-documentation/cdc-inv-evidence.md);
 later rows link exact reusable test identities rather than copying those implementations.
+
+<a id="t13-adoption-replacement-review"></a>
+## T13 adoption and replacement operator assertions
+
+Completed 2026-09-06 (America/Chicago; captures extend into 2026-09-07 UTC), against
+`933fbc4ad3f15c619025e29c636426bcf00489d6` plus these test/evidence changes. T13 closes
+the operator-assertion and manual-comparison work. It does **not** close successful live
+new-database replacement, the absent E19-06 API/consumer handoff, or T14/T15 replays.
+No production controller, identity-rotation, provisioning, or recovery behavior was added.
+
+**Execution environment:** repository root, Linux/Bash, .NET SDK `10.0.102`, VSTest
+`18.0.1`, NUnit adapter `4.6.0`, Docker client/server `29.8.0` / `28.3.2`. Packaged CLI
+cases leased isolated generated-DDL databases from existing PostgreSQL `16.8` and SQL
+Server `2025 RTM-CU7`, `17.0.4065.4` (Enterprise Developer Edition). The PostgreSQL
+server image ID was `sha256:951d0626662c85a25e1ba0a89e64f314a2b99abced2c85b4423506249c2d82b0`;
+SQL Server image ID `sha256:86cc6144ef39bb0fbed2329e1ad79b13ee82e7b2e4739213a0db0800e668a74a`.
+Admin connections were passed through `ConnectionStrings__DatabaseConnection` and
+`ConnectionStrings__MssqlAdmin`, without printing their values. CMS was the existing
+HTTP fixture server. No DMS Docker-stack E2E or deployed API traffic was run.
+
+The broker fixture created its own PostgreSQL, authorizer-enabled Apache Kafka, Connect
+containers and network. [Exact image digests and broker invocation](evidence/t13/broker-command.txt)
+record the existing pinned Ed-Fi image, provider and Kafka inputs, with fail-fast enabled
+so unavailable prerequisites cannot become skips. The existing pinned-image renderer,
+provider inventory, Docker orchestration and live plugin-validation helpers were reused.
+This selection validates adoption/control behavior; it does not independently qualify
+the image's full message-contract or API behavior.
+
+**Final selections:** 247 passed, 0 failed, 0 skipped across four invocations.
+
+| Selection / exact invocation | Executed result | Exercised boundary |
+| --- | --- | --- |
+| [Controller command](evidence/t13/unit-commands.txt), [68 exact identities](evidence/t13/controller-results.txt) | 68 passed | Existing adoption, replacement and initial-enable/retry controller cases with fake collaborators. The retry file declares `Given_CdcSetupControllerInitialEnable`; the `CdcSetupControllerRetry` substring alone selects none. |
+| [CLI unit command](evidence/t13/unit-commands.txt), [136 exact identities](evidence/t13/cli-unit-results.txt) | 136 passed | Existing argument validation and real dispatcher with substituted controller/provider inputs, including all seven verbs' reserved-tenant checks. |
+| [CLI integration command](evidence/t13/cli-command.txt), [34 exact identities](evidence/t13/cli-operator-results.txt) | 34 passed | 18 new packaged replacement assertions, two packaged default-tenant cases, 14 mocked-dispatch JSON/human contract cases. |
+| [Ordered broker command](evidence/t13/broker-command.txt), [nine exact identities](evidence/t13/broker-results.txt) | 9 passed | Seven prerequisite tests followed by complete-record adoption and replacement refusal. Real PostgreSQL/Kafka/Connect, production controller/adapters/local store, forbidden activation seam; no projector or API/consumer. |
+
+The broker selection must include its seven named prerequisite cases and adoption before
+replacement. The original successfully adopted record remains in the same private root
+until fixture teardown. `SetTopicConfigAsync` now waits for `DynamicTopicConfig` as well
+as the value: the inherited broker default already equals `1`, so checking only that value
+could race the explicit override's visibility. The initial selection exposed that race
+(7 passed, 1 failed); the final selection above includes the corrected wait.
+
+**Live adoption and preservation:**
+`Given_CdcControlBrokerBackedStack.It_adopts_only_the_complete_binding_that_matches_the_live_streaming_stack`
+rejects an incorrect partition count without writing a binding or producing a proof,
+then imports the complete generation-3 record with all ten live verifications exact.
+It retries the identical record and checks that the same binding and running connector
+remain. Captures: [mismatch diagnostics](evidence/t13/adopt-mismatch-diagnostics.json)
+(internal diagnostic array, not CLI stdout) and [successful proof](evidence/t13/adopt-proof.json).
+These are controller results; they have no native CLI exit code. The separate CLI
+contract checks assert proof success `0`, and no-proof refusal `10` with empty stdout.
+
+`Given_CdcControlBrokerBackedStack.It_preserves_the_live_generation_when_replacement_lacks_provisioning_evidence`
+requests generation `4`, previous `3`, without the required provisioning assertions.
+The [actual admission](evidence/t13/replace-provisioning-refusal.json) is `unknown`, with
+`replaceSourceRefused` / `malformedProof` / `retryable=false`. The existing generation's
+record contents and connector configuration remain unchanged; its connector stays running,
+public/progress/shared-offset topics remain, committed offsets are present, and provider
+heartbeat advances. This is a pre-fence refusal, not an admitted replacement or cleanup.
+No proof was manufactured to make the minimal streaming fixture eligible for activation.
+
+**Packaged replacement matrix:**
+`Given_DocumentCacheAdminSourceReplacementRejections(provider,evidence)` uses the existing
+PostgreSQL and ready-MSSQL target harnesses. Each tuple has three independent assertions:
+`It_reports_the_refusal_and_exit_code_without_a_success_proof`,
+`It_preserves_the_original_generation_identity_and_lifecycle`, and
+`It_keeps_credentials_out_of_operator_output`. The files retain the exact argument list,
+native exit, stdout/stderr, old/new record snapshots, physical fingerprint, and lifecycle.
+
+| Evidence / providers | Outcome | Captures and limits |
+| --- | --- | --- |
+| `unrotatedIdentity`, PostgreSQL + SQL Server | `unknown` / `12`; `sourceMismatch`, observed `retained`, nonretryable | [PostgreSQL](evidence/t13/replacement-postgresql-unrotatedIdentity.json), [SQL Server](evidence/t13/replacement-mssql-unrotatedIdentity.json). Real eligibility probe reads the actual source fingerprint; outgoing generation-1 record is synthetic. Request names generation `2`, previous `1`. |
+| `nonAdvancingGeneration`, both providers | `unknown` / `12`; `bindingMismatch`, observed `1`, nonretryable | [PostgreSQL](evidence/t13/replacement-postgresql-nonAdvancingGeneration.json), [SQL Server](evidence/t13/replacement-mssql-nonAdvancingGeneration.json). Both generations are `1`; controller refuses before database/broker inspection. |
+| `missingWriteAdmission`, both providers | `64`; empty stdout; required-token guidance on stderr | [PostgreSQL](evidence/t13/replacement-postgresql-missingWriteAdmission.json), [SQL Server](evidence/t13/replacement-mssql-missingWriteAdmission.json). Parser refusal before dispatch. Sibling `It_requires_both_provisioning_evidence_flags("replace-source")` covers omission of either evidence flag. |
+
+All six tuples preserve the original durable record, fingerprint, `Disabled` lifecycle and
+clear cache-ahead latch. The real process can emit native Kafka connection diagnostics on
+stderr during service construction even though these controller paths perform no broker
+inspection. Initial assertions expecting empty stderr failed in four controller-refusal
+tuples; the corrected assertions require a single stdout contract, no contract duplication
+on stderr, and no fixture credentials in either stream. The diagnostic-bearing stderr is
+retained, and the runbook now distinguishes it from the mocked CLI captures' empty stderr.
+
+**Existing behavior reused:** the controller results identify
+`Given_CdcSetupControllerReplaceSource.It_fences_the_outgoing_connector_and_enables_the_replacing_generation`,
+`.It_reuses_no_governed_artifact_of_the_generation_it_replaces`,
+`.It_leaves_the_record_of_the_generation_it_replaces_untouched`,
+`.It_refuses_retryably_when_the_outgoing_connector_could_not_be_fenced`, and
+`.It_resumes_a_replacement_whose_binding_and_tracking_activation_already_committed`.
+These cover success, ordered fencing, retained artifacts/records, interruption and exact
+retry with fake collaborators. Existing cases also refuse unrotated identity, pre-capture
+rows, unbound Tracking, incompatible lifecycle/provider, other live generations and terminal
+history loss before fencing. Adoption siblings verify incomplete/foreign/mismatched records,
+all verification kinds, no provisioning, terminal loss without latching, and no overwrite.
+Dispatcher siblings pin unreadable/missing adoption input and explicit previous-generation
+handoff. Their exact identities/results are in the selections above; no duplicate lifecycle
+or recovery implementation was introduced.
+
+**Manual comparison:** compared the actual captures and source-owned assertions with T05's
+incident selection, adoption verification/output, replacement outcome table, and retry
+instructions. Empty CLI tenant selects record tenant `default`; literal `default` is rejected
+before dispatch, including mixed case in the reused unit cases. [Empty selection](evidence/t13/cdc-tenant-empty.json)
+returns status `0`, while [reserved spelling](evidence/t13/cdc-tenant-default.json) returns `64`
+with no stdout. This PostgreSQL status case returns on missing binding before database/broker
+observation; it is not successful adoption. The [T05 admitted/resumed/fence-refused captures](#t05-continuity-review)
+remain labeled synthetic generation `6` to `7` results. New packaged refusals use `1` to `2`;
+the live controller refusal uses `3` to `4`. No failed or interrupted result is represented
+as a successful proof. Retirement remains T17. Tests use code/contract inputs and never
+read documentation; comparison was manual.
+
+**Unmet dependencies and follow-up:** inspection again found no relational API-to-Kafka
+fixture or consumer helper in the E2E project. The [E19-06 work package](../design/backend-redesign/epics/19-cdc-kafka/06-e2e-kafka-scenarios.md)
+owns that provisioned-database/projector/API/consumer handoff. Successful live replacement
+admission, new-source capture and consumer bootstrap therefore remain **unmet**, assigned
+to E19-06 and T14/T15; existing fake successes and the live pre-fence refusal do not substitute.
+
+An additional development setup attempted a fresh adoption into a second empty root after
+the preceding successful adoption/retry. It was refused twice; the captured
+[diagnostic](evidence/t13/additional-adoption-refusal.json) reports `SourceHistoryContinuity`
+as `Lost`, with no proof. The final replacement fixture reuses the original imported record,
+which is the operation's actual precondition, instead of requiring a second missing-state
+incident. This does not resolve or reinterpret that continuity observation. T14 must collect
+correlated provider retained-range/committed-offset evidence and reconcile the result with
+the E19-04 source-history owner before claiming continuous live replay. No reset, slot
+recreation, identity rotation or automatic retry was added. A running connector and an
+earlier adoption proof do not override a later continuity refusal.
+
+**Artifacts and cleanup:** raw logs, TRX and test attachments are under
+`/tmp/dms-1326-t13-completion`. Durable copies are in `evidence/t13`: extracted results retain
+complete parameterized identities and actual counts, omitting machine paths/run GUIDs;
+JSON is indented without changing outcome fields or stderr. Argument captures replace only
+the private state-root path with `<disposable-state-root>`. Fixture IDs, fingerprints,
+timestamps and native diagnostics are retained; no credentials or user payloads are included.
+File attachments preserve nested JSON strings that NUnit console/TRX rendering can unescape.
+Disposable database/state resources were released by the fixtures; the broker fixture's
+containers/network were removed and verified absent. Existing DMS/CMS/provider containers
+were retained. CSharpier and `git diff --check` passed. T16 owns final downstream evidence
+reconciliation; T13 completion does not mark T14, T15, T16 or T17 complete.

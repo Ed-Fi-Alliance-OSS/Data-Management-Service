@@ -892,8 +892,9 @@ output. Check whether import committed, then reissue with the identical record a
 after resolving observation/permission failures. The atomic import requires an existing
 record to match exactly; a mismatch is not an overwrite opportunity. Never infer offsets
 from a backup, recreate slots/capture instances, edit identity, or use enablement to adopt
-orphan artifacts. [T05 review](cdc-inv-evidence.md#t05-continuity-review) supports authoring;
-additional assertions T13 and real provider replay T14/T15 remain pending.
+orphan artifacts. [T13 evidence](cdc-inv-evidence.md#t13-adoption-replacement-review)
+records complete-record live adoption, mismatch refusal, and exact-record retry.
+Provider runbook replay remains T14/T15; an adoption proof is a point-in-time observation.
 
 <a id="replace-physical-source"></a>
 ## Replace a source through the new-database workflow
@@ -970,6 +971,14 @@ refusal look ready. All captures use synthetic default tenant/data store `1`, ol
 `6`, new `7`, and fake collaborators; they are not results from the example's `1` to `2`
 cutover. [Capture provenance](cdc-inv-evidence.md#t05-continuity-review).
 
+[T13 packaged CLI captures](cdc-inv-evidence.md#t13-adoption-replacement-review) additionally
+exercise both providers: an unchanged physical identity and a non-advancing generation
+return `unknown` / `12`, while missing write-admission evidence returns `64` with no stdout
+contract. Each preserves the old record, physical identity, and lifecycle. The packaged
+Kafka client can emit connection diagnostics on stderr during construction even when the
+controller refuses before broker inspection; keep stderr separately from the stdout JSON.
+These refusal checks do not establish a successful live cutover.
+
 After admission, verify the outgoing connector's persisted fence, retained old record and
 artifacts, and the new record's different fingerprint and governed names. Observe bounded
 `cdc status` with `--generation "$cdc_new_generation"` using the same context. Keep the
@@ -989,7 +998,9 @@ advance generation to evade a refusal, or automatically restart the outgoing con
 Once writes have been admitted, initial-enable retry is no longer the restart route; use
 [guarded continuity procedures](#continuity-incident). Terminal loss stays terminal and
 requires the [deferred repair handoff](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#contract-change-and-repair-operations).
-T13 assertions and T14/T15 provider replay remain pending; T16 reconciles final evidence.
+[T13 assertions and dependency disposition](cdc-inv-evidence.md#t13-adoption-replacement-review)
+are recorded. Successful live new-database replacement and API/consumer handoff remain
+pending the E19-06 helpers and T14/T15 provider replay; T16 reconciles final evidence.
 
 <a id="retire-binding-generation"></a>
 ## Destructively retire one binding generation

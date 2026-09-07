@@ -1,0 +1,72 @@
+{
+  "contractVersion": 1,
+  "operationId": "cdc-control-broker-backed",
+  "verifiedAt": "2026-09-07T01:02:28.8392951+00:00",
+  "binding": {
+    "version": 1,
+    "deploymentKey": "dms-control",
+    "tenantKey": "default",
+    "dataStoreId": "1",
+    "instanceKey": "binding",
+    "generation": 3,
+    "provider": "postgresql",
+    "physicalSourceFingerprint": "sha256:193c47b34d9751c73d06dbf5ccf2655a1cce46154a4808f152d3db0e91b676bc",
+    "connectorName": "dms-control-binding-g3",
+    "topicName": "edfi.control.instance.binding-g3.documents.v1",
+    "partitionCount": 3,
+    "partitionerAlgorithm": "kafka-murmur2-v1",
+    "contractVersion": 1
+  },
+  "verificationResults": [
+    {
+      "verificationKind": "physicalSource",
+      "state": "exactMatch",
+      "evidenceSummary": "the live physical source fingerprint matches the supplied binding record"
+    },
+    {
+      "verificationKind": "providerArtifacts",
+      "state": "exactMatch",
+      "evidenceSummary": "the provider capture artifacts and grants match the binding inventory"
+    },
+    {
+      "verificationKind": "kafkaTopics",
+      "state": "exactMatch",
+      "evidenceSummary": "the governed topics match the bindings Kafka policy"
+    },
+    {
+      "verificationKind": "kafkaAcls",
+      "state": "exactMatch",
+      "evidenceSummary": "the governed topic grants match the bindings Kafka policy"
+    },
+    {
+      "verificationKind": "kafkaPolicy",
+      "state": "exactMatch",
+      "evidenceSummary": "the bindings Kafka policy is satisfied in full record-size budget included"
+    },
+    {
+      "verificationKind": "connectOffsetStore",
+      "state": "exactMatch",
+      "evidenceSummary": "the shared Connect offset store matches the policy the deployment requires"
+    },
+    {
+      "verificationKind": "connector",
+      "state": "exactMatch",
+      "evidenceSummary": "the worker holds the bindings connector running a single running task"
+    },
+    {
+      "verificationKind": "connectorConfig",
+      "state": "exactMatch",
+      "evidenceSummary": "the live connector configuration matches the configuration the binding renders"
+    },
+    {
+      "verificationKind": "connectOffsets",
+      "state": "exactMatch",
+      "evidenceSummary": "the connector has committed a streaming position under the bindings own source partition"
+    },
+    {
+      "verificationKind": "sourceHistoryContinuity",
+      "state": "exactMatch",
+      "evidenceSummary": "the exact resume position is proved for every required provider source artifact"
+    }
+  ]
+}
