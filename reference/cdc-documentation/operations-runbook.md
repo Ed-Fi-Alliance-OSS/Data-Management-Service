@@ -638,8 +638,9 @@ and the deployment record. Check network context, qualified image, rendered conn
 settings, declared consumers, and shared-offset policy with the responsible platform
 owner. Do not edit binding identity to match drift or delete shared offsets. Retry
 [CDC observation](#observe-cdc) after an authorized correction; a healthy component does
-not replace continuity evidence. [Provider setup exercises](#local-setup) are authored; security
-procedures T07 and retention/capacity guidance T08 remain pending in the [delivery index](cdc-inv-evidence.md#pending-delivery).
+not replace continuity evidence. Use [provider setup](#local-setup) and
+[security inspection](#inspect-cdc-security); retention/capacity guidance T08 remains
+pending in the [delivery index](cdc-inv-evidence.md#pending-delivery).
 
 <a id="route-binding-incident"></a>
 ### Binding and physical-source incident routing
@@ -1218,7 +1219,7 @@ handoff only; it has no executable restamp procedure or restamp evidence to reus
 | Compatible representation bytes change; prior records require no purge | [Offline byte-changing correction owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#offline-byte-changing-representation-correction). Corrected public bytes need fresh canonical `ContentVersion` values; cache rebuild at the old version is insufficient. Projection/publication mode requires clear-latch `Tracking`. Same binding/topic eligibility is conditional on compatibility and no purge requirement. |
 | Canonical-only representation correction | Same owner; explicit clear-latch `Disabled` mode changes API validators/Change Query visibility, records no projection work, and makes no Kafka publication claim. It does not unlock packaged offline activation later. |
 | Cache-ahead latch or possibly published higher version | [Cache-ahead containment](#cache-ahead-containment); neither correction mode admits a set latch. Do not reinterpret this as ordinary materializer correction. |
-| Sensitive records must be purged | [Disclosure correction owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#sensitive-data-disclosure-correction); same-topic correction is ineligible. The dedicated containment procedure is pending T07 in [delivery](cdc-inv-evidence.md#pending-delivery). Preserve the incident and route to connector fencing, operator-owned access revocation, guarded retirement, and platform purge evidence under that owner. Higher versions, tombstones, or compaction alone do not prove purge. |
+| Sensitive records must be purged | [Sensitive-data containment](#sensitive-data-containment) implements the [disclosure correction handoff](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#sensitive-data-disclosure-correction). Preserve the incident, fence publication, revoke access through the platform owner, and use guarded retirement. Higher versions, tombstones, or compaction alone do not prove purge. |
 
 All restamp work requires externally stopping affected readers, DMS replicas, canonical
 writers, projector/direct-fill writers, bulk/administrative paths, and external writers.
@@ -1228,6 +1229,269 @@ guards when delivered; do not replace it with manual stamp SQL. After projection
 correction, higher-version public records and projection/connector status are eventual
 observations, not a replacement exact CDC baseline or an API admission gate. Disclosure
 re-enablement remains deferred by its owner.
+
+<a id="cdc-security"></a>
+## Credentials and isolation
+
+The [security owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#security-telemetry-and-operations)
+defines isolation; the [configuration catalog](../../docs/CONFIGURATION.md#datamanagementdocumentcachecdc)
+defines settings. Supply each identity in its own authentication boundary:
+
+| Identity / shipped setting | Credential location and operator responsibility |
+| --- | --- |
+| Provider setup: `SetupPrincipal` | The source connection selected through CMS, or the named original-source connection for retirement, authenticates the setup/validation operation. The setting identifies the expected principal; it is not a password or an impersonation switch. Keep setup authority out of the connector account. |
+| Database connector: `ConnectorDatabasePrincipal`, `ProviderConnectionProperties` | Use a distinct least-privilege database role/login, such as `dms_connector`. The rendered connector receives `database.user` and `database.password`; the worker resolves its configured secret reference. Match that user to the database principal whose grants were validated. |
+| Kafka connector: `ConnectorKafkaPrincipal`, `KafkaClientSecurityProperties` | The broker principal is typed, for example `User:dms_connector`. Java client credentials authenticate it; this principal label alone does not. The renderer forwards these settings to `producer.override.*` and, on SQL Server, both internal schema-history clients. |
+| Kafka worker: `ConnectWorkerPrincipal` | The worker's own deployment configuration supplies its Kafka credentials and internal-topic access. Connector producer overrides do not configure worker authentication. Keep worker internal topics, Connect REST, and its metrics bridge restricted to deployment operators. |
+| Consumers: `Consumers[].Principal` and `.GroupId` | Each deployment-supplied principal is paired with its own group. Consumer applications supply their own credentials. Topic-per-instance authorization is the isolation boundary; consumer-side filtering is not a substitute. |
+| Control plane: `KafkaAdminClientSecurityProperties` | The CLI's .NET admin client uses deployment-owned librdkafka credentials for topic/configuration/ACL operations and observations. These credentials do not become connector credentials. Maintain separate administrative access during containment. |
+| DMS observation: `DmsBearerToken` | Supply a protected bearer token satisfying `DataManagement:DocumentCache:Status:RequiredRole` at `/health/document-cache`. It grants neither Kafka nor database authority. Connect REST reachability/security is a separate deployment responsibility; this token is not sent there. |
+
+`SetupPrincipal` and `ConnectorDatabasePrincipal` remain required with ACLs disabled.
+With `AclsEnabled=true`, supply typed Kafka connector/worker/consumer principals and
+match them to actual authenticated identities. Rotation changes credentials, not binding
+identity; a successful settings validation is not proof of authentication or authorization.
+Protect settings, worker configuration, broker administration, and
+[deployment-state backups](#deployment-state) independently.
+
+These are supported **configuration fragments**, not complete deployment settings or
+commands to register a connector. Merge them into the protected configuration used by the
+[shipped enablement workflow](#local-setup). Java secret references are resolved by a
+configured worker `env` ConfigProvider, with those named secrets present in the worker:
+
+```json
+{
+  "DataManagement": {
+    "DocumentCache": {
+      "Cdc": {
+        "ProviderConnectionProperties": {
+          "database.user": "dms_connector",
+          "database.password": "${env:CDC_DATABASE_PASSWORD}"
+        },
+        "KafkaClientSecurityProperties": {
+          "security.protocol": "SASL_SSL",
+          "sasl.mechanism": "SCRAM-SHA-512",
+          "sasl.jaas.config": "${env:CDC_KAFKA_JAAS_CONFIG}",
+          "ssl.truststore.location": "/run/secrets/kafka.truststore.p12",
+          "ssl.truststore.password": "${env:CDC_KAFKA_TRUSTSTORE_PASSWORD}",
+          "ssl.truststore.type": "PKCS12"
+        }
+      }
+    }
+  }
+}
+```
+
+The JAAS secret contains the deployment's complete login configuration for the connector
+principal. Mount the truststore in the worker. The renderer owns all generated prefixes;
+do not supply `producer.override.*` or `schema.history.internal.*` keys in the dictionary.
+See the [template allow-list](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc/CdcConnectorTemplateInputValidation.cs)
+and [SQL Server history owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#sql-server).
+
+For the .NET dictionary, use the following property names. The deployment's configuration
+provider must inject resolved secret values before starting the CLI; the admin client
+passes values directly to librdkafka and does **not** resolve `${env:...}` worker references.
+Paths here belong to the control-plane process/container, not the worker.
+
+| `KafkaAdminClientSecurityProperties` key | Supported example / value source |
+| --- | --- |
+| `security.protocol` | `SASL_SSL` |
+| `sasl.mechanism` | `SCRAM-SHA-512` |
+| `sasl.username` | `cdc_control` (synthetic administrative account) |
+| `sasl.password` | Resolved value of named deployment secret `CDC_KAFKA_ADMIN_PASSWORD` |
+| `ssl.ca.location` | `/run/secrets/kafka-ca.pem`, mounted for the CLI |
+
+Java `sasl.jaas.config` and `ssl.truststore.location` are rejected in the admin dictionary;
+librdkafka `sasl.username` and `sasl.password` are rejected in the connector dictionary.
+The actual vocabularies and value checks are owned by
+[`CdcControlOptions`](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Control/CdcControlOptions.cs).
+The CLI loads its documented settings/environment providers; see its
+[configuration reference](../../src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin/README.md).
+Do not assume that storing a secret in a host user-secret store automatically injects it
+into either process.
+
+<a id="inspect-cdc-security"></a>
+### Inspect provider grants and effective Kafka policy
+
+**Scope/effect:** inspect retained setup evidence, then observe the selected live binding
+with existing validators. `cdc status` does not provision grants or topics; it can latch
+proved continuity loss and fence the connector. This is not an ACL-repair command.
+
+**Starting directory/prerequisites and target:** repository root, Bash and `jq`, the built
+CLI and [incident command context](#incident-command-context). Use the exact existing
+record/generation, default-tenant translation, state root, and network context. Have the
+provider and Kafka operators retain current authorized inspection evidence for this
+selection; raw Connect configuration and internal source records stay in protected storage.
+
+Inspect any retained generated provider manifest (`cdc-provider.pgsql.manifest.json` or
+`cdc-provider.mssql.manifest.json`) for `outcome`, `observed_source_fingerprint`,
+`source_table_inventory`, `provider_artifacts`, `grant_inventory`, and `validation_diagnostics`.
+Compare the safe principal, object, privilege, and column observations with
+[PostgreSQL setup](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#postgresql) or
+[SQL Server setup](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#sql-server).
+Verify the intended three captured source tables and exclusion of
+`dms.DocumentProjectionWork` from both capture and effective connector access. Check
+role membership, inherited/public permissions, forbidden document writes, and heartbeat
+column permissions as well as direct grants. A short direct-GRANT listing is insufficient.
+Provider validators report unsafe access/capture without silently removing it.
+
+Use the generated redacted connector manifest, when retained, to correlate provider,
+connector/topic names, `configSha256`, and `redactedConfig` selectors with provider evidence.
+Its schema-history identity is absent for PostgreSQL. These are optional artifact outputs
+of the [provider manifest emitter](../../src/dms/backend/EdFi.DataManagementService.Backend.Ddl/CdcProviderManifest.cs)
+and [connector renderer](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc/CdcConnectorTemplateRenderer.cs).
+The packaged controller requests no provider manifest and exposes no manifest-export verb;
+do not expect these files under the binding root after a CLI invocation. If the setup
+owner did not retain them, record that absence and use current validator observations plus
+provider-owner evidence. Do not rerun initial setup or invent provider SQL to manufacture
+historical evidence. A manifest is neither a binding record nor a fresh policy verdict.
+
+```bash
+security_exit=0
+dotnet run --no-build --project src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin -- \
+  cdc status "${cdc_target[@]}" --generation "$cdc_generation" "${cdc_context[@]}" \
+  > "$incident_dir/security-status.json" 2> "$incident_dir/security-status.stderr" || security_exit=$?
+printf '%s\n' "$security_exit" > "$incident_dir/security-status.exit"
+if [ "$security_exit" -eq 0 ]; then
+  jq '{observedAt, readiness, primaryBlockingCategory,
+       targets: [.targets[] | {targetIdentity, providerSetup, kafkaPolicy,
+         connectOffsetStore, connectorConfig, diagnostics}]}' "$incident_dir/security-status.json"
+fi
+```
+
+**Expected outcome and verification:** a produced `CdcStatus` exits `0`, including
+`notReady` or `unknown`; verify selected identity and component evidence using
+[status interpretation](#observe-cdc). Captured [ready](evidence/t03/ready.json) and
+[offset-store-invalid](evidence/t03/offset-store-invalid.json) examples establish the
+JSON shape, not this deployment's isolation. The status components summarize validation;
+they do not contain a full grant inventory or an individual ACL-state array. Retain the
+platform's effective-policy observations alongside them:
+
+| Inspection scope | Compare using the owning policy |
+| --- | --- |
+| Selected generation's public topic | Derived name and explicit topic settings against the [topic contract](../design/backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#topic); configured producer/consumer grants and consumer-group pairing against [security](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#security-telemetry-and-operations). Inspect effective wildcard/prefixed grants as well as literal entries. |
+| Binding progress topic | Generated inventory and validator evidence; instance consumers must not read internal source metadata. Follow [security](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#security-telemetry-and-operations). |
+| Shared Connect offset topic | Configured worker identity, explicit effective topic settings and worker-only grants against the [offset-store owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#kafka-connect-offset-store). Broker defaults alone do not establish an explicit topic policy. Other worker internal topics and REST access also need deployment inspection. |
+| SQL Server schema-history topic | Generated identity, explicit policy and connector history-client access against [SQL Server history](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#sql-server). Consumer access is forbidden; `include.schema.changes=false` does not remove this internal topic. PostgreSQL has no corresponding topic. |
+
+The [Kafka adapter](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Control/CdcKafkaAdminAdapter.cs)
+checks effective matching grants and configured consumer isolation. Its permitted retained
+public topics belong to older generations of the **same target**; generations are not
+separate consumer isolation boundaries. Ask the platform owner to establish the effective
+authentication, superuser, unmanaged-principal, and network boundaries outside these
+configured grants. Do not claim a complete security audit from the component verdict.
+
+With `AclsEnabled=false`, adapter ACL evidence is **not applicable**, even when aggregate
+local status is ready; it cannot qualify production isolation. The existing authorizer
+fixture checks real broker ACL metadata but connects as its configured anonymous superuser;
+it does not prove separate production principals authenticate and are denied end to end.
+[Evidence and pending replay](cdc-inv-evidence.md#t07-security-review) distinguish these layers.
+Consumers still need the [bootstrap protocol](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#public-consumer-bootstrap)
+and [consumer conformance owner](../design/backend-redesign/epics/19-cdc-kafka/05-message-contract-tests.md).
+
+**Interruption/retry:** preserve diagnostics and observed timestamps. Restore the same
+context and repeat after the responsible operator corrects access or configuration.
+Do not delete state, recreate capture, or rerun enablement to conceal drift. During a
+disclosure incident, keep admission closed and use the containment procedure below;
+restoring consumer grants to satisfy routine readiness is not incident resolution.
+
+<a id="sensitive-data-containment"></a>
+## Contain a sensitive-data disclosure
+
+**Scope/effect:** stop publication, remove consumer access through the deployment owner,
+and destructively retire the affected generation. The
+[disclosure correction owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#sensitive-data-disclosure-correction)
+defines completion and deferred re-enablement. This procedure leaves CDC unavailable for
+the affected target; it does not promise an old-topic restart or a replacement baseline.
+
+**Starting directory/prerequisites and selection:** repository root and the
+[incident command context](#incident-command-context), including a protected immutable
+copy of each affected binding record, default-tenant translation, original-source evidence,
+and a single controller. Select every affected generation explicitly, including retained
+ones; do not infer affected scope solely from the current configuration generation.
+Engage the deployment admission, Connect, broker/platform, and consumer-store owners.
+Establish deployment-controlled offline/write-admission containment and mark the target
+not ready in that deployment's orchestration. DMS supplies no CLI flag to set incident
+readiness and no runtime API writer gate; projection status does not stop ordinary writes.
+
+1. **Fence publication and revoke access.** For each affected connector, run the
+   [explicit `cdc stop` command and verification](#continuity-incident), retaining native
+   exit and status JSON. Exit `0` means stop applied or connector absent; `10` indicates
+   not attempted/not applied. Require separate persisted `STOPPED` target-state and
+   all-task fencing evidence from the Connect operator. Missing state, unreachable worker,
+   or a successful stop request without read-back leaves fencing unverified; maintain
+   external containment and escalate. Keep the fence across worker restarts.
+
+   Have the Kafka/platform operator revoke consumer access to each affected public topic
+   and verify effective denial, including access through broader grants or administrative
+   identities. Record revocation time and platform evidence. **ACL revocation is an
+   operator-owned action, not a shipped `cdc` verb.** The retirement command later removes
+   governed literal topic grants; that is not a substitute for immediate revocation.
+   Preserve the control plane's ability to inspect and clean up. Do not publish a
+   corrective record, restamp, or rebuild while consumer access/publication is uncontained.
+
+2. **Coordinate offline correction.** Follow the
+   [representation-correction handoff](#representation-correction-handoff) while the data
+   store remains offline. The dedicated E18-S08 restamp utility/evidence handoff is unmet
+   in this checkout; record it if needed for this incident. The packaged E18 offline
+   commands remain rejected under CDC history. Neither a rebuild nor a higher-version
+   upsert, delete, tombstone, or compaction is a purge certificate. Do not redirect this
+   incident into the same-topic correction path.
+
+3. **Retire explicitly.** Follow [guarded retirement](#retire-binding-generation) for
+   each affected generation, with `--confirm cdcBindingRetirement` and, for a retained
+   source, `--source-connection-variable CDC_ORIGINAL_SOURCE_CONNECTION` containing that
+   generation's original database connection. Use `--connector-already-absent` only after
+   the documented operator judgement; absence does not itself prove offset cleanup.
+   This is the destructive step: it removes the governed connector/offsets, per-binding
+   topics/grants and provider capture artifacts, then live binding state, retaining
+   retirement history. Shared worker topics and consumer-group grants survive.
+
+   Exit `0` returns a `CdcTeardownProof`; compare its identity with the pre-mutation record
+   and inspect every `governedArtifacts` entry. Refusal `10` or incomplete cleanup `12`
+   provides no proof on stdout. Follow the retirement procedure's same-selection retry
+   after resolving prerequisites and reconciling surviving artifacts. A new invocation
+   has a new operation ID; retain all attempts under the incident identity. Do not delete
+   record files or broader topics/volumes as a shortcut.
+
+4. **Obtain platform and downstream deletion evidence.** Record the public-topic deletion
+   request and its completion separately. Obtain the broker/managed-platform confirmation
+   required by its deletion guarantee for the public topic and any governed remote/tiered
+   copies. A transient metadata lookup failure, successful delete request, or component
+   cleanup proof is insufficient. Track independently operated consumer stores, replicas,
+   exports, and backups with their own owners: broker retirement cannot erase those copies.
+   If required platform confirmation is unavailable, the incident **remains open**, even
+   with a complete teardown proof. Do not describe fixture cleanup as platform purge.
+
+Maintain a protected incident record with sanitized shareable evidence. This is an
+operator record, not another CDC JSON contract:
+
+| Record | Required observation or explicit absence |
+| --- | --- |
+| Identity | Incident ID; operation IDs for all attempts; correction/restamp ID if applicable; affected target, generation, connector and public topic; opaque source fingerprint, never the raw source UUID. |
+| Containment | UTC detection/admission-closure time, stop request/result/exit, persisted fence/all-task read-back time and evidence, consumer revocation/effective-denial time and evidence. Record each as unverified if missing. |
+| Deletion | UTC request and observed deletion times, exact artifact selection, full sanitized cleanup proof with `operationId`/`verifiedAt`, retained retirement-history reference, and any incomplete attempts. Proof `verifiedAt` is not remote purge time. |
+| Platform and consumers | Platform request/reference, guarantee and covered copies, confirmation/time or explicitly absent confirmation; independent consumer-store/export owners and outstanding deletion evidence. |
+| Disposition | Open conditions and their owners; CDC stays unavailable. Completion requires the disclosure owner's evidence, not a status exit code or local test pass. |
+
+Keep raw payloads, document/student identifiers, raw source positions/UUIDs, connection
+strings, credentials, bearer tokens, JAAS content, and unredacted Connect responses/task
+traces out of shareable evidence. Preserve original captures in protected storage and
+sanitize copies without dropping outcome, generation, operation, artifact-kind,
+cleanup-state, and timestamp fields needed to assess the result. The
+[redaction tests](cdc-inv-evidence.md#t07-security-review) cover shipped diagnostic
+boundaries; raw platform tools may expose data those boundaries would redact.
+
+**Interruption/retry and final disposition:** preserve the incident, pre-mutation records,
+retirement history, and all partial evidence. Re-establish external offline containment,
+verify fences and revoked access, then resume only the documented same-generation
+retirement/purge-evidence work. Even complete retirement does not authorize recreation
+or restart of the old binding/topic. Re-enablement remains the
+[deferred new-topic cutover](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#deferred-new-topic-cutover),
+including new consumer namespace, snapshot, and barrier requirements. The
+[manual absent-purge walkthrough](cdc-inv-evidence.md#t07-security-review) demonstrates
+an open incident using existing fixture output; deployment replay remains T14/T15 and
+platform purge confirmation remains the deployment owner's evidence.
 
 <a id="inspect-lag"></a>
 ## Inspect connector lag evidence

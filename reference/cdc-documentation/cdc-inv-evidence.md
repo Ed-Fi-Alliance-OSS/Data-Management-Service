@@ -44,6 +44,9 @@ No executable documentation catalog or automated documentation/link tests are us
 | [Retirement cleanup/refusal/retry](operations-runbook.md#retire-binding-generation); T06 behavior reuse | [Binding lifecycle](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding); CDC-INV-11/14/15 supporting evidence | `Given_CdcProviderArtifactTeardown`, `Given_CdcKafkaTeardown`, `Given_CdcSetupControllerRetirement`; mocked provider/Connect/Kafka/lifecycle | 32 passed / 0 failed / 0 skipped; [20 requested-filter cases](evidence/t06/teardown-requested-results.txt), [12 controller cases](evidence/t06/retirement-controller-results.txt) | Provider timeout capture is manual; T17 new assertions; T14/T15 real cleanup |
 | [Retirement CLI boundary](operations-runbook.md#retire-binding-generation); T06 | [Binding lifecycle](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding); CDC-INV-14/15 supporting evidence | `Given_DocumentCacheAdminCdcCommandDispatcher` and `Given_DocumentCacheAdminCdcJsonContracts`; mocked controller/dispatcher, actual CLI executor and serialization | 42 passed / 0 failed / 0 skipped; [31 dispatcher cases](evidence/t06/dispatcher-results.txt), [11 CLI cases](evidence/t06/cli-json-results.txt), [eight captures](evidence/t06/capture-results.txt) | Default-tenant subprocess/retirement matrix T17; live provider/broker replay T14/T15 |
 | [Retained retirement evidence](operations-runbook.md#retire-binding-generation); T06 | [Binding lifecycle](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding); CDC-INV-11/14 supporting evidence | Four exact `Given_LocalCdcStateStore` cases; real temporary filesystem with injected delete failures | 4 passed / 0 failed / 0 skipped; [private-umask case identities](evidence/t06/retirement-store-private-results.txt); initial default-umask run 2 passed / 2 failed, [results](evidence/t06/retirement-store-results.txt) | Not live controller-to-provider retirement; T17/T14/T15 |
+| [Security](operations-runbook.md#cdc-security), [inspection](operations-runbook.md#inspect-cdc-security), [containment](operations-runbook.md#sensitive-data-containment); T07 | [Security](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#security-telemetry-and-operations), [disclosure](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#sensitive-data-disclosure-correction); CDC-INV-14/15 authoring, CDC-INV-06/12 support | Manual review `T07-security`; existing provider/broker assertions reviewed, not executed; fixture-based absent-purge decision | Reviewed; [record and exact reusable identities](#t07-security-review); incident remains open without platform evidence | T14/T15 live replay; deployment platform/consumer-store evidence; T16 closure |
+| [Credentials and ACL inspection](operations-runbook.md#inspect-cdc-security); T07 | [Security](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#security-telemetry-and-operations); CDC-INV-12/15 support | `Given_CdcControlOptionsTests`, `Given_CdcKafkaAclPolicy`, `Given_CdcConnectRestSecretRedaction`; options/fake broker/HTTP unit tests | 115 passed / 0 failed / 0 skipped; [exact cases](evidence/t07/security-results.txt) | Live isolation T14/T15; no production qualification |
+| [Generated security artifacts](operations-runbook.md#cdc-security); T07 | [Provider setup](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#connector-topology-and-provider-setup); CDC-INV-06/08/15 support | `Given_CdcConnectorTemplateArtifactTests`, `Given_CdcConnectorTemplatePostgresqlRendering`, `Given_CdcConnectorTemplateSqlServerRendering`; renderer unit fixtures | 35 passed / 0 failed / 0 skipped; [exact cases](evidence/t07/templates-results.txt) | Live manifests/grants T14/T15; T16 reconciliation |
 
 <a id="t01-foundation-review"></a>
 ## T01 foundation review
@@ -800,6 +803,158 @@ feedback failure was resolved by protected creation permissions; no remaining ta
 failure occurred. Temporary capture resources remain outside Git; the filesystem tests
 dispose their own roots. Manual diff review and `git diff --check` passed.
 
+<a id="t07-security-review"></a>
+## T07 security and disclosure containment review
+
+**Revision/layer:** 2026-09-06, base `bb25f68533b31e3663545c17ad495a6d0976a62d`
+plus this task's documentation changes. Manual review `T07-security` covers
+[credentials](operations-runbook.md#cdc-security),
+[provider/ACL inspection](operations-runbook.md#inspect-cdc-security), and
+[disclosure containment](operations-runbook.md#sensitive-data-containment).
+No production/test code, authoritative inputs, executable documentation catalog, or
+documentation tests changed. Existing story edit excluded from this task's commit.
+
+**Executed product behavior:** repository root, .NET SDK `10.0.102`, VSTest `18.0.1`,
+`net10.0`, Debug. Both builds and selections exited `0`; **150 passed / 0 failed /
+0 skipped**. Raw logs and TRX captured before publication under `/tmp/dms-1326-t07`.
+Published files contain exact TRX test identities and outcomes, excluding machine-local
+paths and timings; no behavior output was edited or inferred.
+
+```bash
+dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Control.Tests.Unit \
+  --filter 'FullyQualifiedName~CdcControlOptions|FullyQualifiedName~CdcKafkaAclPolicy|FullyQualifiedName~CdcConnectRestSecretRedaction' \
+  --logger 'trx;LogFileName=security.trx' --results-directory /tmp/dms-1326-t07
+
+dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Unit \
+  --filter 'FullyQualifiedName~CdcConnectorTemplateArtifact|FullyQualifiedName~CdcConnectorTemplateSqlServerRendering|FullyQualifiedName~CdcConnectorTemplatePostgresqlRendering' \
+  --logger 'trx;LogFileName=templates.trx' --results-directory /tmp/dms-1326-t07
+
+dotnet run --no-build --project src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin -- cdc stop --help
+```
+
+The first selection passed [115 cases](evidence/t07/security-results.txt): required
+principals, separate Java/admin vocabularies, fake-broker ACL filtering/isolation and
+not-applicable observations, plus HTTP error/config/task-trace/offset redaction. The
+second passed [35 cases](evidence/t07/templates-results.txt): PostgreSQL/SQL Server
+rendering and optional redacted artifact output, including work-table exclusion and
+SQL Server history security propagation. These are product unit tests with fixture
+inputs independent of prose. They establish no live authentication, provider grants,
+broker deletion, or production isolation.
+Generated [stop help](evidence/t07/stop-help.txt) exited `0`, empty stderr; only terminal
+blank lines removed. Compared status/retire syntax with existing
+[T03 status help](evidence/t03/cdc-status-help.txt) and
+[T06 retire help](evidence/t06/retire-help.txt), command surface and dispatcher.
+No live mutation commands were executed from the runbook.
+
+**Source and existing evidence review:**
+
+- Compared examples against `CdcControlOptions` and its validator,
+  `CdcControlServiceCollectionExtensions.BuildAdminClient`, template input allow-list,
+  renderer and redacted artifact tests. Java worker ConfigProvider references and .NET
+  resolved secret values belong to different processes; the admin adapter forwards its
+  dictionary without worker placeholder expansion. Principal settings do not supply
+  credentials. SQL Server forwards connector security to both history clients.
+- Reviewed `CdcProviderManifestEmitter` and `CdcSetupController.ProviderSetupRequest`
+  construction: provider JSON uses `validation_diagnostics`, and the controller sets
+  `IncludeManifestPayload: false`. Corrected the draft's generic diagnostics key and
+  documented optional retained manifests without promising CLI export or a state-root
+  artifact. Current status summarizes provider/Kafka validation, not full grant inventories.
+- Reviewed provider capture/grant assertions in
+  [PostgreSQL access/retry](../../src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/PostgresqlCdcProviderAccessRetryTests.cs)
+  and [SQL Server access/retry](../../src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/MssqlCdcProviderAccessRetryTests.cs).
+  Exact reusable identities are below. These tests were **source-reviewed, not executed
+  in T07**; no provider access/grant result is claimed. Validation reports unsafe existing
+  grants/capture without silently removing them. SQL Server effective access includes
+  public/inherited and deny precedence, not just direct grants.
+- Reviewed [broker-backed tests](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Control.Tests.Integration/CdcControlBrokerBackedTests.cs)
+  and [fixture configuration](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Control.Tests.Integration/CdcControlBrokerFixture.cs).
+  `StandardAuthorizer` answers real ACL queries; plaintext fixture clients use
+  `User:ANONYMOUS` as a superuser. This supports real metadata/filter and artifact cleanup
+  assertions when executed; it cannot certify authentication/denial for separate production
+  principals. `CDC_CONTROL_BROKER_KAFKA_IMAGE` is unset in this iteration; no qualified
+  broker/image replay was attempted and no integration pass/skip is claimed.
+- Reviewed the earlier [T06 teardown assertions](evidence/t06/teardown-requested-results.txt),
+  [T06 serialized proof/refusal captures](#t06-retirement-review), and
+  [T12 stop/status contracts](evidence/t12/cdc-contract-captures.json). Local ACL-disabled
+  teardown reports grants `notFound`; it does not prove revocation in production. Retirement
+  preserves consumer-group grants and shared worker topics. The routine status describe
+  path does not restore missing grants; initial provisioning can, so it is not an incident
+  revocation/recovery procedure.
+
+Reusable provider identities: PostgreSQL fixtures use namespace
+`EdFi.DataManagementService.Backend.Postgresql.Tests.Integration`; SQL Server fixtures
+use `EdFi.DataManagementService.Backend.Mssql.Tests.Integration`. Combine that namespace,
+fixture, and method below for the full identity:
+
+| Fixture | Exact method identity | Review finding; execution owner |
+| --- | --- | --- |
+| `Given_PostgresqlCdcProviderAccessRetry` | `It_should_fail_closed_on_mismatched_grants_without_removing_them` | Direct work-table grant diagnosed and retained; T14 live replay. |
+| `Given_PostgresqlCdcProviderAccessRetry` | `It_should_fail_closed_on_work_table_publication_membership_without_removing_it` | Work-table publication membership diagnosed without removal; T14. |
+| `Given_PostgresqlCdcProviderAccessRetry` | `It_should_fail_closed_on_elevated_connector_role_without_downgrading_it` | Elevated connector role refused; T14. |
+| `Given_MssqlCdcProviderAccessRetry` | `It_should_fail_closed_on_public_forbidden_permissions_without_removing_them` | Effective public work-table/source-write/extra-table access diagnosed; T15. |
+| `Given_MssqlCdcProviderAccessRetry` | `It_should_exact_match_when_public_work_table_grant_is_denied_to_connector` | Effective deny precedence inspected; T15. |
+| `Given_MssqlCdcProviderAccessRetry` | `It_should_fail_closed_on_work_table_capture_without_disabling_it` | Forbidden capture diagnosed without cleanup; T15. |
+
+The authorizer suite is ordered and shares one stack; individual later methods are not
+standalone execution recipes. The following exact methods of
+`EdFi.DataManagementService.Backend.Cdc.Control.Tests.Integration.Given_CdcControlBrokerBackedStack`
+were reviewed with their setup and preceding operations:
+
+- `It_reports_the_shared_connect_offset_store_as_compacted_durable_and_worker_only`
+- `It_fails_closed_when_the_offset_store_carries_a_grant_beyond_the_connect_worker`
+- `It_fails_closed_when_the_offset_store_is_covered_by_an_over_broad_topic_pattern`
+- `It_provisions_and_verifies_the_binding_grants_against_a_real_authorizer`
+- `It_fails_closed_when_an_instance_consumer_can_read_another_instances_topic`
+- `It_fails_closed_when_an_instance_consumer_can_read_the_progress_topic`
+- `It_requires_a_stopped_connector_before_its_committed_offsets_can_be_deleted`
+- `It_deletes_exactly_the_binding_governed_artifacts_and_leaves_the_shared_offset_store`
+
+The cleanup test observes absent public/progress topics and public-topic ACLs while the
+shared offset topic/ACLs remain. It uses PostgreSQL, which has no schema-history topic.
+It does not observe managed-platform remote/tiered storage or consumer stores. T14/T15
+own live runbook replay with their prerequisites; SQL Server history remains provider-specific.
+
+**Manual absent-purge walkthrough (not a new fixture result or incident JSON):**
+
+Use synthetic incident `disclosure-lab-01`. Read the existing T06
+[PostgreSQL completion proof](evidence/t06/retire-postgresql-completed.json) and
+[capture result](evidence/t06/capture-results.txt): CLI exit `0`, operation `operation-1`,
+generation `7`, topic `edfi.documents.instance.binding-g7.documents.v1`,
+`verifiedAt=2026-08-28T09:00:01+00:00`, every governed artifact `deleted`.
+Those are actual serialized controller/CLI fixture fields with fake external adapters.
+No new stop/revocation/deletion time or platform confirmation is fabricated.
+
+| Decision checkpoint | Available evidence | Manual disposition |
+| --- | --- | --- |
+| Connector/task fencing and consumer access revoked? | Proof contains cleanup assertions, but no deployed persisted-fence or effective-denial observation. | Deployment containment unverified; keep external admission closed and request owner evidence. |
+| Governed retirement succeeded? | Existing fixture stdout proof and exit `0`; identity and every cleanup state reviewed. | Fixture component cleanup complete only. Same result for the SQL Server proof's additional history artifacts. |
+| Public topic and covered remote/tiered copies purged? | Platform deletion request/time/guarantee/confirmation deliberately absent. `verifiedAt` is only the proof time. | **Incident remains open**, even if deployment containment and component deletion were separately confirmed. |
+| Independent consumer copies gone? | Consumer-store/export deletion evidence absent. | Separate response obligation remains open with those owners. |
+| May old topic restart or enablement resume? | No new-generation cutover/snapshot/consumer-namespace/barrier evidence; workflow deferred. | CDC unavailable; no restart/recreate/re-enable instruction. |
+
+Repeating the review with [SQL Server completion](evidence/t06/retire-sqlserver-completed.json)
+does not change the result: deleting schema history adds no remote purge evidence.
+The [provider-timeout capture](evidence/t06/retire-provider-timeout.stderr.txt) gives exit
+`12` and no proof; it additionally requires same-selection retirement reconciliation/retry.
+The missing platform evidence remains open after the
+[successful retry](evidence/t06/retire-timeout-retry-completed.json).
+
+**Manual review outcome:** followed new local source/design/procedure/evidence links and
+anchors; checked command target/default-tenant selection, source override, confirmation,
+status/stop/proof shapes and exits against generated help/source/captured output. Reviewed
+new examples and reused captures for credentials, bearer tokens, raw UUIDs/source positions,
+payloads and student data. All identifiers are synthetic or opaque fixture fingerprints;
+configuration examples name secrets without values. No new operational JSON was invented.
+The containment procedure leaves the incident open without platform evidence and links the
+deferred cutover owner. `git diff --check` passed. No database, broker, Connect, or DMS
+service was accessed; no deployment resources needed cleanup.
+
+**Remaining evidence:** T14/T15 live provider/authorizer/fence/retirement exercises;
+T13/T17 additional operator assertions; T16 final reconciliation. Production identity and
+platform purge guarantees remain deployment-owned. E18-S08 restamp and E19-06 API-consumer
+handoffs stay explicitly unmet. T07 authoring is complete against existing behavior/help
+and fixture outputs; it does not close these downstream results or the overall story.
+
 <a id="pending-delivery"></a>
 ## Pending delivery and verification
 
@@ -816,7 +971,7 @@ actual results before the story is complete.
 | E18 packaged downstream-history handoff and repair scope | T04/T12 delivered; E18-S08 restamp; T16 reconciliation | [T04 review](#t04-projection-handoff-review): 8 configured integration and 27 history unit cases passed; [T12](#t12-operator-path-review) adds all 36 provider/command/evidence tuples with 144 passing assertions. Dedicated restamp utility/procedure/evidence is absent; E18-S08 handoff unmet. |
 | Continuity, complete-record adoption, physical-source replacement | T05 delivered; T13 assertions; T14/T15 replay | [T05 review](#t05-continuity-review): 68 controller and 11 CLI cases passed; six captured outcomes, help/source/default-tenant/retry review complete. Additional operator assertions and live provider replay pending; T16 closes results. |
 | Destructive retirement, partial failure, timeout and same-operation retry | T06 delivered; T17 assertions; T14/T15 replay | [T06 review](#t06-retirement-review): 78 existing behavior cases passed; eight output captures, generated help, original-source/absence/proof/history review complete. Additional operator assertions and live cleanup remain pending. |
-| Security, consumer isolation, sensitive-data containment | T07; T14/T15 replay | Pending. Link authorizer-backed evidence separately from local ACL-disabled results; component cleanup cannot prove platform purge. |
+| Security, consumer isolation, sensitive-data containment | T07 delivered; T14/T15 replay | [T07 review](#t07-security-review): 150 unit cases passed; source/help/fixture review and absent-purge walkthrough complete. Live provider/authorizer/fence/deletion replay pending; platform purge and independent consumer stores remain deployment-owned. |
 | Provider retention, consumer continuity, record budget, capacity observations | T08; T14/T15 replay | Pending. Link existing owning evidence; small exercises do not establish production capacity. |
 | Discovery references and final consistency | T09; T16 closure | Pending. Final manual review reconciles all anchors, exact test selections, provider results, artifacts, and limitations. |
 
