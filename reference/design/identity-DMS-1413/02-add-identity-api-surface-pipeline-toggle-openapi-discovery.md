@@ -1,7 +1,7 @@
 ---
 jira: TBD
 source_spike: DMS-1413
-depends_on: 01, 00
+depends_on: 01, 00, 00a
 ---
 
 # Story: Add the Identity API Surface, Pipeline, Toggle, OpenAPI, and Discovery
@@ -16,6 +16,7 @@ DMS owns these fixed routes and brokers to `IIdentityService`; plugins provide i
 
 This story depends on story 00, which makes the CMS claim-set provider tenant-safe.
 Service-claim authorization calls that provider, so landing this story first would add a caller to a path that can cache one tenant's authorization metadata under another tenant's key.
+It also depends on story 00a for consistent CMS support of identity-only clients with empty datastore assignments.
 
 ## Acceptance Criteria
 
@@ -29,15 +30,21 @@ Service-claim authorization calls that provider, so landing this story first wou
 - A valid token plus nonexistent tenant returns `404` without calling `IClaimSetProvider` or `IIdentityService`.
 - Tenant existence returns three typed outcomes; only confirmed absence returns `404`, an unanswerable check returns `503`, and request cancellation propagates rather than being converted into an outcome.
 - The tenant-existence lookup uses the existing `IDataStoreProvider.LoadTenants()` tenant-name path, not the datastore reload, so no data store is read and no connection string is decrypted while answering a tenant-existence question.
-- A tenant that exists but whose datastore configuration cannot be loaded or decrypted still resolves as `exists`, and identity requests for it succeed, proven by test. This is the coupling that omitting `ResolveDataStoreMiddleware` is meant to remove.
+- Datastore independence is request-time only: start and fully initialize a host with valid configuration, subsequently make a tenant's datastore configuration unloadable or undecryptable, expire the identity tenant snapshot, and prove an otherwise authorized identity request succeeds without loading datastores. Tenant/application/claim metadata remain available. Fatal startup phases, readiness, and restarting with invalid datastore configuration are unchanged.
 - Confirmed absence is derived from set membership over a successfully fetched tenant-name list, not from an error status, so the outcome requires no Configuration Service change and no change to the shared response handler.
 - A tenants response that deserializes to null is classified `unavailable`. Because `FetchTenants` currently collapses that case to `[]` before returning, the distinction is preserved in `ConfigurationServiceDataStoreProvider` and surfaced to the caller; a middleware-only rule cannot recover it once the loader has discarded it.
 - `LoadTenants`' `InvalidOperationException` wrapping of transport and JSON failures is mapped to `unavailable` rather than escaping as a `500`.
-- The middleware keeps its own tenant-name cache fed by `LoadTenants`; it does not use `TenantExists`, whose backing collection only the datastore reload populates.
+- The middleware keeps its own complete immutable tenant-name snapshot fed by `LoadTenants`, using existing case-insensitive tenant-name matching and a 60-second freshness interval after successful fetch completion. It does not use the datastore-backed `TenantExists`. Both presence and absence in a fresh snapshot answer without refetching.
+- All cold/expired lookups in one process share one refresh regardless of requested tenant name. Atomically replace the snapshot only on success, never answer from stale membership after expiry, and return `503` on refresh failure with a shared 5-second retry cooldown. Tests cover concurrent and successive different unknown names, expiry, empty success, null/malformed responses including invalid tenant entries, transport failure, cooldown, and recovery using a controlled clock.
+- Shared tenant refresh has a 30-second maximum duration linked to host shutdown, independent of any one caller, and uses coordinator/upstream dependencies that outlive request scopes. Each request's wait is cancellable; cancelling one waiter does not cancel other waiters or turn cancellation into absence/unavailability. Tests cover a remaining live waiter, all waiters leaving, refresh timeout, and shutdown.
+- Add cancellation parameters through `IDataStoreProvider.LoadTenants`, `IApplicationContextProvider`, `IConfigurationServiceApplicationProvider`, `IClaimSetProvider`, `IConfigurationServiceClaimSetProvider`, their cache/CMS implementations and reload methods, and affected callers/test doubles. Existing non-identity callers may use defaults; identity must pass its request token explicitly. Forward the appropriate operation token to CMS token acquisition, HTTP send/body reads, and lock waits, rethrowing cancellation before general exception mapping.
+- Application and claim cache fills separate coordinated upstream cancellation from an individual caller's wait: one cancelled caller must not poison memoized/cached results or cancel work another caller needs. Preserve existing cache keys, expiration, and success-only application caching. Retain story 00's per-request claim headers.
+- HTTP tests block CMS separately during token acquisition, tenant lookup, application lookup, and claim lookup; abort via `HttpContext.RequestAborted` and prove prompt cancellation with no identity provider invocation or synthetic `401`, `404`, `503`, or `502`. Paired waiters prove another request can finish. Check cancellation before provider resolution/invocation even after cache hits.
 - A test proves the three outcomes are actually distinguishable end to end against a Configuration Service stub: absent tenant returns `404`, a transport failure or null-deserialized body returns `503`, and an existing tenant continues, with no path collapsing absence into unavailability or the reverse.
 - A token whose client does not belong to the URL tenant returns `401` without calling `IClaimSetProvider` or `IIdentityService`, proven with two existing tenants that both have an identically named claim set granting identity access.
 - The binding check resolves application context for the authenticated client in the URL tenant and returns `503` when Configuration Service is unavailable.
 - The binding check reads nothing from the resolved context beyond the fact that it resolved, and a client whose `ApplicationContext.DataStoreIds` is empty passes, proven by test.
+- Integration tests provision an application and its initial empty-assignment client through real CMS endpoints, add a second client, read/update both retaining empty lists, reset credentials, obtain tokens with the current credentials and call authorized identity operations, then delete the additional client. Assert empty assignments grant no resource access. Test doubles alone do not satisfy the lifecycle criterion; the CMS prerequisite is story 00a.
 - Service-claim authorization uses the shipped identity service claim and requires `Create` for create and `Read` for all other operations; no operation maps to the claim's `Update` action.
 - A matched identity action whose authorization-strategy list is empty, contains an unknown name, or contains a recognized strategy other than `NoFurtherAuthorizationRequired` fails closed as a security-configuration `500`, distinct from `403`.
 - Capability validation runs after service-claim authorization and before POST content-type or body validation.
@@ -51,6 +58,7 @@ Service-claim authorization calls that provider, so landing this story first wou
 - Result status and invariant mapping follows `design.md`.
 - Provider `NotFound` for get-by-id subject miss, results token miss, or provider-owned context refusal maps to identity-not-found `404`, distinct from operation-unsupported, tenant-not-found, and route-miss `404`.
 - Find/search no-match remains a successful `IdentitySearchResponse` with an empty `Responses` array, not provider `NotFound`.
+- Synchronous find/search payloads must have wire `Status: "Complete"` and required `SearchResponses`. Pending work returns `Success` with a usable token and no payload. This is a documented provider obligation checked by schema/fixture tests; the host still passes non-null malformed payloads through without runtime inspection.
 - `Incomplete` from any operation except `ResultsAsync` is provider contract misuse.
 - Provider calls are wrapped by one provider-only exception boundary; cancelled `OperationCanceledException` is rethrown and un-cancelled provider exceptions map to identity-upstream-failure `502`.
 - Provider contract misuse cases map to provider-contract-violation `502`, distinct from identity-upstream-failure `502`.
@@ -96,6 +104,7 @@ Service-claim authorization calls that provider, so landing this story first wou
 - Request media types are `application/json` and `text/json`.
 - Request schemas are object for create, array of string for find, and array of object for search, with standard identifying properties documented on create/search objects.
 - Success response schemas match the payload obligations in `design.md`, including standard identifying attributes, unsupported-as-null semantics, ordered search-response groups, `BirthDate` as `date-time`, and `Score` as `number`/`double`.
+- Separate complete/incomplete schemas constrain `Status` with single-value enums. Find/search `200` references only the complete schema; results `200` permits both. Schema tests reject an incomplete synchronous payload and accept a pending results payload; examples include both results states.
 - Schemas are property-for-property and type-for-type compatible with the pinned ODS 7.3.2 identity OpenAPI document, whose identity schemas declare no schema-level `required` arrays and no `nullable` keywords; requiredness and nullability are DMS additions named in the divergence ledger, and no other difference is permitted unless the ledger names it.
 - Examples include no-match find/search response groups with empty `Responses` arrays.
 - Request and response objects allow additional properties.
@@ -105,16 +114,17 @@ Service-claim authorization calls that provider, so landing this story first wou
 - `Location` headers are declared for async `202` find/search and incomplete `200` results.
 - Create success is declared as `200` with a string body and no `Location`.
 - Provider-contract-violation and identity-upstream-failure `502` responses have distinct problem-detail schemas or documented problem-detail `type` values.
+- The served document carries `x-edfi-identity-contract-version` equal to the contract package version. Generate a deterministic wire-contract baseline covering operations, schemas/references, response codes, headers, media types, security, and pinned examples, normalizing deployment-specific `servers` values and the injected OAuth `tokenUrl` to fixed placeholders and excluding the separately asserted version stamp. Security scheme/flow names, scopes, and requirements remain covered. Story 04 consumes it for package and DMS release compatibility checks; generating this baseline does not publish another package.
 
 ## Tasks
 
-1. Add the tenant-existence middleware over the existing `LoadTenants` tenant-name path, with its own cache and typed exists/absent/unavailable outcomes rather than a bare `bool`, including the null-deserialization guard. It reuses the cache-then-refetch shape but not the datastore reload.
-2. Add the client-to-tenant binding middleware over `IApplicationContextProvider`.
+1. Add the tenant-existence middleware over `LoadTenants` with a complete fresh snapshot, shared bounded refresh, failure cooldown, typed outcomes, and null-deserialization guard; prove request-time independence on an initialized host.
+2. Add client-to-tenant binding and cancellation through tenant/application/claim providers and caches, including transport and caller-wait semantics; prove the CMS lifecycle from story 00a through token issuance and identity calls.
 3. Add service-claim authorization for fixed service claims, including the authorization-strategy policy.
 4. Parameterize content-type validation without changing resource write behavior.
 5. Add the identity handler, request-scope provider resolution, and response mapping.
 6. Add frontend configuration binding, endpoint module, route mappings, and Docker/environment toggle entries.
-7. Add the embedded OpenAPI document, metadata endpoint/listing integration, and Discovery integration.
+7. Add the embedded OpenAPI document with operation-specific response states, contract-version stamp and deterministic wire baseline, metadata endpoint/listing integration, and Discovery integration.
 8. Add identity-route log redaction at both logging layers and the provider-exception diagnostic contract.
 9. Add `Location` to the CORS policy's exposed response headers.
 10. Add unit and integration tests for ordering, authorization, two-tenant client binding, authorization-strategy fail-closed cases, tenant-existence outcome classification and datastore decoupling, scoped-provider resolution, capability gating, route mapping, body handling, token handling including the length and composed-path boundaries, validation-error projection, log redaction at both layers, CORS `Location` exposure, endpoint-level cancellation propagation from `HttpContext.RequestAborted`, status mapping, disabled-route absence, metadata absence, schema/runtime agreement, ODS schema compatibility, headers, problem-detail type values, server URLs, and security metadata.

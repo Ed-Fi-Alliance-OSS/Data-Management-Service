@@ -32,13 +32,14 @@ That architecture is designed but not implemented at the time of this spike, so 
 
 - No concrete identity-system integration and no DMS-shipped identity backend.
 - No person matching, scoring, or UniqueId issuance logic in DMS.
-- No validation of UniqueIds on person-resource writes; that belongs to DMS-1414.
+- No validation of UniqueIds on person-resource writes. DMS-1414 owns documentation and a worked example through `IResourceValidator`, dependent on custom validation; it does not promise a new DMS validation implementation.
 - No Model 2 work. DMS already supports clients supplying their own UniqueIds without validation.
 - No plugin-contributed HTTP routes for identity. DMS owns the HTTP surface.
 - No ApiSchema-generated OpenAPI for this surface.
 - No profile scoping and no request-body validation below duplicate-property rejection and top-level shape checks.
 - No response-payload schema validation beyond required-value presence.
 - No datastore authorization, datastore resolution, or route-qualifier matching for identity calls.
+- No change to fatal startup phases, readiness, or partial service availability. Request-time independence applies only to a successfully initialized, running host.
 
 ## Evidence Base
 
@@ -50,6 +51,7 @@ Important DMS source facts:
 - `TenantValidationMiddleware` checks tenant presence, length, and `^[a-zA-Z0-9_-]+$`; it does not check tenant existence.
 - `TenantValidator.ValidateTenantAsync` checks tenant existence by consulting `IDataStoreProvider.TenantExists` and reloading data stores from Configuration Service on cache miss. Its `catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.NotFound)` clause is unreachable twice over: `LoadDataStores` converts every `HttpRequestException` to an `InvalidOperationException` before it can propagate, and the only `HttpRequestException` Core throws for a Configuration Service error is built with the message-only constructor, so `StatusCode` is null regardless.
 - The tenant data-store load decrypts each data store's primary connection string, and an undecryptable primary fails the whole tenant load, so datastore configuration faults are entangled with tenant existence on that path.
+- `Program.cs` runs datastore loading, ApiSchema initialization, and backend mapping initialization as fatal startup phases before configuring endpoints. Omitting those dependencies from the identity request pipeline cannot bypass host startup.
 - `IDataStoreProvider.LoadTenants()` already provides a tenant-only lookup: it fetches names from the Configuration Service `v3/tenants/` endpoint, sends no `Tenant` header, reads no data store, and decrypts nothing. CMS exempts `/v3/tenants` from tenant-header resolution, so the `400`-for-unknown-tenant behavior of the header path does not apply to it.
 - `FetchTenants` returns an empty list without throwing when the tenants response deserializes to null, so an empty result is not by itself proof that a tenant is absent.
 - The frontend and Core request logging middlewares both place the resolved request path into a structured `Path` property and into their rendered completion and failure messages. `LoggingSanitizer` neutralizes injection characters and does not redact identifiers.
@@ -252,9 +254,9 @@ The contract and OpenAPI document must describe what the provider must return on
 | --- | --- |
 | Create `Success` | A JSON string containing the new unique id |
 | GetById `Success` | An `IdentityResponse` object |
-| Find/Search synchronous `Success` | An `IdentitySearchResponse` object |
-| Results `Success` | An `IdentitySearchResponse` object with wire `Status` complete |
-| Results `Incomplete` | An `IdentitySearchResponse` object with wire `Status` incomplete. The object itself is still required, so the missing-payload rule below still applies; it simply carries no result data while the request is pending |
+| Find/Search synchronous `Success` | A complete `IdentitySearchResponse` object with wire `Status: "Complete"` and required `SearchResponses` |
+| Results `Success` | An `IdentitySearchResponse` object with wire `Status: "Complete"` |
+| Results `Incomplete` | An `IdentitySearchResponse` object with wire `Status: "Incomplete"`. The object itself is still required, so the missing-payload rule below still applies; it simply carries no result data while the request is pending |
 
 `IdentityResponse` is a JSON object with these standard wire properties:
 
@@ -284,6 +286,8 @@ Providers may add custom properties to `IdentityResponse`, `BirthLocation`, and 
 - find entries contain zero or one `IdentityResponse`;
 - search entries contain zero or more `IdentityResponse` values and every returned match has a numeric `Score`.
 
+Synchronous find/search must return the complete shape. Pending work must return `IdentityAsyncResult` with `Success`, a usable `RequestToken`, and no payload; wire `Status: "Incomplete"` is legal only on results polling. OpenAPI defines separate complete and incomplete schemas with single-value `Status` enums: find/search `200` references only the complete schema, while results `200` permits either. Fixture conformance assertions reject an incomplete synchronous payload. DMS still serves a nonconforming non-null payload verbatim; this rule adds no runtime payload inspection.
+
 A find or search request with no matching identity is represented as `Success` with an empty `Responses` array in the corresponding response group, not as provider `NotFound`.
 DMS does not inspect that runtime shape, but the contract documentation, OpenAPI examples, and fixture tests must model no-match responses this way.
 
@@ -297,7 +301,7 @@ Non-cancelled provider exceptions map to identity-upstream-failure `502`; provid
 
 ### UniqueId Issuance Constraints
 
-DMS does not validate UniqueIds on person-resource writes; that is DMS-1414's scope.
+DMS does not validate UniqueIds on person-resource writes. DMS-1414 covers implementer documentation and a worked example through custom validation, including its limitations.
 This design still has to state what makes an issued id usable in those writes later, because the contract is published and additive-only, and a constraint omitted now cannot be added afterwards without breaking implementers.
 
 Two constraints are not obvious from the wire type: length and equality.
@@ -322,20 +326,24 @@ The contract therefore defines a repertoire in which the approximation is exact,
 
 A provider must issue UniqueIds that are:
 
-- unique within the deployment across every tenant and route-qualifier context it serves, since DMS applies no tenant prefix and does not rewrite the value;
+- unique within the identity authority's namespace, whose mapping from tenant and route-qualifier contexts the provider must document as described below;
 - no longer than the `maxLength` the deployment's ApiSchema declares for person UniqueIds, which is **32 characters** across the current core and shipped extension schemas;
 - drawn from the **guaranteed repertoire**: ASCII digits `0`-`9` and ASCII letters `A`-`Z` and `a`-`z`. Within this repertoire the collation applies case folding and nothing else, so `OrdinalIgnoreCase` and `SQL_Latin1_General_CP1_CI_AS` agree exactly and the equality rule below is enforceable as stated. This matches how the schema already describes the field — "a unique alphanumeric code";
-- distinct under `OrdinalIgnoreCase` comparison, not merely under exact comparison, so the value means the same identity on both providers;
+- distinct under `OrdinalIgnoreCase` comparison within that namespace, not merely under exact comparison, so the value means the same identity on both backends;
 - non-empty and free of leading or trailing whitespace, which DMS does not trim;
 - a single URL path segment, because get-by-id carries the value in the route;
 - stable for the life of the identity, because person documents already written reference the value as natural-key data.
+
+**Authority and namespace.** The upstream identity system is authoritative; DMS does not impose a deployment-wide authority. A provider may serve one shared registry or independent registries selected by `Tenant` and `RouteQualifiers`. It must document the mapping, use it consistently for create/get/find/search, and ensure one value never denotes different people within the same namespace. Reusing a value in independent namespaces is permitted; the absence of DMS prefixing does not create a global uniqueness requirement.
+
+The operator must ensure namespaces whose identities are written into the same person-resource natural-key domain (the same resource table in the same datastore) are compatible: overlapping values must identify the same person there. Independent databases do not inherently need coordinated identifiers. Combining registries into one domain requires upstream coordination or provider-owned remapping before use. DMS performs no namespace discovery, datastore selection, collision checking, or rewriting on identity requests; this is a deployment integration obligation, not a new contract member or person-write feature.
 
 A provider that issues values outside the guaranteed repertoire is not rejected by DMS — the identity pipeline performs no ApiSchema validation — but it takes on the uniqueness obligation itself, under each backing store's actual equality rather than under `OrdinalIgnoreCase`, and this contract pins no cross-engine equivalence for those values.
 Implementer documentation must state that consequence rather than presenting the repertoire as advisory styling.
 
 These remain provider responsibilities.
 DMS neither generates nor rewrites the value, and the identity pipeline adds no ApiSchema or relational dependency to enforce them.
-The end-to-end proof that an issued id survives a person-resource write on each backend belongs to DMS-1414, which owns that validation path; this design contributes the constraint that story asserts against.
+This spike assigns no cross-backend person-write E2E implementation to DMS-1414. That ticket's documented example must reflect the custom-validation extension point actually available; store reads and persisted document identity remain gaps recorded by the custom-validation design, not work implicitly supplied by this epic.
 
 ## Feature Toggle
 
@@ -349,7 +357,7 @@ When disabled:
 - the Discovery response has no `identity` URL;
 - provider registrations and plugin loading are not controlled by this toggle.
 
-When enabled with only the DMS host default `NoIdentityService`, the process starts cleanly and every operation answers operation-unsupported `404`.
+When enabled with only the DMS host default `NoIdentityService`, a host satisfying the normal startup prerequisites starts cleanly and every otherwise authorized operation answers operation-unsupported `404`.
 
 This feature toggle does not replace `Plugins:Allowed`.
 An operator still uses the plugin architecture allowlist to load the implementer plugin.
@@ -383,6 +391,14 @@ It declares:
 - `200` `Location` for incomplete results, where the value points back to the current poll URL;
 - no create `Location`, because the chosen DMS create behavior is `200` with the unique-id string body.
 
+### Wire Contract Versioning
+
+The payload schemas are part of the public identity contract even though payloads cross the C# boundary as `JsonNode`. Story 02 stamps the served document with `x-edfi-identity-contract-version`, equal to the `EdFi.Api.Identity` contract version, and produces a deterministic wire-contract baseline from the host-owned OpenAPI document. The baseline covers operation paths, request/response schemas and their referenced components, status codes, media types, headers, security requirements, and pinned examples. Normalize ordering and replace only deployment-specific `servers` values and the injected OAuth `tokenUrl` with fixed placeholders; exclude the version stamp from the baseline comparison while asserting it separately. Security scheme/flow names, scopes, requirements, schema constraints, and descriptions remain covered.
+
+Story 04 gates both package publication and DMS release against the immutable baseline recorded for the last published contract version. An unchanged contract version requires an unchanged baseline, even when the nupkg itself is unchanged. A contract version increment requires a reviewed compatibility diff and continued validation of the prior request/response examples; removing fields or operations, narrowing accepted values, or adding required fields fails the additive-only v1 policy. A breaking wire change needs a separately designed contract/API version, not merely a package version bump. Tests deliberately change a schema while leaving exported C# types unchanged and prove the release gate fails, and prove runtime server and token URL changes do not fail it. The version-to-baseline association is retained with release verification artifacts; no second schema copy in the package or separately published conformance package is required.
+
+The first publication establishes the reviewed baseline when no prior identity contract has been published. After that, a missing or unreadable published baseline fails verification rather than silently treating the current document as a new initial baseline.
+
 ## Authorization
 
 The service claim already exists in shipped claim documents:
@@ -391,7 +407,7 @@ The service claim already exists in shipped claim documents:
 http://ed-fi.org/identity/claims/services/identity
 ```
 
-DMS does not need a CMS migration for this ticket.
+The identity claim needs no CMS migration. Supporting the identity-only client lifecycle does require the CMS validation prerequisite below.
 The identity authorization middleware should use the existing claim-set graph and map operations to actions:
 
 | Operation | Required action |
@@ -441,6 +457,8 @@ The middleware must not reject an empty `DataStoreIds`; doing so would reintrodu
 Outcome mapping follows the existing `ApplicationContextRequirementMiddleware`: a client not resolvable in the tenant is `401`, and an unavailable Configuration Service is `503`.
 Reusing that provider also means identity inherits its request-scoped memoization and cache, so the binding check does not add a Configuration Service round trip per identity request in steady state.
 
+The current CMS application-create path accepts an empty datastore list and creates an initial client, but `ApiClientInsertCommand.Validator` and `ApiClientUpdateCommand.Validator` reject empty lists. [Story 00a](./00a-support-empty-datastore-assignments-in-cms-api-clients.md) makes explicit empty assignments valid throughout that lifecycle before story 02 lands. Story 02 must exercise real CMS application/client create, read, update, credential reset, and deletion endpoints, obtaining tokens and calling identity with the initial and additional clients and after update/reset. Supplying a fake empty application context alone does not prove this requirement. Empty assignments never grant resource access.
+
 The sequence is:
 
 1. tenant syntax validation;
@@ -468,7 +486,7 @@ Add a Core identity-only `ValidateTenantExistsMiddleware`.
 When multitenancy is enabled and the tenant is confirmed absent, it returns `404` without calling the claim-set provider or identity provider.
 When multitenancy is disabled, it is a pass-through.
 
-It reuses the frontend validator's cache-then-refetch *shape* but neither its result type nor its data source, because that path cannot produce the outcomes this design requires.
+It uses a complete tenant-list snapshot, independently of the frontend validator's datastore-backed cache, because that path cannot produce the outcomes this design requires.
 
 **Why the existing path cannot answer the question.**
 `TenantValidator.ValidateTenantAsync` returns a bare `bool` and reaches it through a general exception catch, so a Configuration Service outage on a cache miss is indistinguishable from a nonexistent tenant and a cancellation is swallowed on the same path.
@@ -482,6 +500,8 @@ Its data source is wrong for the question as well.
 An unrelated datastore misconfiguration — a rotated encryption key, a corrupt stored connection string — would therefore make an existing tenant read as nonexistent and block identity requests that need no datastore at all.
 That is precisely the coupling `ResolveDataStoreMiddleware`'s omission is meant to remove.
 
+This is **request-time independence**, not host availability despite startup failure. The host must first complete its fatal datastore, schema, and mapping initialization. Story 02 starts a valid host, then makes a tenant's datastore configuration unloadable or undecryptable while leaving tenant/application/claim lookups available, forces a fresh identity tenant lookup, and proves the request succeeds without loading datastores. Startup/readiness changes or survival of a process restart with invalid datastore configuration require a separate design.
+
 **The lookup this design uses instead.**
 DMS already has a tenant-only path, and identity uses it rather than introducing one.
 `IDataStoreProvider.LoadTenants()` fetches tenant names from the Configuration Service `v3/tenants/` endpoint, which CMS exempts from tenant-header resolution "for tenant management before tenants exist" (`Middleware/TenantResolutionMiddleware.cs:43`); it sends no `Tenant` header and projects nothing but names (`Configuration/ConfigurationServiceDataStoreProvider.cs:414-454`).
@@ -489,15 +509,19 @@ No data store is read and no connection string is decrypted.
 
 That path also carries absence without depending on status plumbing.
 A tenant is confirmed absent when a **successfully fetched** tenant-name list does not contain it, so the absent signal is set membership over a successful response rather than an error status.
-No Configuration Service change and no shared HTTP-client change is required to make the outcomes below derivable.
+No new Configuration Service endpoint or response-handler status change is needed to derive those outcomes. Cancellation does require DMS provider/interface changes, assigned below.
 
 Three specifics the middleware must get right:
 
 1. **An empty list is evidence of absence only if the fetch genuinely succeeded, and the middleware cannot establish that on its own.** `FetchTenants` collapses a null-deserialized body to `[]` and returns it as an ordinary result (`:447-450`), so by the time `LoadTenants` returns, a parse failure is indistinguishable from a genuinely empty tenant set and every tenant would read as absent. The distinction has to be preserved where it is currently discarded, in the loader, and surfaced to the caller; a middleware-only rule cannot recover it. This is a change to `ConfigurationServiceDataStoreProvider`, not only to the identity middleware, and the API-surface story owns it.
 2. **Failures must arrive as an outcome, not an exception.** `LoadTenants` wraps transport and JSON failures in `InvalidOperationException` (`:383`, `:397`). The identity check maps those to `unavailable` rather than letting them escape as a `500`, and lets `OperationCanceledException` for the request's own token propagate untouched.
-3. **The cache is its own.** `TenantExists` reads `_instancesByTenant`, which only `LoadDataStores` populates (`:348`), so it cannot serve as the fast path without reintroducing the datastore dependency this lookup exists to avoid. The identity check keeps its own tenant-name cache fed by `LoadTenants`, in the same cache-then-refetch shape the frontend validator uses.
+3. **The cache is its own complete snapshot.** `TenantExists` reads `_instancesByTenant`, which only `LoadDataStores` populates (`:348`), so it cannot serve as the fast path. The identity check holds an immutable, successfully fetched full tenant-name set, using the existing case-insensitive tenant-name convention, with a 60-second freshness interval measured from successful refresh completion. Presence and absence in a fresh snapshot both answer immediately; an unknown name never causes an early refresh. Cached membership can lag tenant additions/deletions for that interval; once it expires, callers wait for refresh rather than receiving stale membership.
 
-A by-name existence endpoint on CMS would spare the check a full-list refetch on a cold miss.
+On a cold or expired snapshot, all callers on one DMS process join one shared refresh, regardless of requested tenant name. Replace the snapshot atomically only after a complete, valid response. Never serve stale membership after expiry when refresh fails: return `unavailable`, retain a shared failure result for a 5-second retry cooldown, and then permit one new refresh. This bounds full-list fetches for successive unknown names during both healthy operation and an outage. A successful empty list is a fresh empty snapshot; null or malformed content (including null entries or missing/blank names) is a failure, not a partial snapshot from which absence can be inferred. Coordination is per process, not a new distributed-cache requirement.
+
+The shared tenant refresh uses a 30-second maximum duration linked to host shutdown (an existing shorter HTTP timeout may end it earlier), not the first request's cancellation token. Each caller awaits it with its own request token; cancelling a caller ends that wait promptly without cancelling other callers' work or publishing an absence result. The coordinator and upstream dependencies must outlive individual request scopes; a fill must not capture request-scoped services that an aborted waiter can dispose. A fill may finish and populate the cache after all callers leave, but cannot run past its timeout or host shutdown. Refresh timeout becomes `unavailable` for live callers; request cancellation propagates for the cancelled caller. Tests use a controlled clock and blocked CMS transport to cover different unknown names concurrently, fresh misses, expiry, failure cooldown, cancellation, and recovery.
+
+A by-name existence endpoint on CMS could reduce full-list transfer size on refresh.
 That is an optimization, not a prerequisite, and is recorded as a follow-up rather than pulled into this epic.
 
 The identity check returns three typed outcomes:
@@ -519,6 +543,16 @@ An identity-only client with no authorized datastore can call identity endpoints
 Configured route qualifiers are still extracted by the fixed route pattern and passed to the provider as `IdentityRequestContext.RouteQualifiers`.
 DMS does not match them against authorized datastore instances.
 The provider owns contextual refusal for an unknown tenant/qualifier combination and may return `NotFound`.
+
+### Cancellation Through Configuration Service Lookups
+
+Story 02 owns cancellation support in `IDataStoreProvider.LoadTenants`, its loader/HTTP implementation, `IApplicationContextProvider`, `IConfigurationServiceApplicationProvider`, and their cached and CMS implementations, including reload methods and affected callers/test doubles. These methods currently take no token, and the application provider's general catch currently maps cancellation to `Unavailable`. Add trailing cancellation parameters (defaults may preserve existing non-identity callers), forward them through CMS token acquisition, HTTP send and response-body reads, and rethrow cancellation of the supplied operation token before general exception mapping. Identity always passes its required request token explicitly.
+
+Application-context cache fills use the cache's coordinated fill token for upstream work and each caller's request token for its own wait; a single cancelled waiter must not cancel a fill still needed by another. Cancellation is never cached as `NotFound` or `Unavailable`, and request memoization must not capture a cancelled caller's wait as the shared result. Existing application-cache keys, expiration, success-only caching, and tenant binding remain unchanged. Cache coordination may cancel upstream work once all participants have cancelled; unlike the tenant snapshot's host-owned refresh, it need not continue warming after everyone leaves.
+
+Apply the same caller-wait rule to identity service-claim retrieval: story 02 adds cancellation parameters through `IClaimSetProvider`, `IConfigurationServiceClaimSetProvider`, their cache and CMS implementations, including lock waits, token acquisition, and HTTP reads. Retain story 00's per-request headers. If a shared claim fill continues for other callers, the aborted identity request stops awaiting it. Check request cancellation before resolving/calling the identity provider, including after cache hits. Any fill that outlives a caller uses dependencies independent of that caller's request scope. These are internal DMS changes required by the new path, not a rewrite of existing fixed-service facades.
+
+Tests block CMS separately at token acquisition, tenant retrieval, application lookup, and claim retrieval, cancel `HttpContext.RequestAborted`, and assert prompt cancellation with no identity provider invocation and no synthetic `401`, `404`, `503`, or `502`. Paired waiters prove the remaining caller can still finish. Live-caller transport failures retain each lookup's documented failure behavior.
 
 ## Pipeline
 
@@ -572,7 +606,7 @@ The two outbound protocol checks are:
 Reusing the existing request logging is correct for trace correlation and wrong as-is for these two routes, because identity is the only DMS surface whose route values are natural-person identifiers and result-set handles rather than opaque resource ids.
 
 Both layers place the resolved request path into a structured `Path` property and into the rendered completion and failure messages: the frontend at `Infrastructure/LoggingMiddleware.cs:27` and again in the `HttpRequestCompleted` / `HttpRequestFailed` message templates, and Core at `Middleware/RequestResponseLoggingMiddleware.cs:31`.
-`GET /identity/v2/identities/605943412` would therefore write a person's UniqueId at `Information` on every successful lookup, and a results poll would write the request token, which is the bearer of that job's result set.
+`GET /identity/v2/identities/605943412` would therefore write a person's UniqueId at `Information` on every successful lookup, and a results poll would write the request token, a sensitive handle whose use also requires the issuing client's authenticated context.
 `LoggingSanitizer` does not prevent this. It exists to stop log injection — it neutralizes control and layout characters — and a UniqueId survives it unchanged, as it must.
 This conflicts with the repository logging policy's "do not log sensitive data" principle (`docs/LOGGING.md:9`).
 
@@ -680,8 +714,8 @@ A provider must:
 - document whether accepted jobs survive a provider restart.
 
 Results are scoped to the issuing client, not shared across the tenant.
-This is the v1 decision because it can be loosened later without breaking a client, whereas a shared default could not be tightened later without breaking one.
-A provider whose upstream system genuinely shares results within a tenant must still gate the poll on `ClientId`, or document the sharing as a deliberate deviation.
+This is the v1 security boundary. Future sharing must be explicitly authorized rather than silently weakening existing job ownership.
+A provider whose upstream system shares results within a tenant must still gate the poll on `ClientId`. Documentation cannot waive this requirement; a provider that shares jobs across clients is nonconforming. Tenant-wide sharing would require a future explicit authorization mode with configuration, discovery, and tests.
 
 Request cancellation does not cancel an accepted job.
 Once find or search has returned an async `Success` with a token, DMS has already answered `202` and the client's connection is irrelevant to the job.
@@ -699,6 +733,14 @@ If the upstream system issues a UniqueId and the response to DMS is lost, the cl
 The contract does not add an idempotency key in v1.
 Instead, a provider must document how its integration behaves on a repeated create for the same identifying data: either that creation is idempotent on some upstream key, or that duplicate issuance is possible and how the duplicates are reconciled.
 An implementer whose upstream system offers no such guarantee must say so, because a client cannot otherwise know whether retrying a failed create is safe.
+
+The documented client recovery workflow is:
+
+1. Treat a lost response, connection abort, or upstream `502` after create as an **unknown issuance outcome**, not proof that no id was issued. Do not automatically repeat create.
+2. If the provider documents a supported reconciliation lookup (for example search by an immutable upstream person key passed as a custom property), use it in the same tenant/qualifier namespace. Follow `202 Location` if needed. Reuse an id only when that documented lookup establishes the original issuance; a scored demographic match alone is not proof.
+3. If there are multiple candidates, no match without an authoritative absence guarantee, no supported lookup capability, or another lookup failure, stop issuance and use the provider's documented operator/upstream reconciliation process. A client retries only after that process confirms no issuance or the provider guarantees deduplication. No-match alone never makes retry safe while an earlier create may still finish.
+
+Story 03 demonstrates a fixture create that records an issuance and then throws to simulate a lost upstream response. Its documented exact-key lookup recovers the original id without a second create. A second case without reliable lookup demonstrates stopping for operator reconciliation, with no retry. This is provider-specific recovery, not a portable idempotency guarantee, and adds no reserved custom field, host idempotency storage, or new v1 contract member.
 
 ## Error and Response Mapping
 
@@ -794,7 +836,7 @@ That document is an artifact the epic already produces and already asserts, so p
 
 The identity backend is a DMS-1462 replace-cardinality plugin contract.
 DMS registers a host default `NoIdentityService` implementing `IIdentityService` with `Capabilities = None`.
-That host default is enough for DMS to boot with the feature enabled and no plugin loaded.
+That host default satisfies the identity registration requirement with the feature enabled and no plugin loaded; normal host startup prerequisites still apply.
 
 The plugin-registry story declares `IIdentityService` in `DmsPluginContracts.Registry`.
 The registry entry is replace-cardinality:
@@ -812,7 +854,7 @@ The DMS-owned API story can use the host default and test doubles.
 
 ## Prerequisites
 
-One pre-existing defect must be corrected before the identity API surface story lands, because that story adds a caller to the affected path and the defect is a cross-tenant authorization failure.
+Two prerequisites must land before the identity API surface story: the pre-existing claim-set header race and consistent CMS support for clients with empty datastore assignments.
 
 **The CMS-backed claim-set provider is not tenant-safe under concurrent cold cache misses.**
 `ConfigurationServiceClaimSetProvider` mutates the shared `HttpClient`'s `Tenant` and `Authorization` default request headers per call, while `CachedClaimSetProvider`'s stampede lock is keyed per tenant, so two cold misses for different tenants are mutually unsynchronized.
@@ -826,15 +868,18 @@ The claim-set provider is the remaining outlier.
 It is filed as its own story rather than folded into the identity API surface story, because it is a security defect on the existing resource authorization path and belongs where it can be reviewed and released as one.
 The identity API surface story declares it as a dependency.
 
+**CMS API-client create/update reject empty datastore assignments.** Application creation already permits the initial identity-only client, but the direct client endpoints prevent additional clients and updates retaining empty assignments. [Story 00a](./00a-support-empty-datastore-assignments-in-cms-api-clients.md) corrects that validation and proves the lifecycle through real CMS endpoints, preserving tenant checks and resource authorization. It needs no new identity backend or datastore schema migration. Story 02 owns the subsequent CMS-to-token-to-identity proof and the internal DMS lookup cancellation work.
+
 ## Story Breakdown
 
 | # | Story | Depends on | Scope |
 | --- | --- | --- | --- |
 | 01 | Add the Identity Contract Package and Host Default | this design | `EdFi.Api.Identity`, public contract types, XML docs, `NoIdentityService`, solution entry, lock file, Dockerfile copy-list entries |
 | 00 | Send the Tenant Header Per Request in the CMS Claim-Set Provider | this design | per-request `Tenant` and `Authorization` headers in `ConfigurationServiceClaimSetProvider`, concurrent two-tenant cold-miss test. See [Prerequisites](#prerequisites) |
-| 02 | Add the Identity API Surface, Pipeline, Toggle, OpenAPI, and Discovery | 01, 00 | Core identity pipeline, service-claim auth, tenant-only existence middleware over the existing `LoadTenants` path, client-to-tenant binding, authorization-strategy policy, provider resolution from the request scope, request/response mapping and validation-error projection, identity-route log redaction, frontend endpoint module, CORS `Location` exposure, `EnableIdentityManagement`, compose/env entries, fixed OpenAPI document, metadata listing, Discovery `identity` URL, toggle gating. Entirely within the DMS solution: no Configuration Service change and no shared HTTP-client change is required |
+| 00a | Support Empty Datastore Assignments in CMS API Clients | this design | CMS client create/update validation, endpoint lifecycle and resource-access regression coverage |
+| 02 | Add the Identity API Surface, Pipeline, Toggle, OpenAPI, and Discovery | 01, 00, 00a | Core identity pipeline, service-claim auth, fresh shared tenant snapshot over `LoadTenants`, cancellation through DMS tenant/application/claim providers and caches, client-to-tenant binding and real CMS lifecycle proof, authorization-strategy policy, request-scope provider resolution, request/response mapping and validation-error projection, identity-route log redaction, frontend endpoints, CORS `Location`, toggle/config entries, fixed OpenAPI and wire baseline/version stamp, metadata and Discovery. Request-time datastore independence on an initialized host; CMS validation changes land in 00a |
 | 03 | Register the Identity Plugin Contract and Prove a Fixture Plugin | 02, DMS-1498, DMS-1499 | `Replace` registry entry, assembly-name derivation, runtime image assembly-version assertion, replacement cardinality tests, fixture plugin, sync and async flows, custom property pass-through, enabled-without-plugin, duplicate/body/token/error cases |
-| 04 | Document and Publish `EdFi.Api.Identity` | 03, DMS-1500, DMS-1501 | operator toggle docs, plugin implementer chapter, contract readme, divergence ledger, publish-when-absent, skip-when-unchanged, fail-when-changed package lane |
+| 04 | Document and Publish `EdFi.Api.Identity` | 03, DMS-1500, DMS-1501 | operator toggle docs, plugin implementer chapter, contract readme, divergence ledger, package publication lane, wire-contract compatibility gate on package publication and DMS release |
 
 ## Test Strategy
 
@@ -852,7 +897,9 @@ Unit tests:
 - the client-to-tenant binding runs before service-claim authorization and its unavailable outcome returns `503` rather than `401`;
 - tenant existence returns `503` and not `404` when the existence question cannot be answered, and propagates request cancellation instead of converting it to an outcome;
 - the three tenant-existence outcomes are distinguishable against a Configuration Service stub, with confirmed absence classified from set membership over a successfully fetched tenant-name list rather than from an error status or exception message text;
-- a tenant whose datastore configuration fails to load or decrypt still resolves as existing, so an unrelated datastore fault cannot block identity;
+- tenant lookup reads no datastore configuration or connection string; host availability is tested separately after successful startup;
+- a fresh complete tenant snapshot answers different unknown names without refetching; concurrent cold/expired misses share one refresh, and failure cooldown prevents repeated full-list requests;
+- cancelled snapshot waiters stop promptly without cancelling live waiters, and timeout/shutdown bounds shared work; application/claim cache cancellation never poisons cached results;
 - a tenants response that deserializes to null is classified `unavailable` rather than as an empty tenant set that would render every tenant absent;
 - a matched identity action whose strategy list is empty, unknown, or a recognized strategy other than `NoFurtherAuthorizationRequired` fails closed as security configuration rather than `403`;
 - a provider registered as scoped, with its own scoped dependency, is resolved once per request from the request scope and the capability check and invocation observe the same instance;
@@ -872,6 +919,7 @@ Unit tests:
 - `Incomplete` from any operation except results is provider contract misuse;
 - a pending results poll whose payload carries wire `Status` incomplete and no result data returns `200` verbatim, not `502`;
 - response-payload non-validation, proving a wrong-shaped success payload is served verbatim;
+- operation-specific schema assertions reject wire `Status: "Incomplete"` for synchronous find/search but accept it for pending results; this is fixture/schema conformance, not a new host runtime check;
 - request and response schemas for standard identifying attributes, unsupported-as-null semantics, ordered search-response groups, `BirthDate` as `date-time`, and `Score` as `number`/`double`;
 - OpenAPI response metadata for provider `InvalidProperties` `400`, unsupported-media-type `415`, operation-unsupported `404`, identity-not-found `404`, provider-contract-violation `502`, and identity-upstream-failure `502`;
 - identity contract package version and assembly version remain independent of the DMS release version.
@@ -889,12 +937,18 @@ Integration tests:
 - multitenant route context with tenant existence and route qualifiers;
 - provider-contract-violation and identity-upstream-failure `502` cases have distinct problem-detail types;
 - a two-tenant deployment with identically named claim sets rejects tenant A's token on tenant B's identity routes through the real pipeline;
-- a Configuration Service outage during tenant existence and during client-to-tenant binding is classified as `503`, distinct from tenant `404`.
+- a Configuration Service outage during tenant existence and during client-to-tenant binding is classified as `503`, distinct from tenant `404`;
+- after successful host startup, introduce an unloadable or undecryptable datastore configuration and expire the identity tenant snapshot; identity still succeeds with available tenant/application/claim metadata, without datastore reload;
+- block CMS token, tenant, application, and claim retrieval in separate tests, abort the request, and prove no identity provider invocation or synthetic error response while other waiters can finish;
+- real CMS endpoints provision the initial and additional identity-only clients, retain empty assignments through update and credential reset, issue usable tokens for identity, and permit client deletion; empty assignments continue to grant no resource access.
 
 E2E tests:
 
 - fixture plugin loaded through the plugin infrastructure once DMS-1499 exists;
 - full create, get-by-id, find, search, and results flows;
+- synchronous find/search fixture payloads are complete; pending work yields a token;
+- a lost-create-response fixture recovers its original issuance via its documented exact-key lookup with no second create; an unresolved outcome stops for operator reconciliation;
+- independent fixture namespaces may reuse an id without returning the other namespace's person, while a shared namespace resolves that id consistently;
 - custom properties pass through both directions;
 - standard identifying attributes and search confidence scores appear in fixture success responses;
 - two replacing plugins abort startup;
@@ -926,6 +980,7 @@ No tests are run by this spike because it changes design documents only.
 | D-13 | Success missing value | can become empty `200` | `502` contract misuse | client cannot use an empty success |
 | D-14 | OpenAPI response required lists | identity response schemas declare no `required` arrays | `IdentityResponse` declares the standard identifying attributes, `UniqueId`, and `Score` required, `IdentitySearchResponse` declares `Status` required and `SearchResponses` required only in the `Complete` shape, and each `SearchResponses` entry declares `Responses` required | providers need a documented success payload contract; the `Complete`-only scoping of `SearchResponses` keeps a pending poll legal |
 | D-15 | OpenAPI nullability | identity schemas declare no `nullable` keywords, so the document forbids `null` by OpenAPI 3.0 default | standard identifying attributes are declared `nullable` in both request and response schemas, including `BirthLocation` children, and `Score` is declared `nullable` on response schemas | requests use `null` or omission for unknown values and providers represent unsupported response attributes as `null`, which the pinned document's own omission would make illegal; `Score` is nullable because an identity returned outside a search carries no confidence value, while search matches must still supply a number from 0 through 100 |
+| D-16 | Operation-specific response state schemas | shared identity search-response schema | synchronous find/search `200` uses only the complete shape; results `200` permits complete or incomplete shapes with single-value `Status` enums | pending find/search work needs a polling token; a synchronous incomplete payload leaves no recovery handle |
 
 ## Risks and Open Questions
 
@@ -941,12 +996,14 @@ Risks:
 - Capabilities are deployment-wide in v1.
 - Parameterizing content-type validation touches existing resource write pipelines.
 - Payload shape is documented but not enforced at runtime.
+- Identity cannot serve through failed fatal host startup; request-time datastore independence does not change readiness or restart behavior.
 - The Dockerfile explicit copy lists are easy to miss for a new project.
 - Tenant existence will have two implementations until a follow-up extracts a shared helper, and the identity one returns typed outcomes while the frontend one returns a bare `bool`.
 - Route qualifiers are provider context for identity, so provider documentation must explain its own qualifier refusal behavior.
 - The tenant-existence check runs before service-claim authorization for authenticated callers because the claim-set provider is tenant-keyed.
 - Identity omits `ResolveDataStoreMiddleware`, which is what incidentally binds a client to the URL tenant on resource routes, so the explicit binding check is the only thing preventing cross-tenant identity access.
 - The binding check adds a Configuration Service dependency to every identity request, which the application-context cache mitigates but does not remove.
+- Tenant existence can lag CMS changes by the 60-second snapshot freshness interval; after expiry, refresh failure returns `503` with a 5-second retry cooldown.
 - The binding check must ignore `ApplicationContext.DataStoreIds`; an implementation that rejects an empty list would silently break identity-only clients, which is the one client shape this API is expected to serve.
 - Async job ownership, retention, and durability are provider obligations DMS cannot enforce, so a non-conforming provider is a correctness risk the host cannot detect.
 - A lost create response can cause duplicate UniqueId issuance, and v1 ships no idempotency key to prevent it.
@@ -963,8 +1020,8 @@ Open questions with recommended defaults:
 - Blank `{id}` segment: reject `400` when present but blank; let routing produce `404` when absent.
 - Runtime response-payload validation: do not add it in v1.
 - Tokens containing path separators: keep rejected unless a future story measures deployment behavior and changes the contract.
-- Async results shared across a tenant versus scoped to the issuing client: scope to the issuing client, because loosening later is compatible and tightening later is not.
-- An idempotency key on create: not in v1; require the provider to document its own repeated-create behavior instead.
+- Async results shared across a tenant versus scoped to the issuing client: mandatory client binding in v1; sharing needs a separately designed authorization mode.
+- An idempotency key on create: not in v1; require the concrete recovery workflow and fixture proof above, including stopping for operator reconciliation when the outcome cannot be established.
 - A published conformance test suite for implementers: not in this epic; the served OpenAPI document and story 04's documented obligations are the v1 answer.
 
 ## Follow-Up Items Outside Identity Scope

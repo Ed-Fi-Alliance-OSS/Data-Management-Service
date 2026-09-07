@@ -30,6 +30,8 @@ Before those foundations exist, the Identity API can be implemented and tested o
 
 - A fixture plugin replaces `IIdentityService` through the DMS-1462 plugin path.
 - Sync create/get-by-id/find/search/results flows succeed over HTTP.
+- Synchronous find/search fixture payloads have wire `Status: "Complete"` and required `SearchResponses`; incomplete payloads fail conformance against those operations' served schemas. Pending work returns a token; results polling permits incomplete and complete payloads. This adds no runtime host payload validation.
+- The fixture documents its authority/namespace mapping. Independent tenant/qualifier namespaces can reuse an id without returning the other namespace's person; a shared namespace resolves an id consistently across the contexts mapped to it. No person-write integration or deployment-wide uniqueness is assumed.
 - Async find/search return `202 Location`, and following the returned `Location` polls to incomplete and complete results.
 - `Incomplete` from any operation except results returns provider-contract-violation `502`.
 - Tokens that need escaping round-trip to the provider unchanged.
@@ -37,6 +39,7 @@ Before those foundations exist, the Identity API can be implemented and tested o
 - A fixture-plugin token that exceeds the escaped length ceiling, and one that fits the ceiling but overflows the composed poll path under a tenant and route qualifiers, both return `502` with no `Location` rather than a `202`.
 - Every `202 Location` the fixture plugin produces is followed and reaches the results route, proving the emitted URL is fetchable rather than rejected by the host before routing.
 - The fixture plugin binds each async job to the issuing `Tenant`, `RouteQualifiers`, and `ClientId`, and a token redeemed under a different tenant, qualifier set, or client returns identity-not-found `404` rather than the original job.
+- The different-client case uses another client authorized for identity in the same tenant and qualifiers, and the different-tenant case uses a client authorized in that target tenant, so provider ownership is tested after host authorization succeeds. No documentation-based sharing exception is permitted, including when the upstream shares results.
 - A fixture-plugin async job either remains pollable after the DMS container restarts, or the fixture documents itself as in-memory only and the test asserts the documented `404`.
 - The fixture plugin is registered with a scoped lifetime and a scoped dependency of its own, proving the host resolves it per request rather than capturing it in the singleton `ApiService`.
 - Custom properties pass through request and response payloads.
@@ -51,6 +54,8 @@ Before those foundations exist, the Identity API can be implemented and tested o
 - A get-by-id and a results poll over the fixture plugin leave no UniqueId and no token in the captured logs, in either the structured `Path` property or the rendered message, at both logging layers.
 - A fixture-plugin exception whose message contains person-shaped text does not surface that text in the client response or in the failure-level log entry.
 - Two replacing plugins abort startup with both plugin names in the fatal diagnostic.
+- A fixture create records an issuance then throws to simulate a lost upstream response; DMS returns `502`. The example client treats the outcome as unknown, uses the fixture's documented exact upstream-key search in the same namespace, and recovers the original id without a second create. The key is a fixture custom property, not a new host idempotency contract.
+- A second recovery case with no reliable reconciliation lookup stops for documented operator/upstream reconciliation and performs no automatic create retry. A scored match or a no-match without authoritative absence is not considered safe recovery. Document the fixture's limitation rather than claiming portable retry safety.
 
 ## Tasks
 
@@ -59,5 +64,5 @@ Before those foundations exist, the Identity API can be implemented and tested o
 3. Build the fixture plugin against packed `EdFi.Api.Identity` and `EdFi.Api.Plugins`.
 4. Add integration tests using test doubles where plugin loading is not required.
 5. Add Docker-stack E2E tests once the plugin loader exists.
-6. Assert served OpenAPI schemas validate fixture success payloads, including custom properties.
+6. Assert operation-specific served OpenAPI schemas validate fixture success payloads, including custom properties and complete synchronous response states; prove namespace isolation and the documented lost-create recovery workflow.
 7. Add implementer documentation hooks for `Add` versus `TryAdd`.
