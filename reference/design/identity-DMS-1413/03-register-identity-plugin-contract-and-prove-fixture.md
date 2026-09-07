@@ -1,7 +1,9 @@
 ---
-jira: TBD
+jira: DMS-1516
+jira_url: https://edfi.atlassian.net/browse/DMS-1516
+epic: DMS-1412
 source_spike: DMS-1413
-depends_on: 02, DMS-1498, DMS-1499
+depends_on: DMS-1515, DMS-1498, DMS-1499
 ---
 
 # Story: Register the Identity Plugin Contract and Prove a Fixture Plugin

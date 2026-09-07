@@ -1,5 +1,7 @@
 ---
-jira: TBD
+jira: DMS-1513
+jira_url: https://edfi.atlassian.net/browse/DMS-1513
+epic: DMS-1412
 source_spike: DMS-1413
 ---
 

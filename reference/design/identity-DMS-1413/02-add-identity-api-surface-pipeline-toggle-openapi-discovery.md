@@ -1,7 +1,9 @@
 ---
-jira: TBD
+jira: DMS-1515
+jira_url: https://edfi.atlassian.net/browse/DMS-1515
+epic: DMS-1412
 source_spike: DMS-1413
-depends_on: 01, 00, 00a
+depends_on: DMS-1514, DMS-1512, DMS-1513
 ---
 
 # Story: Add the Identity API Surface, Pipeline, Toggle, OpenAPI, and Discovery

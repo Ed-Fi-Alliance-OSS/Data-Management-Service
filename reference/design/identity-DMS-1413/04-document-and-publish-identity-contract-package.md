@@ -1,7 +1,9 @@
 ---
-jira: TBD
+jira: DMS-1517
+jira_url: https://edfi.atlassian.net/browse/DMS-1517
+epic: DMS-1412
 source_spike: DMS-1413
-depends_on: 03, DMS-1500, DMS-1501
+depends_on: DMS-1516, DMS-1500, DMS-1501
 ---
 
 # Story: Document and Publish `EdFi.Api.Identity`
