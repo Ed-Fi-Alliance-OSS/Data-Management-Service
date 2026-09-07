@@ -315,6 +315,95 @@ public sealed class Given_DocumentCacheAdminCdcJsonContracts
         stderr.Should().Contain("CDC retirement left the binding record intact.");
     }
 
+    // The injected dispatcher isolates executor serialization. The broker retirement fixtures
+    // establish the state transitions; dispatcher unit tests establish their exit-code mapping.
+    [TestCase("refused", 10, "rejectedNoMutation")]
+    [TestCase("partialCleanup", 12, "incompleteRetryable")]
+    [TestCase("providerTimeout", 12, "incompleteRetryable")]
+    public async Task It_emits_no_partial_cleanup_proof_and_round_trips_the_completed_retry(
+        string scenario,
+        int expectedExitCode,
+        string outcome
+    )
+    {
+        CdcDiagnostic diagnostic = new(
+            scenario == "refused"
+                ? CdcRetirementDiagnosticCodes.RefusedNoMutation
+                : CdcRetirementDiagnosticCodes.IncompleteRetryable,
+            scenario == "refused"
+                ? CdcDiagnosticCategory.SourceMismatch
+                : CdcDiagnosticCategory.ArtifactNotRemoved,
+            CdcDiagnosticSeverity.Error,
+            CdcDiagnosticComponent.ProviderSetup,
+            DateTimeOffset.UnixEpoch,
+            scenario == "refused"
+                ? "CDC retirement requires the binding's own physical source."
+                : "CDC retirement could not remove the binding's provider capture artifacts.",
+            retryable: scenario != "refused",
+            observed: scenario == "providerTimeout" ? "timedOut" : scenario
+        );
+        DocumentCacheAdminCdcCommandResult refused = DocumentCacheAdminCdcCommandResult.Refused(
+            "retire",
+            expectedExitCode,
+            outcome,
+            "cdcRetire",
+            [diagnostic]
+        );
+        (int exitCode, string stdout, string stderr) = await ExecuteAsync(
+            "retire",
+            refused,
+            jsonOutput: true
+        );
+        exitCode.Should().Be(expectedExitCode);
+        stdout.Should().BeEmpty();
+        stderr.Should().Contain(diagnostic.Code).And.Contain(diagnostic.Message);
+        stderr.Should().NotContain("\"governedArtifacts\"");
+        AssertNoSecrets(stderr);
+        CdcCleanupProof expected = CleanupProof();
+        DocumentCacheAdminCdcCommandResult completed = ContractResult("retire", expected, 0, "completed");
+        (int retryExitCode, string retryStdout, string retryStderr) = await ExecuteAsync(
+            "retire",
+            completed,
+            jsonOutput: true
+        );
+        retryExitCode.Should().Be(0);
+        retryStderr.Should().BeEmpty();
+        retryStdout.Split('\n', StringSplitOptions.RemoveEmptyEntries).Should().ContainSingle();
+        CdcContractReadResult<CdcCleanupProof> read = CdcJsonContract.Deserialize<CdcCleanupProof>(
+            retryStdout
+        );
+        read.Succeeded.Should().BeTrue();
+        read.Contract.Should().BeEquivalentTo(expected);
+        AssertNoSecrets(retryStdout);
+        string artifact = Path.Combine(
+            TestContext.CurrentContext.WorkDirectory,
+            $"retirement-json-{scenario}.json"
+        );
+        await File.WriteAllTextAsync(
+            artifact,
+            System.Text.Json.JsonSerializer.Serialize(
+                new
+                {
+                    scenario,
+                    boundary = "mocked dispatcher; real parser and executor; no provider or broker",
+                    refused.Outcome,
+                    exitCode,
+                    stdout,
+                    stderr,
+                    diagnostic,
+                    retry = new
+                    {
+                        completed.Outcome,
+                        exitCode = retryExitCode,
+                        stdout = retryStdout,
+                        stderr = retryStderr,
+                    },
+                }
+            )
+        );
+        TestContext.AddTestAttachment(artifact);
+    }
+
     private static void AssertNoSecrets(string output)
     {
         output.Should().NotContain("Password=");

@@ -1,0 +1,27 @@
+{
+  "scenario": "partialCleanup",
+  "boundary": "mocked dispatcher; real parser and executor; no provider or broker",
+  "Outcome": "incompleteRetryable",
+  "exitCode": 12,
+  "stdout": "",
+  "stderr": "retire: retireIncomplete: CDC retirement could not remove the bindings provider capture artifacts.",
+  "diagnostic": {
+    "Code": "retireIncomplete",
+    "Category": "artifactNotRemoved",
+    "Severity": "error",
+    "Component": "providerSetup",
+    "ObservedAt": "1970-01-01T00:00:00+00:00",
+    "Message": "CDC retirement could not remove the bindings provider capture artifacts.",
+    "Retryable": true,
+    "ArtifactKind": null,
+    "ArtifactName": null,
+    "Expected": null,
+    "Observed": "partialCleanup"
+  },
+  "retry": {
+    "Outcome": "completed",
+    "exitCode": 0,
+    "stdout": "{\"contractVersion\":1,\"operationId\":\"operation-1\",\"verifiedAt\":\"1970-01-01T00:00:00+00:00\",\"bindingIdentity\":{\"deploymentKey\":\"deployment\",\"tenantKey\":\"\",\"dataStoreId\":\"1\",\"instanceKey\":\"instance\",\"generation\":1,\"provider\":\"postgresql\",\"physicalSourceFingerprint\":\"sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"connectorName\":\"edfi-documents-instance-1\",\"topicName\":\"edfi.documents.instance.1\"},\"cleanupMode\":\"retireBindingGeneration\",\"governedArtifacts\":[{\"artifactKind\":\"kafkaConnectConnector\",\"artifactName\":\"edfi-documents-instance-1\",\"cleanupState\":\"deleted\",\"evidenceSummary\":\"deleted\"},{\"artifactKind\":\"publicTopic\",\"artifactName\":\"edfi.documents.instance.1\",\"cleanupState\":\"deleted\",\"evidenceSummary\":\"deleted\"},{\"artifactKind\":\"progressTopic\",\"artifactName\":\"edfi.documents.instance.1.progress\",\"cleanupState\":\"notFound\",\"evidenceSummary\":\"not found\"}]}",
+    "stderr": ""
+  }
+}

@@ -1,0 +1,4 @@
+Counters: {"aborted": "0", "completed": "0", "disconnected": "0", "error": "0", "executed": "3", "failed": "0", "inProgress": "0", "inconclusive": "0", "notExecuted": "0", "notRunnable": "0", "passed": "3", "passedButRunAborted": "0", "pending": "0", "timeout": "0", "total": "3", "warning": "0"}
+Passed | EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration.Given_DocumentCacheAdminCdcJsonContracts.It_emits_no_partial_cleanup_proof_and_round_trips_the_completed_retry("partialCleanup",12,"incompleteRetryable")
+Passed | EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration.Given_DocumentCacheAdminCdcJsonContracts.It_emits_no_partial_cleanup_proof_and_round_trips_the_completed_retry("providerTimeout",12,"incompleteRetryable")
+Passed | EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration.Given_DocumentCacheAdminCdcJsonContracts.It_emits_no_partial_cleanup_proof_and_round_trips_the_completed_retry("refused",10,"rejectedNoMutation")

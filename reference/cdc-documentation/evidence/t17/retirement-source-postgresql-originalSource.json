@@ -1,0 +1,54 @@
+{
+  "provider": "postgresql",
+  "scenario": "originalSource",
+  "boundary": "packaged CLI; two real databases; synthetic retained binding; unreachable Connect and broker",
+  "arguments": [
+    "cdc",
+    "retire",
+    "--data-store-id",
+    "1",
+    "--deployment-key",
+    "retirement-source",
+    "--instance-key",
+    "instance",
+    "--generation",
+    "1",
+    "--tenant-key",
+    "",
+    "--source-connection-variable",
+    "DMS_RETAINED_SOURCE",
+    "--connector-already-absent",
+    "--kafka-bootstrap-servers",
+    "127.0.0.1:1",
+    "--connect-base-url",
+    "http://127.0.0.1:1",
+    "--max-record-bytes",
+    "1048576",
+    "--durability-profile",
+    "local",
+    "--cdc-binding-state-path",
+    "<disposable-state-root>",
+    "--json",
+    "--confirm",
+    "cdcBindingRetirement"
+  ],
+  "ExitCode": 12,
+  "StandardOutput": "",
+  "StandardError": "%3|1788744033.779|FAIL|rdkafka#producer-1| [thrd:127.0.0.1:1/bootstrap]: 127.0.0.1:1/bootstrap: Connect to ipv4#127.0.0.1:1 failed: Connection refused (after 0ms in state CONNECT)\n%3|1788744033.779|ERROR|rdkafka#producer-1| [thrd:127.0.0.1:1/bootstrap]: 1/1 brokers are down\n%3|1788744033.781|ERROR|rdkafka#producer-1| [thrd:app]: rdkafka#producer-1: 127.0.0.1:1/bootstrap: Connect to ipv4#127.0.0.1:1 failed: Connection refused (after 0ms in state CONNECT)\nretire: retireIncomplete: CDC retirement could not stop the connector it retires.\n",
+  "originalFingerprint": "sha256:f1ac2008a1783a943b80e2c6e1831387791e411901f26a635d15b68ffdfe4f46",
+  "currentFingerprint": "sha256:63abffd0567c20cf1ee6dd26995dbc8e039f596b92f6ad00ec455c02deb92d32",
+  "currentBefore": {
+    "ProjectionLifecycleState": "Disabled",
+    "CacheAheadRecoveryRequired": false
+  },
+  "originalBefore": {
+    "ProjectionLifecycleState": "Disabled",
+    "CacheAheadRecoveryRequired": false
+  },
+  "recordsBefore": {
+    "bindings/retirement-source/instance/1.json": "{\"version\":1,\"deploymentKey\":\"retirement-source\",\"tenantKey\":\"default\",\"dataStoreId\":\"1\",\"instanceKey\":\"instance\",\"generation\":1,\"provider\":\"postgresql\",\"physicalSourceFingerprint\":\"sha256:f1ac2008a1783a943b80e2c6e1831387791e411901f26a635d15b68ffdfe4f46\",\"connectorName\":\"retirement-source-instance-g1\",\"topicName\":\"edfi.dms.instance.instance-g1.documents.v1\",\"partitionCount\":1,\"partitionerAlgorithm\":\"kafka-murmur2-v1\",\"contractVersion\":1}"
+  },
+  "recordsAfter": {
+    "bindings/retirement-source/instance/1.json": "{\"version\":1,\"deploymentKey\":\"retirement-source\",\"tenantKey\":\"default\",\"dataStoreId\":\"1\",\"instanceKey\":\"instance\",\"generation\":1,\"provider\":\"postgresql\",\"physicalSourceFingerprint\":\"sha256:f1ac2008a1783a943b80e2c6e1831387791e411901f26a635d15b68ffdfe4f46\",\"connectorName\":\"retirement-source-instance-g1\",\"topicName\":\"edfi.dms.instance.instance-g1.documents.v1\",\"partitionCount\":1,\"partitionerAlgorithm\":\"kafka-murmur2-v1\",\"contractVersion\":1}"
+  }
+}

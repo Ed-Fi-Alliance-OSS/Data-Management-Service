@@ -1154,9 +1154,11 @@ of all governed cleanup, keep the outstanding work explicit. Retirement also pre
 the historical CDC restriction on
 [offline projection commands](#cache-ahead-containment).
 
-[T06 manual review and existing fixture results](cdc-inv-evidence.md#t06-retirement-review)
-support authoring. T17 owns additional operator-path and timeout/retry assertions;
-T14/T15 own live original-source retirement, read-back, and retained-record replay.
+[T06 manual review](cdc-inv-evidence.md#t06-retirement-review) and
+[T17 operator assertions and captured results](evidence/t17/README.md) cover registered,
+never-registered, timeout/retry, retained state, source-selection and CLI output paths.
+T14/T15 own the provider runbook replays; successful fixture cleanup does not prove
+platform or independent consumer-store purge.
 
 <a id="projection-repair-handoff"></a>
 ## Projection and CDC repair handoff

@@ -48,7 +48,7 @@ namespace EdFi.DataManagementService.Backend.Cdc.Control.Tests.Integration;
 /// lifecycle sequences are proven in their own suites against their own databases.
 /// </para>
 /// </remarks>
-internal sealed class CdcControlBrokerFixture : IAsyncDisposable
+internal sealed partial class CdcControlBrokerFixture : IAsyncDisposable
 {
     /// <summary>
     /// The authorizer-enabled broker image. It is deliberately not the connector-template lane's

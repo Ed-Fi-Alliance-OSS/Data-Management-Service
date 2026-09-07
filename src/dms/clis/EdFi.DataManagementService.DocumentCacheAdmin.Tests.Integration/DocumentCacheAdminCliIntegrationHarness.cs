@@ -1538,11 +1538,15 @@ internal sealed class DocumentCacheAdminCliProcessHarness : IAsyncDisposable
 
     internal string CdcBindingStatePath => Path.Combine(_tempDirectory, "cdc-state");
 
-    internal async Task ConfigureCdcBindingStateAsync(string deploymentKey)
+    internal async Task ConfigureCdcBindingStateAsync(
+        string deploymentKey,
+        string setupPrincipal = CdcSetupPrincipal
+    )
     {
         JsonObject settings = JsonNode.Parse(await File.ReadAllTextAsync(_settingsPath))!.AsObject();
         JsonObject cdc = settings["DataManagement"]!["DocumentCache"]!["Cdc"]!.AsObject();
         cdc["DeploymentKey"] = deploymentKey;
+        cdc["SetupPrincipal"] = setupPrincipal;
         cdc["BindingStateStore"] = new JsonObject { ["RootPath"] = CdcBindingStatePath };
         await File.WriteAllTextAsync(_settingsPath, settings.ToJsonString(_writeOptions));
     }
