@@ -428,6 +428,97 @@ public class Given_CdcSetupControllerInitialEnable
         BindingExactMatched(harness).MustHaveHappenedOnceExactly();
     }
 
+    /// <summary>
+    /// A retry over its own connector returns that connector to its running target state. A normal stop
+    /// of the deployment fences every connector it finds, so an enablement interrupted after
+    /// registration comes back to a connector the worker is holding STOPPED - and this sequence does
+    /// not re-create an exact-match connector, so nothing else in it would start one.
+    /// </summary>
+    [Test]
+    public async Task It_resumes_the_connector_it_found_rather_than_leaving_it_fenced()
+    {
+        CdcSetupControllerHarness harness = new()
+        {
+            BindingRead = CdcSetupControllerHarness.Present(CdcSetupControllerHarness.Binding()),
+            BindingListing = CdcSetupControllerHarness.ListedBindings(CdcSetupControllerHarness.Binding()),
+            Eligibility = CdcSetupControllerHarness.Reading(lifecycleStateToken: "Tracking"),
+        };
+
+        CdcAdmission admission = await harness.EnableAsync();
+
+        using var _ = new AssertionScope();
+        admission.AdmissionState.Should().Be(CdcAdmissionState.Admitted);
+        Resumed(harness).MustHaveHappenedOnceExactly();
+
+        // Nothing was replaced to achieve it: the connector the resume applies to is the one this pass
+        // found and validated against the rendered template.
+        Registered(harness).MustNotHaveHappened();
+    }
+
+    /// <summary>
+    /// A connector this pass registered is already running, so the resume is not issued for it. Asking
+    /// anyway would be a request no state of the deployment calls for, on the one path where the
+    /// sequence knows what state the connector is in.
+    /// </summary>
+    [Test]
+    public async Task It_asks_nothing_to_be_resumed_for_a_connector_it_registered_itself()
+    {
+        CdcSetupControllerHarness harness = new();
+
+        CdcAdmission admission = await harness.EnableAsync();
+
+        using var _ = new AssertionScope();
+        admission.AdmissionState.Should().Be(CdcAdmissionState.Admitted);
+        Registered(harness).MustHaveHappenedOnceExactly();
+        Resumed(harness).MustNotHaveHappened();
+    }
+
+    /// <summary>
+    /// A fence the sequence could not lift ends it there, naming the refusal. Left to run on, the
+    /// barrier below would be waited out and then reported unreached, which says nothing about the
+    /// connector that never advanced toward it.
+    /// </summary>
+    [Test]
+    public async Task It_stops_when_the_connector_it_found_could_not_be_resumed()
+    {
+        CdcSetupControllerHarness harness = new()
+        {
+            BindingRead = CdcSetupControllerHarness.Present(CdcSetupControllerHarness.Binding()),
+            BindingListing = CdcSetupControllerHarness.ListedBindings(CdcSetupControllerHarness.Binding()),
+            Eligibility = CdcSetupControllerHarness.Reading(lifecycleStateToken: "Tracking"),
+            Resume = new(CdcConnectOutcome.Unavailable, null),
+        };
+
+        CdcAdmission admission = await harness.EnableAsync();
+
+        using var _ = new AssertionScope();
+        NotAdmitted(admission);
+        admission
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic => diagnostic.Code == "enableConnectorResumeFailed")
+            .Which.Observed.Should()
+            .Be(nameof(CdcConnectOutcome.Unavailable));
+
+        // The refusal is reached before the barrier is captured, which is also what keeps a SQL Server
+        // capture from being attempted against a connector that cannot advance.
+        harness.BarrierCaptureRequests.Should().BeEmpty();
+    }
+
+    private static IReturnValueArgumentValidationConfiguration<Task<CdcConnectResult>> Resumed(
+        CdcSetupControllerHarness harness
+    ) => A.CallTo(() => harness.Connect.ResumeConnectorAsync(A<string>._, A<CancellationToken>._));
+
+    private static IReturnValueArgumentValidationConfiguration<Task<CdcConnectResult>> Registered(
+        CdcSetupControllerHarness harness
+    ) =>
+        A.CallTo(() =>
+            harness.Connect.PutConnectorConfigAsync(
+                A<string>._,
+                A<IReadOnlyDictionary<string, string>>._,
+                A<CancellationToken>._
+            )
+        );
+
     private static void NotAdmitted(CdcAdmission admission) =>
         admission.AdmissionState.Should().NotBe(CdcAdmissionState.Admitted);
 

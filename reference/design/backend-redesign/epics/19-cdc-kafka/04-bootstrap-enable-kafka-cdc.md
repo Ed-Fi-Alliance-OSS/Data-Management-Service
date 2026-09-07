@@ -247,7 +247,14 @@ of its own.
   failure. No live binding record is a first enablement and runs `cdc enable`, carrying the
   provisioning evidence only when the run created the instance database. A live binding record
   plus the operator's explicit resume assertion is the interrupted-enable retry: `cdc enable`
-  again under the generation that record names, then the guarded restart. A live binding record
+  again under the generation that record names, then the guarded restart. The retry does not
+  depend on that restart to reach readiness, and could not: the enablement's own provider
+  barrier is unreachable while the connector the previous stop fenced is stopped, and the
+  guarded restart refuses on anything but healthy continuity, which an enablement that never
+  committed a first offset does not have. The enablement sequence therefore returns a connector
+  it found and exact-matched to its running target state itself, which the owning design's
+  continuity rule already admits: it governs starts and resumes AFTER initial enablement, and a
+  retry that has admitted no writes is still the initial one. A live binding record
   and no such assertion is a normal restart of an already-admitted binding, and it runs
   `cdc restart` ALONE - it can assert no provisioning evidence, and the owning design has a
   post-admission restart exact-match the binding and validate existing artifacts rather than

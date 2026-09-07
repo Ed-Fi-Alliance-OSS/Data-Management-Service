@@ -1477,6 +1477,16 @@ Describe "DMS-1323 bootstrap CDC phase" {
                 if ($invocation -like "*cdc-setup cdc restart *") {
                     $global:LASTEXITCODE = $script:cdcPhaseRestartExitCode
                 }
+
+                if ($invocation -like "*cdc-setup cdc *") {
+                    # The CLI writes the shared JSON contract to stdout, and a mock that emitted
+                    # nothing hid a defect every real run hit: a native command left on the output
+                    # stream emits into its CALLER's output, so the exit code the phase reads came
+                    # back as an array of [JSON, code]. `-ne 0` then filtered that array instead of
+                    # comparing, and a successful enablement threw. Emitted last so the exit code
+                    # above is already set.
+                    return '{"operationId":"00000000-0000-0000-0000-000000000000","outcome":"successful"}'
+                }
             }
         }
 
@@ -1592,6 +1602,21 @@ Describe "DMS-1323 bootstrap CDC phase" {
             $result.Status | Should -Be "Enabled"
             $result.ConnectorResumed | Should -BeFalse
             (Get-PhaseInvocation -Verb "restart").Count | Should -Be 1
+        }
+
+        It "judges a verb by its exit code alone, not by the JSON it prints" {
+            # The CLI prints the shared JSON contract, and a native command left on the output stream
+            # emits into its caller's output: the exit code came back as an array of [JSON, code], on
+            # which `-ne 0` filters rather than compares. A successful enablement threw, and a
+            # successful restart reported `ConnectorResumed` as `0` - which is why the type is
+            # asserted here and not just the value.
+            New-PhaseBindingRecord -BindingStateRoot $script:cdcPhaseStateRoot -Generation 4
+
+            $result = Invoke-PhaseUnderTest -DatabaseCreatedByThisRun $false -ResumeInterruptedEnable
+
+            $result.Status | Should -Be "Enabled"
+            $result.ConnectorResumed | Should -BeOfType [bool]
+            $result.ConnectorResumed | Should -BeTrue
         }
 
         It "holds the operator token only while a run is in flight" {

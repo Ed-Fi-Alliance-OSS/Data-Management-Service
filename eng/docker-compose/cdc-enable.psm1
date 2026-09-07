@@ -1028,6 +1028,13 @@ function Invoke-CdcEnablePhase {
         or on whether it is removed again afterwards. The exit code is RETURNED rather than thrown on,
         because the two callers judge it differently: a failed enable ends the phase, and a declined
         restart does not.
+
+        The command's own output goes to the INFORMATION stream, which is what makes that return
+        value readable. A native command left on the output stream emits into this function's output
+        too, so the caller would receive the CLI's JSON followed by the integer - an array, on which
+        `-ne 0` filters rather than compares and reports a successful run as a failure, and `-eq 0`
+        collapses a successful one to `0`. Nothing may be written to the output stream here but the
+        exit code.
         #>
         [CmdletBinding()]
         [OutputType([int])]
@@ -1049,7 +1056,7 @@ function Invoke-CdcEnablePhase {
         $global:LASTEXITCODE = 0
         [Environment]::SetEnvironmentVariable($script:CdcDmsBearerTokenVariableName, $OperatorToken)
         try {
-            & docker @ComposeArgument
+            & docker @ComposeArgument | Write-Information -InformationAction Continue
         }
         finally {
             [Environment]::SetEnvironmentVariable($script:CdcDmsBearerTokenVariableName, $PreviousToken)

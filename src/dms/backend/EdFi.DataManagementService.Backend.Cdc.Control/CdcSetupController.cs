@@ -882,6 +882,12 @@ internal sealed class CdcSetupController(
             );
         }
 
+        // Captured before the branch below reassigns the read-back, because it decides one thing the
+        // read-back can no longer answer afterwards: whether the connector this pass will validate is
+        // one it created or one it found. A created connector is started by its own registration; a
+        // found one is in whatever target state the worker was left holding it in.
+        bool foundExistingConnector = readBack.Outcome == CdcConnectOutcome.Succeeded;
+
         if (readBack.Outcome == CdcConnectOutcome.NotFound)
         {
             // The worker validates the configuration against the plugin itself before anything is
@@ -950,6 +956,63 @@ internal sealed class CdcSetupController(
         if (evaluation.ConnectorConfig?.ConfigurationState != CdcConnectorConfigurationState.Matched)
         {
             return Evaluate();
+        }
+
+        // A connector this pass FOUND is returned to its running target state, which a connector this
+        // pass registered already reached. Without it an enablement retried over its own fenced
+        // connector cannot finish: STOPPED is a target state the worker persists, this sequence does
+        // not re-create an exact-match connector, and step 8 below waits for that connector to commit
+        // past a barrier a stopped one never advances toward - so the retry times out, reports the
+        // target not ready, and leaves the fence standing for the next retry to time out on again.
+        // A normal stop of a deployment fences every connector it finds, so an enablement interrupted
+        // after registration reaches its retry in exactly that state.
+        //
+        // The resume is issued here, after the configuration was proved to match and after the
+        // provider artifacts, the shared offset store, and the binding's own topics and grants were
+        // proved in step 5 - the same four prerequisites `cdc restart` proves before it resumes
+        // anything. What it does NOT prove is source-history continuity, and that is deliberate:
+        // cdc-streaming.md requires that check before every connector start or resume AFTER initial
+        // enablement, and an enablement that has admitted no writes is still the initial one. It is
+        // also why this may not be delegated to `cdc restart`, which refuses on anything but healthy
+        // continuity - and an interrupted enablement's continuity is Unknown by design, the classifier
+        // withholding a terminal verdict precisely because the connector has not committed its first
+        // offset yet.
+        //
+        // Before the barrier CAPTURE, not merely before the wait: the SQL Server capture declines
+        // outright while the connector cannot advance.
+        if (foundExistingConnector)
+        {
+            // Resuming is asynchronous and does not wait, and the worker treats it as a no-op for a
+            // connector already running - so this asks for the state it needs rather than first
+            // reading which state the connector is in.
+            CdcConnectResult resume = await connectClient
+                .ResumeConnectorAsync(inventory.ConnectorName, cancellationToken)
+                .ConfigureAwait(false);
+            logger.LogDebug(
+                "CDC enablement asked the worker to resume the connector it found already registered: "
+                    + "{Outcome}.",
+                resume.Outcome
+            );
+
+            if (!resume.Succeeded)
+            {
+                // Reported here rather than left to present as a barrier that timed out: a fence this
+                // sequence could not lift is the reason the barrier will not be reached, and only this
+                // step says so.
+                return Blocked(
+                    Step(
+                        "enableConnectorResumeFailed",
+                        CdcDiagnosticCategory.ConnectorNotRunning,
+                        CdcDiagnosticComponent.ConnectorRuntime,
+                        "CDC enablement could not return the connector it found already registered to "
+                            + "its running target state, which the provider barrier below cannot be "
+                            + "reached without.",
+                        resume.Outcome.ToString(),
+                        timeProvider.GetUtcNow()
+                    ),
+                    []
+                );
+            }
         }
 
         // Step 7: the first caught-up observation, read from the running DMS projector.
@@ -2862,9 +2925,14 @@ internal sealed class CdcSetupController(
             "the live physical source fingerprint matches the supplied binding record",
             validated.ObservedSourceFingerprint is null ? "unreadable" : "a different physical source"
         );
+        // The same predicate the enablement sequence applies at step 5 and the restart applies before
+        // it resumes anything: every capture artifact, grant, source table, and heartbeat the
+        // binding's inventory names, found conforming, with evidence that could not be obtained
+        // counting as no match. Adoption reconstitutes the record of artifacts that sequence would
+        // have created, so it may not hold them to a rule of its own.
         Verify(
             CdcAdoptionVerificationKind.ProviderArtifacts,
-            IsProviderSetupExactMatch(providerSetupObservation.ProviderSetup),
+            CdcTargetStatusEvaluator.IsProviderSetupSatisfied(providerSetupObservation.ProviderSetup),
             "the provider capture artifacts and grants match the binding inventory",
             providerSetupObservation.ProviderSetup.SetupOutcome.ToString()
         );
@@ -3142,20 +3210,6 @@ internal sealed class CdcSetupController(
 
         return CdcContractReadResult<CdcAdoptionProof>.Success(proof);
     }
-
-    /// <summary>
-    /// Whether the provider inspection found every capture artifact, grant, source table, and heartbeat
-    /// the binding's inventory names. Evidence that could not be obtained is not a match.
-    /// </summary>
-    private static bool IsProviderSetupExactMatch(CdcProviderSetupObservation observation) =>
-        observation.SetupOutcome == CoreCdc.CdcProviderSetupOutcome.Satisfied
-        && IsSettled(observation.ArtifactInventoryState)
-        && IsSettled(observation.GrantInventoryState)
-        && IsSettled(observation.SourceInventoryState)
-        && IsSettled(observation.HeartbeatState);
-
-    private static bool IsSettled(CdcProviderSetupState state) =>
-        state is CdcProviderSetupState.Matched or CdcProviderSetupState.NotApplicable;
 
     /// <summary>
     /// Whether every governed topic the binding names was found conforming. The schema-history topic is
