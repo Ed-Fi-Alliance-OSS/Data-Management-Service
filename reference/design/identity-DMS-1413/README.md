@@ -29,6 +29,7 @@ It covers:
 - the use of DMS-1462 replace-cardinality plugin contracts;
 - feature-toggle, Discovery, and OpenAPI behavior;
 - service-claim authorization, the authorization-strategy policy, client-to-tenant binding, and tenant/route-qualifier boundaries;
+- explicit provider-owned namespace grants, tenant-wide access only by configured grant, and documented client/permission revocation windows and existing invalidation procedures;
 - request parsing, duplicate-property rejection, async token handling and length limits, validation-error projection, and response mapping;
 - provider lifetime and resolution, async job obligations, and UniqueId issuance constraints;
 - case/order rules for context equality, mandatory job ownership, terminal job failure versus failed polling, and `no-store` on identity operation responses;

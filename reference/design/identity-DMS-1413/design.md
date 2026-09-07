@@ -218,7 +218,7 @@ It is stable across token refresh, unlike the token's `jti`, which makes it usab
 
 `IdentityCapabilities` is deployment-wide in the first contract.
 Its getter must be inexpensive, perform no I/O, and return a stable value across requests and instances of the registration for the configured deployment. An upstream outage does not change capabilities. DMS reads the getter once per request after activation and uses that captured value for the requested-operation gate and the results-capability invariant; configuration changes requiring a different capability set take effect on restart.
-Per-tenant or per-route-qualifier restrictions are enforced by provider methods returning `NotFound` or `InvalidProperties`.
+Per-tenant or per-route-qualifier namespace access is governed by the mandatory provider policy below; unknown or unauthorized namespaces return `NotFound`. `InvalidProperties` diagnoses invalid request data, not missing namespace permission.
 A later context-aware capability method must be added either as a default interface member or in a new interface/package versioning path; adding a required member to the published plugin-implemented interface is a breaking change.
 
 ### Context Equality
@@ -510,6 +510,20 @@ Service-claim authorization depends on `IClaimSetProvider.GetAllClaimSets(tenant
 That defect is pre-existing and is not identity's to carry, but identity adds a caller to the affected path, so its correction is a named prerequisite rather than an open follow-up.
 See [Prerequisites](#prerequisites).
 
+### Revocation and Cache Visibility
+
+Identity does not promise immediate client or permission revocation. `CacheSettings.ApplicationContextCacheExpirationSeconds` and `CacheSettings.ClaimSetsCacheExpirationSeconds` both default to 600 seconds, independently of the 60-second identity tenant snapshot. Deleting a client in CMS can leave a previously cached successful binding usable by an already-issued token until that application entry expires or is invalidated. Removing an identity action from a claim set can leave the old permission usable until that tenant's claim-set entry expires or is invalidated. Token expiry, including configured JWT clock skew, can reject a request sooner. These are remaining cache lifetimes, not two sequential ten-minute delays, and the tenant snapshot TTL is not a revocation bound.
+
+The effective window depends on which fact changed, when each replica last fetched it, in-flight fills, and the token's claims/lifetime. Changing the application's assigned claim-set name does not rewrite the `scope` in an already-issued token; cache invalidation alone does not replace that token-carried claim. Provider namespace-grant caches have their own documented visibility window. Do not publish a universal ten-minute revocation guarantee for all configuration changes or describe credential reset as invalidating already-issued JWTs. Requests/jobs already accepted are not cancelled by a subsequent configuration change; later requests and polls reevaluate the applicable host and provider checks.
+
+The operator guidance uses existing mechanisms:
+
+- For claim-set content changes, when `AppSettings:EnableClaimsetReload` is enabled, call `POST /management/{tenant}/reload-claimsets` (multitenant) or `POST /management/reload-claimsets` (single-tenant) on each serving replica and verify success. The cached claim graph is process-local; one load-balanced call is not cluster-wide invalidation. This does not clear application contexts or change token claims.
+- Application-context reload is currently an internal provider method, not an operator HTTP endpoint. With the repository's default in-process cache configuration, draining requests/fills and restarting each serving replica clears its application cache; otherwise wait for expiry. A deployment adding a distributed cache must also invalidate its relevant entries and local copies; a process restart alone must not be represented as sufficient for that configuration. This epic adds no cache-administration API.
+- If access must stop before those windows elapse, the operator must stop the affected traffic at its deployment access boundary while changing CMS/provider policy and refreshing or restarting affected replicas. Drain in-flight fills before treating a purge/reload as complete, and verify denial using the original token on each serving replica before resuming traffic. A restart still requires normal host startup prerequisites to succeed.
+
+Story 02 tests warmed caches with real CMS client deletion and claim-action removal separately, using a still-valid original token: prior cached access may continue, expiry/invalidation observes the change, and denied requests/polls never invoke the identity operation. Use a controlled clock for expiry tests and verify replica-local reload behavior rather than assuming one invalidation clears every process. Claim-set reassignment is tested/documented separately from editing the contents of the token-named claim set.
+
 ## Tenant and Route-Qualifier Boundary
 
 `TenantValidationMiddleware` remains responsible for tenant presence and syntax.
@@ -573,7 +587,17 @@ An identity-only client with no authorized datastore can call identity endpoints
 
 Configured route qualifiers are still extracted by the fixed route pattern and passed to the provider as `IdentityRequestContext.RouteQualifiers`.
 DMS does not match them against authorized datastore instances.
-The provider owns contextual refusal for an unknown tenant/qualifier combination and may return `NotFound`.
+The provider must enforce namespace authorization as specified below; tenant binding and a valid qualifier value alone do not grant access to the selected registry.
+
+### Namespace Authorization
+
+v1 requires an explicit provider-owned namespace access policy, enforced for the authenticated `ClientId` on every operation, including create/get/find/search and results polling. Host tenant binding and service-claim authorization remain necessary but are not sufficient. Resolve the namespace and check the grant before reading identities, searching, issuing an id, or accepting a job; checking ownership only when a token is polled does not protect new requests in another namespace.
+
+The provider documents its policy source (for example deployment-managed client/namespace grants or an upstream authorization service), how grants are administered, which operations they permit, cache/invalidation behavior, and the context equality rules used. No matching grant means deny; a valid but unauthorized namespace and an unknown namespace both return provider `NotFound`, mapped to identity-not-found `404`, without performing identity work or exposing namespace/person details. An unavailable policy source must not become an implicit grant: the operation throws and DMS returns sanitized upstream-failure `502` when authorization cannot be established. Cached grants remain subject to their documented lifetime; they are not an immediate-revocation guarantee.
+
+A deployment that intentionally permits tenant-wide identity access can express an explicit grant for all clients in that tenant that have already passed the relevant host service-action check. That broad grant must be configured and documented; it cannot be inferred from the existence of the tenant/registry or the absence of client-specific rules. This permits both independent district registries with restricted access and deliberate tenant-wide access without a new DMS authorization engine, datastore dependency, public contract member, or discovery mode. Even a broad namespace grant never permits redeeming another client's async job.
+
+The fixture policy grants client A access to district A and client B access to district B within the same tenant, with both clients authorized by the host for identity Create/Read. New get/find/search/create requests from A to the valid district B must be refused before lookup, issuance, or job creation; A's own namespace succeeds. Results require both a current namespace grant and matching job ownership, so revoking a grant also blocks polling previously owned jobs once that policy change is visible. Test policy-source failure and an explicitly configured tenant-wide grant as well as missing grants; use valid host-authorized contexts so these tests reach provider authorization.
 
 ### Cancellation Through Configuration Service Lookups
 
@@ -583,7 +607,7 @@ Application-context cache fills use the cache's coordinated fill token for upstr
 
 Apply the same caller-wait rule to identity service-claim retrieval: story 02 adds cancellation parameters through `IClaimSetProvider`, `IConfigurationServiceClaimSetProvider`, their cache and CMS implementations, including lock waits, token acquisition, and HTTP reads. Retain story 00's per-request headers. If a shared claim fill continues for other callers, the aborted identity request stops awaiting it. Check request cancellation before resolving/calling the identity provider, including after cache hits. Any fill that outlives a caller uses dependencies independent of that caller's request scope. These are internal DMS changes required by the new path, not a rewrite of existing fixed-service facades.
 
-Tests block CMS separately at token acquisition, tenant retrieval, application lookup, and claim retrieval, cancel `HttpContext.RequestAborted`, and assert prompt cancellation with no identity provider invocation and no synthetic `401`, `404`, `503`, or `502`. Paired waiters prove the remaining caller can still finish. Live-caller transport failures retain each lookup's documented failure behavior.
+Tests block CMS separately at token acquisition, tenant retrieval, application lookup, and claim retrieval, cancel `HttpContext.RequestAborted`, and assert prompt cancellation with no identity provider invocation and no synthetic `401`, `404`, `503`, or `502`. Paired waiters prove the remaining caller can still finish. Live-caller transport failures retain each lookup's documented failure behavior. Because these providers are shared, story 02 also covers existing resource/fixed-route callers with identity disabled, preserving tenant-specific cache keys, header isolation, failure classification, and normal successful behavior. Story refinement may separate those implementation changes into prerequisite PRs without changing this design's ownership or delivery dependencies.
 
 ## Pipeline
 
@@ -783,7 +807,7 @@ The consequence for create is that a lost response is a client-visible hazard th
 If the upstream system issues a UniqueId and the response to DMS is lost, the client sees `502` and a retry may issue a second id for the same person.
 `TraceId` is per-request and is not an idempotency key, so it cannot be used to deduplicate the retry.
 
-The contract does not add an idempotency key in v1.
+The contract does not add an idempotency key in v1. This is an accepted release limitation: advertising `Create` does not require a search capability, authoritative recovery endpoint, or upstream deduplication. A create-only provider is conforming when it documents its operator reconciliation procedure; the fixture recovery example is not a portable retry guarantee.
 Instead, a provider must document how its integration behaves on a repeated create for the same identifying data: either that creation is idempotent on some upstream key, or that duplicate issuance is possible and how the duplicates are reconciled.
 An implementer whose upstream system offers no such guarantee must say so, because a client cannot otherwise know whether retrying a failed create is safe.
 
@@ -802,6 +826,7 @@ Story 03 demonstrates a fixture create that records an issuance and then throws 
 | Feature disabled | no | route `404` through fallback |
 | Missing/invalid token | no | `401` |
 | Invalid tenant syntax | no | `400` |
+| Global rate limiter rejects a mapped identity operation | no | existing host `429` problem, `Retry-After` when supplied by the limiter, and `Cache-Control: no-store` |
 | Nonexistent tenant with valid token | no | `404` before claim-set lookup |
 | Tenant existence unanswerable because Configuration Service is unavailable | no | `503` service-unavailable problem, not tenant `404` |
 | Valid token whose client does not belong to the URL tenant | no | `401` before claim-set lookup |
@@ -824,6 +849,8 @@ Story 03 demonstrates a fixture create that records an issuance and then throws 
 | Results `JobFailed` | yes | `502` with `urn:ed-fi:api:identities:job-failed`, fixed sanitized terminal problem, no `Location` |
 | `JobFailed` from any operation except results | yes | `502` with `urn:ed-fi:api:identities:provider-contract-violation` |
 | Any operation `InvalidProperties` | yes | `400`, provider errors projected, payload ignored |
+| Namespace grant missing/denied or namespace unknown | authorization only; no identity work | provider `NotFound` mapped to identity-not-found `404` |
+| Namespace policy cannot be evaluated | authorization only; no identity work | sanitized identity-upstream-failure `502` |
 | Provider `NotFound` for get-by-id subject miss, results token miss, or provider-owned context refusal | yes | `404` with `urn:ed-fi:api:identities:not-found` |
 | `Success` or `Incomplete` missing required payload | yes | `502` with `urn:ed-fi:api:identities:provider-contract-violation` |
 | Find/Search `Success` with both payload and token, or neither | yes | `502` with `urn:ed-fi:api:identities:provider-contract-violation` |
@@ -842,7 +869,9 @@ The upstream-failure problem title identifies Identity Management as the failing
 
 ### HTTP Response Caching
 
-Every host-generated response for an enabled, mapped identity operation carries `Cache-Control: no-store`, including pending/complete polls, `202`, no-match results, and error responses such as authentication/authorization failures, tenant/identity/operation-not-supported `404`s, and provider failures. Install this frontend policy before body extraction and Core execution, and ensure it applies when later error handling replaces the response. A final response-header callback can enforce it without adding payload inspection. HTTP tests assert the header on successful, early-rejected, and exception-mapped responses, including repeated polls.
+Every host-generated response for an enabled, mapped identity operation carries `Cache-Control: no-store`, including pending/complete polls, `202`, no-match results, and error responses such as authentication/authorization failures, tenant/identity/operation-not-supported `404`s, rate-limit `429`s, and provider failures. Install endpoint-aware frontend enforcement immediately after `UseRouting()` and before `UseRateLimiter()` and endpoint execution, registering a final response-header callback for the mapped identity endpoints. An endpoint handler/filter is too late: the global limiter can short-circuit before body extraction and Core execution. Preserve the header when downstream error handling replaces the response. HTTP tests exhaust the actual configured limiter and assert `429`, `no-store`, the existing rate-limit problem shape, and `Retry-After` when available, with no identity provider invocation. Other tests cover successful, early-rejected, and exception-mapped responses, including repeated polls.
+
+OpenAPI declares the existing host `429` response and optional `Retry-After` header on all five operations, together with `Cache-Control: no-store`; include these in the wire baseline. This changes neither rate-limit configuration/partitioning nor the host's existing rejection response shape.
 
 The policy covers the five operation endpoints, not identity metadata/Discovery, unrelated routes, disabled-feature fallback responses, or requests rejected by the HTTP server before reaching the application. It follows the response directive in [RFC 9111 section 5.2.2.5](https://www.rfc-editor.org/rfc/rfc9111.html#section-5.2.2.5). It prevents compliant private and shared HTTP caches from storing/reusing these responses; it does not delete copies retained by client applications or guarantee that already delivered results disappear when provider retention expires. Provider retention continues to describe server-side job retrievability.
 
@@ -993,7 +1022,7 @@ Unit tests:
 Integration tests:
 
 - disabled routes and disabled metadata absent;
-- `Cache-Control: no-store` on all mapped identity operation responses, including early authentication/validation/capability failures, success/pending/complete polls, `404`, terminal failure, and mapped exceptions; unrelated routes and metadata are not changed;
+- `Cache-Control: no-store` on all mapped identity operation responses, including actual global-rate-limiter `429` rejection before endpoint execution, early authentication/validation/capability failures, success/pending/complete polls, `404`, terminal failure, and mapped exceptions; unrelated routes and metadata are not changed;
 - enabled without plugin starts and returns operation-unsupported `404`;
 - real HTTP routing for `identities/results` and `identities/results/{token}`;
 - async `Location` followed by polling returns the original token to provider;
@@ -1004,6 +1033,7 @@ Integration tests:
 - multitenant route context with tenant existence and route qualifiers;
 - provider-contract-violation and identity-upstream-failure `502` cases have distinct problem-detail types;
 - a two-tenant deployment with identically named claim sets rejects tenant A's token on tenant B's identity routes through the real pipeline;
+- warmed application/claim caches expose client deletion and claim-action removal only after the applicable expiry/invalidation, tested with the original still-valid token; verify replica-local reload and distinguish changes to token-carried claim-set assignment;
 - a Configuration Service outage during tenant existence and during client-to-tenant binding is classified as `503`, distinct from tenant `404`;
 - after successful host startup, introduce an unloadable or undecryptable datastore configuration and expire the identity tenant snapshot; identity still succeeds with available tenant/application/claim metadata, without datastore reload;
 - block CMS token, tenant, application, and claim retrieval in separate tests, abort the request, and prove no identity provider invocation or synthetic error response while other waiters can finish;
@@ -1013,6 +1043,7 @@ E2E tests:
 
 - fixture plugin loaded through the plugin infrastructure once DMS-1499 exists;
 - full create, get-by-id, find, search, and results flows;
+- within one tenant, valid district namespaces have explicit client grants: unauthorized new get/find/search/create requests perform no identity work; missing grants fail closed, policy-source failure returns `502`, and a configured tenant-wide grant still enforces job ownership;
 - synchronous find/search fixture payloads are complete; pending work yields a token;
 - transient poll failure preserves the same job for successful retry; terminal job failure has its own stable problem type while retained/accessible, applies ownership checks, and becomes `NotFound` after expiry;
 - case/order-equivalent contexts retrieve the same namespace/job, while different client IDs and non-equivalent contexts cannot redeem it;
