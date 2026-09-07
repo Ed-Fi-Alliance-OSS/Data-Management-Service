@@ -169,7 +169,9 @@ the retirement may proceed.
 Select the retained generation explicitly with `--generation`, and use the same
 `--cdc-binding-state-path` as setup. A binding record spells the default tenant `default`;
 translate it to `--tenant-key ''` (or omit that option) for the CLI. Literal
-`--tenant-key default` selects a different tenant.
+`--tenant-key default` is rejected case-insensitively by every CDC verb before dispatch,
+with argument-error exit code `64`. The token is reserved for binding records; a named
+tenant called `default` is unsupported by the CDC CLI.
 
 `--confirm cdcBindingRetirement` authorizes destructive removal of that generation.
 `--connector-already-absent` is a separate operator judgement for a connector never

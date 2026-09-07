@@ -24,6 +24,7 @@ No executable documentation catalog or automated documentation/link tests are us
 
 | Runbook anchor / review | Design owner / invariants | Exact identity and layer | Result / artifact | Remaining owner |
 | --- | --- | --- | --- | --- |
+| [Default-tenant translation](operations-runbook.md#incident-command-context); T21 | [Binding identity](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding); CDC-INV-14/15 authoring support | Manual review `T21-default-tenant`; CLI validator, parser cases, argument-error mapping, configuration catalog | Corrected CLI reference to reserved-token rejection; [reviewed revision and findings](#t21-default-tenant-review) | No new parser behavior or live result claimed |
 | [Credentials and isolation](operations-runbook.md#cdc-security); T18 | [Security](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#security-telemetry-and-operations); CDC-INV-15 authoring support | Manual review `T18-consumer-group`; options class, blank-group validator, configuration catalog | Corrected consumer group key; [reviewed revision and findings](#t18-consumer-group-review) | No live isolation or provider result claimed |
 | [Retirement](operations-runbook.md#retire-binding-generation); T20 CI selection | [Binding lifecycle](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding); CDC-INV-14/15, supporting CDC-INV-11 | Existing `Category=CdcControlBrokerBacked`: 21 `Given_CdcControlBrokerBackedStack` cases and three `Given_CdcControlRetirementOperator` scenarios; real PostgreSQL/Kafka/Connect/filesystem | 24 executed/passed, 0 failed/skipped; [commands, exact results, fixture corrections and reviewed revision](evidence/t20/README.md) | Local reproduction of the existing CI selection; deployment/API/purge evidence remains separate |
 | [SQL Server setup](operations-runbook.md#local-sqlserver), [status handoff](operations-runbook.md#local-setup-verification), [restart](operations-runbook.md#local-stop-restart); T15 prerequisite review | [Local bootstrap](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#local-bootstrap-and-ci); CDC-INV-14/15 | `T15-sqlserver-prerequisites`; manual source inspection only | E19-04 poll-interval container input fixed; blocked on the E19-06 API harness; [trace and disposition](#t15-sqlserver-prerequisite-review). No live exercise or test result | E19-06 harness; then T15 replay and T16 reconciliation |
@@ -57,6 +58,36 @@ No executable documentation catalog or automated documentation/link tests are us
 | [Retention/capacity](operations-runbook.md#retention-and-capacity), [consumer continuity](operations-runbook.md#consumer-continuity), [record increase](operations-runbook.md#increase-record-size), [overhead](operations-runbook.md#pipeline-overhead); T08 | [Operations](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#security-telemetry-and-operations), [topic/record contract](../design/backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md); CDC-INV-14/15 authoring, CDC-INV-07/11 support | Manual review `T08-capacity`; source and sibling assertions, native metadata/tool reference review | Reviewed; [findings and pending observations](#t08-capacity-review) | T14/T15 live inspection; independent consumer/platform qualification; T16 closure |
 | [Policy and size inspection](operations-runbook.md#increase-record-size); T08 behavior reuse | [Record size](../design/backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#record-size), [offset store](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#kafka-connect-offset-store); CDC-INV-07/11/15 support | `Given_CdcKafkaRecordSize`, `Given_CdcKafkaTopicPolicy`, `Given_CdcKafkaOffsetStore`, `Given_CdcKafkaSchemaHistory`; fake Kafka admin/record readers | 82 passed / 0 failed / 0 skipped; [exact identities](evidence/t08/policy-results.txt) | No live provider, broker or consumer capacity claim; T14/T15/T16 |
 | [CDC operator entry point](README.md), setup/discovery links; T09 | [Documentation disposition](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#documentation-audit-and-disposition); CDC-INV-14/15 authoring support | Manual review `T09-discovery`; shipped wrappers, CI lane configuration, source, existing help and evidence | Reviewed; [audit and corrections](#t09-discovery-review); no new test execution or live result | T13/T17 assertions; T14/T15 replay; T16 final reconciliation |
+
+<a id="t21-default-tenant-review"></a>
+## T21 default-tenant CLI reference correction
+
+Reviewed 2026-09-06 from the repository root against revision
+`c3c76efe3c7602cba8d8fdfa8029ebbe2c6a6e65` plus this documentation correction.
+Manually compared the tenant paragraph in the
+[CLI reference](../../src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin/README.md)
+with `ValidateCdcCommandOptions` in
+[DocumentCacheAdminCommandSurface.cs](../../src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin/DocumentCacheAdminCommandSurface.cs)
+and the existing `Given_CdcTenantKey` cases in
+[Given_DocumentCacheAdminCdcCommandSurface.cs](../../src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit/Given_DocumentCacheAdminCdcCommandSurface.cs).
+Every CDC verb registers the validator; its ordinal case-insensitive comparison rejects
+the reserved binding token. The cases cover omitted/empty tenant keys, an ordinary named
+tenant, and rejection of `default`, `DEFAULT`, and `Default` for every verb.
+
+Confirmed the parse-error return in
+[Program.cs](../../src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin/Program.cs)
+and `ArgumentError = 64` in
+[DocumentCacheAdminExitCodes.cs](../../src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin/DocumentCacheAdminExitCodes.cs),
+consistent with the existing [T13 reserved-token capture](evidence/t13/cdc-tenant-default.json).
+Corrected the claim that the literal token selects another tenant: all CDC verbs reject
+it before dispatch with exit `64`. Retained omitted/empty selection of the default tenant
+and stated that a named tenant called `default` is unsupported. Manually compared with the
+[configuration catalog](../../docs/CONFIGURATION.md#cdc-configuration-sources-and-targets)
+and [runbook translation guidance](operations-runbook.md#incident-command-context).
+
+Manual source/catalog/diff and linked-anchor review completed; `git diff --check`
+passed. No parser behavior changed and no automated documentation assertions, builds,
+tests, or live operations were needed or run for this prose-only correction.
 
 <a id="t18-consumer-group-review"></a>
 ## T18 consumer group configuration correction
