@@ -586,8 +586,9 @@ into core.
 
 Bootstrap mode provisions the relational DMS schema only. Relational DMS
 CDC/Kafka connector registration is a separate, explicit opt-in: `-EnableKafkaCdc`
-on `bootstrap-local-dms.ps1` (or `start-local-dms.ps1`) adds it, and without that
-switch bootstrap startup registers no DMS source connectors. The opt-in keeps
+on `bootstrap-local-dms.ps1` adds it after fresh provisioning;
+`start-local-dms.ps1` alone prepares infrastructure. Without the switch, bootstrap startup
+registers no DMS source connectors. The opt-in keeps
 immutable deployment-owned binding records under a separate persistent `.cdc-state`
 root (or an explicit `-CdcBindingStatePath`) and never stores them in the bootstrap
 manifest. Runtime DMS receives only explicit `DocumentCache:Targets` and exposes
@@ -949,115 +950,48 @@ consumers, and nothing in a default local stack starts or registers it.
 DMS E2E `setup-local-dms.ps1` wrapper all accept it, and it works on either database engine
 (`-DatabaseEngine postgresql`, the default, or `-DatabaseEngine mssql`).
 
-Prerequisites:
+`start-local-dms.ps1 -EnableKafkaCdc` prepares infrastructure; initial registration runs
+through `bootstrap-local-dms.ps1` or the DMS E2E setup wrapper after provisioning a fresh
+database. `start-published-dms.ps1` does not accept `-EnableKafkaCdc`. Kafka UI starts
+infrastructure without enabling a source.
 
-* `DMS_CDC_CONNECT_IMAGE` must name the Ed-Fi Kafka Connect image by immutable digest
-  (`edfialliance/ed-fi-kafka-connect@sha256:<digest>`). The run fails before anything starts
-  when it is unset or names a tag; a moving tag would make a registered connector's runtime
-  unreproducible. The non-CDC Kafka/Kafka-UI path keeps `kafka.yml`'s tag default.
-* The self-contained identity provider. Only its setup registers the DocumentCache CDC
-  operator client whose token carries the status-endpoint role.
-* Exactly one data store, created by this run, with no route qualifier — a CDC binding covers
-  exactly one instance database.
+Use the [CDC operations runbook](../../reference/cdc-documentation/operations-runbook.md)
+for the complete procedures:
 
-```pwsh
-# Turnkey: bootstrap a local stack with CDC enabled end to end
-./bootstrap-local-dms.ps1 -EnableKafkaCdc
+* [Prerequisites](../../reference/cdc-documentation/operations-runbook.md#prerequisites)
+  and [fresh provider setup](../../reference/cdc-documentation/operations-runbook.md#local-setup):
+  qualified Ed-Fi Connect image digest, self-contained local identity, one unqualified
+  data store, explicit projection target, and initial enablement before canonical writes.
+  The wrapper's digest-format check alone does not qualify an image.
+* [State and network handoff](../../reference/cdc-documentation/operations-runbook.md#local-setup-verification):
+  keep the same binding-state root, effective environment, and target for the one-shot
+  control-plane container and later operations. Keep binding, incident, and retirement
+  records and backups outside bootstrap workspaces; preserve retirement history after cleanup.
+* [Planned stop and guarded restart](../../reference/cdc-documentation/operations-runbook.md#local-stop-restart):
+  verify the persisted connector fence before restarting its worker. The stop wrapper can
+  warn and continue when fencing fails; worker startup alone can resume a running connector.
+* [Continuity](../../reference/cdc-documentation/operations-runbook.md#continuity-incident)
+  and [missing-state adoption](../../reference/cdc-documentation/operations-runbook.md#adopt-missing-binding):
+  select the existing generation and evidence. Re-running E2E setup recreates databases;
+  it is not an enable retry or a restart.
+* [Guarded retirement](../../reference/cdc-documentation/operations-runbook.md#retire-binding-generation)
+  and [disposable cleanup](../../reference/cdc-documentation/operations-runbook.md#local-cleanup):
+  retire against the still-running source, broker, and Connect worker, then remove the
+  disposable stack. Deleting the state directory is not retirement or a generation reset.
+  The shipped `-AbandonCdcBindingState` escape hatch permits volume removal without
+  successful retirement; it supplies no cleanup proof or downstream-history clearance.
+* [CDC status](../../reference/cdc-documentation/operations-runbook.md#observe-cdc) and
+  [lag observations](../../reference/cdc-documentation/operations-runbook.md#inspect-lag):
+  inspect outcome and component evidence separately from the exit code. Status can latch
+  proved history loss and attempt containment.
 
-# The same on SQL Server
-./bootstrap-local-dms.ps1 -EnableKafkaCdc -DatabaseEngine mssql
-
-# Infrastructure only: starts Kafka and Kafka Connect, configures no projection
-# target, and enables CDC on no data store
-./start-local-dms.ps1 -EnableKafkaCdc
-```
-
-The bootstrap wrapper's CDC phase runs in this order:
-
-1. the infrastructure phase starts Kafka, pre-creates the shared Kafka Connect offset store
-   with `cleanup.policy=compact` and an explicit topic-level `min.insync.replicas`, then
-   starts Kafka Connect and registers the DocumentCache CDC operator client. The order
-   matters: a Connect worker that reaches the broker first creates that topic itself and
-   leaves `min.insync.replicas` to the broker default, and the control plane validates the
-   store rather than repairing it, so every `cdc` verb would refuse against it;
-2. the DocumentCache projection target for the configured data store and the status
-   endpoint's required role are written into this run's environment — before DMS starts,
-   because DMS reads both at startup;
-3. DMS starts, and the phase waits for health and proves the status endpoint answers for the
-   operator credential (a 404 means the role never reached the container, a 403 that the
-   token does not carry it);
-4. `dms-document-cache cdc enable` runs as a one-shot container on the `dms` network, which
-   provisions the provider capture artifacts, the governed topics and ACLs, and the
-   connector, and then collects the readiness evidence. It runs on the network rather than on
-   the host because the instance database is registered in the Configuration Service under
-   its container alias and the broker advertises a container-internal listener.
-
-The durable binding state store defaults to `eng/docker-compose/.cdc-state` (Git-ignored) and
-can be moved with `-CdcBindingStatePath`. It holds one immutable binding record per
-generation and is deliberately outside the `.bootstrap/` workspace: a binding record outlives
-any one bootstrap run and lives at least as long as every artifact it governs.
-
-The generation is allocated from that store, not fixed at 1: the enable phase takes one past
-the highest generation the store has ever held for the target, counting retirement records as
-well as live bindings. So a second local cycle — enable, `-d -v`, enable again — binds
-generation 2 and publishes under its own connector, topics, and consumer state. The governed
-names carry the generation, so the public topic moves from
-`edfi.dms.instance.<instanceKey>-g1.documents.v1` to `-g2`; a consumer pinned to the old name
-sees no new records. Delete the store to start over from generation 1.
-
-An enable that wrote its binding record and then failed — during guarded activation, Kafka
-setup, connector registration, or readiness — is completed by rerunning bootstrap with
-`-ResumeInterruptedCdcEnable`, which reuses the generation that record names and asserts the
-initial-provisioning evidence the control plane requires. The switch is explicit because the
-record cannot supply that evidence: it is written before the artifacts it governs exist and is
-removed only by retirement, so it also survives a *completed* enablement and every write
-admitted afterwards. Without it a plain rerun over an already-enabled target asserts nothing
-and is refused, which is the correct outcome. It is refused too when the store holds no live
-binding record to resume.
-
-Teardown is where the distinction matters:
-
-* `./start-local-dms.ps1 -d` (or `./bootstrap-local-dms.ps1 -d`) stops the stack and
-  **retains** the binding record, the connector, its committed offsets, the governed topics
-  and ACLs, and the provider capture artifacts. It first stops the connector, leaving it
-  fenced. Kafka Connect keeps each connector's target state in a topic on the broker volume
-  this stop retains, and a worker starts every connector it finds at a running target state
-  as soon as it comes back — before anything can check that the source history needed to
-  resume from the committed offset still exists, which is a check that must happen before a
-  connector starts, never after. The fence is what holds that start open; the next
-  `-EnableKafkaCdc` run lifts it with `cdc restart`, which resumes only against affirmative
-  continuity evidence. The fence is applied whether or not the run being stopped asked for
-  CDC, because the worker starts on any Kafka opt-in.
-* `./start-local-dms.ps1 -d -v` retires the binding first and then removes the volumes: it
-  stops the connector, deletes its committed offsets while it is stopped, deletes the
-  connector, then the governed topics and ACLs and the provider capture artifacts, and
-  deletes the binding record last. Retirement runs against the still-running stack, so tear
-  down before stopping the containers another way. A connector the worker no longer holds does
-  not block it: this teardown asserts `--connector-already-absent`, because the same pass
-  removes the broker along with the committed offsets that assertion covers.
-
-A binding that could not be retired **fails the teardown before the volumes are removed**, and
-the stack is left running. That is deliberate: the binding record survives `down -v` while the
-connector, offsets, topics, and capture artifacts it names would not, which is the one state the
-cleanup rule forbids and which destroys everything a retirement retry would have to act on. A
-file under the store that cannot be read as a binding record stops the teardown the same way,
-because an unreadable record may still name live artifacts.
-
-Retire the binding against the still-running stack with `dms-document-cache cdc retire`, then
-tear down again. If the state must be abandoned instead — the artifacts are already gone, or the
-stack it was bound to no longer exists — say so explicitly with
-`./start-local-dms.ps1 -d -v -AbandonCdcBindingState` (also accepted by
-`./bootstrap-local-dms.ps1 -d -v`), which reports what it could not retire and removes the
-volumes anyway. Deleting the binding state store (`.cdc-state` by default) is the equivalent by
-hand.
-
-For E2E, `setup-local-dms.ps1 -EnableKafkaCdc` registers capture against the fresh E2E
-database that setup provisions, before the suite issues any write, and the matching
-`teardown-local-dms.ps1` retires it.
-
-Connector lag comes from Debezium's `MilliSecondsBehindSource` metrics over the Kafka Connect
-Jolokia bridge on port 8778, published on loopback. `dms-document-cache cdc status` reports
-combined CDC readiness for one binding, and the Kafka UI (`-EnableKafkaUI`) shows the topics.
+The [CLI reference](../../src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin/README.md)
+owns syntax, confirmations, and exit codes; the
+[configuration catalog](../../docs/CONFIGURATION.md#datamanagementdocumentcachecdc)
+owns settings, defaults, credentials, and state-path precedence. The
+[CDC evidence index](../../reference/cdc-documentation/cdc-inv-evidence.md) separates
+reviewed procedures and fixture results from pending live provider replays and the unmet
+E19-06 API-to-Kafka smoke dependency.
 
 ## Accessing Swagger UI
 

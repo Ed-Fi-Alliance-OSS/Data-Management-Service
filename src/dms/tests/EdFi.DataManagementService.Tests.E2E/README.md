@@ -28,7 +28,8 @@ rebuild those images first.
 The suite is engine-aware. `-DatabaseEngine` defaults to `postgresql`; pass `mssql` to run the
 same public entry point against SQL Server. The `-DatabaseEngine mssql` value composes the
 `eng/docker-compose/.env.mssql` overlay onto `-EnvironmentFile` and swaps `mssql.yml` for
-`postgresql.yml`; the SQL Server stack is relational-only (no Kafka / OpenSearch).
+`postgresql.yml`. The API test invocations below do not enable CDC. SQL Server and
+PostgreSQL both support the separate CDC opt-in described under [CDC support](#cdc-support).
 
 ### PostgreSQL (default engine)
 
@@ -69,9 +70,9 @@ Any run can be narrowed with `-TestFilter 'Category=@<tag>'`. Common tags:
 | `Category=@DocumentCacheHostedHappyPath` | The hosted DocumentCache fixture; run only with `-EnvironmentOverlayFile './.env.document-cache.e2e'`. |
 
 ```pwsh
-# Data Standard 6.1 focused run (add -DataStandardVersion 6.1). The DS 6.1 PostgreSQL lane
-# also needs a Kafka host entry (see the CI workflow); the MSSQL DS 6.1 stack is relational-only
-# and needs none.
+# Data Standard 6.1 focused run (add -DataStandardVersion 6.1). The PostgreSQL DS 6.1
+# CI lane configures a Kafka host entry (see the workflow); the MSSQL DS 6.1 lane omits it.
+# These lane settings do not qualify CDC publication on either provider.
 
 # PostgreSQL, DS 6.1:
 pwsh ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -DataStandardVersion 6.1 -TestFilter 'Category=@StandardVersion-6_1'
@@ -106,6 +107,22 @@ To debug the API while running the tests, change `ApiUrl` in `SearchContainerSet
 > [!WARNING]
 > Your database tables are truncated after each feature file runs. Double-check your
 > `DatabaseConnection` in `appsettings.json` and be aware of this before you run the tests.
+
+## CDC support
+
+The local `setup-local-dms.ps1 -EnableKafkaCdc` wrapper supports both database engines
+using the self-contained identity provider and a freshly provisioned, unqualified data
+store. Follow the [CDC provider exercises](../../../../reference/cdc-documentation/operations-runbook.md#local-setup)
+for the qualified image, effective environment, projection target, durable binding state,
+and setup/status/stop/retirement sequence. This switch belongs to the setup wrapper;
+the `build-dms.ps1 E2ETest` examples above are ordinary API lanes.
+
+The [API-to-Kafka smoke handoff](../../../../reference/cdc-documentation/operations-runbook.md#local-api-smoke)
+remains unmet pending the E19-06 provisioned-database and consumer helpers. Connector
+registration is shipped; an API-only test pass does not supply that streaming evidence.
+See the [CDC evidence index](../../../../reference/cdc-documentation/cdc-inv-evidence.md)
+for fixture coverage and pending live provider exercises. Removed legacy KafkaMessaging,
+shared-topic, and OpenSearch tests are not relational CDC setup instructions.
 
 ## Local and CI support matrix
 

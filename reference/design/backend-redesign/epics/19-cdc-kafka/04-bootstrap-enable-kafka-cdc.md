@@ -144,8 +144,8 @@ controller, its adapters, and the entry points that invoke them.
   second is worth reissuing.
 
 How operators are told to use this surface — procedures, worked examples, and the judgements
-each confirmation token puts on them — belongs to
-reference/design/backend-redesign/epics/19-cdc-kafka/07-ops-docs-runbooks.md rather than here.
+each confirmation token puts on them — is in the
+[CDC operations runbook](../../../../cdc-documentation/operations-runbook.md).
 
 ### Explicit Projection Target Evidence
 
@@ -199,8 +199,8 @@ The removal order, the offsets-before-configuration rule, the read-back that pro
 and what an absent connector does to a retirement are owned by
 reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding.
 Operator guidance for the confirmation token, `--connector-already-absent`, and reading a
-binding record's tenant token back into a verb's `--tenant-key` belongs to
-reference/design/backend-redesign/epics/19-cdc-kafka/07-ops-docs-runbooks.md.
+binding record's tenant token back into a verb's `--tenant-key` is in the
+[guarded retirement procedure](../../../../cdc-documentation/operations-runbook.md#retire-binding-generation).
 
 This story owns how the controller spends its budgets and classifies its steps. Every provider
 pass runs under the configured provider-setup budget — the create pass, the validate-only pass

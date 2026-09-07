@@ -60,7 +60,21 @@ DocumentCache or CDC/Kafka content, not to unrelated material in the same artifa
 | [`multitenancy-analysis.md`](../../../multitenancy-analysis.md) | Stale-but-useful | Its database-engine constraints and topic-per-instance isolation guidance were incorporated here. Its OpenSearch material is historical and is not part of the relational CDC design. |
 | Deleted `remove-legacy-backend.md` | Historical | Records the completed removal of the document-store backend and its Kafka test path. It remains useful only as Git history and defines no active contract. |
 | Legacy document-store connector configurations and KafkaMessaging setup/test instructions | Obsolete | Targeted removed JSON columns and the shared legacy topic. They must not be restored or used to configure relational CDC; the proposed relational E2E replacement is defined by this design and the implementation stories. |
-| [`eng/docker-compose/README.md`](../../../../../eng/docker-compose/README.md), [`local-development-setup.http`](../../../../../src/dms/tests/RestClient/local-development-setup.http), and the [Instance Management E2E README](../../../../../src/dms/tests/EdFi.InstanceManagement.Tests.E2E/README.md) | Current | Describe present implementation state: Kafka infrastructure may be started, but relational connector registration has not landed. Their future opt-in must implement this design. |
+| [CDC runbook](../../../../cdc-documentation/operations-runbook.md), [evidence index](../../../../cdc-documentation/cdc-inv-evidence.md), [CLI reference](../../../../../src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin/README.md), and [configuration catalog](../../../../../docs/CONFIGURATION.md#datamanagementdocumentcachecdc) | Current | Operator procedures, verification status, command syntax, and shipped configuration respectively. Link to these owners from setup references; they do not replace this design's normative contracts. |
+| [`eng/docker-compose/README.md`](../../../../../eng/docker-compose/README.md), [relational backend guide](../../../../../docs/RELATIONAL-BACKEND.md), and [DMS E2E README](../../../../../src/dms/tests/EdFi.DataManagementService.Tests.E2E/README.md) | Current | Discover the shipped local PostgreSQL and SQL Server CDC opt-in through the runbook. Ordinary API lanes do not qualify CDC; live replay and the missing E19-06 API-consumer handoff remain explicit in the evidence index. |
+| [`local-development-setup.http`](../../../../../src/dms/tests/RestClient/local-development-setup.http) and [Instance Management E2E README](../../../../../src/dms/tests/EdFi.InstanceManagement.Tests.E2E/README.md) | Current | These Keycloak/debugger and route-context setups do not register CDC connectors. Link to the separate self-contained, single-unqualified-target local workflow; these setup limits are not provider capability limits. |
+
+### Implementation Status and Operator Entry Point
+
+The repository ships provider setup, connector-template rendering, the deployment-owned
+`cdc` CLI verbs, and local `-EnableKafkaCdc` bootstrap/E2E orchestration for PostgreSQL and
+SQL Server. The published start script does not accept that local switch. Use the
+[CDC operations runbook](../../../../cdc-documentation/operations-runbook.md) for execution
+and the [evidence index](../../../../cdc-documentation/cdc-inv-evidence.md) for actual
+verification results. Qualified-image and live-provider prerequisites, the unmet E19-06
+API-consumer handoff, and separately owned restamp/performance work remain explicit there.
+Implemented command surfaces do not establish that these pending exercises have passed.
+This status note does not change the contracts or deferred workflows below.
 
 ## Scope and Architecture
 

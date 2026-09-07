@@ -149,21 +149,23 @@ state. DMS compose services do not consume claimset fragment files, so `local-dm
 | **Preconditions** | Story 00 stages and validates the bootstrap manifest; Story 04 (DMS-1154, delivered) activates staged-schema and staged-claims runtime loading when a valid manifest is present. |
 | **Inputs** | `-EnvironmentFile <path>` (select Docker Compose env file and shared local settings); `-Rebuild` / `-r`; `-IdentityProvider`; `-EnableConfig` (legacy compat, not a meaningful opt-out in the normative flow); `-EnableKafkaUI`; `-EnableSwaggerUI`; teardown flags `-d`/`-v`; `-AddExtensionSecurityMetadata` (applies only to no-manifest startup; in bootstrap mode staged claims activate from the manifest and this flag's non-bootstrap Hybrid fallback does not apply); split-startup switches `-InfraOnly` and `-DmsOnly` (mutually exclusive; the bootstrap wrapper uses them to run schema provisioning between infrastructure startup and DMS startup); `-DbOnly` (starts only the database container and waits for engine-appropriate readiness - `pg_isready` polling for PostgreSQL, `Wait-MssqlReady` for SQL Server - then stops; mutually exclusive with `-InfraOnly` and `-DmsOnly` on both scripts, with `-r` / `-Rebuild` on the local script, and, on `start-published-dms.ps1`, also with `-NoDataStore`, `-SchoolYearRange`, and `-AddSmokeTestCredentials`; a narrow phase slice for database-only startup that other orchestration can sequence around); `-DmsBaseUrl <url>` (valid only with `-InfraOnly`, not valid with `-DbOnly`; when set, the script starts infrastructure without the DMS container, waits for Config Service readiness and the claims-ready gate, then polls `<DmsBaseUrl>/health` until HTTP 200 is returned, with a 300-second timeout) |
 | **Outputs** | Running Docker services; provider-specific local identity clients including `CMSReadOnlyAccess`; healthy Config Service; healthy DMS container (the `-DbOnly` shape outputs only a running, ready database container - no identity clients, Config Service, or DMS container) |
-| **Side effects** | Docker Compose up/down; runs provider-specific local identity setup, including the fixed `CMSReadOnlyAccess` read-only client; activates manifest-selected staged claims and staged schema at startup when a valid bootstrap manifest is present (Story 04, delivered); calls `setup-openiddict.ps1 -InitDb` after PostgreSQL health; calls `setup-openiddict.ps1 -InsertData` after Config Service readiness (self-contained path); in bootstrap mode, skips default Debezium connector registration because the bootstrap relational schema does not include the legacy CDC tables the default connector targets; `-DbOnly` performs only `docker compose up db` and the matching readiness wait, with no identity, Config Service, Keycloak, or DMS side effects |
+| **Side effects** | Docker Compose up/down; runs provider-specific local identity setup, including the fixed `CMSReadOnlyAccess` read-only client; activates manifest-selected staged claims and staged schema at startup when a valid bootstrap manifest is present (Story 04, delivered); calls `setup-openiddict.ps1 -InitDb` after PostgreSQL health; calls `setup-openiddict.ps1 -InsertData` after Config Service readiness (self-contained path); registers no legacy Debezium connector; local `-EnableKafkaCdc` prepares CDC infrastructure for the separate post-provisioning phase; `-DbOnly` performs only `docker compose up db` and the matching readiness wait, with no identity, Config Service, Keycloak, or DMS side effects |
 | **Failure conditions** | Docker compose start failure; health-wait timeout for any service; malformed or incomplete bootstrap manifest when present |
 | **Must NOT do** | Resolve or validate ApiSchema files; inspect or write the staged-schema or staged-claims workspace; provision databases; enable the legacy `NEED_DATABASE_SETUP` / `EdFi.DataManagementService.Backend.Installer.dll` startup provisioning path; accept schema or claims parameters; configure data stores; create smoke-test or seed-loading CMS application credentials; load seed data. `-DbOnly` must not start Keycloak, run identity setup, start the Config Service, run the claims-ready gate, or start Kafka - it starts and waits on the database container only. **Note:** `start-published-dms.ps1` retains `-NoDataStore`, `-SchoolYearRange`, and `-AddSmokeTestCredentials` as transitional flags for the published-image workflow; the local `start-local-dms.ps1` is infrastructure-lifecycle-only as of DMS-1153. `start-published-dms.ps1` no longer accepts a `-LoadSeedData` switch of its own (removed; seed delivery on the published flow uses the same wrapper-level, API-based `-LoadSeedData` opt-in as the local flow); it also accepts `-DatabaseEngine`, mirroring the local flow's engine selection. |
 
-The future `-EnableKafkaCdc` workflow may accept `-CdcBindingStatePath`, defaulting to the
-separate persistent `.cdc-state` root defined by the CDC design. It must not add mutable
-projection lifecycle, projection work, binding, connector, topic, or readiness state to
-`.bootstrap/bootstrap-manifest.json`. E19-S04 owns that opt-in orchestration, not the
-ordinary infrastructure-start command. While canonical write admission remains closed it
-must reject any nonempty canonical/cache/work target, atomically create or exact-match the
-immutable binding, then invoke the guarded new-empty `Disabled -> Tracking` transition
-before seed/API writes. It configures the matching DMS projection target, starts queue
-processing, waits for work drain, crosses the provider heartbeat barrier, and rechecks
-caught-up status. Binding/lifecycle crash-state classification and retry remain owned by
-E19-S04 and the CDC design. Starting DMS is not authority to enable tracking.
+The shipped local `-EnableKafkaCdc` workflow accepts `-CdcBindingStatePath` for a
+persistent state root outside `.bootstrap/bootstrap-manifest.json`; path precedence and
+backup requirements are documented in the
+[CDC state handoff](../../../../cdc-documentation/operations-runbook.md#deployment-state).
+The infrastructure command prepares services; the local bootstrap/E2E orchestration invokes
+the post-provisioning control plane. `start-published-dms.ps1` does not accept this switch.
+The [CDC initial-enablement owner](../cdc/cdc-streaming.md#enablement-and-initial-readiness-sequence)
+defines admission and retry authority; the
+[provider setup procedure](../../../../cdc-documentation/operations-runbook.md#local-setup)
+and [planned stop/restart procedure](../../../../cdc-documentation/operations-runbook.md#local-stop-restart)
+cover operator execution. Starting DMS is not authority to enable tracking. Projection
+lifecycle, work, bindings, connector/topic state, and readiness remain outside the bootstrap
+manifest.
 
 **Boundary note:** Story 00 makes staged schema/security the prepared bootstrap contract. Story 04 (DMS-1154,
 delivered) makes it the Docker runtime source of truth by activating staged schema and staged claims together

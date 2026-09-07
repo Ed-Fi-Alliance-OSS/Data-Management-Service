@@ -34,4 +34,7 @@ This material stops at the DocumentCache projection boundary. Kafka connector
 operation, binding/source history, topic management, source replacement, consumer-state
 recovery, and downstream publication containment are separate Kafka/CDC operations
 concerns; start with the
-[Kafka/CDC operations guidance](../design/backend-redesign/epics/19-cdc-kafka/07-ops-docs-runbooks.md).
+[CDC operations runbook](../cdc-documentation/operations-runbook.md) and
+[CDC evidence index](../cdc-documentation/cdc-inv-evidence.md). The packaged history gate
+and the absent offline-restamp handoff are described in the
+[projection/repair handoff](../cdc-documentation/operations-runbook.md#projection-repair-handoff).

@@ -49,6 +49,7 @@ No executable documentation catalog or automated documentation/link tests are us
 | [Generated security artifacts](operations-runbook.md#cdc-security); T07 | [Provider setup](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#connector-topology-and-provider-setup); CDC-INV-06/08/15 support | `Given_CdcConnectorTemplateArtifactTests`, `Given_CdcConnectorTemplatePostgresqlRendering`, `Given_CdcConnectorTemplateSqlServerRendering`; renderer unit fixtures | 35 passed / 0 failed / 0 skipped; [exact cases](evidence/t07/templates-results.txt) | Live manifests/grants T14/T15; T16 reconciliation |
 | [Retention/capacity](operations-runbook.md#retention-and-capacity), [consumer continuity](operations-runbook.md#consumer-continuity), [record increase](operations-runbook.md#increase-record-size), [overhead](operations-runbook.md#pipeline-overhead); T08 | [Operations](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#security-telemetry-and-operations), [topic/record contract](../design/backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md); CDC-INV-14/15 authoring, CDC-INV-07/11 support | Manual review `T08-capacity`; source and sibling assertions, native metadata/tool reference review | Reviewed; [findings and pending observations](#t08-capacity-review) | T14/T15 live inspection; independent consumer/platform qualification; T16 closure |
 | [Policy and size inspection](operations-runbook.md#increase-record-size); T08 behavior reuse | [Record size](../design/backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#record-size), [offset store](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#kafka-connect-offset-store); CDC-INV-07/11/15 support | `Given_CdcKafkaRecordSize`, `Given_CdcKafkaTopicPolicy`, `Given_CdcKafkaOffsetStore`, `Given_CdcKafkaSchemaHistory`; fake Kafka admin/record readers | 82 passed / 0 failed / 0 skipped; [exact identities](evidence/t08/policy-results.txt) | No live provider, broker or consumer capacity claim; T14/T15/T16 |
+| [CDC operator entry point](README.md), setup/discovery links; T09 | [Documentation disposition](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#documentation-audit-and-disposition); CDC-INV-14/15 authoring support | Manual review `T09-discovery`; shipped wrappers, CI lane configuration, source, existing help and evidence | Reviewed; [audit and corrections](#t09-discovery-review); no new test execution or live result | T13/T17 assertions; T14/T15 replay; T16 final reconciliation |
 
 <a id="t01-foundation-review"></a>
 ## T01 foundation review
@@ -1084,6 +1085,56 @@ applicable and retain nonzero selected test counts; do not call a missing prereq
 pass. T16 reconciles these pending rows with actual outcomes. E19-06 API and E18-S08
 restamp handoffs remain as previously recorded.
 
+<a id="t09-discovery-review"></a>
+## T09 setup and discovery review
+
+**Revision/scope:** reviewed 2026-09-06 at
+`a6ab4b20355e87ba5e776961adf4ece3b2815c7c` plus T09 documentation changes. Preserved the
+pre-existing story edit outside this task's commit. T13 was considered first; its qualified
+broker image input remains unset and the E19-06 helper handoff remains unmet. Selected
+ready T09 authoring; no T13 implementation or test execution is claimed.
+
+**Manual search:** from the repository root, ran the task's search before and after edits:
+
+```bash
+rg -n -i "registration has not landed|SQL Server.*Kafka|Kafka.*SQL Server|07-ops-docs-runbooks|EdfiDoc|deleted=true" docs eng/docker-compose reference src/dms/tests src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin/README.md
+```
+
+Both searches returned matches (exit `0`). Classified the results by the design's
+[documentation disposition](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#documentation-audit-and-disposition):
+
+| Material reviewed | Disposition and correction |
+| --- | --- |
+| [Compose guide](../../eng/docker-compose/README.md#deployment-owned-cdc-kafka-connect) | Current. Consolidated duplicated setup/state/retry/retirement/status guidance into runbook links. Removed advice to delete the state store to reset generations and the unconditional fence claim. Kept infrastructure-only startup distinct from post-provisioning registration, and the published script distinct from local opt-in. |
+| [Relational guide](../../docs/RELATIONAL-BACKEND.md#optional-cdc-publication) | Current. Added both-provider setup/evidence and E18/CLI/configuration handoffs; replaced future-tense CDC security ownership. Table provisioning alone does not enable publication. |
+| [DMS E2E README](../../src/dms/tests/EdFi.DataManagementService.Tests.E2E/README.md#cdc-support) | Current. API lanes are distinct from the setup wrapper's CDC opt-in. DS 6.1 PostgreSQL CI retains a Kafka host entry; MSSQL CI omits it. Neither setting nor an API test pass qualifies CDC. E19-06 API-consumer helper and live replay remain unmet/pending. |
+| [RestClient debugger setup](../../src/dms/tests/RestClient/local-development-setup.http) | Current setup, no connector registration in this Keycloak/debugger flow. Replaced the global pending-support claim with a fresh-database/self-contained CDC runbook handoff; no retrofit or container-only host address assumption. |
+| [Instance Management E2E README](../../src/dms/tests/EdFi.InstanceManagement.Tests.E2E/README.md#cdc-support) | Current route-context lane; its setup has no CDC switch, and local CDC requires one unqualified target. Replaced the global pending-support claim with that scoped restriction and runbook/evidence links. |
+| [CLI README](../../src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin/README.md#runbook-links), [E18 README](../document-cache-documentation/README.md), and [E19-S04 operator handoffs](../design/backend-redesign/epics/19-cdc-kafka/04-bootstrap-enable-kafka-cdc.md) | Replaced operator links to the runbook story with delivered procedures/evidence. Story ownership links in epic/Jira indexes and the invariant-to-story table remain valid planning/traceability references. |
+| [CDC design status](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#implementation-status-and-operator-entry-point) | Reconciled disposition and implemented-surface status, without changing normative contracts, design front matter, or deferred workflows. |
+| [Bootstrap boundaries](../design/backend-redesign/design-docs/bootstrap/command-boundaries.md), [generic transform design](../design/backend-redesign/design-docs/expandjsonsmt-replacement.md) | Replaced future local-opt-in wording and legacy default-connector assumption; linked admission/state/retry owners instead of duplicating their algorithm. Generic expander contract unchanged; renderer is shipped, cross-repository image qualification remains a prerequisite, and API-consumer handoff remains unmet. |
+| Legacy JSON/shared-topic/OpenSearch and `deleted=true` references | Historical/obsolete CDC shapes remain classified in the design disposition and ADR 0002; no legacy examples promoted. Other search hits in deadlock/auth/token-info/batch drafts and middleware/request-model names are outside this CDC setup scope and were not blindly renamed. PRD provider capability and SQL Server schema-history/record-budget references remain valid. |
+| Existing mixed Pester suite | Search hits describe provider capability or old documentation assertions. No documentation assertions selected or modified; prior T02 selected behavior evidence remains separate. |
+
+**Source and link review:** inspected `start-local-dms.ps1`, `start-published-dms.ps1`,
+`bootstrap-local-dms.ps1`, `cdc-teardown.psm1`, both E2E setup wrappers, the connector renderer,
+and the DS 6.1 jobs in `.github/workflows/on-dms-pullrequest.yml`. Compared the handoffs with
+[T02 wrapper/help evidence](#t02-setup-review), [T05 continuity evidence](#t05-continuity-review),
+and [T06 retirement evidence](#t06-retirement-review); no new commands or JSON examples
+were added. Manually followed changed relative paths and read target headings/explicit
+anchors for setup, prerequisites, state, setup verification, API smoke, stop/restart,
+continuity, adoption, retirement, cleanup, projection repair, security, status, lag,
+configuration, CLI, evidence, and design ownership. Changed links resolve; remaining
+story links name work packages, not executable procedures. `git diff --check` passed.
+
+**Evidence boundary:** documentation/comment changes only; no C# or PowerShell behavior
+changed, so no new compile/test run was required. No automated documentation, link, or
+catalog tests ran. No provider, broker, qualified image, or DMS deployment was accessed;
+no operational JSON captured and no deployment cleanup needed. T13/T17 additional
+assertions, T14/T15 live provider exercises, the E19-06 API-consumer and E18-S08 restamp
+handoffs, and T16 final consistency review remain pending. This review is not live CDC or
+production-capacity qualification.
+
 <a id="pending-delivery"></a>
 ## Pending delivery and verification
 
@@ -1102,7 +1153,7 @@ actual results before the story is complete.
 | Destructive retirement, partial failure, timeout and same-operation retry | T06 delivered; T17 assertions; T14/T15 replay | [T06 review](#t06-retirement-review): 78 existing behavior cases passed; eight output captures, generated help, original-source/absence/proof/history review complete. Additional operator assertions and live cleanup remain pending. |
 | Security, consumer isolation, sensitive-data containment | T07 delivered; T14/T15 replay | [T07 review](#t07-security-review): 150 unit cases passed; source/help/fixture review and absent-purge walkthrough complete. Live provider/authorizer/fence/deletion replay pending; platform purge and independent consumer stores remain deployment-owned. |
 | Provider retention, consumer continuity, record budget, capacity observations | T08 delivered; T14/T15 replay | [T08 review](#t08-capacity-review): 82 policy tests passed; bounded inspection/source review complete. Live queries/tool output, consumer reports and coordinated rollout observations pending. Production qualification remains separately owned/unassigned. |
-| Discovery references and final consistency | T09; T16 closure | Pending. Final manual review reconciles all anchors, exact test selections, provider results, artifacts, and limitations. |
+| Discovery references and final consistency | T09 delivered; T16 closure | [T09 review](#t09-discovery-review): active setup links, provider/lane distinctions, and historical disposition manually reconciled. Final review of all anchors, exact test selections, provider results, artifacts, and limitations remains T16. |
 
 Setup, provider artifacts, routing, durability, ACLs, and consumer conformance remain in
 their sibling stories/suites. Start with the

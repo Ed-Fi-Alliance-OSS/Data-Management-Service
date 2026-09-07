@@ -500,12 +500,13 @@ produced at all fails.
 - The continuity evidence `cdc restart` depends on, and the terminal source-history loss it
   cannot recover from, are owned by
   [Source-History Continuity](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#source-history-continuity).
-- Kafka connector setup, connector teardown, source replacement, binding retirement, topic
-  management, CDC bootstrap orchestration, and downstream publication containment are
-  governed through the `cdc` verb group and the E19 runbooks. The work package is
-  [Add Explicit Local/Bootstrap Connector Registration](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/reference/design/backend-redesign/epics/19-cdc-kafka/04-bootstrap-enable-kafka-cdc.md);
-  operational procedure starts with
-  [Add CDC Setup, Monitoring, Recovery, and Security Runbooks](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/reference/design/backend-redesign/epics/19-cdc-kafka/07-ops-docs-runbooks.md).
+- CDC setup, monitoring, continuity, source replacement, retirement, and downstream
+  containment procedures are in the
+  [CDC operations runbook](../../../../reference/cdc-documentation/operations-runbook.md).
+  The [CDC evidence index](../../../../reference/cdc-documentation/cdc-inv-evidence.md)
+  separates fixture coverage from pending live provider replays and unmet dependencies;
+  the [configuration catalog](../../../../docs/CONFIGURATION.md#datamanagementdocumentcachecdc)
+  owns the shipped settings and defaults.
 - The CLI story boundary and package verification evidence are in
   [Add a DocumentCache Administration CLI](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/reference/design/backend-redesign/epics/18-document-cache/09-documentcache-administration-cli.md);
   cross-feature DocumentCache runbook evidence is tracked by

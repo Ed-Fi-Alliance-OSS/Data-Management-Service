@@ -8,9 +8,9 @@ status: implemented
 # Design: Replacement for `expandjsonsmt`
 
 > DMS-1240 implemented the generic expand-JSON transform described here. The relational
-> CDC design in DMS-1245 does not amend that completed transform contract. Its proposed
-> DMS-specific `DocumentState` transform is separate work tracked in the relational CDC
-> epic.
+> CDC design in DMS-1245 does not amend that completed transform contract. Its
+> DMS-specific `DocumentState` transform has a separate contract and qualification
+> workflow tracked in the relational CDC epic.
 
 ## Decision
 
@@ -78,7 +78,7 @@ transform. This is a consuming-architecture choice, not a replacement or amendme
 DMS-1240. The generic transform remains available to connectors whose requirement is only
 root-level JSON expansion.
 
-The new cross-repository implementation is explicitly planned in
+Cross-repository implementation and image qualification are tracked in
 [Add the relational DocumentState transform](../epics/19-cdc-kafka/03-document-state-transform.md).
 Connector-template generation consumes that artifact; it does not silently implement it.
 
@@ -102,13 +102,16 @@ The implementation remains intentionally unaware of the DMS-1245 public record c
 | --- | --- |
 | Generic `sourceFields` expansion and removal of the RedHat plugin | DMS-1240 — complete |
 | Relational CDC sources, topic, key, value, delete, and compatibility contract | DMS-1245 |
-| DMS-specific `DocumentState` implementation in Ed-Fi-Kafka-Connect | Proposed `19-03` story |
-| Provider connector templates using the published `DocumentState` class | Proposed `19-02` story |
-| API-driven relational Kafka scenarios | DMS-1232 / proposed `19-06` story |
+| DMS-specific `DocumentState` implementation in Ed-Fi-Kafka-Connect | `19-03` story; qualified image required by local CDC setup |
+| Provider connector templates using the published `DocumentState` class | `19-02` story; renderer shipped in this repository |
+| API-driven relational Kafka scenarios | DMS-1232 / `19-06` story; API-consumer handoff remains unmet in the runbook evidence |
 
-DMS-1232's implementation criteria must be refined against the DMS-1245 topic/message
-contract before that work begins. In particular, the relational v1 delete is a Kafka-null
-tombstone rather than the legacy `deleted=true` document body.
+Use the [CDC setup runbook](../../../cdc-documentation/operations-runbook.md#local-setup)
+for generated connectors and the required qualified image; the
+[evidence index](../../../cdc-documentation/cdc-inv-evidence.md) records pending live
+provider/API exercises. The generic expander is not a substitute for `DocumentState`.
+API-driven scenarios remain governed by the DMS-1245 topic/message contract, including
+Kafka-null tombstones; the legacy `deleted=true` shape stays historical.
 
 ## References
 
