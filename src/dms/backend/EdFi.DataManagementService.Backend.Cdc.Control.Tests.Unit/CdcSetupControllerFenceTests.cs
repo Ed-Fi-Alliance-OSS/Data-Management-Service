@@ -23,15 +23,15 @@ namespace EdFi.DataManagementService.Backend.Cdc.Control.Tests.Unit;
 public class Given_CdcSetupControllerPlannedFence
 {
     /// <summary>
-    /// The shape a deployment shutdown issues: no instance-database connection and no provider-setup
-    /// inputs, because the caller taking the stack down may hold neither.
+    /// The shape a deployment shutdown issues: the target identity alone, because the caller taking
+    /// the stack down may hold nothing else.
     /// </summary>
     [Test]
-    public async Task It_fences_from_the_binding_record_alone_when_no_status_evidence_is_supplied()
+    public async Task It_fences_from_the_binding_record_alone()
     {
         CdcSetupControllerHarness harness = Given_CdcSetupControllerStatus.EnabledBinding();
 
-        CdcStatus status = await harness.StopAsync(withStatusEvidence: false);
+        CdcStatus status = await harness.StopAsync();
 
         using AssertionScope assertions = new();
         A.CallTo(() => harness.Connect.StopConnectorAsync(A<string>._, A<CancellationToken>._))
@@ -46,8 +46,8 @@ public class Given_CdcSetupControllerPlannedFence
     }
 
     /// <summary>
-    /// The instance database is what the observations are collected against, never what the fence acts
-    /// through. A caller that supplied it and found it gone still gets its connector fenced.
+    /// The instance database is what the observing verbs collect against, never what the fence acts
+    /// through. A deployment whose database is already gone still gets its connector fenced.
     /// </summary>
     [Test]
     public async Task It_fences_though_the_instance_database_cannot_be_reached()
@@ -85,78 +85,7 @@ public class Given_CdcSetupControllerPlannedFence
         Given_CdcSetupControllerStatus
             .Target(status)
             .Diagnostics.Should()
-            .Contain(diagnostic => diagnostic.Code == "statusConnectorInputsInvalid");
-        Given_CdcSetupControllerStatus
-            .Target(status)
-            .Diagnostics.Should()
             .NotContain(diagnostic => diagnostic.Code == "stopNotApplied");
-    }
-
-    /// <summary>
-    /// A refusal is the one thing this verb may not lose. Without status evidence there is no connector
-    /// runtime for the sibling refusals' placement, so it is reported in the status's own step
-    /// diagnostics instead of being dropped with the observation that was never collected.
-    /// </summary>
-    [Test]
-    public async Task It_reports_a_refused_stop_when_it_collected_no_status_evidence()
-    {
-        CdcSetupControllerHarness harness = Given_CdcSetupControllerStatus.EnabledBinding();
-        harness.Stop = new(CdcConnectOutcome.Unavailable, new(503, "worker unavailable", true));
-
-        CdcStatus status = await harness.StopAsync(withStatusEvidence: false);
-
-        Given_CdcSetupControllerStatus
-            .Target(status)
-            .Diagnostics.Should()
-            .ContainSingle(diagnostic => diagnostic.Code == "stopNotApplied");
-    }
-
-    /// <summary>
-    /// A worker holding no connector under this name is the end state the verb exists to reach, and it
-    /// is reached without any status evidence to interpret it against.
-    /// </summary>
-    [Test]
-    public async Task It_treats_a_connector_the_worker_does_not_hold_as_fenced_without_status_evidence()
-    {
-        CdcSetupControllerHarness harness = Given_CdcSetupControllerStatus.EnabledBinding();
-        harness.Stop = new(CdcConnectOutcome.NotFound, new(404, "no such connector", false));
-
-        CdcStatus status = await harness.StopAsync(withStatusEvidence: false);
-
-        Given_CdcSetupControllerStatus
-            .Target(status)
-            .Diagnostics.Should()
-            .NotContain(diagnostic => diagnostic.Code == "stopNotApplied");
-    }
-
-    /// <summary>
-    /// The fence and the containment of an already-latched incident are one operation, so the status
-    /// this verb collects afterwards does not ask the worker a second time for the one invocation.
-    /// </summary>
-    [Test]
-    public async Task It_issues_one_stop_for_an_invocation_whose_binding_already_latches_a_loss()
-    {
-        CdcSetupControllerHarness harness = Given_CdcSetupControllerStatus.EnabledBinding(
-            CdcProvider.SqlServer
-        );
-        harness.SchemaHistoryState = CdcSqlServerSchemaHistoryState.Missing;
-        harness.Stop = new(CdcConnectOutcome.Unavailable, new(503, "worker unavailable", true));
-
-        // The poll that proves and latches the loss. Its own fence is refused, so the incident stays
-        // latched with the connector still running.
-        await harness.StatusAsync();
-
-        // Now the planned fence, over that latched incident and with the instance database gone, which
-        // is the containment path the status side would otherwise take as well.
-        A.CallTo(() => harness.Connection.OpenAsync(A<CancellationToken>._))
-            .Throws(new InvalidOperationException("the instance database is unreachable"));
-
-        await harness.StopAsync();
-
-        // Twice in total across both invocations - once for the status above, once for this fence -
-        // rather than three times.
-        A.CallTo(() => harness.Connect.StopConnectorAsync(A<string>._, A<CancellationToken>._))
-            .MustHaveHappenedTwiceExactly();
     }
 }
 
@@ -214,6 +143,55 @@ public class Given_CdcSetupControllerLatchedIncidentContainment
     }
 
     /// <summary>
+    /// The same obligation, reached by a caller that never entered a collection at all. An observing
+    /// verb whose instance database, Configuration Service, or schema inputs cannot be resolved is
+    /// refused before this control plane runs anything, and the loss it would otherwise have contained
+    /// is one nothing else re-attempts.
+    /// </summary>
+    [Test]
+    public async Task It_contains_a_latched_incident_for_a_caller_that_collected_no_observation()
+    {
+        CdcSetupControllerHarness harness = Given_CdcSetupControllerStatus.EnabledBinding(
+            CdcProvider.SqlServer
+        );
+        harness.SchemaHistoryState = CdcSqlServerSchemaHistoryState.Missing;
+        harness.Stop = new(CdcConnectOutcome.Unavailable, new(503, "worker unavailable", true));
+
+        // The poll that proves and latches the loss. Its fence is refused, so the connector is still
+        // running and nothing later raises a second incident candidate.
+        await harness.StatusAsync();
+
+        IReadOnlyList<CdcDiagnostic> containment = await harness.ContainLatchedIncidentAsync();
+
+        using AssertionScope assertions = new();
+        containment.Should().ContainSingle(diagnostic => diagnostic.Code == "statusIncidentFenceNotApplied");
+        A.CallTo(() => harness.Connect.StopConnectorAsync(A<string>._, A<CancellationToken>._))
+            .MustHaveHappenedTwiceExactly();
+
+        // The instance database is what the refused caller could not reach, and the containment does
+        // not need it: the incident and the connector name both came from the binding record.
+        A.CallTo(() => harness.Connection.OpenAsync(A<CancellationToken>._)).MustHaveHappenedOnceExactly();
+    }
+
+    /// <summary>
+    /// A binding that latches nothing has proved no loss, so the containment leaves its connector
+    /// alone. This is not a planned fence, and fencing a healthy stream is what a caller asks for with
+    /// the verb that does.
+    /// </summary>
+    [Test]
+    public async Task It_fences_nothing_for_a_binding_that_latches_no_incident()
+    {
+        CdcSetupControllerHarness harness = Given_CdcSetupControllerStatus.EnabledBinding();
+
+        IReadOnlyList<CdcDiagnostic> containment = await harness.ContainLatchedIncidentAsync();
+
+        using AssertionScope assertions = new();
+        containment.Should().BeEmpty();
+        A.CallTo(() => harness.Connect.StopConnectorAsync(A<string>._, A<CancellationToken>._))
+            .MustNotHaveHappened();
+    }
+
+    /// <summary>
     /// The containment above is scoped to a binding that already carries a latched incident. A status
     /// blocked at the same exit with nothing latched has proved no loss, and stopping a connector on
     /// that evidence would fence a healthy stream.
@@ -267,6 +245,29 @@ public class Given_CdcSetupControllerPollingBudget
             .Be(
                 CdcBlockingCategory.StatusObservationUnavailable,
                 "a step that read nothing reports absent evidence rather than a backlog it never observed"
+            );
+        admission.AdmissionState.Should().NotBe(CdcAdmissionState.Admitted);
+    }
+
+    /// <summary>
+    /// An answer that arrives outside the budget is not the answer the step was allowed to wait for,
+    /// and the fallback may not recover it either. The barrier is observed FROM a committed offset, and
+    /// the offset the poll body mapped came from the very read the deadline rejected - so composing the
+    /// fallback out of it would report a barrier reached on evidence the step had already refused.
+    /// </summary>
+    [Test]
+    public async Task It_reports_an_unreached_barrier_when_its_only_observation_returned_outside_the_budget()
+    {
+        CdcSetupControllerHarness harness = new() { BarrierObservationsOverrunTheBudget = true };
+
+        CdcAdmission admission = await harness.EnableAsync();
+
+        using AssertionScope assertions = new();
+        admission
+            .Steps.ProviderBarrier.State.Should()
+            .NotBe(
+                CdcComponentState.Satisfied,
+                "a late observation is not the one the step was allowed to wait for"
             );
         admission.AdmissionState.Should().NotBe(CdcAdmissionState.Admitted);
     }

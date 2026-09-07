@@ -495,7 +495,7 @@ public class Given_CdcKafkaTopicPolicy
         CdcArtifactInventory inventory
     ) =>
         new CdcKafkaAdminAdapter(
-            adminClient,
+            new Lazy<IAdminClient>(() => adminClient),
             Options.Create(ControlOptions(inventory, CdcControlOptions.LocalDurabilityProfile)),
             new FixedTimeProvider(ObservedAt),
             NullLogger<CdcKafkaAdminAdapter>.Instance
@@ -529,7 +529,7 @@ public class Given_CdcKafkaTopicPolicy
     )
     {
         CdcKafkaAdminAdapter adapter = new(
-            adminClient,
+            new Lazy<IAdminClient>(() => adminClient),
             Options.Create(ControlOptions(inventory, durabilityProfile)),
             new FixedTimeProvider(ObservedAt),
             NullLogger<CdcKafkaAdminAdapter>.Instance

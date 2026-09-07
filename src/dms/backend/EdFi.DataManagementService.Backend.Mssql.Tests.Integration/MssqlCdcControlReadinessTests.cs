@@ -363,7 +363,7 @@ public class Given_A_SqlServer_CdcControlReadinessSequence
                 ),
                 _clock
             ),
-            _activation,
+            new Lazy<IDocumentCacheGuardedNewEmptyActivationCommand>(() => _activation),
             new CdcProviderSetupService([new CdcSqlServerHeartbeatDatabaseProvider()]),
             new CdcInstanceDatabaseConnectionFactory(),
             _kafka,

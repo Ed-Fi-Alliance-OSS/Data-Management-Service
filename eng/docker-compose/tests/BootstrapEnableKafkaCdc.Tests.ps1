@@ -1807,6 +1807,11 @@ Describe "DMS-1323 bootstrap CDC phase" {
             $result.Status | Should -Be "Declined"
             $result.ConnectorResumed | Should -BeFalse
             (Get-PhaseInvocation -Verb "restart").Count | Should -Be 1
+
+            # The bootstrap wrapper checks $LASTEXITCODE before it reads this result, so a decline the
+            # phase accepted may not leave the verb's own nonzero code standing: the wrapper would
+            # throw on it and the structured "Declined" it exists to report would never be reached.
+            $global:LASTEXITCODE | Should -Be 0
         }
 
         It "judges a verb by its exit code alone, not by the JSON it prints" {

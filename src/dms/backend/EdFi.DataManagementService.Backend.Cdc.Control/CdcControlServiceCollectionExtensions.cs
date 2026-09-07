@@ -73,6 +73,15 @@ public static class CdcControlServiceCollectionExtensions
         services.AddCdcConnectorTemplates();
         services.AddCdcProviderSetup();
         services.TryAddSingleton(BuildAdminClient);
+
+        // Resolved lazily by the adapter. Building the client validates the deployment's own
+        // librdkafka properties and throws on any it cannot use, and the adapter is in the dependency
+        // graph of every CDC verb - the planned fence included, which administers no broker at all. A
+        // factory registration defers construction only to first RESOLUTION, and for the fence that is
+        // already too late: it resolves the controller, and the controller holds this adapter.
+        services.TryAddSingleton(serviceProvider => new Lazy<IAdminClient>(
+            serviceProvider.GetRequiredService<IAdminClient>
+        ));
         services.TryAddSingleton<ICdcKafkaAdmin, CdcKafkaAdminAdapter>();
 
         services.AddHttpClient(CdcConnectRestAdapter.HttpClientName);
@@ -113,6 +122,15 @@ public static class CdcControlServiceCollectionExtensions
         // caller input, so no host can assert a source shape the instance database does not have. The
         // host must register the relational mapping-set services its datastore uses.
         services.TryAddSingleton<ICdcProviderSetupInputsFactory, CdcProviderSetupInputsFactory>();
+
+        // Resolved lazily by the controller, for the same reason the Kafka admin client is. The guarded
+        // activation is registered with the DocumentCache runtime services and pulls the projector
+        // runtime, the target registry and the Configuration Service in behind it, while the only verb
+        // that invokes it is an enablement. A planned fence resolves this same controller, and the
+        // deployment it runs in is often one where none of that can be built.
+        services.TryAddSingleton(serviceProvider => new Lazy<IDocumentCacheGuardedNewEmptyActivationCommand>(
+            serviceProvider.GetRequiredService<IDocumentCacheGuardedNewEmptyActivationCommand>
+        ));
 
         // Scoped because it composes the scoped provider-setup and template services. The host must
         // also register the DocumentCache runtime services for its datastore: the guarded new-empty
@@ -178,8 +196,9 @@ public static class CdcControlServiceCollectionExtensions
 
     /// <summary>
     /// Builds the admin client from the deployment's bootstrap servers and its own admin-client
-    /// security properties. Construction is deferred to first resolution so a registration-time graph
-    /// check never opens a broker connection.
+    /// security properties. It is reached through the <see cref="Lazy{T}"/> registered above, so a
+    /// broker connection is opened when the client is first used rather than when the graph that holds
+    /// it is built.
     /// </summary>
     /// <remarks>
     /// The connector's <see cref="CdcControlOptions.KafkaClientSecurityProperties"/> are deliberately

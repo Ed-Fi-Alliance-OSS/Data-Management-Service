@@ -180,7 +180,7 @@ public class Given_CdcControlDiagnosticBoundaries
     {
         using IAdminClient adminClient = UnreachableAdminClient();
         CdcKafkaAdminAdapter adapter = new(
-            adminClient,
+            new Lazy<IAdminClient>(() => adminClient),
             Options.Create(ControlOptions()),
             TimeProvider.System,
             _services.GetRequiredService<ILogger<CdcKafkaAdminAdapter>>()
@@ -207,7 +207,7 @@ public class Given_CdcControlDiagnosticBoundaries
     {
         using IAdminClient adminClient = UnreachableAdminClient();
         CdcKafkaAdminAdapter adapter = new(
-            adminClient,
+            new Lazy<IAdminClient>(() => adminClient),
             Options.Create(ControlOptions()),
             TimeProvider.System,
             _services.GetRequiredService<ILogger<CdcKafkaAdminAdapter>>()

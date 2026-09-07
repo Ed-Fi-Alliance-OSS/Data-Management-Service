@@ -201,14 +201,23 @@ internal interface IDocumentCacheAdminCdcCommandDispatcher
 /// than to stopping its connector. Resolving them first is what left a reachable worker unasked
 /// whenever either was unavailable — the moment a connector most needs fencing.
 /// </remarks>
+/// <param name="dataStoreProvider">
+/// The Configuration Service's data stores, absent when this invocation was composed for the planned
+/// fence alone. Optional for that reason and no other: the fence's graph does not register the
+/// service, because registering it validates the deployment's configuration-service address and the
+/// fence must survive a deployment whose Configuration Service is unusable.
+/// </param>
+/// <param name="connectionStringProvider">
+/// The instance database of a loaded data store, absent for the same invocations and the same reason.
+/// </param>
 internal sealed class DocumentCacheAdminCdcCommandDispatcher(
     ICdcSetupController controller,
     ICdcProviderSetupInputsFactory providerSetupInputsFactory,
     ICdcProviderSourcePositionAdapter sourcePositions,
-    IDataStoreProvider dataStoreProvider,
-    IConnectionStringProvider connectionStringProvider,
     IOptions<CdcControlOptions> options,
-    TimeProvider timeProvider
+    TimeProvider timeProvider,
+    IDataStoreProvider? dataStoreProvider = null,
+    IConnectionStringProvider? connectionStringProvider = null
 ) : IDocumentCacheAdminCdcCommandDispatcher
 {
     public async Task<DocumentCacheAdminCdcCommandResult> ExecuteAsync(
@@ -280,6 +289,33 @@ internal sealed class DocumentCacheAdminCdcCommandDispatcher(
         }
         else
         {
+            // Absent only when this invocation was composed for the planned fence, which returns above
+            // rather than reaching this branch. A host that composed that graph and then dispatched an
+            // observing verb has asked for a verb its own composition cannot answer, and saying so is
+            // better than a null reference from the reads below.
+            if (dataStoreProvider is null || connectionStringProvider is null)
+            {
+                return DocumentCacheAdminCdcCommandResult.Refused(
+                    request.VerbName,
+                    DocumentCacheAdminExitCodes.ConfigurationError,
+                    "configurationError",
+                    "cdcConfigurationServiceNotComposed",
+                    [
+                        new CdcDiagnostic(
+                            "cdcConfigurationServiceNotComposed",
+                            CdcDiagnosticCategory.StatusObservationUnavailable,
+                            CdcDiagnosticSeverity.Error,
+                            CdcDiagnosticComponent.ProviderSetup,
+                            now,
+                            "CDC operation was composed without the Configuration Service services it "
+                                + "resolves the instance database through.",
+                            false,
+                            observed: "absent"
+                        ),
+                    ]
+                );
+            }
+
             // The data-store load belongs to this branch alone, because this is the only branch that
             // asks the Configuration Service anything. An explicit source connection names the
             // database itself, so loading ahead of the choice would refuse a retirement whose
@@ -293,7 +329,8 @@ internal sealed class DocumentCacheAdminCdcCommandDispatcher(
                 await LoadDataStoresAsync(request, cancellationToken).ConfigureAwait(false) is { } loadRefusal
             )
             {
-                return loadRefusal;
+                return await ContainedRefusalAsync(request, loadRefusal, cancellationToken)
+                    .ConfigureAwait(false);
             }
 
             if (
@@ -316,15 +353,20 @@ internal sealed class DocumentCacheAdminCdcCommandDispatcher(
                 // of the fragments it treats as a secret - a code carrying it is replaced by
                 // "redacted" in the shared contract and in stderr alike, leaving an operator with no
                 // stable token to match the one refusal they most need to act on.
-                return Refused(
-                    request.VerbName,
-                    "cdcInstanceDatabaseUnresolved",
-                    CdcDiagnosticCategory.SourceMismatch,
-                    CdcDiagnosticComponent.ProviderSetup,
-                    "CDC operation could not resolve the instance database for the invocation target.",
-                    "absent",
-                    now
-                );
+                return await ContainedRefusalAsync(
+                        request,
+                        Refused(
+                            request.VerbName,
+                            "cdcInstanceDatabaseUnresolved",
+                            CdcDiagnosticCategory.SourceMismatch,
+                            CdcDiagnosticComponent.ProviderSetup,
+                            "CDC operation could not resolve the instance database for the invocation target.",
+                            "absent",
+                            now
+                        ),
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
             }
         }
 
@@ -333,13 +375,18 @@ internal sealed class DocumentCacheAdminCdcCommandDispatcher(
             .ConfigureAwait(false);
         if (setupInputs.Contract is not { } providerSetup)
         {
-            return DocumentCacheAdminCdcCommandResult.Refused(
-                request.VerbName,
-                DocumentCacheAdminExitCodes.ConfigurationError,
-                "configurationError",
-                "cdcProviderSetupInputs",
-                setupInputs.Diagnostics
-            );
+            return await ContainedRefusalAsync(
+                    request,
+                    DocumentCacheAdminCdcCommandResult.Refused(
+                        request.VerbName,
+                        DocumentCacheAdminExitCodes.ConfigurationError,
+                        "configurationError",
+                        "cdcProviderSetupInputs",
+                        setupInputs.Diagnostics
+                    ),
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
         }
 
         Invocation invocation = new(
@@ -392,6 +439,59 @@ internal sealed class DocumentCacheAdminCdcCommandDispatcher(
     }
 
     /// <summary>
+    /// One refusal this dispatcher decided before the control plane was entered, after giving a
+    /// source-history loss the binding record already latches the stop it is still owed.
+    /// </summary>
+    /// <remarks>
+    /// `cdc-streaming.md` requires that containment to be attempted from the binding record alone and
+    /// independently of the observations made around it: a check that could not reach the instance
+    /// database or complete any other collection still owes the stop it may be the last to attempt.
+    /// The refusals this wraps are raised before any collection begins - an unreachable Configuration
+    /// Service, an unresolvable instance database, a schema input that will not read - so without this
+    /// the one thing that re-attempts a stop the worker refused would be out of reach for as long as
+    /// the deployment stayed in that state. Latching raises no second incident candidate and restart
+    /// declines a lost continuity, so nothing else would.
+    ///
+    /// Best effort, and never at the refusal's expense. The caller asked for a verb this invocation
+    /// cannot run and that answer is what it gets; a containment that could not even be composed -
+    /// which is what a control-plane configuration this verb never validated throws here - leaves the
+    /// refusal exactly as it was. Only a refused stop adds anything, because only that is a fact the
+    /// caller did not already have.
+    /// </remarks>
+    private async Task<DocumentCacheAdminCdcCommandResult> ContainedRefusalAsync(
+        DocumentCacheAdminCdcCommandRequest request,
+        DocumentCacheAdminCdcCommandResult refusal,
+        CancellationToken cancellationToken
+    )
+    {
+        IReadOnlyList<CdcDiagnostic>? containment;
+        try
+        {
+            containment = await controller
+                .ContainLatchedIncidentAsync(
+                    new CdcPlannedFenceRequest(
+                        NewToken(),
+                        request.TargetKey.TenantKey,
+                        request.TargetKey.DataStoreId
+                    ),
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
+        catch (OptionsValidationException)
+        {
+            return refusal;
+        }
+
+        return containment is not { Count: > 0 }
+            ? refusal
+            : refusal with
+            {
+                Diagnostics = [.. refusal.Diagnostics, .. containment],
+            };
+    }
+
+    /// <summary>
     /// Loads the invocation tenant's data stores from the Configuration Service, or reports why the
     /// verb cannot reach the instance database it operates on.
     /// </summary>
@@ -419,7 +519,9 @@ internal sealed class DocumentCacheAdminCdcCommandDispatcher(
     {
         try
         {
-            await dataStoreProvider
+            // Non-null on every path that reaches here: the caller above refuses an invocation whose
+            // composition holds no data-store provider.
+            await dataStoreProvider!
                 .LoadDataStores(NullableTenant(request.TargetKey.TenantKey), cancellationToken)
                 .ConfigureAwait(false);
 
@@ -549,6 +651,42 @@ internal sealed class DocumentCacheAdminCdcCommandDispatcher(
                 "argumentError",
                 "cdcAdoptionBinding",
                 binding.Diagnostics
+            );
+        }
+
+        // The instance database this adoption verifies the record against was resolved from the
+        // invocation's own tenant key and data store id, while the record carries a logical target of
+        // its own - and that record's target is the one the binding becomes durable under. Nothing
+        // downstream compares the two: the physical-source verification matches whenever the record's
+        // fingerprint describes the database the invocation resolved, so an invocation naming one data
+        // store could otherwise verify that store's source and artifacts and then persist a binding
+        // claiming another. Compared after the same default-tenant mapping every other binding-facing
+        // comparison applies, because the target key carries the default tenant as the empty string
+        // and a binding record never does.
+        string invocationTenantKey =
+            CdcTargetValidator.MapE18TenantKeyToBindingTenantKey(invocation.Request.TargetKey.TenantKey)
+            ?? invocation.Request.TargetKey.TenantKey;
+        if (
+            !string.Equals(adoptedBinding.TenantKey, invocationTenantKey, StringComparison.Ordinal)
+            || !string.Equals(
+                adoptedBinding.DataStoreId,
+                invocation.Request.TargetKey.DataStoreId.ToString(CultureInfo.InvariantCulture),
+                StringComparison.Ordinal
+            )
+        )
+        {
+            // The mismatch itself is the whole finding, so the record's own target is not echoed: the
+            // operator supplied it and already holds it, while the invocation target is what the
+            // rendering names.
+            return Refused(
+                invocation.Request.VerbName,
+                "cdcAdoptionTargetMismatch",
+                CdcDiagnosticCategory.TargetMismatch,
+                CdcDiagnosticComponent.Binding,
+                "CDC adoption requires the supplied binding record to name the same logical target the "
+                    + "invocation resolved its instance database from.",
+                "a different logical target",
+                now
             );
         }
 

@@ -369,7 +369,19 @@ internal sealed class CdcSetupControllerHarness
                 }
             );
         A.CallTo(() => SourcePositions.ObserveProviderBarrier(A<CdcProviderBarrierObservationRequest>._))
-            .ReturnsLazily((CdcProviderBarrierObservationRequest request) => ObserveBarrier(request));
+            .ReturnsLazily(
+                (CdcProviderBarrierObservationRequest request) =>
+                {
+                    // The observation answers, and answers successfully, only once the step's own
+                    // budget has already elapsed.
+                    if (BarrierObservationsOverrunTheBudget)
+                    {
+                        _clock.Advance(Timeouts.ProviderBarrier);
+                    }
+
+                    return ObserveBarrier(request);
+                }
+            );
         A.CallTo(() =>
                 SourcePositions.ObserveSourceHistoryAsync(
                     A<CdcSourceHistoryObservationRequest>._,
@@ -658,6 +670,13 @@ internal sealed class CdcSetupControllerHarness
     /// </summary>
     public bool ProjectionReadsBlockAfterPreflight { get; set; }
 
+    /// <summary>
+    /// Makes each provider-barrier observation return successfully, but only after the barrier step's
+    /// own budget has elapsed. It is the one shape that leaves the step with a usable committed offset
+    /// in hand and no observation it was allowed to keep.
+    /// </summary>
+    public bool BarrierObservationsOverrunTheBudget { get; set; }
+
     private int _projectionReads;
 
     /// <summary>
@@ -712,13 +731,11 @@ internal sealed class CdcSetupControllerHarness
     public Task<CdcStatus> RestartAsync() =>
         Controller().RestartAsync(TargetRequest(_provider), CancellationToken.None);
 
-    /// <param name="withStatusEvidence">
-    /// Whether the caller supplies the optional instance-database connection and provider-setup inputs
-    /// the reported status is collected from. False is the shape a deployment shutdown issues: the
-    /// fence is expected to land from the binding record alone.
-    /// </param>
-    public Task<CdcStatus> StopAsync(bool withStatusEvidence = true) =>
-        Controller().StopAsync(PlannedFenceRequest(_provider, withStatusEvidence), CancellationToken.None);
+    public Task<CdcStatus> StopAsync() =>
+        Controller().StopAsync(PlannedFenceRequest(), CancellationToken.None);
+
+    public Task<IReadOnlyList<CdcDiagnostic>> ContainLatchedIncidentAsync() =>
+        Controller().ContainLatchedIncidentAsync(PlannedFenceRequest(), CancellationToken.None);
 
     public Task<CdcContractReadResult<CdcCleanupProof>> RetireAsync() =>
         Controller()
@@ -777,7 +794,7 @@ internal sealed class CdcSetupControllerHarness
             Projection,
             Probe,
             Bindings,
-            Activation,
+            new Lazy<IDocumentCacheGuardedNewEmptyActivationCommand>(() => Activation),
             ProviderSetup,
             Connections,
             Kafka,
@@ -836,21 +853,10 @@ internal sealed class CdcSetupControllerHarness
     }
 
     /// <summary>
-    /// One planned fence of the default target's connector. The optional status evidence is what a
-    /// caller that has it supplies so the reported status covers the whole target; the fence itself
-    /// reads the durable binding record and Kafka Connect either way.
+    /// One planned fence of the default target's connector. It carries the target identity alone: the
+    /// fence reads the durable binding record and Kafka Connect, and nothing else.
     /// </summary>
-    public static CdcPlannedFenceRequest PlannedFenceRequest(
-        CoreCdc.CdcProvider provider = CoreCdc.CdcProvider.Postgresql,
-        bool withStatusEvidence = true
-    ) =>
-        withStatusEvidence
-            ? new(OperationId, TenantKey, DataStoreId)
-            {
-                StatusConnectionString = ConnectionString,
-                StatusProviderSetup = Request(provider).ProviderSetup,
-            }
-            : new(OperationId, TenantKey, DataStoreId);
+    public static CdcPlannedFenceRequest PlannedFenceRequest() => new(OperationId, TenantKey, DataStoreId);
 
     /// <summary>
     /// One operator request to adopt the artifact set the default target already holds, under the
@@ -1573,7 +1579,15 @@ internal sealed class CdcSetupControllerHarness
     private sealed class AdvancingTimeProvider(DateTimeOffset start, TimeSpan step) : TimeProvider
     {
         private long _reads = -1;
+        private TimeSpan _skew = TimeSpan.Zero;
 
-        public override DateTimeOffset GetUtcNow() => start + step * Interlocked.Increment(ref _reads);
+        public override DateTimeOffset GetUtcNow() =>
+            start + step * Interlocked.Increment(ref _reads) + _skew;
+
+        /// <summary>
+        /// Jumps the clock forward, for a step whose own budget has to be seen to elapse while one of
+        /// its observations is in flight.
+        /// </summary>
+        public void Advance(TimeSpan amount) => _skew += amount;
     }
 }

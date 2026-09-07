@@ -212,8 +212,9 @@ public sealed class Given_DocumentCacheAdminStartupExitCodes
 
     /// <summary>
     /// The packaged CLI, invoked for the planned fence against a deployment whose effective-schema
-    /// inputs will not initialize and whose CDC configuration is missing everything a provisioning or
-    /// observing verb reads.
+    /// inputs will not initialize, whose Configuration Service address is unusable, whose Kafka
+    /// admin-client security properties cannot build a client, and whose CDC configuration is missing
+    /// everything a provisioning or observing verb reads.
     /// </summary>
     /// <remarks>
     /// The control case below proves those same settings really do refuse a sibling verb. What this
@@ -222,6 +223,11 @@ public sealed class Given_DocumentCacheAdminStartupExitCodes
     /// result it reports is not the point - the store this run names is empty, so there is no binding
     /// and therefore no connector to fence - the point is that the verb got as far as being able to
     /// say so.
+    ///
+    /// The Configuration Service and the Kafka admin client are the two whose CONSTRUCTION used to end
+    /// the run: relaxing what the fence is validated against left both of them in its graph, and a
+    /// dependency that throws while being built refuses a fence just as surely as a setting that fails
+    /// validation.
     /// </remarks>
     [Test]
     public async Task It_reaches_the_planned_fence_though_the_schema_and_cdc_configuration_are_unusable()
@@ -320,11 +326,19 @@ public sealed class Given_DocumentCacheAdminStartupExitCodes
 
     /// <summary>
     /// A deployment in the state a planned fence exists to survive: an API schema path that will not
-    /// load, and a CDC section carrying only the Connect address the fence reaches the worker through
-    /// and the identity that names the binding it looks up. Every setting a provisioning or observing
-    /// verb reads — the principals, the Kafka bootstrap list, the record size, the offset topic — is
-    /// absent.
+    /// load, a Configuration Service address that is not a usable one, an admin-client security
+    /// property no Kafka client can be built with, and a CDC section carrying only the Connect address
+    /// the fence reaches the worker through and the identity that names the binding it looks up. Every
+    /// setting a provisioning or observing verb reads — the principals, the Kafka bootstrap list, the
+    /// record size, the offset topic — is absent.
     /// </summary>
+    /// <remarks>
+    /// The last two are unrelated to the fence and are the point: settings a verb never reads are one
+    /// thing, and dependencies whose CONSTRUCTION fails are another. Both used to end the process
+    /// before the binding store was ever opened — the configuration-service address is validated when
+    /// its data-store provider is registered, and the admin client validates its own security
+    /// properties when it is built.
+    /// </remarks>
     private static string CreateFenceOnlySettingsFile()
     {
         JsonObject settings = CreateValidSettings();
@@ -338,10 +352,19 @@ public sealed class Given_DocumentCacheAdminStartupExitCodes
             Path.GetTempPath(),
             $"{Guid.NewGuid():N}-no-such-api-schema"
         );
+        settings["ConfigurationServiceSettings"]!.AsObject()["BaseUrl"] = string.Empty;
         documentCacheSettings["Cdc"] = new JsonObject
         {
             ["ConnectBaseUri"] = "http://127.0.0.1:1",
             ["TopicPrefix"] = "edfi.dms",
+            ["KafkaAdminClientSecurityProperties"] = new JsonObject
+            {
+                ["security.protocol"] = "ssl",
+                ["ssl.ca.location"] = Path.Combine(
+                    Path.GetTempPath(),
+                    $"{Guid.NewGuid():N}-no-such-certificate-authority.pem"
+                ),
+            },
         };
 
         string settingsPath = Path.Combine(

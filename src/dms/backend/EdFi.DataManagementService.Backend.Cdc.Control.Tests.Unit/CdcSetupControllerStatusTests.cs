@@ -1076,7 +1076,8 @@ public class Given_CdcSetupControllerRestart
     /// Stopping removes nothing and resets nothing, so it takes none of the gates a restart takes: a
     /// binding whose continuity is unknown or lost is exactly the one that most needs fencing. It is
     /// also the one whose artifact prerequisites cannot be proved, so gating on them would refuse the
-    /// fence precisely when it matters.
+    /// fence precisely when it matters. The fence collects none of that evidence at all, which is the
+    /// same answer reached from the other side.
     /// </summary>
     [Test]
     public async Task It_fences_without_the_continuity_and_artifact_gates_a_restart_takes()
@@ -1099,39 +1100,6 @@ public class Given_CdcSetupControllerRestart
             .Target(status)
             .Diagnostics.Should()
             .NotContain(diagnostic => diagnostic.Code == "stopNotAttempted");
-    }
-
-    /// <summary>
-    /// The fence a normal stop exists for, issued while the instance database is unreachable. The
-    /// durable binding record and the artifact names recovered from it are what name the connector, and
-    /// both were read before the connection was ever opened — so a provider the control plane cannot
-    /// reach says nothing about whether the worker can be asked to fence. Refusing here left the
-    /// connector at a running target state through the shutdown, which the worker then restores on the
-    /// next start with no continuity check possible.
-    /// </summary>
-    [Test]
-    public async Task It_fences_when_the_instance_database_is_unreachable_and_the_worker_is_not()
-    {
-        CdcSetupControllerHarness harness = Given_CdcSetupControllerStatus.EnabledBinding();
-        A.CallTo(() => harness.Connection.OpenAsync(A<CancellationToken>._))
-            .Throws(new InvalidOperationException("the instance database is unreachable"));
-
-        CdcStatus status = await harness.StopAsync();
-
-        using var _ = new AssertionScope();
-
-        // The observation that could not be made is still reported as unmade; it is simply not what
-        // decides whether to fence.
-        Given_CdcSetupControllerStatus
-            .Target(status)
-            .Diagnostics.Should()
-            .Contain(diagnostic => diagnostic.Code == "statusProviderConnectionUnavailable");
-        Given_CdcSetupControllerStatus
-            .Target(status)
-            .Diagnostics.Should()
-            .NotContain(diagnostic => diagnostic.Code == "stopNotAttempted");
-        A.CallTo(() => harness.Connect.StopConnectorAsync(A<string>._, A<CancellationToken>._))
-            .MustHaveHappenedOnceExactly();
     }
 
     /// <summary>

@@ -527,7 +527,7 @@ public class Given_CdcKafkaOffsetStore
     )
     {
         CdcKafkaAdminAdapter adapter = new(
-            adminClient,
+            new Lazy<IAdminClient>(() => adminClient),
             Options.Create(options),
             new FixedTimeProvider(ObservedAt),
             NullLogger<CdcKafkaAdminAdapter>.Instance

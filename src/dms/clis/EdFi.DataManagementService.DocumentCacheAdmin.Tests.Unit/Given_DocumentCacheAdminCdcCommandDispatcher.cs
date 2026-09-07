@@ -325,6 +325,53 @@ public sealed class Given_DocumentCacheAdminCdcCommandDispatcher
         result.GovernedNames.DataStoreId.Should().Be(adopted.DataStoreId);
     }
 
+    /// <summary>
+    /// The instance database an adoption verifies against is resolved from the invocation's own tenant
+    /// and data store, while the record supplies a logical target of its own - and the record's is the
+    /// one the binding becomes durable under. A record naming another data store would have its claims
+    /// verified against this one's database and then be persisted for that other target.
+    /// </summary>
+    [Test]
+    public async Task It_refuses_an_adoption_whose_binding_record_names_another_data_store()
+    {
+        DocumentCacheAdminCdcCommandResult result = await ExecuteAsync(
+            Request(
+                DocumentCacheAdminCommandSurface.CdcAdoptVerbName,
+                bindingJson: CdcJsonContract.Serialize(Binding() with { DataStoreId = "2" })
+            )
+        );
+
+        using var _ = new AssertionScope();
+        result.ExitCode.Should().Be(DocumentCacheAdminExitCodes.RejectedNoMutation);
+        result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic => diagnostic.Code == "cdcAdoptionTargetMismatch");
+        A.CallTo(() => _controller.AdoptAsync(A<CdcAdoptRequest>._, A<CancellationToken>._))
+            .MustNotHaveHappened();
+    }
+
+    /// <summary>
+    /// The same rule for the tenant half of the target, which the two sides spell differently: the
+    /// invocation carries the default tenant as the empty string and a binding record never does, so
+    /// the comparison maps between them rather than refusing every default-tenant adoption.
+    /// </summary>
+    [Test]
+    public async Task It_refuses_an_adoption_whose_binding_record_names_another_tenant()
+    {
+        DocumentCacheAdminCdcCommandResult result = await ExecuteAsync(
+            Request(
+                DocumentCacheAdminCommandSurface.CdcAdoptVerbName,
+                bindingJson: CdcJsonContract.Serialize(Binding() with { TenantKey = "other-tenant" })
+            )
+        );
+
+        using var _ = new AssertionScope();
+        result.ExitCode.Should().Be(DocumentCacheAdminExitCodes.RejectedNoMutation);
+        result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic => diagnostic.Code == "cdcAdoptionTargetMismatch");
+    }
+
     [Test]
     public async Task It_refuses_an_adoption_whose_binding_record_is_not_a_readable_contract()
     {
@@ -691,7 +738,7 @@ public sealed class Given_DocumentCacheAdminCdcCommandDispatcher
     /// not the same fault as a data store the deployment does not have.
     /// </summary>
     [Test]
-    public async Task It_refuses_before_reaching_the_controller_when_the_data_stores_cannot_be_loaded()
+    public async Task It_refuses_without_running_the_verb_when_the_data_stores_cannot_be_loaded()
     {
         A.CallTo(() => _dataStores.LoadDataStores(A<string?>._, A<CancellationToken>._))
             .ThrowsAsync(new InvalidOperationException("Unable to connect to Configuration Service."));
@@ -706,7 +753,7 @@ public sealed class Given_DocumentCacheAdminCdcCommandDispatcher
         // A Configuration Service that was momentarily unreachable is worth reissuing against, unlike
         // the sibling refusals that name a fact about the request itself.
         diagnostic.Retryable.Should().BeTrue();
-        A.CallTo(_controller).MustNotHaveHappened();
+        NoVerbRan();
     }
 
     /// <summary>
@@ -733,7 +780,7 @@ public sealed class Given_DocumentCacheAdminCdcCommandDispatcher
     }
 
     [Test]
-    public async Task It_refuses_before_reaching_the_controller_when_the_instance_database_is_unresolved()
+    public async Task It_refuses_without_running_the_verb_when_the_instance_database_is_unresolved()
     {
         A.CallTo(() => _connectionStrings.GetConnectionString(A<long>._, A<string?>._)).Returns(null);
 
@@ -743,11 +790,11 @@ public sealed class Given_DocumentCacheAdminCdcCommandDispatcher
 
         result.ExitCode.Should().Be(DocumentCacheAdminExitCodes.RejectedNoMutation);
         result.Diagnostics.Should().NotBeEmpty();
-        A.CallTo(_controller).MustNotHaveHappened();
+        NoVerbRan();
     }
 
     [Test]
-    public async Task It_refuses_before_reaching_the_controller_when_the_provider_setup_inputs_are_unavailable()
+    public async Task It_refuses_without_running_the_verb_when_the_provider_setup_inputs_are_unavailable()
     {
         A.CallTo(() => _setupInputsFactory.CreateAsync(A<CoreCdc.CdcProvider>._, A<CancellationToken>._))
             .Returns(
@@ -766,7 +813,7 @@ public sealed class Given_DocumentCacheAdminCdcCommandDispatcher
         );
 
         result.ExitCode.Should().Be(DocumentCacheAdminExitCodes.ConfigurationError);
-        A.CallTo(_controller).MustNotHaveHappened();
+        NoVerbRan();
     }
 
     /// <summary>
@@ -848,10 +895,10 @@ public sealed class Given_DocumentCacheAdminCdcCommandDispatcher
             _controller,
             _setupInputsFactory,
             _sourcePositions,
-            _dataStores,
-            _connectionStrings,
             Options.Create(ControlOptions()),
-            TimeProvider.System
+            TimeProvider.System,
+            _dataStores,
+            _connectionStrings
         ).ExecuteAsync(request);
 
     private CdcEnableRequest CapturedEnableRequest() =>
@@ -862,6 +909,61 @@ public sealed class Given_DocumentCacheAdminCdcCommandDispatcher
         Fake.GetCalls(_controller)
             .Single(call => string.Equals(call.Method.Name, methodName, StringComparison.Ordinal))
             .Arguments.Get<TRequest>(0)!;
+
+    /// <summary>
+    /// The stop a latched source-history loss still owes is attempted even by an invocation that could
+    /// resolve none of its own observation inputs, and a stop the worker refused is reported alongside
+    /// the refusal. Nothing else re-attempts it: latching raises no second incident candidate, and
+    /// restart declines a lost continuity rather than acting on it.
+    /// </summary>
+    [Test]
+    public async Task It_contains_a_latched_incident_when_the_data_stores_cannot_be_loaded()
+    {
+        A.CallTo(() => _dataStores.LoadDataStores(A<string?>._, A<CancellationToken>._))
+            .ThrowsAsync(new InvalidOperationException("Unable to connect to Configuration Service."));
+        A.CallTo(() =>
+                _controller.ContainLatchedIncidentAsync(A<CdcPlannedFenceRequest>._, A<CancellationToken>._)
+            )
+            .Returns<IReadOnlyList<CdcDiagnostic>>([
+                new CdcDiagnostic(
+                    CdcDiagnosticCategory.SourceHistoryLost,
+                    DateTimeOffset.UnixEpoch,
+                    "$.connectorRuntime",
+                    "CDC status could not fence the connector carrying the source-history loss."
+                ),
+            ]);
+
+        DocumentCacheAdminCdcCommandResult result = await ExecuteAsync(
+            Request(DocumentCacheAdminCommandSurface.CdcStatusVerbName)
+        );
+
+        using var _ = new AssertionScope();
+        result.ExitCode.Should().Be(DocumentCacheAdminExitCodes.RejectedNoMutation);
+        result.Diagnostics.Should().Contain(diagnostic => diagnostic.Code == "cdcDataStoresUnavailable");
+        result
+            .Diagnostics.Should()
+            .Contain(diagnostic => diagnostic.Category == CdcDiagnosticCategory.SourceHistoryLost);
+        CdcPlannedFenceRequest containment = CapturedRequest<CdcPlannedFenceRequest>(
+            nameof(ICdcSetupController.ContainLatchedIncidentAsync)
+        );
+        containment.DataStoreId.Should().Be(1);
+    }
+
+    /// <summary>
+    /// No cdc verb was run against the control plane. The containment of a latched source-history loss
+    /// is not one: `cdc-streaming.md` requires it to be attempted from the binding record alone,
+    /// independently of the observations a refusal says could not be made.
+    /// </summary>
+    private void NoVerbRan() =>
+        A.CallTo(_controller)
+            .Where(call =>
+                !string.Equals(
+                    call.Method.Name,
+                    nameof(ICdcSetupController.ContainLatchedIncidentAsync),
+                    StringComparison.Ordinal
+                )
+            )
+            .MustNotHaveHappened();
 
     private static DocumentCacheAdminCdcCommandRequest Request(
         string verbName,
@@ -1067,7 +1169,9 @@ public sealed class Given_DocumentCacheAdminCdcCommandDispatcher
         new(
             CdcJsonContract.CurrentContractVersion,
             "deployment",
-            "",
+            // What a binding record carries for the default tenant. The invocation target spells the
+            // same tenant as the empty string, and every binding-facing comparison maps between them.
+            CoreCdc.CdcTargetValidator.DefaultBindingTenantKey,
             "1",
             "instance",
             1,

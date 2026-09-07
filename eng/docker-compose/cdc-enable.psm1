@@ -1,4 +1,4 @@
-﻿# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: Apache-2.0
 # Licensed to the Ed-Fi Alliance under one or more agreements.
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
@@ -1157,6 +1157,13 @@ function Invoke-CdcEnablePhase {
 
         $connectorResumed = ($restartExitCode -eq 0)
         if (-not $connectorResumed) {
+            # The decline is this phase's own decision, and it is carried in the phase result below.
+            # The verb's nonzero exit code is still standing in $LASTEXITCODE, where a caller that
+            # checks it - the bootstrap wrapper does, before it reads the result - would read it as a
+            # phase failure and throw, leaving the structured "Declined" it is meant to report
+            # unreachable. Cleared here, at the point the decline is accepted, so the exit code the
+            # caller sees is the phase's own verdict rather than a verb outcome the phase tolerated.
+            $global:LASTEXITCODE = 0
             Write-Warning "CDC phase: dms-document-cache cdc restart declined to resume the connector of generation $($generationPlan.Generation) (exit code $restartExitCode). It stays fenced, which is the correct outcome when source-history continuity is not proved. Run 'cdc status' for the evidence."
         }
     }

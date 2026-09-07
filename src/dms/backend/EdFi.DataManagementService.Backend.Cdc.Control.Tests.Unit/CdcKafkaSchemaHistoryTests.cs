@@ -286,7 +286,7 @@ public class Given_CdcKafkaSchemaHistory
     )
     {
         CdcKafkaAdminAdapter adapter = new(
-            adminClient,
+            new Lazy<IAdminClient>(() => adminClient),
             Options.Create(ControlOptions(inventory)),
             new FixedTimeProvider(ObservedAt),
             NullLogger<CdcKafkaAdminAdapter>.Instance,

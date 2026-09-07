@@ -20,9 +20,12 @@ internal static class DocumentCacheAdminServiceCollectionExtensions
 {
     /// <param name="plannedFenceOnly">
     /// True when this invocation is the planned fence, which reads the durable binding record and
-    /// Kafka Connect and nothing else. The CDC control plane is then held to the fence's own
-    /// configuration rather than to the complete set, so a deployment missing settings the fence never
-    /// reads can still stop a connector that is still publishing.
+    /// Kafka Connect and nothing else. Its graph is then composed of that alone: the CDC control plane
+    /// is held to the fence's own configuration rather than to the complete set, and the services that
+    /// reach the Configuration Service are not registered at all. `cdc-streaming.md` puts an
+    /// unavailable configuration service, an unusable schema input, and an unreachable instance
+    /// database among the failures that leave the fence obtainable and therefore still owed, so none
+    /// of them may be something this composition has to succeed at first.
     /// </param>
     public static IServiceCollection AddDocumentCacheAdminRuntimeServices(
         this IServiceCollection services,
@@ -45,22 +48,33 @@ internal static class DocumentCacheAdminServiceCollectionExtensions
             .Configure(options => ConfigureDocumentCacheOptions(configuration, invocationTarget, options))
             .ValidateOnStart();
 
-        services
-            .AddDmsDefaultConfiguration(
-                logger,
-                configuration.GetSection("CircuitBreaker"),
-                configuration.GetSection("DeadlockRetry"),
-                maskRequestBodyInLogs: false
-            )
-            .AddDmsConfigurationServiceDataStoreProvider(configuration)
-            .AddDmsDocumentCacheTargetRegistry(configuration)
-            .AddDocumentCacheProjectionSupervisor(registerHostedService: false);
+        services.AddDmsDefaultConfiguration(
+            logger,
+            configuration.GetSection("CircuitBreaker"),
+            configuration.GetSection("DeadlockRetry"),
+            maskRequestBodyInLogs: false
+        );
 
-        services.AddSingleton<IDocumentCacheAdminTargetResolver, DocumentCacheAdminTargetResolver>();
-        services.AddSingleton<
-            IDocumentCacheAdminMutatingCommandDispatcher,
-            DocumentCacheAdminMutatingCommandDispatcher
-        >();
+        // The Configuration Service data-store provider, the target registry it fills, and the
+        // DocumentCache commands that read them are registered only for the invocations that use them.
+        // Registering the provider VALIDATES the deployment's configuration-service base address then
+        // and there, so an unusable one refused the whole composition - including a planned fence,
+        // which asks that service nothing and is exactly what an operator reaches for when the
+        // deployment around it is unhealthy.
+        if (!plannedFenceOnly)
+        {
+            services
+                .AddDmsConfigurationServiceDataStoreProvider(configuration)
+                .AddDmsDocumentCacheTargetRegistry(configuration)
+                .AddDocumentCacheProjectionSupervisor(registerHostedService: false);
+
+            services.AddSingleton<IDocumentCacheAdminTargetResolver, DocumentCacheAdminTargetResolver>();
+            services.AddSingleton<
+                IDocumentCacheAdminMutatingCommandDispatcher,
+                DocumentCacheAdminMutatingCommandDispatcher
+            >();
+        }
+
         services.TryAddSingleton<IDocumentCacheAdminCliTelemetry, DocumentCacheAdminCliTelemetry>();
 
         // The CDC control plane branches on the same AppSettings:Datastore value the DocumentCache

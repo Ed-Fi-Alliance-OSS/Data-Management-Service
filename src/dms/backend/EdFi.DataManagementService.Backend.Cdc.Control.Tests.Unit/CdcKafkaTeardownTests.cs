@@ -293,7 +293,7 @@ public class Given_CdcKafkaTeardown
         bool aclsEnabled = true
     ) =>
         new CdcKafkaAdminAdapter(
-            adminClient,
+            new Lazy<IAdminClient>(() => adminClient),
             Options.Create(ControlOptions(aclsEnabled)),
             new FixedTimeProvider(ObservedAt),
             NullLogger<CdcKafkaAdminAdapter>.Instance

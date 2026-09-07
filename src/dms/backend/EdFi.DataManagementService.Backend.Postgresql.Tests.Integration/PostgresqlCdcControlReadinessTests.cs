@@ -392,7 +392,7 @@ public class Given_A_Postgresql_CdcControlReadinessSequence
                 ),
                 _clock
             ),
-            _activation,
+            new Lazy<IDocumentCacheGuardedNewEmptyActivationCommand>(() => _activation),
             new CdcProviderSetupService([new CdcPostgresqlHeartbeatPublicationProvider()]),
             new CdcInstanceDatabaseConnectionFactory(),
             _kafka,

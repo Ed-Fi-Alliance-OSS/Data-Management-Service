@@ -713,7 +713,7 @@ internal sealed class CdcControlBrokerFixture : IAsyncDisposable
 
     private CdcKafkaAdminAdapter BuildKafkaAdmin(CdcControlOptions controlOptions) =>
         new CdcKafkaAdminAdapter(
-            AdminClient,
+            new Lazy<IAdminClient>(() => AdminClient),
             Options.Create(controlOptions),
             TimeProvider.System,
             NullLogger<CdcKafkaAdminAdapter>.Instance

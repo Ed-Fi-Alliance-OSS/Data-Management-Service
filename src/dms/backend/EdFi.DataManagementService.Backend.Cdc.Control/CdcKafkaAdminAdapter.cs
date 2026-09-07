@@ -276,14 +276,14 @@ internal interface ICdcKafkaTopicOffsetReader
     );
 }
 
-internal sealed class CdcKafkaTopicOffsetReader(IAdminClient adminClient) : ICdcKafkaTopicOffsetReader
+internal sealed class CdcKafkaTopicOffsetReader(Lazy<IAdminClient> adminClient) : ICdcKafkaTopicOffsetReader
 {
     public async Task<IReadOnlyList<ListOffsetsResultInfo>> ListOffsetsAsync(
         IReadOnlyList<TopicPartitionOffsetSpec> offsetSpecs,
         TimeSpan timeout
     ) =>
         (
-            await adminClient.ListOffsetsAsync(
+            await adminClient.Value.ListOffsetsAsync(
                 offsetSpecs,
                 new ListOffsetsOptions { RequestTimeout = timeout }
             )
@@ -291,8 +291,15 @@ internal sealed class CdcKafkaTopicOffsetReader(IAdminClient adminClient) : ICdc
         ?? [];
 }
 
+/// <param name="adminClient">
+/// The broker admin client, built on first USE rather than on resolution. Building it validates the
+/// deployment's librdkafka security properties and throws on anything it cannot use, and this adapter
+/// sits in the dependency graph of every CDC verb - including the planned fence, which administers no
+/// broker at all. Resolving it eagerly made an unusable admin-client property the reason a connector
+/// could not be stopped through Kafka Connect.
+/// </param>
 internal sealed class CdcKafkaAdminAdapter(
-    IAdminClient adminClient,
+    Lazy<IAdminClient> adminClient,
     IOptions<CdcControlOptions> options,
     TimeProvider timeProvider,
     ILogger<CdcKafkaAdminAdapter> logger,
@@ -320,6 +327,12 @@ internal sealed class CdcKafkaAdminAdapter(
 
     /// <summary>Kafka's any-host wildcard; host-level restriction is a deployment network control.</summary>
     internal const string AnyHost = "*";
+
+    /// <summary>
+    /// Kafka's wildcard principal. A grant naming it authorizes every user, so it applies to each
+    /// configured instance consumer exactly as a grant naming that consumer does.
+    /// </summary>
+    internal const string WildcardPrincipal = "User:*";
 
     /// <summary>
     /// Stand-in durability-profile token for an observation composed while the configured profile is
@@ -747,7 +760,7 @@ internal sealed class CdcKafkaAdminAdapter(
         {
             // One metadata read for all of them rather than one per name: the broker answers with the
             // whole cluster either way, and three reads could disagree with each other.
-            Metadata metadata = adminClient.GetMetadata(options.Value.Timeouts.KafkaAdmin);
+            Metadata metadata = adminClient.Value.GetMetadata(options.Value.Timeouts.KafkaAdmin);
             HashSet<string> present =
             [
                 .. (metadata.Topics ?? [])
@@ -1276,7 +1289,7 @@ internal sealed class CdcKafkaAdminAdapter(
             );
         }
 
-        List<DeleteAclsResult> results = await adminClient.DeleteAclsAsync(
+        List<DeleteAclsResult> results = await adminClient.Value.DeleteAclsAsync(
             [
                 new AclBindingFilter
                 {
@@ -1321,7 +1334,7 @@ internal sealed class CdcKafkaAdminAdapter(
 
         try
         {
-            await adminClient.DeleteTopicsAsync(
+            await adminClient.Value.DeleteTopicsAsync(
                 [topicName],
                 new DeleteTopicsOptions { RequestTimeout = timeout, OperationTimeout = timeout }
             );
@@ -1535,7 +1548,7 @@ internal sealed class CdcKafkaAdminAdapter(
     {
         // A MATCH filter also returns wildcard and prefixed patterns covering this resource, so an
         // over-broad grant cannot hide behind a literal-only query.
-        DescribeAclsResult result = await adminClient.DescribeAclsAsync(
+        DescribeAclsResult result = await adminClient.Value.DescribeAclsAsync(
             MatchFilter(resourceType, resourceName),
             new DescribeAclsOptions { RequestTimeout = timeout }
         );
@@ -1632,7 +1645,10 @@ internal sealed class CdcKafkaAdminAdapter(
         }
         else if (missing.Count != 0)
         {
-            await adminClient.CreateAclsAsync(missing, new CreateAclsOptions { RequestTimeout = timeout });
+            await adminClient.Value.CreateAclsAsync(
+                missing,
+                new CreateAclsOptions { RequestTimeout = timeout }
+            );
             logger.LogDebug(
                 "Repaired {GrantCount} missing CDC Kafka grants on {ResourceName}.",
                 missing.Count,
@@ -1644,7 +1660,8 @@ internal sealed class CdcKafkaAdminAdapter(
     }
 
     /// <summary>
-    /// Sweeps every topic and group grant held by each configured instance consumer. The only grants a
+    /// Sweeps every topic and group grant each configured instance consumer holds, and every grant the
+    /// wildcard principal holds, which the broker authorizes each of them against. The only grants a
     /// consumer may hold are read and describe on this binding's public topic and read on its own
     /// consumer group; access to another instance's topic, to any progress topic, or through a
     /// non-literal pattern fails closed.
@@ -1719,26 +1736,27 @@ internal sealed class CdcKafkaAdminAdapter(
         Func<string, bool>? alsoPermitted = null
     )
     {
-        DescribeAclsResult result = await adminClient.DescribeAclsAsync(
-            new AclBindingFilter
-            {
-                PatternFilter = new ResourcePatternFilter
-                {
-                    Type = resourceType,
-                    Name = null,
-                    ResourcePatternType = ResourcePatternType.Any,
-                },
-                EntryFilter = new AccessControlEntryFilter
-                {
-                    Principal = principal,
-                    Operation = AclOperation.Any,
-                    PermissionType = AclPermissionType.Any,
-                },
-            },
-            new DescribeAclsOptions { RequestTimeout = timeout }
+        // Swept for the configured principal and for the wildcard principal alike. Kafka's ACL filter
+        // compares the principal string literally, while the authorizer treats a `User:*` grant as
+        // held by every user - so a wildcard grant on another instance's topic or on any progress
+        // topic is invisible to the query naming this consumer, and the broker still authorizes this
+        // consumer against it. It is asked for as a second targeted query rather than by dropping the
+        // principal filter, which would return every principal's grants in the cluster, including the
+        // connector's own.
+        IReadOnlyList<AclBinding>? namedGrants = await DescribeAclsForPrincipalAsync(
+            resourceType,
+            principal,
+            timeout
         );
+        IReadOnlyList<AclBinding>? wildcardGrants = string.Equals(
+            principal,
+            WildcardPrincipal,
+            StringComparison.Ordinal
+        )
+            ? []
+            : await DescribeAclsForPrincipalAsync(resourceType, WildcardPrincipal, timeout);
 
-        if (result?.AclBindings is not { } bindings)
+        if (namedGrants is not { } bindings || wildcardGrants is not { } wildcardBindings)
         {
             diagnostics.Add(
                 AclUnavailable(
@@ -1755,7 +1773,7 @@ internal sealed class CdcKafkaAdminAdapter(
 
         CdcKafkaPolicyItemState state = CdcKafkaPolicyItemState.Satisfied;
 
-        foreach (AclBinding aclBinding in bindings)
+        foreach (AclBinding aclBinding in bindings.Concat(wildcardBindings))
         {
             ResourcePattern pattern = aclBinding.Pattern;
             bool literal = pattern.ResourcePatternType == ResourcePatternType.Literal;
@@ -1813,6 +1831,36 @@ internal sealed class CdcKafkaAdminAdapter(
 
         return state;
     }
+
+    /// <summary>
+    /// Every grant one principal holds on any resource of one type, or null when the broker answered
+    /// without a binding list.
+    /// </summary>
+    private async Task<IReadOnlyList<AclBinding>?> DescribeAclsForPrincipalAsync(
+        ResourceType resourceType,
+        string principal,
+        TimeSpan timeout
+    ) =>
+        (
+            await adminClient.Value.DescribeAclsAsync(
+                new AclBindingFilter
+                {
+                    PatternFilter = new ResourcePatternFilter
+                    {
+                        Type = resourceType,
+                        Name = null,
+                        ResourcePatternType = ResourcePatternType.Any,
+                    },
+                    EntryFilter = new AccessControlEntryFilter
+                    {
+                        Principal = principal,
+                        Operation = AclOperation.Any,
+                        PermissionType = AclPermissionType.Any,
+                    },
+                },
+                new DescribeAclsOptions { RequestTimeout = timeout }
+            )
+        )?.AclBindings;
 
     /// <summary>
     /// Whether one ACL entry is a grant an instance consumer may hold on a public topic of this
@@ -1908,7 +1956,7 @@ internal sealed class CdcKafkaAdminAdapter(
         Dictionary<string, int?> limits = new(StringComparer.Ordinal);
 
         List<IReadOnlyDictionary<string, ConfigEntryResult>?> brokerConfigs = [];
-        foreach (BrokerMetadata broker in adminClient.GetMetadata(timeout).Brokers ?? [])
+        foreach (BrokerMetadata broker in adminClient.Value.GetMetadata(timeout).Brokers ?? [])
         {
             brokerConfigs.Add(
                 await ReadConfigAsync(
@@ -2279,7 +2327,7 @@ internal sealed class CdcKafkaAdminAdapter(
     /// </summary>
     private TopicMetadata? FindTopic(string topicName, TimeSpan timeout)
     {
-        Metadata metadata = adminClient.GetMetadata(timeout);
+        Metadata metadata = adminClient.Value.GetMetadata(timeout);
 
         return metadata.Topics?.Find(topic =>
             string.Equals(topic.Topic, topicName, StringComparison.Ordinal)
@@ -2324,7 +2372,7 @@ internal sealed class CdcKafkaAdminAdapter(
 
         try
         {
-            await adminClient.CreateTopicsAsync(
+            await adminClient.Value.CreateTopicsAsync(
                 [specification],
                 new CreateTopicsOptions { RequestTimeout = timeout, OperationTimeout = timeout }
             );
@@ -2378,7 +2426,7 @@ internal sealed class CdcKafkaAdminAdapter(
     )
     {
         // One resource per request: the 2.6 result carries entries only, with no resource correlation.
-        List<DescribeConfigsResult> results = await adminClient.DescribeConfigsAsync(
+        List<DescribeConfigsResult> results = await adminClient.Value.DescribeConfigsAsync(
             [new ConfigResource { Type = resourceType, Name = resourceName }],
             new DescribeConfigsOptions { RequestTimeout = timeout }
         );
@@ -2466,7 +2514,7 @@ internal sealed class CdcKafkaAdminAdapter(
 
         // A MATCH filter also returns wildcard and prefixed patterns covering this topic, so an
         // over-broad grant cannot hide behind a literal-only query.
-        DescribeAclsResult result = await adminClient.DescribeAclsAsync(
+        DescribeAclsResult result = await adminClient.Value.DescribeAclsAsync(
             new AclBindingFilter
             {
                 PatternFilter = new ResourcePatternFilter

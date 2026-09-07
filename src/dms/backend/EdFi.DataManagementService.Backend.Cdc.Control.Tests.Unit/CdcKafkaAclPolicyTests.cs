@@ -269,6 +269,35 @@ public class Given_CdcKafkaAclPolicy
             .Contain(diagnostic => diagnostic.ArtifactName == "another-instance-group");
     }
 
+    /// <summary>
+    /// A grant naming the wildcard principal names no consumer, so a filter that names one never
+    /// returns it - while the broker authorizes every consumer against it. On a resource outside this
+    /// binding's inventory no required-grant pass runs either, so the isolation sweep is the only
+    /// place such a grant can be seen at all.
+    /// </summary>
+    [Test]
+    public async Task It_rejects_a_wildcard_principal_grant_on_another_instances_topic()
+    {
+        CdcArtifactInventory inventory = Inventory(CdcProvider.Postgresql);
+        List<AclBinding> acls = ConformingAcls(inventory);
+        acls.Add(
+            Acl(
+                ResourceType.Topic,
+                "another-instance-public-topic",
+                CdcKafkaAdminAdapter.WildcardPrincipal,
+                AclOperation.Read
+            )
+        );
+        IAdminClient adminClient = Broker(inventory, acls);
+
+        CdcKafkaBindingAclPolicies policies = await RunAclsAsync(adminClient, inventory);
+
+        policies.PublicTopicAcls.State.Should().Be(CdcKafkaPolicyItemState.Invalid);
+        policies
+            .Diagnostics.Should()
+            .Contain(diagnostic => diagnostic.ArtifactName == "another-instance-public-topic");
+    }
+
     [Test]
     public async Task It_rejects_a_wildcard_consumer_group_grant()
     {
@@ -557,7 +586,7 @@ public class Given_CdcKafkaAclPolicy
         bool aclsEnabled
     ) =>
         new(
-            adminClient,
+            new Lazy<IAdminClient>(() => adminClient),
             Options.Create(ControlOptions(inventory, aclsEnabled)),
             new FixedTimeProvider(ObservedAt),
             NullLogger<CdcKafkaAdminAdapter>.Instance

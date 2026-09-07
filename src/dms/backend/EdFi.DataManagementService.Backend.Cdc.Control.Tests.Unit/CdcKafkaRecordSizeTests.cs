@@ -234,7 +234,7 @@ public class Given_CdcKafkaRecordSize
     {
         CdcArtifactInventory inventory = Inventory();
         CdcKafkaAdminAdapter adapter = new(
-            adminClient,
+            new Lazy<IAdminClient>(() => adminClient),
             Options.Create(ControlOptions()),
             new FixedTimeProvider(ObservedAt),
             NullLogger<CdcKafkaAdminAdapter>.Instance
