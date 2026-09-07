@@ -196,6 +196,18 @@ function Get-CdcConnectorEnvArgument {
 
     SQL Server names the captured catalog `database.names` and PostgreSQL names it
     `database.dbname`; the control plane's template requires whichever belongs to the provider.
+
+    SQL Server additionally carries the two local TLS properties. The Microsoft JDBC driver Debezium
+    uses negotiates an encrypted connection by default and then validates the server certificate,
+    and mssql.yml's SQL Server answers with the container's own self-signed certificate - which no
+    trust store on the Connect worker contains. Without `driver.trustServerCertificate=true` the
+    connector's own connection attempt fails certificate validation, so plugin validation or the
+    first connection fails rather than anything about CDC. `driver.encrypt=true` is stated with it
+    rather than left to the driver's default, so the pair reads as one decision about a local
+    development certificate; the same two properties are what
+    CdcConnectorTemplatePinnedImageFixture supplies for its SQL Server leg. PostgreSQL needs no
+    counterpart: libpq's `sslmode` defaults to `prefer`, which does not validate a certificate, and
+    the container is not configured for TLS at all.
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Returns an argument list fragment; the plural noun reflects the return shape.')]
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'No password is emitted: only the ${env:...} reference the Kafka Connect worker resolves.')]
@@ -228,7 +240,99 @@ function Get-CdcConnectorEnvArgument {
         "-e", "$propertyPrefix$catalogPropertyName=$SourceDatabaseName"
     )
 
+    if ($DatabaseEngine -eq "mssql") {
+        $arguments += @(
+            "-e", "$($propertyPrefix)driver.encrypt=true",
+            "-e", "$($propertyPrefix)driver.trustServerCertificate=true"
+        )
+    }
+
     return $arguments
+}
+
+function Get-CdcMssqlAgentProbeSql {
+    <#
+    .SYNOPSIS
+    The SQL Server batch that fails unless SQL Server Agent is running.
+
+    .DESCRIPTION
+    Returned as a pure string so the statement shape is unit testable without a live server, the same
+    way provision-cdc-principal.ps1 returns its principal statements.
+
+    THROW rather than a projected value, so `sqlcmd -b` carries the verdict in its exit code and the
+    caller does not have to parse output. sys.dm_server_services is the service's own report of what
+    is running, which is what has to be true; MSSQL_AGENT_ENABLED is only what was requested of the
+    container, and a container that predates the request still answers to the old value.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param()
+
+    return @"
+SET NOCOUNT ON;
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.dm_server_services
+    WHERE servicename LIKE 'SQL Server Agent%' AND status_desc = 'Running'
+)
+    THROW 50000, 'SQL Server Agent is not running.', 1;
+"@
+}
+
+function Assert-CdcMssqlAgentRunning {
+    <#
+    .SYNOPSIS
+    Proves SQL Server Agent is running before any SQL Server CDC work begins.
+
+    .DESCRIPTION
+    SQL Server CDC capture is Agent work: the capture job reads the transaction log and writes the
+    change tables, and the cleanup job trims them. With Agent stopped, provider setup still creates
+    the capture instances and they simply never advance - so the connector reads a capture that
+    produces nothing, the enable workflow's readiness barrier is never met, and the failure presents
+    as a source with no changes rather than as a missing service. That is the reason this is proved
+    here instead of being diagnosed from the readiness timeout.
+
+    Polled rather than asked once: Agent starts asynchronously after SQL Server accepts connections,
+    so the container is healthy for a few seconds before its Agent is.
+
+    PostgreSQL has no counterpart. Its capture is the WAL and a logical replication slot the
+    connector reads directly, with no scheduled job between them.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'The SA password is read as plaintext from the environment file and handed to sqlcmd on docker exec, where it is visible in host-side argv regardless; consistent with provision-cdc-principal.ps1.')]
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]
+        $SaPassword,
+
+        [string]
+        $MssqlContainerName = "dms-mssql",
+
+        [int]
+        $TimeoutSeconds = 120
+    )
+
+    $probeSql = Get-CdcMssqlAgentProbeSql
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+
+    while ($true) {
+        $global:LASTEXITCODE = 0
+        & docker exec -e "SQLCMDPASSWORD=$SaPassword" $MssqlContainerName /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -Q $probeSql -C -b 2>&1 |
+            Out-Null
+
+        if ($LASTEXITCODE -eq 0) {
+            Write-Information "CDC phase: SQL Server Agent is running, so the capture jobs can advance." -InformationAction Continue
+            return
+        }
+
+        if ((Get-Date) -ge $deadline) {
+            break
+        }
+
+        Start-Sleep -Seconds 2
+    }
+
+    throw "CDC phase: SQL Server Agent is not running in container '$MssqlContainerName' after $TimeoutSeconds seconds. SQL Server CDC capture and cleanup are Agent jobs, so without it the capture instances would be created and never advance, and CDC readiness could not complete. mssql.yml passes MSSQL_AGENT_ENABLED and start-local-dms.ps1 sets it to true for -EnableKafkaCdc on this engine; a container created before that setting keeps the old value until it is recreated (docker compose up recreates it)."
 }
 
 function Get-CdcEnableGenerationPlan {
@@ -472,10 +576,12 @@ function Get-CdcEnableArgument {
     parser's and no admission contract reaches stdout - which is also why the reissue needs the
     tokens rather than the reused generation alone.
 
-    A plain rerun asserts neither. That is deliberate: the live binding record a rerun would have to
-    infer the reissue from survives a completed enablement, so inferring it asserted an initial
-    provisioning history for any target that had ever been enabled. The emission site records why the
-    control plane cannot recover the difference.
+    A plain rerun over a live binding record never reaches this builder at all: Invoke-CdcEnablePhase
+    routes it to `cdc restart`, which is the command a post-admission restart wants. That split is
+    deliberate, and so is the fact that neither token can be inferred here: the live binding record a
+    rerun would have to infer the reissue from survives a completed enablement, so inferring it
+    asserted an initial provisioning history for any target that had ever been enabled. The emission
+    site records why the control plane cannot recover the difference.
 
     The connector principal and the connector's own database connection properties travel by
     environment rather than on the command line, alongside the setup principal: they are deployment
@@ -744,10 +850,17 @@ function Invoke-CdcEnablePhase {
 
     .DESCRIPTION
     Ordered deliberately: DMS health, then the operator token, then a status-endpoint preflight,
-    then the enable itself. The preflight is what separates a configuration mistake from a CDC
-    failure - a 404 means the status role never reached the container and the endpoint was never
-    mapped, and a 403 means the token does not carry the role - so it is answered here, in the
-    phase that owns those settings, rather than surfacing from inside the enable workflow.
+    then the verb this run's shape calls for. The preflight is what separates a configuration
+    mistake from a CDC failure - a 404 means the status role never reached the container and the
+    endpoint was never mapped, and a 403 means the token does not carry the role - so it is answered
+    here, in the phase that owns those settings, rather than surfacing from inside the enable
+    workflow.
+
+    Which verb runs is chosen from the binding state store BEFORE anything runs, not discovered from
+    a failure. A first enablement and its explicitly asserted retry run `cdc enable`; a normal rerun
+    over an already-admitted binding runs `cdc restart` alone, because it can assert none of the
+    provisioning evidence an enable requires and must not. The emission site below carries the three
+    shapes and why each needs its own command.
 
     Write admission is still closed when this runs: no seed or API write has been issued yet. DMS
     being up is not write admission, and DMS never enables tracking itself - this external
@@ -833,6 +946,15 @@ function Invoke-CdcEnablePhase {
         -AccessToken $operatorToken `
         -TimeoutSeconds $HealthTimeoutSeconds
 
+    # SQL Server only, and before any capture artifact is created: the capture instances provider
+    # setup creates are driven by Agent jobs, so a stopped Agent yields a capture that exists and
+    # never advances.
+    if ($DatabaseEngine -eq "mssql") {
+        Assert-CdcMssqlAgentRunning -SaPassword (
+            Get-EnvValue -EnvValues $envValues -Name "MSSQL_SA_PASSWORD" -DefaultValue "abcdefgh1!"
+        )
+    }
+
     # Before the enable, and after the database exists: provider setup grants this principal its
     # capture access and refuses when it is missing.
     & "$PSScriptRoot/provision-cdc-principal.ps1" `
@@ -852,50 +974,132 @@ function Invoke-CdcEnablePhase {
         -DeploymentKey $bindingKey.DeploymentKey `
         -InstanceKey $bindingKey.InstanceKey
 
-    $composeArguments = Get-CdcEnableArgument `
-        -ComposeProjectName $ComposeProjectName `
-        -EnvironmentFile $EnvironmentFile `
-        -TenantKey $TenantKey `
-        -DataStoreId $DataStoreId `
-        -DatabaseEngine $DatabaseEngine `
-        -DatabaseCreatedByThisRun $DatabaseCreatedByThisRun `
-        -ResumeInterruptedEnable:$ResumeInterruptedEnable `
-        -SourceDatabaseName $resolvedSourceDatabaseName `
-        -BindingStateRoot $bindingStateRoot `
-        -ConnectorPrincipal $connectorPrincipal
+    # Which of the three shapes this run is, decided HERE - before any verb runs - because the three
+    # need different commands and none can recover from another's failure. The store has already
+    # answered both facts the choice needs, so nothing is inferred from how a command failed.
+    #
+    #   InitialEnable          No live binding record. `cdc enable`, carrying the provisioning tokens
+    #                          only when this run created the database. A run that merely found an
+    #                          existing database carries neither and is refused by the command
+    #                          surface, which is the correct outcome for a target this deployment
+    #                          never enabled.
+    #   InterruptedEnableRetry A live binding record plus the operator's -ResumeInterruptedCdcEnable
+    #                          assertion. `cdc enable` again under the generation that record names,
+    #                          then the guarded restart, because an enable over a live binding does
+    #                          not start a connector the worker is holding at a stopped target state.
+    #   NormalRestart          A live binding record and no such assertion. `cdc restart` ALONE.
+    #
+    # The last one is why the choice is made up front rather than discovered. `cdc restart` used to
+    # run only after the enable, and a normal rerun cannot reach it there: it asserts no provisioning
+    # tokens - the live binding record survives a completed enablement and every write admitted
+    # afterwards, so its presence cannot establish "closed, never opened" - and without them the
+    # enable fails command-line parsing, which threw before the restart was reached. Asserting them
+    # anyway is the other half of the trap: the control plane refuses a populated database, so the
+    # shape that could parse could not pass. cdc-streaming.md settles which command the shape wants -
+    # "A normal restart after admission exact-matches the binding and validates existing artifacts
+    # instead of applying the empty-table retry classification" - and `cdc restart` is that command:
+    # it re-proves source-history continuity and the four artifact prerequisites, and it resumes a
+    # connector the worker holds STOPPED.
+    #
+    # A run that created the database over a live binding record is a NormalRestart too, not a first
+    # enablement: the control plane holds that generation, so an enable against it is a first attempt
+    # against a live one and is refused. The restart is what reports it, on the fingerprint of the
+    # source that actually answered rather than on this phase's guess about which database it is.
+    $phaseMode =
+        if (-not $generationPlan.ResumesLiveBinding) { "InitialEnable" }
+        elseif ($ResumeInterruptedEnable) { "InterruptedEnableRetry" }
+        else { "NormalRestart" }
 
-    Write-Information "CDC phase: enabling CDC for data store $DataStoreId." -InformationAction Continue
-    $global:LASTEXITCODE = 0
-
-    # The token is handed to the container through this process's environment, which the compose
-    # run inherits, rather than through the docker command line - readable by any account on the
-    # host while the run is in flight. Restored to whatever it was, usually absent, however the run
-    # ends; setting it back to $null removes it rather than leaving an empty one behind.
+    # Captured once, for both invocations below. The token is handed to the container through this
+    # process's environment, which the compose run inherits, rather than through the docker command
+    # line - readable by any account on the host while the run is in flight. Restored to whatever it
+    # was, usually absent, however each run ends; setting it back to $null removes it rather than
+    # leaving an empty one behind.
     $previousBearerToken = [Environment]::GetEnvironmentVariable($script:CdcDmsBearerTokenVariableName)
-    [Environment]::SetEnvironmentVariable($script:CdcDmsBearerTokenVariableName, $operatorToken)
-    try {
-        & docker @composeArguments
-    }
-    finally {
-        [Environment]::SetEnvironmentVariable($script:CdcDmsBearerTokenVariableName, $previousBearerToken)
+
+    function Invoke-CdcSetupVerb {
+        <#
+        .SYNOPSIS
+        Runs one composed `cdc` verb with the operator token in the environment, and returns its exit
+        code.
+
+        .DESCRIPTION
+        One place so the two invocations this phase can issue cannot drift on how the token is passed
+        or on whether it is removed again afterwards. The exit code is RETURNED rather than thrown on,
+        because the two callers judge it differently: a failed enable ends the phase, and a declined
+        restart does not.
+        #>
+        [CmdletBinding()]
+        [OutputType([int])]
+        param(
+            [Parameter(Mandatory)]
+            [object[]]
+            $ComposeArgument,
+
+            [Parameter(Mandatory)]
+            [string]
+            $OperatorToken,
+
+            [AllowEmptyString()]
+            [AllowNull()]
+            [string]
+            $PreviousToken
+        )
+
+        $global:LASTEXITCODE = 0
+        [Environment]::SetEnvironmentVariable($script:CdcDmsBearerTokenVariableName, $OperatorToken)
+        try {
+            & docker @ComposeArgument
+        }
+        finally {
+            [Environment]::SetEnvironmentVariable($script:CdcDmsBearerTokenVariableName, $PreviousToken)
+        }
+
+        if ($LASTEXITCODE -is [int]) {
+            return [int]$LASTEXITCODE
+        }
+
+        return 0
     }
 
-    if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
-        throw "dms-document-cache cdc enable failed with exit code $LASTEXITCODE."
+    if ($phaseMode -ne "NormalRestart") {
+        $composeArguments = Get-CdcEnableArgument `
+            -ComposeProjectName $ComposeProjectName `
+            -EnvironmentFile $EnvironmentFile `
+            -TenantKey $TenantKey `
+            -DataStoreId $DataStoreId `
+            -DatabaseEngine $DatabaseEngine `
+            -DatabaseCreatedByThisRun $DatabaseCreatedByThisRun `
+            -ResumeInterruptedEnable:$ResumeInterruptedEnable `
+            -SourceDatabaseName $resolvedSourceDatabaseName `
+            -BindingStateRoot $bindingStateRoot `
+            -ConnectorPrincipal $connectorPrincipal
+
+        Write-Information "CDC phase: enabling CDC for data store $DataStoreId ($phaseMode)." -InformationAction Continue
+        $enableExitCode = Invoke-CdcSetupVerb `
+            -ComposeArgument $composeArguments `
+            -OperatorToken $operatorToken `
+            -PreviousToken $previousBearerToken
+
+        if ($enableExitCode -ne 0) {
+            throw "dms-document-cache cdc enable failed with exit code $enableExitCode."
+        }
     }
 
-    # The guarded lift of the fence the previous normal stop applied. A first enablement starts its
-    # own connector, but a run over a live binding record does not: the connector is already
-    # registered with an exact-match configuration, so it is not re-created, and STOPPED is a target
-    # state the worker persists - the enable would leave it fenced and report the target not ready
-    # with nothing having asked it to resume.
+    # The guarded lift of the fence the previous normal stop applied, issued for both shapes that run
+    # over a live binding record. On a NormalRestart it is the only verb this phase runs; on an
+    # InterruptedEnableRetry it follows the enable, because the connector that enable found is already
+    # registered with an exact-match configuration and is therefore not re-created, and STOPPED is a
+    # target state the worker persists - the enable would leave it fenced and report the target not
+    # ready with nothing having asked it to resume.
     #
     # It is `cdc restart` rather than anything this phase decides, because resuming is exactly what
     # must be guarded: it lifts the fence only against affirmative source-history continuity and the
     # four artifact prerequisites, which is the check the worker's own auto-resume skipped and the
-    # reason the fence is applied at all. A restart that declines is not a phase failure - a
-    # connector that stays fenced is the correct outcome of unproved continuity, and `cdc status`
-    # says why - so its exit code is reported rather than thrown on.
+    # reason the fence is applied at all. A restart that declines is not a phase failure - a connector
+    # that stays fenced is the correct outcome of unproved continuity, and `cdc status` says why - so
+    # its exit code is reported rather than thrown on.
+    $connectorResumed = $null
     if ($generationPlan.ResumesLiveBinding) {
         $restartArguments = Get-CdcRestartArgument `
             -ComposeProjectName $ComposeProjectName `
@@ -907,19 +1111,15 @@ function Invoke-CdcEnablePhase {
             -Generation $generationPlan.Generation `
             -ConnectorPrincipal $connectorPrincipal
 
-        Write-Information "CDC phase: resuming the connector of generation $($generationPlan.Generation) through the guarded restart." -InformationAction Continue
-        $global:LASTEXITCODE = 0
+        Write-Information "CDC phase: resuming the connector of generation $($generationPlan.Generation) through the guarded restart ($phaseMode)." -InformationAction Continue
+        $restartExitCode = Invoke-CdcSetupVerb `
+            -ComposeArgument $restartArguments `
+            -OperatorToken $operatorToken `
+            -PreviousToken $previousBearerToken
 
-        [Environment]::SetEnvironmentVariable($script:CdcDmsBearerTokenVariableName, $operatorToken)
-        try {
-            & docker @restartArguments
-        }
-        finally {
-            [Environment]::SetEnvironmentVariable($script:CdcDmsBearerTokenVariableName, $previousBearerToken)
-        }
-
-        if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
-            Write-Warning "CDC phase: dms-document-cache cdc restart declined to resume the connector of generation $($generationPlan.Generation) (exit code $LASTEXITCODE). It stays fenced, which is the correct outcome when source-history continuity is not proved. Run 'cdc status' for the evidence."
+        $connectorResumed = ($restartExitCode -eq 0)
+        if (-not $connectorResumed) {
+            Write-Warning "CDC phase: dms-document-cache cdc restart declined to resume the connector of generation $($generationPlan.Generation) (exit code $restartExitCode). It stays fenced, which is the correct outcome when source-history continuity is not proved. Run 'cdc status' for the evidence."
         }
     }
 
@@ -933,6 +1133,14 @@ function Invoke-CdcEnablePhase {
         DatabaseEngine           = $DatabaseEngine
         SourceDatabaseName       = $resolvedSourceDatabaseName
         DatabaseCreatedByThisRun = $DatabaseCreatedByThisRun
+        Generation               = $generationPlan.Generation
+        # Which of the three shapes ran. Reported rather than left to be inferred from the transcript:
+        # it is the one fact that says whether this run enabled a target or resumed one, and a caller
+        # that cannot tell them apart cannot tell a normal restart from a first enablement either.
+        PhaseMode                = $phaseMode
+        # Whether the guarded restart resumed the connector. $null when no restart was issued, which
+        # is every first enablement - those start their own connector.
+        ConnectorResumed         = $connectorResumed
         Status                   = "Enabled"
     }
 }
@@ -1054,6 +1262,8 @@ Export-ModuleMember -Function `
     Get-CdcConnectorPrincipalEnvArgument, `
     Get-CdcConnectorEnvArgument, `
     Get-CdcSetupComposeArgument, `
+    Get-CdcMssqlAgentProbeSql, `
+    Assert-CdcMssqlAgentRunning, `
     Get-CdcEnableGenerationPlan, `
     Get-CdcLocalBindingKey, `
     Get-CdcRestartArgument, `

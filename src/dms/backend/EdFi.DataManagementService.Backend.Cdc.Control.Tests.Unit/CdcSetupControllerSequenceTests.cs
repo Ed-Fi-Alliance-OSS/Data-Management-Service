@@ -642,6 +642,112 @@ public class Given_CdcSetupControllerInitialReadinessSequence
         admission.AdmissionState.Should().Be(CdcAdmissionState.Admitted);
     }
 
+    /// <summary>
+    /// The overwrite the design forbids. A retry runs against its own binding record, so the connector
+    /// it finds is one an earlier attempt registered — but one whose governed configuration has since
+    /// drifted "differs from the record", which must stop the workflow, and automation may never
+    /// overwrite a governed artifact to make it agree. Replacing it and validating the replacement
+    /// would report a match and go on to admit writes over a connector nobody had agreed to.
+    /// </summary>
+    [Test]
+    public async Task It_refuses_a_retry_over_a_mismatched_connector_without_replacing_it()
+    {
+        CdcSetupControllerHarness harness = new()
+        {
+            BindingRead = CdcSetupControllerHarness.Present(CdcSetupControllerHarness.Binding()),
+            Eligibility = CdcSetupControllerHarness.Reading(lifecycleStateToken: "Tracking"),
+            ConnectorConfigReadBack = CdcSetupControllerHarness.RenderedConnectorConfig(config =>
+                config["tasks.max"] = "2"
+            ),
+        };
+
+        CdcAdmission admission = await harness.EnableAsync();
+
+        using var _ = new AssertionScope();
+        NotAdmitted(admission);
+        admission.Steps.ConnectorAndTopicValidation.State.Should().NotBe(CdcComponentState.Satisfied);
+
+        // The conflicting configuration is still the one the worker holds: nothing was written over it,
+        // so an operator can see what it actually differs in.
+        A.CallTo(() =>
+                harness.Connect.PutConnectorConfigAsync(
+                    A<string>._,
+                    A<IReadOnlyDictionary<string, string>>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+    }
+
+    /// <summary>
+    /// The same read, reaching the opposite verdict: a retry whose connector already matches the
+    /// rendered template is validated and left exactly as it is. Re-registering an identical
+    /// configuration is not harmless — Connect treats a `PUT` as a configuration change and restarts
+    /// the connector's tasks for it, which is a publication interruption an idempotent retry has no
+    /// business causing.
+    /// </summary>
+    [Test]
+    public async Task It_validates_a_matching_connector_on_a_retry_rather_than_re_registering_it()
+    {
+        CdcSetupControllerHarness harness = new()
+        {
+            BindingRead = CdcSetupControllerHarness.Present(CdcSetupControllerHarness.Binding()),
+            Eligibility = CdcSetupControllerHarness.Reading(lifecycleStateToken: "Tracking"),
+        };
+
+        CdcAdmission admission = await harness.EnableAsync();
+
+        using var _ = new AssertionScope();
+        admission.AdmissionState.Should().Be(CdcAdmissionState.Admitted);
+        Satisfied(
+            admission.Steps.ConnectorAndTopicValidation,
+            nameof(admission.Steps.ConnectorAndTopicValidation)
+        );
+        A.CallTo(() =>
+                harness.Connect.PutConnectorConfigAsync(
+                    A<string>._,
+                    A<IReadOnlyDictionary<string, string>>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+    }
+
+    /// <summary>
+    /// Neither present nor proved absent. Registering on that answer is the overwrite the read exists
+    /// to prevent, decided on evidence the worker never gave — so the sequence stops instead.
+    /// </summary>
+    [Test]
+    public async Task It_stops_when_the_worker_cannot_say_whether_it_already_holds_the_connector()
+    {
+        CdcSetupControllerHarness harness = new()
+        {
+            BindingRead = CdcSetupControllerHarness.Present(CdcSetupControllerHarness.Binding()),
+            Eligibility = CdcSetupControllerHarness.Reading(lifecycleStateToken: "Tracking"),
+            ConnectorConfigReadBack = new(
+                CdcConnectOutcome.Unavailable,
+                null,
+                new(503, "worker unavailable", true)
+            ),
+        };
+
+        CdcAdmission admission = await harness.EnableAsync();
+
+        using var _ = new AssertionScope();
+        NotAdmitted(admission);
+        Diagnostic(admission, "enableConnectorPresenceUnknown")
+            .Observed.Should()
+            .Be(nameof(CdcConnectOutcome.Unavailable));
+        A.CallTo(() =>
+                harness.Connect.PutConnectorConfigAsync(
+                    A<string>._,
+                    A<IReadOnlyDictionary<string, string>>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+    }
+
     private static void Satisfied(CdcComponent component, string stepName) =>
         component.State.Should().Be(CdcComponentState.Satisfied, "{0} must be satisfied", stepName);
 

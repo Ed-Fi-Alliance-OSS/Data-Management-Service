@@ -242,6 +242,27 @@ of its own.
   reachable, and is not conditioned on the CDC opt-in of the run that is stopping: the worker
   starts on any Kafka opt-in at all. A fence that does not apply warns rather than failing
   the shutdown, because a normal stop removes nothing for it to leave unprotected.
+- The phase chooses its verb from the binding state store before it runs anything, because the
+  three shapes a run can be need different commands and none can recover from another's
+  failure. No live binding record is a first enablement and runs `cdc enable`, carrying the
+  provisioning evidence only when the run created the instance database. A live binding record
+  plus the operator's explicit resume assertion is the interrupted-enable retry: `cdc enable`
+  again under the generation that record names, then the guarded restart. A live binding record
+  and no such assertion is a normal restart of an already-admitted binding, and it runs
+  `cdc restart` ALONE - it can assert no provisioning evidence, and the owning design has a
+  post-admission restart exact-match the binding and validate existing artifacts rather than
+  apply the initial-enable retry classification. Running the enable first and reaching the
+  restart afterwards cannot serve that third shape: the enable fails argument parsing without
+  the evidence, and the control plane refuses it with the evidence over a populated database.
+- On SQL Server the opt-in enables SQL Server Agent and the phase proves it is running before
+  provisioning anything, and the connector carries the local TLS settings its driver needs.
+  Both are properties of the deployment rather than of the control plane: capture and cleanup
+  on that engine are Agent jobs, so with Agent stopped the capture instances are created and
+  never advance and readiness cannot complete; and the local container answers with a
+  self-signed certificate that the Connect worker holds no trust store for, which the driver's
+  default encrypted connection then refuses. Neither presents as its own cause - the first
+  looks like a source with no changes and the second like a connector that will not start - so
+  both are settled by the deployment up front instead of diagnosed from a readiness timeout.
 - The control-plane verbs run as a one-shot container on the local compose network rather
   than on the host. The instance database is registered in the Configuration Service under
   its container alias and the broker advertises a container-internal listener, so a

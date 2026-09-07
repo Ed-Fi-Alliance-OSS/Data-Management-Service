@@ -19,6 +19,14 @@ services:
       MSSQL_PID: ${MSSQL_PID:-Developer}
       MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:-abcdefgh1!}
       MSSQL_MEMORY_LIMIT_MB: ${MSSQL_MEMORY_LIMIT_MB:-4096}
+      # SQL Server Agent, off unless something asks for it. SQL Server CDC does not capture without
+      # it: the capture and cleanup jobs that move committed log rows into the change tables are
+      # Agent jobs, so with Agent disabled the capture instances exist and never advance, and CDC
+      # readiness cannot complete. It is disabled by default in the Linux container, and this line
+      # exists so an opt-in can turn it on - start-local-dms.ps1 exports MSSQL_AGENT_ENABLED=true for
+      # -EnableKafkaCdc on this engine. The default stays false so a stack that captures nothing does
+      # not run the Agent process; mssql-tmpfs.yml names the same variable and defaults it to true.
+      MSSQL_AGENT_ENABLED: ${MSSQL_AGENT_ENABLED:-false}
     ports:
       - '127.0.0.1:${MSSQL_PORT:-1435}:1433'
     volumes:

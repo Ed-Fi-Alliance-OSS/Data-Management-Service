@@ -1102,6 +1102,39 @@ public class Given_CdcSetupControllerRestart
     }
 
     /// <summary>
+    /// The fence a normal stop exists for, issued while the instance database is unreachable. The
+    /// durable binding record and the artifact names recovered from it are what name the connector, and
+    /// both were read before the connection was ever opened — so a provider the control plane cannot
+    /// reach says nothing about whether the worker can be asked to fence. Refusing here left the
+    /// connector at a running target state through the shutdown, which the worker then restores on the
+    /// next start with no continuity check possible.
+    /// </summary>
+    [Test]
+    public async Task It_fences_when_the_instance_database_is_unreachable_and_the_worker_is_not()
+    {
+        CdcSetupControllerHarness harness = Given_CdcSetupControllerStatus.EnabledBinding();
+        A.CallTo(() => harness.Connection.OpenAsync(A<CancellationToken>._))
+            .Throws(new InvalidOperationException("the instance database is unreachable"));
+
+        CdcStatus status = await harness.StopAsync();
+
+        using var _ = new AssertionScope();
+
+        // The observation that could not be made is still reported as unmade; it is simply not what
+        // decides whether to fence.
+        Given_CdcSetupControllerStatus
+            .Target(status)
+            .Diagnostics.Should()
+            .Contain(diagnostic => diagnostic.Code == "statusProviderConnectionUnavailable");
+        Given_CdcSetupControllerStatus
+            .Target(status)
+            .Diagnostics.Should()
+            .NotContain(diagnostic => diagnostic.Code == "stopNotAttempted");
+        A.CallTo(() => harness.Connect.StopConnectorAsync(A<string>._, A<CancellationToken>._))
+            .MustHaveHappenedOnceExactly();
+    }
+
+    /// <summary>
     /// Nothing durable names the connector, so there is nothing this verb may act on. Automation never
     /// infers a binding from the artifacts that happen to exist, and reporting a fence it did not apply
     /// would tell a shutdown sequence the connector is safe when it is not.

@@ -770,8 +770,10 @@ internal sealed class CdcSetupController(
 
         logger.LogDebug("CDC enablement provisioned the provider and Kafka artifacts for the binding.");
 
-        // Step 6: render the connector, validate it before it is registered, register it, and validate
-        // what the worker actually holds against the same template rules.
+        // Step 6: render the connector, ask the worker whether it already holds one under this name,
+        // then either register the rendered configuration - validated against the plugin first - or
+        // validate the one that exists. Either way the connector the worker actually holds is read
+        // back and compared against the same template rules; nothing existing is replaced.
         if (
             !TryComposeConnectorTemplate(
                 binding,
@@ -845,47 +847,95 @@ internal sealed class CdcSetupController(
             );
         }
 
-        // The worker validates the configuration against the plugin itself before anything is
-        // registered, so a configuration the plugin refuses never becomes a registered connector.
-        CdcConnectResult<CdcConnectConfigValidation> pluginValidation = await connectClient
-            .ValidateConnectorPluginConfigAsync(connectorClass, rendered.Config, cancellationToken)
-            .ConfigureAwait(false);
-        if (!pluginValidation.Succeeded || pluginValidation.Value is not { ErrorCount: 0 })
-        {
-            return Blocked(
-                Step(
-                    "enableConnectorPluginValidationRejected",
-                    CdcDiagnosticCategory.ConnectorConfigInvalid,
-                    CdcDiagnosticComponent.ConnectorConfig,
-                    "CDC enablement could not confirm the connector plugin accepts the rendered configuration.",
-                    PluginValidationSummary(pluginValidation),
-                    timeProvider.GetUtcNow()
-                ),
-                []
-            );
-        }
-
-        CdcConnectResult registration = await connectClient
-            .PutConnectorConfigAsync(inventory.ConnectorName, rendered.Config, cancellationToken)
-            .ConfigureAwait(false);
-        if (!registration.Succeeded)
-        {
-            return Blocked(
-                Step(
-                    "enableConnectorRegistrationFailed",
-                    CdcDiagnosticCategory.ConnectorNotRunning,
-                    CdcDiagnosticComponent.ConnectorRuntime,
-                    "CDC enablement could not register the connector with the Kafka Connect worker.",
-                    registration.Outcome.ToString(),
-                    timeProvider.GetUtcNow()
-                ),
-                []
-            );
-        }
-
+        // Read before writing. A `PUT` is create-or-REPLACE, so registering first and comparing
+        // afterwards compares this pass against its own replacement: a retry over an existing
+        // connector whose transform, routing, or source settings had drifted from what the binding
+        // governs would overwrite them and then report a match. The design forbids exactly that - a
+        // governed artifact that "differs from the record" must stop the workflow, and automation may
+        // never "infer or overwrite a binding from existing topic names or connector configuration" -
+        // so what is registered may only ever be a connector this pass found absent.
+        //
+        // Only a retry reaches the existing-connector branch. An enablement with no binding record of
+        // its own has already proved the worker holds no connector under this name, before it created
+        // that record; one retrying against its own record does not re-ask, because the artifacts it
+        // finds are the ones its earlier attempt created - but it still has to agree with them.
         CdcConnectResult<IReadOnlyDictionary<string, string>> readBack = await connectClient
             .GetConnectorConfigAsync(inventory.ConnectorName, cancellationToken)
             .ConfigureAwait(false);
+
+        // Neither present nor proved absent. Registering here would be the overwrite this read exists
+        // to prevent, decided on an answer the worker never gave.
+        if (readBack.Outcome is not (CdcConnectOutcome.Succeeded or CdcConnectOutcome.NotFound))
+        {
+            return Blocked(
+                Step(
+                    "enableConnectorPresenceUnknown",
+                    CdcDiagnosticCategory.ConnectorConfigInvalid,
+                    CdcDiagnosticComponent.ConnectorConfig,
+                    "CDC enablement could not establish whether the worker already holds the binding's "
+                        + "connector, which is what decides between registering one and validating the "
+                        + "one that exists.",
+                    readBack.Outcome.ToString(),
+                    timeProvider.GetUtcNow()
+                ),
+                []
+            );
+        }
+
+        if (readBack.Outcome == CdcConnectOutcome.NotFound)
+        {
+            // The worker validates the configuration against the plugin itself before anything is
+            // registered, so a configuration the plugin refuses never becomes a registered connector.
+            CdcConnectResult<CdcConnectConfigValidation> pluginValidation = await connectClient
+                .ValidateConnectorPluginConfigAsync(connectorClass, rendered.Config, cancellationToken)
+                .ConfigureAwait(false);
+            if (!pluginValidation.Succeeded || pluginValidation.Value is not { ErrorCount: 0 })
+            {
+                return Blocked(
+                    Step(
+                        "enableConnectorPluginValidationRejected",
+                        CdcDiagnosticCategory.ConnectorConfigInvalid,
+                        CdcDiagnosticComponent.ConnectorConfig,
+                        "CDC enablement could not confirm the connector plugin accepts the rendered configuration.",
+                        PluginValidationSummary(pluginValidation),
+                        timeProvider.GetUtcNow()
+                    ),
+                    []
+                );
+            }
+
+            CdcConnectResult registration = await connectClient
+                .PutConnectorConfigAsync(inventory.ConnectorName, rendered.Config, cancellationToken)
+                .ConfigureAwait(false);
+            if (!registration.Succeeded)
+            {
+                return Blocked(
+                    Step(
+                        "enableConnectorRegistrationFailed",
+                        CdcDiagnosticCategory.ConnectorNotRunning,
+                        CdcDiagnosticComponent.ConnectorRuntime,
+                        "CDC enablement could not register the connector with the Kafka Connect worker.",
+                        registration.Outcome.ToString(),
+                        timeProvider.GetUtcNow()
+                    ),
+                    []
+                );
+            }
+
+            // What the worker actually holds, which is not necessarily what was sent: the read-back is
+            // the evidence the comparison below is made against, for a connector this pass created no
+            // less than for one it found.
+            readBack = await connectClient
+                .GetConnectorConfigAsync(inventory.ConnectorName, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        else
+        {
+            logger.LogDebug(
+                "CDC enablement found the binding's connector already registered and validated it "
+                    + "against the rendered template rather than replacing it."
+            );
+        }
 
         evaluation = evaluation with
         {
@@ -1155,6 +1205,13 @@ internal sealed class CdcSetupController(
         // nothing, and can only reduce what is published, so there is no state of the deployment in
         // which refusing to fence is the safer answer. The one thing it needs is a record naming the
         // connector: automation never infers a binding from the artifacts that happen to exist.
+        //
+        // That is also why this reads the durable binding and the names recovered from it rather than
+        // a complete observation. Collection carries both onto its refusals, so an instance database
+        // that could not be reached - or a connector template that could not be composed - no longer
+        // stops this verb from asking a reachable worker to fence a connector both it and the record
+        // agree on. Health observations inform the status this reports; they are not permission to
+        // stop.
         if (collected is not { BindingRecord: { } binding, Inventory: { } inventory, Context: { } context })
         {
             return Compose(
@@ -3239,10 +3296,31 @@ internal sealed class CdcSetupController(
             null
         );
 
+        // What this collection has already resolved durably, carried onto every refusal below rather
+        // than discarded with it. A refusal says which observations could not be made; it does not
+        // un-read the binding record or un-recover the artifact names the record itself carries, and
+        // an operation whose only requirement is a record naming the connector must still be able to
+        // act on them. Dropping them is what left `StopAsync` unable to fence a reachable Connect
+        // worker whenever the instance database was unreachable — the one moment fencing matters most.
+        //
+        // Each is assigned at the point it becomes durable, so a refusal raised before that point
+        // still carries nothing: the provider-mismatch refusal below has a binding record but no
+        // inventory, because artifact names recovered under the other engine's provider are not this
+        // deployment's connector.
+        CdcBinding? resolvedBinding = null;
+        CdcArtifactInventory? resolvedInventory = null;
+        CdcObservationContext? resolvedContext = null;
+
         CdcCollectedTargetObservations Blocked(
             CdcDiagnostic stepDiagnostic,
             IReadOnlyList<CdcDiagnostic> diagnostics
-        ) => new(evaluation with { StateStoreDiagnostics = [stepDiagnostic, .. diagnostics] });
+        ) =>
+            new(evaluation with { StateStoreDiagnostics = [stepDiagnostic, .. diagnostics] })
+            {
+                BindingRecord = resolvedBinding,
+                Inventory = resolvedInventory,
+                Context = resolvedContext,
+            };
 
         CdcTargetValidationResult targetValidation = CdcTargetValidator.Validate(
             TargetInput(controlOptions, request.TenantKey, dataStoreId, provider)
@@ -3299,6 +3377,8 @@ internal sealed class CdcSetupController(
             return new(evaluation);
         }
 
+        resolvedBinding = binding;
+
         // The same mismatch retirement, adoption, and source replacement refuse, refused here too and
         // for a sharper reason: the artifact names below are recovered under the record's provider,
         // while the provider-setup input built from them is selected by this deployment's. A record
@@ -3337,6 +3417,19 @@ internal sealed class CdcSetupController(
             );
         }
 
+        resolvedInventory = inventory;
+
+        // Composed here, before the instance connection is opened, because every field it carries is
+        // already known: the operation, the validated target, and the fingerprint the binding record
+        // itself names. It used to be composed after provider setup, which made a database this
+        // control plane could not reach the reason an operation could not identify its own connector.
+        CdcObservationContext context = new(
+            request.OperationId,
+            target.ToTargetIdentity(),
+            binding.PhysicalSourceFingerprint
+        );
+        resolvedContext = context;
+
         // The provider artifacts are inspected without being changed, and the same pass reports the
         // fingerprint of the source that actually answered. The binding is compared against that
         // observed source rather than against itself, so a database swapped underneath the binding is
@@ -3358,10 +3451,17 @@ internal sealed class CdcSetupController(
             // unreachable: every later status returns at this line, and the fence that follows the
             // classified continuity is never reached.
             //
-            // Only on this path. The fence below runs after the connector runtime has been read, so
-            // it can leave a connector already observed stopped alone; here there is no such
-            // observation to hold, and an unread runtime is not evidence that the connector is
-            // fenced - so a request is issued rather than assumed unnecessary.
+            // Belongs to this path because it is `StatusAsync`'s only chance to fence: the fence that
+            // follows a classified continuity runs after the connector runtime has been read, so it
+            // can leave a connector already observed stopped alone, and here there is no such
+            // observation to hold. An unread runtime is not evidence that the connector is fenced, so
+            // a request is issued rather than assumed unnecessary.
+            //
+            // `StopAsync` reaching this same refusal now fences on its own account, from the binding
+            // and inventory this refusal carries. For a latched incident that means two stop requests
+            // for the one call. Both are idempotent and the second is what reports the outcome, so the
+            // duplicate costs a round-trip rather than correctness - and dropping the containment to
+            // avoid it would put the guarantee above at the mercy of which verb happened to poll.
             IReadOnlyList<CdcDiagnostic> containment =
                 bindingRead.State.State == CdcBindingState.IncidentLatched
                     ? await ContainLatchedIncidentAsync(inventory, cancellationToken).ConfigureAwait(false)
@@ -3408,12 +3508,6 @@ internal sealed class CdcSetupController(
             ProviderSetup = providerSetupObservation.ProviderSetup,
             PhysicalSourceFingerprint = validated.ObservedSourceFingerprint?.Value,
         };
-
-        CdcObservationContext context = new(
-            request.OperationId,
-            target.ToTargetIdentity(),
-            binding.PhysicalSourceFingerprint
-        );
 
         CdcProjectionCorrelationObservation projection = await projectionCorrelation
             .CollectAsync(context, cancellationToken)
@@ -4816,9 +4910,15 @@ internal sealed class CdcSetupController(
 
     /// <summary>
     /// One status collection: the observations it gathered, and the binding facts an operation that
-    /// acts on the target — rather than only reporting it — needs. They are absent when collection
-    /// stopped before a binding named them.
+    /// acts on the target — rather than only reporting it — needs.
     /// </summary>
+    /// <remarks>
+    /// The binding facts are absent only when collection stopped before the durable record named them,
+    /// not merely when it stopped early: they come from the record and the names recovered from it, so
+    /// a refusal raised after that point still carries them. An unreachable instance database, a
+    /// nonconforming provider artifact, or a connector template that would not compose therefore does
+    /// not cost an operation the ability to identify the connector its own record names.
+    /// </remarks>
     private sealed record CdcCollectedTargetObservations(CdcTargetStatusEvaluationInput Evaluation)
     {
         public CdcObservationContext? Context { get; init; }

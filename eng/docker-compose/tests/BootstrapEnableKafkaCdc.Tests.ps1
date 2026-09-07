@@ -295,6 +295,63 @@ Describe "DMS-1323 CDC infrastructure opt-in" {
         }
     }
 
+    Context "SQL Server Agent for the MSSQL CDC opt-in" {
+        It "resolves Agent off for an ordinary SQL Server run and on for the opt-in" -Skip:(-not (Get-Command docker -ErrorAction SilentlyContinue)) {
+            # Asked of Compose itself, against the shipped compose file, because what matters is the
+            # value the db container would actually receive - not what the YAML happens to say. This
+            # is `config`, so it resolves and prints the model and starts nothing.
+            #
+            # SQL Server CDC does not capture without Agent: the capture and cleanup jobs that move
+            # committed log rows into the change tables are Agent jobs, and the Linux container
+            # disables Agent by default. mssql.yml carried no MSSQL_AGENT_ENABLED at all, and only
+            # the separate tmpfs overlay - which the DMS stack never selects - named one.
+            $previousAgentSetting = [System.Environment]::GetEnvironmentVariable("MSSQL_AGENT_ENABLED")
+            try {
+                Remove-Item -LiteralPath "Env:MSSQL_AGENT_ENABLED" -ErrorAction SilentlyContinue
+                $resolvedWithoutOptIn = & docker compose `
+                    -f (Join-Path $script:sourceDockerComposeRoot "mssql.yml") `
+                    --env-file (Join-Path $script:sourceDockerComposeRoot ".env.example") `
+                    config 2>&1
+
+                $env:MSSQL_AGENT_ENABLED = "true"
+                $resolvedWithOptIn = & docker compose `
+                    -f (Join-Path $script:sourceDockerComposeRoot "mssql.yml") `
+                    --env-file (Join-Path $script:sourceDockerComposeRoot ".env.example") `
+                    config 2>&1
+            }
+            finally {
+                if ($null -eq $previousAgentSetting) {
+                    Remove-Item -LiteralPath "Env:MSSQL_AGENT_ENABLED" -ErrorAction SilentlyContinue
+                }
+                else {
+                    $env:MSSQL_AGENT_ENABLED = $previousAgentSetting
+                }
+            }
+
+            ($resolvedWithoutOptIn -join "`n") | Should -Match 'MSSQL_AGENT_ENABLED:\s*"false"'
+            ($resolvedWithOptIn -join "`n") | Should -Match 'MSSQL_AGENT_ENABLED:\s*"true"'
+        }
+
+        It "turns Agent on for the CDC opt-in on the mssql engine, before the compose up" {
+            # The export has to precede the `up` that interpolates it, and it belongs to the SQL
+            # Server engine alone - a PostgreSQL stack runs no Agent and needs none. This reads the
+            # script because executing it would start a stack; the live SQL Server bring-up is what
+            # proves the resulting container actually runs Agent, and the phase's own probe is what
+            # refuses the enable when it does not.
+            $optInIndex = $script:startScriptText.IndexOf('if ($EnableKafkaCdc) {')
+            $agentIndex = $script:startScriptText.IndexOf('$env:MSSQL_AGENT_ENABLED = "true"')
+            $upIndex = $script:startScriptText.IndexOf('-p dms-local up $upArgs')
+
+            $optInIndex | Should -BeGreaterThan -1
+            $agentIndex | Should -BeGreaterThan $optInIndex
+            $upIndex | Should -BeGreaterThan $agentIndex
+
+            # Guarded by the engine rather than applied to every CDC run.
+            $script:startScriptText |
+                Should -Match '(?s)if \(\$DatabaseEngine -eq "mssql"\) \{[^}]*\$env:MSSQL_AGENT_ENABLED = "true"'
+        }
+    }
+
     Context "infrastructure opt-in is not authority to project or capture" {
         It "configures no DocumentCache projection target" {
             # cdc-streaming.md: infrastructure opt-in must not implicitly select a projection target.
@@ -335,6 +392,10 @@ Describe "DMS-1323 bootstrap CDC phase" {
         # Resolve-CdcBindingStateRoot lives in env-utility: one resolver for the start script, the
         # enable phase, and the teardown, so no two of them can name different directories.
         Import-Module (Join-Path $script:sourceDockerComposeRoot "env-utility.psm1") -Force
+        # The phase imports this itself, at call time, for the token mint. Imported here as well so
+        # the executed-phase Context below can mock Get-DmsToken: Pester resolves a mock's target
+        # command at mock time, and one the session has never loaded cannot be resolved.
+        Import-Module (Join-Path $script:sourceRepoRoot "eng/Dms-Management.psm1") -Force
 
         # Searches the wrapper and the CDC phase module. The CDC phase's own behavior lives in
         # cdc-enable.psm1 and the sequencing in bootstrap-wrapper.psm1, and a test that asserts on a
@@ -902,20 +963,6 @@ Describe "DMS-1323 bootstrap CDC phase" {
                 Should -Not -Match '"--generation", "1"'
         }
 
-        It "lifts a fence through the guarded restart rather than leaving the enable to start it" {
-            # A run over a live binding record does not start the connector: it is already registered
-            # with an exact-match configuration, so it is not re-created, and STOPPED is a target
-            # state the worker persists. `cdc restart` is what lifts it, and it is the guarded lift -
-            # it resumes only against affirmative continuity and the four artifact prerequisites,
-            # which is exactly the check the worker's own auto-resume skipped.
-            $phaseText = Get-WrapperFunctionText -FunctionName "Invoke-CdcEnablePhase"
-
-            $phaseText | Should -Match '(?s)if \(\$generationPlan\.ResumesLiveBinding\) \{.*?Get-CdcRestartArgument'
-            # A declined restart is the correct outcome of unproved continuity, not a phase failure.
-            $phaseText | Should -Match '(?s)Get-CdcRestartArgument.*?Write-Warning'
-            $phaseText | Should -Not -Match '(?s)Get-CdcRestartArgument[\s\S]*?throw '
-        }
-
         It "builds a restart that carries the token by name and the binding's own generation" {
             $arguments = Get-CdcRestartArgument `
                 -ComposeProjectName "dms-local" `
@@ -1249,19 +1296,341 @@ Describe "DMS-1323 bootstrap CDC phase" {
             ($script:createdRunArguments | Where-Object { $_ -like "--*token*" }) | Should -BeNullOrEmpty
         }
 
-        It "supplies the token value around the run and puts the variable back afterwards" {
-            # The other half of the same rule: the flag names a variable, so something has to hold
-            # it while the container starts, and nothing may hold it afterwards.
-            $phaseText = Get-WrapperFunctionText -FunctionName "Invoke-CdcEnablePhase"
+        It "carries the SQL Server connector's local TLS settings, and no counterpart for PostgreSQL" {
+            # The Microsoft JDBC driver Debezium uses negotiates an encrypted connection by default
+            # and then validates the certificate, and mssql.yml's SQL Server answers with the
+            # container's own self-signed one - which no trust store on the Connect worker holds.
+            # Without these the connector's own connection attempt fails certificate validation, and
+            # the failure surfaces as plugin validation or a dead connector rather than as TLS.
+            $connectorPrincipal = @{
+                PrincipalName     = "dms_connector"
+                PasswordReference = '${env:CDC_DATABASE_PASSWORD}'
+            }
 
-            $setIndex = $phaseText.IndexOf('SetEnvironmentVariable($script:CdcDmsBearerTokenVariableName, $operatorToken)')
-            $runIndex = $phaseText.IndexOf('& docker @composeArguments')
-            $restoreIndex = $phaseText.IndexOf('SetEnvironmentVariable($script:CdcDmsBearerTokenVariableName, $previousBearerToken)')
+            $mssqlArguments = @(
+                Get-CdcConnectorEnvArgument `
+                    -DatabaseEngine "mssql" `
+                    -SourceDatabaseName "edfi_datamanagementservice" `
+                    -ConnectorPrincipal $connectorPrincipal
+            ) -join " "
 
-            $setIndex | Should -BeGreaterThan -1
-            $runIndex | Should -BeGreaterThan $setIndex
-            $restoreIndex | Should -BeGreaterThan $runIndex
-            $phaseText | Should -Match 'finally \{'
+            $mssqlArguments | Should -BeLike "*ProviderConnectionProperties__driver.encrypt=true*"
+            $mssqlArguments | Should -BeLike "*ProviderConnectionProperties__driver.trustServerCertificate=true*"
+
+            # libpq's sslmode defaults to `prefer`, which validates no certificate, and the
+            # PostgreSQL container is not configured for TLS at all - so a driver property there
+            # would be one the provider's own allow list does not carry.
+            $postgresqlArguments = @(
+                Get-CdcConnectorEnvArgument `
+                    -DatabaseEngine "postgresql" `
+                    -SourceDatabaseName "edfi_datamanagementservice" `
+                    -ConnectorPrincipal $connectorPrincipal
+            ) -join " "
+
+            $postgresqlArguments | Should -Not -BeLike "*driver.*"
+        }
+
+        It "fails the SQL Server Agent probe on the service's own report, not on the requested setting" {
+            # MSSQL_AGENT_ENABLED is what was asked of the container; a container created before the
+            # request still answers to the old value. sys.dm_server_services is what is actually
+            # running. THROW rather than a projected value, so `sqlcmd -b` carries the verdict in its
+            # exit code and nothing has to parse output.
+            $probeSql = Get-CdcMssqlAgentProbeSql
+
+            $probeSql | Should -BeLike "*sys.dm_server_services*"
+            $probeSql | Should -BeLike "*SQL Server Agent%*"
+            $probeSql | Should -BeLike "*status_desc = 'Running'*"
+            $probeSql | Should -BeLike "*THROW 50000*"
+            $probeSql | Should -Not -BeLike "*MSSQL_AGENT_ENABLED*"
+        }
+    }
+
+    Context "the verb the phase runs, driven end to end" {
+        # Real invocations of Invoke-CdcEnablePhase against a real binding state store. Only what
+        # lies OUTSIDE the phase is mocked - the health wait, the status-endpoint gate, the token
+        # mint, the SQL Server Agent probe, and the docker client - so the phase's own routing,
+        # argument composition, and token handling all run.
+        #
+        # It is driven rather than read because a source-text assertion cannot answer the question
+        # that matters. A `cdc restart` branch can be present in the text and unreachable in the run:
+        # the phase used to run `cdc enable` first and throw on its failure, and a normal rerun
+        # cannot pass that enable - it asserts no provisioning tokens, so the command surface refuses
+        # it during argument parsing. The branch existed and control never arrived. Only an executed
+        # phase can tell those two apart.
+        BeforeAll {
+            function script:New-PhaseBindingRecord {
+                <#
+                .SYNOPSIS
+                    Writes one live binding record into the store, which is what makes a run a rerun.
+
+                .DESCRIPTION
+                    The generation plan reads the store's own layout - one file per generation, named
+                    for it - so the record's presence and its name are what the routing decision turns
+                    on. The body is the shape the control plane writes.
+                #>
+                param(
+                    [Parameter(Mandatory)]
+                    [string]
+                    $BindingStateRoot,
+
+                    [Parameter(Mandatory)]
+                    [long]
+                    $Generation,
+
+                    [long]
+                    $DataStoreId = 1
+                )
+
+                $instanceDirectory = Join-Path (Join-Path (Join-Path $BindingStateRoot "bindings") "local") "ds$DataStoreId"
+                New-Item -ItemType Directory -Path $instanceDirectory -Force | Out-Null
+
+                @{
+                    deploymentKey = "local"
+                    tenantKey     = "default"
+                    dataStoreId   = "$DataStoreId"
+                    instanceKey   = "ds$DataStoreId"
+                    generation    = $Generation
+                } |
+                    ConvertTo-Json -Depth 5 |
+                    Set-Content -LiteralPath (Join-Path $instanceDirectory "$Generation.json") -Encoding utf8
+            }
+
+            function script:Invoke-PhaseUnderTest {
+                param(
+                    [ValidateSet("postgresql", "mssql")]
+                    [string]
+                    $DatabaseEngine = "postgresql",
+
+                    [bool]
+                    $DatabaseCreatedByThisRun = $false,
+
+                    [switch]
+                    $ResumeInterruptedEnable
+                )
+
+                return Invoke-CdcEnablePhase `
+                    -ComposeProjectName "dms-local" `
+                    -EnvironmentFile $script:cdcPhaseEnvironmentFile `
+                    -TenantKey "" `
+                    -DataStoreId 1 `
+                    -DatabaseEngine $DatabaseEngine `
+                    -DatabaseCreatedByThisRun $DatabaseCreatedByThisRun `
+                    -ResumeInterruptedEnable:$ResumeInterruptedEnable `
+                    -InformationAction SilentlyContinue `
+                    -WarningAction SilentlyContinue
+            }
+
+            function script:Get-PhaseInvocation {
+                param(
+                    [Parameter(Mandatory)]
+                    [ValidateSet("enable", "restart")]
+                    [string]
+                    $Verb
+                )
+
+                # Comma-prefixed so a single match returns a one-element ARRAY rather than the string
+                # itself: `.Count` is 1 either way, and indexing an unrolled string yields its first
+                # character, which then satisfies nothing and reports the mismatch as "did not match c".
+                $matched = @($script:cdcPhaseInvocations | Where-Object { $_ -like "*cdc-setup cdc $Verb *" })
+
+                return , $matched
+            }
+        }
+
+        BeforeEach {
+            $script:cdcPhaseStateRoot = Join-Path ([System.IO.Path]::GetTempPath()) "dms-1323-phase-$([System.Guid]::NewGuid().ToString('n'))"
+            New-Item -ItemType Directory -Path $script:cdcPhaseStateRoot -Force | Out-Null
+            $script:cdcPhaseEnvironmentFile = Join-Path $script:cdcPhaseStateRoot ".env"
+            "DMS_CDC_BINDING_STATE_PATH=$script:cdcPhaseStateRoot" |
+                Set-Content -LiteralPath $script:cdcPhaseEnvironmentFile -Encoding utf8
+
+            # Pinned in the environment as well as in the env file, because the resolver gives an
+            # ambient value precedence over the file's - the way Compose does, and the way the start
+            # script exports it. A sibling suite that left one set would otherwise point these runs at
+            # its root, where the record below is not, and every rerun shape would read as a first
+            # enablement. Restored in AfterEach.
+            $script:cdcPhasePreviousStateRoot =
+                [System.Environment]::GetEnvironmentVariable("DMS_CDC_BINDING_STATE_PATH")
+            $env:DMS_CDC_BINDING_STATE_PATH = $script:cdcPhaseStateRoot
+
+            $script:cdcPhaseInvocations = New-Object System.Collections.ArrayList
+            $script:cdcPhaseTokenWhileRunning = New-Object System.Collections.ArrayList
+            $script:cdcPhaseRestartExitCode = 0
+
+            Mock -ModuleName cdc-enable Wait-CdcHttpEndpoint { }
+            Mock -ModuleName cdc-enable Assert-CdcDocumentCacheStatusEndpoint { }
+            Mock -ModuleName cdc-enable Assert-CdcMssqlAgentRunning { }
+            Mock -ModuleName cdc-enable Get-DmsToken { return "operator-token" }
+            Mock -ModuleName cdc-enable Resolve-DockerLocalDmsBaseUrl { return "http://localhost:8080" }
+            Mock -ModuleName cdc-enable docker {
+                $invocation = $args -join " "
+                [void]$script:cdcPhaseInvocations.Add($invocation)
+                $global:LASTEXITCODE = 0
+
+                if ($invocation -like "*cdc-setup cdc *") {
+                    # What the container would actually receive, read at the moment of the run.
+                    [void]$script:cdcPhaseTokenWhileRunning.Add(
+                        [Environment]::GetEnvironmentVariable("DataManagement__DocumentCache__Cdc__DmsBearerToken")
+                    )
+                }
+
+                if ($invocation -like "*cdc-setup cdc restart *") {
+                    $global:LASTEXITCODE = $script:cdcPhaseRestartExitCode
+                }
+            }
+        }
+
+        AfterEach {
+            if ($null -eq $script:cdcPhasePreviousStateRoot) {
+                Remove-Item -LiteralPath "Env:DMS_CDC_BINDING_STATE_PATH" -ErrorAction SilentlyContinue
+            }
+            else {
+                $env:DMS_CDC_BINDING_STATE_PATH = $script:cdcPhasePreviousStateRoot
+            }
+
+            Remove-Item -LiteralPath $script:cdcPhaseStateRoot -Recurse -Force -ErrorAction SilentlyContinue
+        }
+
+        It "runs the enable alone for a first enablement, and asks nothing to be resumed" {
+            # No live binding record, and this run created the database. The connector does not exist
+            # yet, so the enablement starts its own; there is no fence to lift.
+            $result = Invoke-PhaseUnderTest -DatabaseCreatedByThisRun $true
+
+            $result.PhaseMode | Should -Be "InitialEnable"
+            $result.Status | Should -Be "Enabled"
+            $result.ConnectorResumed | Should -BeNullOrEmpty
+
+            $enable = Get-PhaseInvocation -Verb "enable"
+            $enable.Count | Should -Be 1
+            $enable[0] | Should -BeLike "*--database-creation-mode created-for-initial-cdc-provisioning*"
+            $enable[0] | Should -BeLike "*--write-admission closed-never-opened*"
+            (Get-PhaseInvocation -Verb "restart").Count | Should -Be 0
+        }
+
+        It "asserts no provisioning evidence for a database this run merely found" {
+            # Bootstrap has no standing to claim a data store it did not create was never opened to
+            # writes. The command surface refuses that enable, which is the correct outcome reached
+            # without an assertion this caller cannot support.
+            Invoke-PhaseUnderTest -DatabaseCreatedByThisRun $false | Out-Null
+
+            $enable = Get-PhaseInvocation -Verb "enable"
+            $enable.Count | Should -Be 1
+            $enable[0] | Should -Not -BeLike "*--database-creation-mode*"
+            $enable[0] | Should -Not -BeLike "*--write-admission*"
+        }
+
+        It "reaches the guarded restart on a normal rerun without running the enable at all" {
+            # The shape a stack that enabled CDC, admitted writes, and was stopped normally comes back
+            # in. It asserts no provisioning tokens, so it could never have passed the enable; and the
+            # tokens it would need to pass the parser are ones the control plane refuses over a
+            # populated database. `cdc restart` is the command this shape wants: cdc-streaming.md has
+            # a post-admission restart exact-match the binding and validate existing artifacts rather
+            # than apply the empty-table retry classification.
+            New-PhaseBindingRecord -BindingStateRoot $script:cdcPhaseStateRoot -Generation 3
+
+            $result = Invoke-PhaseUnderTest -DatabaseCreatedByThisRun $false
+
+            $result.PhaseMode | Should -Be "NormalRestart"
+            $result.Generation | Should -Be 3
+            $result.ConnectorResumed | Should -BeTrue
+
+            (Get-PhaseInvocation -Verb "enable").Count | Should -Be 0
+
+            $restart = Get-PhaseInvocation -Verb "restart"
+            $restart.Count | Should -Be 1
+            $restart[0] | Should -BeLike "*--generation 3*"
+            $restart[0] | Should -BeLike "*--instance-key ds1*"
+
+            # A restart is not a claim about enablement, so it may assert neither token.
+            $restart[0] | Should -Not -BeLike "*--database-creation-mode*"
+            $restart[0] | Should -Not -BeLike "*--write-admission*"
+        }
+
+        It "runs the enable under the recorded generation and then the restart for an asserted interrupted enable" {
+            # The narrow retry path, and the only one that may reuse a live generation: the operator
+            # asserts that the enablement never finished. It reruns the enable under that generation
+            # and then lifts the fence, because an enable over a live binding does not re-create a
+            # connector already registered with an exact-match configuration.
+            New-PhaseBindingRecord -BindingStateRoot $script:cdcPhaseStateRoot -Generation 3
+
+            $result = Invoke-PhaseUnderTest -DatabaseCreatedByThisRun $false -ResumeInterruptedEnable
+
+            $result.PhaseMode | Should -Be "InterruptedEnableRetry"
+
+            $enable = Get-PhaseInvocation -Verb "enable"
+            $enable.Count | Should -Be 1
+            $enable[0] | Should -BeLike "*--generation 3*"
+            $enable[0] | Should -BeLike "*--database-creation-mode created-for-initial-cdc-provisioning*"
+            $enable[0] | Should -BeLike "*--write-admission closed-never-opened*"
+
+            (Get-PhaseInvocation -Verb "restart").Count | Should -Be 1
+
+            $script:cdcPhaseInvocations.IndexOf($enable[0]) |
+                Should -BeLessThan $script:cdcPhaseInvocations.IndexOf((Get-PhaseInvocation -Verb "restart")[0])
+        }
+
+        It "refuses an interrupted-enable assertion the store holds no live binding for" {
+            # There is nothing to resume, so the phase stops rather than asserting initial
+            # provisioning for a target it never bound.
+            { Invoke-PhaseUnderTest -DatabaseCreatedByThisRun $false -ResumeInterruptedEnable } |
+                Should -Throw "*holds no live binding record*"
+
+            $script:cdcPhaseInvocations |
+                Where-Object { $_ -like "*cdc-setup cdc *" } |
+                Should -BeNullOrEmpty
+        }
+
+        It "reports a declined restart without failing the phase" {
+            # A connector that stays fenced is the correct outcome of unproved source-history
+            # continuity, and `cdc status` carries the evidence. Failing the bootstrap over it would
+            # make the guard look like a defect.
+            New-PhaseBindingRecord -BindingStateRoot $script:cdcPhaseStateRoot -Generation 2
+            $script:cdcPhaseRestartExitCode = 1
+
+            $result = Invoke-PhaseUnderTest -DatabaseCreatedByThisRun $false
+
+            $result.Status | Should -Be "Enabled"
+            $result.ConnectorResumed | Should -BeFalse
+            (Get-PhaseInvocation -Verb "restart").Count | Should -Be 1
+        }
+
+        It "holds the operator token only while a run is in flight" {
+            # The flag names a variable with no value, so something has to hold it while the container
+            # starts - and nothing may hold it afterwards, on the restart-only path no less than on
+            # the enable one.
+            New-PhaseBindingRecord -BindingStateRoot $script:cdcPhaseStateRoot -Generation 1
+
+            Invoke-PhaseUnderTest -DatabaseCreatedByThisRun $false -ResumeInterruptedEnable | Out-Null
+
+            $script:cdcPhaseTokenWhileRunning.Count | Should -Be 2
+            $script:cdcPhaseTokenWhileRunning | Should -Not -Contain $null
+            foreach ($observed in $script:cdcPhaseTokenWhileRunning) {
+                $observed | Should -Be "operator-token"
+            }
+
+            [Environment]::GetEnvironmentVariable("DataManagement__DocumentCache__Cdc__DmsBearerToken") |
+                Should -BeNullOrEmpty
+        }
+
+        It "proves SQL Server Agent is running before the SQL Server enable, and asks nothing of PostgreSQL" {
+            # SQL Server CDC capture is Agent work. With Agent stopped the capture instances are
+            # created and never advance, so the connector reads a capture that produces nothing and
+            # the failure presents as a source with no changes - which is why it is proved up front
+            # rather than diagnosed from the readiness timeout. PostgreSQL's capture is the WAL and a
+            # replication slot the connector reads directly, with no scheduled job between them.
+            Invoke-PhaseUnderTest -DatabaseEngine "mssql" -DatabaseCreatedByThisRun $true | Out-Null
+
+            Should -Invoke -ModuleName cdc-enable -CommandName Assert-CdcMssqlAgentRunning -Times 1 -Exactly
+
+            $enable = Get-PhaseInvocation -Verb "enable"
+            $enable.Count | Should -Be 1
+            $enable[0] | Should -BeLike "*driver.trustServerCertificate=true*"
+        }
+
+        It "asks nothing about SQL Server Agent on the PostgreSQL path" {
+            Invoke-PhaseUnderTest -DatabaseCreatedByThisRun $true | Out-Null
+
+            Should -Invoke -ModuleName cdc-enable -CommandName Assert-CdcMssqlAgentRunning -Times 0 -Exactly
         }
     }
 

@@ -231,7 +231,9 @@ A few things are specific to the MSSQL path:
   queries directly from SQL, so Kafka, OpenSearch, and the Debezium source connector are not
   started on the default path. Deployment-owned CDC is a separate opt-in and is
   engine-neutral: `-EnableKafkaCdc` starts the same Kafka and Kafka Connect services and
-  registers a SQL Server connector on this engine, exactly as it does on PostgreSQL.
+  registers a SQL Server connector on this engine, exactly as it does on PostgreSQL. The one
+  engine-specific part is that the opt-in enables SQL Server Agent, which the capture jobs run
+  on — see "Deployment-owned CDC (Kafka Connect)" below.
 * **Seed data** uses the same API-based `-LoadSeedData` (BulkLoadClient) path as PostgreSQL;
   it is database-engine agnostic.
 * **CI publishes database-template packages for both engines.** `build-minimal-template.yml` and
@@ -960,6 +962,17 @@ Prerequisites:
 * Exactly one data store, created by this run, with no route qualifier — a CDC binding covers
   exactly one instance database.
 
+On `-DatabaseEngine mssql` the opt-in also turns SQL Server Agent on
+(`MSSQL_AGENT_ENABLED=true`, which `mssql.yml` leaves off otherwise) and the CDC phase proves it
+is actually running before it provisions anything. SQL Server CDC capture is Agent work — the
+capture and cleanup jobs are what move committed log rows into the change tables — so with Agent
+stopped the capture instances are created and never advance, and the connector reads a capture
+that produces nothing. Turning it on changes the `db` service's environment, so a container
+started without it is recreated by the same `up`; the data survives on the major-versioned named
+volume. The SQL Server connector is also given `driver.encrypt=true` and
+`driver.trustServerCertificate=true`, because the container answers with a self-signed
+certificate that no trust store on the Connect worker holds.
+
 ```pwsh
 # Turnkey: bootstrap a local stack with CDC enabled end to end
 ./bootstrap-local-dms.ps1 -EnableKafkaCdc
@@ -1005,15 +1018,34 @@ names carry the generation, so the public topic moves from
 `edfi.dms.instance.<instanceKey>-g1.documents.v1` to `-g2`; a consumer pinned to the old name
 sees no new records. Delete the store to start over from generation 1.
 
-An enable that wrote its binding record and then failed — during guarded activation, Kafka
-setup, connector registration, or readiness — is completed by rerunning bootstrap with
-`-ResumeInterruptedCdcEnable`, which reuses the generation that record names and asserts the
-initial-provisioning evidence the control plane requires. The switch is explicit because the
-record cannot supply that evidence: it is written before the artifacts it governs exist and is
-removed only by retirement, so it also survives a *completed* enablement and every write
-admitted afterwards. Without it a plain rerun over an already-enabled target asserts nothing
-and is refused, which is the correct outcome. It is refused too when the store holds no live
-binding record to resume.
+### What a rerun does
+
+The CDC phase reads the binding state store before it runs anything, and the store decides which
+command the run needs:
+
+* **No live binding record** — a first enablement. `cdc enable` provisions the capture artifacts,
+  topics, ACLs, and connector, and collects the readiness evidence. It carries the
+  initial-provisioning evidence only when the run created the instance database; a run that merely
+  found an existing one carries none and is refused, which is the correct outcome for a data store
+  this deployment never enabled.
+* **A live binding record, and a plain rerun** — a normal restart of an already-admitted binding.
+  It runs `cdc restart` alone. That command exact-matches the binding, re-proves source-history
+  continuity and the four artifact prerequisites the enablement proves before it registers a
+  connector at all, and resumes the connector the previous normal stop left fenced. It asserts no
+  provisioning evidence, because it makes no claim about enablement.
+* **A live binding record plus `-ResumeInterruptedCdcEnable`** — an enable that wrote its binding
+  record and then failed, during guarded activation, Kafka setup, connector registration, or
+  readiness. It reruns `cdc enable` under the generation that record names, asserting the
+  initial-provisioning evidence the control plane requires, and then lifts the fence through
+  `cdc restart`.
+
+The switch is explicit because the record cannot supply that evidence on its own: it is written
+before the artifacts it governs exist and is removed only by retirement, so it also survives a
+*completed* enablement and every write admitted afterwards. Inferring the retry from its presence
+would claim an initial-provisioning history for any target that had ever been enabled. The switch
+is refused when the store holds no live binding record to resume, and the control plane still
+refuses the retry itself on what the database shows — canonical, cache, or work rows, or a
+projection that is resetting, rebuilding, or cache-ahead latched.
 
 Teardown is where the distinction matters:
 

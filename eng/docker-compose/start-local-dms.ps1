@@ -645,6 +645,23 @@ else {
             Write-Warning "Kafka CDC infrastructure is starting under the keycloak identity provider, which does not register the DocumentCache CDC operator client. The CDC enable workflow is supported on the self-contained identity provider."
         }
 
+        if ($DatabaseEngine -eq "mssql") {
+            # SQL Server CDC capture runs on SQL Server Agent jobs, and the Linux container disables
+            # Agent by default - mssql.yml therefore defaults MSSQL_AGENT_ENABLED to false and this
+            # opt-in is what turns it on. Set BEFORE the `up` below, so Compose interpolates it into
+            # the db service's environment; a container already running without it is recreated by
+            # the same `up`, and its data survives on the major-versioned named volume.
+            #
+            # Without this, provider setup creates the capture instances and they never advance:
+            # nothing moves committed log rows into the change tables, so the connector reads an
+            # empty capture and the enable workflow's readiness barrier cannot be met. That is
+            # indistinguishable at the connector from a source that simply has no changes, which is
+            # why this is set here rather than diagnosed later. The CDC phase proves Agent is
+            # actually running once the container is up.
+            $env:MSSQL_AGENT_ENABLED = "true"
+            Write-Output "SQL Server Agent is enabled for this run (MSSQL_AGENT_ENABLED=true): SQL Server CDC capture jobs do not run without it."
+        }
+
         # The shared Connect offset store's topic name, resolved the way Compose resolves it so this
         # script, the worker (kafka.yml OFFSET_STORAGE_TOPIC), and the control plane's own
         # ConnectOffsetStorageTopic setting all name one topic.
