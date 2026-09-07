@@ -490,14 +490,35 @@ internal sealed partial class CdcControlBrokerFixture : IAsyncDisposable
         }
     }
 
-    /// <summary>Reads one topic's explicit configuration straight from the broker.</summary>
+    /// <summary>
+    /// Reads one topic's explicit configuration after the broker exposes the newly created topic.
+    /// </summary>
     public async Task<IReadOnlyDictionary<string, ConfigEntryResult>> ReadTopicConfigAsync(string topicName)
     {
-        List<DescribeConfigsResult> results = await AdminClient.DescribeConfigsAsync([
-            new ConfigResource { Type = ResourceType.Topic, Name = topicName },
-        ]);
+        DateTimeOffset deadline = DateTimeOffset.UtcNow.Add(TopicConfigVisibilityTimeout);
 
-        return results[0].Entries;
+        while (true)
+        {
+            try
+            {
+                List<DescribeConfigsResult> results = await AdminClient.DescribeConfigsAsync([
+                    new ConfigResource { Type = ResourceType.Topic, Name = topicName },
+                ]);
+
+                return results[0].Entries;
+            }
+            catch (DescribeConfigsException exception)
+                when (DateTimeOffset.UtcNow < deadline
+                    && exception.Results.TrueForAll(result =>
+                        result.Error.Code == ErrorCode.UnknownTopicOrPart
+                    )
+                )
+            {
+                // CreateTopics can succeed before DescribeConfigs sees the topic. Retry only this
+                // visibility race; authorization and other broker failures still fail immediately.
+                await Task.Delay(PollInterval);
+            }
+        }
     }
 
     /// <summary>

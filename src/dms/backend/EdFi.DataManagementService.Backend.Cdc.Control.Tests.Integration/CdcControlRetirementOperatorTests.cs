@@ -15,6 +15,7 @@ namespace EdFi.DataManagementService.Backend.Cdc.Control.Tests.Integration;
 [TestFixture("neverRegistered")]
 [TestFixture("providerTimeout")]
 [NonParallelizable]
+[Category("CdcControlBrokerBacked")]
 [Category("CdcRetirementOperator")]
 public sealed class Given_CdcControlRetirementOperator(string scenario)
 {
@@ -37,16 +38,34 @@ public sealed class Given_CdcControlRetirementOperator(string scenario)
         {
             await fixture.GrantConnectWorkerOffsetStoreAclsAsync(token);
             await fixture.SetTopicConfigAsync(fixture.OffsetStoreTopicName, "min.insync.replicas", "1");
-            (
-                await fixture.KafkaAdmin.EnsureBindingKafkaPolicyAsync(
+            DateTimeOffset policyDeadline = DateTimeOffset.UtcNow.AddMinutes(1);
+            CdcKafkaPolicyObservation kafkaPolicy = await fixture.KafkaAdmin.EnsureBindingKafkaPolicyAsync(
+                fixture.ObservationContext,
+                fixture.Inventory,
+                CdcControlBrokerFixture.BindingPartitionCount,
+                token
+            );
+            // This arranges the retirement target. Newly created Kafka metadata may not yet be
+            // observable; retry unknown setup evidence within a bound, never a nonconforming policy.
+            while (
+                kafkaPolicy.PolicyState == CdcKafkaPolicyState.Unknown
+                && DateTimeOffset.UtcNow < policyDeadline
+            )
+            {
+                await Task.Delay(TimeSpan.FromSeconds(2), token);
+                kafkaPolicy = await fixture.KafkaAdmin.EnsureBindingKafkaPolicyAsync(
                     fixture.ObservationContext,
                     fixture.Inventory,
                     CdcControlBrokerFixture.BindingPartitionCount,
                     token
-                )
-            )
+                );
+            }
+            kafkaPolicy
                 .PolicyState.Should()
-                .Be(CdcKafkaPolicyState.Satisfied);
+                .Be(
+                    CdcKafkaPolicyState.Satisfied,
+                    string.Join("; ", kafkaPolicy.Diagnostics.Select(d => $"{d.Code}: {d.Message}"))
+                );
             CdcConnectorTemplateResult rendered = await fixture.RenderConnectorAsync(token);
             if (scenario != "neverRegistered")
             {

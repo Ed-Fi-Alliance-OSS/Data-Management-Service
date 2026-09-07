@@ -840,7 +840,7 @@ public sealed class Given_CdcControlBrokerBackedStack
         {
             result = await _fixture.LagReader.ReadAsync(
                 CoreCdc.CdcProvider.Postgresql,
-                _fixture.ControlOptions.TopicPrefix,
+                _rendered!.Config["topic.prefix"],
                 cancellationToken
             );
 
