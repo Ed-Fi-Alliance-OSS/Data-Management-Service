@@ -8,6 +8,7 @@ using System.Data.Common;
 using System.Text.Json;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Core.DocumentCache;
 using NpgsqlTypes;
 
@@ -719,9 +720,14 @@ public sealed class PostgresqlRepresentationRestampStore(
             );
         }
 
-        ConcreteResourceModel? model = mappingSet.Model.ConcreteResourcesInNameOrder.SingleOrDefault(
-            candidate => candidate.ResourceKey.Resource.Equals(resourceKey.Resource)
-        );
+        ConcreteResourceModel? model = mappingSet.TryGetDescriptorResourceModel(
+            resourceKey.Resource,
+            out ConcreteResourceModel? descriptorModel
+        )
+            ? descriptorModel
+            : mappingSet.Model.ConcreteResourcesInNameOrder.SingleOrDefault(candidate =>
+                candidate.ResourceKey.Resource.Equals(resourceKey.Resource)
+            );
         if (model is null)
         {
             throw new InvalidOperationException(
@@ -732,6 +738,15 @@ public sealed class PostgresqlRepresentationRestampStore(
         {
             throw new InvalidOperationException(
                 "Representation restamp document resource key does not match compiled resource metadata."
+            );
+        }
+        if (model.StorageKind is ResourceStorageKind.SharedDescriptorTable)
+        {
+            DbTableName descriptorTable = model.RelationalModel.Root.Table;
+            return new RepresentationRestampMirrorRoute(
+                resourceKeyId,
+                descriptorTable.Schema.Value,
+                descriptorTable.Name
             );
         }
 

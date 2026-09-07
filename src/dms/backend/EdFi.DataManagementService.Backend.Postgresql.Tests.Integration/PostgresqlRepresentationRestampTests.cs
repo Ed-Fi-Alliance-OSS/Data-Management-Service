@@ -27,7 +27,9 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 public class Given_A_Postgresql_RepresentationRestampStore
 {
     private const string FixtureRelativePath =
-        "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/small/minimal";
+        "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/small/profile-root-only-merge";
+    private const short DescriptorResourceKeyId = 2;
+    private const short StudentResourceKeyId = 3;
     private static readonly DocumentCacheTargetKey TargetKey = DocumentCacheTargetKey.Create("tenant", 1);
     private static readonly DocumentCacheAdministrativeTargetKey AdministrativeTargetKey =
         DocumentCacheAdministrativeTargetKey.FromTargetKey(TargetKey);
@@ -86,7 +88,7 @@ public class Given_A_Postgresql_RepresentationRestampStore
         (
             await _store.ResolveSelectionAsync(
                 session,
-                new DocumentCacheRepresentationRestampResourceScope("Ed-Fi", "Person"),
+                new DocumentCacheRepresentationRestampResourceScope("Ed-Fi", "Student"),
                 10,
                 CancellationToken.None
             )
@@ -112,7 +114,7 @@ public class Given_A_Postgresql_RepresentationRestampStore
     {
         var target = new DocumentCacheAdministrativeTargetKey("tenant", (long)int.MaxValue + 1);
         DocumentCacheRepresentationRestampOperation operation = Operation(
-            new DocumentCacheRepresentationRestampResourceScope("Ed-Fi", "Person"),
+            new DocumentCacheRepresentationRestampResourceScope("Ed-Fi", "Student"),
             boundary: 0,
             previewDocumentCount: 0
         ) with
@@ -150,7 +152,7 @@ public class Given_A_Postgresql_RepresentationRestampStore
         Source second = await InsertAsync(11);
         await LifecycleAsync("Tracking", false);
         RepresentationRestampPageCommit commit = await StampAsync(
-            new DocumentCacheRepresentationRestampResourceScope("Ed-Fi", "Person"),
+            new DocumentCacheRepresentationRestampResourceScope("Ed-Fi", "Student"),
             11
         );
         commit.CanonicalStamps.Select(stamp => stamp.ContentVersion).Should().OnlyHaveUniqueItems();
@@ -167,13 +169,12 @@ public class Given_A_Postgresql_RepresentationRestampStore
     [Test]
     public async Task It_updates_descriptor_mirror_with_the_exact_canonical_version_and_timestamp()
     {
-        Source source = await InsertAsync(10);
-        await DescriptorAsync(source.DocumentId);
+        Source source = await InsertDescriptorAsync(10);
         RepresentationRestampPage page = new([
             new RepresentationRestampDocument(
                 source.DocumentId,
                 source.Uuid,
-                new RepresentationRestampMirrorRoute(1, "dms", "Descriptor")
+                new RepresentationRestampMirrorRoute(DescriptorResourceKeyId, "dms", "Descriptor")
             ),
         ]);
         await using IDocumentCacheAdministrativeMutexLease lease = await LeaseAsync();
@@ -186,6 +187,89 @@ public class Given_A_Postgresql_RepresentationRestampStore
             CancellationToken.None
         );
         await session.CommitAsync();
+        RepresentationRestampStamp stamp = commit.CanonicalStamps.Single();
+        (await DescriptorMirrorAsync(source.DocumentId))
+            .Should()
+            .Be((stamp.ContentVersion, stamp.ContentLastModifiedAt));
+    }
+
+    [Test]
+    public async Task It_selects_and_stamps_descriptor_resource_scope_through_the_real_store_path()
+    {
+        Source first = await InsertDescriptorAsync(10);
+        Source second = await InsertDescriptorAsync(11);
+        await LifecycleAsync("Disabled", false);
+        await using IDocumentCacheAdministrativeMutexLease lease = await LeaseAsync();
+        await using IRelationalWriteSession session = await lease.BeginTransactionAsync(
+            IsolationLevel.Serializable
+        );
+        var scope = new DocumentCacheRepresentationRestampResourceScope("Ed-Fi", "SchoolTypeDescriptor");
+
+        (await _store.ResolveSelectionAsync(session, scope, 10, CancellationToken.None))
+            .PreviewDocumentCount.Should()
+            .Be(2);
+        RepresentationRestampPage page = await _store.SelectNextPageAsync(
+            session,
+            Operation(scope, second.Version),
+            10,
+            CancellationToken.None
+        );
+
+        page.Documents.Select(document => document.DocumentId)
+            .Should()
+            .Equal(first.DocumentId, second.DocumentId);
+        page.Documents.Select(document => document.MirrorRoute)
+            .Should()
+            .OnlyContain(route =>
+                route.ResourceKeyId == DescriptorResourceKeyId
+                && route.MirrorStampTargetSchema == "dms"
+                && route.MirrorStampTargetTable == "Descriptor"
+            );
+        RepresentationRestampPageCommit commit = await _store.StampPageAsync(
+            session,
+            page,
+            CancellationToken.None
+        );
+        await session.CommitAsync();
+
+        foreach (RepresentationRestampStamp stamp in commit.CanonicalStamps)
+        {
+            (await DescriptorMirrorAsync(stamp.DocumentId))
+                .Should()
+                .Be((stamp.ContentVersion, stamp.ContentLastModifiedAt));
+        }
+    }
+
+    [Test]
+    public async Task It_selects_and_stamps_descriptor_UUID_scope_through_the_real_store_path()
+    {
+        Source source = await InsertDescriptorAsync(10);
+        await LifecycleAsync("Disabled", false);
+        await using IDocumentCacheAdministrativeMutexLease lease = await LeaseAsync();
+        await using IRelationalWriteSession session = await lease.BeginTransactionAsync(
+            IsolationLevel.Serializable
+        );
+        var scope = new DocumentCacheRepresentationRestampDocumentUuidsScope([source.Uuid]);
+
+        (await _store.ResolveSelectionAsync(session, scope, 10, CancellationToken.None))
+            .PreviewDocumentCount.Should()
+            .Be(1);
+        RepresentationRestampPage page = await _store.SelectNextPageAsync(
+            session,
+            Operation(scope, source.Version),
+            10,
+            CancellationToken.None
+        );
+
+        page.Documents.Single().DocumentId.Should().Be(source.DocumentId);
+        page.Documents.Single().MirrorRoute.MirrorStampTargetTable.Should().Be("Descriptor");
+        RepresentationRestampPageCommit commit = await _store.StampPageAsync(
+            session,
+            page,
+            CancellationToken.None
+        );
+        await session.CommitAsync();
+
         RepresentationRestampStamp stamp = commit.CanonicalStamps.Single();
         (await DescriptorMirrorAsync(source.DocumentId))
             .Should()
@@ -214,7 +298,7 @@ public class Given_A_Postgresql_RepresentationRestampStore
         }
         RepresentationRestampPage page = await _store.SelectNextPageAsync(
             session,
-            Operation(new DocumentCacheRepresentationRestampResourceScope("Ed-Fi", "Person"), 10),
+            Operation(new DocumentCacheRepresentationRestampResourceScope("Ed-Fi", "Student"), 10),
             1,
             CancellationToken.None
         );
@@ -231,7 +315,7 @@ public class Given_A_Postgresql_RepresentationRestampStore
     {
         Source source = await InsertAsync(10);
         await LifecycleAsync("Disabled", false);
-        await StampAsync(new DocumentCacheRepresentationRestampResourceScope("Ed-Fi", "Person"), 10);
+        await StampAsync(new DocumentCacheRepresentationRestampResourceScope("Ed-Fi", "Student"), 10);
         (await CountAsync("DocumentProjectionWork")).Should().Be(0);
         (await CanonicalAsync(source.DocumentId)).Version.Should().BeGreaterThan(10);
     }
@@ -243,7 +327,7 @@ public class Given_A_Postgresql_RepresentationRestampStore
         Source second = await InsertAsync(11);
         await LifecycleAsync("Disabled", false);
         DocumentCacheRepresentationRestampOperation operation = Operation(
-            new DocumentCacheRepresentationRestampResourceScope("Ed-Fi", "Person"),
+            new DocumentCacheRepresentationRestampResourceScope("Ed-Fi", "Student"),
             11
         );
         await using (IDocumentCacheAdministrativeMutexLease lease = await LeaseAsync())
@@ -284,7 +368,7 @@ public class Given_A_Postgresql_RepresentationRestampStore
         Source second = await InsertAsync(11);
         await LifecycleAsync("Disabled", false);
         DocumentCacheRepresentationRestampOperation operation = Operation(
-            new DocumentCacheRepresentationRestampResourceScope("Ed-Fi", "Person"),
+            new DocumentCacheRepresentationRestampResourceScope("Ed-Fi", "Student"),
             11
         );
         await using (IDocumentCacheAdministrativeMutexLease lease = await LeaseAsync())
@@ -602,7 +686,7 @@ public class Given_A_Postgresql_RepresentationRestampStore
     )
     {
         DocumentCacheRepresentationRestampOperation operation = Operation(
-            new DocumentCacheRepresentationRestampResourceScope("Ed-Fi", "Person"),
+            new DocumentCacheRepresentationRestampResourceScope("Ed-Fi", "Student"),
             boundary,
             mode,
             previewDocumentCount
@@ -808,8 +892,9 @@ public class Given_A_Postgresql_RepresentationRestampStore
     {
         Guid uuid = Guid.NewGuid();
         long id = await _database.ExecuteScalarAsync<long>(
-            """INSERT INTO "dms"."Document" ("DocumentUuid", "ResourceKeyId", "ContentVersion") VALUES (@uuid, 1, @version) RETURNING "DocumentId";""",
+            """INSERT INTO "dms"."Document" ("DocumentUuid", "ResourceKeyId", "ContentVersion") VALUES (@uuid, @resourceKeyId, @version) RETURNING "DocumentId";""",
             new NpgsqlParameter("uuid", uuid),
+            new NpgsqlParameter("resourceKeyId", NpgsqlDbType.Smallint) { Value = StudentResourceKeyId },
             new NpgsqlParameter("version", version)
         );
         await _database.ExecuteNonQueryAsync(
@@ -826,17 +911,55 @@ public class Given_A_Postgresql_RepresentationRestampStore
             new NpgsqlParameter("version", NpgsqlDbType.Bigint) { Value = version }
         );
         await _database.ExecuteNonQueryAsync(
-            """INSERT INTO "edfi"."Person" ("DocumentId", "PersonId") VALUES (@id, @id);""",
-            new NpgsqlParameter("id", id)
+            """INSERT INTO "edfi"."Student" ("DocumentId", "StudentUniqueId", "FirstName") VALUES (@id, @studentUniqueId, 'Test');""",
+            new NpgsqlParameter("id", id),
+            new NpgsqlParameter("studentUniqueId", $"student-{id}")
         );
-        return new(id, uuid, version);
+        long currentVersion = (await CanonicalAsync(id)).Version;
+        return new(id, uuid, currentVersion);
     }
 
-    private Task DescriptorAsync(long id) =>
-        _database.ExecuteNonQueryAsync(
-            """INSERT INTO "dms"."Descriptor" ("DocumentId", "ResourceKeyId", "Namespace", "CodeValue", "ShortDescription", "Discriminator", "Uri") VALUES (@id, 1, 'ns', 'code', 'code', 'ns#code', 'ns#code');""",
-            new NpgsqlParameter("id", id)
+    private async Task<Source> InsertDescriptorAsync(long version)
+    {
+        Guid uuid = Guid.NewGuid();
+        long id = await _database.ExecuteScalarAsync<long>(
+            """INSERT INTO "dms"."Document" ("DocumentUuid", "ResourceKeyId", "ContentVersion") VALUES (@uuid, @resourceKeyId, @version) RETURNING "DocumentId";""",
+            new NpgsqlParameter("uuid", uuid),
+            new NpgsqlParameter("resourceKeyId", NpgsqlDbType.Smallint) { Value = DescriptorResourceKeyId },
+            new NpgsqlParameter("version", version)
         );
+        await _database.ExecuteNonQueryAsync(
+            """
+            SELECT setval(
+                '"dms"."ChangeVersionSequence"',
+                GREATEST(
+                    (SELECT last_value FROM "dms"."ChangeVersionSequence"),
+                    @version
+                ),
+                true
+            );
+            """,
+            new NpgsqlParameter("version", NpgsqlDbType.Bigint) { Value = version }
+        );
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO "dms"."Descriptor" (
+                "DocumentId", "ResourceKeyId", "Namespace", "CodeValue",
+                "ShortDescription", "Discriminator", "Uri"
+            )
+            VALUES (
+                @id, @resourceKeyId, 'uri://ed-fi.org/SchoolTypeDescriptor', @codeValue,
+                @codeValue, 'Ed-Fi:SchoolTypeDescriptor', @uri
+            );
+            """,
+            new NpgsqlParameter("id", id),
+            new NpgsqlParameter("resourceKeyId", NpgsqlDbType.Smallint) { Value = DescriptorResourceKeyId },
+            new NpgsqlParameter("codeValue", $"code-{id}"),
+            new NpgsqlParameter("uri", $"uri://ed-fi.org/SchoolTypeDescriptor#code-{id}")
+        );
+        long currentVersion = (await CanonicalAsync(id)).Version;
+        return new(id, uuid, currentVersion);
+    }
 
     private Task LifecycleAsync(string state, bool latch) =>
         _database.ExecuteNonQueryAsync(
@@ -851,7 +974,7 @@ public class Given_A_Postgresql_RepresentationRestampStore
     private async Task<(long, long, long, long)> CountsAsync() =>
         (
             await CountAsync("Document"),
-            await CountAsync("Person", "edfi"),
+            await CountAsync("Student", "edfi"),
             await CountAsync("DocumentProjectionWork"),
             await CountAsync("DocumentCache")
         );
@@ -872,7 +995,7 @@ public class Given_A_Postgresql_RepresentationRestampStore
     private Task<(long Version, DateTimeOffset At)> CanonicalAsync(long id) =>
         ReadAsync("Document", "dms", id);
 
-    private Task<(long Version, DateTimeOffset At)> RootAsync(long id) => ReadAsync("Person", "edfi", id);
+    private Task<(long Version, DateTimeOffset At)> RootAsync(long id) => ReadAsync("Student", "edfi", id);
 
     private Task<(long Version, DateTimeOffset At)> DescriptorMirrorAsync(long id) =>
         ReadAsync("Descriptor", "dms", id);

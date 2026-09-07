@@ -28,7 +28,9 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 public class Given_A_Mssql_RepresentationRestampStore
 {
     private const string FixtureRelativePath =
-        "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/small/minimal";
+        "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/small/profile-root-only-merge";
+    private const short DescriptorResourceKeyId = 2;
+    private const short StudentResourceKeyId = 3;
     private static readonly DocumentCacheTargetKey TargetKey = DocumentCacheTargetKey.Create("tenant", 1);
     private static readonly DocumentCacheAdministrativeTargetKey AdministrativeTargetKey =
         DocumentCacheAdministrativeTargetKey.FromTargetKey(TargetKey);
@@ -114,7 +116,7 @@ public class Given_A_Mssql_RepresentationRestampStore
         (
             await _store.ResolveSelectionAsync(
                 session,
-                new DocumentCacheRepresentationRestampResourceScope("Ed-Fi", "Person"),
+                new DocumentCacheRepresentationRestampResourceScope("Ed-Fi", "Student"),
                 10,
                 CancellationToken.None
             )
@@ -140,7 +142,7 @@ public class Given_A_Mssql_RepresentationRestampStore
     {
         var target = new DocumentCacheAdministrativeTargetKey("tenant", (long)int.MaxValue + 1);
         DocumentCacheRepresentationRestampOperation operation = Operation(
-            new DocumentCacheRepresentationRestampResourceScope("Ed-Fi", "Person"),
+            new DocumentCacheRepresentationRestampResourceScope("Ed-Fi", "Student"),
             boundary: 0,
             previewDocumentCount: 0
         ) with
@@ -178,7 +180,7 @@ public class Given_A_Mssql_RepresentationRestampStore
         Source second = await InsertAsync(11);
         await LifecycleAsync("Tracking", false);
         RepresentationRestampPageCommit commit = await StampAsync(
-            new DocumentCacheRepresentationRestampResourceScope("Ed-Fi", "Person"),
+            new DocumentCacheRepresentationRestampResourceScope("Ed-Fi", "Student"),
             11
         );
         commit.CanonicalStamps.Select(stamp => stamp.ContentVersion).Should().OnlyHaveUniqueItems();
@@ -195,13 +197,12 @@ public class Given_A_Mssql_RepresentationRestampStore
     [Test]
     public async Task It_updates_descriptor_mirror_with_the_exact_canonical_version_and_timestamp()
     {
-        Source source = await InsertAsync(10);
-        await DescriptorAsync(source.DocumentId);
+        Source source = await InsertDescriptorAsync(10);
         RepresentationRestampPage page = new([
             new RepresentationRestampDocument(
                 source.DocumentId,
                 source.Uuid,
-                new RepresentationRestampMirrorRoute(1, "dms", "Descriptor")
+                new RepresentationRestampMirrorRoute(DescriptorResourceKeyId, "dms", "Descriptor")
             ),
         ]);
         await using IDocumentCacheAdministrativeMutexLease lease = await LeaseAsync();
@@ -214,6 +215,89 @@ public class Given_A_Mssql_RepresentationRestampStore
             CancellationToken.None
         );
         await session.CommitAsync();
+        RepresentationRestampStamp stamp = commit.CanonicalStamps.Single();
+        (await DescriptorMirrorAsync(source.DocumentId))
+            .Should()
+            .Be((stamp.ContentVersion, stamp.ContentLastModifiedAt));
+    }
+
+    [Test]
+    public async Task It_selects_and_stamps_descriptor_resource_scope_through_the_real_store_path()
+    {
+        Source first = await InsertDescriptorAsync(10);
+        Source second = await InsertDescriptorAsync(11);
+        await LifecycleAsync("Disabled", false);
+        await using IDocumentCacheAdministrativeMutexLease lease = await LeaseAsync();
+        await using IRelationalWriteSession session = await lease.BeginTransactionAsync(
+            IsolationLevel.Serializable
+        );
+        var scope = new DocumentCacheRepresentationRestampResourceScope("Ed-Fi", "SchoolTypeDescriptor");
+
+        (await _store.ResolveSelectionAsync(session, scope, 10, CancellationToken.None))
+            .PreviewDocumentCount.Should()
+            .Be(2);
+        RepresentationRestampPage page = await _store.SelectNextPageAsync(
+            session,
+            Operation(scope, second.Version),
+            10,
+            CancellationToken.None
+        );
+
+        page.Documents.Select(document => document.DocumentId)
+            .Should()
+            .Equal(first.DocumentId, second.DocumentId);
+        page.Documents.Select(document => document.MirrorRoute)
+            .Should()
+            .OnlyContain(route =>
+                route.ResourceKeyId == DescriptorResourceKeyId
+                && route.MirrorStampTargetSchema == "dms"
+                && route.MirrorStampTargetTable == "Descriptor"
+            );
+        RepresentationRestampPageCommit commit = await _store.StampPageAsync(
+            session,
+            page,
+            CancellationToken.None
+        );
+        await session.CommitAsync();
+
+        foreach (RepresentationRestampStamp stamp in commit.CanonicalStamps)
+        {
+            (await DescriptorMirrorAsync(stamp.DocumentId))
+                .Should()
+                .Be((stamp.ContentVersion, stamp.ContentLastModifiedAt));
+        }
+    }
+
+    [Test]
+    public async Task It_selects_and_stamps_descriptor_UUID_scope_through_the_real_store_path()
+    {
+        Source source = await InsertDescriptorAsync(10);
+        await LifecycleAsync("Disabled", false);
+        await using IDocumentCacheAdministrativeMutexLease lease = await LeaseAsync();
+        await using IRelationalWriteSession session = await lease.BeginTransactionAsync(
+            IsolationLevel.Serializable
+        );
+        var scope = new DocumentCacheRepresentationRestampDocumentUuidsScope([source.Uuid]);
+
+        (await _store.ResolveSelectionAsync(session, scope, 10, CancellationToken.None))
+            .PreviewDocumentCount.Should()
+            .Be(1);
+        RepresentationRestampPage page = await _store.SelectNextPageAsync(
+            session,
+            Operation(scope, source.Version),
+            10,
+            CancellationToken.None
+        );
+
+        page.Documents.Single().DocumentId.Should().Be(source.DocumentId);
+        page.Documents.Single().MirrorRoute.MirrorStampTargetTable.Should().Be("Descriptor");
+        RepresentationRestampPageCommit commit = await _store.StampPageAsync(
+            session,
+            page,
+            CancellationToken.None
+        );
+        await session.CommitAsync();
+
         RepresentationRestampStamp stamp = commit.CanonicalStamps.Single();
         (await DescriptorMirrorAsync(source.DocumentId))
             .Should()
@@ -243,7 +327,7 @@ public class Given_A_Mssql_RepresentationRestampStore
 
         RepresentationRestampPage page = await _store.SelectNextPageAsync(
             session,
-            Operation(new DocumentCacheRepresentationRestampResourceScope("Ed-Fi", "Person"), 10),
+            Operation(new DocumentCacheRepresentationRestampResourceScope("Ed-Fi", "Student"), 10),
             1,
             CancellationToken.None
         );
@@ -260,7 +344,7 @@ public class Given_A_Mssql_RepresentationRestampStore
     {
         Source source = await InsertAsync(10);
         await LifecycleAsync("Disabled", false);
-        await StampAsync(new DocumentCacheRepresentationRestampResourceScope("Ed-Fi", "Person"), 10);
+        await StampAsync(new DocumentCacheRepresentationRestampResourceScope("Ed-Fi", "Student"), 10);
         (await CountAsync("DocumentProjectionWork")).Should().Be(0);
         (await CanonicalAsync(source.DocumentId)).Version.Should().BeGreaterThan(10);
     }
@@ -271,7 +355,7 @@ public class Given_A_Mssql_RepresentationRestampStore
         await InsertManyAsync(701);
         await LifecycleAsync("Disabled", false);
         DocumentCacheRepresentationRestampOperation operation = Operation(
-            new DocumentCacheRepresentationRestampResourceScope("Ed-Fi", "Person"),
+            new DocumentCacheRepresentationRestampResourceScope("Ed-Fi", "Student"),
             boundary: 701,
             previewDocumentCount: 701
         );
@@ -310,7 +394,7 @@ public class Given_A_Mssql_RepresentationRestampStore
         Source second = await InsertAsync(11);
         await LifecycleAsync("Disabled", false);
         DocumentCacheRepresentationRestampOperation operation = Operation(
-            new DocumentCacheRepresentationRestampResourceScope("Ed-Fi", "Person"),
+            new DocumentCacheRepresentationRestampResourceScope("Ed-Fi", "Student"),
             11
         );
         await using (IDocumentCacheAdministrativeMutexLease lease = await LeaseAsync())
@@ -351,7 +435,7 @@ public class Given_A_Mssql_RepresentationRestampStore
         Source second = await InsertAsync(11);
         await LifecycleAsync("Disabled", false);
         DocumentCacheRepresentationRestampOperation operation = Operation(
-            new DocumentCacheRepresentationRestampResourceScope("Ed-Fi", "Person"),
+            new DocumentCacheRepresentationRestampResourceScope("Ed-Fi", "Student"),
             11
         );
         await using (IDocumentCacheAdministrativeMutexLease lease = await LeaseAsync())
@@ -682,7 +766,7 @@ public class Given_A_Mssql_RepresentationRestampStore
     )
     {
         DocumentCacheRepresentationRestampOperation operation = Operation(
-            new DocumentCacheRepresentationRestampResourceScope("Ed-Fi", "Person"),
+            new DocumentCacheRepresentationRestampResourceScope("Ed-Fi", "Student"),
             boundary,
             mode,
             previewDocumentCount
@@ -844,19 +928,22 @@ public class Given_A_Mssql_RepresentationRestampStore
 
             INSERT INTO [dms].[Document] ([DocumentUuid], [ResourceKeyId], [ContentVersion], [ContentLastModifiedAt])
             OUTPUT INSERTED.[DocumentId] INTO @inserted ([DocumentId])
-            VALUES (@uuid, 1, @version, SYSUTCDATETIME());
+            VALUES (@uuid, @resourceKeyId, @version, SYSUTCDATETIME());
 
             SELECT [DocumentId] FROM @inserted;
             """,
             new SqlParameter("@uuid", SqlDbType.UniqueIdentifier) { Value = uuid },
+            new SqlParameter("@resourceKeyId", SqlDbType.SmallInt) { Value = StudentResourceKeyId },
             new SqlParameter("@version", SqlDbType.BigInt) { Value = version }
         );
         await AdvanceSequencePastAsync(version);
         await _database.ExecuteNonQueryAsync(
-            "INSERT INTO [edfi].[Person] ([DocumentId], [PersonId]) VALUES (@id, @id);",
-            new SqlParameter("@id", SqlDbType.BigInt) { Value = id }
+            "INSERT INTO [edfi].[Student] ([DocumentId], [StudentUniqueId], [FirstName]) VALUES (@id, @studentUniqueId, N'Test');",
+            new SqlParameter("@id", SqlDbType.BigInt) { Value = id },
+            new SqlParameter("@studentUniqueId", SqlDbType.NVarChar, 32) { Value = $"student-{id}" }
         );
-        return new(id, uuid, version);
+        long currentVersion = (await CanonicalAsync(id)).Version;
+        return new(id, uuid, currentVersion);
     }
 
     private async Task InsertManyAsync(int count)
@@ -874,15 +961,16 @@ public class Given_A_Mssql_RepresentationRestampStore
                 [DocumentUuid], [ResourceKeyId], [ContentVersion], [ContentLastModifiedAt]
             )
             OUTPUT INSERTED.[DocumentId] INTO @documents ([DocumentId])
-            SELECT NEWID(), 1, [Value], SYSUTCDATETIME()
+            SELECT NEWID(), @resourceKeyId, [Value], SYSUTCDATETIME()
             FROM [numbers];
 
-            INSERT INTO [edfi].[Person] ([DocumentId], [PersonId])
-            SELECT [DocumentId], [DocumentId]
+            INSERT INTO [edfi].[Student] ([DocumentId], [StudentUniqueId], [FirstName])
+            SELECT [DocumentId], CONCAT(N'student-', [DocumentId]), N'Test'
             FROM @documents;
 
             ALTER SEQUENCE [dms].[ChangeVersionSequence] RESTART WITH 702;
             """,
+            new SqlParameter("@resourceKeyId", SqlDbType.SmallInt) { Value = StudentResourceKeyId },
             new SqlParameter("@count", SqlDbType.Int) { Value = count }
         );
     }
@@ -895,17 +983,46 @@ public class Given_A_Mssql_RepresentationRestampStore
             $"ALTER SEQUENCE [dms].[ChangeVersionSequence] RESTART WITH {version + 1};"
         );
 
-    private Task DescriptorAsync(long id) =>
-        _database.ExecuteNonQueryAsync(
+    private async Task<Source> InsertDescriptorAsync(long version)
+    {
+        Guid uuid = Guid.NewGuid();
+        long id = await _database.ExecuteScalarAsync<long>(
+            """
+            DECLARE @inserted TABLE ([DocumentId] bigint);
+
+            INSERT INTO [dms].[Document] ([DocumentUuid], [ResourceKeyId], [ContentVersion], [ContentLastModifiedAt])
+            OUTPUT INSERTED.[DocumentId] INTO @inserted ([DocumentId])
+            VALUES (@uuid, @resourceKeyId, @version, SYSUTCDATETIME());
+
+            SELECT [DocumentId] FROM @inserted;
+            """,
+            new SqlParameter("@uuid", SqlDbType.UniqueIdentifier) { Value = uuid },
+            new SqlParameter("@resourceKeyId", SqlDbType.SmallInt) { Value = DescriptorResourceKeyId },
+            new SqlParameter("@version", SqlDbType.BigInt) { Value = version }
+        );
+        await AdvanceSequencePastAsync(version);
+        await _database.ExecuteNonQueryAsync(
             """
             INSERT INTO [dms].[Descriptor] (
                 [DocumentId], [ResourceKeyId], [Namespace], [CodeValue],
                 [ShortDescription], [Discriminator], [Uri]
             )
-            VALUES (@id, 1, N'ns', N'code', N'code', N'ns#code', N'ns#code');
+            VALUES (
+                @id, @resourceKeyId, N'uri://ed-fi.org/SchoolTypeDescriptor', @codeValue,
+                @codeValue, N'Ed-Fi:SchoolTypeDescriptor', @uri
+            );
             """,
-            new SqlParameter("@id", SqlDbType.BigInt) { Value = id }
+            new SqlParameter("@id", SqlDbType.BigInt) { Value = id },
+            new SqlParameter("@resourceKeyId", SqlDbType.SmallInt) { Value = DescriptorResourceKeyId },
+            new SqlParameter("@codeValue", SqlDbType.NVarChar, 50) { Value = $"code-{id}" },
+            new SqlParameter("@uri", SqlDbType.NVarChar, 306)
+            {
+                Value = $"uri://ed-fi.org/SchoolTypeDescriptor#code-{id}",
+            }
         );
+        long currentVersion = (await CanonicalAsync(id)).Version;
+        return new(id, uuid, currentVersion);
+    }
 
     private Task LifecycleAsync(string state, bool latch) =>
         _database.ExecuteNonQueryAsync(
@@ -924,7 +1041,7 @@ public class Given_A_Mssql_RepresentationRestampStore
     private async Task<(long, long, long, long)> CountsAsync() =>
         (
             await CountAsync("Document"),
-            await CountAsync("Person", "edfi"),
+            await CountAsync("Student", "edfi"),
             await CountAsync("DocumentProjectionWork"),
             await CountAsync("DocumentCache")
         );
@@ -947,7 +1064,7 @@ public class Given_A_Mssql_RepresentationRestampStore
     private Task<(long Version, DateTimeOffset At)> CanonicalAsync(long id) =>
         ReadAsync("Document", "dms", id);
 
-    private Task<(long Version, DateTimeOffset At)> RootAsync(long id) => ReadAsync("Person", "edfi", id);
+    private Task<(long Version, DateTimeOffset At)> RootAsync(long id) => ReadAsync("Student", "edfi", id);
 
     private Task<(long Version, DateTimeOffset At)> DescriptorMirrorAsync(long id) =>
         ReadAsync("Descriptor", "dms", id);
