@@ -301,7 +301,6 @@ public sealed class MssqlRepresentationRestampStore(
         Dictionary<long, RepresentationRestampStamp> stampsByDocumentId = stamps.ToDictionary(stamp =>
             stamp.DocumentId
         );
-        int mirrorStampedCount = 0;
         foreach (
             IGrouping<
                 RepresentationRestampMirrorRoute,
@@ -321,11 +320,9 @@ public sealed class MssqlRepresentationRestampStore(
                     $"Representation restamp mirror '{group.Key.MirrorStampTargetSchema}.{group.Key.MirrorStampTargetTable}' did not stamp the selected page exactly once."
                 );
             }
-
-            mirrorStampedCount += affected;
         }
 
-        return new RepresentationRestampPageCommit(page, stamps, stamps.Length, mirrorStampedCount);
+        return new RepresentationRestampPageCommit(page, stamps);
     }
 
     public async Task UpdateProgressAsync(
@@ -685,7 +682,7 @@ public sealed class MssqlRepresentationRestampStore(
             UPDATE mirror
             SET mirror.[ContentVersion] = stamped.[ContentVersion],
                 mirror.[ContentLastModifiedAt] = stamped.[ContentLastModifiedAt]
-            FROM {{table}} AS mirror
+            FROM {{table}} AS mirror WITH (FORCESEEK)
             INNER JOIN (VALUES {{string.Join(", ", values)}})
                 AS stamped([DocumentId], [ContentVersion], [ContentLastModifiedAt])
                 ON mirror.[DocumentId] = stamped.[DocumentId];
@@ -777,8 +774,7 @@ public sealed class MssqlRepresentationRestampStore(
         return new RepresentationRestampMirrorRoute(
             resourceKeyId,
             mirrorTarget.Schema.Value,
-            mirrorTarget.Name,
-            mirrorTarget.Equals(new DbTableName(new DbSchemaName("dms"), "Descriptor"))
+            mirrorTarget.Name
         );
     }
 

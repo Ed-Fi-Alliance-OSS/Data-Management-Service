@@ -60,8 +60,7 @@ public sealed record RepresentationRestampMirrorRoute
     public RepresentationRestampMirrorRoute(
         short resourceKeyId,
         string mirrorStampTargetSchema,
-        string mirrorStampTargetTable,
-        bool isDescriptor
+        string mirrorStampTargetTable
     )
     {
         if (resourceKeyId <= 0)
@@ -86,7 +85,6 @@ public sealed record RepresentationRestampMirrorRoute
         ResourceKeyId = resourceKeyId;
         MirrorStampTargetSchema = mirrorStampTargetSchema;
         MirrorStampTargetTable = mirrorStampTargetTable;
-        IsDescriptor = isDescriptor;
     }
 
     public short ResourceKeyId { get; }
@@ -94,8 +92,6 @@ public sealed record RepresentationRestampMirrorRoute
     public string MirrorStampTargetSchema { get; }
 
     public string MirrorStampTargetTable { get; }
-
-    public bool IsDescriptor { get; }
 }
 
 public sealed record RepresentationRestampDocument
@@ -210,9 +206,7 @@ public sealed record RepresentationRestampPageCommit
 {
     public RepresentationRestampPageCommit(
         RepresentationRestampPage page,
-        ImmutableArray<RepresentationRestampStamp> canonicalStamps,
-        int canonicalStampedCount,
-        int mirrorStampedCount
+        ImmutableArray<RepresentationRestampStamp> canonicalStamps
     )
     {
         ArgumentNullException.ThrowIfNull(page);
@@ -233,26 +227,13 @@ public sealed record RepresentationRestampPageCommit
             );
         }
 
-        if (canonicalStampedCount != page.Count || mirrorStampedCount != page.Count)
-        {
-            throw new ArgumentException(
-                "Representation restamp page commit counts must equal the selected page size."
-            );
-        }
-
         Page = page;
         CanonicalStamps = canonicalStamps;
-        CanonicalStampedCount = canonicalStampedCount;
-        MirrorStampedCount = mirrorStampedCount;
     }
 
     public RepresentationRestampPage Page { get; }
 
     public ImmutableArray<RepresentationRestampStamp> CanonicalStamps { get; }
-
-    public int CanonicalStampedCount { get; }
-
-    public int MirrorStampedCount { get; }
 
     public void RequireSelectedPage(RepresentationRestampPage page)
     {

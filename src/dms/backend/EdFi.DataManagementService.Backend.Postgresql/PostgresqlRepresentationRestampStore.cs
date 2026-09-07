@@ -286,7 +286,9 @@ public sealed class PostgresqlRepresentationRestampStore(
             );
         }
 
-        int mirrorStampedCount = 0;
+        Dictionary<long, RepresentationRestampStamp> stampsByDocumentId = stamps.ToDictionary(stamp =>
+            stamp.DocumentId
+        );
         foreach (
             IGrouping<
                 RepresentationRestampMirrorRoute,
@@ -294,9 +296,6 @@ public sealed class PostgresqlRepresentationRestampStore(
             > group in page.Documents.GroupBy(document => document.MirrorRoute)
         )
         {
-            Dictionary<long, RepresentationRestampStamp> stampsByDocumentId = stamps.ToDictionary(stamp =>
-                stamp.DocumentId
-            );
             ImmutableArray<RepresentationRestampStamp> groupStamps =
             [
                 .. group.Select(document => stampsByDocumentId[document.DocumentId]),
@@ -309,11 +308,9 @@ public sealed class PostgresqlRepresentationRestampStore(
                     $"Representation restamp mirror '{group.Key.MirrorStampTargetSchema}.{group.Key.MirrorStampTargetTable}' did not stamp the selected page exactly once."
                 );
             }
-
-            mirrorStampedCount += affected;
         }
 
-        return new RepresentationRestampPageCommit(page, stamps, stamps.Length, mirrorStampedCount);
+        return new RepresentationRestampPageCommit(page, stamps);
     }
 
     public async Task UpdateProgressAsync(
@@ -752,8 +749,7 @@ public sealed class PostgresqlRepresentationRestampStore(
         return new RepresentationRestampMirrorRoute(
             resourceKeyId,
             mirrorTarget.Schema.Value,
-            mirrorTarget.Name,
-            mirrorTarget.Equals(new DbTableName(new DbSchemaName("dms"), "Descriptor"))
+            mirrorTarget.Name
         );
     }
 

@@ -32,36 +32,20 @@ public class Given_RepresentationRestampStoreContract
         Action act = () =>
             new RepresentationRestampPageCommit(
                 page,
-                [new RepresentationRestampStamp(2, 19, DateTimeOffset.UtcNow)],
-                canonicalStampedCount: 1,
-                mirrorStampedCount: 1
+                [new RepresentationRestampStamp(2, 19, DateTimeOffset.UtcNow)]
             );
 
         act.Should().Throw<ArgumentException>();
     }
 
     [Test]
-    public void It_rejects_a_page_commit_whose_canonical_or_mirror_counts_do_not_equal_the_page_size()
+    public void It_rejects_a_page_commit_whose_canonical_stamp_count_does_not_equal_the_page_size()
     {
         RepresentationRestampPage page = new([new RepresentationRestampDocument(1, Guid.NewGuid(), Route())]);
 
-        Action canonicalAct = () =>
-            new RepresentationRestampPageCommit(
-                page,
-                [new RepresentationRestampStamp(1, 19, DateTimeOffset.UtcNow)],
-                canonicalStampedCount: 0,
-                mirrorStampedCount: 1
-            );
-        Action mirrorAct = () =>
-            new RepresentationRestampPageCommit(
-                page,
-                [new RepresentationRestampStamp(1, 19, DateTimeOffset.UtcNow)],
-                canonicalStampedCount: 1,
-                mirrorStampedCount: 0
-            );
+        Action act = () => new RepresentationRestampPageCommit(page, []);
 
-        canonicalAct.Should().Throw<ArgumentException>();
-        mirrorAct.Should().Throw<ArgumentException>();
+        act.Should().Throw<ArgumentException>();
     }
 
     [Test]
@@ -75,9 +59,7 @@ public class Given_RepresentationRestampStoreContract
         ]);
         RepresentationRestampPageCommit commit = new(
             secondPage,
-            [new RepresentationRestampStamp(2, 19, DateTimeOffset.UtcNow)],
-            canonicalStampedCount: 1,
-            mirrorStampedCount: 1
+            [new RepresentationRestampStamp(2, 19, DateTimeOffset.UtcNow)]
         );
 
         Action act = () => commit.RequireSelectedPage(firstPage);
@@ -103,5 +85,5 @@ public class Given_RepresentationRestampStoreContract
         RepresentationRestampOperationAdmission.CanExecute(state).Should().BeFalse();
     }
 
-    private static RepresentationRestampMirrorRoute Route() => new(1, "edfi", "Student", isDescriptor: false);
+    private static RepresentationRestampMirrorRoute Route() => new(1, "edfi", "Student");
 }

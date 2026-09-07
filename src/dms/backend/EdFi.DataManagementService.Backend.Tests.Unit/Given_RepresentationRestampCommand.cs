@@ -201,7 +201,14 @@ public class Given_RepresentationRestampCommand
         A.CallTo(() =>
                 harness.Store.LoadAsync(A<IRelationalWriteSession>._, operationId, A<CancellationToken>._)
             )
-            .Returns(Operation(operationId, DocumentCacheRepresentationRestampOperationState.Draft));
+            .Returns(
+                Operation(
+                    operationId,
+                    DocumentCacheRepresentationRestampOperationState.Incomplete,
+                    previewDocumentCount: 2,
+                    committedDocumentCount: 1
+                )
+            );
 
         DocumentCacheAdministrativeCommandResult result = await harness.Command.ExecuteAsync(
             ExecuteRequest(operationId)
@@ -209,6 +216,13 @@ public class Given_RepresentationRestampCommand
 
         result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.FailedNoMutation);
         result.Classification.Should().Be(expectedClassification);
+        AssertIncompleteRestampResult(
+            result,
+            operationId,
+            committedDocumentCount: 1,
+            remaining: null,
+            previewDocumentCount: 2
+        );
         A.CallTo(() =>
                 harness.Store.SelectNextPageAsync(
                     A<IRelationalWriteSession>._,
@@ -230,7 +244,14 @@ public class Given_RepresentationRestampCommand
         A.CallTo(() =>
                 harness.Store.LoadAsync(A<IRelationalWriteSession>._, operationId, A<CancellationToken>._)
             )
-            .Returns(Operation(operationId, DocumentCacheRepresentationRestampOperationState.Draft));
+            .Returns(
+                Operation(
+                    operationId,
+                    DocumentCacheRepresentationRestampOperationState.Incomplete,
+                    previewDocumentCount: 2,
+                    committedDocumentCount: 1
+                )
+            );
 
         DocumentCacheAdministrativeCommandResult result = await harness.Command.ExecuteAsync(
             ExecuteRequest(operationId)
@@ -350,6 +371,7 @@ public class Given_RepresentationRestampCommand
         result
             .Classification.Should()
             .Be(DocumentCacheAdministrativeCommandClassification.CancellationAfterMutation);
+        AssertIncompleteRestampResult(result, operationId, committedDocumentCount: 1, remaining: null);
         A.CallTo(() =>
                 harness.Store.StampPageAsync(A<IRelationalWriteSession>._, page, A<CancellationToken>._)
             )
@@ -423,7 +445,14 @@ public class Given_RepresentationRestampCommand
         A.CallTo(() =>
                 harness.Store.LoadAsync(A<IRelationalWriteSession>._, operationId, A<CancellationToken>._)
             )
-            .Returns(Operation(operationId, DocumentCacheRepresentationRestampOperationState.Draft));
+            .Returns(
+                Operation(
+                    operationId,
+                    DocumentCacheRepresentationRestampOperationState.Incomplete,
+                    previewDocumentCount: 2,
+                    committedDocumentCount: 1
+                )
+            );
         A.CallTo(() =>
                 harness.Store.SelectNextPageAsync(
                     A<IRelationalWriteSession>._,
@@ -442,6 +471,13 @@ public class Given_RepresentationRestampCommand
         result
             .Classification.Should()
             .Be(DocumentCacheAdministrativeCommandClassification.ProviderConcurrencyRetryExhausted);
+        AssertIncompleteRestampResult(
+            result,
+            operationId,
+            previewDocumentCount: 2,
+            committedDocumentCount: 1,
+            remaining: null
+        );
         A.CallTo(() =>
                 harness.Store.StampPageAsync(
                     A<IRelationalWriteSession>._,
@@ -700,17 +736,36 @@ public class Given_RepresentationRestampCommand
             new RepresentationRestampDocument(
                 documentId,
                 Guid.Parse($"00000000-0000-0000-0000-{documentId:D12}"),
-                new RepresentationRestampMirrorRoute(1, "dms", "Student", isDescriptor: false)
+                new RepresentationRestampMirrorRoute(1, "dms", "Student")
             ),
         ]);
 
     private static RepresentationRestampPageCommit Commit(RepresentationRestampPage page) =>
-        new(
-            page,
-            [new RepresentationRestampStamp(page.Documents[0].DocumentId, 1, DateTimeOffset.UtcNow)],
-            canonicalStampedCount: page.Count,
-            mirrorStampedCount: page.Count
-        );
+        new(page, [new RepresentationRestampStamp(page.Documents[0].DocumentId, 1, DateTimeOffset.UtcNow)]);
+
+    private static void AssertIncompleteRestampResult(
+        DocumentCacheAdministrativeCommandResult result,
+        Guid operationId,
+        long committedDocumentCount,
+        long? remaining,
+        long previewDocumentCount = 1
+    )
+    {
+        result.RepresentationRestampResult.Should().NotBeNull();
+        result.RepresentationRestampResult!.OperationId.Should().Be(operationId);
+        result
+            .RepresentationRestampResult.State.Should()
+            .Be(DocumentCacheRepresentationRestampOperationState.Incomplete);
+        result.RepresentationRestampResult.PreRestampBoundary.Should().Be(41);
+        result.RepresentationRestampResult.PreviewDocumentCount.Should().Be(previewDocumentCount);
+        result.RepresentationRestampResult.CommittedDocumentCount.Should().Be(committedDocumentCount);
+        result.RepresentationRestampResult.RemainingEligibleDocumentCount.Should().Be(remaining);
+        result.RepresentationRestampResult.Mode.Should().Be(DocumentCacheRepresentationRestampMode.Tracking);
+        result.RepresentationRestampResult.PhysicalSourceFingerprint.Should().Be(Fingerprint);
+        result
+            .RepresentationRestampResult.ClaimLevel.Should()
+            .Be(DocumentCacheRepresentationRestampClaimLevel.Incomplete);
+    }
 
     private sealed record Harness(
         RepresentationRestampCommand Command,
@@ -782,7 +837,8 @@ public class Given_RepresentationRestampCommand
 
         public bool TryClassify(
             DbException exception,
-            [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out RelationalWriteExceptionClassification? classification
+            [System.Diagnostics.CodeAnalysis.NotNullWhen(true)]
+                out RelationalWriteExceptionClassification? classification
         )
         {
             classification = null;

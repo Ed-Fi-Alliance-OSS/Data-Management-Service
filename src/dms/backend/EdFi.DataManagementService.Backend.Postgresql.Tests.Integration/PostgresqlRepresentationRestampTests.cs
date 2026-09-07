@@ -173,7 +173,7 @@ public class Given_A_Postgresql_RepresentationRestampStore
             new RepresentationRestampDocument(
                 source.DocumentId,
                 source.Uuid,
-                new RepresentationRestampMirrorRoute(1, "dms", "Descriptor", true)
+                new RepresentationRestampMirrorRoute(1, "dms", "Descriptor")
             ),
         ]);
         await using IDocumentCacheAdministrativeMutexLease lease = await LeaseAsync();

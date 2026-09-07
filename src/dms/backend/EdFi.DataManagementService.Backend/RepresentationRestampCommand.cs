@@ -46,8 +46,10 @@ internal sealed class RepresentationRestampCommand(
         DocumentCacheRepresentationRestampPreviewRequest request,
         IRepresentationRestampStore store,
         TimeProvider timeProvider
-    ) : IDocumentCacheAdministrativeCommandWorkflow
+    ) : IDocumentCacheAdministrativeCommandWorkflow, IDocumentCacheAdministrativeCommandResultAugmenter
     {
+        private DocumentCacheRepresentationRestampOperation? _knownOperation;
+
         public Task<DocumentCacheAdministrativeCommandResult> RunPreflightAsync(
             DocumentCacheAdministrativeCommandExecutionContext context,
             CancellationToken cancellationToken
@@ -137,6 +139,7 @@ internal sealed class RepresentationRestampCommand(
                     {
                         if (result.DraftOperation is not null)
                         {
+                            _knownOperation = result.DraftOperation;
                             context.MarkMutated();
                         }
                     }
@@ -157,13 +160,21 @@ internal sealed class RepresentationRestampCommand(
                 remaining: null
             );
         }
+
+        public DocumentCacheAdministrativeCommandResult AugmentResult(
+            DocumentCacheAdministrativeCommandExecutionContext context,
+            DocumentCacheAdministrativeCommandResult result
+        ) => ResultWithKnownOperation(result, _knownOperation, remaining: null);
     }
 
     private sealed class ExecuteWorkflow(
         DocumentCacheRepresentationRestampExecuteRequest request,
         IRepresentationRestampStore store
-    ) : IDocumentCacheAdministrativeCommandWorkflow
+    ) : IDocumentCacheAdministrativeCommandWorkflow, IDocumentCacheAdministrativeCommandResultAugmenter
     {
+        private DocumentCacheRepresentationRestampOperation? _knownOperation;
+        private long? _knownRemaining;
+
         public Task<DocumentCacheAdministrativeCommandResult> RunPreflightAsync(
             DocumentCacheAdministrativeCommandExecutionContext context,
             CancellationToken cancellationToken
@@ -210,6 +221,7 @@ internal sealed class RepresentationRestampCommand(
             }
 
             DocumentCacheRepresentationRestampOperation operation = load.LoadedOperation;
+            _knownOperation = operation;
             if (
                 operation.ContractVersion != ContractVersion
                 || !operation.TargetKey.Equals(request.TargetKey)
@@ -321,6 +333,7 @@ internal sealed class RepresentationRestampCommand(
 
                 if (pageTransaction.ReconciliationFailed)
                 {
+                    _knownRemaining = pageTransaction.Remaining;
                     return Failure(
                         context,
                         DocumentCacheAdministrativeCommandClassification.RepresentationRestampCountReconciliationFailure,
@@ -350,9 +363,15 @@ internal sealed class RepresentationRestampCommand(
                     CommittedDocumentCount = pageTransaction.CommittedDocumentCount,
                     State = DocumentCacheRepresentationRestampOperationState.Incomplete,
                 };
+                _knownOperation = operation;
                 context.CompletePhase(DocumentCacheAdministrativeCommandPhase.StampDocuments);
             }
         }
+
+        public DocumentCacheAdministrativeCommandResult AugmentResult(
+            DocumentCacheAdministrativeCommandExecutionContext context,
+            DocumentCacheAdministrativeCommandResult result
+        ) => ResultWithKnownOperation(result, _knownOperation, _knownRemaining);
     }
 
     private static async Task<DocumentCacheAdministrativeCommandResult?> RequireLifecycleAsync(
@@ -451,6 +470,44 @@ internal sealed class RepresentationRestampCommand(
             context.PhaseDiagnostics,
             context.Request.AcceptedOfflineWriterAdmissionConfirmation,
             context.ElapsedCommandTime,
+            new DocumentCacheRepresentationRestampResult(
+                operation.OperationId,
+                operation.State,
+                operation.PreRestampBoundary,
+                operation.PreviewDocumentCount,
+                operation.CommittedDocumentCount,
+                remaining,
+                operation.Mode,
+                operation.PhysicalSourceFingerprint,
+                ClaimLevel(operation)
+            )
+        );
+    }
+
+    private static DocumentCacheAdministrativeCommandResult ResultWithKnownOperation(
+        DocumentCacheAdministrativeCommandResult result,
+        DocumentCacheRepresentationRestampOperation? operation,
+        long? remaining
+    )
+    {
+        if (operation is null || result.RepresentationRestampResult is not null)
+        {
+            return result;
+        }
+
+        return new(
+            result.Command,
+            result.TargetKey,
+            result.Status,
+            result.Classification,
+            result.Mutated,
+            result.TargetGeneration,
+            result.PhysicalSourceFingerprint,
+            result.Lifecycle,
+            result.CacheAheadRecoveryRequired,
+            result.PhaseDiagnostics,
+            result.OfflineWriterAdmission,
+            result.ElapsedCommandTime,
             new DocumentCacheRepresentationRestampResult(
                 operation.OperationId,
                 operation.State,

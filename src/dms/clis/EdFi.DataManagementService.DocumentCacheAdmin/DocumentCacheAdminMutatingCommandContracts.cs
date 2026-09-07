@@ -245,30 +245,24 @@ internal static class DocumentCacheAdminMutatingCommandContracts
                     confirmation
                 )
         ),
-        [DocumentCacheAdminCommandSurface.RestampPreviewCommandName] = Create(
-            DocumentCacheAdminCommandSurface.RestampPreviewCommandName,
-            DocumentCacheAdministrativeCommand.RepresentationRestamp,
-            (targetKey, expectedPhysicalSourceFingerprint, confirmation, offlineWriterAdmission) =>
-                new DocumentCacheRepresentationRestampPreviewRequest(
-                    targetKey,
-                    offlineWriterAdmission,
-                    DocumentCacheRepresentationRestampMode.Tracking,
-                    "cli",
-                    new DocumentCacheRepresentationRestampResourceScope("Ed-Fi", "unknown"),
-                    expectedPhysicalSourceFingerprint
-                )
-        ),
-        [DocumentCacheAdminCommandSurface.RestampExecuteCommandName] = Create(
-            DocumentCacheAdminCommandSurface.RestampExecuteCommandName,
-            DocumentCacheAdministrativeCommand.RepresentationRestamp,
-            (targetKey, expectedPhysicalSourceFingerprint, confirmation, offlineWriterAdmission) =>
-                new DocumentCacheRepresentationRestampExecuteRequest(
-                    targetKey,
-                    Guid.Empty,
-                    offlineWriterAdmission,
-                    confirmation
-                )
-        ),
+        [DocumentCacheAdminCommandSurface.RestampPreviewCommandName] =
+            Create<DocumentCacheRepresentationRestampPreviewRequest>(
+                DocumentCacheAdminCommandSurface.RestampPreviewCommandName,
+                DocumentCacheAdministrativeCommand.RepresentationRestamp,
+                (targetKey, expectedPhysicalSourceFingerprint, confirmation, offlineWriterAdmission) =>
+                    throw new InvalidOperationException(
+                        "Representation restamp preview requests must be built from the restamp-specific CLI parser."
+                    )
+            ),
+        [DocumentCacheAdminCommandSurface.RestampExecuteCommandName] =
+            Create<DocumentCacheRepresentationRestampExecuteRequest>(
+                DocumentCacheAdminCommandSurface.RestampExecuteCommandName,
+                DocumentCacheAdministrativeCommand.RepresentationRestamp,
+                (targetKey, expectedPhysicalSourceFingerprint, confirmation, offlineWriterAdmission) =>
+                    throw new InvalidOperationException(
+                        "Representation restamp execute requests must be built from the restamp-specific CLI parser."
+                    )
+            ),
     };
 
     public static bool TryGet(
