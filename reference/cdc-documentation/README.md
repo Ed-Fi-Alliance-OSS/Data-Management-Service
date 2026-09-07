@@ -8,8 +8,9 @@ DMS-1326: configuration, [monitoring/incident routing](operations-runbook.md#mon
 [continuity](operations-runbook.md#continuity-incident),
 [complete-record adoption](operations-runbook.md#adopt-missing-binding),
 [new-database replacement](operations-runbook.md#replace-physical-source),
-[guarded retirement](operations-runbook.md#retire-binding-generation), and
-[security and disclosure containment](operations-runbook.md#cdc-security)
+[guarded retirement](operations-runbook.md#retire-binding-generation),
+[security and disclosure containment](operations-runbook.md#cdc-security), and
+[retention, consumer continuity and capacity](operations-runbook.md#retention-and-capacity)
 are available; remaining authoring and live provider replay are tracked in the
 [evidence index](cdc-inv-evidence.md).
 Pending work is not evidence that an operator procedure has passed.
@@ -61,6 +62,10 @@ original-source/absence refusals, and fixture timeout/retry output; live replay 
 [T07 security review](cdc-inv-evidence.md#t07-security-review) records credential/ACL tests,
 provider and authorizer source review, and the open-incident decision when platform purge
 evidence is absent. Live isolation and platform deletion are separate evidence obligations.
+
+[T08 capacity review](cdc-inv-evidence.md#t08-capacity-review) records 82 policy tests,
+bounded metadata inspection, consumer evidence and coordinated size-change limitations;
+live observations and representative capacity qualification remain pending.
 
 T01's exact commands and captured results are in the
 [foundation review](cdc-inv-evidence.md#t01-foundation-review). T02–T09 add their command

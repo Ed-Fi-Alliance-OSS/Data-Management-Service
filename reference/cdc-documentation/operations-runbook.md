@@ -639,8 +639,8 @@ settings, declared consumers, and shared-offset policy with the responsible plat
 owner. Do not edit binding identity to match drift or delete shared offsets. Retry
 [CDC observation](#observe-cdc) after an authorized correction; a healthy component does
 not replace continuity evidence. Use [provider setup](#local-setup) and
-[security inspection](#inspect-cdc-security); retention/capacity guidance T08 remains
-pending in the [delivery index](cdc-inv-evidence.md#pending-delivery).
+[security inspection](#inspect-cdc-security), [provider/broker retention](#retention-and-capacity),
+[consumer continuity](#consumer-continuity) and [record-size coordination](#increase-record-size).
 
 <a id="route-binding-incident"></a>
 ### Binding and physical-source incident routing
@@ -1584,3 +1584,369 @@ Sources: [status telemetry](../../src/dms/backend/EdFi.DataManagementService.Bac
 [projection telemetry](../../src/dms/backend/EdFi.DataManagementService.Backend/DocumentCacheProjectionTelemetry.cs),
 [enqueue telemetry](../../src/dms/backend/EdFi.DataManagementService.Backend/DocumentCacheEnqueueTelemetry.cs),
 and [CDC labels](../../src/dms/core/EdFi.DataManagementService.Core/DocumentCache/Cdc/CdcTelemetryLabels.cs).
+
+<a id="retention-and-capacity"></a>
+## Inspect retention and pipeline capacity
+
+**Scope/effect:** bounded metadata inspection for one selected binding; no source-row,
+cache, work-table, or public-topic scan. These observations supplement
+[CDC status](#observe-cdc), which can latch history loss and fence publication. Provider
+history, broker retention, and consumer checkpoint continuity are separate obligations;
+the [continuity owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#source-history-continuity)
+and [topic owner](../design/backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#topic)
+define their policies. Do not shorten retention, drop slots/capture instances, reset
+offsets, or enable segment deletion to relieve pressure.
+
+**Starting directory/prerequisites and selection:** repository root; establish the
+[incident context](#incident-command-context), including the same record, generation,
+physical source and default-tenant translation. The DBA uses a protected connection
+profile for that physical database, not a password in SQL or shell arguments. Use a
+statement/query timeout appropriate to the maintenance budget (for example, 10 seconds
+per metadata query); this is an inspection bound, not a readiness threshold. Obtain
+catalog/Agent access and the provider's monitoring permission separately from connector
+credentials. Retain UTC sample time, provider version, identity, native errors and units.
+Take one sample, then a second at a recorded interval if a rate is needed; do not loop
+unboundedly. The following provider subsections share this context and disposition.
+
+<a id="inspect-postgresql-retention"></a>
+### PostgreSQL retained WAL and slot pressure
+
+In a `psql` session connected through the approved profile to the selected writable
+primary, set `cdc_slot` to the **exact generated slot name** from the retained artifact
+inventory. The synthetic value below is a selection placeholder, not a naming recipe.
+The adapter inspects the same slot/database/plugin/LSN metadata in
+[CdcPostgresqlHeartbeatPublicationProvider](../../src/dms/backend/EdFi.DataManagementService.Backend.Ddl/CdcPostgresqlHeartbeatPublicationProvider.cs).
+
+```sql
+\set ON_ERROR_STOP on
+\set cdc_slot 'selected_generated_slot'
+SET statement_timeout = '10s';
+SELECT clock_timestamp() AS observed_at, current_database() AS database_name,
+       slot.slot_name, slot.plugin, slot.slot_type, slot.database, slot.active,
+       slot.restart_lsn, slot.confirmed_flush_lsn,
+       to_jsonb(slot)->>'wal_status' AS wal_status,
+       to_jsonb(slot)->>'invalidation_reason' AS invalidation_reason,
+       pg_wal_lsn_diff(pg_current_wal_lsn(), slot.restart_lsn) AS retained_wal_span_bytes,
+       to_jsonb(slot)->>'safe_wal_size' AS safe_wal_size_bytes
+FROM pg_catalog.pg_replication_slots AS slot
+WHERE slot.slot_name = :'cdc_slot';
+SHOW max_slot_wal_keep_size;
+RESET statement_timeout;
+```
+
+**Expected result/verification:** one metadata row for the selected slot, text settings,
+no CDC JSON; a successful noninteractive `psql` run exits `0`. Zero rows, denied access,
+null/unsupported observations or an error are unavailable evidence, not zero pressure.
+The LSN difference is a WAL-address span in bytes, not the exact on-disk allocation or a
+Kafka consumer lag. Correlate it with the platform's `pg_wal` filesystem free bytes,
+WAL generation rate, and the planned outage duration. `safe_wal_size` can be null for an
+unlimited retention setting or a lost slot; it is not a promise of unlimited disk.
+See [PostgreSQL slot metadata](https://www.postgresql.org/docs/16/view-pg-replication-slots.html).
+Do not equate `active=true` or `confirmed_flush_lsn` with the committed Kafka Connect
+source offset. Use [continuity observation](#continuity-incident) for that comparison;
+retain invalidation/loss evidence and verify containment separately. Escalate a shrinking
+storage/retention margin to the DBA before the planned stop consumes it.
+
+**Interruption/retry:** these queries change only session timeout. Reconnect with the
+same profile/slot and take a fresh timestamped sample. No slot recreation or WAL deletion
+is a retry. Live query output and pressure observations remain pending T14 in
+[T08 evidence](cdc-inv-evidence.md#t08-capacity-review).
+
+<a id="inspect-sqlserver-retention"></a>
+### SQL Server capture, cleanup and row-version storage
+
+Use the approved SQL query client in the selected database with query timeout enabled.
+The DBA needs access to CDC metadata, `msdb` job activity/history and, for SQL Server
+2025 monitoring DMVs, `VIEW SERVER PERFORMANCE STATE`. The shipped
+[CdcSqlServerHeartbeatDatabaseProvider](../../src/dms/backend/EdFi.DataManagementService.Backend.Ddl/CdcSqlServerHeartbeatDatabaseProvider.cs)
+uses `sp_cdc_help_jobs`, latest Agent activity/history, and each capture instance's retained
+LSNs. Substitute all three exact generated capture names; never guess from a table name.
+
+```sql
+EXEC sys.sp_cdc_help_jobs;
+
+SELECT capture_instance,
+       sys.fn_varbintohexstr(sys.fn_cdc_get_min_lsn(capture_instance)) AS retained_min_lsn,
+       sys.fn_varbintohexstr(sys.fn_cdc_get_max_lsn()) AS captured_max_lsn
+FROM cdc.change_tables
+WHERE capture_instance IN
+    (N'selected_document_capture', N'selected_cache_capture', N'selected_heartbeat_capture');
+
+SELECT job.name, job.enabled,
+       activity.start_execution_date, activity.stop_execution_date,
+       history.run_status, history.run_date, history.run_time
+FROM msdb.dbo.sysjobs AS job
+OUTER APPLY (
+    SELECT TOP (1) start_execution_date, stop_execution_date
+    FROM msdb.dbo.sysjobactivity
+    WHERE job_id = job.job_id ORDER BY session_id DESC
+) AS activity
+OUTER APPLY (
+    SELECT TOP (1) run_status, run_date, run_time
+    FROM msdb.dbo.sysjobhistory
+    WHERE job_id = job.job_id AND step_id = 0 ORDER BY instance_id DESC
+) AS history
+WHERE job.name IN (N'cdc.' + DB_NAME() + N'_capture', N'cdc.' + DB_NAME() + N'_cleanup');
+
+SELECT database_id, reserved_page_count, reserved_space_kb
+FROM sys.dm_tran_version_store_space_usage WHERE database_id = DB_ID();
+
+SELECT database_id, persistent_version_store_size_kb,
+       oldest_active_transaction_id, min_transaction_timestamp
+FROM sys.dm_tran_persistent_version_store_stats WHERE database_id = DB_ID();
+```
+
+**Expected result/verification:** native result sets, not CDC JSON. A successful batch
+reports no SQL errors (with command-line `sqlcmd`, use `-b` so SQL errors produce failure
+exit status; success exits `0`). Save errors as well as rows. Expect the selected three
+capture instances and both jobs; missing/inaccessible rows are unproved. `sp_cdc_help_jobs`
+reports cleanup `retention` in **minutes**, capture `pollinginterval` in **seconds**, and
+`maxtrans`/`maxscans` as counts. Read actual values; the
+[continuity owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#source-history-continuity)
+explains the provider default and retained-range requirement. LSNs are positions, not
+elapsed-time or byte estimates. Compare every retained range with committed-source
+evidence through `cdc status`; a failed job is independently not ready while covered
+history may still be healthy. A scheduled cleanup job need not be running at every sample:
+inspect its enabled schedule, latest result and next run with the DBA, rather than
+requiring continuous activity or inferring health from an enabled flag alone.
+
+The aggregate [tempdb version-store DMV](https://learn.microsoft.com/en-us/sql/relational-databases/system-dynamic-management-objects/sys-dm-tran-version-store-space-usage?view=sql-server-ver17)
+returns pages and KB without scanning individual versions. When ADR is enabled, also
+inspect the [persistent version store](https://learn.microsoft.com/en-us/sql/relational-databases/system-dynamic-management-objects/sys-dm-tran-persistent-version-store-stats?view=sql-server-ver17);
+its size is off-row KB and excludes in-row versions. Ask the DBA to correlate storage
+free space, growth and long-lived transactions/snapshots with the sampled usage. Missing
+DMV access is unavailable evidence; tempdb alone does not account for an ADR deployment.
+Reuse [E18 prerequisite correction](../document-cache-documentation/operations-runbook.md#sql-server-prerequisite-failure-correction)
+for RCSI/nested triggers; do not toggle them to relieve pressure in an admitted lifecycle.
+
+**Interruption/retry:** cancel a timed-out read, retain diagnostics, then take a new
+bounded sample for the same source. Do not invoke capture/cleanup setup to repair missing
+metadata or manually purge change tables. Route unknown/lost history to
+[continuity handling](#continuity-incident). Live job/range/version-store observations
+remain pending T15 in [T08 evidence](cdc-inv-evidence.md#t08-capacity-review).
+
+<a id="inspect-broker-capacity"></a>
+### Broker retained log and cleaner health
+
+**Context:** repository root, Bash, GNU `timeout`, an installed Kafka tool distribution
+matching the qualified deployment (`CDC_KAFKA_HOME`), and protected Java admin-client
+properties at `CDC_KAFKA_ADMIN_PROPERTIES`. This file is separate from the .NET admin
+settings. Set `CDC_KAFKA_BOOTSTRAP` to reachable broker addresses; obtain Describe/DescribeConfigs
+and required log-directory inspection authority from the Kafka owner. Use the incident
+record to select the exact topic. These are metadata reads, not a public consumer.
+
+```bash
+cdc_topic=$(jq -er '.topicName' "$CDC_RECORD")
+timeout 30s "$CDC_KAFKA_HOME/bin/kafka-configs.sh" \
+  --bootstrap-server "$CDC_KAFKA_BOOTSTRAP" --command-config "$CDC_KAFKA_ADMIN_PROPERTIES" \
+  --entity-type topics --entity-name "$cdc_topic" --describe --all
+timeout 30s "$CDC_KAFKA_HOME/bin/kafka-get-offsets.sh" \
+  --bootstrap-server "$CDC_KAFKA_BOOTSTRAP" --command-config "$CDC_KAFKA_ADMIN_PROPERTIES" \
+  --topic "\Q${cdc_topic}\E" --time earliest
+timeout 30s "$CDC_KAFKA_HOME/bin/kafka-get-offsets.sh" \
+  --bootstrap-server "$CDC_KAFKA_BOOTSTRAP" --command-config "$CDC_KAFKA_ADMIN_PROPERTIES" \
+  --topic "\Q${cdc_topic}\E" --time latest
+timeout 30s "$CDC_KAFKA_HOME/bin/kafka-log-dirs.sh" \
+  --bootstrap-server "$CDC_KAFKA_BOOTSTRAP" --command-config "$CDC_KAFKA_ADMIN_PROPERTIES" \
+  --describe --topic-list "$cdc_topic"
+```
+
+**Expected result/verification:** configs and partition offsets are text;
+`kafka-log-dirs` emits its native JSON with per-replica sizes/errors, not a CDC contract.
+Success exits `0`; timeout exits `124`. Capture each native result/exit independently;
+stop on failure. The offset tool treats `--topic` as a regex, so the example quotes
+the literal name with `\Q`/`\E`. It can skip failed partitions while exiting `0`; inspect
+stderr and require every expected partition. No live output is claimed here. Check all
+hosting brokers. Earliest-to-end differences are offset spans, not record counts or
+bytes: compaction leaves gaps. Log-directory replica `size` is bytes; distinguish each
+replica from logical topic volume, and request any remote/tiered allocation separately.
+Compare effective public-topic policy and explicit overrides using
+[security/policy inspection](#inspect-cdc-security). Shared offsets, binding progress and
+SQL Server schema history have different retention owners; do not copy public-topic
+settings to them or delete them to reclaim space.
+
+For the same bounded observation window, request broker monitoring for cleaner activity,
+uncleanable partitions/bytes, compaction backlog, log bytes per partition, disk free bytes,
+and I/O utilization. Correlate [Kafka broker metrics](https://kafka.apache.org/40/operations/monitoring/)
+with cleaner error logs and effective `log.cleaner.*` settings; unavailable exporter or
+managed-platform metrics stay explicitly unavailable. A quiet producer or low live-key
+count does not show that dirty historical records have been compacted. Capacity must
+include the largest **retained earliest-to-end log**, dirty records, tombstones, partition
+skew, and concurrent writes, as required by the
+[consumer owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#public-consumer-bootstrap).
+Do not convert one sample into a universal cleaner threshold or a production capacity
+claim. Request platform capacity remediation without weakening the topic contract.
+
+**Interruption/retry:** metadata reads are repeatable for the same topic; sample times
+will differ and do not form an atomic bootstrap barrier. Preserve earlier outputs, then
+retry the failed observation once access is restored. T14/T15 own live tool/version/output
+capture; the consumer must capture its own barriers as described next.
+
+<a id="consumer-continuity"></a>
+## Verify consumer bootstrap and checkpoint continuity
+
+**Scope/context:** diagnostic evidence handoff to each independently operated consumer
+owner. From the repository root and selected incident record, identify that consumer's
+public topic/generation, state namespace and configured principal/group. Obtain its
+protected operational report; the CDC CLI has no consumer-bootstrap or checkpoint-repair
+verb. No generic shell consumer is substituted for the owned implementation.
+
+Follow the design-owned [bootstrap deadline and renewal rules](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#public-consumer-bootstrap)
+and [explicit tombstone-retention minimum](../design/backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#topic).
+The deadline covers the whole bootstrap from first partition scan through durable state
+persistence, including stalls/rebalances. Request the first-scan UTC time, earliest
+positions, complete partition assignment, each captured end-offset barrier, durably
+applied positions and next-offset checkpoints, completion time, and latest renewal proof.
+An end offset is the next offset, so evidence must establish application through the
+records preceding that barrier. Include empty/idle partitions; an unchanged end can
+renew proof only after durable checkpoint completion. Kafka group commits or low lag
+alone do not prove application into the consumer's durable state.
+
+**Expected result/verification:** the consumer's own report format and native result,
+not `CdcStatus` JSON or a CDC exit code. Missing partitions/checkpoints, corruption,
+unexpected assignments, an expired bootstrap deadline or uncertain/expired incremental
+renewal invalidate the **entire reconstructed state**. The owner must stop advertising
+it, discard it and perform the consumer-owned full bootstrap from earliest offsets.
+Resuming an uncertain incremental checkpoint is not a recovery option, even if no offset
+error occurred. A repeated missed deadline requires capacity correction before production
+use; extending a local timeout does not extend the topic contract.
+
+**Interruption/retry:** let the consumer owner classify any interrupted scan or renewal
+against its durable evidence. If proof cannot be recovered, require full bootstrap.
+The [E19-05 consumer fixture](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/MessageContractConsumerBrokerTests.cs)
+checks durable barriers, empty partitions, idle renewal and checkpoint-loss/corruption
+reconstruction. It is a small test consumer, not certification of another product.
+Consumer capacity evidence must include dirty retained log, skew, maximum records, durable
+state writes and concurrent mutation load. [T08 evidence](cdc-inv-evidence.md#t08-capacity-review)
+separates reviewed sibling assertions from pending live/deployment-owned results.
+
+<a id="increase-record-size"></a>
+## Coordinate an in-place record-size increase
+
+**Scope/effect:** a maintenance change across independently operated consumers, broker
+replication, the public topic and connector producer. It can restart publication and
+increase memory/storage use. The
+[record contract](../design/backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#record-size)
+and [ordered increase owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#in-place-record-size-increase)
+own the operation. Budget the fully materialized public envelope, key and one-record
+Kafka framing after real transforms/converters; an HTTP request-body limit or compressed
+sample is insufficient. Over-budget production fails the task without partial publication
+under the fixed `errors.tolerance=none` and uncompressed producer contract.
+
+**Starting directory/prerequisites and selection:** repository root and the same incident
+context, record/generation, state root and physical source. Securely retain the existing
+full connector configuration and deployment policy; a redacted manifest cannot be sent
+back as configuration. Have consumer, Kafka, Connect and deployment operators available,
+plus fresh healthy continuity and sufficient source-retention margin. Unknown/lost history
+goes to [continuity handling](#continuity-incident) before any configuration action that
+could start a task. This procedure is not initial enablement or a source-replacement path.
+
+1. Deployment automation marks the target unavailable for CDC admission and retains that
+   maintenance disposition throughout the rollout. Use the shipped
+   [stop/read-back procedure](#local-stop-restart) to fence publication and preserve
+   offsets. This does not install a runtime API writer gate; the deployment owner must
+   separately coordinate admission/mutation limits and the resulting queue/history growth.
+2. Each consumer owner raises `max.partition.fetch.bytes` and `fetch.max.bytes` to carry
+   the new byte budget, provisions receive/deserialization memory, and supplies effective
+   read-back plus capacity evidence. A configured `Consumers` list is not that evidence.
+3. Kafka operators raise and read back every broker's `socket.request.max.bytes`,
+   `replica.fetch.max.bytes` and `replica.fetch.response.max.bytes`, and the effective
+   `message.max.bytes`/topic override. Use the platform's broker configuration mechanism
+   and required rolling restarts; `kafka-configs.sh --describe --all --entity-type brokers
+   --entity-name <broker-id>` provides inspection with the same connection arguments as
+   [broker inspection](#inspect-broker-capacity). An inaccessible broker makes verification
+   incomplete. Change this public topic's `max.message.bytes` using Kafka Admin
+   `IncrementalAlterConfigs` or `kafka-configs.sh --alter --entity-type topics --entity-name
+   <selected-topic> --add-config max.message.bytes=<new-budget>`, then describe it again.
+   Preserve its other explicit retention/durability settings and partition count.
+4. Update persisted `DataManagement:DocumentCache:Cdc:MaxRecordBytes` and, if needed,
+   `ProducerBufferBytes` through the deployment configuration owner. The
+   [catalog](../../docs/CONFIGURATION.md#datamanagementdocumentcachecdc) and
+   [renderer](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc/CdcConnectorTemplateRenderer.cs)
+   own defaults/validation. The shipped buffer validator requires at least
+   `max(33554432, MaxRecordBytes)`, stronger than merely accepting the new record. Raise
+   Connect heap with additional headroom; producer buffer size is not a total memory cap.
+   Clear stale environment/command-line overrides according to catalog precedence.
+5. The Connect owner applies the corresponding generated producer configuration through
+   the authenticated Connect REST `PUT /connectors/{name}/config`, retaining the exact
+   registered identity and all unrelated governed settings/secret references. Increase
+   `producer.override.buffer.memory` before allowing the larger
+   `producer.override.max.request.size`; increase request size last. Verify the worker
+   permits the overrides. This is a deployment integration action: the packaged CLI has
+   no resize/reconfigure/render-export verb, and `--max-record-bytes` only selects the
+   policy to validate. `cdc restart` does **not** update the retained configuration.
+   Do not hand-author a replacement connector or rerun fresh-database setup. A REST
+   update may start/reconfigure tasks: the deployment must preserve containment and
+   healthy continuity through that boundary. If it cannot control that transition,
+   leave the change pending with the Connect owner; the sibling boundary test is not
+   a delivered deployment orchestrator.
+6. Read back `GET /connectors/{name}/config`, broker/topic limits and consumer settings
+   into protected evidence. Keep compression, ordering, partitioner, task topology and
+   error tolerance unchanged. Use [guarded restart](#local-stop-restart) once its
+   prerequisites pass, then [CDC status](#observe-cdc) with the new persisted policy.
+   Inspect returned components and continuity independently of exit status; retain
+   consumer confirmation before the deployment restores its readiness disposition.
+
+**Expected outcome/verification:** Kafka tools exit `0` for successful native operations;
+Connect returns an HTTP success response with its own configuration representation, not a
+CDC cleanup/admission proof. `cdc restart` success exits `0` even if eventual readiness
+is not ready, and a produced `cdc status` also exits `0` for `notReady`/`unknown`.
+Reuse [captured CLI shapes](evidence/t12/cdc-contract-captures.json), not invented resize
+JSON. Verify unchanged binding/generation/topic/keying, all effective limits, sufficient
+heap, successful task progress and retained source offsets. Once aligned, an earlier
+rejected record resumes from its uncommitted source position; do not reset offsets or
+skip it. [E19-05 boundary assertions](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/MessageContractRecordSizeTests.cs)
+exercise this with a synthetic envelope on each provider; they do not establish the
+largest production record or this deployment's rollout.
+
+**Interruption/retry:** a timeout may leave a subset applied; retain maintenance/not-ready
+disposition, inspect every layer and finish in the same order for the same generation.
+Leave already-raised downstream limits in place while resolving missing upstream changes.
+Do not blindly lower limits after larger records may have been published. A partial,
+out-of-order or unverifiable rollout stays unavailable; a terminal loss during the window
+requires containment, not a size retry. T14/T15 own live observations; platform and consumer
+owners supply their own read-backs. See [T08 review](cdc-inv-evidence.md#t08-capacity-review).
+
+<a id="pipeline-overhead"></a>
+## Separate write overhead, queue drain and Kafka lag
+
+The [projector owner](../design/backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#durable-work-and-lifecycle)
+places coalesced enqueue work in the canonical write transaction. PostgreSQL's emitted
+`ON CONFLICT` update and SQL Server's update/insert locking path both add per-write work;
+same-document enqueue/acknowledgement contention is distinct from unrelated-document
+throughput. Inspect provider lock waits/deadlocks and enqueue latency alongside canonical
+request latency. PostgreSQL also needs WAL, vacuum and bloat observations; SQL Server
+needs transaction-log, ghost/index and [row-version-store observations](#inspect-sqlserver-retention).
+The [emitted queue routines](../../src/dms/backend/EdFi.DataManagementService.Backend.Ddl/CoreDdlEmitter.cs)
+and [E18 component evidence](../document-cache-documentation/cdc-inv-evidence.md)
+are the existing implementation/evidence owners.
+
+Projector downtime permits queued canonical writes; an enqueue failure rejects the whole
+canonical transaction. Queue drain later adds materialization, cache write and work
+acknowledgement cost; Connect/Kafka lag occurs farther downstream and is not an enqueue
+latency measurement. Compare timestamped [projection/queue observations](#observe-projection),
+[shipped telemetry](#telemetry), [connector lag](#inspect-lag) and provider/storage metrics
+for the same interval. Coalescing means work-row count is not the number of writes waiting
+to be replayed. Measure drain while concurrent writes continue, not only after traffic
+stops. SQL Server capture-job polling and connector `SqlServerPollInterval` are different
+stages and settings.
+
+Use shipped [projection settings](../../docs/CONFIGURATION.md#datamanagementdocumentcache)
+`Projector:PageSize`, `PollInterval`, `MaxConcurrentTargets`, `FailureBackoff` and
+`BaselineHighWaterMark` for selected targets. Page size bounds a page, not elapsed drain
+or rebuild time; target concurrency is per process, not per-document parallelism within
+one target. Use [CDC settings](../../docs/CONFIGURATION.md#datamanagementdocumentcachecdc)
+for heartbeat/poll intervals, producer buffer and operation timeouts. A larger lag
+threshold changes admission policy rather than improving throughput. Change one measured
+constraint at a time with the responsible owner and preserve before/after observations;
+do not add connector tasks or partitions as an in-place tuning shortcut.
+
+The provider writer tests' `DocumentCacheWriterPerformanceEvidence_it_compares_projector_and_direct_fill_workload_modes`
+measure elapsed milliseconds, per-operation timing and contention/retry cases in small
+component workloads. The E18 index links both implementations; it carries no representative
+production timing artifacts. E19-05's consumer/boundary results and these local exercises
+likewise do not certify independent consumer capacity. Follow the still-unassigned
+[Projection Performance Qualification](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#projection-performance-qualification)
+for provider-specific write/lifecycle, outage drain, baseline/reset/restart cost, log
+amplification and large-source query-plan qualification. This task adds neither a
+performance harness nor universal thresholds. Record unmeasured capacity as unqualified.

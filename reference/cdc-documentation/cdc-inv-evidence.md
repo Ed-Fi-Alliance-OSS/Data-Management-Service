@@ -47,6 +47,8 @@ No executable documentation catalog or automated documentation/link tests are us
 | [Security](operations-runbook.md#cdc-security), [inspection](operations-runbook.md#inspect-cdc-security), [containment](operations-runbook.md#sensitive-data-containment); T07 | [Security](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#security-telemetry-and-operations), [disclosure](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#sensitive-data-disclosure-correction); CDC-INV-14/15 authoring, CDC-INV-06/12 support | Manual review `T07-security`; existing provider/broker assertions reviewed, not executed; fixture-based absent-purge decision | Reviewed; [record and exact reusable identities](#t07-security-review); incident remains open without platform evidence | T14/T15 live replay; deployment platform/consumer-store evidence; T16 closure |
 | [Credentials and ACL inspection](operations-runbook.md#inspect-cdc-security); T07 | [Security](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#security-telemetry-and-operations); CDC-INV-12/15 support | `Given_CdcControlOptionsTests`, `Given_CdcKafkaAclPolicy`, `Given_CdcConnectRestSecretRedaction`; options/fake broker/HTTP unit tests | 115 passed / 0 failed / 0 skipped; [exact cases](evidence/t07/security-results.txt) | Live isolation T14/T15; no production qualification |
 | [Generated security artifacts](operations-runbook.md#cdc-security); T07 | [Provider setup](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#connector-topology-and-provider-setup); CDC-INV-06/08/15 support | `Given_CdcConnectorTemplateArtifactTests`, `Given_CdcConnectorTemplatePostgresqlRendering`, `Given_CdcConnectorTemplateSqlServerRendering`; renderer unit fixtures | 35 passed / 0 failed / 0 skipped; [exact cases](evidence/t07/templates-results.txt) | Live manifests/grants T14/T15; T16 reconciliation |
+| [Retention/capacity](operations-runbook.md#retention-and-capacity), [consumer continuity](operations-runbook.md#consumer-continuity), [record increase](operations-runbook.md#increase-record-size), [overhead](operations-runbook.md#pipeline-overhead); T08 | [Operations](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#security-telemetry-and-operations), [topic/record contract](../design/backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md); CDC-INV-14/15 authoring, CDC-INV-07/11 support | Manual review `T08-capacity`; source and sibling assertions, native metadata/tool reference review | Reviewed; [findings and pending observations](#t08-capacity-review) | T14/T15 live inspection; independent consumer/platform qualification; T16 closure |
+| [Policy and size inspection](operations-runbook.md#increase-record-size); T08 behavior reuse | [Record size](../design/backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#record-size), [offset store](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#kafka-connect-offset-store); CDC-INV-07/11/15 support | `Given_CdcKafkaRecordSize`, `Given_CdcKafkaTopicPolicy`, `Given_CdcKafkaOffsetStore`, `Given_CdcKafkaSchemaHistory`; fake Kafka admin/record readers | 82 passed / 0 failed / 0 skipped; [exact identities](evidence/t08/policy-results.txt) | No live provider, broker or consumer capacity claim; T14/T15/T16 |
 
 <a id="t01-foundation-review"></a>
 ## T01 foundation review
@@ -955,6 +957,133 @@ platform purge guarantees remain deployment-owned. E18-S08 restamp and E19-06 AP
 handoffs stay explicitly unmet. T07 authoring is complete against existing behavior/help
 and fixture outputs; it does not close these downstream results or the overall story.
 
+<a id="t08-capacity-review"></a>
+## T08 retention, continuity and capacity review
+
+Reviewed 2026-09-06 against `92d80f03d1a445d13439f720cb5f3d23248d5f50` plus T08
+changes; .NET SDK `10.0.102`, Linux/Bash. The pre-existing story edit remains outside
+this commit. T13 was considered first; `CDC_CONTROL_BROKER_KAFKA_IMAGE` is unset and the
+[T02 E19-06 helper handoff](#t02-setup-review) remains unmet. Selected ready T08 authoring;
+no provider, Connect, broker, consumer or qualified image was started/accessed. No live
+inspection or performance result is claimed. No deployment cleanup required.
+
+### Executed behavior checks
+
+From repository root:
+
+```bash
+dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Control.Tests.Unit \
+  --filter 'FullyQualifiedName~CdcKafkaRecordSize|FullyQualifiedName~CdcKafkaTopicPolicy|FullyQualifiedName~CdcKafkaOffsetStore|FullyQualifiedName~CdcKafkaSchemaHistory' \
+  --logger 'trx;LogFileName=policy.trx' --results-directory /tmp/dms-1326-t08
+```
+
+Build/test exit `0`: **82 passed, 0 failed, 0 skipped**. Exact TRX-derived identities
+and outcomes: [policy-results.txt](evidence/t08/policy-results.txt). Raw stdout/stderr
+were captured before review in `/tmp/dms-1326-t08/policy.log`, with `policy.trx`; temporary
+captures are not durable evidence. The committed result list preserves all selected
+identities/outcomes; no operational JSON was fabricated. Tests use fake Kafka admin
+responses/record readers, not real broker or provider access. They verify product policy
+independently of prose; no documentation assertions or documentation tooling was run.
+
+### Manual comparison and findings
+
+Reviewed the new anchors
+[retention context](operations-runbook.md#retention-and-capacity),
+[PostgreSQL](operations-runbook.md#inspect-postgresql-retention),
+[SQL Server](operations-runbook.md#inspect-sqlserver-retention),
+[broker](operations-runbook.md#inspect-broker-capacity),
+[consumer](operations-runbook.md#consumer-continuity),
+[size increase](operations-runbook.md#increase-record-size), and
+[overhead](operations-runbook.md#pipeline-overhead).
+Manually followed their local links/anchors to the configuration catalog, incident/status
+and stop context, E18 prerequisite/evidence owners, renderer, source metadata adapters,
+emitted enqueue routines, sibling fixtures, topic/consumer/record-size design and
+unassigned production qualification. This is authoring review, not an executed SQL/Kafka
+exercise. No new CDC CLI syntax was introduced: existing T02/T05 help and T12 JSON shapes
+supply stop/restart/status references.
+
+- Compared PostgreSQL selection to `CdcPostgresqlHeartbeatPublicationProvider.ReplicationSlotSql`:
+  exact slot/database/plugin, retained/flush LSN and optional slot state fields. Added
+  native WAL-span/safe-size inspection with the
+  [PostgreSQL 16 metadata reference](https://www.postgresql.org/docs/16/view-pg-replication-slots.html).
+  WAL-address distance is not allocated bytes, connector committed position or Kafka lag;
+  null safe size is not unlimited disk evidence.
+- Compared SQL inspection to `CdcSqlServerHeartbeatDatabaseProvider` help-jobs/runtime
+  and capture-instance SQL and `CdcProviderSetupResultMapper`. Retained-LSN inspection
+  is metadata-only. Cleanup retention minutes and capture-job polling seconds stay
+  distinct from connector poll configuration. Scheduled cleanup is not required to run
+  continuously. Row-version queries use aggregate
+  [tempdb](https://learn.microsoft.com/en-us/sql/relational-databases/system-dynamic-management-objects/sys-dm-tran-version-store-space-usage?view=sql-server-ver17)
+  and [ADR/PVS](https://learn.microsoft.com/en-us/sql/relational-databases/system-dynamic-management-objects/sys-dm-tran-persistent-version-store-stats?view=sql-server-ver17)
+  metadata; missing access/rows remain unproved. PVS off-row size is not all version storage.
+- Compared Kafka policy to `CdcKafkaAdminAdapter` and the four selected suites: topic
+  explicit policy, replica/broker minimum limits, unknown unreadable settings, shared
+  offsets and SQL Server schema history. Inspections do not apply public-topic retention
+  to internal topics. Checked native config/offset tool syntax against Apache Kafka
+  [ConfigCommand](https://github.com/apache/kafka/blob/4.0.0/core/src/main/scala/kafka/admin/ConfigCommand.scala)
+  [GetOffsetShell](https://github.com/apache/kafka/blob/4.0.0/tools/src/main/java/org/apache/kafka/tools/GetOffsetShell.java),
+  and [LogDirsCommand](https://github.com/apache/kafka/blob/4.0.0/tools/src/main/java/org/apache/kafka/tools/LogDirsCommand.java).
+  Corrected literal-topic regex quoting and noted per-partition errors can accompany exit
+  zero. Broker metrics/cleaner logs and retained log bytes are separate from offset spans;
+  no cleaner health is inferred from a live-key count. Live tool help/output remains T14/T15.
+- Consumer evidence follows the design-owned deadline, tombstone floor and renewal rules;
+  no second policy table. Invalid/expired/uncertain proof invalidates the entire store
+  and requires consumer-owned full bootstrap. Per-partition durable application includes
+  idle/empty partitions; group commits alone are insufficient. Capacity includes dirty
+  retained log, skew, maximum records, durable writes and concurrent traffic.
+- `CdcControlOptions.ToDeploymentPolicy`, `CdcConnectorTemplateContracts`, renderer and
+  validator require buffer >= `max(33554432, MaxRecordBytes)`. Coordinated increase raises
+  consumers, then broker/replica/topic, then producer buffer/request size. `MaxRecordBytes`
+  is mutable policy, not binding identity. Read-back must cover every layer; partial
+  rollout stays unavailable. `CdcSetupController.UnsatisfiedRestartPrerequisite` checks
+  current policy/config but restart never rewrites it. Packaged CLI has no size-rollout
+  orchestrator or render-export verb. The Connect update boundary may start tasks; the
+  deployment must preserve containment/healthy continuity or leave that step pending.
+- Compared E19-05 `UpdateRetainedConnectorSizeConfigAsync` and boundary fixture: it uses
+  renderer plus retained-config REST PUT and explicit test restart. Its observer/custom
+  test orchestration is not an operator helper and was not copied into the runbook.
+- E18 writer timings and query-plan assertions are component evidence, not canonical
+  pipeline or independent consumer capacity certification. Provider enqueue/ack overhead,
+  projector outage/drain and Kafka lag are distinct. Linked still-unassigned representative
+  qualification; no new performance harness, benchmarks or arbitrary thresholds added.
+
+Manual link/anchor and secret/payload review completed; `git diff --check` passed.
+
+### Reused sibling evidence and live handoff
+
+Source-reviewed, **not run in T08**:
+
+- Namespace `EdFi.DataManagementService.Backend.Cdc.Tests.Integration`,
+  `Given_MessageContractRecordSize` (both provider fixture instances):
+  `It_publishes_the_complete_synthetic_record_one_byte_below_the_pinned_producer_boundary`,
+  `It_fails_the_producer_without_partial_publication_and_blocks_readiness_despite_healthy_progress_and_lag`,
+  `It_replays_the_rejected_record_and_recovers_readiness_after_aligned_limits_change_in_place`.
+  [Fixture](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/MessageContractRecordSizeTests.cs)
+  captures bounded size/config/offset evidence when its qualified runtime prerequisites exist.
+- Same namespace, `Given_MessageContractConsumerBroker`:
+  `It_requires_durable_application_and_every_checkpoint_including_the_empty_partition`,
+  `It_renews_an_idle_proof_from_real_unchanged_ends_only_after_all_checkpoints_complete`,
+  `It_continues_from_durable_next_offsets_without_replaying_bootstrap`,
+  `It_reconstructs_from_earliest_after_checkpoint_loss`,
+  `It_reconstructs_from_earliest_after_checkpoint_corruption`.
+  [Fixture](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/MessageContractConsumerBrokerTests.cs)
+  is test-consumer conformance, not independent consumer certification.
+- PostgreSQL and MSSQL `DocumentCacheWriterTests`:
+  `DocumentCacheWriterPerformanceEvidence_it_compares_projector_and_direct_fill_workload_modes`;
+  existing [E18 index](../document-cache-documentation/cdc-inv-evidence.md) identifies
+  both provider projects and the concurrency/query-plan supporting evidence. No numeric
+  production result is inferred or copied.
+
+T14/T15 must capture selected identity, source revision, provider/Kafka tool/qualified-image
+versions, exact inspection commands from these anchors, raw then sanitized stdout/stderr,
+native exits, timestamps/units, missing permissions and cleanup. PostgreSQL owns slot/WAL
+observations in T14; SQL Server owns jobs/retained ranges/version storage in T15; both own
+broker observations and the size-policy read-back handoff. External consumer reports and
+platform capacity evidence remain deployment-owned. Use existing E19-05 fixtures where
+applicable and retain nonzero selected test counts; do not call a missing prerequisite a
+pass. T16 reconciles these pending rows with actual outcomes. E19-06 API and E18-S08
+restamp handoffs remain as previously recorded.
+
 <a id="pending-delivery"></a>
 ## Pending delivery and verification
 
@@ -972,7 +1101,7 @@ actual results before the story is complete.
 | Continuity, complete-record adoption, physical-source replacement | T05 delivered; T13 assertions; T14/T15 replay | [T05 review](#t05-continuity-review): 68 controller and 11 CLI cases passed; six captured outcomes, help/source/default-tenant/retry review complete. Additional operator assertions and live provider replay pending; T16 closes results. |
 | Destructive retirement, partial failure, timeout and same-operation retry | T06 delivered; T17 assertions; T14/T15 replay | [T06 review](#t06-retirement-review): 78 existing behavior cases passed; eight output captures, generated help, original-source/absence/proof/history review complete. Additional operator assertions and live cleanup remain pending. |
 | Security, consumer isolation, sensitive-data containment | T07 delivered; T14/T15 replay | [T07 review](#t07-security-review): 150 unit cases passed; source/help/fixture review and absent-purge walkthrough complete. Live provider/authorizer/fence/deletion replay pending; platform purge and independent consumer stores remain deployment-owned. |
-| Provider retention, consumer continuity, record budget, capacity observations | T08; T14/T15 replay | Pending. Link existing owning evidence; small exercises do not establish production capacity. |
+| Provider retention, consumer continuity, record budget, capacity observations | T08 delivered; T14/T15 replay | [T08 review](#t08-capacity-review): 82 policy tests passed; bounded inspection/source review complete. Live queries/tool output, consumer reports and coordinated rollout observations pending. Production qualification remains separately owned/unassigned. |
 | Discovery references and final consistency | T09; T16 closure | Pending. Final manual review reconciles all anchors, exact test selections, provider results, artifacts, and limitations. |
 
 Setup, provider artifacts, routing, durability, ACLs, and consumer conformance remain in
