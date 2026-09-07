@@ -759,6 +759,10 @@ function Get-LocalCdcDeploymentPolicy {
         min.insync.replicas one, and the adapter creates the store with 25 partitions - so a
         pre-created store and a control-plane-created one are the same topic. They belong here with
         DurabilityProfile rather than in the start script, because they are that profile's values.
+
+        SqlServerPollInterval is an explicit local connector policy, below the renderer's default
+        five-second heartbeat. The shared setup argument builder passes it to every SQL Server verb
+        so initial registration and later configuration comparisons use the same interval.
     #>
     return @{
         KafkaBootstrapServers        = 'dms-kafka1:9092'
@@ -766,6 +770,7 @@ function Get-LocalCdcDeploymentPolicy {
         MaxRecordBytes               = '1048576'
         DurabilityProfile            = 'local'
         BindingStatePath             = '/state'
+        SqlServerPollInterval        = '00:00:00.500'
         OffsetStoreTopicDefault      = 'debezium_source_offset'
         OffsetStorePartitionCount    = 25
         OffsetStoreReplicationFactor = 1

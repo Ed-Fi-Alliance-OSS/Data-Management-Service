@@ -695,6 +695,48 @@ Describe "DMS-1323 bootstrap CDC phase" {
         }
     }
 
+    Context "SQL Server poll interval delivery" {
+        It "passes the local poll interval into the container for <Verb> on <Engine>" -ForEach @(
+            @{ Verb = 'enable'; Engine = 'mssql' }
+            @{ Verb = 'status'; Engine = 'mssql' }
+            @{ Verb = 'restart'; Engine = 'mssql' }
+            @{ Verb = 'enable'; Engine = 'postgresql' }
+            @{ Verb = 'status'; Engine = 'postgresql' }
+            @{ Verb = 'restart'; Engine = 'postgresql' }
+        ) {
+            $common = @{
+                ComposeProjectName = 'dms-local'
+                EnvironmentFile    = '/tmp/.env.derived'
+                DatabaseEngine     = $Engine
+            }
+            $target = @{
+                TenantKey          = ''
+                DataStoreId        = 1
+                SourceDatabaseName = 'edfi_datastore'
+            }
+            $arguments = switch ($Verb) {
+                'enable' {
+                    Get-CdcEnableArgument @common @target `
+                        -DatabaseCreatedByThisRun $true -BindingStateRoot (New-AbsentStateRoot)
+                }
+                'status' { Get-CdcSetupComposeArgument @common -VerbName status }
+                'restart' { Get-CdcRestartArgument @common @target -Generation 1 }
+            }
+
+            $pollArguments = @($arguments | Where-Object { $_ -like '*__SqlServerPollInterval=*' })
+            if ($Engine -eq 'mssql') {
+                $pollArguments | Should -HaveCount 1
+                $pollArguments[0] | Should -Be 'DataManagement__DocumentCache__Cdc__SqlServerPollInterval=00:00:00.500'
+                $index = [array]::IndexOf([object[]]$arguments, $pollArguments[0])
+                $arguments[$index - 1] | Should -Be '-e'
+                $index | Should -BeLessThan ([array]::IndexOf([object[]]$arguments, 'cdc-setup'))
+            }
+            else {
+                $pollArguments | Should -HaveCount 0
+            }
+        }
+    }
+
     Context "cdc enable invocation" {
         BeforeAll {
             $script:createdRunArguments = Get-CdcEnableArgument `

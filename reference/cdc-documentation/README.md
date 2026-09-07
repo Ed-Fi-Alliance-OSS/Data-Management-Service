@@ -16,6 +16,12 @@ provider replay, and final review are tracked in the
 [evidence index](cdc-inv-evidence.md).
 Pending work is not evidence that an operator procedure has passed.
 
+The [local SQL Server exercise](operations-runbook.md#local-sqlserver) now receives the
+required 500 ms `SqlServerPollInterval` through the shared enable/status/restart container
+argument builder. The full exercise remains blocked on the E19-06 API-to-Kafka harness.
+[T15 prerequisite review](cdc-inv-evidence.md#t15-sqlserver-prerequisite-review) records
+the source trace and resumption requirements; no SQL Server wrapper replay pass is claimed.
+
 - [CDC evidence index](cdc-inv-evidence.md): manual reviews, exact behavior-test identities,
   provider results, sanitized captures, and outstanding verification owners.
 - [DocumentCache runbook](../document-cache-documentation/operations-runbook.md) and

@@ -219,6 +219,11 @@ of its own.
 
 ### Local Bootstrap and E2E Entry Points
 
+- `Get-LocalCdcDeploymentPolicy` owns the explicit local SQL Server connector poll
+  interval. `Get-CdcSetupComposeArgument` delivers it as container environment for all
+  SQL Server verbs, including enable, status, and guarded restart, so their rendered
+  configurations agree. The connector renderer retains ownership of positivity and
+  heartbeat-bound validation; direct deployments must still supply their own policy.
 - The local Kafka and Kafka Connect infrastructure is engine-neutral. SQL Server is a
   first-class CDC provider, so neither the compose set nor the start sequence branches on
   the database engine, and one Connect worker service hosts whichever Debezium connector is

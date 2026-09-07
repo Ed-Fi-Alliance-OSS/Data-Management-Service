@@ -154,8 +154,10 @@ requests remain read-only.
 
 ### Optional CDC publication
 
-Both PostgreSQL and SQL Server support deployment-owned CDC through the local
-`-EnableKafkaCdc` bootstrap/E2E opt-in. Start with the
+Both PostgreSQL and SQL Server have deployment-owned CDC implementations. The local
+`-EnableKafkaCdc` bootstrap/E2E SQL Server path supplies the same 500 ms connector poll
+interval to enable, status, and guarded restart through its shared container argument builder.
+Start with the
 [CDC setup runbook](../reference/cdc-documentation/operations-runbook.md#local-setup)
 for fresh-database prerequisites and the
 [CDC evidence index](../reference/cdc-documentation/cdc-inv-evidence.md) for verification

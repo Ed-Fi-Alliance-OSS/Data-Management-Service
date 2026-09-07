@@ -186,13 +186,30 @@ session for observation and cleanup. Continue with [shared verification](#local-
 <a id="local-sqlserver"></a>
 ### SQL Server
 
+The shared `Get-CdcSetupComposeArgument` builder supplies
+`DataManagement__DocumentCache__Cdc__SqlServerPollInterval=00:00:00.500` through
+`docker compose run -e` for SQL Server. Initial enable, subsequent status, and guarded
+restart all use this builder and the same `Get-LocalCdcDeploymentPolicy` value. No host
+export or additional status argument is needed. This explicit local connector policy is
+500 ms, below the renderer's default 5-second heartbeat. The control-plane option itself
+still has no default; direct deployments must supply a positive interval no greater than
+the effective heartbeat, as specified in the
+[configuration contract](../../docs/CONFIGURATION.md#datamanagementdocumentcachecdc).
+This is the connector poll interval, separate from SQL Server capture-job polling.
+
+**The E19-06 API harness remains an unmet prerequisite** for the full operator exercise.
+The configuration handoff is covered by focused tests; successful SQL Server wrapper
+admission and API publication still require live evidence. See the
+[T15 prerequisite review](cdc-inv-evidence.md#t15-sqlserver-prerequisite-review).
+
 Use the local SQL Server 2025 Compose service, its setup administrator, and a separate
 connector login. Confirm capture infrastructure and snapshot-isolation prerequisites;
 initialization/validation of RCSI and nested triggers follows the
 [E18 provider procedure](../document-cache-documentation/operations-runbook.md#sql-server-prerequisite-failure-correction).
 The generated provider workflow owns CDC objects and grants; no independent capture
 creation is part of this exercise. Follow [SQL Server's design owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#sql-server).
-From the same E2E starting directory, after the other provider's cleanup:
+The following command is retained for replay **only after the E19-06 harness is available**.
+Use the same E2E starting directory, after the other provider's cleanup:
 
 ```powershell
 $engine = 'mssql'
@@ -251,6 +268,9 @@ in an access-restricted backup after each operation has settled. Follow
 **Commands:** remain in the E2E PowerShell session, with `$cdcEnv` now the absolute
 **effective** path printed by setup. This uses exported shipped argument builders to run
 packaged `dms-document-cache cdc` verbs through the same one-shot service as setup/teardown.
+For SQL Server, the shared builder also supplies the same 500 ms connector poll interval
+used by enable and guarded restart; `$containerEnv` need only add the connector connection
+properties and bearer token shown below.
 It adds no provider or controller implementation. The dedicated state root must contain
 exactly one live binding for this fresh exercise; stop to investigate any other shape.
 

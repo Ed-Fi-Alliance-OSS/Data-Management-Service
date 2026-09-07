@@ -19,6 +19,26 @@ namespace EdFi.DataManagementService.Backend.Cdc.Tests.Unit;
 public class Given_CdcConnectorTemplateSqlServerRendering
 {
     [Test]
+    public void It_renders_the_local_poll_interval_with_the_default_heartbeat()
+    {
+        CdcConnectorTemplateResult result = Render(
+            BuildRequest(
+                CdcProvider.SqlServer,
+                deploymentPolicy: new CdcConnectorTemplateDeploymentPolicy(
+                    "broker:9092",
+                    maxRecordBytes: 1_048_576,
+                    sqlServerPollInterval: TimeSpan.FromMilliseconds(500)
+                )
+            )
+        );
+
+        using var _ = new AssertionScope();
+        result.Outcome.Should().Be(CdcConnectorTemplateOutcome.Rendered);
+        result.Config.Should().Contain("poll.interval.ms", "500");
+        result.Config.Should().Contain("heartbeat.interval.ms", "5000");
+    }
+
+    [Test]
     public void It_renders_the_sqlserver_connector_contract_from_provider_setup_metadata()
     {
         CdcConnectorTemplateResult result = Render(

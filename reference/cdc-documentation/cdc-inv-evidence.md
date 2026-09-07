@@ -24,6 +24,7 @@ No executable documentation catalog or automated documentation/link tests are us
 
 | Runbook anchor / review | Design owner / invariants | Exact identity and layer | Result / artifact | Remaining owner |
 | --- | --- | --- | --- | --- |
+| [SQL Server setup](operations-runbook.md#local-sqlserver), [status handoff](operations-runbook.md#local-setup-verification), [restart](operations-runbook.md#local-stop-restart); T15 prerequisite review | [Local bootstrap](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#local-bootstrap-and-ci); CDC-INV-14/15 | `T15-sqlserver-prerequisites`; manual source inspection only | E19-04 poll-interval container input fixed; blocked on the E19-06 API harness; [trace and disposition](#t15-sqlserver-prerequisite-review). No live exercise or test result | E19-06 harness; then T15 replay and T16 reconciliation |
 | [Retirement](operations-runbook.md#retire-binding-generation); T17 | [Binding lifecycle](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding); CDC-INV-14/15, supporting CDC-INV-11 | `Given_CdcControlRetirementOperator`, `Given_DocumentCacheAdminRetirementSourceSelection`, selected `Given_DocumentCacheAdminCdcJsonContracts`; separate live broker, packaged two-provider CLI, and mocked-dispatch layers | 16 new integration cases passed; 187 reused unit cases passed; [exact results, captures and manual review](evidence/t17/README.md) | T14/T15 runbook replay; T16 final reconciliation; platform purge remains deployment-owned |
 | [Prerequisites](operations-runbook.md#prerequisites), [state](operations-runbook.md#deployment-state), [format](operations-runbook.md#procedure-format); T01 foundation | [Configuration](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#configuration-and-projection-target-selection), [binding](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding); CDC-INV-14/15 authoring support only | Manual review `T01-foundation`; no provider access | Reviewed; [record below](#t01-foundation-review), [root help](evidence/t01/help.txt), [CDC help](evidence/t01/cdc-help.txt) | Operational replay pending T14/T15; final reconciliation T16 |
 | [Prerequisites/configuration](operations-runbook.md#prerequisites); T01 validation support | [Configuration](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#configuration-and-projection-target-selection); CDC-INV-15 support, not exercised-runbook closure | `EdFi.DataManagementService.Backend.Cdc.Control.Tests.Unit.Given_CdcControlOptionsTests`; all 77 exact selected case identities in artifact; provider-independent unit behavior | 77 passed, 0 failed, 0 skipped; [case results](evidence/t01/options-test-results.txt) | Provider claims still pending T14/T15 |
@@ -541,6 +542,10 @@ pending T14/T15; no synthetic operational output was written to fill that gap.
 `src/dms/tests/EdFi.DataManagementService.Tests.E2E`, in the prepared PowerShell sessions
 from [PostgreSQL](operations-runbook.md#local-postgresql) or
 [SQL Server](operations-runbook.md#local-sqlserver), respectively:
+
+**SQL Server replay remains blocked** on the E19-06 harness dependency. The E19-04
+poll-interval handoff is fixed. The command below is retained only for replay after
+the harness is supplied; see the [T15 review](#t15-sqlserver-prerequisite-review).
 
 ```powershell
 pwsh ./setup-local-dms.ps1 -EnvironmentFile $cdcEnv -DatabaseEngine postgresql -EnableKafkaCdc
@@ -1150,7 +1155,7 @@ actual results before the story is complete.
 
 | Pending scope | Authoring / evidence owner | Result and required handoff |
 | --- | --- | --- |
-| Fresh PostgreSQL/SQL Server setup, API upsert/delete, planned stop/guarded restart | T02 delivered; T14/T15 live replay | [T02 review](#t02-setup-review): 131 bootstrap behavior cases passed; help/source/fixture authoring complete. E19-06 API consumer harness absent, dependency unmet. Actual provider/image/API/fence/cleanup results pending T14/T15. |
+| Fresh PostgreSQL/SQL Server setup, API upsert/delete, planned stop/guarded restart | T02 delivered; external PostgreSQL follow-up / T15 SQL Server replay | [T02 review](#t02-setup-review): 131 bootstrap behavior cases passed; help/source/fixture authoring complete. [T15 prerequisite review](#t15-sqlserver-prerequisite-review): SQL Server wrapper poll-interval handoff fixed (E19-04); API consumer harness absent (E19-06). No live replay pass. |
 | Monitoring/incident routing and status/lag JSON | T03/T12 delivered; T14/T15 live observations | Authoring and existing fixture capture reviewed in [T03](#t03-monitoring-review); additional CLI contracts verified in [T12](#t12-operator-path-review). Deployed endpoint/provider/metrics/fence read-back remains pending; fixture success does not close live evidence. |
 | E18 packaged downstream-history handoff and repair scope | T04/T12 delivered; E18-S08 restamp; T16 reconciliation | [T04 review](#t04-projection-handoff-review): 8 configured integration and 27 history unit cases passed; [T12](#t12-operator-path-review) adds all 36 provider/command/evidence tuples with 144 passing assertions. Dedicated restamp utility/procedure/evidence is absent; E18-S08 handoff unmet. |
 | Continuity, complete-record adoption, physical-source replacement | T05/T13 delivered; E19-06 dependency; T14/T15 replay | [T13 review](#t13-adoption-replacement-review): controller/CLI assertions, live adoption and replacement refusal, both-provider packaged refusals, exact commands and captures recorded. Successful live replacement/API handoff remains unmet; T16 closes provider replay results. |
@@ -1304,3 +1309,88 @@ Disposable database/state resources were released by the fixtures; the broker fi
 containers/network were removed and verified absent. Existing DMS/CMS/provider containers
 were retained. CSharpier and `git diff --check` passed. T16 owns final downstream evidence
 reconciliation; T13 completion does not mark T14, T15, T16 or T17 complete.
+
+<a id="t15-sqlserver-prerequisite-review"></a>
+## T15 SQL Server prerequisite review — blocked
+
+**Current status:** the E19-04 shared container argument builder now supplies the local
+500 ms connector poll interval for SQL Server enable, status, and guarded restart.
+The E19-06 API fixture remains absent; T15 is still incomplete. The findings below
+record the original prerequisite review before this fix. See the follow-up evidence
+at the end of this section.
+
+Reviewed 2026-09-06 at `3e4c793d5` plus this documentation correction.
+Selected T15; T16 remains dependent on its actual exercise results. This is manual
+source inspection, with no automated documentation assertions and no provider or
+broker/API execution. T15 is incomplete.
+
+| Inspected source / invocation | Finding |
+| --- | --- |
+| [`CdcControlOptions`](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Control/CdcControlOptions.cs), `SqlServerPollInterval` and `ToDeploymentPolicy` | Nullable option has no default and is forwarded unchanged into template policy. Generic validation requires positivity when supplied. |
+| [`CdcConnectorTemplateInputValidation`](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc/CdcConnectorTemplateInputValidation.cs), `AddSqlServerPollIntervalDiagnosticIfNeeded` | SQL Server absence produces `CDC_TEMPLATE_SQLSERVER_POLL_INTERVAL_REQUIRED` for `poll.interval.ms`; a supplied interval must not exceed the effective heartbeat interval. This diagnostic is source evidence, not captured CLI output. |
+| [`cdc-enable.psm1`](../../eng/docker-compose/cdc-enable.psm1), `Get-CdcEnableArgument` and `Get-CdcRestartArgument` | Environment arguments carry the status token and connector connection settings; no poll interval is supplied. Both use `Get-CdcSetupComposeArgument`. |
+| Same module, `Get-CdcSetupComposeArgument`; [`cdc-setup.yml`](../../eng/docker-compose/cdc-setup.yml) | Shared builder adds setup principal and caller environment arguments; Compose policy has no poll-interval environment mapping. A host export alone cannot fill this missing container input. |
+| [Runbook status invocation](operations-runbook.md#local-setup-verification) | `$containerEnv` adds connector settings and bearer token, but no poll interval. Status and guarded restart must be reconciled with the owning wrapper delivery, as well as initial enablement. |
+| `rg -n -i 'pollinterval|poll.interval' eng/docker-compose src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1` | Only unrelated projector `PollInterval` mapping found. It does not set the connector interval. |
+| `rg -n -i 'kafka|debezium|confluent' src/dms/tests --glob '*.cs' --glob '*.feature' --glob '*.csproj' --glob '!**/obj/**' --glob '!**/bin/**'` | No matches (exit 1). Required E19-06 API-to-Kafka fixture/consumer handoff remains absent; no concrete API filter or nonzero result exists to capture. |
+
+**Corrections:** marked the SQL Server setup command conditional before its destructive
+invocation; annotated the shared status example; reconciled CDC README, Compose README,
+relational-backend guide, E2E README, and the earlier setup evidence handoff. Manually
+followed the changed links and compared the settings and wrapper descriptions with the
+sources above and the configuration catalog. No new invocation, JSON example, shell
+workaround, or production capability was introduced.
+
+**Owners/resumption:** [E19-04](../design/backend-redesign/epics/19-cdc-kafka/04-bootstrap-enable-kafka-cdc.md)
+must deliver a consistent positive SQL Server poll interval to initial enable, later
+status, and guarded restart, bounded by the effective heartbeat interval.
+[E19-06](../design/backend-redesign/epics/19-cdc-kafka/06-e2e-kafka-scenarios.md)
+must supply the API/bootstrap/database/consumer fixture and concrete SQL Server filter.
+The removed T14 task is external PostgreSQL follow-up; older T14 references in prior
+reviews are historical pending ownership, not completed PostgreSQL evidence.
+
+After both dependencies arrive, verify the disposable server and qualified image,
+then replay T15's exact wrapper and operator paths with the required lifecycle,
+retention, capture/grant, and cleanup evidence. Existing [T12](#t12-operator-path-review),
+[T13](#t13-adoption-replacement-review), and [T17](evidence/t17/README.md) results retain
+their recorded scope; provider refusal/composition results do not replace successful
+SQL Server wrapper admission or API publication. E18 retains prerequisite/rebuild/scrub
+ownership. Local ACL metadata cannot qualify production isolation or platform purge.
+
+**Disposition:** stopped before destructive setup or provider access. No containers,
+databases, bindings, or retirement records were created or changed; no cleanup was
+needed. Provider/tool/image versions and connectivity were not qualified in this
+prerequisite-only review. No test run, skip, operational exit code, or successful
+exercise is claimed. `PROBLEMS.md` records the out-of-scope dependencies for the
+implementation loop; resolve it only after the required handoffs or explicit task-scope
+revision. No task completion commit was made.
+
+
+**E19-04 follow-up — configuration gap fixed (2026-09-06):** the user authorized the
+owning wrapper fix. `Get-LocalCdcDeploymentPolicy` supplies `00:00:00.500`, and
+`Get-CdcSetupComposeArgument` passes it as
+`DataManagement__DocumentCache__Cdc__SqlServerPollInterval` via `docker compose run -e`
+for SQL Server. Enable, status, and guarded restart reuse that builder. PostgreSQL
+receives no SQL Server interval override. No Compose mapping or host export is needed.
+The renderer still owns validation; the local value is 500 ms against its default
+5-second heartbeat. The runbook and discovery documentation now describe this path.
+
+Validation commands (repository root):
+
+```powershell
+$result = Invoke-Pester -Path eng/docker-compose/tests/BootstrapEnableKafkaCdc.Tests.ps1 -Output Normal -PassThru
+if ($result.FailedCount -or $result.FailedContainersCount -or $result.FailedBlocksCount) { throw 'Bootstrap tests failed.' }
+dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Unit/EdFi.DataManagementService.Backend.Cdc.Tests.Unit.csproj --no-restore --filter 'Category=CdcConnectorTemplateRenderingSqlServer' --logger 'trx;LogFileName=e19-04-poll-interval.trx'
+```
+
+Results: **175 Pester cases passed**, including six combinations of enable/status/restart
+and PostgreSQL/SQL Server that check the actual container environment argument placement;
+**17 SQL Server renderer cases passed**, including local poll/default-heartbeat rendering
+and existing missing, nonpositive, and excessive interval rejection. The local TRX is
+under that unit project's ignored `TestResults/e19-04-poll-interval.trx` directory.
+CSharpier and `git diff --check` passed. Initial Pester execution also exposed three
+README assertions left stale by earlier documentation edits; reconciling the prerequisite
+and lifecycle descriptions restored the full suite to green.
+
+No live SQL Server setup, admission, API traffic, broker exercise, or resource cleanup
+ran in this follow-up. E19-06 remains the blocking dependency; T15 and T16 are not complete.

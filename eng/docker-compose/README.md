@@ -229,9 +229,11 @@ A few things are specific to the MSSQL path:
   `api-schema-tools ddl provision --dialect mssql --create-database`.
 * **No CDC is needed to serve requests.** The relational backend serves both writes and
   queries directly from SQL, so Kafka, OpenSearch, and the Debezium source connector are not
-  started on the default path. Deployment-owned CDC is a separate opt-in and is
-  engine-neutral: `-EnableKafkaCdc` starts the same Kafka and Kafka Connect services and
-  registers a SQL Server connector on this engine, exactly as it does on PostgreSQL.
+  started on the default path. The CDC opt-in registers a SQL Server connector on this engine.
+  Deployment-owned CDC supports both providers. The local
+  `-EnableKafkaCdc` SQL Server registration path supplies a shared 500 ms connector poll
+  interval for enable, status, and restart. Read the [SQL Server setup prerequisites](../../reference/cdc-documentation/operations-runbook.md#local-sqlserver)
+  before destructive provisioning.
 * **Seed data** uses the same API-based `-LoadSeedData` (BulkLoadClient) path as PostgreSQL;
   it is database-engine agnostic.
 * **CI publishes database-template packages for both engines.** `build-minimal-template.yml` and
@@ -947,8 +949,12 @@ deployment-owned workflow that captures committed document changes into Kafka fo
 consumers, and nothing in a default local stack starts or registers it.
 
 `-EnableKafkaCdc` is the opt-in. `start-local-dms.ps1`, `bootstrap-local-dms.ps1`, and the
-DMS E2E `setup-local-dms.ps1` wrapper all accept it, and it works on either database engine
-(`-DatabaseEngine postgresql`, the default, or `-DatabaseEngine mssql`).
+DMS E2E `setup-local-dms.ps1` wrapper all accept it with either database engine
+(`-DatabaseEngine postgresql`, the default, or `-DatabaseEngine mssql`). SQL Server
+receives the same 500 ms `SqlServerPollInterval` through the shared one-shot container
+argument builder for enable, status, and restart. Follow the
+[SQL Server prerequisites](../../reference/cdc-documentation/operations-runbook.md#local-sqlserver)
+before destructive setup; API-to-Kafka exercise evidence still depends on the E19-06 harness.
 
 `start-local-dms.ps1 -EnableKafkaCdc` prepares infrastructure; initial registration runs
 through `bootstrap-local-dms.ps1` or the DMS E2E setup wrapper after provisioning a fresh
@@ -960,15 +966,19 @@ for the complete procedures:
 
 * [Prerequisites](../../reference/cdc-documentation/operations-runbook.md#prerequisites)
   and [fresh provider setup](../../reference/cdc-documentation/operations-runbook.md#local-setup):
-  qualified Ed-Fi Connect image digest, self-contained local identity, one unqualified
+  qualified Ed-Fi Connect image in `DMS_CDC_CONNECT_IMAGE` with an immutable digest,
+  self-contained local identity, one unqualified
   data store, explicit projection target, and initial enablement before canonical writes.
   The wrapper's digest-format check alone does not qualify an image.
 * [State and network handoff](../../reference/cdc-documentation/operations-runbook.md#local-setup-verification):
-  keep the same binding-state root, effective environment, and target for the one-shot
+  select the binding-state root with `-CdcBindingStatePath` where supported or
+  `DMS_CDC_BINDING_STATE_PATH` (default `.cdc-state` under this directory), and keep
+  the same root, effective environment, and target for the one-shot
   control-plane container and later operations. Keep binding, incident, and retirement
   records and backups outside bootstrap workspaces; preserve retirement history after cleanup.
 * [Planned stop and guarded restart](../../reference/cdc-documentation/operations-runbook.md#local-stop-restart):
-  verify the persisted connector fence before restarting its worker. The stop wrapper can
+  a normal stop **retains** the binding record. Verify the persisted connector fence
+  before restarting its worker. The stop wrapper can
   warn and continue when fencing fails; worker startup alone can resume a running connector.
 * [Continuity](../../reference/cdc-documentation/operations-runbook.md#continuity-incident)
   and [missing-state adoption](../../reference/cdc-documentation/operations-runbook.md#adopt-missing-binding):
@@ -977,7 +987,8 @@ for the complete procedures:
 * [Guarded retirement](../../reference/cdc-documentation/operations-runbook.md#retire-binding-generation)
   and [disposable cleanup](../../reference/cdc-documentation/operations-runbook.md#local-cleanup):
   retire against the still-running source, broker, and Connect worker, then remove the
-  disposable stack. Deleting the state directory is not retirement or a generation reset.
+  disposable stack. Successful retirement deletes the binding record last and retains
+  the retirement record. Deleting the state directory is not retirement or a generation reset.
   The shipped `-AbandonCdcBindingState` escape hatch permits volume removal without
   successful retirement; it supplies no cleanup proof or downstream-history clearance.
 * [CDC status](../../reference/cdc-documentation/operations-runbook.md#observe-cdc) and

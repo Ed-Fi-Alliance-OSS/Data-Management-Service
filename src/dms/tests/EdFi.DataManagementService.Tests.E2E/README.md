@@ -29,7 +29,8 @@ The suite is engine-aware. `-DatabaseEngine` defaults to `postgresql`; pass `mss
 same public entry point against SQL Server. The `-DatabaseEngine mssql` value composes the
 `eng/docker-compose/.env.mssql` overlay onto `-EnvironmentFile` and swaps `mssql.yml` for
 `postgresql.yml`. The API test invocations below do not enable CDC. SQL Server and
-PostgreSQL both support the separate CDC opt-in described under [CDC support](#cdc-support).
+PostgreSQL have separate CDC implementations; local wrapper prerequisites and the SQL
+Server prerequisites are described under [CDC support](#cdc-support).
 
 ### PostgreSQL (default engine)
 
@@ -110,9 +111,12 @@ To debug the API while running the tests, change `ApiUrl` in `SearchContainerSet
 
 ## CDC support
 
-The local `setup-local-dms.ps1 -EnableKafkaCdc` wrapper supports both database engines
+The local `setup-local-dms.ps1 -EnableKafkaCdc` wrapper accepts both database engines
 using the self-contained identity provider and a freshly provisioned, unqualified data
-store. Follow the [CDC provider exercises](../../../../reference/cdc-documentation/operations-runbook.md#local-setup)
+store. SQL Server enable, status, and guarded restart receive the same 500 ms connector
+poll interval through the shared container argument builder; see the
+[SQL Server configuration](../../../../reference/cdc-documentation/operations-runbook.md#local-sqlserver).
+Follow the [CDC provider exercises](../../../../reference/cdc-documentation/operations-runbook.md#local-setup)
 for the qualified image, effective environment, projection target, durable binding state,
 and setup/status/stop/retirement sequence. This switch belongs to the setup wrapper;
 the `build-dms.ps1 E2ETest` examples above are ordinary API lanes.

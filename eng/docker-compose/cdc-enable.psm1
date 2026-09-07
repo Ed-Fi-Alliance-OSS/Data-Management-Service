@@ -435,6 +435,11 @@ function Get-CdcSetupComposeArgument {
     $composeArguments += Get-CdcContainerUserArgument
     $composeArguments += @("-e", "DataManagement__DocumentCache__Cdc__SetupPrincipal=$setupPrincipal")
     $composeArguments += $EnvironmentArgument
+    if ($DatabaseEngine -eq "mssql") {
+        $composeArguments += @(
+            "-e", "DataManagement__DocumentCache__Cdc__SqlServerPollInterval=$($localPolicy.SqlServerPollInterval)"
+        )
+    }
     $composeArguments += @("cdc-setup", "cdc", $VerbName)
     $composeArguments += $VerbArgument
     $composeArguments += @(
