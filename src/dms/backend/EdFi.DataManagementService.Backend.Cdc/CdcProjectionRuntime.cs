@@ -24,6 +24,7 @@ public interface ICdcProjectionRuntime : IAsyncDisposable
         DocumentCacheGuardedNewEmptyActivationRequest request,
         CancellationToken cancellationToken
     );
+    Task<CdcInitialDatabaseObservation> ObserveInitialDatabaseAsync(CancellationToken cancellationToken);
     Task StartProcessingAsync(CancellationToken cancellationToken);
     Task<DocumentCacheStatusResponse> ObserveAsync(CancellationToken cancellationToken);
 }
@@ -142,6 +143,21 @@ internal sealed class CdcProjectionRuntime(
             .GetRequiredService<IDocumentCacheGuardedNewEmptyActivationCommand>()
             .ExecuteAsync(request, cancellationToken)
             .ConfigureAwait(false);
+    }
+
+    public Task<CdcInitialDatabaseObservation> ObserveInitialDatabaseAsync(
+        CancellationToken cancellationToken
+    )
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (_started)
+        {
+            throw new InvalidOperationException(
+                "Initial eligibility requires an offline projection runtime."
+            );
+        }
+        return CdcInitialDatabaseInspector.ObserveAsync(provider, targetKey, cancellationToken);
     }
 
     public async Task StartProcessingAsync(CancellationToken cancellationToken)
