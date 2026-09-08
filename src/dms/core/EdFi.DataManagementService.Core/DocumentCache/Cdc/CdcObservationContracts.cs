@@ -596,7 +596,14 @@ public sealed record CdcConnectOffsetStorePolicyObservation(
     [property: JsonRequired] int? MinInSyncReplicas,
     [property: JsonRequired] CdcConnectOffsetStoreItemState AclState,
     [property: JsonRequired] IReadOnlyList<CdcDiagnostic> Diagnostics
-) : ICdcObservationContract;
+) : ICdcObservationContract
+{
+    /// <summary>
+    /// Optional adapter evaluation of actual topic policy, including profile-specific durability and
+    /// explicit overrides. Older producers retain structural validation of the original fields.
+    /// </summary>
+    public CdcConnectOffsetStoreItemState? TopicState { get; init; }
+}
 
 public sealed record CdcConnectorConfigurationObservation(
     [property: JsonRequired] int ContractVersion,
@@ -1397,7 +1404,7 @@ public static class CdcKafkaPolicyObservationValidator
         );
 
         if (
-            recordSizePolicy.State != CdcKafkaPolicyItemState.Unknown
+            recordSizePolicy.State == CdcKafkaPolicyItemState.Satisfied
             && recordSizePolicy.MaxRecordBytes is not null
             && recordSizePolicy.MaxMessageBytes is not null
             && recordSizePolicy.MaxRecordBytes > recordSizePolicy.MaxMessageBytes
@@ -1421,7 +1428,7 @@ public static class CdcKafkaPolicyObservationValidator
     {
         if (value is null)
         {
-            if (state != CdcKafkaPolicyItemState.Unknown)
+            if (state == CdcKafkaPolicyItemState.Satisfied)
             {
                 diagnostics.MissingRequiredField(path, fieldName);
             }
@@ -1448,7 +1455,7 @@ public static class CdcKafkaPolicyObservationValidator
     {
         if (cleanupPolicy is null)
         {
-            if (state != CdcKafkaPolicyItemState.Unknown)
+            if (state == CdcKafkaPolicyItemState.Satisfied)
             {
                 diagnostics.MissingRequiredField(path, "cleanupPolicy");
             }
@@ -1724,17 +1731,21 @@ public static class CdcConnectOffsetStorePolicyObservationValidator
             observation.ReplicationFactor,
             "$.replicationFactor",
             "replicationFactor",
-            observation.PolicyState != CdcConnectOffsetStorePolicyState.Unknown,
+            observation.PolicyState == CdcConnectOffsetStorePolicyState.Satisfied,
             diagnostics
         );
         ValidatePositiveIfRequired(
             observation.MinInSyncReplicas,
             "$.minInSyncReplicas",
             "minInSyncReplicas",
-            observation.PolicyState != CdcConnectOffsetStorePolicyState.Unknown,
+            observation.PolicyState == CdcConnectOffsetStorePolicyState.Satisfied,
             diagnostics
         );
         ValidateAclState(observation.AclState, diagnostics);
+        if (observation.TopicState is { } topicState)
+        {
+            ValidateAclState(topicState, diagnostics);
+        }
         ValidatePolicyStateConsistency(observation, diagnostics);
 
         return diagnostics.ToValidationResult();
@@ -1761,7 +1772,7 @@ public static class CdcConnectOffsetStorePolicyObservationValidator
     {
         if (observation.CleanupPolicy is null)
         {
-            if (observation.PolicyState != CdcConnectOffsetStorePolicyState.Unknown)
+            if (observation.PolicyState == CdcConnectOffsetStorePolicyState.Satisfied)
             {
                 diagnostics.MissingRequiredField("$.cleanupPolicy", "cleanupPolicy");
             }
@@ -1859,6 +1870,9 @@ public static class CdcConnectOffsetStorePolicyObservationValidator
                 || minInSyncUnknown
                 || minInSyncInvalid
                 || observation.AclState != CdcConnectOffsetStoreItemState.Satisfied
+                || observation.TopicState
+                    is CdcConnectOffsetStoreItemState.Invalid
+                        or CdcConnectOffsetStoreItemState.Unknown
             )
         )
         {
@@ -1876,6 +1890,7 @@ public static class CdcConnectOffsetStorePolicyObservationValidator
                 || replicationInvalid
                 || minInSyncInvalid
                 || observation.AclState == CdcConnectOffsetStoreItemState.Invalid
+                || observation.TopicState == CdcConnectOffsetStoreItemState.Invalid
             )
         )
         {
@@ -1893,6 +1908,7 @@ public static class CdcConnectOffsetStorePolicyObservationValidator
                 || replicationUnknown
                 || minInSyncUnknown
                 || observation.AclState == CdcConnectOffsetStoreItemState.Unknown
+                || observation.TopicState == CdcConnectOffsetStoreItemState.Unknown
             )
         )
         {

@@ -84,12 +84,7 @@ public sealed class CdcDeploymentRequest
             throw new ArgumentException("CDC connector credentials require externalized secret references.");
         }
 
-        int producerBufferBytes =
-            connectorPolicy.ProducerBufferBytes
-            ?? Math.Max(
-                CdcConnectorTemplateDeploymentPolicy.MinimumProducerBufferBytes,
-                connectorPolicy.MaxRecordBytes
-            );
+        int producerBufferBytes = connectorPolicy.EffectiveProducerBufferBytes;
         if (workerPolicy.HeapBytes <= producerBufferBytes)
         {
             throw new ArgumentException(
@@ -264,6 +259,8 @@ public sealed class CdcWorkerDeploymentPolicy
         CdcKafkaDurabilityProfile durabilityProfile,
         CdcKafkaAuthorizationProfile authorizationProfile,
         CdcSafeName workerPrincipal,
+        CdcSafeName connectorPrincipal,
+        CdcSafeName deploymentAdministratorPrincipal,
         IReadOnlyList<CdcConsumerAccess> consumers
     )
     {
@@ -301,6 +298,31 @@ public sealed class CdcWorkerDeploymentPolicy
         WorkerKey = new CdcSafeName(workerKey.Value);
         OffsetStorageTopic = new CdcSafeName(offsetStorageTopic.Value);
         WorkerPrincipal = new CdcSafeName(workerPrincipal.Value);
+        ConnectorPrincipal = new CdcSafeName(connectorPrincipal.Value);
+        DeploymentAdministratorPrincipal = new CdcSafeName(deploymentAdministratorPrincipal.Value);
+        string[] servicePrincipals =
+        [
+            WorkerPrincipal.Value,
+            ConnectorPrincipal.Value,
+            DeploymentAdministratorPrincipal.Value,
+        ];
+        if (
+            servicePrincipals.Distinct(StringComparer.Ordinal).Count() != servicePrincipals.Length
+            || Array.Exists(servicePrincipals, principal => principal.Contains('*', StringComparison.Ordinal))
+            || consumers.Any(consumer =>
+                consumer is null
+                || servicePrincipals.Contains(consumer.Principal.Value, StringComparer.Ordinal)
+                || string.IsNullOrWhiteSpace(consumer.Principal.Value)
+                || consumer.Principal.Value.Contains('*', StringComparison.Ordinal)
+                || string.IsNullOrWhiteSpace(consumer.Group.Value)
+                || consumer.Group.Value.Contains('*', StringComparison.Ordinal)
+            )
+        )
+        {
+            throw new ArgumentException(
+                "CDC Kafka roles require distinct service identities and literal consumer identities/groups."
+            );
+        }
         QualifiedImageDigest = qualifiedImageDigest;
         HeapBytes = heapBytes;
         ClientConfigurationOverridePolicy = clientConfigurationOverridePolicy;
@@ -329,6 +351,8 @@ public sealed class CdcWorkerDeploymentPolicy
     public CdcKafkaDurabilityProfile DurabilityProfile { get; }
     public CdcKafkaAuthorizationProfile AuthorizationProfile { get; }
     public CdcSafeName WorkerPrincipal { get; }
+    public CdcSafeName ConnectorPrincipal { get; }
+    public CdcSafeName DeploymentAdministratorPrincipal { get; }
     public IReadOnlyList<CdcConsumerAccess> Consumers { get; }
 
     public override string ToString() => nameof(CdcWorkerDeploymentPolicy);

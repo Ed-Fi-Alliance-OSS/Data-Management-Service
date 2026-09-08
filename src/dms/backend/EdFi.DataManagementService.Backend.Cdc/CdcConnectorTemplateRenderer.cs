@@ -122,7 +122,8 @@ internal sealed class CdcConnectorTemplateRenderer(
             ["producer.override.retries"] = int.MaxValue.ToString(),
             ["producer.override.max.in.flight.requests.per.connection"] = "5",
             ["producer.override.max.request.size"] = request.DeploymentPolicy.MaxRecordBytes.ToString(),
-            ["producer.override.buffer.memory"] = ProducerBufferBytes(request).ToString(),
+            ["producer.override.buffer.memory"] =
+                request.DeploymentPolicy.EffectiveProducerBufferBytes.ToString(),
             ["producer.override.compression.type"] = "none",
             ["producer.override.partitioner.class"] = PartitionerClass(request.PartitionerAlgorithm),
             ["heartbeat.interval.ms"] = CdcConnectorTemplateSharedRules
@@ -284,13 +285,6 @@ internal sealed class CdcConnectorTemplateRenderer(
                 && artifact.State is CdcProviderArtifactState.Created or CdcProviderArtifactState.Matched
             )
             .ToArray();
-
-    private static int ProducerBufferBytes(CdcConnectorTemplateRequest request) =>
-        request.DeploymentPolicy.ProducerBufferBytes
-        ?? Math.Max(
-            CdcConnectorTemplateDeploymentPolicy.MinimumProducerBufferBytes,
-            request.DeploymentPolicy.MaxRecordBytes
-        );
 
     private static string ConnectorClass(CdcProvider provider) =>
         provider switch

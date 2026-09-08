@@ -32,6 +32,8 @@ internal static class CdcDeploymentRequestTestData
             durability,
             authorization,
             new("worker-principal"),
+            new("kafka-connector-principal"),
+            new("kafka-administrator-principal"),
             [new(new("consumer"), new("consumer-group"))]
         );
 
