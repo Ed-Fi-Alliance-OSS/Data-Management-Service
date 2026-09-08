@@ -243,8 +243,11 @@ $dmsCurrentHash = Get-FileSha256 -Path $dmsPath
 $expectedStamped = ConvertTo-NormalizedText -Value (
     Get-ExpectedStampedPropsContent -BuildScript $BuildScriptPath -Version $ExpectedDMSVersion
 )
+# -ceq, not -eq. PowerShell's -eq on strings is case-insensitive, which would let a case-only edit -
+# <Product>ed-fi api</Product> in place of <Product>Ed-Fi API</Product> - be claimed as the build's
+# own output and overwritten. Ordinal case-sensitive comparison is the whole point of the check.
 $dmsIsStampedOutput =
-    (ConvertTo-NormalizedText -Value (Get-Content -LiteralPath $dmsPath -Raw)) -eq $expectedStamped
+    (ConvertTo-NormalizedText -Value (Get-Content -LiteralPath $dmsPath -Raw)) -ceq $expectedStamped
 
 $assertionSucceeded = $false
 
