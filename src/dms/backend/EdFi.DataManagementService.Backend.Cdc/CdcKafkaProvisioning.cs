@@ -437,7 +437,16 @@ public sealed class CdcKafkaProvisioning : ICdcKafkaAdministrationTransport
         return journal;
     }
 
-    private async Task<CdcKafkaDeploymentEvidence> InspectAsync(
+    private Task<CdcKafkaDeploymentEvidence> InspectAsync(
+        CdcDeploymentRequest request,
+        bool shared,
+        bool includeProducer,
+        CancellationToken token
+    ) => InspectAsync(_kafka, _producer, request, shared, includeProducer, token);
+
+    internal static async Task<CdcKafkaDeploymentEvidence> InspectAsync(
+        ICdcKafkaAdminAdapter kafka,
+        ICdcKafkaProducerInspection producerInspection,
         CdcDeploymentRequest request,
         bool shared,
         bool includeProducer,
@@ -453,15 +462,15 @@ public sealed class CdcKafkaProvisioning : ICdcKafkaAdministrationTransport
         {
             topics.Add(
                 name,
-                await CallAsync(request, ct => _kafka.InspectTopicAsync(request, name, ct), token)
+                await CallAsync(request, ct => kafka.InspectTopicAsync(request, name, ct), token)
             );
         }
-        var acls = await CallAsync(request, ct => _kafka.InspectAclsAsync(request, ct), token);
+        var acls = await CallAsync(request, ct => kafka.InspectAclsAsync(request, ct), token);
         var brokers = shared
             ? Unknown<CdcKafkaBrokerEvidence>()
-            : await CallAsync(request, ct => _kafka.InspectBrokersAsync(request, ct), token);
+            : await CallAsync(request, ct => kafka.InspectBrokersAsync(request, ct), token);
         var producer = includeProducer
-            ? await CallAsync(request, ct => _producer.InspectAsync(request, ct), token)
+            ? await CallAsync(request, ct => producerInspection.InspectAsync(request, ct), token)
             : Unknown<CdcKafkaProducerCapacityEvidence>();
         return new(topics, brokers, producer, acls);
     }

@@ -67,6 +67,18 @@ internal static class CdcWorkflowJournalValidation
                 )
             );
             Require(!operation.RecordSizeIncrease.IsDefault);
+            Require(!operation.ConnectorRegistration.IsDefault);
+            Require(
+                operation.Effect == CdcWorkflowEffect.RegisterConnector
+                    ? operation.ConnectorRegistration.Length <= 1
+                    : operation.ConnectorRegistration.IsEmpty
+            );
+            foreach (var registration in operation.ConnectorRegistration)
+            {
+                Require(
+                    registration is not null && CdcSha256ValueValidator.IsValid(registration.ConfigSha256)
+                );
+            }
             if (
                 operation.Effect
                 is CdcWorkflowEffect.CreateDatabase

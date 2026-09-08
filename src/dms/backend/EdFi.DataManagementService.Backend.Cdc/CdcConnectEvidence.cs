@@ -68,6 +68,10 @@ public sealed class CdcConnectOffsetEvidence(
     public CdcConnectOffsetState State { get; } = state;
 
     [JsonIgnore]
+    public IReadOnlyDictionary<string, string> SourcePartition { get; init; } =
+        new Dictionary<string, string>();
+
+    [JsonIgnore]
     public string SourcePartitionHash { get; } = sourcePartitionHash;
 
     [JsonIgnore]
@@ -219,7 +223,12 @@ public sealed class CdcConnectOffsetEvidence(
                 hash,
                 parsed,
                 new(match, false, false, null, null, null)
-            );
+            )
+            {
+                SourcePartition = partition
+                    .EnumerateObject()
+                    .ToDictionary(p => p.Name, p => p.Value.GetString()!, StringComparer.Ordinal),
+            };
         }
         if (
             !TryString(offset, "commit_lsn", out string commit)
@@ -246,6 +255,11 @@ public sealed class CdcConnectOffsetEvidence(
         // Invalid provider text is not retained or echoed even in the typed evidence.
         return sqlComparison.Succeeded
             ? new(CdcConnectOffsetState.Streaming, hash, new(match, false, false, null), sqlOffset)
+            {
+                SourcePartition = partition
+                    .EnumerateObject()
+                    .ToDictionary(p => p.Name, p => p.Value.GetString()!, StringComparer.Ordinal),
+            }
             : Empty(CdcConnectOffsetState.Malformed);
     }
 

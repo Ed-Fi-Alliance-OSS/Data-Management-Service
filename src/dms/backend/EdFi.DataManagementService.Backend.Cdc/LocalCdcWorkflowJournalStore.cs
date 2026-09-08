@@ -157,6 +157,42 @@ public sealed partial class LocalCdcWorkflowJournalStore
             ImmutableArray<CdcRecordSizeIncreaseJournal> recordSizeIncrease,
             CancellationToken cancellationToken
         ) =>
+            RecordIntentCoreAsync(
+                target,
+                workflowId,
+                operationId,
+                effect,
+                recordSizeIncrease,
+                [],
+                cancellationToken
+            );
+
+        public Task<CdcWorkflowJournal> RecordConnectorRegistrationIntentAsync(
+            CdcTargetIdentity target,
+            Guid workflowId,
+            Guid operationId,
+            CdcConnectorRegistrationIntent registration,
+            CancellationToken cancellationToken
+        ) =>
+            RecordIntentCoreAsync(
+                target,
+                workflowId,
+                operationId,
+                CdcWorkflowEffect.RegisterConnector,
+                [],
+                [registration],
+                cancellationToken
+            );
+
+        private Task<CdcWorkflowJournal> RecordIntentCoreAsync(
+            CdcTargetIdentity target,
+            Guid workflowId,
+            Guid operationId,
+            CdcWorkflowEffect effect,
+            ImmutableArray<CdcRecordSizeIncreaseJournal> recordSizeIncrease,
+            ImmutableArray<CdcConnectorRegistrationIntent> registration,
+            CancellationToken cancellationToken
+        ) =>
             RunAsync(
                 async () =>
                 {
@@ -167,7 +203,10 @@ public sealed partial class LocalCdcWorkflowJournalStore
                         _store.Now(),
                         recordSizeIncrease,
                         []
-                    );
+                    )
+                    {
+                        ConnectorRegistration = registration,
+                    };
                     CdcWorkflowJournal next = journal with { Operations = journal.Operations.Add(operation) };
                     Validate(next, _store.Now());
                     if (CanExposeSource(effect))

@@ -97,199 +97,8 @@ public sealed class CdcProviderSetupOrchestration
                     : request.Timing.CallTimeout,
                 token
             );
-            var binding = request.Binding;
-            var target = binding.ToTargetIdentity();
-            var journal = await session.ReadAsync(target, token);
-            var history = await session.ReadSourcePublicationHistoryAsync(
-                target,
-                binding.PhysicalSourceFingerprint,
-                token
-            );
-            Require(
-                history.WorkflowId == journal.WorkflowId
-                    && history.CreationTarget == target
-                    && history.CreationReceipt.Outcome == CdcDatabaseCreationOutcome.Created
-            );
-            Require(
-                history.Transitions[^1].Status
-                    is DocumentCacheDownstreamPublicationStatus.Possible
-                        or DocumentCacheDownstreamPublicationStatus.Active
-            );
-            Require(!journal.Operations.Any(o => o.Effect == CdcWorkflowEffect.Retire));
-            RequireCompleted(journal, CdcWorkflowEffect.ReserveBinding);
-            RequireCompleted(journal, CdcWorkflowEffect.ActivateProjection);
-            var exact = await _bindings.ExactMatchBindingAsync(binding, token);
-            Require(
-                exact.Status == CdcControlPlaneOperationStatus.Succeeded
-                    && exact.State?.State == CdcBindingState.BindingPresent
-            );
-
-            var providerOperations = journal
-                .Operations.Where(o => o.Effect == CdcWorkflowEffect.CreateProvider)
-                .ToArray();
-            Require(providerOperations.Length <= 1);
-            Require(
-                Array.TrueForAll(
-                    providerOperations,
-                    o =>
-                        o.IntendedAt
-                        >= journal
-                            .Operations.Single(a => a.Effect == CdcWorkflowEffect.ActivateProjection)
-                            .Completions[0]
-                            .ReconciledAt
-                )
-            );
-            var retained = providerOperations
-                .SelectMany(o => o.Completions)
-                .Select(c => c.Evidence)
-                .OfType<CdcWorkflowCompletion.Provider>()
-                .ToArray();
-            bool consumptionPossible = journal.Operations.Any(o =>
-                o.Effect == CdcWorkflowEffect.RegisterConnector
-            );
-            bool advanced = journal.Operations.Any(o =>
-                o.Effect
-                    is CdcWorkflowEffect.EstablishConnector
-                        or CdcWorkflowEffect.AuthorizeWriterPublication
-                        or CdcWorkflowEffect.StopConnector
-                        or CdcWorkflowEffect.ResumeConnector
-                        or CdcWorkflowEffect.IncreaseRecordSize
-            );
-            Require(!advanced || consumptionPossible);
-            Require(!consumptionPossible || retained.Length == 1);
-            Require(
-                !consumptionPossible
-                    || providerOperations[0].Completions[0].ReconciledAt
-                        <= journal
-                            .Operations.First(o => o.Effect == CdcWorkflowEffect.RegisterConnector)
-                            .IntendedAt
-            );
-
-            boundary.Component = CdcDeploymentComponent.Projection;
-            // Established inspection must not manufacture a closed-never-opened initial proof.
-            var initial = new CdcInitialEnablement(_store, _bindings, _time);
-            if (consumptionPossible)
-            {
-                var current = await initial.ObserveCurrentDatabaseAsync(
-                    runtime,
-                    binding,
-                    _time.GetUtcNow(),
-                    request.Timing.MaximumObservationAge,
-                    token
-                );
-                Require(
-                    current.Lifecycle.State == DocumentCacheLifecycleState.Tracking
-                        && !current.Lifecycle.CacheAheadRecoveryRequired
-                );
-            }
-            else
-            {
-                var proof = new InitialCdcProvisioningProof(
-                    CdcJsonContract.CurrentContractVersion,
-                    Guid.NewGuid().ToString("D"),
-                    Guid.NewGuid().ToString("D"),
-                    target,
-                    target.Provider,
-                    journal.WorkflowId.ToString("D"),
-                    CdcDatabaseCreationMode.CreatedForInitialCdcProvisioning,
-                    CdcWriteAdmissionState.ClosedNeverOpened,
-                    _time.GetUtcNow()
-                );
-                var observation = await initial.ObserveAsync(
-                    runtime,
-                    binding,
-                    proof,
-                    request.Timing.MaximumObservationAge,
-                    token
-                );
-                Require(
-                    initial.Classify(binding, proof, observation.Eligibility, exact).RetryClassification
-                        == CdcRetryClassification.ResumeProviderTopicConnectorSetup
-                );
-            }
-
-            boundary.Component = CdcDeploymentComponent.WorkflowState;
-            if (providerOperations.Length == 0)
-            {
-                Require(!journal.WriterPublicationAuthorized && !journal.HasPendingRecordSizeIncrease);
-                journal = await session.RecordIntentAsync(
-                    target,
-                    journal.WorkflowId,
-                    Guid.NewGuid(),
-                    CdcWorkflowEffect.CreateProvider,
-                    [],
-                    token
-                );
-            }
-            var operation = journal.Operations.Single(o => o.Effect == CdcWorkflowEffect.CreateProvider);
-            boundary.Component = CdcDeploymentComponent.ProviderSetup;
-            // A durable completed provider is inspect-only even before registration. This never repairs
-            // missing slots/capture instances/jobs. The provider owns the unconsumed-slot guard.
-            var slotProof = retained.SelectMany(p => p.InitialSlotProofs).SingleOrDefault();
-            var mode = retained.Length == 0 ? DdlMode.InitialCreateOrExactMatch : DdlMode.ValidateOnly;
-            var setup = CopyRequest(
-                request.ProviderSetup,
-                mode,
-                slotProof,
-                !consumptionPossible && retained.Length == 1
-            );
-            var result = await _provider.SetupAsync(setup, token);
-            token.ThrowIfCancellationRequested();
-            ValidateResult(request, setup, result);
-            if (retained.Length == 0)
-            {
-                slotProof = result.InitialReplicationSlotProof;
-                Require(setup.Provider != DdlProvider.Postgresql || slotProof is not null);
-                // Re-read live capture after effects. A success response alone is not a completion receipt.
-                setup = CopyRequest(request.ProviderSetup, DdlMode.ValidateOnly, slotProof, true);
-                result = await _provider.SetupAsync(setup, token);
-                token.ThrowIfCancellationRequested();
-                ValidateResult(request, setup, result);
-            }
-            if (slotProof is not null)
-            {
-                var slot = result.ArtifactInventory.Single(a =>
-                    a.ArtifactKind == CdcProviderArtifactKind.PostgresqlReplicationSlot
-                );
-                Require(
-                    slot.SafeArtifactName == slotProof.ReplicationSlotName
-                        && slotProof.SourceFingerprint == result.ObservedSourceFingerprint
-                        && slot.SafeObservedValues.TryGetValue(
-                            "database_identity_token",
-                            out var databaseIdentity
-                        )
-                        && databaseIdentity == slotProof.DatabaseIdentityToken.Value
-                );
-            }
-            var completion = new CdcWorkflowCompletion.Provider(
-                Identities(request, result),
-                slotProof is null ? [] : [slotProof]
-            );
-            if (retained.Length == 1)
-            {
-                Require(completion.Artifacts.SequenceEqual(retained[0].Artifacts));
-            }
-            var observedAt = _time.GetUtcNow();
-            boundary.Component = CdcDeploymentComponent.WorkflowState;
-            await session.ReconcileCompletionAsync(
-                target,
-                journal.WorkflowId,
-                operation.OperationId,
-                (_, ct) =>
-                {
-                    ct.ThrowIfCancellationRequested();
-                    return Task.FromResult<CdcTransportResult<CdcWorkflowCompletion>>(
-                        new CdcTransportResult<CdcWorkflowCompletion>.Observed(completion)
-                    );
-                },
-                token
-            );
-            boundary.Component = CdcDeploymentComponent.ProviderSetup;
-            var templateRequest = request.CreateTemplateRequest(new(binding.Generation, result));
-            var template = _templates.Render(templateRequest);
-            Require(template.Outcome == CdcConnectorTemplateOutcome.Rendered);
             return new CdcTransportResult<CdcProviderSetupHandoff>.Observed(
-                new(templateRequest, template, observedAt)
+                await SetupInSessionAsync(request, runtime, session, c => boundary.Component = c, token)
             );
         }
         catch (OperationCanceledException)
@@ -316,6 +125,209 @@ public sealed class CdcProviderSetupOrchestration
                 CdcDeploymentDiagnostic.FromException(boundary.Component, exception)
             );
         }
+    }
+
+    // Caller owns the same state-root session for the complete registration operation.
+    internal async Task<CdcProviderSetupHandoff> SetupInSessionAsync(
+        CdcDeploymentRequest request,
+        ICdcProjectionRuntime runtime,
+        LocalCdcWorkflowJournalStore.Session session,
+        Action<CdcDeploymentComponent> setComponent,
+        CancellationToken token
+    )
+    {
+        var binding = request.Binding;
+        var target = binding.ToTargetIdentity();
+        var journal = await session.ReadAsync(target, token);
+        var history = await session.ReadSourcePublicationHistoryAsync(
+            target,
+            binding.PhysicalSourceFingerprint,
+            token
+        );
+        Require(
+            history.WorkflowId == journal.WorkflowId
+                && history.CreationTarget == target
+                && history.CreationReceipt.Outcome == CdcDatabaseCreationOutcome.Created
+        );
+        Require(
+            history.Transitions[^1].Status
+                is DocumentCacheDownstreamPublicationStatus.Possible
+                    or DocumentCacheDownstreamPublicationStatus.Active
+        );
+        Require(!journal.Operations.Any(o => o.Effect == CdcWorkflowEffect.Retire));
+        RequireCompleted(journal, CdcWorkflowEffect.ReserveBinding);
+        RequireCompleted(journal, CdcWorkflowEffect.ActivateProjection);
+        var exact = await _bindings.ExactMatchBindingAsync(binding, token);
+        Require(
+            exact.Status == CdcControlPlaneOperationStatus.Succeeded
+                && exact.State?.State == CdcBindingState.BindingPresent
+        );
+
+        var providerOperations = journal
+            .Operations.Where(o => o.Effect == CdcWorkflowEffect.CreateProvider)
+            .ToArray();
+        Require(providerOperations.Length <= 1);
+        Require(
+            Array.TrueForAll(
+                providerOperations,
+                o =>
+                    o.IntendedAt
+                    >= journal
+                        .Operations.Single(a => a.Effect == CdcWorkflowEffect.ActivateProjection)
+                        .Completions[0]
+                        .ReconciledAt
+            )
+        );
+        var retained = providerOperations
+            .SelectMany(o => o.Completions)
+            .Select(c => c.Evidence)
+            .OfType<CdcWorkflowCompletion.Provider>()
+            .ToArray();
+        bool consumptionPossible = journal.Operations.Any(o =>
+            o.Effect == CdcWorkflowEffect.RegisterConnector
+        );
+        bool advanced = journal.Operations.Any(o =>
+            o.Effect
+                is CdcWorkflowEffect.EstablishConnector
+                    or CdcWorkflowEffect.AuthorizeWriterPublication
+                    or CdcWorkflowEffect.StopConnector
+                    or CdcWorkflowEffect.ResumeConnector
+                    or CdcWorkflowEffect.IncreaseRecordSize
+        );
+        Require(!advanced || consumptionPossible);
+        Require(!consumptionPossible || retained.Length == 1);
+        Require(
+            !consumptionPossible
+                || providerOperations[0].Completions[0].ReconciledAt
+                    <= journal
+                        .Operations.First(o => o.Effect == CdcWorkflowEffect.RegisterConnector)
+                        .IntendedAt
+        );
+
+        setComponent(CdcDeploymentComponent.Projection);
+        // Established inspection must not manufacture a closed-never-opened initial proof.
+        var initial = new CdcInitialEnablement(_store, _bindings, _time);
+        if (consumptionPossible)
+        {
+            var current = await initial.ObserveCurrentDatabaseAsync(
+                runtime,
+                binding,
+                _time.GetUtcNow(),
+                request.Timing.MaximumObservationAge,
+                token
+            );
+            Require(
+                current.Lifecycle.State == DocumentCacheLifecycleState.Tracking
+                    && !current.Lifecycle.CacheAheadRecoveryRequired
+            );
+        }
+        else
+        {
+            var proof = new InitialCdcProvisioningProof(
+                CdcJsonContract.CurrentContractVersion,
+                Guid.NewGuid().ToString("D"),
+                Guid.NewGuid().ToString("D"),
+                target,
+                target.Provider,
+                journal.WorkflowId.ToString("D"),
+                CdcDatabaseCreationMode.CreatedForInitialCdcProvisioning,
+                CdcWriteAdmissionState.ClosedNeverOpened,
+                _time.GetUtcNow()
+            );
+            var observation = await initial.ObserveAsync(
+                runtime,
+                binding,
+                proof,
+                request.Timing.MaximumObservationAge,
+                token
+            );
+            Require(
+                initial.Classify(binding, proof, observation.Eligibility, exact).RetryClassification
+                    == CdcRetryClassification.ResumeProviderTopicConnectorSetup
+            );
+        }
+
+        setComponent(CdcDeploymentComponent.WorkflowState);
+        if (providerOperations.Length == 0)
+        {
+            Require(!journal.WriterPublicationAuthorized && !journal.HasPendingRecordSizeIncrease);
+            journal = await session.RecordIntentAsync(
+                target,
+                journal.WorkflowId,
+                Guid.NewGuid(),
+                CdcWorkflowEffect.CreateProvider,
+                [],
+                token
+            );
+        }
+        var operation = journal.Operations.Single(o => o.Effect == CdcWorkflowEffect.CreateProvider);
+        setComponent(CdcDeploymentComponent.ProviderSetup);
+        // A durable completed provider is inspect-only even before registration. This never repairs
+        // missing slots/capture instances/jobs. The provider owns the unconsumed-slot guard.
+        var slotProof = retained.SelectMany(p => p.InitialSlotProofs).SingleOrDefault();
+        var mode = retained.Length == 0 ? DdlMode.InitialCreateOrExactMatch : DdlMode.ValidateOnly;
+        var setup = CopyRequest(
+            request.ProviderSetup,
+            mode,
+            slotProof,
+            !consumptionPossible && retained.Length == 1
+        );
+        var result = await _provider.SetupAsync(setup, token);
+        token.ThrowIfCancellationRequested();
+        ValidateResult(request, setup, result);
+        if (retained.Length == 0)
+        {
+            slotProof = result.InitialReplicationSlotProof;
+            Require(setup.Provider != DdlProvider.Postgresql || slotProof is not null);
+            // Re-read live capture after effects. A success response alone is not a completion receipt.
+            setup = CopyRequest(request.ProviderSetup, DdlMode.ValidateOnly, slotProof, true);
+            result = await _provider.SetupAsync(setup, token);
+            token.ThrowIfCancellationRequested();
+            ValidateResult(request, setup, result);
+        }
+        if (slotProof is not null)
+        {
+            var slot = result.ArtifactInventory.Single(a =>
+                a.ArtifactKind == CdcProviderArtifactKind.PostgresqlReplicationSlot
+            );
+            Require(
+                slot.SafeArtifactName == slotProof.ReplicationSlotName
+                    && slotProof.SourceFingerprint == result.ObservedSourceFingerprint
+                    && slot.SafeObservedValues.TryGetValue(
+                        "database_identity_token",
+                        out var databaseIdentity
+                    )
+                    && databaseIdentity == slotProof.DatabaseIdentityToken.Value
+            );
+        }
+        var completion = new CdcWorkflowCompletion.Provider(
+            Identities(request, result),
+            slotProof is null ? [] : [slotProof]
+        );
+        if (retained.Length == 1)
+        {
+            Require(completion.Artifacts.SequenceEqual(retained[0].Artifacts));
+        }
+        var observedAt = _time.GetUtcNow();
+        setComponent(CdcDeploymentComponent.WorkflowState);
+        await session.ReconcileCompletionAsync(
+            target,
+            journal.WorkflowId,
+            operation.OperationId,
+            (_, ct) =>
+            {
+                ct.ThrowIfCancellationRequested();
+                return Task.FromResult<CdcTransportResult<CdcWorkflowCompletion>>(
+                    new CdcTransportResult<CdcWorkflowCompletion>.Observed(completion)
+                );
+            },
+            token
+        );
+        setComponent(CdcDeploymentComponent.ProviderSetup);
+        var templateRequest = request.CreateTemplateRequest(new(binding.Generation, result));
+        var template = _templates.Render(templateRequest);
+        Require(template.Outcome == CdcConnectorTemplateOutcome.Rendered);
+        return new(templateRequest, template, observedAt);
     }
 
     private static CdcProviderSetupRequest CopyRequest(

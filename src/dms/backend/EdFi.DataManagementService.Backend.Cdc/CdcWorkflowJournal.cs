@@ -99,7 +99,13 @@ public sealed record CdcWorkflowOperation(
     DateTimeOffset IntendedAt,
     ImmutableArray<CdcRecordSizeIncreaseJournal> RecordSizeIncrease,
     ImmutableArray<CdcWorkflowCompletionRecord> Completions
-);
+)
+{
+    public ImmutableArray<CdcConnectorRegistrationIntent> ConnectorRegistration { get; init; } = [];
+}
+
+/// <summary>Exact template payload identity; no raw configuration or readiness.</summary>
+public sealed record CdcConnectorRegistrationIntent(string ConfigSha256);
 
 public sealed record CdcWorkflowCompletionRecord(DateTimeOffset ReconciledAt, CdcWorkflowCompletion Evidence);
 
