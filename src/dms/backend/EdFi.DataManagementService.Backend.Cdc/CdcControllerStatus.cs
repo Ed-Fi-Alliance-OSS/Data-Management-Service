@@ -136,9 +136,12 @@ public sealed partial class CdcControllerStatus
         }
     }
 
-    private async Task<CdcControllerTargetStatus> ObserveTargetAsync(
+    internal async Task<CdcControllerTargetStatus> ObserveTargetAsync(
         CdcControllerStatusTarget target,
-        CancellationToken token
+        CancellationToken token,
+        LocalCdcWorkflowJournalStore.Session retainedSession = null!,
+        CdcEstablishedValidationMode mode = CdcEstablishedValidationMode.RunningPublication,
+        Action<CdcEstablishedValidationObservation> observed = null!
     )
     {
         var request = target.Request;
@@ -158,13 +161,18 @@ public sealed partial class CdcControllerStatus
         observationTimeout.CancelAfter(request.Timing.WaitTimeout);
         try
         {
-            await using var session = await _store.AcquireAsync(
-                request.Timing.CallTimeout,
+            var pollInterval =
                 request.Timing.PollInterval < request.Timing.CallTimeout
                     ? request.Timing.PollInterval
-                    : request.Timing.CallTimeout,
-                observationTimeout.Token
-            );
+                    : request.Timing.CallTimeout;
+            await using var ownedSession = retainedSession is not null
+                ? null
+                : await _store.AcquireAsync(
+                    request.Timing.CallTimeout,
+                    pollInterval,
+                    observationTimeout.Token
+                );
+            var session = retainedSession ?? ownedSession!;
             bool containmentAttempted = false;
             progress.ContainTerminal = async () =>
             {
@@ -213,7 +221,7 @@ public sealed partial class CdcControllerStatus
                     .ObserveInSessionAsync(
                         request,
                         target.Runtime,
-                        CdcEstablishedValidationMode.RunningPublication,
+                        mode,
                         target.LagThresholdMilliseconds,
                         target.Integrity,
                         session,
@@ -222,6 +230,7 @@ public sealed partial class CdcControllerStatus
                         progress
                     );
                 diagnostics.AddRange(observation.Diagnostics);
+                observed?.Invoke(observation);
             }
             catch (Exception exception)
             {

@@ -75,11 +75,15 @@ public sealed record CdcRecordSizeIncreaseJournal(
 [JsonDerivedType(typeof(CdcWorkflowCompletion.Source), "source")]
 [JsonDerivedType(typeof(CdcWorkflowCompletion.Provider), "provider")]
 [JsonDerivedType(typeof(CdcWorkflowCompletion.Connector), "connector")]
+[JsonDerivedType(typeof(CdcWorkflowCompletion.Shutdown), "shutdown")]
 public abstract record CdcWorkflowCompletion
 {
     private CdcWorkflowCompletion() { }
 
     public sealed record Reconciled : CdcWorkflowCompletion;
+
+    /// <summary>Managed STOPPED/no-task read-back, never an HTTP acknowledgement or current permission.</summary>
+    public sealed record Shutdown : CdcWorkflowCompletion;
 
     public sealed record Database(CdcDatabaseCreationReceipt Receipt) : CdcWorkflowCompletion;
 

@@ -271,6 +271,8 @@ internal static class CdcWorkflowJournalValidation
                     );
                 }
                 break;
+            case (CdcWorkflowEffect.StopConnector, CdcWorkflowCompletion.Shutdown):
+                break;
             case (CdcWorkflowEffect.EstablishConnector, CdcWorkflowCompletion.Connector connector):
                 Require(completed.OfType<CdcWorkflowCompletion.Provider>().Any());
                 Require(CdcSha256ValueValidator.IsValid(connector.SourcePartitionHash));
