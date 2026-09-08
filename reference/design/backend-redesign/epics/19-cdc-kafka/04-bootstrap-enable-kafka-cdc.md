@@ -13,6 +13,7 @@ epic: DMS-1309
 - **Local bootstrap and CI**: reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#local-bootstrap-and-ci
 - **Connector topology and provider setup**: reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#connector-topology-and-provider-setup
 - **Deployment-owned physical source binding**: reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding
+- **V1 deployment-state continuity and adoption deferral**: reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#v1-deployment-state-continuity-and-adoption-deferral
 - **Source-history continuity**: reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#source-history-continuity
 - **Bootstrap phase ownership**: reference/design/backend-redesign/design-docs/bootstrap/command-boundaries.md
 - **Projection administrative serialization**: reference/design/backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#administrative-serialization-and-state-row-fencing
@@ -54,7 +55,7 @@ needed to provision, validate, start, stop, and retire a target.
 - Add cluster-scoped Kafka Connect offset-store provisioning/validation and binding-scoped
   Kafka topic, durability, record-size, and ACL provisioning/validation.
 - Add Kafka Connect registration, live validation, status polling, restart, guarded
-  adoption/source replacement, and teardown operations.
+  source replacement, and teardown operations.
 - Expose the same workflow to the E2E harness.
 
 ## Resolved Bootstrap and Controller Scope
@@ -80,7 +81,7 @@ controller composes those contracts rather than introducing another set of rules
   currently in `DocumentCacheAdmin` into a shared runtime composition helper if needed;
   do not reference one CLI executable from another or copy its initialization pipeline.
   Lifecycle mutations still execute through the E18 command and its provider mutex.
-- Expose explicit enable, validate, status/watch, restart, stop, adopt, source-replacement,
+- Expose explicit enable, validate, status/watch, restart, stop, source-replacement,
   record-size increase, and retire operations. Validate inspects without repairing;
   status/watch also performs the design-required incident latching and connector containment.
   Stop retains artifacts; retire requires an explicit generation and destructive-cleanup
@@ -238,15 +239,20 @@ controller composes those contracts rather than introducing another set of rules
   terminal incident and stop the affected connector; report failures to persist or stop
   without concealing the incident. Never restart on unknown continuity or reuse initial
   readiness evidence to claim another exact baseline.
-- Adoption gathers all live evidence before invoking `ImportVerifiedBindingAsync` with
-  the complete operator-supplied binding. Source replacement uses the design's guarded
+- Enforce the design's v1 deployment-state continuity and adoption deferral before
+  validation/restart. Return sanitized diagnostics identifying unavailable or contradictory
+  provenance without reconstructing it from operator input or healthy artifacts. Do not
+  expose an adoption command or call `ImportVerifiedBindingAsync` from the controller.
+  The existing lower-level import capability may remain unused; removing it is not required
+  by this story. Preserve intact interrupted-initial-workflow retries through 19-00.
+- Source replacement uses the design's guarded
   previously-enabled-source path, with an explicit old/new generation request and durable
   crash checkpoints around connector fencing, source-identity rotation, and new artifacts.
   Factor any missing rotation/state-operation seam into the existing control-plane/provider
   abstractions, including an explicitly guarded new-generation provider-creation path;
   do not mislabel replacement as an initial-empty retry to bypass 19-01's mode guards.
-  It is not recovery from terminal history loss or a published cache-ahead
-  latch, and it does not implement the deferred baseline-replacing cutover.
+  It is not recovery from lost deployment provenance, terminal history loss, or a published
+  cache-ahead latch, and it does not implement the deferred baseline-replacing cutover.
 - Teardown keeps infrastructure reachable while stopping the connector, removing its own
   committed offsets through the supported stopped-connector API, and deleting/verifying
   the connector and remaining governed artifacts. Use 19-00's typed cleanup inventory and
@@ -258,9 +264,10 @@ controller composes those contracts rather than introducing another set of rules
 - Put controller and transport-contract tests in the existing CDC unit/integration test
   projects and wrapper ordering tests under `eng/docker-compose/tests`. Use real PostgreSQL
   and SQL Server capture plus the qualified Connect image for admission, interrupted setup,
-  restart, adoption, containment, and retirement evidence. Include an authorization-enabled
-  broker profile for the shared-offset and cross-instance ACL cases. Qualification CI fails
-  on missing prerequisites rather than counting skipped provider/broker tests as evidence.
+  intact-state restart, state-loss rejection, containment, and retirement evidence. Include
+  an authorization-enabled broker profile for the shared-offset and cross-instance ACL cases.
+  Qualification CI fails on missing prerequisites rather than counting skipped provider/broker
+  tests as evidence.
 - Exercise the history bridge through the packaged DocumentCacheAdmin composition, including
   durable positive internal-only evidence and rejection after binding retirement, state
   loss, source change, and concurrent CDC reservation. Include crash injection at creation
@@ -285,6 +292,15 @@ controller composes those contracts rather than introducing another set of rules
   image validation.
 - Provider tests cover the initial readiness and post-enablement lifecycle paths for
   PostgreSQL and SQL Server.
+- Controller tests cover the design's deployment-state continuity boundary: intact-state
+  validation/restart and interrupted initial retries succeed when otherwise eligible;
+  missing binding, journal, establishment/provider-identity evidence, or source-history
+  record, unreadable, corrupt, or contradictory provenance, and reported incident-history deletion or
+  state rollback reject without mutation. Healthy artifacts and operator-supplied binding
+  JSON do not bypass rejection. Retained terminal incidents prevent restart; normal incident
+  file absence remains valid for an intact workflow. Tests also reject attempts to route
+  state loss through initial enablement or source replacement and prove retirement does not
+  restore a surviving database's initial eligibility or internal-only publication history.
 - Production-path tests prove the E18 `activate-offline`, `deactivate-offline`, and
   `recover-cache-ahead` commands no longer receive the default `unknown` downstream
   history when trusted CDC evidence proves `internalOnly`, and still reject active,
@@ -296,3 +312,57 @@ controller composes those contracts rather than introducing another set of rules
 - Managed-provider-specific deployment automation is deployment work.
 - Projector behavior is assigned to E18; message behavior is owned by the ADR and tested in
   19-05.
+- Missing-state adoption and recovery from deployment-state rollback are deferred by the
+  owning integration design; this story adds no replacement provenance mechanism.
+
+## Clarifying Questions and Answers
+
+### Questions 1
+
+1. For explicit adoption, which durable provenance must survive besides the operator-supplied binding and live artifacts? Define the supported cases when the workflow journal, connector-establishment/provider-identity evidence, source-history record, or incident state is missing, and how adoption avoids reviving a previously terminal generation when live artifacts currently look healthy.
+2. Which concrete telemetry transport must the shipped local/CI controller use to obtain current connector lag and the required lag statistics, and who owns any exporter or qualified-image changes it needs? What observation freshness and connector/task identity checks must that adapter satisfy before its lag value can participate in readiness?
+3. For the explicit record-size increase operation, what evidence confirms that independently operated consumers have raised fetch and deserialization capacity, and how is that confirmation scoped and persisted for crash-safe retries? Is an operator-supplied acknowledgement sufficient, or must this story deliver a consumer/deployment verification adapter before broker/topic and producer changes can proceed?
+
+
+### Answers 1
+
+1. **Resolved: defer missing-state adoption from v1.** Implement the owning design's
+   [deployment-state continuity and adoption deferral](../../design-docs/cdc/cdc-streaming.md#v1-deployment-state-continuity-and-adoption-deferral).
+   Ship intact-state validation/restart, interrupted initial-workflow retry, and independently
+   guarded retirement, with rejection diagnostics and evidence for unsupported state-loss
+   recovery. Remove adoption from the command surface and successful integration scenarios;
+   do not invoke `ImportVerifiedBindingAsync` from the controller. The lower-level capability
+   may remain unused. The design retains the normally absent incident file and explicitly
+   excludes recovery from suspected incident-history deletion or state rollback; this story
+   does not add an always-present generation ledger or infer historical proof from live health.
+
+2. **Requires human decision:** Select the supported local/CI telemetry transport and its
+   observation contract, and assign any required exporter/image delivery work. The design
+   requires `statistics.metrics.enabled=true`, current `MilliSecondsBehindSource`, and
+   P50/P95/P99 lag telemetry, but names no transport, endpoint, sample-age limit, or worker
+   restart/task-reassignment identity policy. DMS-1323 already owns the deployment telemetry
+   adapter; DMS-1322 owns the qualified plugin image and DMS-1321 its qualification fixtures,
+   but neither sibling assigns exporter implementation. The decision must establish how
+   samples are tied to the bound connector and its current sole task, how collection time
+   and freshness are verified, and when restart or reassignment invalidates a sample.
+   Until that contract is defined, unavailable or unverified lag must remain unknown and
+   cannot pass readiness. Preserve the independent lag threshold and provider barrier
+   requirements from
+   [connector setup](../../design-docs/cdc/cdc-streaming.md#connector-topology-and-provider-setup);
+   neither REST `RUNNING` nor historical quantiles replace current lag or the barrier.
+
+3. **Requires human decision:** Define the trusted consumer-capacity confirmation contract
+   before tasking the record-size increase operation. The
+   [coordinated increase procedure](../../design-docs/cdc/cdc-streaming.md#in-place-record-size-increase)
+   requires consumer confirmation before broker/topic and producer changes, but does not
+   authorize an operator acknowledgement as sufficient evidence or specify a verification
+   adapter. The decision must identify who may attest, how all affected independently
+   operated consumers are covered, and what proves fetch limits and deserialization
+   capacity for the requested ceiling. Scope the accepted evidence to the complete binding
+   generation/source, public topic, consumer deployment identities, requested
+   `maxRecordBytes`, and increase operation; persist it with the operation's intent and
+   completion in the deployment workflow journal before advancing the rollout. The owning
+   design and story should later define its validity and retry revalidation rules so a
+   changed consumer deployment or larger ceiling cannot reuse unrelated confirmation.
+   Missing or unverifiable confirmation leaves the target not ready and prevents the
+   increase from advancing to broker/topic or producer changes.

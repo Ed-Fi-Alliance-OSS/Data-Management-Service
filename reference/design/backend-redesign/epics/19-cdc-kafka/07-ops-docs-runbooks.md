@@ -9,6 +9,7 @@ epic: DMS-1309
 ## Design References
 
 - **Configuration, integration, readiness, and operations**: reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md
+- **V1 deployment-state continuity and adoption deferral**: reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#v1-deployment-state-continuity-and-adoption-deferral
 - **Topic and message contract**: reference/design/backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md
 - **Projector and source decision**: reference/design/backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md
 
@@ -51,6 +52,11 @@ Publish verified operator guidance for the implemented relational CDC capability
   ordinary API routing.
 - Document only the implemented restart, recovery, containment, source-replacement, and
   destructive-retirement commands.
+- Document preservation of deployment state, intact-state validation/restart, interrupted
+  initial-setup retry, and independently guarded retirement. Link state-loss diagnostics and
+  backup/rollback limitations to the owning adoption deferral; do not present adoption,
+  replacement-binding JSON, artifact recreation, or state deletion/restoration as a recovery
+  procedure for lost provenance or a terminal generation.
 - Cross-link E18 projection/restamp guidance and the design-owned deferred workflows.
 - Add documentation checks against command help, templates, status output, and test
   fixtures.
@@ -66,6 +72,9 @@ Publish verified operator guidance for the implemented relational CDC capability
   recovery, and work-table capture exclusion.
 - Documentation tests detect drift from the shipped configuration, status, and lifecycle
   surfaces.
+- Documentation checks or exercised scenarios cover the deployment-state continuity
+  boundary, unsupported missing-state adoption, terminal-incident rejection, and retirement
+  limitations using DMS-1323's shipped diagnostics and rejection fixtures.
 - Documentation checks or exercised runbook scenarios cover both admitted `internalOnly`
   paths and rejected active, historical, possible, unknown, missing, or mismatched
   downstream-history evidence for the E18 command gate.

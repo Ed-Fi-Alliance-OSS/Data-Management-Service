@@ -868,14 +868,12 @@ Binding creation and cleanup follow a fail-closed order:
    artifact. A record that already exists must match exactly; automation never rewrites its
    binding fields.
 3. If any governed artifact exists without its binding record, or differs from the
-   record, stop and require explicit adoption or cleanup. Do not infer or overwrite a
-   binding from existing topic names or connector configuration. Explicit adoption
-   requires an operator-supplied complete record plus live verification of the physical
-   source and every retained artifact. E19's binding-state operation owns guarded atomic
-   record creation, and bootstrap owns the live provider, connector, topic, offset, ACL, and
-   configuration verification. Adoption repairs missing deployment state around an already
-   complete governed-artifact set; it is not a first-time enablement path. A failed or
-   incomplete adoption changes nothing.
+   record, reject setup, validation, and restart without mutation. V1 does not support
+   adoption of an established generation with missing deployment state, including recovery
+   of only a missing binding. An operator-supplied complete record and healthy live artifacts
+   cannot replace historical evidence. Do not infer, recreate, or overwrite a binding from
+   topic names or connector configuration. Governed retirement remains available only when
+   its independent cleanup requirements can be satisfied; state loss is not cleanup authority.
 4. On retirement, either retain the binding record with every retained governed
    artifact, or delete the connector, every governed topic, offset, ACL, PostgreSQL
    slot/publication, SQL Server capture artifact, and other governed artifact before
@@ -888,6 +886,29 @@ artifacts. A crash may leave an unused record, which safely supports an idempote
 it must never leave surviving artifacts reusable after automatic record deletion.
 An explicit failed-attempt cleanup may retire an unused binding only after proving that no
 governed artifact exists; a crash by itself never triggers that cleanup.
+
+### V1 deployment-state continuity and adoption deferral
+
+Validation and restart of an established generation require the matching binding, workflow
+journal, connector-establishment and retained provider-identity evidence, and source-history
+record for that same target, physical source, and generation. Missing, unreadable, corrupt,
+or contradictory required evidence rejects the operation without mutation. Live artifact
+verification remains necessary but cannot reconstruct missing historical proof. V1 exposes
+no adoption command or operator override for these failures.
+
+A retained terminal incident always prohibits restart. The incident file remains normally
+absent until a loss is latched; that absence is valid only within the supported intact-state
+workflow and is not proof that incident history was never deleted. Suspected incident-history
+deletion or deployment-state rollback is unsupported and rejects validation/restart without
+mutation. V1 relies on the deployment-owned persistent state remaining intact; it does not
+provide rollback detection or certify recovery from an older state backup.
+
+Intact interrupted initial workflows continue through the existing initial-enable retry
+classification. An established generation with lost provenance cannot be reclassified as an
+initial workflow or recovered through source replacement. Retirement does not make a
+surviving database eligible for initial CDC enablement and does not erase downstream
+publication history. Missing-state adoption is deferred until a separately designed durable
+provenance and incident-history recovery contract exists.
 
 Before first-write admission, initial-enable retry classifies durable state as follows:
 
@@ -1593,9 +1614,13 @@ They document the shipped projector defaults; how to tune poll interval, page si
 failure backoff, target concurrency, and baseline high-water mark; how to identify
 same-document canonical-write contention; and why projector downtime permits queued
 writes while enqueue-schema failure rejects canonical writes.
-They cover binding-state backup, fail-closed missing-state recovery, guarded explicit
-adoption, cleanup ordering, and guarded new-generation source replacement; they never infer
-or repair a binding by rewriting an immutable record. They state that same-topic baseline
+They cover preservation of intact deployment state, interrupted initial-setup retry,
+intact-state validation/restart, cleanup ordering, and guarded new-generation source
+replacement. They link to the
+[v1 deployment-state continuity and adoption deferral](#v1-deployment-state-continuity-and-adoption-deferral)
+for missing-state diagnostics and backup/rollback limitations; they provide no adoption,
+replacement-binding JSON, or stale-backup restoration procedure as recovery. They never
+infer or repair a binding by rewriting an immutable record. They state that same-topic baseline
 replacement and incompatible-contract cutover are deferred until an owned cross-replica/
 external-writer fence exists. The representation-restamp utility is documented only for an
 explicitly offline data store; its lifecycle preflight distinguishes
