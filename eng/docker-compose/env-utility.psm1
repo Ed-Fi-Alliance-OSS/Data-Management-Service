@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: Apache-2.0
+﻿# SPDX-License-Identifier: Apache-2.0
 # Licensed to the Ed-Fi Alliance under one or more agreements.
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
@@ -584,10 +584,199 @@ function Resolve-IdentityClientSecretConfiguration {
         CmsReadOnlyAccessClientSecret       = Get-EnvValue -EnvValues $EnvValues -Name "CONFIG_SERVICE_CLIENT_SECRET" -DefaultValue "ValidClientSecret1234567890!Abcd"
         ClientSecretMinimumLength           = [int](Get-EnvValue -EnvValues $EnvValues -Name "DMS_CONFIG_IDENTITY_CLIENT_SECRET_MINIMUM_LENGTH" -DefaultValue "32")
         ClientSecretMaximumLength           = [int](Get-EnvValue -EnvValues $EnvValues -Name "DMS_CONFIG_IDENTITY_CLIENT_SECRET_MAXIMUM_LENGTH" -DefaultValue "128")
+        # Registered by the CDC opt-in only. Both the registration (start-local-dms.ps1) and the
+        # token request (the bootstrap CDC phase) read them from here, so the client the identity
+        # store holds and the client the phase authenticates as cannot drift apart.
+        DocumentCacheOperatorClientId       = Get-EnvValue -EnvValues $EnvValues -Name "DMS_DOCUMENT_CACHE_OPERATOR_CLIENT_ID" -DefaultValue "DocumentCacheOperator"
+        DocumentCacheOperatorClientSecret   = Get-EnvValue -EnvValues $EnvValues -Name "DMS_DOCUMENT_CACHE_OPERATOR_CLIENT_SECRET" -DefaultValue "ValidClientSecret1234567890!Abcd"
     }
 }
 
 Set-Alias -Name Resolve-IdentityClientSecrets -Value Resolve-IdentityClientSecretConfiguration
+
+function Get-DocumentCacheStatusOperatorRole {
+    <#
+    .SYNOPSIS
+        The single role token the DocumentCache status endpoint authorizes against.
+
+    .DESCRIPTION
+        Two places must agree on it and they are in different files: the local identity setup
+        registers a client carrying this role, and the bootstrap CDC opt-in writes the same token
+        into DataManagement:DocumentCache:Status:RequiredRole. The endpoint compares the role claim
+        exactly, so a drift between the two produces a 403 that reads like a CDC failure.
+    #>
+    return "dms-document-cache-operator"
+}
+
+function Resolve-CdcBindingStateRoot {
+    <#
+    .SYNOPSIS
+        The one host path of the durable CDC binding state store, for every reader in the deployment.
+
+    .DESCRIPTION
+        Four things must name the same directory or a teardown destroys what an enablement bound: the
+        start script that creates it, the cdc-setup.yml bind mount Compose renders, the enable phase
+        that allocates a generation from it, and the destructive teardown that retires from it. They
+        used to resolve it three different ways - the start script from its switch alone, the enable
+        phase with Compose precedence, Compose itself by interpolation - so a switch naming directory
+        A while the environment named directory B left the enablement writing B, the teardown
+        inspecting A, finding nothing to retire, and proceeding to `down -v` over the artifacts B's
+        surviving record still governed. This is that resolution, in one place.
+
+        Precedence, highest first:
+
+          - An explicit -Path. This is the operator's own -CdcBindingStatePath and it outranks the
+            environment because it is the more specific instruction. A caller that honours it must
+            also EXPORT the result as DMS_CDC_BINDING_STATE_PATH before invoking Compose - resolving
+            it here is not enough, since Compose reads the mount source from the environment and would
+            otherwise still mount the ambient or file value. start-local-dms.ps1 does exactly that.
+          - An ambient DMS_CDC_BINDING_STATE_PATH, then the env file's own value, then the
+            ./.cdc-state default - which is Compose's own interpolation order for the mount source
+            cdc-setup.yml declares, read here through the shared Compose-equivalent resolver.
+
+        The result is always absolute. A relative -Path resolves against -WorkingDirectory (the
+        caller's own directory, matching how -EnvironmentFile is resolved) and defaults to the current
+        location when that is omitted; a relative environment or file value resolves against
+        eng/docker-compose, which is the compose project directory the mount source is relative to.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [hashtable]
+        $EnvValues,
+
+        [string]
+        $Path = "",
+
+        [string]
+        $WorkingDirectory = ""
+    )
+
+    if (-not [string]::IsNullOrWhiteSpace($Path)) {
+        if ([System.IO.Path]::IsPathRooted($Path)) {
+            return [System.IO.Path]::GetFullPath($Path)
+        }
+
+        $base =
+            if ([string]::IsNullOrWhiteSpace($WorkingDirectory)) { (Get-Location).Path }
+            else { $WorkingDirectory }
+
+        return [System.IO.Path]::GetFullPath((Join-Path $base $Path))
+    }
+
+    $configured = Get-ComposeResolvedEnvValue `
+        -EnvironmentValues $EnvValues `
+        -Name "DMS_CDC_BINDING_STATE_PATH" `
+        -DefaultValue "./.cdc-state"
+
+    if ([System.IO.Path]::IsPathRooted($configured)) {
+        return [System.IO.Path]::GetFullPath($configured)
+    }
+
+    return [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot $configured))
+}
+
+function Get-CdcConnectorPrincipalConfiguration {
+    <#
+    .SYNOPSIS
+        The database principal the Debezium connector authenticates as, and the secret seam its
+        password travels through.
+
+    .DESCRIPTION
+        Three places must agree on this and they are in three different files, so it is resolved
+        here rather than restated in each: provision-cdc-principal.ps1 creates the principal in the
+        instance database, the bootstrap CDC phase passes the name as
+        DataManagement:DocumentCache:Cdc:ConnectorDatabasePrincipal and as the connector's own
+        database.user, and kafka.yml exposes the password to the Kafka Connect worker under
+        PasswordEnvVariable.
+
+        This is the DATABASE identity only. The connector's Kafka identity is a separate control-plane
+        setting in the broker's typed form, required only where an authorizer is enabled, which the
+        local stack's PLAINTEXT broker is not - so nothing here supplies one.
+
+        The password is NEVER rendered into the connector configuration. The configuration carries
+        the indirect reference '${env:<PasswordEnvVariable>}', which the worker resolves through its
+        EnvVarConfigProvider at connector start, so the registered configuration a read-back
+        validation compares holds the reference rather than the secret.
+
+        PasswordEnvVariable is fixed rather than configurable: it is the name the connector
+        configuration references and the name kafka.yml declares on the worker, and a deployment
+        that changed one without the other would leave the connector unable to resolve its own
+        password. PasswordReference is the '${env:...}' form itself, composed here by
+        concatenation rather than interpolation because that is also PowerShell's own
+        environment-variable syntax and a double-quoted string would expand it on the host.
+
+        The two values are read through DIFFERENT resolvers, and the difference is which of them
+        crosses a Compose boundary. The password does: kafka.yml renders it as
+        `CDC_DATABASE_PASSWORD: ${DMS_CDC_CONNECTOR_PASSWORD:-EdFi_Dms1!}`, where Compose
+        interpolation gives an exported value precedence over the env file's own text - so it is
+        resolved the same way here, or provision-cdc-principal.ps1 would create the principal with the
+        file's password while the worker authenticated with the exported one and enablement failed at
+        provider setup with nothing naming the cause. The principal name crosses no such boundary: no
+        compose file interpolates DMS_CDC_CONNECTOR_PRINCIPAL, it travels to the control plane and to
+        the connector configuration as an argument this module composes, and the file-only resolver is
+        what keeps a direct phase invocation independent of ambient state.
+    #>
+    param(
+        [hashtable]$EnvValues
+    )
+
+    $passwordEnvVariable = "CDC_DATABASE_PASSWORD"
+
+    return @{
+        PrincipalName       = Get-EnvValue -EnvValues $EnvValues -Name "DMS_CDC_CONNECTOR_PRINCIPAL" -DefaultValue "dms_connector"
+        Password            = Get-ComposeResolvedEnvValue -EnvironmentValues $EnvValues -Name "DMS_CDC_CONNECTOR_PASSWORD" -DefaultValue "EdFi_Dms1!"
+        PasswordEnvVariable = $passwordEnvVariable
+        PasswordReference   = '${env:' + $passwordEnvVariable + '}'
+    }
+}
+
+function Get-LocalCdcDeploymentPolicy {
+    <#
+    .SYNOPSIS
+        The deployment policy every `cdc` verb the local stack runs is invoked under.
+
+    .DESCRIPTION
+        Two callers pass these on the command line - the bootstrap CDC enable phase and the
+        destructive teardown - and three of the five are load-bearing for the second one: the broker
+        and Connect endpoints and the container-internal binding state path are how a retirement
+        reaches the artifacts an enable registered. Stated in both callers they agreed only by hand,
+        so a Connect service alias or port changed in the enable path alone would leave `cdc retire`
+        reporting every binding unavailable while the compose down removed its artifacts anyway.
+
+        MaxRecordBytes and DurabilityProfile are inert for a retirement - they only have to satisfy
+        the control plane's options validation - but they are named here too, so one file holds the
+        local policy rather than one file holding most of it.
+
+        The endpoints are container-internal names: both invocations run as one-shot containers on
+        the dms network, where the broker advertises PLAINTEXT://dms-kafka1:9092 and Connect answers
+        as kafka-postgresql-source, regardless of the host ports the compose files publish.
+
+        The three OffsetStore* values are the shared Connect offset store the start script
+        pre-creates before it starts the worker. They restate, for the local single-broker profile,
+        exactly what the control plane validates the store against - CdcKafkaDurabilityPolicy.For
+        resolves the 'local' DurabilityProfile above to replication factor one with
+        min.insync.replicas one, and the adapter creates the store with 25 partitions - so a
+        pre-created store and a control-plane-created one are the same topic. They belong here with
+        DurabilityProfile rather than in the start script, because they are that profile's values.
+
+        SqlServerPollInterval is an explicit local connector policy, below the renderer's default
+        five-second heartbeat. The shared setup argument builder passes it to every SQL Server verb
+        so initial registration and later configuration comparisons use the same interval.
+    #>
+    return @{
+        KafkaBootstrapServers        = 'dms-kafka1:9092'
+        ConnectBaseUrl               = 'http://kafka-postgresql-source:8083'
+        MaxRecordBytes               = '1048576'
+        DurabilityProfile            = 'local'
+        BindingStatePath             = '/state'
+        SqlServerPollInterval        = '00:00:00.500'
+        OffsetStoreTopicDefault      = 'debezium_source_offset'
+        OffsetStorePartitionCount    = 25
+        OffsetStoreReplicationFactor = 1
+        OffsetStoreMinInSyncReplicas = 1
+    }
+}
 
 function Resolve-CmsBaseUrl {
     <#

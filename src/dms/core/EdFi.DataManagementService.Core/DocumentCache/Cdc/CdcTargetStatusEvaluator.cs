@@ -1048,6 +1048,82 @@ public static class CdcTargetStatusEvaluator
         || observation.SourceInventoryState == state
         || observation.HeartbeatState == state;
 
+    /// <summary>
+    /// Whether the provider capture artifacts, grants, source inventory, and heartbeat were all found
+    /// conforming.
+    /// </summary>
+    /// <remarks>
+    /// This is the same rule <c>EvaluateProviderSetup</c> applies when it composes a status, exposed for
+    /// the same reason as <see cref="IsKafkaPolicySatisfied"/>: a provisioning sequence reads the
+    /// validate-only evidence before it registers a connector, and nonconforming provider artifacts must
+    /// end that sequence rather than be reported by the status composed after a connector is already
+    /// publishing through them. It answers on the observed outcome and states alone; the composed status
+    /// still applies the observation contract's own validation.
+    /// </remarks>
+    public static bool IsProviderSetupSatisfied(CdcProviderSetupObservation observation)
+    {
+        ArgumentNullException.ThrowIfNull(observation);
+
+        return observation.SetupOutcome == CdcProviderSetupOutcome.Satisfied
+            && !HasProviderSetupState(observation, CdcProviderSetupState.Missing)
+            && !HasProviderSetupState(observation, CdcProviderSetupState.Mismatched)
+            && !HasProviderSetupState(observation, CdcProviderSetupState.Unknown);
+    }
+
+    /// <summary>
+    /// Whether the binding's Kafka topics, ACLs, and record-size budget were all found conforming.
+    /// </summary>
+    /// <remarks>
+    /// This is the same rule <c>EvaluateKafkaPolicy</c> applies when it composes a status, exposed so a
+    /// provisioning sequence can refuse before it registers a connector rather than discovering the
+    /// nonconformance only in the status it composes afterwards. It answers on the observed states
+    /// alone; the composed status still applies the observation contract's own validation.
+    /// </remarks>
+    public static bool IsKafkaPolicySatisfied(CdcKafkaPolicyObservation observation)
+    {
+        ArgumentNullException.ThrowIfNull(observation);
+
+        return observation.PolicyState == CdcKafkaPolicyState.Satisfied
+            && !HasInvalidKafkaItem(observation)
+            && !HasUnknownKafkaItem(observation);
+    }
+
+    /// <summary>
+    /// Whether the shared Connect offset store was found conforming, grants included.
+    /// </summary>
+    /// <remarks>
+    /// The counterpart of <see cref="IsKafkaPolicySatisfied"/> for the cluster-scoped store, and the
+    /// same rule <c>EvaluateConnectOffsetStore</c> applies.
+    /// </remarks>
+    public static bool IsConnectOffsetStorePolicySatisfied(CdcConnectOffsetStorePolicyObservation observation)
+    {
+        ArgumentNullException.ThrowIfNull(observation);
+
+        return observation.PolicyState == CdcConnectOffsetStorePolicyState.Satisfied
+            && observation.AclState == CdcConnectOffsetStoreItemState.Satisfied;
+    }
+
+    /// <summary>
+    /// Whether the registered connector's configuration, task count, and every configuration item were
+    /// all found conforming.
+    /// </summary>
+    /// <remarks>
+    /// The same rule <c>EvaluateConnectorConfig</c> applies, exposed for the same reason as its three
+    /// siblings, and for one more: a restart puts a registered connector back to work without
+    /// re-deriving its configuration, so a resume issued over a nonconforming one publishes through it
+    /// and no status composed afterwards can recall what it produced. It answers on the observed states
+    /// alone; the composed status still applies the observation contract's own validation.
+    /// </remarks>
+    public static bool IsConnectorConfigSatisfied(CdcConnectorConfigurationObservation observation)
+    {
+        ArgumentNullException.ThrowIfNull(observation);
+
+        return observation.ConfigurationState == CdcConnectorConfigurationState.Matched
+            && observation.TaskCount == 1
+            && !HasConnectorConfigurationItem(observation, CdcConnectorConfigurationItemState.Invalid)
+            && !HasConnectorConfigurationItem(observation, CdcConnectorConfigurationItemState.Unknown);
+    }
+
     private static bool HasInvalidKafkaItem(CdcKafkaPolicyObservation observation) =>
         KafkaItemStates(observation).Any(state => state == CdcKafkaPolicyItemState.Invalid);
 

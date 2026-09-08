@@ -1,0 +1,91 @@
+{
+  "contractVersion": 1,
+  "operationId": "operation-1",
+  "verifiedAt": "2026-08-28T09:00:01+00:00",
+  "bindingIdentity": {
+    "deploymentKey": "dms",
+    "tenantKey": "default",
+    "dataStoreId": "1",
+    "instanceKey": "binding",
+    "generation": 7,
+    "provider": "sqlServer",
+    "physicalSourceFingerprint": "sha256:1780ea8893149195e89a46c70698dfdf64e8e6f9b31c7b7e9a9872baff498d75",
+    "connectorName": "dms-binding-g7",
+    "topicName": "edfi.documents.instance.binding-g7.documents.v1"
+  },
+  "cleanupMode": "retireBindingGeneration",
+  "governedArtifacts": [
+    {
+      "artifactKind": "connectSourceOffsets",
+      "artifactName": "dms-binding-g7",
+      "cleanupState": "deleted",
+      "evidenceSummary": "the Kafka Connect worker reported the governed artifact and it was removed"
+    },
+    {
+      "artifactKind": "kafkaConnectConnector",
+      "artifactName": "dms-binding-g7",
+      "cleanupState": "deleted",
+      "evidenceSummary": "the Kafka Connect worker reported the governed artifact and it was removed"
+    },
+    {
+      "artifactKind": "publicTopic",
+      "artifactName": "edfi.documents.instance.binding-g7.documents.v1",
+      "cleanupState": "deleted",
+      "evidenceSummary": "the governed artifact was removed"
+    },
+    {
+      "artifactKind": "progressTopic",
+      "artifactName": "edfi.documents.instance.binding-g7.documents.v1.cdc-progress",
+      "cleanupState": "deleted",
+      "evidenceSummary": "the governed artifact was removed"
+    },
+    {
+      "artifactKind": "publicTopicAcls",
+      "artifactName": "edfi.documents.instance.binding-g7.documents.v1",
+      "cleanupState": "deleted",
+      "evidenceSummary": "the governed artifact was removed"
+    },
+    {
+      "artifactKind": "progressTopicAcls",
+      "artifactName": "edfi.documents.instance.binding-g7.documents.v1.cdc-progress",
+      "cleanupState": "deleted",
+      "evidenceSummary": "the governed artifact was removed"
+    },
+    {
+      "artifactKind": "schemaHistoryTopic",
+      "artifactName": "edfi.documents.instance.binding-g7.documents.v1.schema-history",
+      "cleanupState": "deleted",
+      "evidenceSummary": "the governed artifact was removed"
+    },
+    {
+      "artifactKind": "schemaHistoryTopicAcls",
+      "artifactName": "edfi.documents.instance.binding-g7.documents.v1.schema-history",
+      "cleanupState": "deleted",
+      "evidenceSummary": "the governed artifact was removed"
+    },
+    {
+      "artifactKind": "sqlServerCdcGatingRole",
+      "artifactName": "edfi_dms_dms_binding_g7_de1bb4313908_cdc_reader",
+      "cleanupState": "deleted",
+      "evidenceSummary": "the governed artifact was removed"
+    },
+    {
+      "artifactKind": "sqlServerCaptureInstanceDocument",
+      "artifactName": "edfi_dms_dms_binding_g7_de1bb4313908_document",
+      "cleanupState": "deleted",
+      "evidenceSummary": "the governed artifact was removed"
+    },
+    {
+      "artifactKind": "sqlServerCaptureInstanceDocumentCache",
+      "artifactName": "edfi_dms_dms_binding_g7_de1bb4313908_documentcache",
+      "cleanupState": "deleted",
+      "evidenceSummary": "the governed artifact was removed"
+    },
+    {
+      "artifactKind": "sqlServerCaptureInstanceCdcHeartbeat",
+      "artifactName": "edfi_dms_dms_binding_g7_de1bb4313908_cdcheartbeat",
+      "cleanupState": "deleted",
+      "evidenceSummary": "the governed artifact was removed"
+    }
+  ]
+}

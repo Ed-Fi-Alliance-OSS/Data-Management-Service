@@ -294,6 +294,32 @@ public class Given_CdcArtifactNameGenerator
         return result.Inventory!;
     }
 
+    /// <summary>
+    /// The ACL isolation rule asks whether a topic a consumer principal holds a grant on belongs to
+    /// this target at all, because a guarded source replacement retains the generation it supersedes
+    /// and a stable consumer reads both. Every case below is one the rule must get right: another
+    /// generation of this target is this target's, and a progress topic, another instance's topic, and
+    /// anything not named for a generation are not.
+    /// </summary>
+    [TestCase("edfi.dms.instance.data-store-1-g1.documents.v1", true)]
+    [TestCase("edfi.dms.instance.data-store-1-g2.documents.v1", true)]
+    [TestCase("edfi.dms.instance.data-store-1-g17.documents.v1", true)]
+    [TestCase("edfi.dms.instance.data-store-1-g1.documents.v1.cdc-progress", false)]
+    [TestCase("edfi.dms.instance.data-store-1-g1.documents.v1.schema-history", false)]
+    [TestCase("edfi.dms.instance.data-store-2-g1.documents.v1", false)]
+    [TestCase("edfi.dms.instance.data-store-1-g.documents.v1", false)]
+    [TestCase("edfi.dms.instance.data-store-1-g0.documents.v1", false)]
+    [TestCase("edfi.dms.instance.data-store-1-gx.documents.v1", false)]
+    [TestCase("edfi.dms.instance.data-store-1-g-1.documents.v1", false)]
+    [TestCase("connect-offsets", false)]
+    public void It_recognizes_only_this_targets_public_topics(string topicName, bool expected)
+    {
+        CdcArtifactNameGenerator
+            .IsTargetPublicTopicName("edfi.dms", "data-store-1", topicName)
+            .Should()
+            .Be(expected);
+    }
+
     private static string Truncate(string artifactKind, string untruncatedName, int limit)
     {
         if (untruncatedName.Length <= limit)

@@ -1,0 +1,15 @@
+[
+  {
+    "Code": "adoptVerificationNotExactMatch",
+    "Category": "sourceHistoryLost",
+    "Severity": "error",
+    "Component": "sourceHistory",
+    "ObservedAt": "2026-09-07T00:59:50.3876521+00:00",
+    "Message": "CDC adoption requires every live verification to exactly match the supplied binding record.",
+    "Retryable": false,
+    "ArtifactKind": "SourceHistoryContinuity",
+    "ArtifactName": null,
+    "Expected": "ExactMatch",
+    "Observed": "Lost"
+  }
+]

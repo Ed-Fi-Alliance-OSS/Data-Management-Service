@@ -252,10 +252,15 @@ ad hoc DMS web process or duplicating provider-specific rebuild logic.
   18-01 downstream-publication-history abstraction to report `internalOnly` for the same
   normalized target key and physical-source fingerprint. Do not accept a CLI boolean,
   operator-entered text, stopped connector, or removed `DocumentCache:Targets` entry as
-  internal-only proof. Until E19 supplies durable binding/history evidence, the production
-  default remains `unknown` and these commands reject. The packaged command must not ship a
-  non-production command-line switch, appsettings flag, environment variable, or plug-in
-  proof mechanism that can make a target appear `internalOnly`.
+  internal-only proof. E19 supplies the CDC evidence behind that abstraction — `active` and
+  `historical` from records that name the target, `unknown` from every other shape — and it
+  does not prove `internalOnly` from the absence of a record, so these three commands stay
+  rejected until evidence that positively proves a target internal-only exists. What those
+  records prove, and which observations reject, is owned by
+  [Relational CDC and Document Projection](../../design-docs/cdc/cdc-streaming.md) under the
+  read-acceleration toggle and is not restated here. The packaged command must not ship a
+  non-production command-line switch, appsettings flag, environment variable, or plug-in proof
+  mechanism that can make a target appear `internalOnly`.
 - Online rebuild, scrub, and cache-ahead recovery must preserve the fail-closed latch
   routing from the design. A set cache-ahead latch rejects `rebuild-online` before any
   mutation; `scrub` is admitted only from clear-latch `Tracking` and may set but never clear

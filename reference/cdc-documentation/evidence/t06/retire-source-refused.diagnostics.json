@@ -1,0 +1,15 @@
+[
+  {
+    "Code": "retireRefused",
+    "Category": "sourceMismatch",
+    "Severity": "error",
+    "Component": "providerSetup",
+    "ObservedAt": "2026-08-28T09:00:00+00:00",
+    "Message": "CDC retirement requires the connected database to be the bindings own physical source.",
+    "Retryable": false,
+    "ArtifactKind": "cdcRetirement",
+    "ArtifactName": null,
+    "Expected": "a retirement request this deployment can begin",
+    "Observed": "a different physical source"
+  }
+]

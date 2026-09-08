@@ -104,6 +104,7 @@ public enum CdcDiagnosticCategory
     ArtifactNotRemoved,
     UnsafeEvidence,
     OperationMismatch,
+    UnsupportedOperation,
     TargetMismatch,
     ProviderMismatch,
     InvalidOrdering,

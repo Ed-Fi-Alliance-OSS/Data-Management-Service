@@ -1,0 +1,53 @@
+{
+  "provider": "mssql",
+  "evidence": "missingWriteAdmission",
+  "boundary": "packaged CLI preflight; synthetic outgoing binding; no provider probe or broker",
+  "arguments": [
+    "cdc",
+    "replace-source",
+    "--data-store-id",
+    "1",
+    "--deployment-key",
+    "replacement-rejections",
+    "--instance-key",
+    "instance",
+    "--generation",
+    "2",
+    "--previous-generation",
+    "1",
+    "--confirm",
+    "cdcSourceReplacement",
+    "--database-creation-mode",
+    "created-for-initial-cdc-provisioning",
+    "--kafka-bootstrap-servers",
+    "localhost:9092",
+    "--connect-base-url",
+    "http://localhost:8083",
+    "--max-record-bytes",
+    "1048576",
+    "--durability-profile",
+    "local",
+    "--cdc-binding-state-path",
+    "<disposable-state-root>",
+    "--json"
+  ],
+  "ExitCode": 64,
+  "StandardOutput": "",
+  "StandardError": "--write-admission is required and must be closed-never-opened.\n",
+  "before": {
+    "ProjectionLifecycleState": "Disabled",
+    "CacheAheadRecoveryRequired": false
+  },
+  "after": {
+    "ProjectionLifecycleState": "Disabled",
+    "CacheAheadRecoveryRequired": false
+  },
+  "fingerprintBefore": "sha256:bbb5469590ec861adcad26a61be2db96726925dac866384dd1921c6f0428144a",
+  "fingerprintAfter": "sha256:bbb5469590ec861adcad26a61be2db96726925dac866384dd1921c6f0428144a",
+  "recordsBefore": {
+    "bindings/replacement-rejections/instance/1.json": "{\"version\":1,\"deploymentKey\":\"replacement-rejections\",\"tenantKey\":\"default\",\"dataStoreId\":\"1\",\"instanceKey\":\"instance\",\"generation\":1,\"provider\":\"sqlServer\",\"physicalSourceFingerprint\":\"sha256:bbb5469590ec861adcad26a61be2db96726925dac866384dd1921c6f0428144a\",\"connectorName\":\"replacement-rejections-instance-g1\",\"topicName\":\"edfi.dms.instance.instance-g1.documents.v1\",\"partitionCount\":1,\"partitionerAlgorithm\":\"kafka-murmur2-v1\",\"contractVersion\":1}"
+  },
+  "recordsAfter": {
+    "bindings/replacement-rejections/instance/1.json": "{\"version\":1,\"deploymentKey\":\"replacement-rejections\",\"tenantKey\":\"default\",\"dataStoreId\":\"1\",\"instanceKey\":\"instance\",\"generation\":1,\"provider\":\"sqlServer\",\"physicalSourceFingerprint\":\"sha256:bbb5469590ec861adcad26a61be2db96726925dac866384dd1921c6f0428144a\",\"connectorName\":\"replacement-rejections-instance-g1\",\"topicName\":\"edfi.dms.instance.instance-g1.documents.v1\",\"partitionCount\":1,\"partitionerAlgorithm\":\"kafka-murmur2-v1\",\"contractVersion\":1}"
+  }
+}

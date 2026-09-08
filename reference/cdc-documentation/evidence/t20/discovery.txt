@@ -1,0 +1,51 @@
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  EdFi.DataManagementService.CustomValidation -> <repo-root>/src/dms/core/EdFi.DataManagementService.CustomValidation/bin/Debug/net10.0/EdFi.DataManagementService.CustomValidation.dll
+  EdFi.DataManagementService.Core.External -> <repo-root>/src/dms/core/EdFi.DataManagementService.Core.External/bin/Debug/net10.0/EdFi.DataManagementService.Core.External.dll
+  EdFi.DataManagementService.Backend.External -> <repo-root>/src/dms/backend/EdFi.DataManagementService.Backend.External/bin/Debug/net10.0/EdFi.DataManagementService.Backend.External.dll
+  EdFi.DataManagementService.Backend.RelationalModel -> <repo-root>/src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/bin/Debug/net10.0/EdFi.DataManagementService.Backend.RelationalModel.dll
+  EdFi.DataManagementService.Backend.Ddl -> <repo-root>/src/dms/backend/EdFi.DataManagementService.Backend.Ddl/bin/Debug/net10.0/EdFi.DataManagementService.Backend.Ddl.dll
+  EdFi.DataManagementService.Core -> <repo-root>/src/dms/core/EdFi.DataManagementService.Core/bin/Debug/net10.0/EdFi.DataManagementService.Core.dll
+  EdFi.DataManagementService.Backend.Cdc -> <repo-root>/src/dms/backend/EdFi.DataManagementService.Backend.Cdc/bin/Debug/net10.0/EdFi.DataManagementService.Backend.Cdc.dll
+  EdFi.DataManagementService.Backend.Plans -> <repo-root>/src/dms/backend/EdFi.DataManagementService.Backend.Plans/bin/Debug/net10.0/EdFi.DataManagementService.Backend.Plans.dll
+  EdFi.DataManagementService.Backend -> <repo-root>/src/dms/backend/EdFi.DataManagementService.Backend/bin/Debug/net10.0/EdFi.DataManagementService.Backend.dll
+  EdFi.DataManagementService.Backend.Postgresql -> <repo-root>/src/dms/backend/EdFi.DataManagementService.Backend.Postgresql/bin/Debug/net10.0/EdFi.DataManagementService.Backend.Postgresql.dll
+  EdFi.DataManagementService.Backend.Mssql -> <repo-root>/src/dms/backend/EdFi.DataManagementService.Backend.Mssql/bin/Debug/net10.0/EdFi.DataManagementService.Backend.Mssql.dll
+  EdFi.DataManagementService.Backend.Cdc.Control -> <repo-root>/src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Control/bin/Debug/net10.0/EdFi.DataManagementService.Backend.Cdc.Control.dll
+  EdFi.DataManagementService.Backend.Cdc.Tests.Integration -> <repo-root>/src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/bin/Debug/net10.0/EdFi.DataManagementService.Backend.Cdc.Tests.Integration.dll
+  EdFi.DataManagementService.Backend.Cdc.Control.Tests.Integration -> <repo-root>/src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Control.Tests.Integration/bin/Debug/net10.0/EdFi.DataManagementService.Backend.Cdc.Control.Tests.Integration.dll
+Test run for <repo-root>/src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Control.Tests.Integration/bin/Debug/net10.0/EdFi.DataManagementService.Backend.Cdc.Control.Tests.Integration.dll (.NETCoreApp,Version=v10.0)
+VSTest version 18.0.1 (x64)
+
+The following Tests are available:
+    It_accepts_a_record_size_budget_the_broker_limits_admit
+    It_adopts_only_the_complete_binding_that_matches_the_live_streaming_stack
+    It_creates_the_binding_topics_with_the_explicit_policy_values_the_broker_reports_back
+    It_deletes_exactly_the_binding_governed_artifacts_and_leaves_the_shared_offset_store
+    It_fails_closed_when_an_instance_consumer_can_read_another_instances_topic
+    It_fails_closed_when_an_instance_consumer_can_read_the_progress_topic
+    It_fails_closed_when_the_offset_store_carries_a_grant_beyond_the_connect_worker
+    It_fails_closed_when_the_offset_store_is_covered_by_an_over_broad_topic_pattern
+    It_observes_provider_heartbeat_progress_and_the_committed_source_offsets
+    It_preserves_the_live_generation_when_replacement_lacks_provisioning_evidence
+    It_provisions_and_verifies_the_binding_grants_against_a_real_authorizer
+    It_reads_back_the_live_connector_configuration_the_worker_holds
+    It_reads_the_debezium_source_lag_current_value_and_every_quantile_over_jolokia
+    It_rejects_a_budget_the_broker_replica_fetch_limits_cannot_carry
+    It_rejects_a_worker_created_offset_store_that_inherits_its_durability_from_the_broker
+    It_reports_a_budget_the_effective_message_limit_does_not_cover_as_unknown
+    It_reports_the_shared_connect_offset_store_as_compacted_durable_and_worker_only
+    It_requires_a_stopped_connector_before_its_committed_offsets_can_be_deleted
+    It_restarts_the_running_connector_and_returns_it_to_running
+    It_validates_conforming_binding_topics_idempotently_without_recreating_them
+    It_validates_the_rendered_connector_against_the_pinned_plugin_and_registers_it
+    It_keeps_secrets_out_of_the_connect_offset_store_boundary
+    It_keeps_secrets_out_of_the_connect_registration_boundary
+    It_keeps_secrets_out_of_the_explicit_projection_target_boundary
+    It_keeps_secrets_out_of_the_kafka_policy_boundary
+    It_keeps_secrets_out_of_the_projection_status_boundary
+    It_keeps_secrets_out_of_the_source_lag_boundary
+    It_keeps_the_instance_connection_string_out_of_the_eligibility_boundary
+    It_preserves_retry_authority_until_governed_cleanup_is_proved
+    It_preserves_retry_authority_until_governed_cleanup_is_proved
+    It_preserves_retry_authority_until_governed_cleanup_is_proved

@@ -1,0 +1,4 @@
+Counters: {"aborted": "0", "completed": "0", "disconnected": "0", "error": "0", "executed": "3", "failed": "0", "inProgress": "0", "inconclusive": "0", "notExecuted": "0", "notRunnable": "0", "passed": "3", "passedButRunAborted": "0", "pending": "0", "timeout": "0", "total": "3", "warning": "0"}
+Passed | EdFi.DataManagementService.Backend.Cdc.Control.Tests.Integration.Given_CdcControlRetirementOperator("neverRegistered").It_preserves_retry_authority_until_governed_cleanup_is_proved
+Passed | EdFi.DataManagementService.Backend.Cdc.Control.Tests.Integration.Given_CdcControlRetirementOperator("providerTimeout").It_preserves_retry_authority_until_governed_cleanup_is_proved
+Passed | EdFi.DataManagementService.Backend.Cdc.Control.Tests.Integration.Given_CdcControlRetirementOperator("registered").It_preserves_retry_authority_until_governed_cleanup_is_proved

@@ -62,8 +62,12 @@
 #    "ConnectionStrings": {
 #        "DatabaseConnection": "host=localhost;port=5435;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice;"
 #    },
-# 7. Relational DMS CDC/Kafka support is pending a separate implementation; there is no DMS source
-#    connector registration step for this setup.
+# 7. This Keycloak/debugger setup does not register a CDC source connector. Local relational CDC
+#    opt-in is available for PostgreSQL and SQL Server through the separate self-contained setup.
+#    Start with [CDC provider setup](../../../../reference/cdc-documentation/operations-runbook.md#local-setup)
+#    for a fresh database, qualified image, explicit target, and durable state. Do not retrofit
+#    this already-written database. [Production-like prerequisites](../../../../reference/cdc-documentation/operations-runbook.md#prerequisites)
+#    cover deployment identity and host/container connectivity outside the local wrapper.
 # 8. Run these steps from top to bottom.
 
 @configPort=5126

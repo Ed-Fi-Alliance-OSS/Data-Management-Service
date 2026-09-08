@@ -30,6 +30,11 @@ internal interface ICdcBindingStateStore
         CancellationToken cancellationToken
     );
 
+    Task<CdcListRetirementsStateStoreResult> ListRetirementsAsync(
+        string deploymentKey,
+        CancellationToken cancellationToken
+    );
+
     Task<CdcLatchIncidentStateStoreResult> LatchSourceHistoryLossAsync(
         CdcIncident incident,
         CancellationToken cancellationToken
@@ -156,6 +161,17 @@ internal abstract record CdcListBindingsStateStoreResult
         : CdcListBindingsStateStoreResult;
 
     internal sealed record StateStoreFailure(CdcStateStoreFailure Failure) : CdcListBindingsStateStoreResult;
+}
+
+internal abstract record CdcListRetirementsStateStoreResult
+{
+    private CdcListRetirementsStateStoreResult() { }
+
+    internal sealed record Listed(IReadOnlyList<CdcRetirement> Retirements)
+        : CdcListRetirementsStateStoreResult;
+
+    internal sealed record StateStoreFailure(CdcStateStoreFailure Failure)
+        : CdcListRetirementsStateStoreResult;
 }
 
 internal abstract record CdcLatchIncidentStateStoreResult

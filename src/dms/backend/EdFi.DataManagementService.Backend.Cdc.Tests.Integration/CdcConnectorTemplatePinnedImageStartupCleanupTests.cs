@@ -98,6 +98,53 @@ public sealed class Given_PinnedImageFixtureStartupFailureCleanup
     private const string ResourcePrefix = "dms-cdc-startup-test";
 
     [Test]
+    public void It_attempts_every_cleanup_after_a_removal_throws_and_preserves_the_startup_failure()
+    {
+        var startup = new OperationCanceledException("startup canceled");
+        var docker = new RecordingDockerCli(arguments =>
+        {
+            if (IsKafkaConnectRunCommand(arguments))
+            {
+                return startup;
+            }
+            return arguments.SequenceEqual(new[] { "rm", "-f", $"{ResourcePrefix}-connect" })
+                ? new InvalidOperationException("cleanup detail sentinel")
+                : null;
+        });
+        OperationCanceledException actual = Assert.ThrowsAsync<OperationCanceledException>(async () =>
+            await CdcConnectorTemplatePinnedImageFixture.StartAsync(
+                CdcProvider.Postgresql,
+                BuildSettings(),
+                docker,
+                ResourcePrefix,
+                CancellationToken.None
+            )
+        )!;
+        actual.Should().BeSameAs(startup);
+        AssertCleanupCommandsWereRun(docker);
+    }
+
+    [Test]
+    public void It_disposes_partially_started_resources_when_startup_assertion_fails()
+    {
+        var failure = new AssertionException("startup assertion");
+        var docker = new RecordingDockerCli(arguments =>
+            IsKafkaConnectRunCommand(arguments) ? failure : null
+        );
+        AssertionException actual = Assert.ThrowsAsync<AssertionException>(async () =>
+            await CdcConnectorTemplatePinnedImageFixture.StartAsync(
+                CdcProvider.Postgresql,
+                BuildSettings(),
+                docker,
+                ResourcePrefix,
+                CancellationToken.None
+            )
+        )!;
+        actual.Should().BeSameAs(failure);
+        AssertCleanupCommandsWereRun(docker);
+    }
+
+    [Test]
     public void It_disposes_partially_started_resources_when_start_docker_resources_fails()
     {
         var startupException = new OperationCanceledException("connect startup canceled");
@@ -291,6 +338,10 @@ public sealed class Given_PinnedImageFixtureStartupFailureCleanup
         )
         {
             _commands.Add($"allow {CommandText(arguments)}");
+            if (failureForCommand(arguments) is Exception failure)
+            {
+                throw failure;
+            }
             return Task.FromResult(ResultFor(arguments));
         }
 

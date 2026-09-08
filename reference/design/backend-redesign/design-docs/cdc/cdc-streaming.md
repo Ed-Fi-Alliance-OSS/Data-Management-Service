@@ -60,7 +60,21 @@ DocumentCache or CDC/Kafka content, not to unrelated material in the same artifa
 | [`multitenancy-analysis.md`](../../../multitenancy-analysis.md) | Stale-but-useful | Its database-engine constraints and topic-per-instance isolation guidance were incorporated here. Its OpenSearch material is historical and is not part of the relational CDC design. |
 | Deleted `remove-legacy-backend.md` | Historical | Records the completed removal of the document-store backend and its Kafka test path. It remains useful only as Git history and defines no active contract. |
 | Legacy document-store connector configurations and KafkaMessaging setup/test instructions | Obsolete | Targeted removed JSON columns and the shared legacy topic. They must not be restored or used to configure relational CDC; the proposed relational E2E replacement is defined by this design and the implementation stories. |
-| [`eng/docker-compose/README.md`](../../../../../eng/docker-compose/README.md), [`local-development-setup.http`](../../../../../src/dms/tests/RestClient/local-development-setup.http), and the [Instance Management E2E README](../../../../../src/dms/tests/EdFi.InstanceManagement.Tests.E2E/README.md) | Current | Describe present implementation state: Kafka infrastructure may be started, but relational connector registration has not landed. Their future opt-in must implement this design. |
+| [CDC runbook](../../../../cdc-documentation/operations-runbook.md), [evidence index](../../../../cdc-documentation/cdc-inv-evidence.md), [CLI reference](../../../../../src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin/README.md), and [configuration catalog](../../../../../docs/CONFIGURATION.md#datamanagementdocumentcachecdc) | Current | Operator procedures, verification status, command syntax, and shipped configuration respectively. Link to these owners from setup references; they do not replace this design's normative contracts. |
+| [`eng/docker-compose/README.md`](../../../../../eng/docker-compose/README.md), [relational backend guide](../../../../../docs/RELATIONAL-BACKEND.md), and [DMS E2E README](../../../../../src/dms/tests/EdFi.DataManagementService.Tests.E2E/README.md) | Current | Discover the shipped local PostgreSQL and SQL Server CDC opt-in through the runbook. Ordinary API lanes do not qualify CDC; live replay and the missing E19-06 API-consumer handoff remain explicit in the evidence index. |
+| [`local-development-setup.http`](../../../../../src/dms/tests/RestClient/local-development-setup.http) and [Instance Management E2E README](../../../../../src/dms/tests/EdFi.InstanceManagement.Tests.E2E/README.md) | Current | These Keycloak/debugger and route-context setups do not register CDC connectors. Link to the separate self-contained, single-unqualified-target local workflow; these setup limits are not provider capability limits. |
+
+### Implementation Status and Operator Entry Point
+
+The repository ships provider setup, connector-template rendering, the deployment-owned
+`cdc` CLI verbs, and local `-EnableKafkaCdc` bootstrap/E2E orchestration for PostgreSQL and
+SQL Server. The published start script does not accept that local switch. Use the
+[CDC operations runbook](../../../../cdc-documentation/operations-runbook.md) for execution
+and the [evidence index](../../../../cdc-documentation/cdc-inv-evidence.md) for actual
+verification results. Qualified-image and live-provider prerequisites, the unmet E19-06
+API-consumer handoff, and separately owned restamp/performance work remain explicit there.
+Implemented command surfaces do not establish that these pending exercises have passed.
+This status note does not change the contracts or deferred workflows below.
 
 ## Scope and Architecture
 
@@ -352,6 +366,43 @@ erase that history or authorize clearing. Online compatible cache rebuild remain
 by its own operation above, while CDC containment and baseline-replacing recovery remain
 governed by the contracts below.
 
+Internal-only is never taken from an operator assertion, a CLI switch, a stopped connector, or
+a removed `DocumentCache:Targets` entry. Eligibility is decided from durable deployment state,
+and the state that decides it is the deployment's own CDC records:
+
+- A binding naming the target on its currently resolved physical source proves active
+  downstream publication; one naming the target on an earlier physical source proves
+  historical publication. Either makes the target ineligible.
+- Retirement deletes the binding record it retires, so an absent binding is not on its own
+  proof that a target was never published. Retirement therefore records the generation it
+  retires durably, before the binding record is removed, and never removes that record
+  afterwards. A retirement record naming the target proves historical publication.
+- No record naming the target is unknown rather than proof of internal-only. A listing
+  establishes which records exist now, not that none was ever lost: a fresh volume, a
+  mis-mounted state root, a restored or partially migrated root, and a root pointed at another
+  deployment all answer a listing exactly as an intact one does, and other targets' bindings
+  say nothing about this one. A listing that cannot be completed, a record that cannot be read
+  as a binding, and an unconfigured deployment key are unknown for the same reason. Unknown
+  rejects without mutation.
+- Retirement records are read even when the binding listing is empty, because retiring a
+  deployment's only binding empties that listing and leaves the retirement as the sole trace of
+  what the target published. A deployment that has retired nothing legitimately holds no
+  retirement record, so an empty retirement listing is not itself a gap.
+
+Proving internal-only therefore requires positive durable evidence about the target itself — a
+record initialized for it and irreversibly transitioned when publication occurs — which no
+contract in this design produces. Until one does, the CDC records prove ineligibility and never
+eligibility: a target reports active, historical, or unknown, and unknown rejects. A deployment
+that registers no CDC control plane has no such records to read and reports unknown, which also
+rejects.
+
+Every observation carries the currently resolved physical-source fingerprint, including the
+rejecting ones, because the administrative gate compares the fingerprint before it reads the
+status and withholding it would report a source mismatch that was never observed. That
+comparison is therefore evidence only on an observation that names a record: where no record
+names the target, the fingerprint is the one the caller already resolved, and the status alone
+is what rejects. The gate must never be given a fingerprint match as a substitute for a record.
+
 ## Projection Health and Deployment-Owned CDC Readiness
 
 Projection exposes two independent DMS-owned signals for each explicit
@@ -529,6 +580,21 @@ above and do not claim another exact baseline.
 The barrier is transient status evidence and is not persisted in or used to mutate the
 immutable binding.
 
+A capture that waits for evidence the binding's own connector produces is attempted only
+while that connector can produce it. The SQL Server procedure below waits for a heartbeat
+after-image the connector's own action query writes, so against a connector that is not
+running — no running task, or a connector the worker holds `STOPPED`, `PAUSED`, or `FAILED` —
+it is not attempted and the barrier is reported unknown, which is the same result the wait
+reaches and the honest one either way. Observational status and restart therefore report an
+uncaptured barrier at once rather than after the capture timeout; restart in particular is
+issued against exactly those connector states, and the barrier is neither one of its
+artifact prerequisites nor an input to source-history continuity, so waiting for it would
+delay a decision it cannot inform. The catch-up evidence a resumed connector goes on to
+produce belongs to the next status observation. The PostgreSQL procedure reads the server's
+current WAL position and does not depend on the connector, so it is unaffected. The initial
+readiness sequence above always captures: it reaches step 5 with the connector registered
+and started, which is when waiting for catch-up is the point.
+
 **PostgreSQL adapter**
 
 After the projection-health response selected by the applicable readiness sequence,
@@ -644,6 +710,25 @@ The deployment-owned status has three continuity outcomes:
   latches `SourceHistoryContinuityLost` for that binding generation, stops the old connector,
   and keeps combined readiness false. The latch cannot be cleared by later artifact
   recreation, offset mutation, a healthy-looking lag value, or a snapshot.
+
+A Kafka Connect worker restarting is a connector start like any other, and the rule above admits
+no exception for it. The worker persists each connector's target state and restores every
+connector standing at a running one as soon as it starts, so a deployment that stops and starts
+its worker resumes publishing with no continuity check possible — nothing can run before a worker
+that has already resumed. Deployment automation therefore leaves connectors at a stopped target
+state across a planned stop and resumes them afterwards through the guarded restart, which applies
+the continuity check and the artifact prerequisites the worker's own restore does not. The fence is
+issued while the worker is still reachable, is applied whether or not the stop was requested by CDC
+automation, and removes nothing: a stop that does not apply leaves no artifact unprotected, because
+the guarded restart re-checks continuity on the way back regardless.
+
+Latching and fencing are separate obligations. The latch is written once, from the proof that
+established the loss; a later check that reads it back re-proves nothing and writes nothing. The
+fence follows the classified continuity instead, so every check that finds the continuity lost
+leaves the connector stopped - a stop the worker refused, or a process that exited between the
+durable latch and the stop, would otherwise leave it publishing indefinitely, since no later
+check raises a second proof and restart declines a lost continuity rather than acting on it. A
+connector already observed stopped is left alone.
 
 This latch affects CDC publication readiness only and does not change DMS request routing.
 A failure for one binding does not stop unrelated bindings.
@@ -869,18 +954,48 @@ Binding creation and cleanup follow a fail-closed order:
    binding fields.
 3. If any governed artifact exists without its binding record, or differs from the
    record, stop and require explicit adoption or cleanup. Do not infer or overwrite a
-   binding from existing topic names or connector configuration. Explicit adoption
+   binding from existing topic names or connector configuration. An enablement with no
+   binding record of its own therefore establishes that the broker holds none of the
+   binding's governed topics and that the worker holds no connector under its name,
+   before it creates that record; evidence it could not obtain refuses it as an existing
+   artifact does, because absence that was not observed is not absence. An enablement
+   retrying against its own record does not ask, since the artifacts it finds are the ones
+   its earlier attempt created. Explicit adoption
    requires an operator-supplied complete record plus live verification of the physical
    source and every retained artifact. E19's binding-state operation owns guarded atomic
    record creation, and bootstrap owns the live provider, connector, topic, offset, ACL, and
-   configuration verification. Adoption repairs missing deployment state around an already
-   complete governed-artifact set; it is not a first-time enablement path. A failed or
-   incomplete adoption changes nothing.
+   configuration verification. It applies the same complete Kafka-policy and shared Connect
+   offset-store predicates the enablement and the restart apply, record-size budget included,
+   so a proof is never issued over a policy the deployment's broker limits make invalid;
+   those observations are read-only, because adoption provisions nothing. Adoption repairs
+   missing deployment state around an already complete governed-artifact set; it is not a
+   first-time enablement path. A failed or incomplete adoption changes nothing.
 4. On retirement, either retain the binding record with every retained governed
    artifact, or delete the connector, every governed topic, offset, ACL, PostgreSQL
    slot/publication, SQL Server capture artifact, and other governed artifact before
    deleting the terminal incident state and binding record. A normal process restart or
-   stack stop deletes neither.
+   stack stop deletes neither. Within that removal the connector is stopped first, its
+   committed offsets are deleted while it is stopped and still exists, and its configuration
+   is deleted only afterwards: Connect accepts an offsets delete only for an existing stopped
+   connector, and deleting the configuration leaves the committed offsets in the
+   cluster-scoped store. The stop is proved by reading the connector's state back until it
+   reports stopped, because the worker applies a stop asynchronously and an accepted request
+   is not yet a fence. A connector the worker does not have ends the retirement: the worker
+   answers the same way whether the connector never existed or was deleted out from under the
+   record, so its absence is never read as proof that the committed offsets are gone. Only an
+   explicit operator assertion that the connector is already absent allows the retirement to
+   continue, and the proof then records the offsets as that assertion rather than as an
+   observation. A retirement also proves, before it fences anything, that the record names the
+   deployment's provider and that the connected database is that record's own physical source.
+   A retained superseded generation is therefore retirable only against the database it was
+   bound to: run against the source that replaced it, every provider artifact would be reported
+   absent, and the proof would certify a cleanup of a database that never held them. Deployment
+   configuration names the replacing database once a replacement has run, so the retirement
+   accepts the superseded source's connection as an explicit operator input, supplied by
+   reference to a deployment secret rather than as a literal. That input selects which database
+   is inspected and weakens no proof: the fingerprint comparison above still decides whether the
+   retirement may proceed, and a reference that resolves to nothing is a refusal rather than a
+   fallback to the target's current connection.
 
 The binding record lives at least as long as any governed artifact. Local teardown may
 remove it only in the same destructive volume-removal workflow that removes all of those
@@ -907,11 +1022,26 @@ of applying the empty-table retry classification.
 
 V1 never reassigns an existing topic or connector generation to a different physical
 database. Guarded source replacement is supported only for a database previously enabled
-through the v1 new-database path. It fences the old connector, rotates `SourceIdentity`
-through the binding-state operation, and creates a new binding generation, connector,
-public topic, progress topic, SQL Server schema-history topic when applicable, consumer
-state namespace, and snapshot. The old generation is retained or explicitly retired; none
-of its governed artifacts is reused. The new generation reports eventual operational status
+through the v1 new-database path. It fences the old connector and creates a new binding
+generation, connector, public topic, progress topic, SQL Server schema-history topic when
+applicable, consumer state namespace, and snapshot. The replacing source's `SourceIdentity`
+must already have been rotated away from the generation it replaces before the operation is
+invoked, and the operation refuses a source whose identity still resolves to the replaced
+generation's physical-source fingerprint: a restore, rollback, or copied backup carries the
+replaced database's own identity row, and binding a new generation to it would publish one
+physical source under two generations. Rotating that identity is not part of the operation.
+Enablement is the same sequence and is held to the same
+fence: it never starts a generation of a target the deployment already holds a live binding
+for, except the one generation a replacement fenced and named on the way in. Without that,
+repointing a deployment at a new empty database and enabling again would reach a replacement's
+end state with both generations publishing, which is the fence being bypassed rather than
+applied. Every refusal the enablement can settle from reads alone is taken before the fence,
+not through the enablement the replacement enters afterwards: this includes a live binding
+of the same target at a generation the replacement did not fence - a retained earlier
+generation among them - and a governed artifact already standing at one of the replacing
+generation's names. Refusing either one after the barrier would stop a connector that was
+publishing correctly for a request that was never going to proceed. The old generation is
+retained or explicitly retired; none of its governed artifacts is reused. The new generation reports eventual operational status
 rather than another exact baseline. It cannot clear a published cache-ahead latch or recover
 a binding whose source-history loss is terminal. Removing a target requires explicit
 retain-or-delete decisions for every generation.
@@ -1126,8 +1256,12 @@ contract and is not an operator-configurable v1 exception.
 [Debezium's SQL Server connector](https://debezium.io/documentation/reference/3.6/connectors/sqlserver.html#sqlserver-schema-history-topic)
 distinguishes the required internal history store from optional public schema-change
 events. Normal connector stop or restart retains the history topic and Connect source
-offsets. Missing, unreadable, empty-when-offsets-exist, or misconfigured history makes the
-connector not ready; automation never recreates it silently around retained offsets. After
+offsets. Missing, unreadable, empty-when-offsets-exist, truncated-when-offsets-exist, or
+misconfigured history makes the connector not ready; automation never recreates it silently
+around retained offsets. A history topic whose log start has advanced past its first record
+is truncated: the governed `cleanup.policy=delete` with infinite time and size retention is
+observed at one point in time and does not establish that no earlier record was already
+removed, so a nonempty topic is not by itself a complete one. After
 initial enablement, missing or inconsistent history or offsets participates in the
 source-history continuity check and may terminally latch the binding. V1 provides no
 destructive same-binding recovery or controlled resnapshot for that condition. Binding
@@ -1400,6 +1534,14 @@ Local bootstrap exposes an explicit opt-in such as `-EnableKafkaCdc`.
 - The local default binding state root is `eng/docker-compose/.cdc-state`; an explicit
   `-CdcBindingStatePath` may select another persistent deployment-owned location. It is
   never placed in `.bootstrap/bootstrap-manifest.json`.
+- Every reader of that root resolves it once, from one precedence, and the resolved value is
+  what the container mount receives: an explicit path outranks an ambient
+  `DMS_CDC_BINDING_STATE_PATH`, which outranks the environment file's own value, which
+  outranks the default. Resolving is not sufficient on its own — the resolved value is
+  exported so Compose interpolates the mount from it. A deployment where the store the
+  enablement writes and the store the retirement enumerates can differ is a deployment whose
+  destructive teardown reports nothing to retire and then removes the artifacts a surviving
+  binding record still governs.
 - Mutable lifecycle, projection work, caught-up state, and CDC binding progress remain
   outside the bootstrap manifest. DMS startup itself has no authority to enable tracking.
 - Binding reservation and registration are idempotent for an exact binding match and
@@ -1523,6 +1665,24 @@ effective deployment-managed ACL set would grant a configured instance consumer 
 another instance topic or any progress topic. ACL verification completes before connector
 registration and before combined readiness can pass. It does not rely on consumer-side
 filtering as an isolation control.
+
+Generations of one target are not isolated from each other, and the rule above is deliberately
+about another instance's topic rather than another generation's. Guarded source replacement
+retains the generation it supersedes until an operator retires it, so a stable consumer
+principal holds literal grants on both of that target's public topics for as long as that
+lasts; treating the retained one as foreign would make ordinary source replacement fail closed.
+A grant naming another instance key, any progress or schema-history topic, or a non-literal
+pattern still fails closed. The retained topic is exempted by name only: the grant on it must
+still be one an instance consumer may hold, allowed rather than denied, from any host, and read
+or describe. No required-grant pass runs over a topic outside the current binding's inventory,
+so a consumer that may only read the current generation's public topic may only read a retained
+one, and that is enforced where the exemption is granted or nowhere.
+
+The consumer-group grant is the consumer's rather than one generation's. Its name is deployment
+configuration, not a binding-derived artifact name, and the same consumer group reads the
+generation that replaces a retired one, so binding retirement removes every topic grant the
+binding created - which is what carries access to data - and never the consumer-group grant.
+Revoking that is a deployment decision, taken when the consumer itself is removed.
 
 Structured logs and metrics cover:
 

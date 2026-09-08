@@ -1,0 +1,72 @@
+{
+  "contractVersion": 1,
+  "operationId": "operation-1",
+  "observedAt": "2026-08-28T09:00:31+00:00",
+  "targetIdentity": {
+    "deploymentKey": "dms",
+    "tenantKey": "default",
+    "dataStoreId": "1",
+    "instanceKey": "binding",
+    "generation": 7,
+    "provider": "postgresql"
+  },
+  "admissionState": "admitted",
+  "primaryBlockingCategory": "none",
+  "steps": {
+    "binding": {
+      "state": "satisfied",
+      "category": "none",
+      "observedAt": "2026-08-28T09:00:00+00:00",
+      "message": null
+    },
+    "guardedTrackingActivation": {
+      "state": "satisfied",
+      "category": "none",
+      "observedAt": "2026-08-28T09:00:31+00:00",
+      "message": "tracking active"
+    },
+    "providerSetup": {
+      "state": "satisfied",
+      "category": "none",
+      "observedAt": "2026-08-28T09:00:12+00:00",
+      "message": null
+    },
+    "connectorAndTopicValidation": {
+      "state": "satisfied",
+      "category": "none",
+      "observedAt": "2026-08-28T09:00:23+00:00",
+      "message": null
+    },
+    "firstProjectionCaughtUp": {
+      "state": "satisfied",
+      "category": "none",
+      "observedAt": "2026-08-28T09:00:18+00:00",
+      "message": null
+    },
+    "providerBarrier": {
+      "state": "satisfied",
+      "category": "none",
+      "observedAt": "2026-08-28T09:00:22+00:00",
+      "message": null
+    },
+    "sourceHistory": {
+      "state": "satisfied",
+      "category": "none",
+      "observedAt": "2026-08-28T09:00:25+00:00",
+      "message": null
+    },
+    "secondProjectionCaughtUp": {
+      "state": "satisfied",
+      "category": "none",
+      "observedAt": "2026-08-28T09:00:29+00:00",
+      "message": null
+    },
+    "lag": {
+      "state": "satisfied",
+      "category": "none",
+      "observedAt": "2026-08-28T09:00:30+00:00",
+      "message": null
+    }
+  },
+  "diagnostics": []
+}

@@ -47,7 +47,8 @@ public sealed class Given_DocumentCacheAdminParserAndContractUnitTests
                 DocumentCacheAdminCommandSurface.DeactivateOfflineCommandName,
                 DocumentCacheAdminCommandSurface.RebuildOnlineCommandName,
                 DocumentCacheAdminCommandSurface.ScrubCommandName,
-                DocumentCacheAdminCommandSurface.RecoverCacheAheadCommandName
+                DocumentCacheAdminCommandSurface.RecoverCacheAheadCommandName,
+                DocumentCacheAdminCommandSurface.CdcCommandName
             );
         OptionNames(rootCommand)
             .Should()

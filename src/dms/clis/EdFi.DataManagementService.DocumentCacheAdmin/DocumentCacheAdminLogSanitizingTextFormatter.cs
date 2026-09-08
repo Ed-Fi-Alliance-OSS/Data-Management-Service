@@ -14,6 +14,9 @@ internal sealed class DocumentCacheAdminLogSanitizingTextFormatter : ITextFormat
 {
     public static DocumentCacheAdminLogSanitizingTextFormatter Instance { get; } = new();
 
+    // The cdc verbs are allowlisted under their scoped labels, which is also how they are recorded: the
+    // group's `status` verb and the DocumentCache `status` command would otherwise be one label in the
+    // logs.
     private static readonly HashSet<string> SafeCommandLabels =
     [
         DocumentCacheAdminCommandSurface.StatusCommandName,
@@ -23,6 +26,9 @@ internal sealed class DocumentCacheAdminLogSanitizingTextFormatter : ITextFormat
         DocumentCacheAdminCommandSurface.RebuildOnlineCommandName,
         DocumentCacheAdminCommandSurface.ScrubCommandName,
         DocumentCacheAdminCommandSurface.RecoverCacheAheadCommandName,
+        .. DocumentCacheAdminCommandSurface.CdcVerbNames.Select(
+            DocumentCacheAdminCommandSurface.CdcCommandLabel
+        ),
     ];
 
     private static readonly (string PropertyName, string OutputName)[] SafeProperties =

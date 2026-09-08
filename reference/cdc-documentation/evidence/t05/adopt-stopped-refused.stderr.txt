@@ -1,0 +1,1 @@
+adopt: adoptVerificationNotExactMatch: CDC adoption requires every live verification to exactly match the supplied binding record.

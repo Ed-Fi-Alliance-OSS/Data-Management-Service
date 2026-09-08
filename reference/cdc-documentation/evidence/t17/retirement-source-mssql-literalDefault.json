@@ -1,0 +1,54 @@
+{
+  "provider": "mssql",
+  "scenario": "literalDefault",
+  "boundary": "packaged CLI; two real databases; synthetic retained binding; unreachable Connect and broker",
+  "arguments": [
+    "cdc",
+    "retire",
+    "--data-store-id",
+    "1",
+    "--deployment-key",
+    "retirement-source",
+    "--instance-key",
+    "instance",
+    "--generation",
+    "1",
+    "--tenant-key",
+    "default",
+    "--source-connection-variable",
+    "DMS_RETAINED_SOURCE",
+    "--connector-already-absent",
+    "--kafka-bootstrap-servers",
+    "127.0.0.1:1",
+    "--connect-base-url",
+    "http://127.0.0.1:1",
+    "--max-record-bytes",
+    "1048576",
+    "--durability-profile",
+    "local",
+    "--cdc-binding-state-path",
+    "<disposable-state-root>",
+    "--json",
+    "--confirm",
+    "cdcBindingRetirement"
+  ],
+  "ExitCode": 64,
+  "StandardOutput": "",
+  "StandardError": "default is reserved for the CDC binding-record tenant spelling. For the default tenant omit --tenant-key or pass an empty string.\n",
+  "originalFingerprint": "sha256:36d902a7f45053a8a3e48a559314877a1ba8552caca89d7560c533856777f9ae",
+  "currentFingerprint": "sha256:0566597dc31f61aca5163a474132363a48305eab2be9ccd28304bf933f2bb6b8",
+  "currentBefore": {
+    "ProjectionLifecycleState": "Disabled",
+    "CacheAheadRecoveryRequired": false
+  },
+  "originalBefore": {
+    "ProjectionLifecycleState": "Disabled",
+    "CacheAheadRecoveryRequired": false
+  },
+  "recordsBefore": {
+    "bindings/retirement-source/instance/1.json": "{\"version\":1,\"deploymentKey\":\"retirement-source\",\"tenantKey\":\"default\",\"dataStoreId\":\"1\",\"instanceKey\":\"instance\",\"generation\":1,\"provider\":\"sqlServer\",\"physicalSourceFingerprint\":\"sha256:36d902a7f45053a8a3e48a559314877a1ba8552caca89d7560c533856777f9ae\",\"connectorName\":\"retirement-source-instance-g1\",\"topicName\":\"edfi.dms.instance.instance-g1.documents.v1\",\"partitionCount\":1,\"partitionerAlgorithm\":\"kafka-murmur2-v1\",\"contractVersion\":1}"
+  },
+  "recordsAfter": {
+    "bindings/retirement-source/instance/1.json": "{\"version\":1,\"deploymentKey\":\"retirement-source\",\"tenantKey\":\"default\",\"dataStoreId\":\"1\",\"instanceKey\":\"instance\",\"generation\":1,\"provider\":\"sqlServer\",\"physicalSourceFingerprint\":\"sha256:36d902a7f45053a8a3e48a559314877a1ba8552caca89d7560c533856777f9ae\",\"connectorName\":\"retirement-source-instance-g1\",\"topicName\":\"edfi.dms.instance.instance-g1.documents.v1\",\"partitionCount\":1,\"partitionerAlgorithm\":\"kafka-murmur2-v1\",\"contractVersion\":1}"
+  }
+}

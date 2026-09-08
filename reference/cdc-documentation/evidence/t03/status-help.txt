@@ -1,0 +1,18 @@
+Description:
+  Inspect one DocumentCache target
+
+Usage:
+  dms-document-cache status [options]
+
+Options:
+  --data-store-id <data-store-id>                                            Positive CMS data store identifier
+  --tenant-key <tenant-key>                                                  Target tenant key; omitted means the default tenant
+  --request-json <request-json>                                              Path to a shared JSON request document, or '-' for stdin
+  --status-observation-timeout-seconds <status-observation-timeout-seconds>  Provider durable-observation timeout in seconds (default: 5) [default: 5]
+  --status-timeout-seconds <status-timeout-seconds>                          Total status evaluation timeout in seconds (default: 30) [default: 30]
+  -?, -h, --help                                                             Show help and usage information
+  --json                                                                     Write the shared JSON contract document to stdout
+  -v, --verbose                                                              Enable verbose (debug-level) logging
+  --settings <settings>                                                      Path to a DMS appsettings JSON file
+  --environment <environment>                                                DMS environment name used for configuration loading
+  --datastore <postgresql|sqlserver>                                         Target datastore provider: postgresql or sqlserver

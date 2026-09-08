@@ -1,0 +1,105 @@
+{
+  "scenario": "registered",
+  "boundary": "real PostgreSQL, Kafka, Connect, filesystem; provider deletion timeout injected only for providerTimeout",
+  "recordsBefore": {
+    "bindings/dms-control/binding/3.json": "{\"version\":1,\"deploymentKey\":\"dms-control\",\"tenantKey\":\"default\",\"dataStoreId\":\"1\",\"instanceKey\":\"binding\",\"generation\":3,\"provider\":\"postgresql\",\"physicalSourceFingerprint\":\"sha256:193c47b34d9751c73d06dbf5ccf2655a1cce46154a4808f152d3db0e91b676bc\",\"connectorName\":\"dms-control-binding-g3\",\"topicName\":\"edfi.control.instance.binding-g3.documents.v1\",\"partitionCount\":3,\"partitionerAlgorithm\":\"kafka-murmur2-v1\",\"contractVersion\":1}"
+  },
+  "providerBefore": 2,
+  "attempts": [],
+  "cleanupProof": {
+    "contractVersion": 1,
+    "operationId": "retirement-retry",
+    "verifiedAt": "2026-09-07T01:23:07.0646848+00:00",
+    "bindingIdentity": {
+      "deploymentKey": "dms-control",
+      "tenantKey": "default",
+      "dataStoreId": "1",
+      "instanceKey": "binding",
+      "generation": 3,
+      "provider": "postgresql",
+      "physicalSourceFingerprint": "sha256:193c47b34d9751c73d06dbf5ccf2655a1cce46154a4808f152d3db0e91b676bc",
+      "connectorName": "dms-control-binding-g3",
+      "topicName": "edfi.control.instance.binding-g3.documents.v1"
+    },
+    "cleanupMode": "retireBindingGeneration",
+    "governedArtifacts": [
+      {
+        "artifactKind": "connectSourceOffsets",
+        "artifactName": "dms-control-binding-g3",
+        "cleanupState": "deleted",
+        "evidenceSummary": "the Kafka Connect worker reported the governed artifact and it was removed"
+      },
+      {
+        "artifactKind": "kafkaConnectConnector",
+        "artifactName": "dms-control-binding-g3",
+        "cleanupState": "deleted",
+        "evidenceSummary": "the Kafka Connect worker reported the governed artifact and it was removed"
+      },
+      {
+        "artifactKind": "publicTopicAcls",
+        "artifactName": "edfi.control.instance.binding-g3.documents.v1",
+        "cleanupState": "deleted",
+        "evidenceSummary": "Removed 4 literal governed grants."
+      },
+      {
+        "artifactKind": "publicTopic",
+        "artifactName": "edfi.control.instance.binding-g3.documents.v1",
+        "cleanupState": "deleted",
+        "evidenceSummary": "Governed topic deleted."
+      },
+      {
+        "artifactKind": "progressTopicAcls",
+        "artifactName": "edfi.control.instance.binding-g3.documents.v1.cdc-progress",
+        "cleanupState": "deleted",
+        "evidenceSummary": "Removed 2 literal governed grants."
+      },
+      {
+        "artifactKind": "progressTopic",
+        "artifactName": "edfi.control.instance.binding-g3.documents.v1.cdc-progress",
+        "cleanupState": "deleted",
+        "evidenceSummary": "Governed topic deleted."
+      },
+      {
+        "artifactKind": "postgresqlPublication",
+        "artifactName": "edfi_dms_dms_control_binding_g3_2c2fce85cd67_pub",
+        "cleanupState": "deleted",
+        "evidenceSummary": "the provider reported the governed artifact and it was removed"
+      },
+      {
+        "artifactKind": "postgresqlLogicalSlot",
+        "artifactName": "edfi_dms_dms_control_binding_g3_2c2fce85cd67_slot",
+        "cleanupState": "deleted",
+        "evidenceSummary": "the provider reported the governed artifact and it was removed"
+      }
+    ]
+  },
+  "recordsAfter": {
+    "retirements/dms-control/binding/3.json": "{\"version\":1,\"deploymentKey\":\"dms-control\",\"tenantKey\":\"default\",\"dataStoreId\":\"1\",\"instanceKey\":\"binding\",\"generation\":3,\"physicalSourceFingerprint\":\"sha256:193c47b34d9751c73d06dbf5ccf2655a1cce46154a4808f152d3db0e91b676bc\",\"retiredAt\":\"2026-09-07T01:23:07.0656499+00:00\",\"contractVersion\":1}"
+  },
+  "Retirements": [
+    {
+      "Version": 1,
+      "DeploymentKey": "dms-control",
+      "TenantKey": "default",
+      "DataStoreId": "1",
+      "InstanceKey": "binding",
+      "Generation": 3,
+      "PhysicalSourceFingerprint": "sha256:193c47b34d9751c73d06dbf5ccf2655a1cce46154a4808f152d3db0e91b676bc",
+      "RetiredAt": "2026-09-07T01:23:07.0656499+00:00",
+      "ContractVersion": 1
+    }
+  ],
+  "after": {
+    "connector": "notFound",
+    "publicTopic": "absent",
+    "progressTopic": "absent",
+    "providerArtifacts": 0,
+    "sharedWorkerTopics": [
+      "dms-cdc-control-dfbaeb9e5ec44733b98409c4844ecac9.connect.offsets",
+      "dms-cdc-control-dfbaeb9e5ec44733b98409c4844ecac9.connect.configs",
+      "dms-cdc-control-dfbaeb9e5ec44733b98409c4844ecac9.connect.status"
+    ],
+    "sharedWorkerTopicsState": "present",
+    "sharedOffsetAcls": "unchanged"
+  }
+}

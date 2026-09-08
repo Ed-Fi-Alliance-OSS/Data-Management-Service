@@ -1,0 +1,1 @@
+retire: retireRefused: CDC retirement cannot observe the committed source offsets of a connector the worker does not have and the shared offset store may still hold them under this name.

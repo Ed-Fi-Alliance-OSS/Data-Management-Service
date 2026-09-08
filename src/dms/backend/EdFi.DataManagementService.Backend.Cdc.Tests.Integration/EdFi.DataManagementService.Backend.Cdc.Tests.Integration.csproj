@@ -8,6 +8,7 @@
         <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     </PropertyGroup>
     <ItemGroup>
+        <PackageReference Include="Confluent.Kafka" />
         <PackageReference Include="FluentAssertions" />
         <PackageReference Include="Microsoft.Data.SqlClient" />
         <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
@@ -23,5 +24,46 @@
     </ItemGroup>
     <ItemGroup>
         <ProjectReference Include="..\EdFi.DataManagementService.Backend.Cdc\EdFi.DataManagementService.Backend.Cdc.csproj" />
+        <ProjectReference Include="../EdFi.DataManagementService.Backend.Cdc.Control/EdFi.DataManagementService.Backend.Cdc.Control.csproj" />
+    </ItemGroup>
+    <ItemGroup>
+        <!-- The CDC control plane's broker-backed fixture reuses this project's Docker CLI, mapped-port,
+             and output-redaction helpers rather than standing up a second copy of them. -->
+        <InternalsVisibleTo Include="EdFi.DataManagementService.Backend.Cdc.Control.Tests.Integration" />
+    </ItemGroup>
+    <Import Project="../Fixtures/cdc/message-contract/MessageContractFixtures.props" />
+    <ItemGroup>
+        <None
+            Update="MessageContractRunner/**/*"
+            CopyToOutputDirectory="PreserveNewest"
+            CopyToPublishDirectory="PreserveNewest"
+        />
+    </ItemGroup>
+    <ItemGroup>
+        <!-- Share test-only fixture helpers without referencing another test assembly. -->
+        <Compile
+            Include="../EdFi.DataManagementService.Backend.Cdc.Tests.Unit/MessageContractTraceabilityTests.cs"
+            Link="MessageContractTraceabilityTests.cs"
+        />
+        <Compile
+            Include="../EdFi.DataManagementService.Backend.Cdc.Tests.Unit/MessageContractAdmissionFixture.cs"
+            Link="MessageContractAdmissionFixture.cs"
+        />
+        <Compile
+            Include="../EdFi.DataManagementService.Backend.Cdc.Tests.Unit/MessageContractFixtureCatalog.cs"
+            Link="MessageContractFixtureCatalog.cs"
+        />
+        <Compile
+            Include="../EdFi.DataManagementService.Backend.Cdc.Tests.Unit/MessageContractConsumer.cs"
+            Link="MessageContractConsumer.cs"
+        />
+        <Compile
+            Include="../EdFi.DataManagementService.Backend.Cdc.Tests.Unit/MessageContractConsumerBootstrap.cs"
+            Link="MessageContractConsumerBootstrap.cs"
+        />
+        <Compile
+            Include="../EdFi.DataManagementService.Backend.Cdc.Tests.Unit/MessageContractJson.cs"
+            Link="MessageContractJson.cs"
+        />
     </ItemGroup>
 </Project>

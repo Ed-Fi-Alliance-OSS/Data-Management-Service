@@ -388,11 +388,14 @@ param(
     [string] `$EnvironmentFile,
     [string] `$IdentityProvider,
     [switch] `$EnableKafkaUI,
+    [switch] `$EnableKafkaCdc,
+    [string] `$CdcBindingStatePath,
+    [switch] `$AbandonCdcBindingState,
     [switch] `$EnableSwaggerUI,
     [string] `$DatabaseEngine,
     [Parameter(ValueFromRemainingArguments = `$true)] `$Rest
 )
-Add-Content -LiteralPath '$CallLogPath' -Value "teardown d=`$d v=`$v RemoveBootstrap=`$RemoveBootstrap EnvironmentFile=`$EnvironmentFile IdentityProvider=`$IdentityProvider EnableKafkaUI=`$EnableKafkaUI EnableSwaggerUI=`$EnableSwaggerUI DatabaseEngine=`$DatabaseEngine Rest=`$Rest"
+Add-Content -LiteralPath '$CallLogPath' -Value "teardown d=`$d v=`$v RemoveBootstrap=`$RemoveBootstrap EnvironmentFile=`$EnvironmentFile IdentityProvider=`$IdentityProvider EnableKafkaUI=`$EnableKafkaUI EnableKafkaCdc=`$EnableKafkaCdc CdcBindingStatePath=`$CdcBindingStatePath AbandonCdcBindingState=`$AbandonCdcBindingState EnableSwaggerUI=`$EnableSwaggerUI DatabaseEngine=`$DatabaseEngine Rest=`$Rest"
 $failureStatement
 "@ | Set-Content -LiteralPath $scriptPath -Encoding utf8
             return $scriptPath
@@ -1549,21 +1552,27 @@ param(
             }
         }
 
-        It "start-local-dms.ps1 gates Kafka on the PostgreSQL engine (no Debezium CDC on the MSSQL path)" {
+        It "start-local-dms.ps1 selects Kafka independently of the database engine" {
+            # The Kafka compose file used to be PostgreSQL-only, on the premise that only the
+            # PostgreSQL path had CDC. The deployment-owned CDC workflow captures from SQL Server
+            # too, so the engine now selects only the database. BootstrapEnableKafkaCdc.Tests.ps1
+            # carries the rest of the opt-in's rules.
             $startScript = Get-Content -LiteralPath (
                 Join-Path $script:sourceDockerComposeRoot "start-local-dms.ps1"
             ) -Raw
 
-            $startScript | Should -Match 'if \(\$enableKafkaInfrastructure -and \$DatabaseEngine -eq "postgresql"\)\s*\{[^}]*\$files \+= @\("-f", "kafka\.yml"\)'
+            $startScript | Should -Match 'if \(\$enableKafkaInfrastructure\)\s*\{[^}]*\$files \+= @\("-f", "kafka\.yml"\)'
+            $startScript | Should -Not -Match '\$enableKafkaInfrastructure -and \$DatabaseEngine'
         }
 
-        It "start-local-dms.ps1 gates the Kafka UI startup on the PostgreSQL engine (no Debezium CDC on the MSSQL path)" {
+        It "start-local-dms.ps1 starts the Kafka UI on -EnableKafkaUI alone, on either engine" {
             $startScript = Get-Content -LiteralPath (
                 Join-Path $script:sourceDockerComposeRoot "start-local-dms.ps1"
             ) -Raw
 
-            $startScript | Should -Match 'if \(\$EnableKafkaUI -and \$DatabaseEngine -eq "postgresql"\)\s*\{[^}]*up \$upArgs kafka-ui'
-            $startScript | Should -Match 'elseif \(\$EnableKafkaUI -and \$DatabaseEngine -eq "mssql"\)\s*\{[^}]*Skipping Kafka UI'
+            $startScript | Should -Match 'if \(\$EnableKafkaUI\)\s*\{[^}]*up \$upArgs kafka-ui'
+            $startScript | Should -Not -Match '\$EnableKafkaUI -and \$DatabaseEngine'
+            $startScript | Should -Not -Match 'Skipping Kafka'
         }
 
         It "start-local-dms.ps1 composes the MSSQL engine overlay after the data-standard overlay and before reading env values" {
@@ -2027,7 +2036,15 @@ Copy-Item -LiteralPath `$EnvironmentFile -Destination '$capturedEnvPath' -Force
             # Guards the teardown forwarding whitelist. Options that do not change the compose-file set
             # must never reach the delegation; the stub records anything outside the whitelist in Rest=,
             # so an accidental addition to the forwarding loop surfaces here instead of passing silently.
-            $forwarded = @('EnvironmentFile', 'IdentityProvider', 'EnableKafkaUI', 'EnableSwaggerUI', 'DatabaseEngine')
+            # -EnableKafkaCdc also selects kafka.yml, so it shapes the compose set a teardown must
+            # cover; -CdcBindingStatePath travels with it so teardown names the same state store.
+            # -AbandonCdcBindingState is forwarded for a different reason: it shapes no compose file,
+            # but a destructive teardown fails on an unretired binding, and abandoning that state is a
+            # decision only the operator can make - so the entry point has to be able to express it.
+            $forwarded = @(
+                'EnvironmentFile', 'IdentityProvider', 'EnableKafkaUI', 'EnableKafkaCdc',
+                'CdcBindingStatePath', 'AbandonCdcBindingState', 'EnableSwaggerUI', 'DatabaseEngine'
+            )
             $excluded = @(
                 'LoadSeedData', 'SeedTemplate', 'SeedDataPath', 'AdditionalNamespacePrefix',
                 'SchoolYearRange', 'DataStandardVersion', 'InfraOnly', 'DmsBaseUrl',
@@ -2036,7 +2053,11 @@ Copy-Item -LiteralPath `$EnvironmentFile -Destination '$capturedEnvPath' -Force
                 # files a teardown must cover: local-config.yml is unconditional in
                 # start-local-dms.ps1's compose set. So it is excluded, like the other
                 # non-compose-shaping options.
-                'SeparateConfigDatabase'
+                'SeparateConfigDatabase',
+                # -ResumeInterruptedCdcEnable is an assertion the enable phase carries, so it shapes
+                # no compose file and has nothing to say to a teardown - unlike
+                # -AbandonCdcBindingState, which is a decision about the teardown itself.
+                'ResumeInterruptedCdcEnable'
             )
 
             # Completeness guard: every parameter the entry script declares must be classified here
@@ -2066,6 +2087,7 @@ Copy-Item -LiteralPath `$EnvironmentFile -Destination '$capturedEnvPath' -Force
                 -NoDataStore `
                 -AddSmokeTestCredentials `
                 -SeparateConfigDatabase `
+                -ResumeInterruptedCdcEnable `
                 -d
 
             $log = @(Get-Content -LiteralPath $callLog)
@@ -2076,6 +2098,39 @@ Copy-Item -LiteralPath `$EnvironmentFile -Destination '$capturedEnvPath' -Force
     }
 
     Context "bootstrap-local-dms.ps1 teardown fail-fast validation (DMS-1272)" {
+        It "-d -v -AbandonCdcBindingState reaches the delegation that owns the retirement" {
+            # The destructive teardown fails on a binding that did not retire, because removing the
+            # volumes around a surviving binding record destroys the artifacts it still names. The
+            # operator's decision to accept that has to reach the script that runs the retirement.
+            $callLog = Join-Path $script:repo.RepoRoot "call-log-teardown-abandon-cdc.txt"
+            New-RecordingTeardownStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+
+            & $script:repo.WrapperScript `
+                -EnvironmentFile $script:repo.EnvFile `
+                -d -v -AbandonCdcBindingState
+
+            $log = @(Get-Content -LiteralPath $callLog)
+
+            $log.Count | Should -Be 1
+            $log[0] | Should -Match 'AbandonCdcBindingState=True'
+            $log[0] | Should -Match 'Rest=$'
+        }
+
+        It "-AbandonCdcBindingState is rejected on a run that removes no volumes" {
+            # It permits only the volume removal to proceed, so a start run or a plain stop that named
+            # it would carry a permission nothing reads.
+            $callLog = Join-Path $script:repo.RepoRoot "call-log-teardown-abandon-cdc-invalid.txt"
+            New-RecordingPrepareScripts -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog
+            New-RecordingTeardownStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+
+            {
+                & $script:repo.WrapperScript `
+                    -EnvironmentFile $script:repo.EnvFile -d -AbandonCdcBindingState
+            } | Should -Throw "*-AbandonCdcBindingState requires -d -v*"
+
+            Test-Path -LiteralPath $callLog | Should -BeFalse
+        }
+
         It "-v without -d is rejected before any phase or delegation runs" {
             $callLog = Join-Path $script:repo.RepoRoot "call-log-teardown-v-only.txt"
             New-RecordingPrepareScripts -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog
@@ -2131,7 +2186,11 @@ Copy-Item -LiteralPath `$EnvironmentFile -Destination '$capturedEnvPath' -Force
                 "start-local-dms.ps1",
                 "start-published-dms.ps1",
                 "bootstrap-manifest.psm1",
-                "bootstrap-claims-gate.psm1"
+                "bootstrap-claims-gate.psm1",
+                # start-local-dms.ps1 imports this on the -d -v path to retire any CDC binding
+                # before the volumes are removed; with no binding state store staged here it finds
+                # nothing to retire and issues no Docker invocation of its own.
+                "cdc-teardown.psm1"
             )) {
                 Copy-DockerComposeFile -FileName $fileName -Destination $script:repo.DockerComposeRoot
             }

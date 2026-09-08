@@ -37,7 +37,7 @@ pwsh ./build-dms.ps1 InstanceE2ETest -Configuration Release -DatabaseEngine mssq
 
 The suite is engine-aware. `-DatabaseEngine` defaults to `postgresql`; pass `mssql` to run the
 same public entry point against SQL Server (which composes the `eng/docker-compose/.env.mssql`
-overlay and swaps in `mssql.yml`; the SQL Server stack is relational-only).
+overlay and swaps in `mssql.yml`). These route-context test lanes do not enable CDC.
 
 `-EnvironmentFile` is optional: when omitted, `InstanceE2ETest` resolves the tracked
 [`eng/docker-compose/.env.routeContext.e2e`](../../../../eng/docker-compose/.env.routeContext.e2e)
@@ -221,5 +221,13 @@ clients, fixture state, and hydration), `Models/`, and `Hooks/` (`SetupHooks.cs`
 
 ## CDC support
 
-Legacy document-store streaming tests have been removed. Relational CDC support is pending a
-separate implementation.
+Legacy document-store streaming tests have been removed. This Instance Management suite
+uses route-qualified data stores and its setup wrapper has no `-EnableKafkaCdc` switch.
+The shipped local CDC opt-in requires one unqualified data store, so these lanes do not
+exercise CDC registration or API-to-Kafka delivery.
+
+Relational CDC is available on PostgreSQL and SQL Server through the separate DMS
+bootstrap/E2E workflow. Follow the [CDC provider setup runbook](../../../../reference/cdc-documentation/operations-runbook.md#local-setup)
+and [verification status](../../../../reference/cdc-documentation/cdc-inv-evidence.md)
+for that workflow, including the unmet E19-06 API-consumer handoff. This suite's restriction
+is not a provider limitation.

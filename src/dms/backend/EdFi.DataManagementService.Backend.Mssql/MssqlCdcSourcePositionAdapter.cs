@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+﻿// SPDX-License-Identifier: Apache-2.0
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
@@ -45,6 +45,26 @@ internal sealed class MssqlCdcSourcePositionAdapter(
         );
         if (diagnostics.HasDiagnostics || heartbeatCaptureInstanceName is null)
         {
+            return CdcProviderBarrierCaptureResult.Failure(
+                CdcProvider.SqlServer,
+                capturedAt,
+                diagnostics.Diagnostics
+            );
+        }
+
+        // The wait below is for a heartbeat after-image past the sequence read at its start, and those
+        // rows come from the connector's own heartbeat.action.query. A connector the caller observed
+        // stopped or paused writes none, so waiting produces the same uncaptured barrier as this - only
+        // after the full capture timeout, which a restart of that very connector then spent before it
+        // could issue its resume. Reported as unavailable rather than as a reached or unreached barrier,
+        // because no position was observed either way.
+        if (!request.ConnectorCanAdvance)
+        {
+            diagnostics.LocalStateUnavailable(
+                HeartbeatSequencePath,
+                "CDC SQL Server provider barrier capture was not attempted: the connector is not running, "
+                    + "so no heartbeat can advance the capture instance past its current sequence."
+            );
             return CdcProviderBarrierCaptureResult.Failure(
                 CdcProvider.SqlServer,
                 capturedAt,
@@ -286,6 +306,7 @@ internal sealed class MssqlCdcSourcePositionAdapter(
                     ConnectorOffset = request.ConnectorOffset,
                     ProviderHistory = request.ProviderHistory,
                     SqlServerSchemaHistory = request.SqlServerSchemaHistory,
+                    PublicTopicPublication = request.PublicTopicPublication,
                     LatchedIncident = request.LatchedIncident,
                     ExpectedConnectSourcePartitionHash = request.ExpectedConnectSourcePartitionHash,
                     Diagnostics = [.. diagnostics.Diagnostics],

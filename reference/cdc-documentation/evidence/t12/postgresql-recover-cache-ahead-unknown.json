@@ -1,0 +1,60 @@
+{
+  "provider": "postgresql",
+  "command": "recover-cache-ahead",
+  "evidence": "unknown",
+  "observedHistory": "Unknown",
+  "boundary": "packaged CLI, synthetic durable records, real provider database; no broker/capture",
+  "ExitCode": 10,
+  "StandardOutput": "{\"command\":\"internalOnlyCacheAheadRecovery\",\"targetKey\":{\"tenantKey\":\"\",\"dataStoreId\":1},\"status\":\"rejectedNoMutation\",\"classification\":\"downstreamHistoryPresentOrUnknown\",\"mutated\":false,\"targetGeneration\":1,\"physicalSourceFingerprint\":\"sha256:00f7018d204e47266ad4e157f08777b7d9c458d21a84479efbd72582a5c185e0\",\"lifecycle\":\"tracking\",\"cacheAheadRecoveryRequired\":true,\"phaseDiagnostics\":[{\"currentPhase\":\"preflight\",\"lastCompletedPhase\":\"resolveTarget\",\"retryable\":false,\"diagnosticCategory\":\"downstreamPublicationHistoryPresentOrUnknown\",\"affectedDocumentIds\":[],\"message\":\"Downstream publication history is not internal-only.\"}],\"offlineWriterAdmission\":\"internalOnlyCacheAheadRecoveryWritersClosedAndDrained\",\"elapsedCommandTimeSeconds\":0.0479298}\n",
+  "StandardError": "",
+  "before": {
+    "Lifecycle": {
+      "ProjectionLifecycleState": "Tracking",
+      "CacheAheadRecoveryRequired": true
+    },
+    "Counts": {
+      "DocumentCacheRows": 1,
+      "WorkRows": 1
+    },
+    "CachedVersions": {
+      "1": 11
+    },
+    "OldestWorkFirstEnqueuedAt": "2026-09-06T23:12:47.378051Z",
+    "CanonicalDocuments": 1,
+    "PhysicalSourceFingerprint": "sha256:00f7018d204e47266ad4e157f08777b7d9c458d21a84479efbd72582a5c185e0",
+    "Cache": {
+      "1": "{\"seeded\": true}"
+    },
+    "Work": {
+      "1": 10
+    }
+  },
+  "after": {
+    "Lifecycle": {
+      "ProjectionLifecycleState": "Tracking",
+      "CacheAheadRecoveryRequired": true
+    },
+    "Counts": {
+      "DocumentCacheRows": 1,
+      "WorkRows": 1
+    },
+    "CachedVersions": {
+      "1": 11
+    },
+    "OldestWorkFirstEnqueuedAt": "2026-09-06T23:12:47.378051Z",
+    "CanonicalDocuments": 1,
+    "PhysicalSourceFingerprint": "sha256:00f7018d204e47266ad4e157f08777b7d9c458d21a84479efbd72582a5c185e0",
+    "Cache": {
+      "1": "{\"seeded\": true}"
+    },
+    "Work": {
+      "1": 10
+    }
+  },
+  "recordsBefore": {
+    "bindings/runbook-rejections/instance/1.json": "{unreadable fixture record"
+  },
+  "recordsAfter": {
+    "bindings/runbook-rejections/instance/1.json": "{unreadable fixture record"
+  }
+}

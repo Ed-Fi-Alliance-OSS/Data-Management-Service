@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: Apache-2.0
+﻿# SPDX-License-Identifier: Apache-2.0
 # Licensed to the Ed-Fi Alliance under one or more agreements.
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
@@ -159,6 +159,20 @@ Describe "DocumentCacheAdmin package target" {
         $pushPackage = Get-ScriptFunctionAst -FunctionName "PushPackage"
 
         $pushPackage.Extent.Text | Should -BeLike '*dotnet nuget push $PackageFile --api-key $NuGetApiKey --source $EdFiNuGetFeed*'
+    }
+
+    It "smoke-tests the cdc verb group on the installed tool" {
+        $smokeScriptText = Get-Content -LiteralPath $script:smokeScriptPath -Raw
+
+        $smokeScriptText | Should -BeLike '*@("cdc", "--help")*'
+        $smokeScriptText | Should -BeLike '*@("cdc", "enable", "--help")*'
+
+        foreach ($cdcVerbName in @("enable", "status", "restart", "stop", "adopt", "replace-source", "retire")) {
+            $smokeScriptText | Should -BeLike "*`"$cdcVerbName`"*"
+        }
+
+        $smokeScriptText | Should -BeLike '*--database-creation-mode*'
+        $smokeScriptText | Should -BeLike '*--write-admission*'
     }
 
     It "refuses to delete an existing smoke tool path without the package smoke marker" {

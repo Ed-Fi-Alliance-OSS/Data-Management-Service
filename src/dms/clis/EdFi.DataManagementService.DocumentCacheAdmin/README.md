@@ -1,4 +1,4 @@
-# Ed-Fi DocumentCache Administration CLI
+﻿# Ed-Fi DocumentCache Administration CLI
 
 `EdFi.Api.DocumentCacheAdmin` packages the `dms-document-cache` .NET tool for Ed-Fi DMS
 DocumentCache status and administration workflows. It reuses the DMS target registry,
@@ -37,13 +37,34 @@ The CLI loads DMS configuration from the normal settings and environment provide
 `--settings <path>` and `--environment <name>` for non-secret configuration selection, and
 use `--datastore postgresql|sqlserver` only to override the provider value for the current
 run. Connection strings, CMS credentials, client secrets, and other secrets must come from
-settings, environment variables, user secrets, or the deployment secret provider. The CLI
-does not expose secret-bearing command-line options.
+protected settings or environment variables. The CLI does not directly load user secrets
+or remote secret providers; deployment automation must resolve those into its loaded
+configuration sources. The CLI does not expose secret-bearing command-line options.
+See the [CDC configuration catalog](../../../../docs/CONFIGURATION.md#datamanagementdocumentcachecdc)
+for exact precedence, required settings, defaults, and binding-state path resolution.
 
 The tool package includes the default Ed-Fi ApiSchema workspace and uses it when
 `AppSettings:UseApiSchemaPath` is absent or `false`. Set `AppSettings:UseApiSchemaPath=true`
 and `AppSettings:ApiSchemaPath=<workspace>` only when the run must use an external
 bootstrap workspace with `bootstrap-api-schema-manifest.json`.
+
+The `cdc` verbs read the deployment's CDC control-plane settings from
+`DataManagement:DocumentCache:Cdc`. Each `cdc` option below overrides one key in that
+section for the current run only. Keys that have no command-line option — topic prefix,
+partition count, the principals, and the Kafka Connect worker settings — come only from
+settings or environment variables.
+
+The connector is named to two authorities that do not share a naming scheme, so it has two
+principal settings and they are not interchangeable. `ConnectorDatabasePrincipal` is the
+database account it authenticates as and the grantee of the source grants, in whatever form
+the engine takes (`dms_connector`); it is required for every `cdc` verb. `ConnectorKafkaPrincipal`
+is its Kafka identity, in the broker's typed form (`User:dms_connector`), and is required only
+when `AclsEnabled`.
+
+Every Kafka principal — that one, `ConnectWorkerPrincipal`, and each `Consumers[].Principal`
+— is validated in the broker's `<type>:<name>` form at options validation, so a database role
+name supplied where a Kafka principal belongs is refused before any artifact is provisioned
+rather than by the authorizer afterwards.
 
 Every invocation targets exactly one DocumentCache target:
 
@@ -87,17 +108,128 @@ dms-document-cache status --request-json status-target.json --settings ./appsett
 | `rebuild-online` | Rebuild DocumentCache while canonical writes remain online. | `onlineCacheRebuild` | None |
 | `scrub` | Run the explicit integrity scrub over source/cache/work relationships. | `integrityScrub` | None |
 | `recover-cache-ahead` | Run the proven-internal-only cache-ahead recovery workflow. | `internalCacheAheadRecovery` | `closedAndDrained` |
+| `cdc` | Verb group for deployment-owned CDC binding operations on one target. | Per verb | None |
+
+The `cdc` verb group carries the deployment-owned CDC binding operations:
+
+| Verb | Purpose | Required confirmation | Other required options |
+| --- | --- | --- | --- |
+| `cdc enable` | Enable CDC on a target created for this provisioning. | None | `--database-creation-mode`, `--write-admission` |
+| `cdc status` | Report deployment-owned CDC readiness for one binding. | None | None |
+| `cdc restart` | Restart the binding's connector after affirmative continuity evidence. | None | None |
+| `cdc stop` | Stop the binding's connector, so the worker holds it fenced across a planned stop. Removes nothing. | None | None |
+| `cdc adopt` | Adopt an operator-supplied binding around a complete governed artifact set. | None | `--binding-json` |
+| `cdc replace-source` | Replace the physical source behind an enabled target with a new binding generation. | `cdcSourceReplacement` | `--database-creation-mode`, `--write-admission`, `--previous-generation` |
+| `cdc retire` | Retire a binding and its governed artifacts. | `cdcBindingRetirement` | None |
+
+`cdc enable` requires the target to already be an operator-configured
+`DataManagement:DocumentCache:Targets` entry in the running DMS's own configuration. It is
+the only initial-enable path: the physical database must have been created for this CDC
+provisioning and must never have admitted a write. An already-provisioned database is not
+eligible, and neither the CLI nor the control plane infers eligibility from the schema it
+finds.
+
+`cdc adopt` repairs deployment state around an already complete governed-artifact set from
+the complete binding record `--binding-json` supplies. It is not a first-time enablement
+path, and adoption never infers a binding from the topics or connector configuration that
+happen to exist.
+
+`cdc replace-source` points a logical target at a different physical database as a new
+binding generation. It fences the connector of the generation named by
+`--previous-generation`, then runs the replacing generation through the same initial
+readiness sequence `cdc enable` runs, which is why it requires the same
+`--database-creation-mode` and `--write-admission` evidence: in-place source reset and topic
+reuse are deferred, so the replacing database must be one created for this CDC provisioning
+that has never admitted a write, and no governed artifact of the generation it supersedes is
+reused.
+
+The replacing source's identity must already have been rotated away from the generation it
+replaces. A restore, rollback, or copy carries the replaced database's own
+`dms.DataStoreIdentity` row, so its fingerprint is the replaced source's until it is rotated,
+and binding a new generation to an unrotated identity would publish one physical source under
+two generations. The verb refuses that rather than proceeding.
+
+The generation it supersedes is retained, not retired: its connector configuration and
+committed offsets are left for a `cdc retire` that removes them in order.
+
+`cdc retire` proves, before it fences anything, that the binding record names this deployment's
+provider and that the connected database is the binding's own physical source. A retained
+superseded generation is therefore retired against the connection string of the database it was
+bound to, not the replacement's: retiring it against the replacement would find none of its
+artifacts and certify an absence in a database that never held them.
+
+The Configuration Service names the replacing database once a replacement has run, so
+`--source-connection-variable` supplies the superseded generation's own. It takes the name of an
+environment variable rather than the connection string, so no credential reaches the command line
+or a container argument list, and a variable that is unset or empty is a refusal rather than a
+fallback to the data store's current connection. The physical-source proof above is unchanged: the
+option selects which database is inspected, and the fingerprint comparison still decides whether
+the retirement may proceed.
+
+Select the retained generation explicitly with `--generation`, and use the same
+`--cdc-binding-state-path` as setup. A binding record spells the default tenant `default`;
+translate it to `--tenant-key ''` (or omit that option) for the CLI. Literal
+`--tenant-key default` is rejected case-insensitively by every CDC verb before dispatch,
+with argument-error exit code `64`. The token is reserved for binding records; a named
+tenant called `default` is unsupported by the CDC CLI.
+
+`--confirm cdcBindingRetirement` authorizes destructive removal of that generation.
+`--connector-already-absent` is a separate operator judgement for a connector never
+registered or already removed. The worker cannot tell those cases from an external
+configuration deletion that left committed offsets behind. After reconciling that
+history, the option permits retirement to continue on a missing connector; the proof
+records the offsets as an operator assertion, not a worker observation. It does not
+bypass the original-source guard or a worker failure.
+
+Successful retirement emits a full `CdcCleanupProof` and exits `0`. Refused/incomplete
+retirement emits no proof: in `--json` mode stdout is empty and stderr carries diagnostic
+codes/messages. Exit `10` means a refusal before mutation; `12` means incomplete retryable
+cleanup. Keep the binding and original-source reference for retry after a partial failure,
+including a provider-cleanup timeout. Reissue the same target/generation; each CLI
+invocation generates a new operation ID. The absent-connector judgement may be needed
+once an earlier attempt removed the configuration. Shared worker state is retained,
+and the filesystem store retains a retirement identity record after deleting the selected
+incident/binding. Archive the CLI cleanup proof separately. Follow the
+[retirement procedure](../../../../reference/cdc-documentation/operations-runbook.md#retire-binding-generation)
+for proof inspection, interruption handling, and retained evidence.
+
+When a `cdc` verb produces a contract, its type is selected by the verb rather than
+by the outcome:
+
+| Verb | Shared contract | Reported outcome values |
+| --- | --- | --- |
+| `cdc enable`, `cdc replace-source` | `CdcAdmission` | `admitted`, `notAdmitted`, `unknown` |
+| `cdc status`, `cdc restart`, `cdc stop` | `CdcStatus` | `ready`, `notReady`, `unknown` |
+| `cdc adopt` | `CdcAdoptionProof` on success; no contract on refusal | `completed`; refusal is `rejectedNoMutation` internally |
+| `cdc retire` | `CdcCleanupProof` | `completed`, `rejectedNoMutation`, `incompleteRetryable` |
+
+A successful adoption proof has `binding` and `verificationResults`, not an `outcome`
+property. When adoption refuses, `--json` leaves stdout empty and writes diagnostic
+code/message lines to stderr; no partial or rejected proof is issued. See the
+[complete-record adoption procedure](../../../../reference/cdc-documentation/operations-runbook.md#adopt-missing-binding).
+
+Without `--json`, a `cdc` verb prints its outcome followed by the governed names it
+operated on — connector name, provider, data store identifier, the opaque instance key,
+and the public, progress, and SQL Server schema-history topics. No connection string,
+credential, or tenant display name appears in either output mode.
 
 Current packaged production behavior intentionally rejects `activate-offline`,
 `deactivate-offline`, and `recover-cache-ahead` unless a trusted downstream
 publication-history provider reports `internalOnly` for the same target and
-physical-source fingerprint. The default provider reports `unknown` because durable CDC
-binding/history evidence is not available in this product scope. Treat
-`downstreamHistoryPresentOrUnknown` as expected in that default state.
+physical-source fingerprint. This tool registers the CDC control plane, so that provider
+reads the durable binding state store, which holds positive evidence of publication and
+nothing else: a binding naming the target on the resolved physical source reports `active`;
+a binding naming it on an earlier source, or a retirement record naming it, reports
+`historical`; and every other shape reports `unknown` — a listing that fails, a record that
+cannot be read, an empty store, a store whose records all name other targets, and a store with
+no deployment key configured. Nothing in those records states that a target was never
+published, so the provider never reports `internalOnly` and these three commands are rejected
+in every case. Treat `downstreamHistoryPresentOrUnknown` as the expected outcome.
 
-All commands support `--json`. In JSON mode, stdout contains exactly one shared contract
-document and no prose. Logs, warnings, progress, and sanitized diagnostics go to stderr or
-configured log sinks. Status effective settings and administrative command durations use
+All commands support `--json`. In JSON mode, stdout contains one shared contract
+document when produced and no prose. A CDC refusal that produces no contract leaves
+stdout empty and reports diagnostics on stderr. Logs, warnings, progress, and sanitized
+diagnostics go to stderr or configured log sinks. Status effective settings and administrative command durations use
 numeric `*Seconds` JSON fields; administrative command results expose elapsed workflow time
 as `elapsedCommandTimeSeconds`.
 
@@ -136,6 +268,39 @@ Mutating command options:
 | `--expected-physical-source-fingerprint <value>` | None | Optional `sha256:<lowercase-hex>` guard checked before mutation. |
 | `--command-timeout-seconds <seconds>` | `86400` | Total workflow budget mapped to `DataManagement:DocumentCache:Administration:WorkflowTimeout`. |
 | `--offline-writer-admission closedAndDrained` | None | Required only for `activate-offline`, `deactivate-offline`, and `recover-cache-ahead`. |
+
+`cdc` verb options. Every `cdc` verb accepts the target options above and the options in
+this table; the configuration key column names the `DataManagement:DocumentCache:Cdc` key
+each one overrides for the current run:
+
+| Option | Description | Mapped configuration key |
+| --- | --- | --- |
+| `--cdc-binding-state-path <path>` | Root path of the durable CDC binding state store. | `BindingStateStore:RootPath` |
+| `--deployment-key <value>` | Opaque deployment key contributing to governed artifact names. | `DeploymentKey` |
+| `--instance-key <value>` | Opaque instance key contributing to governed artifact names. | `InstanceKey` |
+| `--generation <n>` | Positive binding generation. | `Generation` |
+| `--previous-generation <n>` | Positive generation being replaced; required by `cdc replace-source` and never inferred from the generations that exist. | None; request-only. |
+| `--kafka-bootstrap-servers <value>` | Kafka bootstrap servers the governed topics are provisioned through. | `KafkaBootstrapServers` |
+| `--connect-base-url <url>` | Base URL of the Kafka Connect REST interface. | `ConnectBaseUri` |
+| `--max-record-bytes <n>` | Largest record the pipeline must carry end to end. | `MaxRecordBytes` |
+| `--durability-profile local\|production` | Durability profile governed topics are created with and validated against. | `DurabilityProfile` |
+| `--binding-json <path\|->` | Complete binding record to adopt; required by `cdc adopt` and never inferred. | None; request-only. |
+| `--connector-already-absent` | Assert the connector the record names is already gone, so `cdc retire` may proceed without observing its committed offsets. | None; request-only. |
+| `--source-connection-variable <name>` | Name of an environment variable holding the connection string of the database the generation being retired was bound to. Accepted by `cdc retire` only. The value is read from the environment, never from the command line. | None; request-only. |
+
+`--generation` and `--previous-generation` are positive integers, and
+`--max-record-bytes` is a positive byte count. Zero, negative, malformed, and overflow
+values are argument errors, as is a `--durability-profile` outside `local|production`. An
+unreadable or malformed `--binding-json` document is an argument error too, and no control
+plane operation is attempted.
+
+`cdc enable` additionally requires two exact-token evidence flags,
+because the control plane never infers either fact for itself:
+
+| Option | Required value |
+| --- | --- |
+| `--database-creation-mode` | `created-for-initial-cdc-provisioning` |
+| `--write-admission` | `closed-never-opened` |
 
 Timeout values are positive numeric seconds. Zero, negative, malformed, overflow, and
 unsupported aliases such as `--timeout`, `--provider-command-timeout`, and
@@ -191,6 +356,39 @@ default packaged production state, this command rejects with
 dms-document-cache recover-cache-ahead --data-store-id 1 --confirm internalCacheAheadRecovery --offline-writer-admission closedAndDrained --settings ./appsettings.Production.json --environment Production --json
 ```
 
+Enable CDC on a target whose database was created for this provisioning:
+
+```bash
+dms-document-cache cdc enable --data-store-id 1 --database-creation-mode created-for-initial-cdc-provisioning --write-admission closed-never-opened --durability-profile local --settings ./appsettings.Production.json --environment Production --json
+```
+
+Report deployment-owned CDC readiness for that binding:
+
+```bash
+dms-document-cache cdc status --data-store-id 1 --settings ./appsettings.Production.json --environment Production --json
+```
+
+Restart the binding's connector and report the readiness that follows:
+
+```bash
+dms-document-cache cdc restart --data-store-id 1 --settings ./appsettings.Production.json --environment Production --json
+```
+
+Adopt an existing governed-artifact set under a binding record you supply:
+
+```bash
+dms-document-cache cdc adopt --data-store-id 1 --binding-json ./binding.json --settings ./appsettings.Production.json --environment Production --json
+```
+
+Retire a selected retained generation and its governed artifacts. The deployment secret
+mechanism must export `CDC_ORIGINAL_SOURCE_CONNECTION` for its original database first;
+only the variable name is passed. This synthetic example maps record tenant `default`
+to the empty CLI tenant and requires prior review of the selected record:
+
+```bash
+dms-document-cache cdc retire --tenant-key '' --data-store-id 1 --deployment-key cdc-lab --instance-key ds1 --generation 1 --cdc-binding-state-path /srv/dms-cdc-state --source-connection-variable CDC_ORIGINAL_SOURCE_CONNECTION --confirm cdcBindingRetirement --settings ./appsettings.Production.json --environment Production --json
+```
+
 Mutating request JSON uses the shared administrative DTO shape:
 
 ```json
@@ -237,6 +435,35 @@ For Exit code `12`, retry the same command with the same target and guard values
 runner reacquires the provider mutex and revalidates durable state before resuming; it does
 not reconnect under presumed mutex ownership after cancellation or session loss.
 
+The `cdc` verbs use the same codes, classified from the shared CDC contract they produce:
+
+| `cdc` outcome | Code |
+| --- | ---: |
+| Write admission opened, adoption completed, or retirement completed. | 0 |
+| A readiness answer of any kind from `cdc status`, including `notReady` and `unknown`. | 0 |
+| A restart the worker applied, whatever the connector reports afterwards. | 0 |
+| A stop the worker applied, or a connector it no longer holds. A fenced target is not ready; the fence still succeeded. | 0 |
+| The binding is missing, does not match, or the operation is invalid for it. | 10 |
+| A retirement, restart, or stop refused before it changed anything. | 10 |
+| The binding state store could not be read or written. | 11 |
+| Write admission did not open, or a retirement removed only part of the artifact set. | 12 |
+
+For `cdc replace-source`, a returned `CdcAdmission` with `notAdmitted` or `unknown`
+exits `12`, including a controller refusal settled before fencing. Inspect its diagnostics:
+`replaceSourceRefused` with `retryable=false` requires prerequisite correction, not an
+automatic retry merely because the process exited `12`. An adoption controller refusal
+(including a refused durable import) exits `10` with no proof; early invocation/configuration
+failures follow their own codes. See [replacement outcomes and retries](../../../../reference/cdc-documentation/operations-runbook.md#replace-physical-source).
+
+Write admission that did not open is retryable rather than a rejection: the binding record
+is made durable before any external artifact is created, so such a run may already have
+mutated deployment state, and every `cdc` verb is built to be reissued unchanged. A partial
+retirement leaves the binding record in place for the same reason, and is completed by being
+reissued. A retirement, restart, or stop that changed nothing is a rejection instead: reissuing it
+unchanged repeats a request that was wrong the first time. A readiness report from `cdc status`
+is a success whatever it reports, because the command answered; only a status that could not be
+produced at all fails.
+
 ## Runbook Links
 
 - DocumentCache operator workflows are in the
@@ -262,10 +489,26 @@ not reconnect under presumed mutex ownership after cancellation or session loss.
   [Cache-Ahead Invariant Recovery](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/reference/design/backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#cache-ahead-invariant-recovery)
   and
   [Contract Change and Repair Operations](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#contract-change-and-repair-operations).
-- Kafka connector setup, connector teardown, source replacement, binding retirement, topic
-  management, CDC bootstrap orchestration, and downstream publication containment are E19
-  concerns. Start with
-  [Add CDC Setup, Monitoring, Recovery, and Security Runbooks](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/reference/design/backend-redesign/epics/19-cdc-kafka/07-ops-docs-runbooks.md).
+- `cdc enable` eligibility, the evidence the two exact-token flags assert, and the order the
+  initial readiness sequence runs in are owned by
+  [Enablement and Initial Readiness Sequence](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#enablement-and-initial-readiness-sequence).
+- The binding record `cdc adopt`, `cdc replace-source`, and `cdc retire` operate on — its
+  identity, its fail-closed creation and cleanup order, and the physical-source fingerprint
+  it is bound to — is owned by
+  [Deployment-Owned CDC Target and Physical Source Binding](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding).
+- The governed artifact names the `cdc` verbs report, and the provider capture artifacts and
+  topics they create, are owned by
+  [Connector Topology and Provider Setup](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#connector-topology-and-provider-setup).
+- The continuity evidence `cdc restart` depends on, and the terminal source-history loss it
+  cannot recover from, are owned by
+  [Source-History Continuity](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#source-history-continuity).
+- CDC setup, monitoring, continuity, source replacement, retirement, and downstream
+  containment procedures are in the
+  [CDC operations runbook](../../../../reference/cdc-documentation/operations-runbook.md).
+  The [CDC evidence index](../../../../reference/cdc-documentation/cdc-inv-evidence.md)
+  separates fixture coverage from pending live provider replays and unmet dependencies;
+  the [configuration catalog](../../../../docs/CONFIGURATION.md#datamanagementdocumentcachecdc)
+  owns the shipped settings and defaults.
 - The CLI story boundary and package verification evidence are in
   [Add a DocumentCache Administration CLI](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/reference/design/backend-redesign/epics/18-document-cache/09-documentcache-administration-cli.md);
   cross-feature DocumentCache runbook evidence is tracked by
@@ -273,8 +516,9 @@ not reconnect under presumed mutex ownership after cancellation or session loss.
 
 ## Out of Scope
 
-This CLI does not configure Kafka connectors, create or delete topics, retire source
-bindings, replace a physical source, orchestrate CDC bootstrap, run representation restamp,
-publish release artifacts, own release pipeline work, expose HTTP administration
-endpoints, or provide an interactive wizard. Those workflows are owned by the E18/E19
-stories linked above.
+This CLI does not run representation restamp, publish release artifacts, own release
+pipeline work, expose HTTP administration endpoints, or provide an interactive wizard.
+Kafka connector, topic, and provider capture artifacts are governed only through the `cdc`
+verb group above, and only for a target the running DMS already has configured; the
+surrounding bootstrap and E2E orchestration that invokes it is owned by the E18/E19 stories
+linked above.

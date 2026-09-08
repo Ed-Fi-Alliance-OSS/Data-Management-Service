@@ -1,0 +1,60 @@
+{
+  "provider": "mssql",
+  "command": "deactivate-offline",
+  "evidence": "mismatchedTarget",
+  "observedHistory": "Unknown",
+  "boundary": "packaged CLI, synthetic durable records, real provider database; no broker/capture",
+  "ExitCode": 10,
+  "StandardOutput": "{\"command\":\"offlineDeactivation\",\"targetKey\":{\"tenantKey\":\"\",\"dataStoreId\":1},\"status\":\"rejectedNoMutation\",\"classification\":\"downstreamHistoryPresentOrUnknown\",\"mutated\":false,\"targetGeneration\":1,\"physicalSourceFingerprint\":\"sha256:f18d7bccbe1858786dad277b818b14c731920cd55eceb1e50c9c2c10e06b9f9e\",\"lifecycle\":\"tracking\",\"cacheAheadRecoveryRequired\":false,\"phaseDiagnostics\":[{\"currentPhase\":\"preflight\",\"lastCompletedPhase\":\"resolveTarget\",\"retryable\":false,\"diagnosticCategory\":\"downstreamPublicationHistoryPresentOrUnknown\",\"affectedDocumentIds\":[],\"message\":\"Downstream publication history is not internal-only.\"}],\"offlineWriterAdmission\":\"offlineDeactivationWritersClosedAndDrained\",\"elapsedCommandTimeSeconds\":0.0559999}\n",
+  "StandardError": "",
+  "before": {
+    "Lifecycle": {
+      "ProjectionLifecycleState": "Tracking",
+      "CacheAheadRecoveryRequired": false
+    },
+    "Counts": {
+      "DocumentCacheRows": 1,
+      "WorkRows": 1
+    },
+    "CachedVersions": {
+      "1": 10
+    },
+    "OldestWorkFirstEnqueuedAt": "2026-09-06T23:11:52.9533333",
+    "CanonicalDocuments": 1,
+    "PhysicalSourceFingerprint": "sha256:f18d7bccbe1858786dad277b818b14c731920cd55eceb1e50c9c2c10e06b9f9e",
+    "Cache": {
+      "1": "{\"seeded\":true}"
+    },
+    "Work": {
+      "1": 10
+    }
+  },
+  "after": {
+    "Lifecycle": {
+      "ProjectionLifecycleState": "Tracking",
+      "CacheAheadRecoveryRequired": false
+    },
+    "Counts": {
+      "DocumentCacheRows": 1,
+      "WorkRows": 1
+    },
+    "CachedVersions": {
+      "1": 10
+    },
+    "OldestWorkFirstEnqueuedAt": "2026-09-06T23:11:52.9533333",
+    "CanonicalDocuments": 1,
+    "PhysicalSourceFingerprint": "sha256:f18d7bccbe1858786dad277b818b14c731920cd55eceb1e50c9c2c10e06b9f9e",
+    "Cache": {
+      "1": "{\"seeded\":true}"
+    },
+    "Work": {
+      "1": 10
+    }
+  },
+  "recordsBefore": {
+    "bindings/runbook-rejections/instance/1.json": "{\"version\":1,\"deploymentKey\":\"runbook-rejections\",\"tenantKey\":\"another-tenant\",\"dataStoreId\":\"1\",\"instanceKey\":\"instance\",\"generation\":1,\"provider\":\"sqlServer\",\"physicalSourceFingerprint\":\"sha256:f18d7bccbe1858786dad277b818b14c731920cd55eceb1e50c9c2c10e06b9f9e\",\"connectorName\":\"runbook-rejections-instance-g1\",\"topicName\":\"edfi.documents.instance.instance-g1.documents.v1\",\"partitionCount\":1,\"partitionerAlgorithm\":\"kafka-murmur2-v1\",\"contractVersion\":1}"
+  },
+  "recordsAfter": {
+    "bindings/runbook-rejections/instance/1.json": "{\"version\":1,\"deploymentKey\":\"runbook-rejections\",\"tenantKey\":\"another-tenant\",\"dataStoreId\":\"1\",\"instanceKey\":\"instance\",\"generation\":1,\"provider\":\"sqlServer\",\"physicalSourceFingerprint\":\"sha256:f18d7bccbe1858786dad277b818b14c731920cd55eceb1e50c9c2c10e06b9f9e\",\"connectorName\":\"runbook-rejections-instance-g1\",\"topicName\":\"edfi.documents.instance.instance-g1.documents.v1\",\"partitionCount\":1,\"partitionerAlgorithm\":\"kafka-murmur2-v1\",\"contractVersion\":1}"
+  }
+}

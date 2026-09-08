@@ -96,6 +96,125 @@ available.
 containing ASCII whitespace, commas, semicolons, quotes, brackets, braces, or control
 characters are invalid and leave the DocumentCache status endpoint unmapped.
 
+## DataManagement:DocumentCache:Cdc
+
+These settings configure the deployment-owned `dms-document-cache cdc` control plane;
+their presence does not enable CDC. Start with the
+[CDC runbook](../reference/cdc-documentation/operations-runbook.md#prerequisites).
+Installation, syntax, confirmations, and exit codes remain in the
+[CLI reference](../src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin/README.md).
+Design owners: [target selection](../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#configuration-and-projection-target-selection),
+[binding identity](../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding),
+[readiness](../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#projection-health-and-deployment-owned-cdc-readiness),
+and [record size](../reference/design/backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#record-size).
+
+### CDC configuration sources and targets
+
+For the shipped CLI, increasing precedence is: optional `appsettings.json` in the starting
+directory, optional `appsettings.{environment}.json`, explicit `--settings` file,
+environment variables, then supplied CLI overrides. Environment selection is
+`--environment`, then `DOTNET_ENVIRONMENT`, then `ASPNETCORE_ENVIRONMENT`. The CLI's
+configuration builder does not itself load user secrets or remote secret providers;
+deployment automation must supply their resolved values through the loaded sources.
+Use `__` for environment section separators, for example
+`DataManagement__DocumentCache__Cdc__LagThreshold=00:00:30`. Dictionary keys retain dots.
+Omitted CDC flags leave configuration intact; request-only flags such as the previous
+generation and provisioning assertions are not configuration keys.
+
+Every CDC target must be an explicit `DataManagement:DocumentCache:Targets` entry on a
+running DMS projector host and in the control plane's configuration. Initial-enable
+preflight reads that membership before the CLI's invocation target override;
+`--data-store-id` alone does not establish projector configuration. `TenantKey` is empty
+for the default tenant and `DataStoreId` is positive. A CDC binding record spells that
+tenant `default`; translate it back to the empty key (or omit `--tenant-key`) for the CLI.
+Every CDC verb rejects `--tenant-key default` (case-insensitively) before dispatch: the
+token is reserved for binding records, so named tenants called `default` are unsupported
+by the CDC CLI. Target configuration neither changes durable lifecycle nor opens writer admission; read
+acceleration is independently optional.
+
+### CDC identity, endpoints, and policy
+
+Names below are relative to `DataManagement:DocumentCache:Cdc`. Required text defaults to
+empty and must be nonblank. Required positive integers default to zero and must be supplied.
+Values supplied by local wrappers are not defaults of the CLI options object.
+
+| Parameter | Requirement and shipped default |
+| --- | --- |
+| DeploymentKey, InstanceKey, TopicPrefix | Required text contributing to governed artifact names; generated-name validation also applies. |
+| Generation | Required positive `Int64` binding generation; the CLI does not select the latest generation automatically. |
+| PartitionCount | Required positive `Int32` public-topic partition count. |
+| KafkaBootstrapServers | Required broker bootstrap addresses. Control-plane and connector clients must reach the same Kafka cluster. |
+| ConnectBaseUri | Required absolute HTTP(S) Kafka Connect REST URI. |
+| ConnectMetricsBaseUri | Optional absolute HTTP(S) base URI for the worker's Jolokia bridge. Blank derives the scheme and host from `ConnectBaseUri`, port `8778`, root path `/`. The reader appends `jolokia/read/...`; supply the bridge base, not the read URL. The image enables its bridge with `ENABLE_JOLOKIA=true`. |
+| ConnectWorkerKey | Required worker-group identifier used for offset-store validation. |
+| ConnectOffsetStorageTopic | Required shared worker offset-topic name; never a per-binding teardown artifact. |
+| DurabilityProfile | Required `local` or `production`, case-insensitive; no default. Selects governed replication/in-sync-replica expectations from the [topic contract](../reference/design/backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#topic). |
+| MaxRecordBytes | Required positive `Int32` byte budget; no default. Drives producer/topic configuration and broker-limit verification. Consumers must support the same end-to-end budget. |
+| ProducerBufferBytes | Optional byte override, at least `max(33554432, MaxRecordBytes)`. The renderer uses that minimum when omitted. |
+| HeartbeatInterval | Optional positive `TimeSpan`; omitted renders `5000` milliseconds. |
+| SqlServerPollInterval | Optional at generic options binding, but required by the SQL Server renderer: positive and no greater than the effective heartbeat interval. No default; not required for PostgreSQL. |
+| LagThreshold | Positive `TimeSpan` for connector-lag assessment; default `00:00:30`. |
+| DmsBaseUrl | Default empty; supplied values must be absolute HTTP(S) URIs. Workflows collecting projection evidence require the running DMS URL. |
+| DmsBearerToken | Default empty; workflows collecting projection evidence require a bearer token with the configured DocumentCache status role. Excluded from options JSON serialization. Adoption and retirement do not require projection-status credentials. |
+
+Configuration intervals use `TimeSpan` notation, for example `00:00:05`; CLI timeout
+options ending in `-seconds` take positive numeric seconds. Connector heartbeat/poll
+intervals render as milliseconds rounded upward. Lag observations use milliseconds;
+missing metrics do not prove zero lag.
+
+The binding contract owns identity. Timeouts, lag thresholds, credentials, and buffer/record
+budgets are operational policy, not additional binding identity. Policy changes do not
+authorize source or artifact changes. Record-budget changes follow the
+[coordinated increase procedure](../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#in-place-record-size-increase).
+
+### CDC principals and credentials
+
+| Parameter | Requirement and shipped default |
+| --- | --- |
+| SetupPrincipal | Required database setup principal name on every CDC verb, including validate-only operations. Separately supply a source connection with the necessary setup authority. |
+| ConnectorDatabasePrincipal | Required database login/role, such as `cdc_reader`, on every CDC verb; distinct from the Kafka identity. |
+| AclsEnabled | Default `false`. For a broker without an authorizer, evidence is not applicable, not proof of production isolation. |
+| ConnectorKafkaPrincipal, ConnectWorkerPrincipal | Default empty; required with `AclsEnabled=true`, in broker `<type>:<name>` form such as `User:cdc_reader`. |
+| Consumers | Default empty list. Each entry pairs nonblank `Principal` and `ConsumerGroup`. Both are individually unique using ordinal comparison: no principal gets multiple groups and no group is shared. With ACLs enabled, principals must use broker typed form. |
+| ProviderConnectionProperties | Default empty dictionary. Renderer requires `database.hostname`, `database.user`, `database.password`, and PostgreSQL `database.dbname` or SQL Server `database.names` (exactly one database). Only provider-allowed connection keys are accepted. This configures connector access, separate from CMS-resolved setup access. |
+| KafkaClientSecurityProperties | Default empty dictionary for the connector's Java client. Allow-listed properties become `producer.override.*` and SQL Server schema-history client settings. Secret-bearing properties require externalized Connect references. |
+| KafkaAdminClientSecurityProperties | Default empty dictionary for the control plane's librdkafka client. Only `CdcControlOptions.AdminClientSecurityPropertyNames` are accepted, with nonblank values. Supply resolved secrets through protected configuration; Java JAAS/keystore property names are not interchangeable with librdkafka names. |
+
+For example, connector `database.password` can use `${env:CDC_SOURCE_PASSWORD}` when the
+worker has that named secret and its environment config provider enabled. Keep passwords,
+tokens, connection values, and JAAS secrets out of invocations and evidence artifacts.
+The [renderer input validator](../src/dms/backend/EdFi.DataManagementService.Backend.Cdc/CdcConnectorTemplateInputValidation.cs)
+owns provider/Java allow-lists, externalized-secret checks, and reserved generated keys;
+operator dictionaries cannot override generated capture, transform, or topic configuration.
+The [control options and validator](../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Control/CdcControlOptions.cs)
+own the separate admin allow-list. See [security ownership](../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#security-telemetry-and-operations).
+
+### CDC timeouts and durable state
+
+These positive `TimeSpan` values are under `DataManagement:DocumentCache:Cdc:Timeouts`.
+Timeout does not substitute for evidence or establish that a mutation rolled back.
+
+| Parameter | Default |
+| --- | --- |
+| EligibilityProbe, KafkaAdmin, ConnectRequest, StatusEndpoint | `00:00:30` each |
+| ProviderSetup | `00:05:00` |
+| ProjectionCaughtUp, ProviderBarrier | `00:10:00` each |
+| PollInterval | `00:00:02` between evidence reads |
+
+`DataManagement:DocumentCache:Cdc:BindingStateStore:RootPath` defaults to
+`eng/docker-compose/.cdc-state`, resolved against the CLI starting directory.
+`--cdc-binding-state-path` overrides it. The shipped filesystem store is single-controller;
+no remote state adapter is shipped. Preserve binding, incident, and retirement records
+on durable restricted storage; see the [state handoff](../reference/cdc-documentation/operations-runbook.md#deployment-state).
+
+Local wrappers resolve the host mount separately: explicit `-CdcBindingStatePath` where
+supported, ambient `DMS_CDC_BINDING_STATE_PATH`, that key in the environment file, then
+`./.cdc-state`. An explicit relative path uses the caller's directory; environment/default
+relative paths use `eng/docker-compose`. Wrappers export the resolved path for Compose,
+mount it at `/state`, and pass `/state` to the CLI. `DMS_CDC_BINDING_STATE_PATH` is a
+wrapper/Compose input, not a direct CLI alias. Setup, status, stop, and retirement must
+resolve the same store.
+
 ## Configuration Service AppSettings
 
 The following parameters apply to the DMS Configuration Service (`appsettings.json`).

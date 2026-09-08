@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+﻿// SPDX-License-Identifier: Apache-2.0
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
@@ -17,6 +17,27 @@ public sealed record CdcProviderSourceHistoryEvidence(
     public IReadOnlyList<CdcDiagnostic> Diagnostics { get; init; } = [];
 
     public CdcSqlServerCdcJobEvidence? SqlServerJobs { get; init; }
+}
+
+/// <summary>
+/// Whether the binding's public topic has ever carried a published record.
+/// </summary>
+/// <remarks>
+/// This is what separates an established stream from an initial enablement that has not finished, and
+/// it is read from the topic's own log-end offsets rather than from any durable marker: a topic that
+/// has received a record has a log end past zero, and compaction never moves it back, so the answer
+/// survives every retention rule the public topic is under.
+///
+/// <paramref name="Readable"/> false means the broker did not answer. Evidence that could not be
+/// obtained is never read as proof that the stream is unestablished, and never as proof that it is.
+/// </remarks>
+public sealed record CdcPublicTopicPublicationEvidence(bool Readable, bool HasPublishedRecords)
+{
+    /// <summary>Nothing was asked, so nothing is established by it.</summary>
+    public static CdcPublicTopicPublicationEvidence Unreadable { get; } = new(false, false);
+
+    /// <summary>The stream is established: at least one record has been published to the public topic.</summary>
+    public bool ProvesEstablishedStream => Readable && HasPublishedRecords;
 }
 
 public sealed record CdcSqlServerSchemaHistoryEvidence(
@@ -41,6 +62,12 @@ public sealed record CdcSourceHistoryClassificationInput(
     public CdcProviderSourceHistoryEvidence? ProviderHistory { get; init; }
 
     public CdcSqlServerSchemaHistoryEvidence? SqlServerSchemaHistory { get; init; }
+
+    /// <summary>
+    /// Whether the binding's public topic proves an established stream. Absent evidence is treated
+    /// exactly as unreadable evidence: the classifier withholds a terminal classification either way.
+    /// </summary>
+    public CdcPublicTopicPublicationEvidence? PublicTopicPublication { get; init; }
 
     public CdcIncident? LatchedIncident { get; init; }
 
@@ -622,8 +649,70 @@ public static class CdcSourceHistoryContinuityClassifier
             );
         }
 
+        if (input.ConnectorOffset.SourcePartitionMatchResult == CdcConnectorOffsetMatchResult.Unavailable)
+        {
+            // The worker was not asked successfully. An answer that was never obtained disproves
+            // nothing, so continuity is unknown - readiness stays false and neither start nor resume
+            // is automated, but no terminal loss is latched over an offset nobody read.
+            diagnostics.Add(
+                CdcDiagnosticCategory.StatusObservationUnavailable,
+                "$.connectorOffset.sourcePartitionMatchResult",
+                "CDC connector offset evidence was not obtained from the worker."
+            );
+
+            return new(
+                UnknownWithMetadata(
+                    input,
+                    observedAt,
+                    diagnostics,
+                    binding.Provider,
+                    inventory,
+                    expectedSourcePartitionHash,
+                    null,
+                    input.ProviderHistory,
+                    [CdcIncidentUnavailableFact.ConnectOffset]
+                ),
+                null
+            );
+        }
+
         if (input.ConnectorOffset.SourcePartitionMatchResult == CdcConnectorOffsetMatchResult.Missing)
         {
+            // Terminal for an ESTABLISHED binding only, which is the scope this classification has
+            // always been given. A binding whose public topic has never carried a record has published
+            // nothing: no consumer can hold state from it, and there is no committed position for the
+            // source to have aged out from under - the connector has simply not committed its first
+            // offset yet, because the enablement that would have produced it has not finished. Latching
+            // there would turn an interrupted initial setup into a terminal history loss and close the
+            // documented retry, which refuses an incident-latched binding.
+            //
+            // Evidence that could not be read withholds the terminal classification too. It is not
+            // proof that the stream is established, and the irreversible action needs proof.
+            if (input.PublicTopicPublication?.ProvesEstablishedStream != true)
+            {
+                diagnostics.Add(
+                    CdcDiagnosticCategory.StatusObservationUnavailable,
+                    "$.connectorOffset.sourcePartitionMatchResult",
+                    "CDC connector has committed no offset and its public topic does not prove a stream "
+                        + "this loss could be terminal for."
+                );
+
+                return new(
+                    UnknownWithMetadata(
+                        input,
+                        observedAt,
+                        diagnostics,
+                        binding.Provider,
+                        inventory,
+                        expectedSourcePartitionHash,
+                        null,
+                        input.ProviderHistory,
+                        [CdcIncidentUnavailableFact.ConnectOffset]
+                    ),
+                    null
+                );
+            }
+
             return new(
                 Lost(
                     input,
@@ -668,7 +757,76 @@ public static class CdcSourceHistoryContinuityClassifier
             );
         }
 
-        if (input.ConnectorOffset.IsNull || input.ConnectorOffset.IsSnapshot)
+        if (input.ConnectorOffset.IsSnapshot)
+        {
+            // A snapshot offset is the connector's own progress through a phase that has not reached
+            // streaming yet, not a position this classification can decide continuity from. It is
+            // separated from the malformed offset below deliberately: latching is irreversible and
+            // closes the documented enable retry, which refuses an incident-latched binding, and an
+            // enablement whose initial snapshot was interrupted is the ordinary way to arrive here.
+            // Readiness stays false and neither start nor resume is automated, which is what a phase
+            // still in progress warrants.
+            //
+            // That exception is unfinished initial provisioning only, and it is narrowed by the same
+            // evidence the missing-offset branch above is narrowed by. An ESTABLISHED stream - one
+            // whose public topic has carried a record - that is back in a snapshot has lost the
+            // streaming position it would have resumed from, and the snapshot replacing it reads
+            // current rows: it cannot reconstruct a delete that happened while the stream was down, so
+            // a consumer holding cache state keeps an entry for a document that is gone. Left unlatched
+            // this heals itself out of sight, because the snapshot commits a fresh streaming offset and
+            // every observation after that classifies healthy.
+            if (input.PublicTopicPublication?.ProvesEstablishedStream != true)
+            {
+                diagnostics.Add(
+                    CdcDiagnosticCategory.StatusObservationUnavailable,
+                    "$.connectorOffset.isSnapshot",
+                    "CDC connector has committed only a snapshot position and its public topic does not "
+                        + "prove a stream this loss could be terminal for."
+                );
+
+                return new(
+                    UnknownWithMetadata(
+                        input,
+                        observedAt,
+                        diagnostics,
+                        binding.Provider,
+                        inventory,
+                        expectedSourcePartitionHash,
+                        null,
+                        input.ProviderHistory,
+                        [CdcIncidentUnavailableFact.ConnectOffset]
+                    ),
+                    null
+                );
+            }
+
+            diagnostics.Add(
+                CdcDiagnosticCategory.SourceHistoryLost,
+                "$.connectorOffset.isSnapshot",
+                "CDC connector of an established stream has committed only a snapshot position, so the "
+                    + "streaming position it would resume from is gone."
+            );
+
+            return new(
+                Lost(
+                    input,
+                    observedAt,
+                    diagnostics,
+                    CdcIncidentFailureCategory.ConnectOffsetMissing,
+                    BuildPositionMetadata(
+                        binding.Provider,
+                        inventory,
+                        expectedSourcePartitionHash,
+                        null,
+                        input.ProviderHistory,
+                        [CdcIncidentUnavailableFact.ConnectOffset]
+                    )
+                ),
+                null
+            );
+        }
+
+        if (input.ConnectorOffset.IsNull)
         {
             return new(
                 Lost(

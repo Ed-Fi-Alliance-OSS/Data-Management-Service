@@ -1,0 +1,151 @@
+{
+  "scenario": "providerTimeout",
+  "boundary": "real PostgreSQL, Kafka, Connect, filesystem; provider deletion timeout injected only for providerTimeout",
+  "recordsBefore": {
+    "bindings/dms-control/binding/3.json": "{\"version\":1,\"deploymentKey\":\"dms-control\",\"tenantKey\":\"default\",\"dataStoreId\":\"1\",\"instanceKey\":\"binding\",\"generation\":3,\"provider\":\"postgresql\",\"physicalSourceFingerprint\":\"sha256:193c47b34d9751c73d06dbf5ccf2655a1cce46154a4808f152d3db0e91b676bc\",\"connectorName\":\"dms-control-binding-g3\",\"topicName\":\"edfi.control.instance.binding-g3.documents.v1\",\"partitionCount\":3,\"partitionerAlgorithm\":\"kafka-murmur2-v1\",\"contractVersion\":1}"
+  },
+  "providerBefore": 2,
+  "attempts": [
+    {
+      "phase": "providerTimeout",
+      "Diagnostics": [
+        {
+          "Code": "retireIncomplete",
+          "Category": "artifactNotRemoved",
+          "Severity": "error",
+          "Component": "providerSetup",
+          "ObservedAt": "2026-09-07T01:22:33.6514069+00:00",
+          "Message": "CDC retirement could not remove the bindings provider capture artifacts.",
+          "Retryable": true,
+          "ArtifactKind": "cdcRetirement",
+          "ArtifactName": null,
+          "Expected": "every governed artifact removed before the binding record",
+          "Observed": "timedOut"
+        }
+      ],
+      "proof": null,
+      "records": {
+        "bindings/dms-control/binding/3.json": "{\"version\":1,\"deploymentKey\":\"dms-control\",\"tenantKey\":\"default\",\"dataStoreId\":\"1\",\"instanceKey\":\"binding\",\"generation\":3,\"provider\":\"postgresql\",\"physicalSourceFingerprint\":\"sha256:193c47b34d9751c73d06dbf5ccf2655a1cce46154a4808f152d3db0e91b676bc\",\"connectorName\":\"dms-control-binding-g3\",\"topicName\":\"edfi.control.instance.binding-g3.documents.v1\",\"partitionCount\":3,\"partitionerAlgorithm\":\"kafka-murmur2-v1\",\"contractVersion\":1}"
+      },
+      "connector": "notFound",
+      "publicTopic": "absent",
+      "progressTopic": "absent",
+      "providerArtifacts": 2
+    },
+    {
+      "phase": "absentConnectorWithoutAssertion",
+      "Diagnostics": [
+        {
+          "Code": "retireRefused",
+          "Category": "connectOffsetStoreInvalid",
+          "Severity": "error",
+          "Component": "connectOffsetStore",
+          "ObservedAt": "2026-09-07T01:22:33.893565+00:00",
+          "Message": "CDC retirement cannot observe the committed source offsets of a connector the worker does not have and the shared offset store may still hold them under this name.",
+          "Retryable": false,
+          "ArtifactKind": "cdcRetirement",
+          "ArtifactName": null,
+          "Expected": "a retirement request this deployment can begin",
+          "Observed": "dms-control-binding-g3"
+        }
+      ],
+      "proof": null
+    }
+  ],
+  "cleanupProof": {
+    "contractVersion": 1,
+    "operationId": "retirement-retry",
+    "verifiedAt": "2026-09-07T01:22:33.9764442+00:00",
+    "bindingIdentity": {
+      "deploymentKey": "dms-control",
+      "tenantKey": "default",
+      "dataStoreId": "1",
+      "instanceKey": "binding",
+      "generation": 3,
+      "provider": "postgresql",
+      "physicalSourceFingerprint": "sha256:193c47b34d9751c73d06dbf5ccf2655a1cce46154a4808f152d3db0e91b676bc",
+      "connectorName": "dms-control-binding-g3",
+      "topicName": "edfi.control.instance.binding-g3.documents.v1"
+    },
+    "cleanupMode": "retireBindingGeneration",
+    "governedArtifacts": [
+      {
+        "artifactKind": "connectSourceOffsets",
+        "artifactName": "dms-control-binding-g3",
+        "cleanupState": "notFound",
+        "evidenceSummary": "the operator asserted the connector was already absent so the Kafka Connect worker could not report on its committed source offsets"
+      },
+      {
+        "artifactKind": "kafkaConnectConnector",
+        "artifactName": "dms-control-binding-g3",
+        "cleanupState": "notFound",
+        "evidenceSummary": "the Kafka Connect worker reported no such governed artifact"
+      },
+      {
+        "artifactKind": "publicTopicAcls",
+        "artifactName": "edfi.control.instance.binding-g3.documents.v1",
+        "cleanupState": "notFound",
+        "evidenceSummary": "No governed grant remained."
+      },
+      {
+        "artifactKind": "publicTopic",
+        "artifactName": "edfi.control.instance.binding-g3.documents.v1",
+        "cleanupState": "notFound",
+        "evidenceSummary": "Governed topic was already absent."
+      },
+      {
+        "artifactKind": "progressTopicAcls",
+        "artifactName": "edfi.control.instance.binding-g3.documents.v1.cdc-progress",
+        "cleanupState": "notFound",
+        "evidenceSummary": "No governed grant remained."
+      },
+      {
+        "artifactKind": "progressTopic",
+        "artifactName": "edfi.control.instance.binding-g3.documents.v1.cdc-progress",
+        "cleanupState": "notFound",
+        "evidenceSummary": "Governed topic was already absent."
+      },
+      {
+        "artifactKind": "postgresqlPublication",
+        "artifactName": "edfi_dms_dms_control_binding_g3_2c2fce85cd67_pub",
+        "cleanupState": "deleted",
+        "evidenceSummary": "the provider reported the governed artifact and it was removed"
+      },
+      {
+        "artifactKind": "postgresqlLogicalSlot",
+        "artifactName": "edfi_dms_dms_control_binding_g3_2c2fce85cd67_slot",
+        "cleanupState": "deleted",
+        "evidenceSummary": "the provider reported the governed artifact and it was removed"
+      }
+    ]
+  },
+  "recordsAfter": {
+    "retirements/dms-control/binding/3.json": "{\"version\":1,\"deploymentKey\":\"dms-control\",\"tenantKey\":\"default\",\"dataStoreId\":\"1\",\"instanceKey\":\"binding\",\"generation\":3,\"physicalSourceFingerprint\":\"sha256:193c47b34d9751c73d06dbf5ccf2655a1cce46154a4808f152d3db0e91b676bc\",\"retiredAt\":\"2026-09-07T01:22:33.977325+00:00\",\"contractVersion\":1}"
+  },
+  "Retirements": [
+    {
+      "Version": 1,
+      "DeploymentKey": "dms-control",
+      "TenantKey": "default",
+      "DataStoreId": "1",
+      "InstanceKey": "binding",
+      "Generation": 3,
+      "PhysicalSourceFingerprint": "sha256:193c47b34d9751c73d06dbf5ccf2655a1cce46154a4808f152d3db0e91b676bc",
+      "RetiredAt": "2026-09-07T01:22:33.977325+00:00",
+      "ContractVersion": 1
+    }
+  ],
+  "after": {
+    "connector": "notFound",
+    "publicTopic": "absent",
+    "progressTopic": "absent",
+    "providerArtifacts": 0,
+    "sharedWorkerTopics": [
+      "dms-cdc-control-5a0be7bff50545adb2223966fe67d1a6.connect.offsets",
+      "dms-cdc-control-5a0be7bff50545adb2223966fe67d1a6.connect.configs",
+      "dms-cdc-control-5a0be7bff50545adb2223966fe67d1a6.connect.status"
+    ],
+    "sharedWorkerTopicsState": "present",
+    "sharedOffsetAcls": "unchanged"
+  }
+}

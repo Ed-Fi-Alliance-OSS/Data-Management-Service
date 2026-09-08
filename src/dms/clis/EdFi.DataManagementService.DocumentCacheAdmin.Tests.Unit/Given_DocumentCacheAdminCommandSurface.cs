@@ -31,6 +31,7 @@ public sealed class Given_DocumentCacheAdminCommandSurface
                     DocumentCacheAdminCommandSurface.RebuildOnlineCommandName,
                     DocumentCacheAdminCommandSurface.ScrubCommandName,
                     DocumentCacheAdminCommandSurface.RecoverCacheAheadCommandName,
+                    DocumentCacheAdminCommandSurface.CdcCommandName,
                 ],
                 options => options.WithStrictOrdering()
             );
@@ -276,7 +277,7 @@ public sealed class Given_DocumentCacheAdminCommandSurface
     private static IEnumerable<Command> MutatingCommands() =>
         DocumentCacheAdminCommandSurface
             .CreateRootCommand()
-            .Subcommands.Where(command => command.Name != DocumentCacheAdminCommandSurface.StatusCommandName);
+            .Subcommands.Where(command => DocumentCacheAdminCommandSurface.IsMutatingCommand(command.Name));
 
     private static IEnumerable<string> AllOptionNames(Command command) =>
         command.Options.Select(option => option.Name).Concat(command.Subcommands.SelectMany(AllOptionNames));

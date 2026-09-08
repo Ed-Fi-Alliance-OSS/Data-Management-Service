@@ -152,6 +152,25 @@ DocumentCache materializer/writer rather than the shaped API response. Snapshot 
 read-replica requests skip direct fill when derivative routing is available because those
 requests remain read-only.
 
+### Optional CDC publication
+
+Both PostgreSQL and SQL Server have deployment-owned CDC implementations. The local
+`-EnableKafkaCdc` bootstrap/E2E SQL Server path supplies the same 500 ms connector poll
+interval to enable, status, and guarded restart through its shared container argument builder.
+Start with the
+[CDC setup runbook](../reference/cdc-documentation/operations-runbook.md#local-setup)
+for fresh-database prerequisites and the
+[CDC evidence index](../reference/cdc-documentation/cdc-inv-evidence.md) for verification
+status and the unmet E19-06 API-consumer dependency. Provisioning the projection tables
+alone does not enable publication. Existing-source operations use the
+[continuity and lifecycle procedures](../reference/cdc-documentation/operations-runbook.md#continuity-incident).
+
+The [DocumentCache runbook](../reference/document-cache-documentation/operations-runbook.md)
+owns queue, rebuild, scrub, and provider-prerequisite operations; the
+[configuration catalog](CONFIGURATION.md#datamanagementdocumentcachecdc) and
+[CLI reference](../src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin/README.md)
+own settings and command syntax.
+
 ### Create-only guardrails and reruns
 
 Provisioning is still create-only: it does not migrate an older DocumentCache shape,
@@ -180,7 +199,8 @@ PostgreSQL provisioning creates or safely reuses a locked-down `NOLOGIN`
 `edfi_dms_enqueue_owner` role and gives the authenticated provisioning principal only the
 direct membership needed to own and refresh the enqueue functions. That owner is not a
 runtime DMS credential; production still uses the deployment-supplied data-store
-credential, while later CDC work owns separate CDC principals and grants.
+credential. Separate CDC principals and grants are covered by the
+[CDC security procedure](../reference/cdc-documentation/operations-runbook.md#cdc-security).
 
 SQL Server uses the existing same-owner ownership chain for the enqueue trigger and
 referenced `dms` tables. The generated trigger has no `EXECUTE AS`, enqueue user, or

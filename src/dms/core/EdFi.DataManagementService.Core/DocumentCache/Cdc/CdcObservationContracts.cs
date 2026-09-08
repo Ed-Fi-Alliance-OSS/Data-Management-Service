@@ -1869,12 +1869,20 @@ public static class CdcConnectOffsetStorePolicyObservationValidator
             );
         }
 
+        // A replica count or minimum in-sync replica value that is positive but below the active
+        // durability profile is a nonconformance the observation's own fields cannot express, so an
+        // explicit offset-store diagnostic also qualifies as an invalid policy fact.
+        bool diagnosedInvalid = observation.Diagnostics.Any(diagnostic =>
+            diagnostic.Category == CdcDiagnosticCategory.ConnectOffsetStoreInvalid
+        );
+
         if (
             observation.PolicyState == CdcConnectOffsetStorePolicyState.Invalid
             && !(
                 cleanupInvalid
                 || replicationInvalid
                 || minInSyncInvalid
+                || diagnosedInvalid
                 || observation.AclState == CdcConnectOffsetStoreItemState.Invalid
             )
         )

@@ -162,6 +162,56 @@ public class Given_PostgresqlCdcHeartbeatPublication_Initial_Setup
         executor.ExecutedSql.Should().NotContain(sql => sql.Contains("CREATE PUBLICATION"));
     }
 
+    /// <summary>
+    /// The setup principal is the elevated identity that creates capture artifacts and issues the
+    /// connector's grants. It arrives as configuration, so a pass running on some other connection would
+    /// otherwise make that configured value a fiction — either failing partway through artifact creation
+    /// for want of privilege, or succeeding with more privilege than the deployment declared. The
+    /// mismatch has to fail closed before any artifact is touched.
+    /// </summary>
+    [Test]
+    public async Task It_should_fail_closed_when_the_session_is_not_the_configured_setup_principal()
+    {
+        var executor = new RecordingPostgresqlCdcExecutor(setupPrincipal: "some_other_role");
+        var service = new CdcProviderSetupService([new CdcPostgresqlHeartbeatPublicationProvider()]);
+
+        var result = await service.SetupAsync(
+            CdcProviderSetupContractTestData.BuildPostgresqlRequest(databaseExecutor: executor)
+        );
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+        result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == "CDC_SETUP_PRINCIPAL_MISMATCH"
+                && diagnostic.Category == CdcProviderDiagnosticCategory.SetupPrincipalFailure
+                && diagnostic.PrincipalKind == CdcPrincipalKind.SetupPrincipal
+                && diagnostic.Classification == CdcProviderRetryContinuityClassification.FailClosed
+            );
+        executor.ExecutedSql.Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// Neither engine treats a principal name as case-sensitive the way an ordinal comparison would, so
+    /// a case difference is not the mismatch this guards against and must not fail a working deployment.
+    /// </summary>
+    [Test]
+    public async Task It_should_accept_the_configured_setup_principal_in_another_casing()
+    {
+        var executor = new RecordingPostgresqlCdcExecutor(setupPrincipal: "SETUP_PRINCIPAL");
+        var service = new CdcProviderSetupService([new CdcPostgresqlHeartbeatPublicationProvider()]);
+
+        var result = await service.SetupAsync(
+            CdcProviderSetupContractTestData.BuildPostgresqlRequest(databaseExecutor: executor)
+        );
+
+        result
+            .Diagnostics.Should()
+            .NotContain(diagnostic =>
+                diagnostic.Category == CdcProviderDiagnosticCategory.SetupPrincipalFailure
+            );
+    }
+
     [Test]
     public async Task It_should_use_emitted_heartbeat_inventory_for_validation_queries()
     {
@@ -1241,6 +1291,7 @@ internal sealed class RecordingPostgresqlCdcExecutor : ICdcProviderDatabaseExecu
     private readonly string _connectorExtraDmsSelectTables;
     private readonly string _connectorExtraDmsForbiddenPrivileges;
     private readonly string _sourceIdentity;
+    private readonly string _setupPrincipal;
     private readonly CdcSourceTableKind? _omittedSourceInventoryTableKind;
     private readonly string _omittedSourceInventoryColumnName;
     private readonly bool? _heartbeatPrimaryKeyMatches;
@@ -1289,6 +1340,7 @@ internal sealed class RecordingPostgresqlCdcExecutor : ICdcProviderDatabaseExecu
         string connectorWorkTablePrivileges = "",
         string connectorExtraDmsSelectTables = "",
         string connectorExtraDmsForbiddenPrivileges = "",
+        string setupPrincipal = "setup_principal",
         string sourceIdentity = CdcProviderSetupContractTestData.SourceIdentity,
         CdcSourceTableKind? omittedSourceInventoryTableKind = null,
         string omittedSourceInventoryColumnName = ""
@@ -1342,6 +1394,7 @@ internal sealed class RecordingPostgresqlCdcExecutor : ICdcProviderDatabaseExecu
         _connectorExtraDmsSelectTables = connectorExtraDmsSelectTables;
         _connectorExtraDmsForbiddenPrivileges = connectorExtraDmsForbiddenPrivileges;
         _sourceIdentity = sourceIdentity;
+        _setupPrincipal = setupPrincipal;
         _omittedSourceInventoryTableKind = omittedSourceInventoryTableKind;
         _omittedSourceInventoryColumnName = omittedSourceInventoryColumnName;
     }
@@ -1441,6 +1494,10 @@ internal sealed class RecordingPostgresqlCdcExecutor : ICdcProviderDatabaseExecu
 
         IReadOnlyList<IReadOnlyDictionary<string, string?>> rows = sql switch
         {
+            var text when text.Contains("cdc:postgresql:setup-principal") =>
+            [
+                Row(("setup_principal", _setupPrincipal)),
+            ],
             var text when text.Contains("cdc:postgresql:source-fingerprint") =>
             [
                 Row(("source_identity", _sourceIdentity)),

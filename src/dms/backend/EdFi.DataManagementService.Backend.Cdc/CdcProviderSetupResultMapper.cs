@@ -44,6 +44,27 @@ public static class CdcProviderSetupResultMapper
             CdcProviderArtifactKind.SqlServerCaptureInstance,
         };
 
+    /// <summary>
+    /// The provider diagnostics of a setup result, translated to the shared diagnostic contract on
+    /// their own.
+    /// </summary>
+    /// <remarks>
+    /// For the passes whose result is not validate-only evidence and so has no observation to compose:
+    /// the create-or-exact-match pass a provisioning sequence runs first. Its refusal is reported from
+    /// the step that refused, but the provider's own account of why - a missing principal, a refused
+    /// grant, an exhausted step budget - is only in these diagnostics, and a refusal that dropped them
+    /// would leave an operator with the outcome and nothing to act on.
+    /// </remarks>
+    public static IReadOnlyList<CoreCdc.CdcDiagnostic> MapResultDiagnostics(
+        CdcProviderSetupResult result,
+        DateTimeOffset observedAt
+    )
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return MapDiagnostics(result.Diagnostics, observedAt.ToUniversalTime());
+    }
+
     public static CdcProviderSetupObservationMapping MapValidateOnlyResult(
         string operationId,
         DateTimeOffset observedAt,

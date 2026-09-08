@@ -85,6 +85,7 @@ Describe "Start scripts register identity clients with env-file secrets" {
         # the two resolved secrets swapped. Assert the exact resolved property each client requires:
         #   - CMSReadOnlyAccess           -> CmsReadOnlyAccessClientSecret        (CONFIG_SERVICE_CLIENT_SECRET)
         #   - DmsConfigurationService     -> DmsConfigurationServiceClientSecret  (DMS_CONFIG_IDENTITY_CLIENT_SECRET)
+        #   - DocumentCacheOperator       -> DocumentCacheOperatorClientSecret     (DMS_DOCUMENT_CACHE_OPERATOR_CLIENT_SECRET)
         #   - CMSAuthMetadataReadOnlyAccess has no dedicated env-file secret and keeps the default.
         # Both operator-secret clients must also pass the env-file length bounds so a CMS-valid
         # secret is not rejected by the setup scripts' default 32/128 validation.
@@ -106,6 +107,15 @@ Describe "Start scripts register identity clients with env-file secrets" {
                 $line | Should -Match '-NewClientSecret\s+\$identityClientSecrets\.CmsReadOnlyAccessClientSecret\b' -Because "CMSReadOnlyAccess must register CONFIG_SERVICE_CLIENT_SECRET: $line"
                 $line | Should -Match $minBoundPattern -Because "CMSReadOnlyAccess must validate with the env-file minimum length: $line"
                 $line | Should -Match $maxBoundPattern -Because "CMSReadOnlyAccess must validate with the env-file maximum length: $line"
+            }
+            elseif ($line -match '-NewClientId\s+\$identityClientSecrets\.DocumentCacheOperatorClientId') {
+                # The CDC opt-in's operator client. Its role is what the DocumentCache status
+                # endpoint authorizes on, so the role token comes from the shared helper rather
+                # than a literal that could drift from the one written into RequiredRole.
+                $line | Should -Match '-NewClientSecret\s+\$identityClientSecrets\.DocumentCacheOperatorClientSecret\b' -Because "DocumentCacheOperator must register DMS_DOCUMENT_CACHE_OPERATOR_CLIENT_SECRET: $line"
+                $line | Should -Match '-DmsClientRole\s+\(Get-DocumentCacheStatusOperatorRole\)' -Because "DocumentCacheOperator must carry the shared status role token: $line"
+                $line | Should -Match $minBoundPattern -Because "DocumentCacheOperator must validate with the env-file minimum length: $line"
+                $line | Should -Match $maxBoundPattern -Because "DocumentCacheOperator must validate with the env-file maximum length: $line"
             }
             else {
                 # No -NewClientId => the default DmsConfigurationService (full_access) client.
@@ -326,6 +336,17 @@ Describe "Start scripts pass the resolved database identity and role names to th
         $lines = Get-SetupOpeniddictLine -ScriptPath $ScriptPath | Where-Object { $_ -match '-InsertData' }
         $lines | Should -Not -BeNullOrEmpty -Because "each start script registers the identity clients"
         foreach ($line in $lines) {
+            if ($line -match '-NewClientId\s+\$identityClientSecrets\.DocumentCacheOperatorClientId') {
+                # The one client whose DMS role is deliberately not the configured client role: the
+                # DocumentCache status endpoint authorizes on its own role token. It cannot splat the
+                # resolved set alongside that override -- -DmsClientRole would bind twice -- so both
+                # halves are asserted individually here. ConfigServiceRole still comes from the same
+                # resolved set, which is what this case exists to guarantee.
+                $line | Should -Match '-ConfigServiceRole\s+\$identityRoleParams\.ConfigServiceRole\b' -Because "the operator client must register against the resolved CMS role rather than the setup default: $line"
+                $line | Should -Match '-DmsClientRole\s+\(Get-DocumentCacheStatusOperatorRole\)' -Because "the operator client must carry the shared status role token: $line"
+                continue
+            }
+
             $line | Should -Match '@identityRoleParams' -Because "this call would otherwise insert the setup defaults: $line"
         }
     }

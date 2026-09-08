@@ -285,6 +285,16 @@ internal sealed class CdcConnectorTemplateRenderer(
             )
             .ToArray();
 
+    /// <summary>
+    /// The producer buffer the connector is rendered with: the operator's value when supplied,
+    /// otherwise the greater of the fixed minimum and the record-size budget. The single derivation of
+    /// it, so nothing reports a buffer other than the one the connector is configured with.
+    /// </summary>
+    /// <remarks>
+    /// Deployment must provision Connect worker heap beyond this value, which Kafka documents as
+    /// approximate producer buffer capacity rather than a hard total-memory bound. That is a
+    /// deployment obligation no client of this control plane can observe.
+    /// </remarks>
     private static int ProducerBufferBytes(CdcConnectorTemplateRequest request) =>
         request.DeploymentPolicy.ProducerBufferBytes
         ?? Math.Max(

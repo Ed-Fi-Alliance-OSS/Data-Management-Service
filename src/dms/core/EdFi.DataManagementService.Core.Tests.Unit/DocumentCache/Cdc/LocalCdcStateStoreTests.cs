@@ -340,6 +340,86 @@ public class Given_LocalCdcStateStore
             .Be(CdcStateStoreFailureKind.InvalidPersistedBinding);
     }
 
+    /// <summary>
+    /// A generation is allocated against the retirement records as well as the live bindings. The local
+    /// store's root is a deployment path rather than a container volume, so it survives the destructive
+    /// volume removal that deletes the source it was bound to, and the next stack asks for the same
+    /// first generation of the same instance key against a new physical database - which would reassign
+    /// an existing connector name, topic namespace, and consumer state to a different physical source.
+    /// </summary>
+    [Test]
+    public async Task It_refuses_a_binding_for_a_generation_it_already_retired()
+    {
+        using TempCdcStateRoot tempRoot = new();
+        LocalCdcBindingStateStore store = new(tempRoot.Path);
+
+        // What a completed retirement leaves: the record of the publication, and no binding record.
+        tempRoot.WriteRetirement(SampleBinding, SampleObservedAt);
+
+        CdcCreateBindingStateStoreResult result = await store.CreateBindingIfAbsentAsync(
+            SampleBinding with
+            {
+                PhysicalSourceFingerprint =
+                    "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            },
+            CancellationToken.None
+        );
+
+        CdcStateStoreFailure failure = result
+            .Should()
+            .BeOfType<CdcCreateBindingStateStoreResult.StateStoreFailure>()
+            .Subject.Failure;
+        failure.Kind.Should().Be(CdcStateStoreFailureKind.InvalidOperation);
+        failure
+            .Diagnostics.Should()
+            .Contain(diagnostic => diagnostic.Category == CdcDiagnosticCategory.UnsupportedOperation);
+
+        // Nothing was written for the refused generation.
+        File.Exists(tempRoot.BindingPath(SampleBinding)).Should().BeFalse();
+    }
+
+    /// <summary>
+    /// An existing retirement record is an idempotent retry only when it says the same thing. The
+    /// generation and its path are stable across a destructive volume removal, so accepting a record
+    /// that names another physical source would report this binding retired while the durable trace
+    /// still named the one it replaced, and the second publication would be recorded nowhere.
+    /// </summary>
+    [Test]
+    public async Task It_refuses_a_retirement_whose_existing_record_names_a_different_binding()
+    {
+        using TempCdcStateRoot tempRoot = new();
+        LocalCdcBindingStateStore store = new(tempRoot.Path);
+
+        await store.CreateBindingIfAbsentAsync(SampleBinding, CancellationToken.None);
+
+        // The same generation, retired earlier against the source this one replaced.
+        tempRoot.WriteRetirement(
+            SampleBinding with
+            {
+                PhysicalSourceFingerprint =
+                    "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            },
+            SampleObservedAt
+        );
+
+        CdcDeleteBindingStateStoreResult result = await store.DeleteStateAfterVerifiedCleanupAsync(
+            CreateCleanupProof(SampleBinding),
+            CancellationToken.None
+        );
+
+        CdcStateStoreFailure failure = result
+            .Should()
+            .BeOfType<CdcDeleteBindingStateStoreResult.StateStoreFailure>()
+            .Subject.Failure;
+        failure.Kind.Should().Be(CdcStateStoreFailureKind.InvalidOperation);
+        failure
+            .Diagnostics.Should()
+            .Contain(diagnostic => diagnostic.Category == CdcDiagnosticCategory.BindingMismatch);
+
+        // The binding record is the last thing a retirement removes, and this one never got there.
+        File.Exists(tempRoot.BindingPath(SampleBinding)).Should().BeTrue();
+    }
+
     [Test]
     public async Task It_latches_incidents_idempotently_and_deletes_state_after_verified_cleanup()
     {
@@ -394,7 +474,7 @@ public class Given_LocalCdcStateStore
             .BeOfType<CdcDeleteBindingStateStoreResult.Deleted>()
             .Subject.BindingIdentity.Should()
             .Be(SampleBinding.ToCompleteBindingIdentity());
-        deleteFileSystem.DeleteCalls.Should().Equal(bindingPath, incidentPath);
+        deleteFileSystem.DeleteCalls.Should().Equal(incidentPath, bindingPath);
         File.Exists(bindingPath).Should().BeFalse();
         File.Exists(incidentPath).Should().BeFalse();
         readAfterDelete.Should().BeOfType<CdcReadBindingStateStoreResult.Missing>();
@@ -1049,8 +1129,14 @@ public class Given_LocalCdcStateStore
         }
     }
 
+    /// <summary>
+    /// The binding record is deleted last, so a failure anywhere in the final teardown leaves a record
+    /// the next retirement can finish from. The other order leaves an incident whose binding is gone,
+    /// which fails the whole deployment listing and is retirable by nothing: the retirement refuses on
+    /// the missing record before it reaches the state that would clear it.
+    /// </summary>
     [Test]
-    public async Task It_deletes_binding_before_incident_and_can_retry_orphan_incident_cleanup()
+    public async Task It_deletes_incident_before_binding_and_keeps_the_record_when_either_delete_fails()
     {
         using TempCdcStateRoot bindingFailureRoot = new();
         LocalCdcBindingStateStore bindingWriter = new(bindingFailureRoot.Path);
@@ -1094,20 +1180,35 @@ public class Given_LocalCdcStateStore
                     .Diagnostics.Single()
                     .Message.Contains("delete binding state", StringComparison.Ordinal)
             );
-        bindingDeleteFailure.DeleteCalls.Should().Equal(bindingFailureBindingPath);
-        File.Exists(bindingFailureIncidentPath).Should().BeTrue();
+        bindingDeleteFailure
+            .DeleteCalls.Should()
+            .Equal(bindingFailureIncidentPath, bindingFailureBindingPath);
+
+        // The record that survives is a plain binding: its incident is gone, and the deployment lists
+        // normally rather than failing on state nothing names.
+        File.Exists(bindingFailureIncidentPath).Should().BeFalse();
         File.Exists(bindingFailureBindingPath).Should().BeTrue();
         bindingFailureRead
             .Should()
             .BeOfType<CdcReadBindingStateStoreResult.Found>()
             .Subject.State.Incident.Should()
-            .BeEquivalentTo(incident);
+            .BeNull();
         CdcListBindingsStateStoreResult.Listed bindingFailureListed = bindingFailureList
             .Should()
             .BeOfType<CdcListBindingsStateStoreResult.Listed>()
             .Subject;
         bindingFailureListed.States.Should().ContainSingle();
-        bindingFailureListed.States.Single().Incident.Should().BeEquivalentTo(incident);
+        bindingFailureListed.States.Single().Incident.Should().BeNull();
+
+        CdcDeleteBindingStateStoreResult bindingRetryResult =
+            await bindingWriter.DeleteStateAfterVerifiedCleanupAsync(cleanupProof, CancellationToken.None);
+
+        bindingRetryResult
+            .Should()
+            .BeOfType<CdcDeleteBindingStateStoreResult.Deleted>()
+            .Subject.BindingIdentity.Should()
+            .Be(SampleBinding.ToCompleteBindingIdentity());
+        File.Exists(bindingFailureBindingPath).Should().BeFalse();
 
         using TempCdcStateRoot incidentFailureRoot = new();
         LocalCdcBindingStateStore incidentWriter = new(incidentFailureRoot.Path);
@@ -1144,12 +1245,17 @@ public class Given_LocalCdcStateStore
                     .Diagnostics.Single()
                     .Message.Contains("delete incident state", StringComparison.Ordinal)
             );
-        incidentDeleteFailure
-            .DeleteCalls.Should()
-            .Equal(incidentFailureBindingPath, incidentFailureIncidentPath);
+
+        // The binding was never reached, so both files are still there and the incident is still the
+        // record's own rather than an orphan.
+        incidentDeleteFailure.DeleteCalls.Should().Equal(incidentFailureIncidentPath);
         File.Exists(incidentFailureIncidentPath).Should().BeTrue();
-        File.Exists(incidentFailureBindingPath).Should().BeFalse();
-        incidentFailureRead.Should().BeOfType<CdcReadBindingStateStoreResult.Missing>();
+        File.Exists(incidentFailureBindingPath).Should().BeTrue();
+        incidentFailureRead
+            .Should()
+            .BeOfType<CdcReadBindingStateStoreResult.Found>()
+            .Subject.State.Incident.Should()
+            .BeEquivalentTo(incident);
 
         CdcDeleteBindingStateStoreResult retryDeleteResult =
             await incidentWriter.DeleteStateAfterVerifiedCleanupAsync(cleanupProof, CancellationToken.None);
@@ -1171,6 +1277,46 @@ public class Given_LocalCdcStateStore
         File.Exists(incidentFailureBindingPath).Should().BeFalse();
         retryRead.Should().BeOfType<CdcReadBindingStateStoreResult.Missing>();
         retryList
+            .Should()
+            .BeOfType<CdcListBindingsStateStoreResult.Listed>()
+            .Subject.States.Should()
+            .BeEmpty();
+    }
+
+    /// <summary>
+    /// An orphan incident cannot be produced by this order, but a store written by a build that
+    /// deleted the binding first can still hold one. The cleanup is kept for that store, and it takes
+    /// the incident away rather than leaving a deployment whose listing can never be read.
+    /// </summary>
+    [Test]
+    public async Task It_clears_an_orphan_incident_a_store_already_holds()
+    {
+        using TempCdcStateRoot root = new();
+        LocalCdcBindingStateStore store = new(root.Path);
+        CdcIncident incident = CreateIncident(SampleBinding);
+        CdcCleanupProof cleanupProof = CreateCleanupProof(SampleBinding);
+
+        await store.CreateBindingIfAbsentAsync(SampleBinding, CancellationToken.None);
+        await store.LatchSourceHistoryLossAsync(incident, CancellationToken.None);
+
+        // The state an interrupted retirement used to leave behind, written directly because nothing
+        // in this build produces it any more.
+        File.Delete(root.BindingPath(SampleBinding));
+
+        CdcDeleteBindingStateStoreResult orphanDeleteResult =
+            await store.DeleteStateAfterVerifiedCleanupAsync(cleanupProof, CancellationToken.None);
+        CdcListBindingsStateStoreResult listAfter = await store.ListBindingsAsync(
+            SampleBinding.DeploymentKey,
+            CancellationToken.None
+        );
+
+        orphanDeleteResult
+            .Should()
+            .BeOfType<CdcDeleteBindingStateStoreResult.Deleted>()
+            .Subject.BindingIdentity.Should()
+            .Be(SampleBinding.ToCompleteBindingIdentity());
+        File.Exists(root.IncidentPath(SampleBinding)).Should().BeFalse();
+        listAfter
             .Should()
             .BeOfType<CdcListBindingsStateStoreResult.Listed>()
             .Subject.States.Should()
@@ -1500,6 +1646,29 @@ public class Given_LocalCdcStateStore
                 binding.InstanceKey,
                 $"{binding.Generation}.json"
             );
+
+        public string RetirementPath(CdcBinding binding) =>
+            System.IO.Path.Combine(
+                Path,
+                "retirements",
+                binding.DeploymentKey,
+                binding.InstanceKey,
+                $"{binding.Generation}.json"
+            );
+
+        /// <summary>
+        /// Plants the retirement record a completed retirement leaves behind, without the binding
+        /// record it removed.
+        /// </summary>
+        public void WriteRetirement(CdcBinding binding, DateTimeOffset retiredAt)
+        {
+            string path = RetirementPath(binding);
+            Directory.CreateDirectory(
+                System.IO.Path.GetDirectoryName(path)
+                    ?? throw new InvalidOperationException("Retirement path has no parent directory.")
+            );
+            File.WriteAllText(path, CdcJsonContract.Serialize(CdcRetirement.FromBinding(binding, retiredAt)));
+        }
 
         public void Dispose()
         {

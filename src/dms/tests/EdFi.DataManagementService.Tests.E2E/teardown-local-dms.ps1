@@ -17,6 +17,14 @@
     prune, no container-name regex removal, no unprefixed volume removal, and no deletion of the
     shared external `dms` network). Only the two known locally-built images are additionally
     removed, by exact name.
+
+    Because the primitives are invoked destructively (`-d -v`), a run started with
+    `setup-local-dms.ps1 -EnableKafkaCdc` also has its CDC binding retired before its volumes are
+    removed: the connector, its committed offsets, the governed topics and ACLs, and the provider
+    capture artifacts go first, and the binding record last. Retirement runs against the still-running
+    stack, so tear down before stopping the containers by any other means - a binding that cannot be
+    retired fails this teardown and leaves the volumes in place, because removing them would destroy
+    the artifacts its surviving record still names.
 .PARAMETER DatabaseEngine
     Database engine the environment was started with. "postgresql" (default) or "mssql".
 .PARAMETER EnvironmentFile

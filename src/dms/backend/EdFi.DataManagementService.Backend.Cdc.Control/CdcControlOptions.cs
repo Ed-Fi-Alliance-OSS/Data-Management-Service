@@ -1,0 +1,686 @@
+﻿// SPDX-License-Identifier: Apache-2.0
+// Licensed to the Ed-Fi Alliance under one or more agreements.
+// The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+// See the LICENSE and NOTICES files in the project root for more information.
+
+using System.Diagnostics.CodeAnalysis;
+using System.Text.Json.Serialization;
+using EdFi.DataManagementService.Backend.Ddl;
+using EdFi.DataManagementService.Core.Configuration;
+using Microsoft.Extensions.Options;
+
+namespace EdFi.DataManagementService.Backend.Cdc.Control;
+
+/// <summary>
+/// Durability profile the deployment operates under. The profile selects the replication and
+/// in-sync-replica expectations that governed Kafka topics are created with and validated against.
+/// </summary>
+public enum CdcDurabilityProfile
+{
+    Local,
+    Production,
+}
+
+/// <summary>
+/// Deployment and runtime policy inputs owned by the CDC control plane. These are the inputs the
+/// connector-template story assigned to its caller rather than to template rendering.
+/// </summary>
+public sealed class CdcControlOptions
+{
+    public const string SectionName = $"{DocumentCacheOptions.SectionName}:Cdc";
+
+    public const string LocalDurabilityProfile = "local";
+
+    public const string ProductionDurabilityProfile = "production";
+
+    /// <summary>Opaque deployment key contributing to governed artifact names.</summary>
+    public string DeploymentKey { get; set; } = string.Empty;
+
+    /// <summary>Opaque instance key contributing to governed artifact names.</summary>
+    public string InstanceKey { get; set; } = string.Empty;
+
+    /// <summary>Topic prefix contributing to governed topic names.</summary>
+    public string TopicPrefix { get; set; } = string.Empty;
+
+    /// <summary>Binding generation. A new generation never reuses a prior generation's artifacts.</summary>
+    public long Generation { get; set; }
+
+    /// <summary>Fixed partition count for the binding's public topic.</summary>
+    public int PartitionCount { get; set; }
+
+    public string KafkaBootstrapServers { get; set; } = string.Empty;
+
+    public string ConnectBaseUri { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Optional override for the Connect worker's JMX-over-HTTP metrics bridge, which the connector
+    /// source-lag reading is taken from. The bridge's port is fixed by the Connect image entrypoint,
+    /// so a blank value reads it from the Connect host on that port.
+    /// </summary>
+    public string ConnectMetricsBaseUri { get; set; } = string.Empty;
+
+    /// <summary>Identifies the Connect worker group whose offset store is validated.</summary>
+    public string ConnectWorkerKey { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Cluster-scoped Connect offset storage topic. It is shared, is never deleted, and never
+    /// appears in per-binding teardown.
+    /// </summary>
+    public string ConnectOffsetStorageTopic { get; set; } = string.Empty;
+
+    /// <summary>Either <c>local</c> or <c>production</c>.</summary>
+    public string DurabilityProfile { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Largest record the pipeline must carry end to end. Required with no default: it drives topic
+    /// configuration, producer overrides, and broker-limit verification, so an absent value fails closed.
+    /// </summary>
+    public int MaxRecordBytes { get; set; }
+
+    /// <summary>
+    /// Optional producer buffer override. When supplied it must be at least
+    /// <c>max(<see cref="CdcConnectorTemplateDeploymentPolicy.MinimumProducerBufferBytes"/>, <see cref="MaxRecordBytes"/>)</c>.
+    /// </summary>
+    public int? ProducerBufferBytes { get; set; }
+
+    public TimeSpan? HeartbeatInterval { get; set; }
+
+    public TimeSpan? SqlServerPollInterval { get; set; }
+
+    /// <summary>Connector lag at or below this threshold is acceptable for write admission.</summary>
+    public TimeSpan LagThreshold { get; set; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// False for a local broker with no authorizer, in which case ACL evidence is reported as
+    /// not applicable rather than satisfied.
+    /// </summary>
+    public bool AclsEnabled { get; set; }
+
+    /// <summary>
+    /// Database principal the provider-setup pass runs as. Required for every cdc operation, because
+    /// both the create pass and the validate-only pass report the grants this principal made.
+    /// </summary>
+    public string SetupPrincipal { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Database principal the connector authenticates as. Required for every cdc operation like
+    /// <see cref="SetupPrincipal"/>: the provider-setup pass every verb runs grants the source objects
+    /// to it, so it is required whether or not an authorizer is enabled.
+    /// </summary>
+    /// <remarks>
+    /// Distinct from <see cref="ConnectorKafkaPrincipal"/> because the two name the same component to
+    /// two authorities that do not share a naming scheme. This one is an ordinary database role or
+    /// login — <c>dms_connector</c> — and reaches the provider as the grantee of a GRANT statement.
+    /// The broker's is typed, <c>User:dms_connector</c>, and a name without its type prefix is not a
+    /// principal the broker can parse. One setting behind both would leave every authorizer-enabled
+    /// deployment unable to configure either boundary without breaking the other.
+    /// </remarks>
+    public string ConnectorDatabasePrincipal { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Kafka principal the connector's governed grants are written for, in the broker's own typed
+    /// form — <c>User:dms_connector</c>. Required only when <see cref="AclsEnabled"/>, like
+    /// <see cref="ConnectWorkerPrincipal"/>, because nothing outside the Kafka grants names it.
+    /// </summary>
+    /// <remarks>
+    /// See <see cref="ConnectorDatabasePrincipal"/> for why the database identity is a separate
+    /// setting rather than this one reused.
+    /// </remarks>
+    public string ConnectorKafkaPrincipal { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Deployment-supplied instance consumers, each paired with the one consumer group it reads
+    /// through. The pairing is required because a consumer may be granted only its own group; a flat
+    /// principal list would force every consumer onto every group. An empty list is valid for local
+    /// and no-consumer deployments.
+    /// </summary>
+    public IList<CdcConsumerOptions> Consumers { get; set; } = new List<CdcConsumerOptions>();
+
+    public string ConnectWorkerPrincipal { get; set; } = string.Empty;
+
+    public IDictionary<string, string> ProviderConnectionProperties { get; set; } =
+        new Dictionary<string, string>(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Security properties for the Kafka client the rendered connector runs, in the Java client's own
+    /// property names. They are validated against the connector template's allow-list and reach the
+    /// connector configuration as <c>producer.override.*</c>.
+    /// </summary>
+    /// <remarks>
+    /// Never given to this process's own admin client. The connector runs inside a Java Kafka Connect
+    /// worker and these are Java Kafka client properties — <c>sasl.jaas.config</c>,
+    /// <c>ssl.truststore.location</c>, and the rest — while the control plane talks to the broker
+    /// through librdkafka, which does not know any of those names and refuses to build a client
+    /// carrying one. <see cref="KafkaAdminClientSecurityProperties"/> is the control plane's own.
+    /// </remarks>
+    public IDictionary<string, string> KafkaClientSecurityProperties { get; set; } =
+        new Dictionary<string, string>(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Security properties for the admin client this control plane uses to reach the broker, in
+    /// librdkafka's property names.
+    /// </summary>
+    /// <remarks>
+    /// Separate from <see cref="KafkaClientSecurityProperties"/> because the two clients are different
+    /// implementations that do not share a configuration vocabulary, and neither dictionary's names are
+    /// usable by the other: librdkafka authenticates SASL with <c>sasl.username</c> and
+    /// <c>sasl.password</c>, which the connector allow-list refuses, and it has no
+    /// <c>sasl.jaas.config</c> or Java keystore properties at all. One dictionary feeding both would
+    /// leave a secured deployment unable to configure either side without breaking the other.
+    ///
+    /// Empty is valid and is what a PLAINTEXT broker uses, which is every local and E2E deployment.
+    /// </remarks>
+    public IDictionary<string, string> KafkaAdminClientSecurityProperties { get; set; } =
+        new Dictionary<string, string>(StringComparer.Ordinal);
+
+    /// <summary>Base URL of the running DMS whose projector supplies caught-up evidence.</summary>
+    public string DmsBaseUrl { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Bearer token whose role claim satisfies the DocumentCache status endpoint's authorization.
+    /// Never emitted in diagnostics, telemetry, or serialized output.
+    /// </summary>
+    [JsonIgnore]
+    public string DmsBearerToken { get; set; } = string.Empty;
+
+    public CdcControlTimeoutOptions Timeouts { get; set; } = new();
+
+    /// <summary>Parses <see cref="DurabilityProfile"/>, accepting only the two defined tokens.</summary>
+    public static bool TryParseDurabilityProfile(
+        string? value,
+        [NotNullWhen(true)] out CdcDurabilityProfile? durabilityProfile
+    )
+    {
+        if (string.Equals(value, LocalDurabilityProfile, StringComparison.OrdinalIgnoreCase))
+        {
+            durabilityProfile = CdcDurabilityProfile.Local;
+            return true;
+        }
+
+        if (string.Equals(value, ProductionDurabilityProfile, StringComparison.OrdinalIgnoreCase))
+        {
+            durabilityProfile = CdcDurabilityProfile.Production;
+            return true;
+        }
+
+        durabilityProfile = null;
+        return false;
+    }
+
+    /// <summary>
+    /// Projects the record-size and interval policy onto the connector-template contract that owns
+    /// those rules, so the control plane never restates them.
+    /// </summary>
+    public CdcConnectorTemplateDeploymentPolicy ToDeploymentPolicy() =>
+        new(
+            KafkaBootstrapServers,
+            MaxRecordBytes,
+            ProducerBufferBytes,
+            HeartbeatInterval,
+            SqlServerPollInterval
+        );
+
+    public CdcProviderConnectionProperties ToProviderConnectionProperties(CdcProvider provider) =>
+        new(provider, new Dictionary<string, string>(ProviderConnectionProperties, StringComparer.Ordinal));
+
+    public CdcKafkaClientSecurityProperties ToKafkaClientSecurityProperties() =>
+        new(new Dictionary<string, string>(KafkaClientSecurityProperties, StringComparer.Ordinal));
+
+    /// <summary>
+    /// The librdkafka security properties an admin client may be configured with, from the pinned
+    /// client version's CONFIGURATION.md: enough to select a protocol, authenticate over SASL, and
+    /// establish TLS trust and a client identity.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately not the Java names in the connector's own allow-list. The overlap between the two
+    /// vocabularies is `security.protocol` and `sasl.mechanism`; everything else that looks similar
+    /// means something different or does not exist on the other side, which is why one dictionary
+    /// cannot serve both.
+    /// </remarks>
+    public static IReadOnlySet<string> AdminClientSecurityPropertyNames { get; } =
+        new HashSet<string>(StringComparer.Ordinal)
+        {
+            "security.protocol",
+            "sasl.mechanism",
+            "sasl.mechanisms",
+            "sasl.username",
+            "sasl.password",
+            "sasl.kerberos.service.name",
+            "sasl.kerberos.principal",
+            "sasl.kerberos.keytab",
+            "sasl.oauthbearer.config",
+            "sasl.oauthbearer.method",
+            "sasl.oauthbearer.client.id",
+            "sasl.oauthbearer.client.secret",
+            "sasl.oauthbearer.token.endpoint.url",
+            "sasl.oauthbearer.scope",
+            "ssl.ca.location",
+            "ssl.ca.pem",
+            "ssl.certificate.location",
+            "ssl.certificate.pem",
+            "ssl.key.location",
+            "ssl.key.pem",
+            "ssl.key.password",
+            "ssl.keystore.location",
+            "ssl.keystore.password",
+            "ssl.endpoint.identification.algorithm",
+        };
+}
+
+/// <summary>
+/// One deployment-supplied instance consumer: the principal that reads the binding's public topic and
+/// the single consumer group it is granted.
+/// </summary>
+public sealed class CdcConsumerOptions
+{
+    /// <summary>
+    /// The consumer's Kafka principal, in the broker's typed form — <c>User:reporting</c>. Never a
+    /// database identity: a consumer reads the public topic and is granted nothing on the source.
+    /// </summary>
+    public string Principal { get; set; } = string.Empty;
+
+    public string ConsumerGroup { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// Per-step timeouts. A step that times out returns a fail-closed result; elapsed time never
+/// substitutes for evidence.
+/// </summary>
+public sealed class CdcControlTimeoutOptions
+{
+    public TimeSpan EligibilityProbe { get; set; } = TimeSpan.FromSeconds(30);
+
+    public TimeSpan KafkaAdmin { get; set; } = TimeSpan.FromSeconds(30);
+
+    public TimeSpan ConnectRequest { get; set; } = TimeSpan.FromSeconds(30);
+
+    public TimeSpan StatusEndpoint { get; set; } = TimeSpan.FromSeconds(30);
+
+    public TimeSpan ProviderSetup { get; set; } = TimeSpan.FromMinutes(5);
+
+    public TimeSpan ProjectionCaughtUp { get; set; } = TimeSpan.FromMinutes(10);
+
+    public TimeSpan ProviderBarrier { get; set; } = TimeSpan.FromMinutes(10);
+
+    /// <summary>
+    /// Interval between reads of a step that waits for evidence to arrive — the projection caught-up
+    /// observations and the provider barrier.
+    /// </summary>
+    public TimeSpan PollInterval { get; set; } = TimeSpan.FromSeconds(2);
+}
+
+public sealed class CdcControlOptionsValidator : IValidateOptions<CdcControlOptions>
+{
+    public ValidateOptionsResult Validate(string? name, CdcControlOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+
+        List<string> failures = [];
+
+        ValidateArtifactIdentity(options, failures);
+        ValidateEndpoints(options, failures);
+        ValidateRecordSize(options, failures);
+        ValidateIntervals(options, failures);
+        ValidateAcls(options, failures);
+        ValidateAdminClientSecurity(options, failures);
+        ValidateProjectionStatusAccess(options, failures);
+        ValidateTimeouts(options.Timeouts, failures);
+
+        return failures.Count == 0 ? ValidateOptionsResult.Success : ValidateOptionsResult.Fail(failures);
+    }
+
+    private static void ValidateArtifactIdentity(CdcControlOptions options, List<string> failures)
+    {
+        RequireText(options.DeploymentKey, nameof(CdcControlOptions.DeploymentKey), failures);
+        RequireText(options.InstanceKey, nameof(CdcControlOptions.InstanceKey), failures);
+        RequireText(options.TopicPrefix, nameof(CdcControlOptions.TopicPrefix), failures);
+        RequireText(options.SetupPrincipal, nameof(CdcControlOptions.SetupPrincipal), failures);
+        RequireText(
+            options.ConnectorDatabasePrincipal,
+            nameof(CdcControlOptions.ConnectorDatabasePrincipal),
+            failures
+        );
+
+        if (options.Generation <= 0)
+        {
+            failures.Add($"{nameof(CdcControlOptions.Generation)} must be positive.");
+        }
+
+        if (options.PartitionCount <= 0)
+        {
+            failures.Add($"{nameof(CdcControlOptions.PartitionCount)} must be positive.");
+        }
+    }
+
+    private static void ValidateEndpoints(CdcControlOptions options, List<string> failures)
+    {
+        RequireText(options.KafkaBootstrapServers, nameof(CdcControlOptions.KafkaBootstrapServers), failures);
+        RequireText(options.ConnectWorkerKey, nameof(CdcControlOptions.ConnectWorkerKey), failures);
+        RequireText(
+            options.ConnectOffsetStorageTopic,
+            nameof(CdcControlOptions.ConnectOffsetStorageTopic),
+            failures
+        );
+        RequireHttpUri(options.ConnectBaseUri, nameof(CdcControlOptions.ConnectBaseUri), failures);
+
+        if (!string.IsNullOrWhiteSpace(options.ConnectMetricsBaseUri))
+        {
+            RequireHttpUri(
+                options.ConnectMetricsBaseUri,
+                nameof(CdcControlOptions.ConnectMetricsBaseUri),
+                failures
+            );
+        }
+    }
+
+    private static void ValidateRecordSize(CdcControlOptions options, List<string> failures)
+    {
+        if (!CdcControlOptions.TryParseDurabilityProfile(options.DurabilityProfile, out _))
+        {
+            failures.Add(
+                $"{nameof(CdcControlOptions.DurabilityProfile)} must be one of: "
+                    + $"{CdcControlOptions.LocalDurabilityProfile}, {CdcControlOptions.ProductionDurabilityProfile}."
+            );
+        }
+
+        if (options.MaxRecordBytes <= 0)
+        {
+            failures.Add(
+                $"{nameof(CdcControlOptions.MaxRecordBytes)} must be specified and positive; it has no default."
+            );
+            return;
+        }
+
+        if (options.ProducerBufferBytes is not { } producerBufferBytes)
+        {
+            return;
+        }
+
+        int minimumProducerBufferBytes = Math.Max(
+            CdcConnectorTemplateDeploymentPolicy.MinimumProducerBufferBytes,
+            options.MaxRecordBytes
+        );
+
+        if (producerBufferBytes < minimumProducerBufferBytes)
+        {
+            failures.Add(
+                $"{nameof(CdcControlOptions.ProducerBufferBytes)} must be greater than or equal to "
+                    + $"{minimumProducerBufferBytes.ToString(System.Globalization.CultureInfo.InvariantCulture)}."
+            );
+        }
+    }
+
+    private static void ValidateIntervals(CdcControlOptions options, List<string> failures)
+    {
+        RequirePositive(options.LagThreshold, nameof(CdcControlOptions.LagThreshold), failures);
+
+        if (options.HeartbeatInterval is { } heartbeatInterval)
+        {
+            RequirePositive(heartbeatInterval, nameof(CdcControlOptions.HeartbeatInterval), failures);
+        }
+
+        if (options.SqlServerPollInterval is { } sqlServerPollInterval)
+        {
+            RequirePositive(sqlServerPollInterval, nameof(CdcControlOptions.SqlServerPollInterval), failures);
+        }
+    }
+
+    private static void ValidateAcls(CdcControlOptions options, List<string> failures)
+    {
+        if (
+            options.Consumers.Any(consumer =>
+                string.IsNullOrWhiteSpace(consumer.Principal)
+                || string.IsNullOrWhiteSpace(consumer.ConsumerGroup)
+            )
+        )
+        {
+            failures.Add(
+                $"{nameof(CdcControlOptions.Consumers)} must not contain a blank principal or consumer group."
+            );
+        }
+
+        if (
+            options.Consumers.Select(consumer => consumer.Principal).Distinct(StringComparer.Ordinal).Count()
+            != options.Consumers.Count
+        )
+        {
+            failures.Add(
+                $"{nameof(CdcControlOptions.Consumers)} must not grant one principal more than one consumer group."
+            );
+        }
+
+        if (
+            options
+                .Consumers.Select(consumer => consumer.ConsumerGroup)
+                .Distinct(StringComparer.Ordinal)
+                .Count() != options.Consumers.Count
+        )
+        {
+            failures.Add($"{nameof(CdcControlOptions.Consumers)} must not share one consumer group.");
+        }
+
+        if (!options.AclsEnabled)
+        {
+            return;
+        }
+
+        // ConnectorDatabasePrincipal is required unconditionally, beside SetupPrincipal: the
+        // provider-setup pass grants the source objects to it whether or not the broker has an
+        // authorizer, and CdcProviderSetupInputsFactory refuses every verb without it. The two Kafka
+        // principals are ACL-conditional, because nothing outside the Kafka grants names either.
+        RequireText(
+            options.ConnectWorkerPrincipal,
+            nameof(CdcControlOptions.ConnectWorkerPrincipal),
+            failures
+        );
+        RequireText(
+            options.ConnectorKafkaPrincipal,
+            nameof(CdcControlOptions.ConnectorKafkaPrincipal),
+            failures
+        );
+
+        // Every Kafka principal is validated in the broker's own typed form. The names reach
+        // AclBinding verbatim, and a broker parses a principal as "<type>:<name>", so an untyped value
+        // is refused by the authorizer rather than matched against nothing - the failure a deployment
+        // that reused its database role name would otherwise reach only at provisioning time.
+        RequireKafkaPrincipalForm(
+            options.ConnectorKafkaPrincipal,
+            nameof(CdcControlOptions.ConnectorKafkaPrincipal),
+            failures
+        );
+        RequireKafkaPrincipalForm(
+            options.ConnectWorkerPrincipal,
+            nameof(CdcControlOptions.ConnectWorkerPrincipal),
+            failures
+        );
+
+        foreach (CdcConsumerOptions consumer in options.Consumers)
+        {
+            RequireKafkaPrincipalForm(
+                consumer.Principal,
+                $"{nameof(CdcControlOptions.Consumers)}.{nameof(CdcConsumerOptions.Principal)}",
+                failures
+            );
+        }
+    }
+
+    /// <summary>
+    /// A Kafka principal is "&lt;type&gt;:&lt;name&gt;" with both halves non-empty. Blank values are
+    /// left to <see cref="RequireText"/>, so an omitted setting is reported once as missing rather
+    /// than twice.
+    /// </summary>
+    private static void RequireKafkaPrincipalForm(string value, string name, List<string> failures)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return;
+        }
+
+        int separator = value.IndexOf(':', StringComparison.Ordinal);
+        if (separator <= 0 || separator == value.Length - 1)
+        {
+            failures.Add(
+                $"{name} must be a Kafka principal in the broker's typed form, for example "
+                    + "'User:dms_connector'."
+            );
+        }
+    }
+
+    /// <summary>
+    /// Validates the projection-status credentials only as far as every verb is entitled to demand.
+    /// </summary>
+    /// <remarks>
+    /// These two settings are read in exactly one place — the projection-status collector — and only
+    /// the verbs that correlate the running projector's report reach it: enable, status, and restart.
+    /// Retirement and adoption never read projection status at all.
+    ///
+    /// Requiring them here made them a precondition of resolving the options, which every verb does,
+    /// so a deployment that could not mint an operator token could not retire a binding either. That is
+    /// exactly backwards: retirement matters most when the DMS is already down, which is precisely when
+    /// no token can be obtained. The collector refuses for itself when they are absent, so the verbs
+    /// that need them still fail closed with a message naming them.
+    ///
+    /// A supplied base URL is still shape-checked. A malformed URL is a configuration fault whichever
+    /// verb runs, and catching it on resolution is free; an absent one is simply a deployment that has
+    /// not configured the verbs that would use it.
+    /// </remarks>
+    /// <summary>
+    /// Refuses an admin-client security property librdkafka does not define, at options validation
+    /// rather than at the first broker call.
+    /// </summary>
+    /// <remarks>
+    /// The failure this catches is otherwise silent until something reaches the broker: librdkafka
+    /// throws on an unknown property name when the client is built, and the client is built lazily on
+    /// first resolution, so a deployment misconfigured this way starts cleanly and fails inside
+    /// whichever verb happens to touch Kafka first. The likeliest such misconfiguration is a Java
+    /// property name copied across from <see cref="CdcControlOptions.KafkaClientSecurityProperties"/>,
+    /// which is exactly what this names.
+    ///
+    /// The allow-list is librdkafka's own security-related configuration for a SASL or TLS client, from
+    /// the pinned client version's CONFIGURATION.md. It is deliberately narrow: an admin client needs
+    /// to authenticate and establish trust, and nothing here should be a channel for arbitrary client
+    /// tuning.
+    /// </remarks>
+    private static void ValidateAdminClientSecurity(CdcControlOptions options, List<string> failures)
+    {
+        foreach (
+            string propertyName in options
+                .KafkaAdminClientSecurityProperties.Keys.Where(propertyName =>
+                    !CdcControlOptions.AdminClientSecurityPropertyNames.Contains(propertyName)
+                )
+                .Order(StringComparer.Ordinal)
+        )
+        {
+            failures.Add(
+                $"{nameof(CdcControlOptions.KafkaAdminClientSecurityProperties)} does not support "
+                    + $"`{propertyName}`. The control plane reaches the broker through librdkafka, whose "
+                    + "property names differ from the Java client names the connector is configured "
+                    + $"with in {nameof(CdcControlOptions.KafkaClientSecurityProperties)}."
+            );
+        }
+
+        foreach (
+            string propertyName in options
+                .KafkaAdminClientSecurityProperties.Where(property =>
+                    string.IsNullOrWhiteSpace(property.Value)
+                )
+                .Select(property => property.Key)
+                .Order(StringComparer.Ordinal)
+        )
+        {
+            failures.Add(
+                $"{nameof(CdcControlOptions.KafkaAdminClientSecurityProperties)} `{propertyName}` must "
+                    + "not be empty."
+            );
+        }
+    }
+
+    private static void ValidateProjectionStatusAccess(CdcControlOptions options, List<string> failures)
+    {
+        if (string.IsNullOrWhiteSpace(options.DmsBaseUrl))
+        {
+            return;
+        }
+
+        RequireHttpUri(options.DmsBaseUrl, nameof(CdcControlOptions.DmsBaseUrl), failures);
+    }
+
+    private static void ValidateTimeouts(CdcControlTimeoutOptions timeouts, List<string> failures)
+    {
+        ArgumentNullException.ThrowIfNull(timeouts);
+
+        RequirePositive(
+            timeouts.EligibilityProbe,
+            $"{nameof(CdcControlOptions.Timeouts)}:{nameof(CdcControlTimeoutOptions.EligibilityProbe)}",
+            failures
+        );
+        RequirePositive(
+            timeouts.KafkaAdmin,
+            $"{nameof(CdcControlOptions.Timeouts)}:{nameof(CdcControlTimeoutOptions.KafkaAdmin)}",
+            failures
+        );
+        RequirePositive(
+            timeouts.ConnectRequest,
+            $"{nameof(CdcControlOptions.Timeouts)}:{nameof(CdcControlTimeoutOptions.ConnectRequest)}",
+            failures
+        );
+        RequirePositive(
+            timeouts.StatusEndpoint,
+            $"{nameof(CdcControlOptions.Timeouts)}:{nameof(CdcControlTimeoutOptions.StatusEndpoint)}",
+            failures
+        );
+        RequirePositive(
+            timeouts.ProviderSetup,
+            $"{nameof(CdcControlOptions.Timeouts)}:{nameof(CdcControlTimeoutOptions.ProviderSetup)}",
+            failures
+        );
+        RequirePositive(
+            timeouts.ProjectionCaughtUp,
+            $"{nameof(CdcControlOptions.Timeouts)}:{nameof(CdcControlTimeoutOptions.ProjectionCaughtUp)}",
+            failures
+        );
+        RequirePositive(
+            timeouts.ProviderBarrier,
+            $"{nameof(CdcControlOptions.Timeouts)}:{nameof(CdcControlTimeoutOptions.ProviderBarrier)}",
+            failures
+        );
+        RequirePositive(
+            timeouts.PollInterval,
+            $"{nameof(CdcControlOptions.Timeouts)}:{nameof(CdcControlTimeoutOptions.PollInterval)}",
+            failures
+        );
+    }
+
+    private static void RequireText(string? value, string settingName, List<string> failures)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            failures.Add($"{settingName} must be supplied.");
+        }
+    }
+
+    private static void RequirePositive(TimeSpan value, string settingName, List<string> failures)
+    {
+        if (value <= TimeSpan.Zero)
+        {
+            failures.Add($"{settingName} must be positive.");
+        }
+    }
+
+    private static void RequireHttpUri(string? value, string settingName, List<string> failures)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            failures.Add($"{settingName} must be supplied.");
+            return;
+        }
+
+        if (
+            !Uri.TryCreate(value, UriKind.Absolute, out Uri? uri)
+            || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps)
+        )
+        {
+            failures.Add($"{settingName} must be an absolute http or https URL.");
+        }
+    }
+}

@@ -106,6 +106,30 @@ param (
     [Switch]
     $EnableKafkaUI,
 
+    # Enable the Kafka and Kafka Connect infrastructure the deployment-owned CDC workflow runs on,
+    # for either database engine. This switch is an infrastructure opt-in only: it configures no
+    # DocumentCache projection target and enables tracking on no data store. Starting DMS is never
+    # authority to enable tracking - the CDC workflow's own explicit steps do both, and the
+    # bootstrap wrapper owns them.
+    [Switch]
+    $EnableKafkaCdc,
+
+    # Root path of the durable CDC binding state store, which holds the deployment-owned immutable
+    # binding records. Defaults to eng/docker-compose/.cdc-state (Git-ignored). The store is
+    # deliberately separate from the .bootstrap workspace: a binding record outlives any one
+    # bootstrap run and is never part of the bootstrap manifest. A relative path resolves against
+    # the caller's working directory, the same way -EnvironmentFile does.
+    [string]
+    $CdcBindingStatePath = "",
+
+    # Remove the compose volumes even when a CDC binding did not retire, abandoning its record and
+    # the governed artifacts it names. A destructive teardown otherwise fails on an unretired
+    # binding, because deleting the volumes around a surviving binding record destroys the very
+    # connector, offsets, topics, and capture artifacts an idempotent retirement retry needs. Requires
+    # -d -v. This is an operator decision and is never inferred from a retirement that could not run.
+    [Switch]
+    $AbandonCdcBindingState,
+
     # Enable the DMS Configuration Service.
     # Retained for backward compatibility; Config Service is now always included in the compose set.
     # Per the bootstrap entry-point spec (DMS-1153), every non-teardown run starts Config Service,
@@ -170,8 +194,8 @@ param (
     # Database engine for the whole stack. "postgresql" (default) uses postgresql.yml.
     # "mssql" swaps in mssql.yml: SQL Server hosts the DMS datastore, the Configuration
     # Service (CMS SQL Server backend), and the self-contained OpenIddict identity stores —
-    # no PostgreSQL container runs. The relational backend has no Debezium CDC (Kafka is
-    # PostgreSQL-only and omitted). The .env.mssql overlay (DMS_DATASTORE=mssql,
+    # no PostgreSQL container runs. Kafka and Kafka Connect are engine-neutral and opt-in on
+    # either engine; the engine selects only the database. The .env.mssql overlay (DMS_DATASTORE=mssql,
     # DMS_CONFIG_DATASTORE=mssql, the MSSQL_* keys, and the SQL Server connection strings)
     # is composed automatically onto -EnvironmentFile. See mssql.yml and
     # Resolve-DatabaseEngineEnvironmentFile.
@@ -216,6 +240,55 @@ if ($PSBoundParameters.ContainsKey('DmsBaseUrl') -and -not [string]::IsNullOrWhi
 
 if ($DbOnly -and $r) {
     throw "Parameter -r/-Rebuild is not valid with -DbOnly. Database-only mode starts and waits for the database without building application images."
+}
+
+# A binding state root named on a run that neither opts into CDC nor tears one down would be
+# silently ignored, which is the failure mode most likely to leave an operator believing a
+# different store was in use than the one that was written.
+if (-not [string]::IsNullOrWhiteSpace($CdcBindingStatePath) -and -not ($EnableKafkaCdc -or $d)) {
+    throw "-CdcBindingStatePath requires -EnableKafkaCdc (or a teardown run). Use: start-local-dms.ps1 -EnableKafkaCdc -CdcBindingStatePath <path>"
+}
+
+# Abandoning the binding state is only meaningful for the one workflow that removes it, so a run that
+# cannot reach the retirement is refused rather than silently carrying an unused permission.
+if ($AbandonCdcBindingState -and -not ($d -and $v)) {
+    throw "-AbandonCdcBindingState requires -d -v. It permits the destructive volume removal to proceed when a CDC binding did not retire, which is the only workflow that removes a binding record."
+}
+
+function Assert-CdcConnectImagePinnedByDigest {
+    <#
+    .SYNOPSIS
+    Fails closed unless the Kafka Connect image the CDC workflow runs is named by immutable digest.
+
+    .DESCRIPTION
+    The image is operator-supplied through DMS_CDC_CONNECT_IMAGE and must be the qualified Ed-Fi
+    Kafka Connect build, named by digest, exactly as the connector-template integration fixture
+    requires of CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE. A tag is rejected rather than used: a moving
+    tag makes a registered connector's runtime unreproducible and leaves the live read-back
+    validation comparing against an unknown image. There is deliberately no fallback - kafka.yml's
+    :pre default belongs to the non-CDC Kafka/Kafka-UI path, which this opt-in does not relax.
+
+    Digest-qualification is all this gate enforces, and the messages say so rather than claiming an
+    identity check. The repository name cannot separate the qualified build from the unqualified one
+    - both are published as ed-fi-kafka-connect and only the digest distinguishes them - so a digest
+    naming an image without the Ed-Fi partitioner passes here and fails later inside connector
+    validation, which is where the plugin is actually observed.
+    #>
+    param(
+        [AllowEmptyString()]
+        [string]
+        $Image
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Image)) {
+        throw "-EnableKafkaCdc requires DMS_CDC_CONNECT_IMAGE to name a Kafka Connect image by immutable digest (for example edfialliance/ed-fi-kafka-connect@sha256:<digest>). It is unset, and the CDC workflow never falls back to a tag. Supply the qualified Ed-Fi build: this check enforces the digest form only, so a digest for any other image fails later, inside connector validation."
+    }
+
+    if (-not $Image.Contains("@sha256:")) {
+        throw "DMS_CDC_CONNECT_IMAGE must name the Kafka Connect image by immutable digest. '$Image' names a tag, which the CDC workflow rejects. This check enforces the digest form only; supplying a digest for an image other than the qualified Ed-Fi build fails later, inside connector validation."
+    }
+
+    return $Image
 }
 
 $databaseOnlyStartup = $DbOnly -and -not $d
@@ -301,6 +374,35 @@ else {
     $EnvironmentFile = Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine $DatabaseEngine -BaseEnvironmentFile $EnvironmentFile -DockerComposeRoot $PSScriptRoot -SkipMssqlCmsDatabaseValidation:($databaseOnlyStartup -or $d -or $SeparateConfigDatabase)
 }
 $envValues = ReadValuesFromEnvFile $EnvironmentFile
+
+# Resolved HERE rather than beside the other parameter normalization above, because it is resolved
+# from the env file Compose will be given - the overlay-composed one $EnvironmentFile has by now
+# become - and not from the switch alone. env-utility owns the precedence: an explicit
+# -CdcBindingStatePath, then an ambient DMS_CDC_BINDING_STATE_PATH, then the file, then ./.cdc-state.
+#
+# Then EXPORTED, which is the half that makes the resolution binding. Compose reads the state store's
+# bind-mount source out of the environment, so a run whose switch named one directory while the
+# environment named another created and reported one store, mounted a second, and - on the teardown
+# below - enumerated the first, found no binding to retire, and carried on into `down -v` over the
+# artifacts the second store's surviving record still governed. With the value exported, the
+# directory this script creates, the store the setup container mounts, the store the enable phase
+# allocates its generation from, and the store the retirement reads are one directory by
+# construction. Scoped to the two shapes that reach the CDC path at all, which are the same two
+# -CdcBindingStatePath is accepted for.
+$cdcBindingStateRoot = Resolve-CdcBindingStateRoot `
+    -EnvValues $envValues `
+    -Path $CdcBindingStatePath `
+    -WorkingDirectory $originalLocation.Path
+# Whether anything named a root before this script resolved one, read BEFORE the export below makes
+# the answer yes for every later reader. Only the teardown drift warning needs it.
+$cdcBindingStateRootWasNamed =
+    (-not [string]::IsNullOrWhiteSpace($CdcBindingStatePath)) -or
+    $envValues.ContainsKey("DMS_CDC_BINDING_STATE_PATH") -or
+    ($null -ne [System.Environment]::GetEnvironmentVariable("DMS_CDC_BINDING_STATE_PATH"))
+if ($EnableKafkaCdc -or $d) {
+    $env:DMS_CDC_BINDING_STATE_PATH = $cdcBindingStateRoot
+}
+
 if (-not $databaseOnlyStartup) {
     # Identity/CMS/DMS settings are application concerns. Keeping them outside DbOnly means an
     # unrelated malformed identity value cannot block the database + readiness diagnostic slice.
@@ -414,11 +516,11 @@ if (-not $databaseOnlyStartup) {
         $files += @("-f", "local-dms-diagnostics.yml")
     }
 
-    # Kafka (and KafkaUI) back the PostgreSQL Debezium CDC path only and are opt-in via
-    # -EnableKafka / -EnableKafkaUI. The relational MSSQL path serves writes and queries directly
-    # from SQL and registers no connector, so Kafka is omitted.
-    $enableKafkaInfrastructure = $EnableKafka -or $EnableKafkaUI
-    if ($enableKafkaInfrastructure -and $DatabaseEngine -eq "postgresql") {
+    # Kafka and Kafka Connect are opt-in via -EnableKafka, -EnableKafkaUI, or -EnableKafkaCdc, and
+    # are engine-neutral: the deployment-owned CDC workflow captures from SQL Server as well as
+    # PostgreSQL, so neither the compose set nor the start sequence branches on -DatabaseEngine.
+    $enableKafkaInfrastructure = $EnableKafka -or $EnableKafkaUI -or $EnableKafkaCdc
+    if ($enableKafkaInfrastructure) {
         $files += @("-f", "kafka.yml")
     }
 
@@ -431,7 +533,9 @@ if (-not $databaseOnlyStartup) {
         $files += @("-f", "keycloak.yml")
     }
 
-    if ($EnableKafkaUI -and $DatabaseEngine -eq "postgresql") {
+    # -EnableKafkaUI adds the UI on top of that infrastructure and nothing else; it is not a CDC
+    # opt-in and never implies one.
+    if ($EnableKafkaUI) {
         $files += @("-f", "kafka-ui.yml")
     }
 
@@ -461,6 +565,55 @@ if ($d) {
     else {
         Write-Output "Shutting down"
     }
+    if (-not $v) {
+        # A normal stop retains the binding, connector, offsets, topics, ACLs, and provider capture
+        # artifacts - including the Connect config topic on the broker volume, which is where the
+        # worker keeps each connector's target state. It restores every connector standing at a
+        # RUNNING target state as soon as it starts again, so without this the next start resumes
+        # publishing before anything checks source-history continuity, which cdc-streaming.md
+        # requires to be proved before every connector start or resume after initial enablement.
+        # Fencing here is the only place that check can be kept: nothing can run before a worker
+        # that has already resumed. `cdc restart` lifts the fence through the continuity gate.
+        #
+        # Runs BEFORE the compose down, while the worker is still reachable, and NOT under
+        # $EnableKafkaCdc: the worker starts on any Kafka opt-in ($enableKafkaInfrastructure), so a
+        # stack that enabled CDC once and is restarted with only -EnableKafka would otherwise resume
+        # its connector with no CDC code on the path. A fence that does not apply warns rather than
+        # failing the shutdown - nothing has been removed for it to leave unprotected.
+        Import-Module (Join-Path $PSScriptRoot "cdc-teardown.psm1") -Force
+        Invoke-CdcConnectorFence `
+            -BindingStateRoot $cdcBindingStateRoot `
+            -ComposeProjectName "dms-local" `
+            -EnvironmentFile $EnvironmentFile `
+            -DatabaseEngine $DatabaseEngine | Out-Null
+    }
+    if ($v) {
+        # Destructive volume removal is the only local workflow allowed to remove a CDC binding
+        # record, and only in the same pass that removes every artifact the record governs. The
+        # retirement therefore runs BEFORE the compose down, while the connector, broker, and
+        # instance database it must reach are still running. No fence is issued first: the
+        # retirement's own first act is to stop the connector, and it goes on to delete it.
+        Import-Module (Join-Path $PSScriptRoot "cdc-teardown.psm1") -Force
+        if (-not $cdcBindingStateRootWasNamed) {
+            # Nothing named a root - not the switch, not the env file this teardown was given, not
+            # the environment (asked before this run's own export). The default is what will be
+            # retired from, and a stack started against a custom root would be retired from an empty
+            # store, reporting nothing to retire and then removing every volume anyway. Named here so
+            # the mismatch is visible before the down, since the script cannot know what the start run
+            # passed. A run that DID name a root is silent: it and the start run resolved that name
+            # through the same precedence, so they cannot land on different directories.
+            Write-Output "CDC teardown will retire from the default binding state store at '$cdcBindingStateRoot' (neither -CdcBindingStatePath nor DMS_CDC_BINDING_STATE_PATH named one). A stack started against a different binding state root must be torn down against that same root."
+        }
+        # Throws when a discovered binding did not retire, which is what keeps the compose down below
+        # from removing the volumes holding the artifacts that binding's surviving record still names.
+        # -AbandonCdcBindingState is the operator's explicit decision to accept that instead.
+        Invoke-CdcDestructiveTeardown `
+            -BindingStateRoot $cdcBindingStateRoot `
+            -ComposeProjectName "dms-local" `
+            -EnvironmentFile $EnvironmentFile `
+            -DatabaseEngine $DatabaseEngine `
+            -AbandonBindingState:$AbandonCdcBindingState
+    }
     docker compose $files --env-file $EnvironmentFile -p dms-local down $downArgs
     # Fail before workspace removal: a failed down can leave services running against the
     # bind-mounted .bootstrap schema and claims, so removing the workspace would pull it
@@ -476,6 +629,39 @@ else {
     $existingNetwork = docker network ls --filter name="dms" -q
     if (! $existingNetwork) {
         docker network create dms
+    }
+
+    if ($EnableKafkaCdc) {
+        # Read the way Compose reads it, so an ambient shell value - which wins over the env file
+        # during interpolation - is the value that is validated, not the file's own text.
+        Assert-CdcConnectImagePinnedByDigest -Image (
+            Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "DMS_CDC_CONNECT_IMAGE"
+        ) | Out-Null
+
+        if ($IdentityProvider -eq "keycloak") {
+            # Only the self-contained identity setup registers the DocumentCache operator client, so
+            # under Keycloak the infrastructure still starts but nothing can authenticate to the
+            # status endpoint. Said here rather than discovered later as a 403.
+            Write-Warning "Kafka CDC infrastructure is starting under the keycloak identity provider, which does not register the DocumentCache CDC operator client. The CDC enable workflow is supported on the self-contained identity provider."
+        }
+
+        # The shared Connect offset store's topic name, resolved the way Compose resolves it so this
+        # script, the worker (kafka.yml OFFSET_STORAGE_TOPIC), and the control plane's own
+        # ConnectOffsetStorageTopic setting all name one topic.
+        $cdcConnectOffsetStorageTopic = Get-ComposeResolvedEnvValue `
+            -EnvironmentValues $envValues `
+            -Name "DMS_CDC_CONNECT_OFFSET_STORAGE_TOPIC" `
+            -DefaultValue (Get-LocalCdcDeploymentPolicy).OffsetStoreTopicDefault
+
+        # The store root is created here, before any CDC work, so every later phase and any teardown
+        # name one existing absolute path. Creating it is not an enablement decision: this run
+        # configures no DocumentCache projection target and enables tracking on no data store, and
+        # an empty store is exactly what a deployment that has bound nothing yet holds.
+        if (-not (Test-Path -LiteralPath $cdcBindingStateRoot -PathType Container)) {
+            New-Item -ItemType Directory -Path $cdcBindingStateRoot -Force | Out-Null
+        }
+        Write-Output "CDC binding state store root: $cdcBindingStateRoot"
+        Write-Output "Kafka CDC infrastructure is opt-in infrastructure only: no projection target is configured and no data store has CDC enabled by this step."
     }
 
     $upArgs = @("--detach")
@@ -758,6 +944,117 @@ else {
         throw "PostgreSQL ($(Format-LogSafeText $ContainerName)) did not become ready within $TimeoutSeconds seconds."
     }
 
+    function Initialize-CdcConnectOffsetStore {
+        <#
+        .SYNOPSIS
+        Provisions the shared Kafka Connect offset store before the Connect worker can create it.
+
+        .DESCRIPTION
+        cdc-streaming.md requires bootstrap to pre-create and validate the configured shared offset
+        topic before it starts local Kafka Connect, and never to rely on Connect topic auto-creation
+        or broker defaults. A worker that reaches the broker first creates the topic itself and sets
+        only cleanup.policy on it, leaving min.insync.replicas to the broker default. The control
+        plane validates an existing store rather than repairing it, and a broker-default value is not
+        a topic-level override, so a worker-created store is permanently nonconforming and every cdc
+        verb refuses against it - which is exactly what the checked-in broker-backed test proves.
+
+        Kafka is therefore started on its own first, the store is provisioned, and only then does the
+        caller start the worker.
+
+        The add-config runs whether or not the create found the topic present. A stack stopped
+        without -v keeps the broker volume, so a run that opted into Kafka before it opted into CDC
+        has already left a worker-created store behind, and setting the explicit topic-level values
+        on it is the deployment obligation that makes the opt-in usable on that broker. The values
+        are the local profile's own, read from Get-LocalCdcDeploymentPolicy so this script and the
+        cdc verbs cannot name different ones. The control plane still validates the store for itself
+        on every verb; this provisions it and confirms what the broker reports back.
+        #>
+        param(
+            [Parameter(Mandatory)]
+            [string[]]
+            $ComposeFiles,
+
+            [Parameter(Mandatory)]
+            [string]
+            $EnvironmentFile,
+
+            [Parameter(Mandatory)]
+            [string]
+            $TopicName,
+
+            [int]
+            $TimeoutSeconds = 120
+        )
+
+        $policy = Get-LocalCdcDeploymentPolicy
+        $partitionCount = [string]$policy.OffsetStorePartitionCount
+        $replicationFactor = [string]$policy.OffsetStoreReplicationFactor
+        $minInSyncReplicas = [string]$policy.OffsetStoreMinInSyncReplicas
+
+        Write-Output "Starting Kafka before Kafka Connect, so the shared Connect offset store is provisioned before the worker can create it..."
+        docker compose $ComposeFiles --env-file $EnvironmentFile -p dms-local up --detach kafka
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to start Kafka. Exit code $LASTEXITCODE"
+        }
+
+        $deadline = [datetime]::UtcNow.AddSeconds($TimeoutSeconds)
+        $brokerReady = $false
+        while ([datetime]::UtcNow -lt $deadline) {
+            $remainingSeconds = [math]::Max(1, [math]::Ceiling(($deadline - [datetime]::UtcNow).TotalSeconds))
+            $probeArguments = @(
+                "exec", "dms-kafka1",
+                "/opt/kafka/bin/kafka-cluster.sh", "cluster-id", "--bootstrap-server", "dms-kafka1:9092"
+            )
+            if (Test-NativeCommandWithTimeout -FilePath "docker" -ArgumentList $probeArguments -TimeoutSeconds ([math]::Min(10, $remainingSeconds))) {
+                $brokerReady = $true
+                break
+            }
+
+            if ([datetime]::UtcNow -lt $deadline) {
+                Start-Sleep -Seconds 2
+            }
+        }
+
+        if (-not $brokerReady) {
+            throw "Kafka (dms-kafka1) did not become reachable within $TimeoutSeconds seconds, so the shared Connect offset store could not be provisioned before the Connect worker starts."
+        }
+
+        Write-Output "Provisioning the shared Connect offset store '$(Format-LogSafeText $TopicName)'..."
+        docker exec dms-kafka1 /opt/kafka/bin/kafka-topics.sh `
+            --bootstrap-server dms-kafka1:9092 `
+            --create --if-not-exists `
+            --topic $TopicName `
+            --partitions $partitionCount `
+            --replication-factor $replicationFactor `
+            --config cleanup.policy=compact `
+            --config "min.insync.replicas=$minInSyncReplicas"
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to create the shared Connect offset store. Exit code $LASTEXITCODE"
+        }
+
+        docker exec dms-kafka1 /opt/kafka/bin/kafka-configs.sh `
+            --bootstrap-server dms-kafka1:9092 `
+            --alter --entity-type topics --entity-name $TopicName `
+            --add-config "cleanup.policy=compact,min.insync.replicas=$minInSyncReplicas"
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to set the shared Connect offset store's explicit topic-level policy. Exit code $LASTEXITCODE"
+        }
+
+        $described = (docker exec dms-kafka1 /opt/kafka/bin/kafka-configs.sh `
+            --bootstrap-server dms-kafka1:9092 `
+            --describe --entity-type topics --entity-name $TopicName 2>&1) | Out-String
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to read the shared Connect offset store's policy back. Exit code $LASTEXITCODE"
+        }
+
+        if ($described -notmatch [regex]::Escape("min.insync.replicas=$minInSyncReplicas") -or
+            $described -notmatch [regex]::Escape("cleanup.policy=compact")) {
+            throw "The shared Connect offset store does not report the explicit topic-level policy the CDC control plane requires (cleanup.policy=compact and min.insync.replicas=$minInSyncReplicas)."
+        }
+
+        Write-Output "Shared Connect offset store is compacted with an explicit topic-level min.insync.replicas=$minInSyncReplicas."
+    }
+
     if ($DmsOnly) {
         Write-Output "Starting DMS service only..."
         $dmsServices = @("dms")
@@ -908,28 +1205,49 @@ else {
             ./setup-openiddict.ps1 -InsertData @identityRoleParams -NewClientSecret $identityClientSecrets.DmsConfigurationServiceClientSecret -ClientSecretMinimumLength $identityClientSecrets.ClientSecretMinimumLength -ClientSecretMaximumLength $identityClientSecrets.ClientSecretMaximumLength -EnvironmentFile $EnvironmentFile @identityDbParams
             ./setup-openiddict.ps1 -InsertData @identityRoleParams -NewClientId "CMSReadOnlyAccess" -NewClientName "CMS ReadOnly Access" -ClientScopeName "edfi_admin_api/readonly_access" -NewClientSecret $identityClientSecrets.CmsReadOnlyAccessClientSecret -ClientSecretMinimumLength $identityClientSecrets.ClientSecretMinimumLength -ClientSecretMaximumLength $identityClientSecrets.ClientSecretMaximumLength -EnvironmentFile $EnvironmentFile @identityDbParams
             ./setup-openiddict.ps1 -InsertData @identityRoleParams -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access" -EnvironmentFile $EnvironmentFile @identityDbParams
+
+            if ($EnableKafkaCdc) {
+                # The DocumentCache status endpoint authorizes on an exact role claim, and a client
+                # CMS creates carries the configured client role instead, so the operator client is
+                # registered here - in the identity phase that already owns local client
+                # registration - rather than by the CDC phase that consumes its token.
+                #
+                # The resolved role set is not splatted: this is the one client whose DMS role is
+                # deliberately not the configured client role, and splatting it alongside the
+                # override would bind -DmsClientRole twice. ConfigServiceRole still comes from that
+                # same resolved set, so the operator client is registered against the CMS role the
+                # deployment configured rather than the setup script's default.
+                Write-Output "Registering the DocumentCache CDC operator client..."
+                ./setup-openiddict.ps1 -InsertData -ConfigServiceRole $identityRoleParams.ConfigServiceRole -NewClientId $identityClientSecrets.DocumentCacheOperatorClientId -NewClientName "DocumentCache CDC Operator" -DmsClientRole (Get-DocumentCacheStatusOperatorRole) -NewClientSecret $identityClientSecrets.DocumentCacheOperatorClientSecret -ClientSecretMinimumLength $identityClientSecrets.ClientSecretMinimumLength -ClientSecretMaximumLength $identityClientSecrets.ClientSecretMaximumLength -EnvironmentFile $EnvironmentFile @identityDbParams
+            }
         }
 
-        if ($enableKafkaInfrastructure -and $DatabaseEngine -eq "postgresql") {
+        if ($enableKafkaInfrastructure) {
+            # The Connect worker starts in the same `up` as the broker, so on the CDC opt-in the
+            # shared offset store is provisioned first rather than left to the worker to create.
+            if ($EnableKafkaCdc) {
+                Initialize-CdcConnectOffsetStore `
+                    -ComposeFiles $files `
+                    -EnvironmentFile $EnvironmentFile `
+                    -TopicName $cdcConnectOffsetStorageTopic
+            }
+
             Write-Output "Starting Kafka infrastructure..."
+            # kafka-postgresql-source is the Kafka Connect service. The name predates the
+            # engine-neutral CDC workflow and is kept: renaming it would break existing local
+            # workflows and any external reference to the container name.
             docker compose $files --env-file $EnvironmentFile -p dms-local up $upArgs kafka kafka-postgresql-source
             if ($LASTEXITCODE -ne 0) {
                 throw "Failed to start Kafka infrastructure. Exit code $LASTEXITCODE"
             }
         }
-        elseif ($enableKafkaInfrastructure -and $DatabaseEngine -eq "mssql") {
-            Write-Output "Skipping Kafka infrastructure: the MSSQL relational path does not use Debezium CDC (PostgreSQL-only)."
-        }
 
-        if ($EnableKafkaUI -and $DatabaseEngine -eq "postgresql") {
+        if ($EnableKafkaUI) {
             Write-Output "Starting Kafka UI..."
             docker compose $files --env-file $EnvironmentFile -p dms-local up $upArgs kafka-ui
             if ($LASTEXITCODE -ne 0) {
                 throw "Failed to start Kafka UI. Exit code $LASTEXITCODE"
             }
-        }
-        elseif ($EnableKafkaUI -and $DatabaseEngine -eq "mssql") {
-            Write-Output "Skipping Kafka UI: the MSSQL relational path does not use Debezium CDC (PostgreSQL-only)."
         }
 
         # Claims-ready gate: prove CMS has applied the expected claims content before
@@ -978,6 +1296,15 @@ else {
         ./setup-openiddict.ps1 -InitDb -EnvironmentFile $EnvironmentFile @identityDbParams
     }
 
+    # The full-stack `up` starts the Connect worker alongside everything else, so the shared offset
+    # store is provisioned before it rather than left to the worker's own auto-creation.
+    if ($EnableKafkaCdc) {
+        Initialize-CdcConnectOffsetStore `
+            -ComposeFiles $files `
+            -EnvironmentFile $EnvironmentFile `
+            -TopicName $cdcConnectOffsetStorageTopic
+    }
+
     if ($bootstrapManifestPresent) {
         Write-Output "Bootstrap manifest detected; starting DMS."
         docker compose $files --env-file $EnvironmentFile -p dms-local up $upArgs
@@ -1003,6 +1330,13 @@ else {
 
         # Create client with edfi_admin_api/authMetadata_readonly_access scope
         ./setup-openiddict.ps1 -InsertData @identityRoleParams -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access" -EnvironmentFile $EnvironmentFile @identityDbParams
+
+        if ($EnableKafkaCdc) {
+            # Same operator client the -InfraOnly shape registers, for a direct full start, and for
+            # the same reason it does not splat the resolved role set.
+            Write-Output "Registering the DocumentCache CDC operator client..."
+            ./setup-openiddict.ps1 -InsertData -ConfigServiceRole $identityRoleParams.ConfigServiceRole -NewClientId $identityClientSecrets.DocumentCacheOperatorClientId -NewClientName "DocumentCache CDC Operator" -DmsClientRole (Get-DocumentCacheStatusOperatorRole) -NewClientSecret $identityClientSecrets.DocumentCacheOperatorClientSecret -ClientSecretMinimumLength $identityClientSecrets.ClientSecretMinimumLength -ClientSecretMaximumLength $identityClientSecrets.ClientSecretMaximumLength -EnvironmentFile $EnvironmentFile @identityDbParams
+        }
     }
     Start-Sleep 20
 }

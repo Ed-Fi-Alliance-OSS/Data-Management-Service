@@ -1,0 +1,28 @@
+[
+  {
+    "Code": "adoptVerificationNotExactMatch",
+    "Category": "kafkaPolicyInvalid",
+    "Severity": "error",
+    "Component": "kafkaPolicy",
+    "ObservedAt": "2026-09-07T01:02:28.4380887+00:00",
+    "Message": "CDC adoption requires every live verification to exactly match the supplied binding record.",
+    "Retryable": false,
+    "ArtifactKind": "KafkaTopics",
+    "ArtifactName": null,
+    "Expected": "ExactMatch",
+    "Observed": "Invalid"
+  },
+  {
+    "Code": "adoptVerificationNotExactMatch",
+    "Category": "kafkaPolicyInvalid",
+    "Severity": "error",
+    "Component": "kafkaPolicy",
+    "ObservedAt": "2026-09-07T01:02:28.4395384+00:00",
+    "Message": "CDC adoption requires every live verification to exactly match the supplied binding record.",
+    "Retryable": false,
+    "ArtifactKind": "KafkaPolicy",
+    "ArtifactName": null,
+    "Expected": "ExactMatch",
+    "Observed": "Invalid / record size Satisfied"
+  }
+]

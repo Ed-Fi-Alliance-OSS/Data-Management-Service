@@ -1,0 +1,5 @@
+Counters: {"aborted": "0", "completed": "0", "disconnected": "0", "error": "0", "executed": "4", "failed": "0", "inProgress": "0", "inconclusive": "0", "notExecuted": "0", "notRunnable": "0", "passed": "4", "passedButRunAborted": "0", "pending": "0", "timeout": "0", "total": "4", "warning": "0"}
+Passed | EdFi.DataManagementService.Core.Tests.Unit.DocumentCache.Cdc.Given_LocalCdcStateStore.It_deletes_incident_before_binding_and_keeps_the_record_when_either_delete_fails
+Passed | EdFi.DataManagementService.Core.Tests.Unit.DocumentCache.Cdc.Given_LocalCdcStateStore.It_latches_incidents_idempotently_and_deletes_state_after_verified_cleanup
+Passed | EdFi.DataManagementService.Core.Tests.Unit.DocumentCache.Cdc.Given_LocalCdcStateStore.It_refuses_a_binding_for_a_generation_it_already_retired
+Passed | EdFi.DataManagementService.Core.Tests.Unit.DocumentCache.Cdc.Given_LocalCdcStateStore.It_refuses_a_retirement_whose_existing_record_names_a_different_binding

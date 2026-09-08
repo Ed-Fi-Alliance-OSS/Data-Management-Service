@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+﻿// SPDX-License-Identifier: Apache-2.0
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
@@ -17,9 +17,22 @@ namespace EdFi.DataManagementService.Core.DocumentCache.Cdc;
 public enum CdcConnectorOffsetMatchResult
 {
     Exact,
+
+    /// <summary>
+    /// The worker answered and holds no offset at all for this connector. Distinct from
+    /// <see cref="Unavailable"/>, which is the absence of an answer: only an answer can be evidence,
+    /// and only <see cref="SourcePartitionMismatch"/> and this one describe what the worker reported.
+    /// </summary>
     Missing,
     Multiple,
     SourcePartitionMismatch,
+
+    /// <summary>
+    /// The worker could not be asked, or did not answer usably. Never evidence about the connector's
+    /// committed position: an unreachable worker proves nothing about an offset it was not able to
+    /// report, so continuity over it is unknown rather than lost.
+    /// </summary>
+    Unavailable,
 }
 
 public sealed record CdcProviderPositionComparisonResult
@@ -637,6 +650,8 @@ internal static class CdcConnectorOffsetValidationRules
             CdcConnectorOffsetMatchResult.Missing => CdcDiagnosticCategory.InvalidObservation,
             CdcConnectorOffsetMatchResult.Multiple => CdcDiagnosticCategory.InvalidObservation,
             CdcConnectorOffsetMatchResult.SourcePartitionMismatch => CdcDiagnosticCategory.SourceMismatch,
+            // An answer that was never obtained is unavailable evidence, not an invalid observation.
+            CdcConnectorOffsetMatchResult.Unavailable => CdcDiagnosticCategory.StatusObservationUnavailable,
             _ => null,
         };
 

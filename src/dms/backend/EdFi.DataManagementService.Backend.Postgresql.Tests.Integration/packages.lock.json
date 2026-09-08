@@ -147,6 +147,11 @@
           "Json.More.Net": "2.0.1.2"
         }
       },
+      "librdkafka.redist": {
+        "type": "Transitive",
+        "resolved": "2.6.1",
+        "contentHash": "RcpH/eqmfp08RmfeQdHeJEz0OaAcYWJo8EqQiU4ohDrBygIXbWhCTksUFkhYGqap/5Ycm+HC9RVSlwetFo9SlA=="
+      },
       "Microsoft.Bcl.AsyncInterfaces": {
         "type": "Transitive",
         "resolved": "8.0.0",
@@ -471,6 +476,21 @@
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.1, )"
         }
       },
+      "edfi.datamanagementservice.backend.cdc.control": {
+        "type": "Project",
+        "dependencies": {
+          "Confluent.Kafka": "[2.6.1, )",
+          "EdFi.DataManagementService.Backend": "[1.0.0, )",
+          "EdFi.DataManagementService.Backend.Cdc": "[1.0.0, )",
+          "EdFi.DataManagementService.Backend.Ddl": "[1.0.0, )",
+          "EdFi.DataManagementService.Backend.Mssql": "[1.0.0, )",
+          "EdFi.DataManagementService.Backend.Postgresql": "[1.0.0, )",
+          "EdFi.DataManagementService.Core": "[1.0.0, )",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.1, )",
+          "Microsoft.Extensions.Http": "[10.0.1, )",
+          "Microsoft.Extensions.Options": "[10.0.1, )"
+        }
+      },
       "edfi.datamanagementservice.backend.ddl": {
         "type": "Project",
         "dependencies": {
@@ -482,6 +502,16 @@
         "type": "Project",
         "dependencies": {
           "EdFi.DataManagementService.Core.External": "[1.0.0, )"
+        }
+      },
+      "edfi.datamanagementservice.backend.mssql": {
+        "type": "Project",
+        "dependencies": {
+          "EdFi.DataManagementService.Backend": "[1.0.0, )",
+          "EdFi.DataManagementService.Backend.Plans": "[1.0.0, )",
+          "EdFi.DataManagementService.Core": "[1.0.0, )",
+          "Microsoft.CodeAnalysis": "[4.12.0, )",
+          "Microsoft.Data.SqlClient": "[6.1.4, )"
         }
       },
       "edfi.datamanagementservice.backend.plans": {
@@ -573,6 +603,15 @@
           "Microsoft.Extensions.Logging": "[10.0.1, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.1, )",
           "Sandwych.QuickGraph.Core": "[1.0.0, )"
+        }
+      },
+      "Confluent.Kafka": {
+        "type": "CentralTransitive",
+        "requested": "[2.6.1, )",
+        "resolved": "2.6.1",
+        "contentHash": "DCap4xzbUzItoFVBCmBbng6q4XbaxfqLgR/b56b67L9S0iUTIwrSAvk3MPegyQNn56+1C/m3ytwy1YU+nAuqDA==",
+        "dependencies": {
+          "librdkafka.redist": "2.6.1"
         }
       },
       "FastGuid": {

@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Backend;
+using EdFi.DataManagementService.Backend.Cdc.Control;
 using EdFi.DataManagementService.Backend.Mssql;
 using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Core;
@@ -54,6 +55,13 @@ internal static class DocumentCacheAdminServiceCollectionExtensions
             DocumentCacheAdminMutatingCommandDispatcher
         >();
         services.TryAddSingleton<IDocumentCacheAdminCliTelemetry, DocumentCacheAdminCliTelemetry>();
+
+        // The CDC control plane branches on the same AppSettings:Datastore value the DocumentCache
+        // runtime services below do, so the configuration is passed through rather than the branch being
+        // repeated. Its own options are validated on first resolution, which happens only on a cdc verb,
+        // so a DocumentCache-only invocation is unaffected by CDC configuration it does not use.
+        services.AddDmsCdcControl(configuration);
+        services.AddScoped<IDocumentCacheAdminCdcCommandDispatcher, DocumentCacheAdminCdcCommandDispatcher>();
 
         string datastore = configuration.GetSection("AppSettings:Datastore").Value ?? string.Empty;
         if (string.Equals(datastore, "postgresql", StringComparison.OrdinalIgnoreCase))

@@ -505,9 +505,11 @@ Describe "on-dms-pullrequest.yml CI budget wiring" {
             # the gate would stay green while that lane failed. Every defined job must be a gate
             # dependency unless it is on this deliberate exclusion list.
             $nonBlockingJob = @(
-                # Qualification lane: runs only on workflow_dispatch, never on a pull request or in
-                # the merge queue.
+                # Qualification lanes: run only on workflow_dispatch, never on a pull request or in
+                # the merge queue, because each starts Docker containers from operator-supplied
+                # images that are not freely pullable.
                 'run-backend-cdc-connector-template-smoke-tests'
+                'run-backend-cdc-control-broker-backed-tests'
                 # Informational reporting; the workflow deliberately omits these so they can never
                 # block a merge.
                 'test-timing-summary'

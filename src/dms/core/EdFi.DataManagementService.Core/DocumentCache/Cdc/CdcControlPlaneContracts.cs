@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+﻿// SPDX-License-Identifier: Apache-2.0
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
@@ -33,6 +33,14 @@ public sealed record CdcBindingLifecycleListResult(
     [property: JsonRequired] IReadOnlyList<CdcDiagnostic> Diagnostics
 ) : ICdcJsonContract;
 
+public sealed record CdcRetirementListResult(
+    [property: JsonRequired] int ContractVersion,
+    [property: JsonRequired] DateTimeOffset ObservedAt,
+    [property: JsonRequired] CdcControlPlaneOperationStatus Status,
+    [property: JsonRequired] IReadOnlyList<CdcRetirement> Retirements,
+    [property: JsonRequired] IReadOnlyList<CdcDiagnostic> Diagnostics
+) : ICdcJsonContract;
+
 public interface ICdcBindingLifecycleService
 {
     Task<CdcBindingLifecycleResult> CreateBindingIfAbsentAsync(
@@ -51,6 +59,15 @@ public interface ICdcBindingLifecycleService
     );
 
     Task<CdcBindingLifecycleListResult> ListBindingsAsync(
+        string deploymentKey,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
+    /// Every generation this deployment has retired. Retirement deletes the binding record, so this is
+    /// the only durable trace that a target was once published downstream.
+    /// </summary>
+    Task<CdcRetirementListResult> ListRetirementsAsync(
         string deploymentKey,
         CancellationToken cancellationToken = default
     );
@@ -78,6 +95,27 @@ public sealed record CdcProviderBarrierCaptureRequest(string ConnectionString, C
     public TimeSpan CaptureWaitTimeout { get; init; } = TimeSpan.FromSeconds(45);
 
     public TimeSpan PollInterval { get; init; } = TimeSpan.FromMilliseconds(500);
+
+    /// <summary>
+    /// Whether the binding's connector is in a state that can still move the source forward, as the
+    /// caller observed it. A capture that waits on evidence only a running connector produces returns
+    /// immediately when this is false, rather than spending its whole wait on a position that cannot
+    /// arrive.
+    /// </summary>
+    /// <remarks>
+    /// Only the SQL Server capture reads it, because only that one waits: it polls the capture instance
+    /// for a heartbeat after-image past the sequence it read, and the heartbeat rows are written by the
+    /// connector's own <c>heartbeat.action.query</c>. A stopped or paused connector writes none, so the
+    /// wait ran to the full <c>Timeouts.ProviderBarrier</c> and then reported the same uncaptured
+    /// barrier this reports at once — which is what made restarting a fenced connector wait ten minutes
+    /// before the resume was even issued. The PostgreSQL capture is a single read of the server's
+    /// current WAL position and does not depend on the connector at all.
+    ///
+    /// Defaults to true, so a caller that has not observed the runtime asks for the full capture. The
+    /// enablement sequence leaves it there: it captures its barrier immediately after registering and
+    /// starting the connector, which is exactly when waiting for catch-up is the point.
+    /// </remarks>
+    public bool ConnectorCanAdvance { get; init; } = true;
 }
 
 public sealed record CdcProviderBarrierCaptureResult
@@ -195,6 +233,13 @@ public sealed record CdcSourceHistoryObservationRequest(
     public CdcIncident? LatchedIncident { get; init; }
 
     public CdcSqlServerSchemaHistoryEvidence? SqlServerSchemaHistory { get; init; }
+
+    /// <summary>
+    /// Whether the binding's public topic proves an established stream. Provider-independent, unlike
+    /// <see cref="SqlServerSchemaHistory"/>: every binding has a public topic, and it is what decides
+    /// whether an absent connector offset is a terminal loss or an enablement that has not finished.
+    /// </summary>
+    public CdcPublicTopicPublicationEvidence? PublicTopicPublication { get; init; }
 
     public string? ExpectedConnectSourcePartitionHash { get; init; }
 }
