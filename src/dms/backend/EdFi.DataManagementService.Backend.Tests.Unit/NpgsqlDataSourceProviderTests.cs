@@ -153,4 +153,50 @@ public class Given_NpgsqlDataSourceProvider
         replicaDataSource.Should().NotBeSameAs(primaryDataSource);
         replicaDataSource.ConnectionString.Should().Contain("Host=replica");
     }
+
+    /// <summary>
+    /// The seam guard classifies against the target kind, and reads it from here rather than taking a
+    /// second dependency on the request's selection.
+    /// </summary>
+    [Test]
+    public void It_reports_the_selected_targets_kind()
+    {
+        var provider = ProviderFor(
+            SelectionOf(new EffectiveDataStoreTarget(EffectiveTargetKind.Snapshot, ConnectionString)),
+            _cache
+        );
+
+        provider.TargetKind.Should().Be(EffectiveTargetKind.Snapshot);
+    }
+
+    /// <summary>
+    /// Answering the kind must not build or lease anything: a seam reads it before deciding to open,
+    /// and on a request that never opens a connection nothing should have been claimed.
+    /// </summary>
+    [Test]
+    public void It_takes_no_lease_to_report_the_kind()
+    {
+        using GatedNpgsqlDataSourceLifetime lifetime = new();
+        using NpgsqlDataSourceCache cache = new(A.Fake<ILogger<NpgsqlDataSourceCache>>(), lifetime);
+        var provider = ProviderFor(SelectionOf(EffectiveDataStoreTarget.Primary(ConnectionString)), cache);
+
+        _ = provider.TargetKind;
+
+        lifetime.BuildCount.Should().Be(0, "no data source is built until one is actually needed");
+    }
+
+    /// <summary>
+    /// Like the data source itself, the kind has no fallback to the parent: a seam reached with no
+    /// selected target fails rather than classifying against a kind nobody chose.
+    /// </summary>
+    [Test]
+    public void It_refuses_to_report_a_kind_when_no_target_was_selected()
+    {
+        DataStoreSelection selection = new();
+        var provider = ProviderFor(selection, _cache);
+
+        Action read = () => _ = provider.TargetKind;
+
+        read.Should().Throw<InvalidOperationException>();
+    }
 }

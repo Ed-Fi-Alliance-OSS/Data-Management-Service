@@ -50,19 +50,27 @@ internal static class DatabaseFingerprintReaderSupport
             _ => throw new ArgumentOutOfRangeException(nameof(dialect), dialect, "Unsupported SQL dialect."),
         };
 
+    /// <summary>
+    /// Reads the fingerprint over a connection the caller has already opened.
+    /// </summary>
+    /// <param name="connection">
+    /// An open connection, owned by the caller: the support reads from it and does not dispose it.
+    /// Construction, connection-string parsing, and the open all belong to the provider-side seam so
+    /// they can sit inside one connection-acquisition boundary, which is why an already-open
+    /// connection arrives here rather than a factory. Drawing that boundary around the open alone
+    /// would leave a provider-invalid connection string unclassified, and drawing it around this whole
+    /// call would classify command execution as an acquisition failure.
+    /// </param>
     public static async Task<DatabaseFingerprint?> ReadFingerprintAsync(
-        Func<DbConnection> connectionFactory,
+        DbConnection connection,
         DatabaseFingerprintReaderQuery query,
         ILogger logger,
         Predicate<Exception>? isProjectionValidationFailure = null
     )
     {
-        ArgumentNullException.ThrowIfNull(connectionFactory);
+        ArgumentNullException.ThrowIfNull(connection);
         ArgumentNullException.ThrowIfNull(query);
         ArgumentNullException.ThrowIfNull(logger);
-
-        await using var connection = connectionFactory();
-        await connection.OpenAsync();
 
         await using var existsCommand = connection.CreateCommand();
         existsCommand.CommandText = query.ExistsCommandText;

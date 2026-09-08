@@ -971,6 +971,91 @@ public class Given_DocumentCacheReadLookup
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("programming");
     }
 
+    /// <summary>
+    /// A cancellation the caller asked for is not a cache miss. It is rethrown from acquisition rather
+    /// than classified, so the request fails as cancelled instead of falling through to a relational
+    /// read the caller no longer wants. The existing caller-cancellation test covers a cancellation
+    /// raised while executing; this one covers acquisition, which has its own arm.
+    /// </summary>
+    [Test]
+    public async Task It_propagates_caller_cancellation_from_postgresql_connection_acquisition()
+    {
+        using var cancellationSource = new CancellationTokenSource();
+        await cancellationSource.CancelAsync();
+
+        var adapter = new PostgresqlDocumentCacheReadLookupAdapter(
+            (_, _) =>
+                Task.FromException<LeasedNpgsqlConnection>(
+                    new OperationCanceledException(cancellationSource.Token)
+                ),
+            new PostgresqlRelationalWriteExceptionClassifier(),
+            new PostgresqlDocumentCacheProviderCommandTimeoutClassifier(),
+            NullLogger<PostgresqlDocumentCacheReadLookupAdapter>.Instance,
+            new ServedEtagComposer(),
+            new RecordingResponseShaper()
+        );
+
+        Func<Task> act = async () =>
+            await adapter.LookupBatchAsync(
+                new DocumentCacheReadBatchLookupRequest(MappingSet, [Candidate()]),
+                ExecutionContext(),
+                cancellationSource.Token
+            );
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    /// <summary>
+    /// Disposal during a request abort is likewise not a cache miss.
+    /// </summary>
+    [Test]
+    public async Task It_propagates_request_abort_disposal_from_postgresql_connection_acquisition()
+    {
+        var adapter = new PostgresqlDocumentCacheReadLookupAdapter(
+            (_, _) =>
+                Task.FromException<LeasedNpgsqlConnection>(new ObjectDisposedException("NpgsqlDataSource")),
+            new PostgresqlRelationalWriteExceptionClassifier(),
+            new PostgresqlDocumentCacheProviderCommandTimeoutClassifier(),
+            NullLogger<PostgresqlDocumentCacheReadLookupAdapter>.Instance,
+            new ServedEtagComposer(),
+            new RecordingResponseShaper()
+        );
+
+        Func<Task> act = async () =>
+            await adapter.LookupBatchAsync(
+                new DocumentCacheReadBatchLookupRequest(MappingSet, [Candidate()]),
+                ExecutionContext()
+            );
+
+        await act.Should().ThrowAsync<ObjectDisposedException>();
+    }
+
+    /// <summary>
+    /// The classifier the adapter shares with the read-path seam guard excludes a null argument, even
+    /// though it excludes it from an ArgumentException arm that the construction-failure case above
+    /// relies on. A defect must not be reported as an unavailable cache.
+    /// </summary>
+    [Test]
+    public async Task It_propagates_a_null_argument_failure_from_postgresql_connection_acquisition()
+    {
+        var adapter = new PostgresqlDocumentCacheReadLookupAdapter(
+            (_, _) => Task.FromException<LeasedNpgsqlConnection>(NullArgumentFailure()),
+            new PostgresqlRelationalWriteExceptionClassifier(),
+            new PostgresqlDocumentCacheProviderCommandTimeoutClassifier(),
+            NullLogger<PostgresqlDocumentCacheReadLookupAdapter>.Instance,
+            new ServedEtagComposer(),
+            new RecordingResponseShaper()
+        );
+
+        Func<Task> act = async () =>
+            await adapter.LookupBatchAsync(
+                new DocumentCacheReadBatchLookupRequest(MappingSet, [Candidate()]),
+                ExecutionContext()
+            );
+
+        await act.Should().ThrowAsync<ArgumentNullException>();
+    }
+
     [Test]
     public async Task It_returns_cache_unavailable_for_mssql_connection_string_parse_failures()
     {
@@ -1084,6 +1169,98 @@ public class Given_DocumentCacheReadLookup
 
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("programming");
     }
+
+    /// <summary>
+    /// The SQL Server half of the acquisition-time cancellation guarantee.
+    /// </summary>
+    [Test]
+    public async Task It_propagates_caller_cancellation_from_mssql_connection_acquisition()
+    {
+        using var cancellationSource = new CancellationTokenSource();
+        await cancellationSource.CancelAsync();
+
+        var adapter = new MssqlDocumentCacheReadLookupAdapter(
+            (_, _) =>
+                Task.FromException<MssqlLeasedConnection>(
+                    new OperationCanceledException(cancellationSource.Token)
+                ),
+            new MssqlRelationalWriteExceptionClassifier(),
+            new MssqlDocumentCacheProviderCommandTimeoutClassifier(),
+            NullLogger<MssqlDocumentCacheReadLookupAdapter>.Instance,
+            new ServedEtagComposer(),
+            new RecordingResponseShaper()
+        );
+
+        Func<Task> act = async () =>
+            await adapter.LookupBatchAsync(
+                new DocumentCacheReadBatchLookupRequest(MappingSet, [Candidate()]),
+                ExecutionContext(
+                    providerToken: RelationalProviderToken.SqlServer,
+                    sqlServerPrerequisites: SatisfiedSqlServerPrerequisites()
+                ),
+                cancellationSource.Token
+            );
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Test]
+    public async Task It_propagates_request_abort_disposal_from_mssql_connection_acquisition()
+    {
+        var adapter = new MssqlDocumentCacheReadLookupAdapter(
+            (_, _) => Task.FromException<MssqlLeasedConnection>(new ObjectDisposedException("SqlConnection")),
+            new MssqlRelationalWriteExceptionClassifier(),
+            new MssqlDocumentCacheProviderCommandTimeoutClassifier(),
+            NullLogger<MssqlDocumentCacheReadLookupAdapter>.Instance,
+            new ServedEtagComposer(),
+            new RecordingResponseShaper()
+        );
+
+        Func<Task> act = async () =>
+            await adapter.LookupBatchAsync(
+                new DocumentCacheReadBatchLookupRequest(MappingSet, [Candidate()]),
+                ExecutionContext(
+                    providerToken: RelationalProviderToken.SqlServer,
+                    sqlServerPrerequisites: SatisfiedSqlServerPrerequisites()
+                )
+            );
+
+        await act.Should().ThrowAsync<ObjectDisposedException>();
+    }
+
+    [Test]
+    public async Task It_propagates_a_null_argument_failure_from_mssql_connection_acquisition()
+    {
+        var adapter = new MssqlDocumentCacheReadLookupAdapter(
+            (_, _) => Task.FromException<MssqlLeasedConnection>(NullArgumentFailure()),
+            new MssqlRelationalWriteExceptionClassifier(),
+            new MssqlDocumentCacheProviderCommandTimeoutClassifier(),
+            NullLogger<MssqlDocumentCacheReadLookupAdapter>.Instance,
+            new ServedEtagComposer(),
+            new RecordingResponseShaper()
+        );
+
+        Func<Task> act = async () =>
+            await adapter.LookupBatchAsync(
+                new DocumentCacheReadBatchLookupRequest(MappingSet, [Candidate()]),
+                ExecutionContext(
+                    providerToken: RelationalProviderToken.SqlServer,
+                    sqlServerPrerequisites: SatisfiedSqlServerPrerequisites()
+                )
+            );
+
+        await act.Should().ThrowAsync<ArgumentNullException>();
+    }
+
+    /// <summary>
+    /// A null-argument failure carrying a parameter name that really exists, which is what the static
+    /// analyzer requires of any ArgumentException construction.
+    /// </summary>
+    private static ArgumentNullException NullArgumentFailure(string? connectionString = null) =>
+        new(
+            nameof(connectionString),
+            $"'{nameof(connectionString)}' must not be {connectionString ?? "null"}."
+        );
 
     [Test]
     public async Task It_returns_deterministic_invariant_for_result_shape_failures()

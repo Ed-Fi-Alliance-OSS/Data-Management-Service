@@ -7,6 +7,7 @@ using System.Data.Common;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.External.Backend;
 using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Backend.Mssql;
@@ -29,21 +30,36 @@ internal sealed class MssqlRelationalCommandExecutor : IRelationalCommandExecuto
 
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _openConnectionAsync = cancellationToken =>
-            MssqlSeamConnection.OpenAsync(dataStoreSelection, acquisition, cancellationToken);
+            MssqlSeamConnection.OpenAsync(dataStoreSelection, acquisition, logger, cancellationToken);
     }
 
+    /// <summary>
+    /// Test seam: an injected open, guarded exactly as the production one is.
+    /// </summary>
+    /// <param name="targetKind">
+    /// The kind the guard classifies against. Primary by default, which is what every existing caller
+    /// means, so a test that cares about the snapshot boundary is the only one that names it.
+    /// </param>
     internal MssqlRelationalCommandExecutor(
         Func<CancellationToken, Task<DbConnection>> openConnectionAsync,
-        ILogger<MssqlRelationalCommandExecutor> logger
+        ILogger<MssqlRelationalCommandExecutor> logger,
+        EffectiveTargetKind targetKind = EffectiveTargetKind.Primary
     )
     {
         ArgumentNullException.ThrowIfNull(openConnectionAsync);
 
-        _openConnectionAsync = async cancellationToken =>
-            MssqlLeasedConnection.WithoutLease(
-                await openConnectionAsync(cancellationToken).ConfigureAwait(false)
-            );
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _openConnectionAsync = cancellationToken =>
+            ConnectionAcquisition.GuardAsync(
+                async () =>
+                    MssqlLeasedConnection.WithoutLease(
+                        await openConnectionAsync(cancellationToken).ConfigureAwait(false)
+                    ),
+                targetKind,
+                MssqlConnectionAcquisitionFailure.IsExpected,
+                logger,
+                cancellationToken
+            );
     }
 
     public async Task<TResult> ExecuteReaderAsync<TResult>(

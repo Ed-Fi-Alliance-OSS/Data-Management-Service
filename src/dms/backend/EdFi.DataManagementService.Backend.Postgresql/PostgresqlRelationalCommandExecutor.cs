@@ -7,6 +7,7 @@ using System.Data.Common;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Postgresql;
+using EdFi.DataManagementService.Core.External.Backend;
 using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Backend.Postgresql;
@@ -26,18 +27,34 @@ internal sealed class PostgresqlRelationalCommandExecutor : IRelationalCommandEx
         ArgumentNullException.ThrowIfNull(dataSourceProvider);
 
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _openConnectionAsync = async cancellationToken =>
-            await dataSourceProvider.DataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        _openConnectionAsync = cancellationToken =>
+            PostgresqlSeamConnection.OpenGuardedAsync(dataSourceProvider, logger, cancellationToken);
     }
 
+    /// <summary>
+    /// Test seam: an injected open, guarded exactly as the production one is.
+    /// </summary>
+    /// <param name="targetKind">
+    /// The kind the guard classifies against. Primary by default, which is what every existing caller
+    /// means, so a test that cares about the snapshot boundary is the only one that names it.
+    /// </param>
     internal PostgresqlRelationalCommandExecutor(
         Func<CancellationToken, Task<DbConnection>> openConnectionAsync,
-        ILogger<PostgresqlRelationalCommandExecutor> logger
+        ILogger<PostgresqlRelationalCommandExecutor> logger,
+        EffectiveTargetKind targetKind = EffectiveTargetKind.Primary
     )
     {
-        _openConnectionAsync =
-            openConnectionAsync ?? throw new ArgumentNullException(nameof(openConnectionAsync));
+        ArgumentNullException.ThrowIfNull(openConnectionAsync);
+
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _openConnectionAsync = cancellationToken =>
+            ConnectionAcquisition.GuardAsync(
+                () => openConnectionAsync(cancellationToken),
+                targetKind,
+                PostgresqlConnectionAcquisitionFailure.IsExpected,
+                logger,
+                cancellationToken
+            );
     }
 
     public async Task<TResult> ExecuteReaderAsync<TResult>(

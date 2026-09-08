@@ -11,6 +11,7 @@ using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Core.DocumentCache.Cdc;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Backend.Postgresql;
 
@@ -166,11 +167,15 @@ internal sealed class PostgresqlReferenceResolverAdapterFactory(IRelationalComma
     }
 }
 
-internal sealed class PostgresqlDocumentHydrator(NpgsqlDataSourceProvider dataSourceProvider)
-    : IDocumentHydrator
+internal sealed class PostgresqlDocumentHydrator(
+    NpgsqlDataSourceProvider dataSourceProvider,
+    ILogger<PostgresqlDocumentHydrator> logger
+) : IDocumentHydrator
 {
     private readonly NpgsqlDataSourceProvider _dataSourceProvider =
         dataSourceProvider ?? throw new ArgumentNullException(nameof(dataSourceProvider));
+    private readonly ILogger<PostgresqlDocumentHydrator> _logger =
+        logger ?? throw new ArgumentNullException(nameof(logger));
 
     public async Task<HydratedPage> HydrateAsync(
         ResourceReadPlan plan,
@@ -179,7 +184,13 @@ internal sealed class PostgresqlDocumentHydrator(NpgsqlDataSourceProvider dataSo
         CancellationToken ct
     )
     {
-        await using var connection = await _dataSourceProvider.DataSource.OpenConnectionAsync(ct);
+        // Hydration can be the first acquisition of a request whose earlier reads were all served from
+        // cached verdicts, so this seam carries the same guard as the command executor's.
+        await using var connection = await PostgresqlSeamConnection.OpenGuardedAsync(
+            _dataSourceProvider,
+            _logger,
+            ct
+        );
 
         return await HydrationExecutor.ExecuteAsync(
             connection,

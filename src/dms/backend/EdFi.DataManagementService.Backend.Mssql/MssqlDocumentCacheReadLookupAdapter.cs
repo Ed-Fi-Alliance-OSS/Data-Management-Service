@@ -125,7 +125,7 @@ internal sealed class MssqlDocumentCacheReadLookupAdapter : DocumentCacheReadLoo
         {
             throw;
         }
-        catch (Exception exception) when (IsExpectedConnectionAcquisitionFailure(exception))
+        catch (Exception exception) when (MssqlConnectionAcquisitionFailure.IsExpected(exception))
         {
             throw new DocumentCacheReadAcquisitionUnavailableException(
                 "SQL Server DocumentCache read lookup connection acquisition failed.",
@@ -153,14 +153,6 @@ internal sealed class MssqlDocumentCacheReadLookupAdapter : DocumentCacheReadLoo
                 cancellationToken
             );
     }
-
-    private static bool IsExpectedConnectionAcquisitionFailure(Exception exception) =>
-        exception
-            is DbException
-                or TimeoutException
-                or FormatException
-                or ArgumentException
-                and not ArgumentNullException;
 
     private static void AddParameters(DbCommand dbCommand, IReadOnlyList<RelationalParameter> parameters)
     {
