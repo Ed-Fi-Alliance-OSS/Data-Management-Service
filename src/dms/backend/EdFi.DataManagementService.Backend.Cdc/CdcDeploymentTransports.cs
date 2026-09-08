@@ -143,13 +143,15 @@ public sealed class CdcWorkerInspection(
 
 /// <summary>
 /// Collects fresh, worker/task-correlated lag evidence using worker inspection and Connect status
-/// before and after the scrape. Implementations enforce maximum observation age and cancellation.
-/// Core's existing lag evaluator determines readiness; telemetry does not replace a provider barrier.
+/// before and after the scrape. Each pass allows one collection; callers recheck the returned
+/// observation at each readiness use and invalidate the pass on recovery or completion. Implementations
+/// bound calls and collection age. Core evaluates lag; telemetry does not replace a provider barrier.
 /// </summary>
 public interface ICdcWorkerMetricsTransport
 {
-    Task<CdcTransportResult<CoreCdc.CdcConnectorLagObservation>> ObserveAsync(
+    Task<CdcTransportResult<CdcConnectorTelemetryObservation>> CollectAsync(
         CdcDeploymentRequest request,
+        CdcTelemetryObservationPass pass,
         CancellationToken cancellationToken
     );
 }

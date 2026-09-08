@@ -238,6 +238,30 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
         worker
             .ConnectWorkerId.Should()
             .Be(status.GetProperty("tasks").EnumerateArray().Single().GetProperty("worker_id").GetString());
+        // Exercise the production T15 HTTP/parser/status/deployment path against this qualified image.
+        using var telemetryPass = new CdcTelemetryObservationPass(
+            request,
+            "telemetry-qualification",
+            long.MaxValue
+        );
+        var telemetry = new CdcConnectorTelemetryAdapter(
+            metrics,
+            new CdcConnectRestAdapter(_httpClient),
+            inspector
+        );
+        var collected = await telemetry.CollectAsync(request, telemetryPass, token);
+        collected
+            .State.Should()
+            .Be(
+                CdcTransportEvidenceState.Observed,
+                "current lag must survive production parsing and live worker/task correlation: {0}",
+                string.Join(",", collected.Diagnostics)
+            );
+        var observation = (
+            (CdcTransportResult<CdcConnectorTelemetryObservation>.Observed)collected
+        ).Value.ReadForEvaluation(telemetryPass);
+        observation.LagState.Should().Be(Core.DocumentCache.Cdc.CdcConnectorLagState.WithinThreshold);
+        observation.CurrentLagMilliseconds.Should().BeGreaterThanOrEqualTo(0);
         return worker.ProcessIdentity;
     }
 
