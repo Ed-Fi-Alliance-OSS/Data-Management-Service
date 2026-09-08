@@ -1353,6 +1353,39 @@ readiness. A partial, out-of-order, or unverifiable rollout remains not ready. I
 over-budget record already failed the connector, the task resumes from its uncommitted
 source position after the larger policy is effective.
 
+For v1, consumer-capacity confirmation is an explicit structured attestation from the
+operator authorized to administer the CDC deployment, using the existing administrative
+trust boundary. The operator obtains confirmation from every affected consumer owner that
+the deployed `max.partition.fetch.bytes` and `fetch.max.bytes` meet the requested ceiling
+and deserialization capacity has been tested for records at that ceiling. Consumer owners
+must preserve that capacity through rollout completion and subsequent consumption. The
+operator attests that the inventory includes every affected consumer; the controller does
+not discover or certify independently operated consumers.
+
+The acknowledgement records:
+
+- operator identity and confirmation time;
+- the complete binding identity and generation, physical-source fingerprint, public topic,
+  requested `maxRecordBytes`, and increase operation ID; and
+- each affected consumer's deployment identity and revision, confirming owner, and a
+  reference to that owner's capacity evidence, or an explicit declaration that there are
+  no affected consumers. An omitted consumer inventory is not a no-consumers declaration.
+
+The controller validates the acknowledgement's completeness and exact operation scope,
+then durably records it with the operation intent in the deployment workflow journal before
+advancing to broker/topic or producer changes. Evidence references contain no credentials;
+the operator remains responsible for the truth and completeness of the external evidence.
+V1 adds no signing service, separate approval system, or consumer-verification adapter.
+
+Each invocation that resumes an interrupted increase requires renewed operator confirmation
+for that same operation before advancing, including before restoring readiness. The
+controller journals the renewed acknowledgement and reconciles completed infrastructure
+changes from live state; a persisted acknowledgement alone does not authorize a resumed
+invocation. Changed consumer deployments require updated evidence. A different binding,
+source, public topic, or requested ceiling cannot reuse the acknowledgement. Missing or
+mismatched confirmation prevents advancement, and a partially completed increase remains
+not ready. No automatic rollback or lowering of already increased limits is implied.
+
 ### Deferred new-topic cutover
 
 Changing the topic partition count or `partitionerAlgorithm` token creates a new binding

@@ -213,6 +213,10 @@ controller composes those contracts rather than introducing another set of rules
   broker/topic policy changes and regenerated connector config through the design's
   [coordinated increase procedure](../../design-docs/cdc/cdc-streaming.md#in-place-record-size-increase);
   do not rewrite the binding or make ordinary drift validation a configuration repair loop.
+  Add its structured deployment-operator consumer-capacity acknowledgement to the command
+  input, with scope validation, workflow-journal persistence, and resumed-invocation
+  confirmation handling. Add command help and invocation examples explaining the operator's
+  responsibility for consumer inventory and capacity evidence.
 
 ### Publication-History Bridge to E18 Administration
 
@@ -298,6 +302,12 @@ controller composes those contracts rather than introducing another set of rules
 - Broker-backed tests cover the shared Connect offset store's compaction, durability, and
   worker-only ACLs plus binding-topic policy, record-size, connector, offset, heartbeat, and
   image validation.
+- Record-size increase tests cover the design's consumer-attestation contract: accepted
+  acknowledgement, explicit no-consumers declaration, incomplete or mismatched evidence,
+  changed consumer deployments and requested ceilings, durable acknowledgement ordering,
+  and interrupted rollout with renewed confirmation and live reconciliation. Include crash
+  boundaries before external changes and before readiness restoration, and prove missing
+  confirmation prevents advancement while a partial rollout remains not ready.
 - Provider tests cover the initial readiness and post-enablement lifecycle paths for
   PostgreSQL and SQL Server.
 - Telemetry adapter and controller tests consume the sibling qualification fixtures and
@@ -332,6 +342,8 @@ controller composes those contracts rather than introducing another set of rules
 - Distributed-worker metrics-endpoint discovery is deferred to a later deployment adapter.
   Exporter packaging/image publication belongs to DMS-1322, and reusable image/metric
   qualification fixtures belong to DMS-1321.
+- Automated inspection or certification of independently operated consumers is deferred;
+  this story implements the design-owned deployment-operator attestation contract.
 
 ## Clarifying Questions and Answers
 
@@ -365,18 +377,13 @@ controller composes those contracts rather than introducing another set of rules
    single-worker local/CI topology; distributed-worker endpoint discovery is deferred.
    Preserve the independent current-lag threshold and provider barrier requirements.
 
-3. **Requires human decision:** Define the trusted consumer-capacity confirmation contract
-   before tasking the record-size increase operation. The
+3. **Resolved: use deployment-operator consumer-capacity attestation for v1.** Implement the
+   owning design's attestation contract in the
    [coordinated increase procedure](../../design-docs/cdc/cdc-streaming.md#in-place-record-size-increase)
-   requires consumer confirmation before broker/topic and producer changes, but does not
-   authorize an operator acknowledgement as sufficient evidence or specify a verification
-   adapter. The decision must identify who may attest, how all affected independently
-   operated consumers are covered, and what proves fetch limits and deserialization
-   capacity for the requested ceiling. Scope the accepted evidence to the complete binding
-   generation/source, public topic, consumer deployment identities, requested
-   `maxRecordBytes`, and increase operation; persist it with the operation's intent and
-   completion in the deployment workflow journal before advancing the rollout. The owning
-   design and story should later define its validity and retry revalidation rules so a
-   changed consumer deployment or larger ceiling cannot reuse unrelated confirmation.
-   Missing or unverifiable confirmation leaves the target not ready and prevents the
-   increase from advancing to broker/topic or producer changes.
+   using the existing administrative trust boundary. The deployment operator supplies a
+   structured acknowledgement based on every affected consumer owner's capacity evidence
+   and attests to inventory completeness; an explicit no-consumers declaration is supported.
+   DMS-1323 owns the command input, operation-scope validation, durable journal integration,
+   renewed confirmation on resumed invocations, live rollout reconciliation, command help,
+   and acceptance tests. Follow the design's rejection and partial-rollout readiness rules.
+   Automated inspection or certification of independently operated consumers is deferred.
