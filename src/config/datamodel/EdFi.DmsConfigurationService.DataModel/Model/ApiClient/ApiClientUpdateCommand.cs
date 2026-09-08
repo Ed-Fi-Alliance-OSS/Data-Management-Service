@@ -36,8 +36,10 @@ public class ApiClientUpdateCommand
             RuleFor(a => a.ApplicationId).NotEmpty().GreaterThan(0);
             RuleFor(a => a.Name).NotEmpty().MaximumLength(50);
             RuleFor(a => a.DataStoreIds)
-                .NotEmpty()
-                .WithMessage("DataStoreIds cannot be empty. At least one Data Store is required.");
+                .NotNull()
+                .WithMessage(
+                    "DataStoreIds cannot be null. Supply an array of Data Store ids, or an empty array for a client with no Data Store assignment."
+                );
             RuleFor(a => a.AdditionalProperties).Custom(RejectOwnershipFields);
         }
 

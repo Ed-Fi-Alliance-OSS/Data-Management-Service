@@ -681,10 +681,11 @@ public class ApiClientModuleTests
             string responseContent = await insertResponse.Content.ReadAsStringAsync();
             var actualResponse = JsonNode.Parse(responseContent);
 
-            // Verify the validation errors are present
+            // Verify the validation errors are present. An empty dataStoreIds list is valid, so it
+            // contributes no failure of its own.
             actualResponse!["validationErrors"]!["ApplicationId"].Should().NotBeNull();
             actualResponse!["validationErrors"]!["Name"].Should().NotBeNull();
-            actualResponse!["validationErrors"]!["DataStoreIds"].Should().NotBeNull();
+            actualResponse!["validationErrors"]!["DataStoreIds"].Should().BeNull();
         }
 
         [Test]
@@ -4365,5 +4366,411 @@ public class ApiClientModuleTests
         [Test]
         public void It_releases_every_lock() =>
             _recordingLockManager.Handles.Should().OnlyContain(handle => handle.Disposed);
+    }
+
+    /// <summary>
+    /// Arranges the fakes both api-client write endpoints need, with the stored client's data
+    /// store assignments under the test's control.
+    /// </summary>
+    public abstract class DataStoreAssignmentTestBase : ApiClientModuleTests
+    {
+        protected void ArrangeStoredClient(List<int> storedDataStoreIds)
+        {
+            A.CallTo(() => _applicationRepository.GetApplication(A<int>.Ignored))
+                .Returns(
+                    new ApplicationGetResult.Success(
+                        new ApplicationResponse
+                        {
+                            Id = 1,
+                            ApplicationName = "Test Application",
+                            ClaimSetName = "TestClaimSet",
+                            VendorId = 1,
+                            EducationOrganizationIds = [1],
+                            DataStoreIds = [1],
+                        }
+                    )
+                );
+
+            A.CallTo(() => _vendorRepository.GetVendor(A<int>.Ignored))
+                .Returns(
+                    new VendorGetResult.Success(
+                        new VendorResponse
+                        {
+                            Id = 1,
+                            Company = "Test Vendor",
+                            ContactName = "Test Contact",
+                            ContactEmailAddress = "test@test.com",
+                            NamespacePrefixes = "uri://test.org",
+                        }
+                    )
+                );
+
+            A.CallTo(() => _apiClientRepository.GetApiClientById(A<int>.Ignored))
+                .Returns(
+                    new ApiClientGetResult.Success(
+                        new ApiClientResponse
+                        {
+                            Id = 1,
+                            ApplicationId = 1,
+                            ClientId = "test-client-id",
+                            ClientUuid = Guid.NewGuid(),
+                            Name = "Stored API Client",
+                            IsApproved = true,
+                            DataStoreIds = storedDataStoreIds,
+                        }
+                    )
+                );
+
+            A.CallTo(() =>
+                    _identityProviderRepository.CreateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<int[]?>.Ignored,
+                        A<bool>.Ignored
+                    )
+                )
+                .Returns(new ClientCreateResult.Success(Guid.NewGuid()));
+
+            A.CallTo(() =>
+                    _identityProviderRepository.UpdateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<int[]?>.Ignored,
+                        A<bool>.Ignored,
+                        A<string>.Ignored
+                    )
+                )
+                .Returns(new ClientUpdateResult.Success(Guid.NewGuid()));
+
+            A.CallTo(() =>
+                    _apiClientRepository.InsertApiClient(
+                        A<ApiClientInsertCommand>.Ignored,
+                        A<ApiClientCommand>.Ignored
+                    )
+                )
+                .Returns(new ApiClientInsertResult.Success(1));
+
+            A.CallTo(() => _apiClientRepository.UpdateApiClient(A<ApiClientUpdateCommand>.Ignored))
+                .Returns(new ApiClientUpdateResult.Success());
+        }
+
+        protected static Task<HttpResponseMessage> PostApiClientAsync(HttpClient client, string body) =>
+            client.PostAsync("/v3/apiClients", new StringContent(body, Encoding.UTF8, "application/json"));
+
+        protected static Task<HttpResponseMessage> PutApiClientAsync(HttpClient client, string body) =>
+            client.PutAsync("/v3/apiClients/1", new StringContent(body, Encoding.UTF8, "application/json"));
+    }
+
+    // Instance per test case so each test gets its own fakes: NUnit otherwise shares one fixture
+    // instance across the fixture, and the request issued in Setup would be recorded once per test
+    // method, breaking the call-count assertions below.
+    [TestFixture]
+    [FixtureLifeCycle(LifeCycle.InstancePerTestCase)]
+    public class Given_an_api_client_insert_with_an_empty_data_store_id_list : DataStoreAssignmentTestBase
+    {
+        private HttpResponseMessage _response = new();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            ArrangeStoredClient([]);
+            using var client = SetUpClient();
+
+            _response = await PostApiClientAsync(
+                client,
+                """
+                {
+                  "applicationId": 1,
+                  "name": "Client With No Data Store",
+                  "isApproved": true,
+                  "dataStoreIds": []
+                }
+                """
+            );
+        }
+
+        [Test]
+        public void It_creates_the_api_client()
+        {
+            _response.StatusCode.Should().Be(HttpStatusCode.Created);
+        }
+
+        [Test]
+        public void It_persists_no_data_store_assignment()
+        {
+            A.CallTo(() =>
+                    _apiClientRepository.InsertApiClient(
+                        A<ApiClientInsertCommand>.That.Matches(command => command.DataStoreIds.Length == 0),
+                        A<ApiClientCommand>.That.Matches(clientCommand =>
+                            clientCommand.DataStoreIds.Length == 0
+                        )
+                    )
+                )
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [Test]
+        public void It_does_not_query_data_store_existence()
+        {
+            A.CallTo(() => _dataStoreRepository.GetExistingDataStoreIds(A<int[]>.Ignored))
+                .MustNotHaveHappened();
+        }
+    }
+
+    [TestFixture]
+    [FixtureLifeCycle(LifeCycle.InstancePerTestCase)]
+    public class Given_an_api_client_insert_with_an_omitted_data_store_id_list : DataStoreAssignmentTestBase
+    {
+        private HttpResponseMessage _response = new();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            ArrangeStoredClient([]);
+            using var client = SetUpClient();
+
+            _response = await PostApiClientAsync(
+                client,
+                """
+                {
+                  "applicationId": 1,
+                  "name": "Client With No Data Store",
+                  "isApproved": true
+                }
+                """
+            );
+        }
+
+        [Test]
+        public void It_creates_the_api_client()
+        {
+            _response.StatusCode.Should().Be(HttpStatusCode.Created);
+        }
+
+        [Test]
+        public void It_persists_no_data_store_assignment()
+        {
+            A.CallTo(() =>
+                    _apiClientRepository.InsertApiClient(
+                        A<ApiClientInsertCommand>.That.Matches(command => command.DataStoreIds.Length == 0),
+                        A<ApiClientCommand>.That.Matches(clientCommand =>
+                            clientCommand.DataStoreIds.Length == 0
+                        )
+                    )
+                )
+                .MustHaveHappenedOnceExactly();
+        }
+    }
+
+    [TestFixture]
+    [FixtureLifeCycle(LifeCycle.InstancePerTestCase)]
+    public class Given_an_api_client_insert_with_a_null_data_store_id_list : DataStoreAssignmentTestBase
+    {
+        private HttpResponseMessage _response = new();
+        private JsonNode _responseBody = JsonNode.Parse("{}")!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            ArrangeStoredClient([]);
+            using var client = SetUpClient();
+
+            _response = await PostApiClientAsync(
+                client,
+                """
+                {
+                  "applicationId": 1,
+                  "name": "Client With Null Data Stores",
+                  "isApproved": true,
+                  "dataStoreIds": null
+                }
+                """
+            );
+            _responseBody = JsonNode.Parse(await _response.Content.ReadAsStringAsync())!;
+        }
+
+        [Test]
+        public void It_rejects_the_request()
+        {
+            _response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+
+        [Test]
+        public void It_reports_a_data_store_ids_validation_error()
+        {
+            _responseBody["validationErrors"]!["DataStoreIds"].Should().NotBeNull();
+        }
+
+        [Test]
+        public void It_creates_no_identity_provider_client()
+        {
+            A.CallTo(() =>
+                    _identityProviderRepository.CreateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<int[]?>.Ignored,
+                        A<bool>.Ignored
+                    )
+                )
+                .MustNotHaveHappened();
+        }
+    }
+
+    [TestFixture]
+    [FixtureLifeCycle(LifeCycle.InstancePerTestCase)]
+    public class Given_an_api_client_update_retaining_an_empty_data_store_id_list
+        : DataStoreAssignmentTestBase
+    {
+        private HttpResponseMessage _response = new();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            ArrangeStoredClient([]);
+            using var client = SetUpClient();
+
+            _response = await PutApiClientAsync(
+                client,
+                """
+                {
+                  "id": 1,
+                  "applicationId": 1,
+                  "name": "Client With No Data Store",
+                  "isApproved": true,
+                  "dataStoreIds": []
+                }
+                """
+            );
+        }
+
+        [Test]
+        public void It_updates_the_api_client()
+        {
+            _response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        }
+
+        [Test]
+        public void It_persists_no_data_store_assignment()
+        {
+            A.CallTo(() =>
+                    _apiClientRepository.UpdateApiClient(
+                        A<ApiClientUpdateCommand>.That.Matches(command => command.DataStoreIds.Length == 0)
+                    )
+                )
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [Test]
+        public void It_does_not_query_data_store_existence()
+        {
+            A.CallTo(() => _dataStoreRepository.GetExistingDataStoreIds(A<int[]>.Ignored))
+                .MustNotHaveHappened();
+        }
+    }
+
+    // A PUT is a full replacement, so an omitted list clears the assignments a stored client
+    // already has.
+    [TestFixture]
+    [FixtureLifeCycle(LifeCycle.InstancePerTestCase)]
+    public class Given_an_api_client_update_omitting_the_data_store_id_list_of_a_populated_client
+        : DataStoreAssignmentTestBase
+    {
+        private HttpResponseMessage _response = new();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            ArrangeStoredClient([1]);
+            using var client = SetUpClient();
+
+            _response = await PutApiClientAsync(
+                client,
+                """
+                {
+                  "id": 1,
+                  "applicationId": 1,
+                  "name": "Client Losing Its Data Store",
+                  "isApproved": true
+                }
+                """
+            );
+        }
+
+        [Test]
+        public void It_updates_the_api_client()
+        {
+            _response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        }
+
+        [Test]
+        public void It_clears_the_stored_data_store_assignment()
+        {
+            A.CallTo(() =>
+                    _apiClientRepository.UpdateApiClient(
+                        A<ApiClientUpdateCommand>.That.Matches(command => command.DataStoreIds.Length == 0)
+                    )
+                )
+                .MustHaveHappenedOnceExactly();
+        }
+    }
+
+    [TestFixture]
+    [FixtureLifeCycle(LifeCycle.InstancePerTestCase)]
+    public class Given_an_api_client_update_with_a_null_data_store_id_list : DataStoreAssignmentTestBase
+    {
+        private HttpResponseMessage _response = new();
+        private JsonNode _responseBody = JsonNode.Parse("{}")!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            ArrangeStoredClient([1]);
+            using var client = SetUpClient();
+
+            _response = await PutApiClientAsync(
+                client,
+                """
+                {
+                  "id": 1,
+                  "applicationId": 1,
+                  "name": "Client With Null Data Stores",
+                  "isApproved": true,
+                  "dataStoreIds": null
+                }
+                """
+            );
+            _responseBody = JsonNode.Parse(await _response.Content.ReadAsStringAsync())!;
+        }
+
+        [Test]
+        public void It_rejects_the_request()
+        {
+            _response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+
+        [Test]
+        public void It_reports_a_data_store_ids_validation_error()
+        {
+            _responseBody["validationErrors"]!["DataStoreIds"].Should().NotBeNull();
+        }
+
+        [Test]
+        public void It_leaves_the_stored_api_client_unchanged()
+        {
+            A.CallTo(() => _apiClientRepository.UpdateApiClient(A<ApiClientUpdateCommand>.Ignored))
+                .MustNotHaveHappened();
+        }
     }
 }
