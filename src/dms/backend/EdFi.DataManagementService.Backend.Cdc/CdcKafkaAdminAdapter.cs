@@ -81,7 +81,10 @@ public interface ICdcKafkaAdminAdapter
 /// invocation must reconcile live state. Only the safe factory owns the native client; test injection
 /// does not. Native logs/error callbacks are suppressed because they can contain physical identifiers.
 /// </summary>
-public sealed class CdcKafkaAdminAdapter : ICdcKafkaAdminAdapter, IDisposable
+public sealed partial class CdcKafkaAdminAdapter
+    : ICdcKafkaAdminAdapter,
+        ICdcArtifactCleanupAdapter,
+        IDisposable
 {
     private readonly IAdminClient _client;
     private readonly ICdcKafkaAuthorizationInspection _authorization;

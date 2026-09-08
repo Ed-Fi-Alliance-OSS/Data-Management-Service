@@ -36,4 +36,8 @@
     <ItemGroup>
         <Compile Include="..\..\clis\EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration\DocumentCacheAdminCliIntegrationHarness.cs" Link="DocumentCacheAdminCliIntegrationHarness.cs" />
     </ItemGroup>
+    <ItemGroup>
+        <Compile Include="..\EdFi.DataManagementService.Backend.Cdc.Tests.Unit\CdcDeploymentRequestTestData.cs" Link="Shared\CdcDeploymentRequestTestData.cs" />
+        <Compile Include="..\EdFi.DataManagementService.Backend.Cdc.Tests.Unit\CdcConnectorTemplateTestData.cs" Link="Shared\CdcConnectorTemplateTestData.cs" />
+    </ItemGroup>
 </Project>
