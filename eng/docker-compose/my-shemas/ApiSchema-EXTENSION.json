@@ -1,0 +1,911 @@
+{
+  "apiSchemaVersion": "1.0.0",
+  "projectSchema": {
+    "abstractResources": {
+    },
+    "caseInsensitiveEndpointNameMapping": {
+      "haircolordescriptors": "hairColorDescriptors"
+    },
+    "compatibleDsRange": "6.1.0",
+    "description": "",
+    "domains": [
+    ],
+    "educationOrganizationHierarchy": {
+      "CommunityOrganization": {
+      },
+      "CommunityProvider": {
+        "CommunityOrganization": "$.communityOrganizationReference.communityOrganizationId"
+      },
+      "EducationOrganization": {
+      },
+      "EducationOrganizationNetwork": {
+      },
+      "EducationServiceCenter": {
+        "StateEducationAgency": "$.stateEducationAgencyReference.stateEducationAgencyId"
+      },
+      "LocalEducationAgency": {
+        "EducationServiceCenter": "$.educationServiceCenterReference.educationServiceCenterId",
+        "LocalEducationAgency": "$.parentLocalEducationAgencyReference.localEducationAgencyId",
+        "StateEducationAgency": "$.stateEducationAgencyReference.stateEducationAgencyId"
+      },
+      "OrganizationDepartment": {
+        "EducationOrganization": "$.parentEducationOrganizationReference.educationOrganizationId"
+      },
+      "PostSecondaryInstitution": {
+      },
+      "School": {
+        "LocalEducationAgency": "$.localEducationAgencyReference.localEducationAgencyId",
+        "PostSecondaryInstitution": "$.postSecondaryInstitutionReference.postSecondaryInstitutionId"
+      },
+      "StateEducationAgency": {
+      }
+    },
+    "educationOrganizationTypes": [
+      "CommunityOrganization",
+      "CommunityProvider",
+      "EducationOrganizationNetwork",
+      "EducationServiceCenter",
+      "LocalEducationAgency",
+      "OrganizationDepartment",
+      "PostSecondaryInstitution",
+      "School",
+      "StateEducationAgency",
+      "EducationOrganization"
+    ],
+    "isExtensionProject": true,
+    "projectEndpointName": "test-extension",
+    "projectName": "TestExtension",
+    "projectVersion": "1.0.0",
+    "resourceNameMapping": {
+      "HairColorDescriptor": "hairColorDescriptors"
+    },
+    "resourceSchemas": {
+      "hairColorDescriptors": {
+        "allowIdentityUpdates": false,
+        "arrayUniquenessConstraints": [
+        ],
+        "authorizationPathways": [
+        ],
+        "booleanJsonPaths": [
+        ],
+        "commonExtensionOverrides": [
+        ],
+        "dateJsonPaths": [
+        ],
+        "dateTimeJsonPaths": [
+        ],
+        "decimalPropertyValidationInfos": [
+        ],
+        "documentPathsMapping": {
+        },
+        "domains": [
+        ],
+        "equalityConstraints": [
+        ],
+        "identityJsonPaths": [
+        ],
+        "isDescriptor": true,
+        "isResourceExtension": false,
+        "isSchoolYearEnumeration": false,
+        "isSubclass": false,
+        "jsonSchemaForInsert": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "description": "An Ed-Fi Descriptor",
+          "properties": {
+            "codeValue": {
+              "description": "The descriptor code value",
+              "maxLength": 50,
+              "minLength": 1,
+              "pattern": "^(?!\\s).*(?<!\\s)$",
+              "type": "string"
+            },
+            "description": {
+              "description": "The descriptor description",
+              "maxLength": 1024,
+              "type": "string"
+            },
+            "effectiveBeginDate": {
+              "description": "The descriptor effective begin date",
+              "format": "date",
+              "type": "string"
+            },
+            "effectiveEndDate": {
+              "description": "The descriptor effective end date",
+              "format": "date",
+              "type": "string"
+            },
+            "namespace": {
+              "description": "The descriptor namespace as a URI",
+              "maxLength": 255,
+              "minLength": 1,
+              "pattern": "^(?!\\s).*(?<!\\s)$",
+              "type": "string"
+            },
+            "shortDescription": {
+              "description": "The descriptor short description",
+              "maxLength": 75,
+              "minLength": 1,
+              "pattern": "^(?!\\s).*(?<!\\s)$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "namespace",
+            "codeValue",
+            "shortDescription"
+          ],
+          "title": "EdFi.Descriptor",
+          "type": "object"
+        },
+        "numericJsonPaths": [
+        ],
+        "openApiFragments": {
+          "descriptors": {
+            "components": {
+              "schemas": {
+                "TestExtension_HairColorDescriptor": {
+                  "description": "An Ed-Fi Descriptor",
+                  "properties": {
+                    "codeValue": {
+                      "description": "The descriptor code value",
+                      "maxLength": 50,
+                      "minLength": 1,
+                      "pattern": "^(?!\\s).*(?<!\\s)$",
+                      "type": "string",
+                      "x-Ed-Fi-isIdentity": true
+                    },
+                    "description": {
+                      "description": "The descriptor description",
+                      "maxLength": 1024,
+                      "type": "string",
+                      "x-nullable": true
+                    },
+                    "effectiveBeginDate": {
+                      "description": "The descriptor effective begin date",
+                      "format": "date",
+                      "type": "string",
+                      "x-nullable": true
+                    },
+                    "effectiveEndDate": {
+                      "description": "The descriptor effective end date",
+                      "format": "date",
+                      "type": "string",
+                      "x-nullable": true
+                    },
+                    "id": {
+                      "description": "",
+                      "type": "string"
+                    },
+                    "namespace": {
+                      "description": "The descriptor namespace as a URI",
+                      "maxLength": 255,
+                      "minLength": 1,
+                      "pattern": "^(?!\\s).*(?<!\\s)$",
+                      "type": "string",
+                      "x-Ed-Fi-isIdentity": true
+                    },
+                    "shortDescription": {
+                      "description": "The descriptor short description",
+                      "maxLength": 75,
+                      "minLength": 1,
+                      "pattern": "^(?!\\s).*(?<!\\s)$",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "namespace",
+                    "codeValue",
+                    "shortDescription"
+                  ],
+                  "type": "object"
+                },
+                "TestExtension_HairColorDescriptor_TrackedChangeDelete": {
+                  "properties": {
+                    "changeVersion": {
+                      "format": "int64",
+                      "type": "integer"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "keyValues": {
+                      "$ref": "#/components/schemas/TestExtension_HairColorDescriptor_TrackedChangeKey"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "changeVersion",
+                    "keyValues"
+                  ],
+                  "type": "object"
+                },
+                "TestExtension_HairColorDescriptor_TrackedChangeKey": {
+                  "properties": {
+                    "codeValue": {
+                      "maxLength": 50,
+                      "type": "string"
+                    },
+                    "namespace": {
+                      "maxLength": 255,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "namespace",
+                    "codeValue"
+                  ],
+                  "type": "object"
+                },
+                "TestExtension_HairColorDescriptor_TrackedChangeKeyChange": {
+                  "properties": {
+                    "changeVersion": {
+                      "format": "int64",
+                      "type": "integer"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "newKeyValues": {
+                      "$ref": "#/components/schemas/TestExtension_HairColorDescriptor_TrackedChangeKey"
+                    },
+                    "oldKeyValues": {
+                      "$ref": "#/components/schemas/TestExtension_HairColorDescriptor_TrackedChangeKey"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "changeVersion",
+                    "oldKeyValues",
+                    "newKeyValues"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "paths": {
+              "/test-extension/hairColorDescriptors": {
+                "get": {
+                  "description": "This GET operation provides access to resources using the \"Get\" search pattern.  The values of any properties of the resource that are specified will be used to return all matching results (if it exists).",
+                  "operationId": "getTestExtensionHairColors",
+                  "parameters": [
+                    {
+                      "$ref": "#/components/parameters/offset"
+                    },
+                    {
+                      "$ref": "#/components/parameters/limit"
+                    },
+                    {
+                      "$ref": "#/components/parameters/MinChangeVersion"
+                    },
+                    {
+                      "$ref": "#/components/parameters/MaxChangeVersion"
+                    },
+                    {
+                      "$ref": "#/components/parameters/totalCount"
+                    },
+                    {
+                      "description": "",
+                      "in": "query",
+                      "name": "id",
+                      "schema": {
+                        "type": "string"
+                      }
+                    },
+                    {
+                      "description": "A code or abbreviation that is used to refer to the descriptor.",
+                      "in": "query",
+                      "name": "codeValue",
+                      "schema": {
+                        "maxLength": 50,
+                        "type": "string"
+                      },
+                      "x-Ed-Fi-isIdentity": true
+                    },
+                    {
+                      "description": "The description of the descriptor.",
+                      "in": "query",
+                      "name": "description",
+                      "schema": {
+                        "maxLength": 1024,
+                        "type": "string"
+                      }
+                    },
+                    {
+                      "description": "The beginning date of the period when the descriptor is in effect. If omitted, the default is immediate effectiveness.",
+                      "in": "query",
+                      "name": "effectiveBeginDate",
+                      "schema": {
+                        "format": "date",
+                        "type": "string"
+                      }
+                    },
+                    {
+                      "description": "The end date of the period when the descriptor is in effect.",
+                      "in": "query",
+                      "name": "effectiveEndDate",
+                      "schema": {
+                        "format": "date",
+                        "type": "string"
+                      }
+                    },
+                    {
+                      "description": "A globally unique namespace that identifies this descriptor set. Author is strongly encouraged to use the Universal Resource Identifier (http, ftp, file, etc.) for the source of the descriptor definition. Best practice is for this source to be the descriptor file itself, so that it can be machine-readable and be fetched in real-time, if necessary.",
+                      "in": "query",
+                      "name": "namespace",
+                      "schema": {
+                        "maxLength": 255,
+                        "type": "string"
+                      },
+                      "x-Ed-Fi-isIdentity": true
+                    },
+                    {
+                      "description": "A shortened description for the descriptor.",
+                      "in": "query",
+                      "name": "shortDescription",
+                      "schema": {
+                        "maxLength": 75,
+                        "type": "string"
+                      }
+                    }
+                  ],
+                  "responses": {
+                    "200": {
+                      "content": {
+                        "application/json": {
+                          "schema": {
+                            "items": {
+                              "$ref": "#/components/schemas/TestExtension_HairColorDescriptor"
+                            },
+                            "type": "array"
+                          }
+                        }
+                      },
+                      "description": "The requested resource was successfully retrieved."
+                    },
+                    "304": {
+                      "$ref": "#/components/responses/NotModified"
+                    },
+                    "400": {
+                      "$ref": "#/components/responses/BadRequest"
+                    },
+                    "401": {
+                      "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                      "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                      "$ref": "#/components/responses/NotFound"
+                    },
+                    "500": {
+                      "$ref": "#/components/responses/Error"
+                    }
+                  },
+                  "summary": "Retrieves specific resources using the resource's property values (using the \"Get\" pattern).",
+                  "tags": [
+                    "hairColorDescriptors"
+                  ]
+                },
+                "post": {
+                  "description": "The POST operation can be used to create or update resources. In database terms, this is often referred to as an \"upsert\" operation (insert + update). Clients should NOT include the resource \"id\" in the JSON body because it will result in an error. The web service will identify whether the resource already exists based on the natural key values provided, and update or create the resource appropriately. It is recommended to use POST for both create and update except while updating natural key of a resource in which case PUT operation must be used.",
+                  "operationId": "postTestExtensionHairColor",
+                  "requestBody": {
+                    "content": {
+                      "application/json": {
+                        "schema": {
+                          "$ref": "#/components/schemas/TestExtension_HairColorDescriptor"
+                        }
+                      }
+                    },
+                    "description": "The JSON representation of the HairColor resource to be created or updated.",
+                    "required": true,
+                    "x-bodyName": "HairColor"
+                  },
+                  "responses": {
+                    "200": {
+                      "$ref": "#/components/responses/Updated"
+                    },
+                    "201": {
+                      "$ref": "#/components/responses/Created"
+                    },
+                    "400": {
+                      "$ref": "#/components/responses/BadRequest"
+                    },
+                    "401": {
+                      "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                      "$ref": "#/components/responses/Forbidden"
+                    },
+                    "405": {
+                      "description": "Method Is Not Allowed."
+                    },
+                    "409": {
+                      "$ref": "#/components/responses/Conflict"
+                    },
+                    "412": {
+                      "$ref": "#/components/responses/PreconditionFailed"
+                    },
+                    "500": {
+                      "$ref": "#/components/responses/Error"
+                    }
+                  },
+                  "summary": "Creates or updates resources based on the natural key values of the supplied resource.",
+                  "tags": [
+                    "hairColorDescriptors"
+                  ]
+                },
+                "x-Ed-Fi-domains": [
+                ]
+              },
+              "/test-extension/hairColorDescriptors/deletes": {
+                "get": {
+                  "description": "This GET operation provides access to deleted resource keys in the requested ChangeVersion range.",
+                  "operationId": "deletesTestExtensionHairColors",
+                  "parameters": [
+                    {
+                      "$ref": "#/components/parameters/MinChangeVersion"
+                    },
+                    {
+                      "$ref": "#/components/parameters/MaxChangeVersion"
+                    },
+                    {
+                      "$ref": "#/components/parameters/limit"
+                    },
+                    {
+                      "$ref": "#/components/parameters/offset"
+                    },
+                    {
+                      "$ref": "#/components/parameters/totalCount"
+                    }
+                  ],
+                  "responses": {
+                    "200": {
+                      "content": {
+                        "application/json": {
+                          "schema": {
+                            "items": {
+                              "$ref": "#/components/schemas/TestExtension_HairColorDescriptor_TrackedChangeDelete"
+                            },
+                            "type": "array"
+                          }
+                        }
+                      },
+                      "description": "The requested Change Query results were successfully retrieved."
+                    },
+                    "400": {
+                      "$ref": "#/components/responses/BadRequest"
+                    },
+                    "401": {
+                      "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                      "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                      "$ref": "#/components/responses/NotFound"
+                    },
+                    "500": {
+                      "$ref": "#/components/responses/Error"
+                    }
+                  },
+                  "summary": "Retrieves deleted resource keys for Change Queries.",
+                  "tags": [
+                    "hairColorDescriptors"
+                  ]
+                },
+                "x-Ed-Fi-domains": [
+                ]
+              },
+              "/test-extension/hairColorDescriptors/keyChanges": {
+                "get": {
+                  "description": "This GET operation provides access to changed resource keys in the requested ChangeVersion range.",
+                  "operationId": "keyChangesTestExtensionHairColors",
+                  "parameters": [
+                    {
+                      "$ref": "#/components/parameters/MinChangeVersion"
+                    },
+                    {
+                      "$ref": "#/components/parameters/MaxChangeVersion"
+                    },
+                    {
+                      "$ref": "#/components/parameters/limit"
+                    },
+                    {
+                      "$ref": "#/components/parameters/offset"
+                    },
+                    {
+                      "$ref": "#/components/parameters/totalCount"
+                    }
+                  ],
+                  "responses": {
+                    "200": {
+                      "content": {
+                        "application/json": {
+                          "schema": {
+                            "items": {
+                              "$ref": "#/components/schemas/TestExtension_HairColorDescriptor_TrackedChangeKeyChange"
+                            },
+                            "type": "array"
+                          }
+                        }
+                      },
+                      "description": "The requested Change Query results were successfully retrieved."
+                    },
+                    "400": {
+                      "$ref": "#/components/responses/BadRequest"
+                    },
+                    "401": {
+                      "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                      "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                      "$ref": "#/components/responses/NotFound"
+                    },
+                    "500": {
+                      "$ref": "#/components/responses/Error"
+                    }
+                  },
+                  "summary": "Retrieves changed resource keys for Change Queries.",
+                  "tags": [
+                    "hairColorDescriptors"
+                  ]
+                },
+                "x-Ed-Fi-domains": [
+                ]
+              },
+              "/test-extension/hairColorDescriptors/{id}": {
+                "delete": {
+                  "description": "The DELETE operation is used to delete an existing resource by identifier. If the resource doesn't exist, an error will result (the resource will not be found).",
+                  "operationId": "deleteTestExtensionHairColorsById",
+                  "parameters": [
+                    {
+                      "description": "A resource identifier that uniquely identifies the resource.",
+                      "in": "path",
+                      "name": "id",
+                      "required": true,
+                      "schema": {
+                        "type": "string"
+                      }
+                    },
+                    {
+                      "$ref": "#/components/parameters/If-Match"
+                    }
+                  ],
+                  "responses": {
+                    "204": {
+                      "$ref": "#/components/responses/Updated"
+                    },
+                    "400": {
+                      "$ref": "#/components/responses/BadRequest"
+                    },
+                    "401": {
+                      "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                      "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                      "$ref": "#/components/responses/NotFound"
+                    },
+                    "405": {
+                      "description": "Method Is Not Allowed."
+                    },
+                    "409": {
+                      "$ref": "#/components/responses/Conflict"
+                    },
+                    "412": {
+                      "$ref": "#/components/responses/PreconditionFailed"
+                    },
+                    "500": {
+                      "$ref": "#/components/responses/Error"
+                    }
+                  },
+                  "summary": "Deletes an existing resource using the resource identifier.",
+                  "tags": [
+                    "hairColorDescriptors"
+                  ]
+                },
+                "get": {
+                  "description": "This GET operation retrieves a resource by the specified resource identifier.",
+                  "operationId": "getTestExtensionHairColorsById",
+                  "parameters": [
+                    {
+                      "description": "A resource identifier that uniquely identifies the resource.",
+                      "in": "path",
+                      "name": "id",
+                      "required": true,
+                      "schema": {
+                        "type": "string"
+                      }
+                    },
+                    {
+                      "$ref": "#/components/parameters/If-None-Match"
+                    }
+                  ],
+                  "responses": {
+                    "200": {
+                      "content": {
+                        "application/json": {
+                          "schema": {
+                            "$ref": "#/components/schemas/TestExtension_HairColorDescriptor"
+                          }
+                        }
+                      },
+                      "description": "The requested resource was successfully retrieved."
+                    },
+                    "304": {
+                      "$ref": "#/components/responses/NotModified"
+                    },
+                    "400": {
+                      "$ref": "#/components/responses/BadRequest"
+                    },
+                    "401": {
+                      "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                      "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                      "$ref": "#/components/responses/NotFound"
+                    },
+                    "500": {
+                      "$ref": "#/components/responses/Error"
+                    }
+                  },
+                  "summary": "Retrieves a specific resource using the resource's identifier (using the \"Get By Id\" pattern).",
+                  "tags": [
+                    "hairColorDescriptors"
+                  ]
+                },
+                "put": {
+                  "description": "The PUT operation is used to update a resource by identifier. If the resource identifier (\"id\") is provided in the JSON body, it will be ignored. Additionally, this API resource is not configured for cascading natural key updates. Natural key values for this resource cannot be changed using PUT operation, so the recommendation is to use POST as that supports upsert behavior.",
+                  "operationId": "putTestExtensionHairColor",
+                  "parameters": [
+                    {
+                      "description": "A resource identifier that uniquely identifies the resource.",
+                      "in": "path",
+                      "name": "id",
+                      "required": true,
+                      "schema": {
+                        "type": "string"
+                      }
+                    },
+                    {
+                      "$ref": "#/components/parameters/If-Match"
+                    }
+                  ],
+                  "requestBody": {
+                    "content": {
+                      "application/json": {
+                        "schema": {
+                          "$ref": "#/components/schemas/TestExtension_HairColorDescriptor"
+                        }
+                      }
+                    },
+                    "description": "The JSON representation of the HairColor resource to be created or updated.",
+                    "required": true,
+                    "x-bodyName": "HairColor"
+                  },
+                  "responses": {
+                    "204": {
+                      "$ref": "#/components/responses/Updated"
+                    },
+                    "400": {
+                      "$ref": "#/components/responses/BadRequest"
+                    },
+                    "401": {
+                      "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                      "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                      "$ref": "#/components/responses/NotFound"
+                    },
+                    "405": {
+                      "description": "Method Is Not Allowed."
+                    },
+                    "409": {
+                      "$ref": "#/components/responses/Conflict"
+                    },
+                    "412": {
+                      "$ref": "#/components/responses/PreconditionFailed"
+                    },
+                    "500": {
+                      "$ref": "#/components/responses/Error"
+                    }
+                  },
+                  "summary": "Updates a resource based on the resource identifier.",
+                  "tags": [
+                    "hairColorDescriptors"
+                  ]
+                },
+                "x-Ed-Fi-domains": [
+                ]
+              }
+            },
+            "tags": [
+              {
+                "description": "This descriptor defines student hair color.",
+                "name": "hairColorDescriptors"
+              }
+            ]
+          }
+        },
+        "queryFieldMapping": {
+          "codeValue": [
+            {
+              "path": "$.codeValue",
+              "type": "string"
+            }
+          ],
+          "description": [
+            {
+              "path": "$.description",
+              "type": "string"
+            }
+          ],
+          "effectiveBeginDate": [
+            {
+              "path": "$.effectiveBeginDate",
+              "type": "date"
+            }
+          ],
+          "effectiveEndDate": [
+            {
+              "path": "$.effectiveEndDate",
+              "type": "date"
+            }
+          ],
+          "id": [
+            {
+              "path": "$.id",
+              "type": "string"
+            }
+          ],
+          "namespace": [
+            {
+              "path": "$.namespace",
+              "type": "string"
+            }
+          ],
+          "shortDescription": [
+            {
+              "path": "$.shortDescription",
+              "type": "string"
+            }
+          ]
+        },
+        "resourceName": "HairColorDescriptor",
+        "securableElements": {
+          "Contact": [
+          ],
+          "EducationOrganization": [
+          ],
+          "Namespace": [
+            "$.namespace"
+          ],
+          "Staff": [
+          ],
+          "Student": [
+          ]
+        }
+      },
+      "studentEducationOrganizationAssociations": {
+        "allowIdentityUpdates": false,
+        "arrayUniquenessConstraints": [
+        ],
+        "authorizationPathways": [
+        ],
+        "booleanJsonPaths": [
+        ],
+        "commonExtensionOverrides": [
+        ],
+        "dateJsonPaths": [
+        ],
+        "dateTimeJsonPaths": [
+        ],
+        "decimalPropertyValidationInfos": [
+        ],
+        "documentPathsMapping": {
+          "HairColorDescriptor": {
+            "isDescriptor": true,
+            "isPartOfIdentity": false,
+            "isReference": true,
+            "isRequired": false,
+            "path": "$._ext.testextension.hairColorDescriptor",
+            "projectName": "TestExtension",
+            "resourceName": "HairColorDescriptor",
+            "type": "string"
+          }
+        },
+        "domains": [
+        ],
+        "equalityConstraints": [
+        ],
+        "identityJsonPaths": [
+        ],
+        "isDescriptor": false,
+        "isResourceExtension": true,
+        "isSchoolYearEnumeration": false,
+        "isSubclass": false,
+        "jsonSchemaForInsert": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "description": "",
+          "properties": {
+            "_ext": {
+              "additionalProperties": true,
+              "description": "optional extension collection",
+              "properties": {
+                "testextension": {
+                  "additionalProperties": true,
+                  "description": "testextension extension properties collection",
+                  "properties": {
+                    "hairColorDescriptor": {
+                      "description": "hair color of student",
+                      "maxLength": 306,
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                }
+              },
+              "type": "object"
+            }
+          },
+          "title": "TestExtension.StudentEducationOrganizationAssociation",
+          "type": "object"
+        },
+        "numericJsonPaths": [
+        ],
+        "openApiFragments": {
+          "resources": {
+            "components": {
+              "schemas": {
+              }
+            },
+            "exts": {
+              "EdFi_StudentEducationOrganizationAssociation": {
+                "description": "",
+                "properties": {
+                  "hairColorDescriptor": {
+                    "description": "hair color of student",
+                    "maxLength": 306,
+                    "type": "string",
+                    "x-nullable": true
+                  },
+                  "id": {
+                    "description": "A unique system-generated resource identifier.",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          }
+        },
+        "relational": {
+          "rootTableNameOverride": "StudentEducationOrganizationAssociationExtension"
+        },
+        "resourceName": "StudentEducationOrganizationAssociation",
+        "securableElements": {
+          "Contact": [
+          ],
+          "EducationOrganization": [
+          ],
+          "Namespace": [
+          ],
+          "Staff": [
+          ],
+          "Student": [
+          ]
+        }
+      }
+    }
+  }
+}

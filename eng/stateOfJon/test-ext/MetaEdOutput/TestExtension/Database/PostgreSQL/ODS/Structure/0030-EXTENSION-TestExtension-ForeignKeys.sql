@@ -1,0 +1,17 @@
+ALTER TABLE testextension.HairColorDescriptor ADD CONSTRAINT FK_26d163_Descriptor FOREIGN KEY (HairColorDescriptorId)
+REFERENCES edfi.Descriptor (DescriptorId)
+ON DELETE CASCADE
+;
+
+ALTER TABLE testextension.StudentEducationOrganizationAssociationExtension ADD CONSTRAINT FK_2c2930_HairColorDescriptor FOREIGN KEY (HairColorDescriptorId)
+REFERENCES testextension.HairColorDescriptor (HairColorDescriptorId)
+;
+
+CREATE INDEX FK_2c2930_HairColorDescriptor
+ON testextension.StudentEducationOrganizationAssociationExtension (HairColorDescriptorId ASC);
+
+ALTER TABLE testextension.StudentEducationOrganizationAssociationExtension ADD CONSTRAINT FK_2c2930_StudentEducationOrganizationAssociation FOREIGN KEY (EducationOrganizationId, StudentUSI)
+REFERENCES edfi.StudentEducationOrganizationAssociation (EducationOrganizationId, StudentUSI)
+ON DELETE CASCADE
+;
+

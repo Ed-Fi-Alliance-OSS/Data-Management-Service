@@ -1,0 +1,14 @@
+{
+  "name": "TestExtensionClaims",
+  "resourceClaims": [
+    {
+      "isParent": true,
+      "name": "domains/systemDescriptors",
+      "children": [
+        {
+          "name": "http://ed-fi.org/identity/claims/test-extension/HairColorDescriptor"
+        }
+      ]
+    }
+  ]
+}

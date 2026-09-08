@@ -1,0 +1,313 @@
+{
+  "odsApiVersion": "7.3",
+  "schemaDefinition": {
+    "logicalName": "TestExtension",
+    "physicalName": "testextension",
+    "description": "",
+    "version": "1.0.0"
+  },
+  "aggregateDefinitions": [
+    {
+      "aggregateRootEntityName": {
+        "schema": "testextension",
+        "name": "HairColorDescriptor"
+      },
+      "aggregateEntityNames": [
+        {
+          "schema": "testextension",
+          "name": "HairColorDescriptor"
+        }
+      ]
+    }
+  ],
+  "aggregateExtensionDefinitions": [],
+  "entityDefinitions": [
+    {
+      "schema": "testextension",
+      "name": "HairColorDescriptor",
+      "locallyDefinedProperties": [],
+      "identifiers": [
+        {
+          "identifierName": "HairColorDescriptor_PK",
+          "identifyingPropertyNames": [
+            "HairColorDescriptorId"
+          ],
+          "isPrimary": true,
+          "isUpdatable": false,
+          "constraintNames": {
+            "sqlServer": "HairColorDescriptor_PK",
+            "postgreSql": "HairColorDescriptor_PK"
+          }
+        }
+      ],
+      "isAbstract": false,
+      "description": "This descriptor defines student hair color.",
+      "domains": [],
+      "tableNames": {
+        "sqlServer": "HairColorDescriptor",
+        "postgreSql": "HairColorDescriptor"
+      }
+    },
+    {
+      "schema": "testextension",
+      "name": "StudentEducationOrganizationAssociationExtension",
+      "locallyDefinedProperties": [
+        {
+          "propertyName": "CreateDate",
+          "propertyType": {
+            "dbType": "DateTime2",
+            "maxLength": 0,
+            "precision": 0,
+            "scale": 0,
+            "isNullable": false
+          },
+          "description": "",
+          "isIdentifying": false,
+          "isServerAssigned": false,
+          "columnNames": {
+            "sqlServer": "CreateDate",
+            "postgreSql": "CreateDate"
+          }
+        }
+      ],
+      "identifiers": [
+        {
+          "identifierName": "StudentEducationOrganizationAssociationExtension_PK",
+          "identifyingPropertyNames": [
+            "EducationOrganizationId",
+            "StudentUSI"
+          ],
+          "isPrimary": true,
+          "isUpdatable": false,
+          "constraintNames": {
+            "sqlServer": "StudentEducationOrganizationAssociationExtension_PK",
+            "postgreSql": "StudentEducationOrganizationAssociationExtension_PK"
+          }
+        }
+      ],
+      "isAbstract": false,
+      "description": "",
+      "domains": [],
+      "tableNames": {
+        "sqlServer": "StudentEducationOrganizationAssociationExtension",
+        "postgreSql": "StudentEducationOrganizationAssociationExtension"
+      }
+    }
+  ],
+  "associationDefinitions": [
+    {
+      "fullName": {
+        "schema": "testextension",
+        "name": "FK_HairColorDescriptor_Descriptor"
+      },
+      "cardinality": "OneToOneInheritance",
+      "primaryEntityFullName": {
+        "schema": "edfi",
+        "name": "Descriptor"
+      },
+      "primaryEntityProperties": [
+        {
+          "propertyName": "DescriptorId",
+          "propertyType": {
+            "dbType": "Int32",
+            "maxLength": 0,
+            "precision": 10,
+            "scale": 0,
+            "isNullable": false
+          },
+          "description": "A unique identifier used as Primary Key, not derived from business logic, when acting as Foreign Key, references the parent table.",
+          "isIdentifying": true,
+          "isServerAssigned": true,
+          "columnNames": {
+            "sqlServer": "DescriptorId",
+            "postgreSql": "DescriptorId"
+          }
+        }
+      ],
+      "secondaryEntityFullName": {
+        "schema": "testextension",
+        "name": "HairColorDescriptor"
+      },
+      "secondaryEntityProperties": [
+        {
+          "propertyName": "HairColorDescriptorId",
+          "propertyType": {
+            "dbType": "Int32",
+            "maxLength": 0,
+            "precision": 10,
+            "scale": 0,
+            "isNullable": false
+          },
+          "description": "A unique identifier used as Primary Key, not derived from business logic, when acting as Foreign Key, references the parent table.",
+          "isIdentifying": true,
+          "isServerAssigned": true,
+          "columnNames": {
+            "sqlServer": "HairColorDescriptorId",
+            "postgreSql": "HairColorDescriptorId"
+          }
+        }
+      ],
+      "isIdentifying": true,
+      "isRequired": true,
+      "constraintNames": {
+        "sqlServer": "FK_HairColorDescriptor_Descriptor",
+        "postgreSql": "FK_26d163_Descriptor"
+      },
+      "potentiallyLogical": false
+    },
+    {
+      "fullName": {
+        "schema": "testextension",
+        "name": "FK_StudentEducationOrganizationAssociationExtension_HairColorDescriptor"
+      },
+      "cardinality": "OneToZeroOrMore",
+      "primaryEntityFullName": {
+        "schema": "testextension",
+        "name": "HairColorDescriptor"
+      },
+      "primaryEntityProperties": [
+        {
+          "propertyName": "HairColorDescriptorId",
+          "propertyType": {
+            "dbType": "Int32",
+            "maxLength": 0,
+            "precision": 10,
+            "scale": 0,
+            "isNullable": false
+          },
+          "description": "A unique identifier used as Primary Key, not derived from business logic, when acting as Foreign Key, references the parent table.",
+          "isIdentifying": false,
+          "isServerAssigned": false,
+          "columnNames": {
+            "sqlServer": "HairColorDescriptorId",
+            "postgreSql": "HairColorDescriptorId"
+          }
+        }
+      ],
+      "secondaryEntityFullName": {
+        "schema": "testextension",
+        "name": "StudentEducationOrganizationAssociationExtension"
+      },
+      "secondaryEntityProperties": [
+        {
+          "propertyName": "HairColorDescriptorId",
+          "propertyType": {
+            "dbType": "Int32",
+            "maxLength": 0,
+            "precision": 10,
+            "scale": 0,
+            "isNullable": true
+          },
+          "description": "hair color of student",
+          "isIdentifying": false,
+          "isServerAssigned": false,
+          "columnNames": {
+            "sqlServer": "HairColorDescriptorId",
+            "postgreSql": "HairColorDescriptorId"
+          }
+        }
+      ],
+      "isIdentifying": false,
+      "isRequired": false,
+      "constraintNames": {
+        "sqlServer": "FK_StudentEducationOrganizationAssociationExtension_HairColorDescriptor",
+        "postgreSql": "FK_2c2930_HairColorDescriptor"
+      },
+      "potentiallyLogical": false
+    },
+    {
+      "fullName": {
+        "schema": "testextension",
+        "name": "FK_StudentEducationOrganizationAssociationExtension_StudentEducationOrganizationAssociation"
+      },
+      "cardinality": "OneToOneExtension",
+      "primaryEntityFullName": {
+        "schema": "edfi",
+        "name": "StudentEducationOrganizationAssociation"
+      },
+      "primaryEntityProperties": [
+        {
+          "propertyName": "EducationOrganizationId",
+          "propertyType": {
+            "dbType": "Int64",
+            "maxLength": 0,
+            "precision": 10,
+            "scale": 0,
+            "isNullable": false
+          },
+          "description": "The identifier assigned to an education organization.",
+          "isIdentifying": true,
+          "isServerAssigned": false,
+          "columnNames": {
+            "sqlServer": "EducationOrganizationId",
+            "postgreSql": "EducationOrganizationId"
+          }
+        },
+        {
+          "propertyName": "StudentUSI",
+          "propertyType": {
+            "dbType": "Int32",
+            "maxLength": 0,
+            "precision": 10,
+            "scale": 0,
+            "isNullable": false
+          },
+          "description": "A unique alphanumeric code assigned to a student.",
+          "isIdentifying": true,
+          "isServerAssigned": false,
+          "columnNames": {
+            "sqlServer": "StudentUSI",
+            "postgreSql": "StudentUSI"
+          }
+        }
+      ],
+      "secondaryEntityFullName": {
+        "schema": "testextension",
+        "name": "StudentEducationOrganizationAssociationExtension"
+      },
+      "secondaryEntityProperties": [
+        {
+          "propertyName": "EducationOrganizationId",
+          "propertyType": {
+            "dbType": "Int64",
+            "maxLength": 0,
+            "precision": 10,
+            "scale": 0,
+            "isNullable": false
+          },
+          "description": "The identifier assigned to an education organization.",
+          "isIdentifying": true,
+          "isServerAssigned": false,
+          "columnNames": {
+            "sqlServer": "EducationOrganizationId",
+            "postgreSql": "EducationOrganizationId"
+          }
+        },
+        {
+          "propertyName": "StudentUSI",
+          "propertyType": {
+            "dbType": "Int32",
+            "maxLength": 0,
+            "precision": 10,
+            "scale": 0,
+            "isNullable": false
+          },
+          "description": "A unique alphanumeric code assigned to a student.",
+          "isIdentifying": true,
+          "isServerAssigned": false,
+          "columnNames": {
+            "sqlServer": "StudentUSI",
+            "postgreSql": "StudentUSI"
+          }
+        }
+      ],
+      "isIdentifying": true,
+      "isRequired": true,
+      "constraintNames": {
+        "sqlServer": "FK_StudentEducationOrganizationAssociationExtension_StudentEducationOrganizationAssociation",
+        "postgreSql": "FK_2c2930_StudentEducationOrganizationAssociation"
+      }
+    }
+  ],
+  "edFiVersion": "6.1.0"
+}
