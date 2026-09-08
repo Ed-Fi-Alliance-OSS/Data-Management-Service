@@ -14,6 +14,8 @@ epic: DMS-1309
 - **Connector topology and provider setup**: reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#connector-topology-and-provider-setup
 - **Deployment-owned physical source binding**: reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding
 - **Source-history continuity**: reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#source-history-continuity
+- **Bootstrap phase ownership**: reference/design/backend-redesign/design-docs/bootstrap/command-boundaries.md
+- **Projection administrative serialization**: reference/design/backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#administrative-serialization-and-state-row-fencing
 
 The referenced design sections define eligibility, sequencing, topic policy, registration,
 readiness, and lifecycle operations. This story is only the work package for implementing
@@ -54,6 +56,218 @@ needed to provision, validate, start, stop, and retire a target.
 - Add Kafka Connect registration, live validation, status polling, restart, guarded
   adoption/source replacement, and teardown operations.
 - Expose the same workflow to the E2E harness.
+
+## Resolved Bootstrap and Controller Scope
+
+The following choices define the implementation seams for this story. The linked design
+documents continue to own eligibility, readiness, continuity, and recovery behavior; the
+controller composes those contracts rather than introducing another set of rules.
+
+### Reuse and Command Ownership
+
+- Put reusable controller orchestration and its transport interfaces in the existing
+  `EdFi.DataManagementService.Backend.Cdc` library. Add a thin `cdc` command group to
+  SchemaTools and a shared PowerShell phase used by the local/published bootstrap wrappers
+  and E2E setup. Do not implement independent workflows in each script or add Kafka control
+  to the DMS HTTP application.
+- Reuse Core's `AddDmsCdcControlPlane`, `ICdcBindingLifecycleService`, artifact-name
+  generator, retry/admission/status evaluators, and provider-position contracts. Reuse
+  `ICdcProviderSetupService` from `Backend.Ddl` and `ICdcConnectorTemplateService` from
+  `Backend.Cdc`. Their typed results are the handoff; scripts do not reconstruct bindings,
+  provider identifiers, connector properties, source-position comparisons, or diagnostics.
+- Reuse E18 target resolution, effective-schema initialization, administrative commands,
+  supervisor, and projection-status services. Factor the necessary non-HTTP composition
+  currently in `DocumentCacheAdmin` into a shared runtime composition helper if needed;
+  do not reference one CLI executable from another or copy its initialization pipeline.
+  Lifecycle mutations still execute through the E18 command and its provider mutex.
+- Expose explicit enable, validate, status/watch, restart, stop, adopt, source-replacement,
+  record-size increase, and retire operations. Validate inspects without repairing;
+  status/watch also performs the design-required incident latching and connector containment.
+  Stop retains artifacts; retire requires an explicit generation and destructive-cleanup
+  intent. Configuration
+  removal is not an invocation of either operation.
+- Use one typed deployment request for normalized target identity, binding inputs, DMS
+  settings, provider setup context, Connect endpoint, Kafka/worker policy, externalized
+  connector credentials, consumer principals/groups, and bounded timeout/poll settings.
+  Reuse existing provider-token conversion at CLI/configuration boundaries. Keep secrets
+  out of binding and workflow JSON, command output, and redacted template manifests.
+  JSON mode emits one structured result on stdout and diagnostics/progress on stderr.
+
+### Bootstrap Integration and the Offline Window
+
+- Add `-EnableKafkaCdc` and `-CdcBindingStatePath` to the wrapper handoff without changing
+  schema/claims preparation or target selection ownership. Use the structured selected
+  IDs from `configure-local-data-store.ps1`; extend the physical-database creation path
+  to return authoritative created-versus-reused evidence. A newly created CMS record,
+  successful `ddl provision`, empty database, or matching schema hash is not that evidence.
+- For the first local implementation, use a dedicated new DMS database and the existing
+  `-SeparateConfigDatabase` topology. Reject an initial CDC request that would reuse the
+  shared CMS database, a DMS database outside the proven initial workflow, or an already running
+  DMS/IDE endpoint. Validate unsupported flag combinations before starting infrastructure.
+  Ordinary non-CDC and Kafka-UI-only flows retain their existing phase behavior.
+- Insert the CDC phase after ordinary schema provisioning and before the wrapper's
+  `-DmsOnly` start and optional seed phase. During this phase, host the existing DMS
+  projection runtime without an HTTP listener in the controller process. Resolve and
+  initialize the explicitly configured target, perform activation and connector setup,
+  then start its supervisor and read the shared projection-status service. This supplies
+  DMS-owned observations without exposing a canonical writer during the offline window.
+- Require explicit `DocumentCache:Targets` membership in the supplied DMS settings and
+  carry that same configuration into the eventual DMS host. CDC opt-in does not manufacture
+  target membership. Dispose the temporary supervisor cleanly after initial readiness;
+  public DMS startup resumes the same durable queue through the existing runtime path.
+- The controller must exclusively own this initial database and its publication to writers.
+  Local setup checks that no existing application instance can resolve/use the selected
+  database; connecting a shared CMS to running replicas does not meet that condition.
+  External deployment adapters must supply equivalent ownership evidence. This story adds
+  no cross-replica request gate and does not accept a caller's `writesClosed=true` as proof.
+- Start public DMS, print actionable writer/IDE continuation guidance, and invoke seed or
+  E2E API writes only after the CDC phase succeeds. A failed or cancelled phase ends the
+  wrapper without those actions. Suppress the existing provision/start phase's early
+  writer/IDE continuation hints while CDC admission is pending. An `-InfraOnly` preparation
+  may remain offline, but an arbitrary `-DmsBaseUrl` health check cannot complete initial
+  CDC admission.
+
+### Durable Workflow Evidence and Retry Boundaries
+
+- Extend the deployment-owned local state infrastructure with a small, versioned workflow
+  journal alongside the existing binding/incident files under `.cdc-state`. Record the
+  controller creation receipt, normalized target and source fingerprint, original workflow
+  identity, binding generation, external-operation intent/completion, provider creation
+  evidence, and whether writer publication has been authorized. Do not add these fields to
+  the immutable binding, `EffectiveSchema`, or `.bootstrap/bootstrap-manifest.json`.
+- Serialize controller mutations with one exclusive local controller lock for the state
+  root; retain the existing atomic binding operations and owner-only file protections.
+  This remains a single-controller filesystem implementation, not a distributed lease or
+  a generic workflow engine. Persist intent before an external side effect and confirm
+  completion from live state after a crash; a journal step alone does not validate an
+  artifact. Missing, corrupt, or contradictory provenance fails closed. A watch loop releases
+  the controller lock between observation/containment passes rather than holding it forever.
+- Build fresh `InitialCdcProvisioningProof` and eligibility observations from that trusted
+  journal plus current provider/runtime inspection. Reuse the 19-00 pre-binding and retry
+  classifiers. Persist the binding before invoking E18 activation. If database creation
+  committed but its receipt was not durably recorded, require cleanup/reprovisioning;
+  do not adopt the database into the initial workflow by inference.
+- Preserve the PostgreSQL initial slot-creation proof returned by 19-01 before registration.
+  An existing slot with lost creation evidence cannot be relabeled newly created. Use
+  `InitialCreateOrExactMatch` only for authorized unfinished provider creation; once the
+  connector has started consuming, obtain fresh `ValidateOnly` results so a legitimate
+  active/advanced slot is not sent back through the pre-registration creation guard.
+- Distinguish an initial connector awaiting its first streaming offset from an established
+  connector whose offset disappeared. Persist establishment evidence and retained provider
+  artifact identity needed by 19-00 continuity checks. A lost HTTP response is an unknown
+  outcome to reconcile, not permission to recreate history or resubmit a different config.
+- On an interrupted readiness wait, reobserve projection, capture a new barrier, and obtain
+  the second projection observation through the existing evaluator. Do not persist a
+  reusable ready flag or barrier. Before any writer handoff, durably mark the initial
+  workflow ineligible for further initial-enable retries; a crash around that handoff
+  therefore routes to validation/restart, never an empty-table enablement shortcut.
+
+### Provider, Kafka, and Connect Adapters
+
+- Supply the ordinary emitted source inventory to 19-01; supply its fresh typed result and
+  the exact binding to 19-02 rendering and validation. Provider setup does not perform
+  activation. Configure local SQL Server projection prerequisites while the new database
+  is offline and let E18 validate them; retain 19-01's ownership of capture setup and its
+  prohibition on silently repairing established capture history.
+- Separate Kafka broker startup from Connect worker startup in the existing Compose path.
+  Pre-create/validate the configured shared offset store before launching the qualified
+  digest-pinned worker, including when `-EnableKafkaUI` is also selected. Replace the legacy
+  floating connector-image selection on the CDC path; consume the 19-03 image and 19-02
+  qualification fixtures rather than rebuilding
+  plugin behavior in this repository. UI-only startup never registers a connector.
+- Implement narrow Kafka administration and Connect REST adapters behind the controller
+  interfaces. Kafka administration observes actual topic configs, replicas, broker limits,
+  and effective deployment-managed ACLs. Worker configuration/deployment inspection supplies
+  offset-topic identity, override-policy, image, and heap evidence that connector REST
+  config alone cannot prove. Unavailable evidence remains unavailable, not a default value.
+- Apply the topic, durability, sizing, and ACL policies from the linked design through one
+  shared policy builder/validator. Create missing binding artifacts only in eligible setup;
+  exact-match existing topics and reject incompatible configuration rather than silently
+  changing partition counts or repairing history. Repair missing required ACL grants only
+  within the design's allowed ACL reconciliation. Keep the shared worker offset topic out
+  of binding cleanup inventories. Authorization-disabled local fixtures must identify that
+  profile explicitly; production-like ACL evidence requires an authorization-enabled broker.
+- Render the current registration payload in memory, run registration preflight against
+  the worker, and create only an absent connector. Read an existing connector's effective
+  config and use 19-02 live validation; do not use unconditional config upsert to hide drift.
+  Read back and live-validate a newly registered connector as well. A create conflict or
+  request timeout triggers read-back reconciliation. Wait for the connector and sole task,
+  then read committed offsets through the supported REST surface.
+  Reuse the provider offset parser and source-partition hash; do not consume progress-topic
+  records or substitute topic offsets for source-position evidence.
+- Add a deployment telemetry adapter for current connector lag and the design-owned lag
+  statistics; a REST `RUNNING` response supplies neither. Bound each external call and the
+  complete wait, propagate cancellation, and return the failed component with sanitized
+  diagnostics. Connection/authentication failure and an authoritative missing artifact must
+  remain distinguishable inputs to continuity classification.
+- Keep an explicit record-size increase separate from ordinary validation/retry. Compose
+  broker/topic policy changes and regenerated connector config through the design's
+  [coordinated increase procedure](../../design-docs/cdc/cdc-streaming.md#in-place-record-size-increase);
+  do not rewrite the binding or make ordinary drift validation a configuration repair loop.
+
+### Publication-History Bridge to E18 Administration
+
+- Implement and register the production `IDocumentCacheDownstreamPublicationHistoryProvider`
+  in the DocumentCache administrative host as well as any controller host invoking those
+  commands. Reuse the E18 observation and proof evaluator. Normal HTTP DMS needs neither
+  Kafka credentials nor CDC controller registration to perform projection.
+- Binding absence cannot prove `internalOnly`. Add a controller-owned source-history
+  record for a newly created, exclusively managed database, keyed by normalized target and
+  physical-source fingerprint. The ordinary managed provisioning path must be able to
+  establish this record when CDC is not selected; a CDC-only setup path cannot supply the
+  successful internal-only production case required by this story. Existing/unmanaged
+  databases receive no retrospective internal-only attestation.
+- Record loss of internal-only eligibility durably before binding reservation or any other
+  managed downstream exposure. Serialize this update with the controller's binding workflow
+  and keep E18 history-gated administration from racing that workflow, using the same lock
+  order in both hosts before entering the E18 administrative command. Preserve exposure
+  history across stop, target removal, and binding retirement when the database survives.
+  A failed reservation may conservatively leave history `possible`; cleanup does not
+  promote it back to `internalOnly`.
+- Return `internalOnly` only from complete trusted ownership/history evidence with no
+  downstream exposure for that same target/source. Active or historical bindings, possible
+  exposure, incomplete ownership/history, absent/unreadable state, and mismatched sources
+  use the existing rejecting statuses. Do not add an operator assertion, override switch,
+  or empty-directory shortcut. If no trusted state backend is configured, preserve E18's
+  default `unknown` behavior.
+
+### Post-Enablement Operations and Delivery Evidence
+
+- After admission, use the 19-00 observational status/continuity services and 19-01
+  validate-only inspection before restart/resume and on each watch interval. Persist any
+  terminal incident and stop the affected connector; report failures to persist or stop
+  without concealing the incident. Never restart on unknown continuity or reuse initial
+  readiness evidence to claim another exact baseline.
+- Adoption gathers all live evidence before invoking `ImportVerifiedBindingAsync` with
+  the complete operator-supplied binding. Source replacement uses the design's guarded
+  previously-enabled-source path, with an explicit old/new generation request and durable
+  crash checkpoints around connector fencing, source-identity rotation, and new artifacts.
+  Factor any missing rotation/state-operation seam into the existing control-plane/provider
+  abstractions, including an explicitly guarded new-generation provider-creation path;
+  do not mislabel replacement as an initial-empty retry to bypass 19-01's mode guards.
+  It is not recovery from terminal history loss or a published cache-ahead
+  latch, and it does not implement the deferred baseline-replacing cutover.
+- Teardown keeps infrastructure reachable while stopping the connector, removing its own
+  committed offsets through the supported stopped-connector API, and deleting/verifying
+  the connector and remaining governed artifacts. Use 19-00's typed cleanup inventory and
+  `DeleteStateAfterVerifiedCleanupAsync` only after complete live absence evidence. A failed
+  cleanup retains binding/incident state and is resumable. Normal stack stop retains all
+  state; destructive volume teardown must complete governed cleanup before deleting state
+  files. Per-binding retirement never deletes shared worker topics or another binding's
+  principals, grants, or artifacts.
+- Put controller and transport-contract tests in the existing CDC unit/integration test
+  projects and wrapper ordering tests under `eng/docker-compose/tests`. Use real PostgreSQL
+  and SQL Server capture plus the qualified Connect image for admission, interrupted setup,
+  restart, adoption, containment, and retirement evidence. Include an authorization-enabled
+  broker profile for the shared-offset and cross-instance ACL cases. Qualification CI fails
+  on missing prerequisites rather than counting skipped provider/broker tests as evidence.
+- Exercise the history bridge through the packaged DocumentCacheAdmin composition, including
+  durable positive internal-only evidence and rejection after binding retirement, state
+  loss, source change, and concurrent CDC reservation. Include crash injection at creation
+  receipt, binding/activation, provider proof, registration, barrier, writer handoff, and
+  cleanup boundaries. Reuse sibling fixtures; detailed public-message and API-driven Kafka
+  scenarios remain in 19-05/19-06, and full operator runbooks remain in 19-07. Add command
+  help and local invocation examples here so those stories have a concrete shipped surface.
 
 ## Acceptance Evidence
 
