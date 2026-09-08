@@ -919,7 +919,7 @@ Feature: ApiClients endpoints
                   }
                   """
 
-        Scenario: 23 Ensure an omitted DataStoreIds list replaces a populated assignment
+        Scenario: 23 Ensure an omitted DataStoreIds list creates and replaces with no assignment
             Given a POST request is made to "/v3/applications" with
                   """
                   {
@@ -977,6 +977,36 @@ Feature: ApiClients endpoints
                     "clientId": "{populatedKey}",
                     "clientUuid": "{clientUuid}",
                     "name": "Populated Client 23",
+                    "isApproved": true,
+                    "creatorOwnershipTokenId": null,
+                    "ownershipTokenIds": [],
+                    "dataStoreIds": []
+                  }
+                  """
+              # An omitted list on create must fall back to the command's own empty default, the
+              # same end state an explicit empty array produces.
+             When a POST request is made to "/v3/apiClients" with
+                  """
+                  {
+                   "applicationId": {applicationId},
+                   "name": "Omitted List Client 23",
+                   "isApproved": true
+                  }
+                  """
+             Then it should respond with 201
+              And the response body has key and secret
+              And the response body credentials are captured as "omittedCreate"
+              And the response body id is captured as "omittedCreateId"
+             When a GET request is made to "/v3/apiClients/{omittedCreateKey}"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  {
+                    "id": {omittedCreateId},
+                    "applicationId": {applicationId},
+                    "clientId": "{omittedCreateKey}",
+                    "clientUuid": "{clientUuid}",
+                    "name": "Omitted List Client 23",
                     "isApproved": true,
                     "creatorOwnershipTokenId": null,
                     "ownershipTokenIds": [],
