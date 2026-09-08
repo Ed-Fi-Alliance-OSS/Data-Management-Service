@@ -1,0 +1,62 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    </PropertyGroup>
+
+    <!--
+    Declared as a property so CI can point this at the version it just packed
+    (-p:PluginsPackageVersion=<v>) without editing a tracked file. Nothing produces
+    this default on its own, which is the point: a developer who builds this project
+    without packing first gets a restore failure naming a version that does not
+    exist, rather than a quiet success against whatever EdFi.Api.Plugins happened to
+    be lying around. The Package command packs without building, so it needs a prior
+    build in the same -Configuration:
+
+      ./build-dms.ps1 Build -Configuration Release
+      ./build-dms.ps1 Package -PackageTarget Plugins -Configuration Release
+
+    Then pass the contract's own declared version, which
+    Get-PluginsContractVersion reads out of src/plugins/Directory.Build.props.
+
+    The version is pinned exactly, in [brackets]. A bare version is a floor, not a
+    pin, so with more than one nupkg in the local folder feed NuGet resolves a
+    different one and warns via NU1603 instead of failing - which would let this
+    check validate an artifact other than the one just packed.
+  -->
+    <PropertyGroup>
+        <PluginsPackageVersion Condition="'$(PluginsPackageVersion)' == ''">0.0.0-local</PluginsPackageVersion>
+    </PropertyGroup>
+
+    <!--
+    Deliberately outside central package management: this project proves that
+    EdFi.Api.Plugins resolves and compiles as an ordinary implementer would
+    experience it, from the locally packed nupkg plus its declared dependencies on
+    nuget.org (see nuget.config). It carries no ProjectReference into src/ - a
+    project reference would defeat the entire point of the check - and it is not
+    added to any .sln.
+  -->
+    <ItemGroup>
+        <PackageReference Include="EdFi.Api.Plugins" Version="[$(PluginsPackageVersion)]" />
+        <!--
+      Declared here rather than leaned on transitively, even though EdFi.Api.Plugins
+      does declare both of these itself. That is the difference from the sibling
+      custom-validation consumer, and stating both halves matters: the contract
+      declares them because its own hook signature names IConfiguration and
+      IServiceCollection, and this project declares them because an implementer
+      writing registration code against those signatures compiles against both
+      assemblies directly. Naming them here keeps this fixture behaving like an
+      outside project rather than like one that happens to inherit what it needs.
+
+      These versions are deliberately independent of src/Directory.Packages.props and
+      of Dependabot, whose nuget scope is directory: src/. They happen to match today
+      and are not required to: an outside implementer picks their own versions, and
+      this project exists to behave like one. Bump them only to exercise a version an
+      implementer might realistically use, never to track DMS's own.
+    -->
+        <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.1" />
+        <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.1" />
+    </ItemGroup>
+</Project>
