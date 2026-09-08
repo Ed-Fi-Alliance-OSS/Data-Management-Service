@@ -168,6 +168,15 @@ public sealed class CdcConnectRestAdapter(HttpClient client, TimeProvider timePr
                 {
                     return Failure<CdcTransportAcknowledgement>(CdcDeploymentFailure.ValidationFailed);
                 }
+                if (
+                    !IsSizeOnlyIncrease(
+                        ((CdcTransportResult<IReadOnlyDictionary<string, string>>.Observed)before).Value,
+                        payload.Config
+                    )
+                )
+                {
+                    return Failure<CdcTransportAcknowledgement>(CdcDeploymentFailure.ValidationFailed);
+                }
                 // This explicit controller-authorized operation is the only PUT config surface. Connect's
                 // API is inherently an upsert, so the state-root controller lock must exclude managed deletion.
                 var effect = await SendAsync(
@@ -414,6 +423,59 @@ public sealed class CdcConnectRestAdapter(HttpClient client, TimeProvider timePr
             )
             ? Acknowledged()
             : Failure<CdcTransportAcknowledgement>(CdcDeploymentFailure.ValidationFailed);
+    }
+
+    private static bool IsSizeOnlyIncrease(
+        IReadOnlyDictionary<string, string> before,
+        IReadOnlyDictionary<string, string> after
+    )
+    {
+        if (!before.Keys.Order().SequenceEqual(after.Keys.Order()))
+        {
+            return false;
+        }
+        int changes = 0;
+        foreach (var pair in after)
+        {
+            string old = before[pair.Key];
+            if (old == pair.Value)
+            {
+                continue;
+            }
+            if (
+                CdcConnectorTemplateInputValidator.IsSecretBearingRenderedProperty(pair.Key)
+                && CdcConnectorTemplateEffectiveConfigValidator.IsAcceptedSecretReadBack(
+                    pair.Value,
+                    old,
+                    CdcConnectorTemplateSourcePhase.LiveReadBack
+                )
+            )
+            {
+                continue;
+            }
+            if (
+                pair.Key is not ("producer.override.max.request.size" or "producer.override.buffer.memory")
+                || !long.TryParse(
+                    old,
+                    System.Globalization.NumberStyles.None,
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    out long previous
+                )
+                || !long.TryParse(
+                    pair.Value,
+                    System.Globalization.NumberStyles.None,
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    out long requested
+                )
+                || previous <= 0
+                || requested <= previous
+            )
+            {
+                return false;
+            }
+            changes++;
+        }
+        return changes <= 1;
     }
 
     private static bool ValidPayload(

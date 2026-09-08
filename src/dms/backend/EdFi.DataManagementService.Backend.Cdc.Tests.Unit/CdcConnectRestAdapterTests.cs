@@ -654,6 +654,35 @@ public class Given_CdcConnectRestAdapter_lifecycle
         _fixture.Http.Calls[2].Path.Should().Be(_fixture.Path("/config"));
     }
 
+    [TestCase("lower")]
+    [TestCase("unrelated")]
+    [TestCase("added")]
+    public async Task It_CdcRecordSizeIncrease_rejects_non_size_and_lowering_PUTs(string scenario)
+    {
+        _fixture.Respond(body: _fixture.Config);
+        _fixture.Respond(body: _fixture.Status("STOPPED", taskCount: 0));
+        Dictionary<string, string> updated = new(_fixture.Payload.Config);
+        switch (scenario)
+        {
+            case "lower":
+                updated["producer.override.max.request.size"] = "1";
+                break;
+            case "unrelated":
+                updated["connector.class"] = "replacement";
+                break;
+            case "added":
+                updated["snapshot.mode"] = "initial";
+                break;
+        }
+        var result = await _fixture.Adapter.UpdateConfigurationForRecordSizeIncreaseAsync(
+            _fixture.Request,
+            new(new(_fixture.Payload.Name), updated),
+            CancellationToken.None
+        );
+        result.State.Should().Be(CdcTransportEvidenceState.Unavailable);
+        _fixture.Http.Calls.Should().NotContain(c => c.Method == HttpMethod.Put);
+    }
+
     [Test]
     public async Task It_never_creates_a_missing_connector_through_configuration_update()
     {

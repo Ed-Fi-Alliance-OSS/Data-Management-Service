@@ -92,6 +92,7 @@ public sealed partial class CdcKafkaAdminAdapter
     private readonly IAdminClient _client;
     private readonly ICdcKafkaAuthorizationInspection _authorization;
     private readonly bool _ownsClient;
+    private readonly ICdcKafkaBrokerSizeDeployment _brokerSizes;
     private static readonly string[] TopicConfigurationKeys =
     [
         "cleanup.policy",
@@ -105,18 +106,21 @@ public sealed partial class CdcKafkaAdminAdapter
     internal CdcKafkaAdminAdapter(
         IAdminClient client,
         ICdcKafkaAuthorizationInspection authorization,
-        bool ownsClient = false
+        bool ownsClient = false,
+        ICdcKafkaBrokerSizeDeployment brokerSizes = null!
     )
     {
         _client = client;
         _authorization = authorization;
         _ownsClient = ownsClient;
+        _brokerSizes = brokerSizes;
         ListOffsets = (specs, options) => client.ListOffsetsAsync(specs, options);
     }
 
     public static CdcTransportResult<CdcKafkaAdminAdapter> Create(
         AdminClientConfig configuration,
-        ICdcKafkaAuthorizationInspection authorization
+        ICdcKafkaAuthorizationInspection authorization,
+        ICdcKafkaBrokerSizeDeployment brokerSizes = null!
     )
     {
         try
@@ -135,7 +139,9 @@ public sealed partial class CdcKafkaAdminAdapter
                 .SetLogHandler((_, _) => { })
                 .SetErrorHandler((_, _) => { })
                 .Build();
-            return new CdcTransportResult<CdcKafkaAdminAdapter>.Observed(new(client, authorization, true));
+            return new CdcTransportResult<CdcKafkaAdminAdapter>.Observed(
+                new(client, authorization, true, brokerSizes)
+            );
         }
         catch (Exception exception)
         {

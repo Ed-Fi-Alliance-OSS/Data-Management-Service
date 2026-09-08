@@ -614,7 +614,7 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(
         }
     }
 
-    private static bool IsAcceptedSecretReadBack(
+    internal static bool IsAcceptedSecretReadBack(
         string expectedValue,
         string observedValue,
         CdcConnectorTemplateSourcePhase sourcePhase

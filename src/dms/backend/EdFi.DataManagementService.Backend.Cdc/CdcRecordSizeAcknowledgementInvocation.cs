@@ -44,6 +44,7 @@ public sealed class CdcRecordSizeAcknowledgementInvocation
     private readonly CdcRecordSizeIncreaseScope _scope;
     private readonly TimeProvider _time;
     private int _entered;
+    private bool _active;
 
     internal CdcRecordSizeAcknowledgementInvocation(
         LocalCdcWorkflowJournalStore.Session session,
@@ -94,7 +95,25 @@ public sealed class CdcRecordSizeAcknowledgementInvocation
             cancellationToken
         );
         cancellationToken.ThrowIfCancellationRequested();
-        return await advance!(cancellationToken);
+        _active = true;
+        try
+        {
+            return await advance!(cancellationToken);
+        }
+        finally
+        {
+            _active = false;
+        }
+    }
+
+    internal void RequireActive(LocalCdcWorkflowJournalStore.Session session, CdcWorkflowJournal journal)
+    {
+        Require(_active && ReferenceEquals(session, _session) && journal.WorkflowId == _workflowId);
+        var operation = journal.Operations.Single(o => o.OperationId == _scope.OperationId);
+        Require(
+            operation.Completions.IsEmpty
+                && operation.RecordSizeIncrease.Single().Acknowledgements[^1].InvocationId == InvocationId
+        );
     }
 
     internal static void ValidateScope(CdcRecordSizeIncreaseScope scope)

@@ -231,6 +231,33 @@ public sealed class Given_CdcWorkerComposeStartup
         _commands.Should().ContainSingle().Which.Should().NotContain(" up ");
     }
 
+    [Test]
+    public async Task It_CdcRecordSizeIncrease_includes_override_created_after_startup_transport_construction()
+    {
+        string file = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".json");
+        try
+        {
+            _transport = new(
+                "/compose/kafka-cdc.yml",
+                "/configuration/selected.env",
+                "selected-project",
+                new HashSet<string> { Image },
+                _docker,
+                file
+            );
+            await _transport.StartBrokerAsync(_request, CancellationToken.None);
+            await File.WriteAllTextAsync(file, "{}");
+            _commands.Clear();
+            await _transport.StartBrokerAsync(_request, CancellationToken.None);
+            await _transport.StartWorkerAsync(_request, CancellationToken.None);
+            _commands.Should().OnlyContain(command => command.Contains("-f " + file));
+        }
+        finally
+        {
+            File.Delete(file);
+        }
+    }
+
     private sealed class Docker(Func<IReadOnlyList<string>, string> run) : ICdcWorkerDockerCommand
     {
         public Task<string> RunAsync(IReadOnlyList<string> arguments, CancellationToken token)

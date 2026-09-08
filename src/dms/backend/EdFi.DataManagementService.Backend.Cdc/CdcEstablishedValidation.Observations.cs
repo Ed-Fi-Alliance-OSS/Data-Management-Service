@@ -17,7 +17,8 @@ public sealed partial class CdcEstablishedValidation
         CdcSourceHistoryClassificationResult continuity,
         CdcConnectStatus connector,
         CdcWorkerInspection worker,
-        List<CdcDeploymentDiagnostic> diagnostics
+        List<CdcDeploymentDiagnostic> diagnostics,
+        bool acknowledgedIncrease = false
     )
     {
         // This observational check does not certify another initial baseline.
@@ -35,7 +36,7 @@ public sealed partial class CdcEstablishedValidation
             AddFailure(item.Evidence.State, item.Component);
         }
         AddFailure(status.SourceHistory.State, CdcDeploymentComponent.ProviderSetup);
-        if (journal.HasPendingRecordSizeIncrease)
+        if (journal.HasPendingRecordSizeIncrease && !acknowledgedIncrease)
         {
             diagnostics.Add(new(CdcDeploymentComponent.WorkflowState, CdcDeploymentFailure.ValidationFailed));
         }
@@ -43,7 +44,7 @@ public sealed partial class CdcEstablishedValidation
             Array.TrueForAll(prerequisites, p => p.Evidence.State == CdcComponentState.Satisfied)
             && status.SourceHistory.State == CdcComponentState.Satisfied
             && continuity.Observation.Continuity == CdcSourceHistoryContinuity.Healthy
-            && !journal.HasPendingRecordSizeIncrease;
+            && (!journal.HasPendingRecordSizeIncrease || acknowledgedIncrease);
         bool startable =
             connector.IsStopped
             || connector.IsRunning

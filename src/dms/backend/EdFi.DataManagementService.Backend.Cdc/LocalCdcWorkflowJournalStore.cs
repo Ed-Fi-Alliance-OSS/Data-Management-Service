@@ -640,7 +640,7 @@ public sealed partial class LocalCdcWorkflowJournalStore
     }
 
     // A flushed temporary file plus rename is atomic; syncing the parent makes the renamed entry durable.
-    private static void FlushDirectory(string path)
+    internal static void FlushDirectory(string path)
     {
         Require(!OperatingSystem.IsWindows(), CdcWorkflowStateFailure.Unavailable);
         int descriptor = OpenDirectory(path, 0);

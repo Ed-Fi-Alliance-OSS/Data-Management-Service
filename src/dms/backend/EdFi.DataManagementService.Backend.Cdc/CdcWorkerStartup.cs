@@ -92,26 +92,49 @@ public sealed class CdcWorkerStartup(
 public sealed class CdcComposeWorkerStartupTransport : ICdcWorkerStartupTransport
 {
     private readonly string[] _arguments;
+    private readonly string _brokerSizeOverrideFile;
+    private string[] ComposeArguments =>
+        string.IsNullOrEmpty(_brokerSizeOverrideFile) || !File.Exists(_brokerSizeOverrideFile)
+            ? _arguments
+            : [.. _arguments, "-f", _brokerSizeOverrideFile];
     private readonly ICdcWorkerDockerCommand _docker;
     private readonly IReadOnlySet<string> _qualifiedImages;
-
-    public CdcComposeWorkerStartupTransport(string composeFile, string environmentFile, string project)
-        : this(composeFile, environmentFile, project, CdcQualifiedWorkerImage.Images) { }
 
     public CdcComposeWorkerStartupTransport(
         string composeFile,
         string environmentFile,
         string project,
-        IReadOnlySet<string> qualifiedImages
+        string brokerSizeOverrideFile = ""
     )
-        : this(composeFile, environmentFile, project, qualifiedImages, new CdcWorkerDockerCommand()) { }
+        : this(composeFile, environmentFile, project, CdcQualifiedWorkerImage.Images, brokerSizeOverrideFile)
+    { }
+
+    public CdcComposeWorkerStartupTransport(
+        string composeFile,
+        string environmentFile,
+        string project,
+        IReadOnlySet<string> qualifiedImages,
+        string brokerSizeOverrideFile = ""
+    )
+        : this(
+            composeFile,
+            environmentFile,
+            project,
+            qualifiedImages,
+            new CdcWorkerDockerCommand(),
+            brokerSizeOverrideFile
+        )
+    {
+        ArgumentNullException.ThrowIfNull(qualifiedImages);
+    }
 
     internal CdcComposeWorkerStartupTransport(
         string composeFile,
         string environmentFile,
         string project,
         IReadOnlySet<string> qualifiedImages,
-        ICdcWorkerDockerCommand docker
+        ICdcWorkerDockerCommand docker,
+        string brokerSizeOverrideFile = ""
     )
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(composeFile);
@@ -128,6 +151,9 @@ public sealed class CdcComposeWorkerStartupTransport : ICdcWorkerStartupTranspor
             project,
         ];
         _docker = docker;
+        _brokerSizeOverrideFile = string.IsNullOrEmpty(brokerSizeOverrideFile)
+            ? ""
+            : Path.GetFullPath(brokerSizeOverrideFile);
         _qualifiedImages = qualifiedImages.ToHashSet(StringComparer.Ordinal);
     }
 
@@ -135,7 +161,7 @@ public sealed class CdcComposeWorkerStartupTransport : ICdcWorkerStartupTranspor
     {
         await ValidateComposeAsync(request, cancellationToken);
         await _docker.RunAsync(
-            [.. _arguments, "up", "--detach", "--wait", "--wait-timeout", "180", "kafka"],
+            [.. ComposeArguments, "up", "--detach", "--wait", "--wait-timeout", "180", "kafka"],
             cancellationToken
         );
     }
@@ -145,7 +171,7 @@ public sealed class CdcComposeWorkerStartupTransport : ICdcWorkerStartupTranspor
         await ValidateComposeAsync(request, cancellationToken);
         await _docker.RunAsync(
             [
-                .. _arguments,
+                .. ComposeArguments,
                 "up",
                 "--detach",
                 "--no-deps",
@@ -161,7 +187,7 @@ public sealed class CdcComposeWorkerStartupTransport : ICdcWorkerStartupTranspor
     private async Task ValidateComposeAsync(CdcDeploymentRequest request, CancellationToken token)
     {
         string output = await _docker.RunAsync(
-            [.. _arguments, "--profile", "cdc-managed-worker", "config", "--format", "json"],
+            [.. ComposeArguments, "--profile", "cdc-managed-worker", "config", "--format", "json"],
             token
         );
         using var document = JsonDocument.Parse(output);

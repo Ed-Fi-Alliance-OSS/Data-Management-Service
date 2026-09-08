@@ -142,14 +142,31 @@ public static class CdcDeploymentKafkaPolicy
         string operationId,
         DateTimeOffset observedAt,
         CdcKafkaDeploymentEvidence evidence
+    ) =>
+        ObserveBindingForIncrease(
+            request,
+            operationId,
+            observedAt,
+            evidence,
+            request.ConnectorPolicy.MaxRecordBytes
+        );
+
+    internal static CoreCdc.CdcKafkaPolicyObservation ObserveBindingForIncrease(
+        CdcDeploymentRequest request,
+        string operationId,
+        DateTimeOffset observedAt,
+        CdcKafkaDeploymentEvidence evidence,
+        int publicMaxRecordBytes
     )
     {
         CdcDeploymentKafkaPolicyPlan plan = Build(request);
         CoreCdc.CdcKafkaTopicPolicy[] topics = plan
-            .BindingTopics.Select(topic => ObserveTopic(request, topic, Lookup(evidence, topic.Name)))
+            .BindingTopics.Select(topic =>
+                ObserveTopic(request, topic, Lookup(evidence, topic.Name), publicMaxRecordBytes)
+            )
             .ToArray();
         CdcKafkaAclValidation acl = ValidateAcls(request, evidence.Acls, sharedOffsets: false);
-        CoreCdc.CdcKafkaRecordSizePolicy size = ObserveSize(request, plan, evidence);
+        CoreCdc.CdcKafkaRecordSizePolicy size = ObserveSize(request, plan, evidence, publicMaxRecordBytes);
         ItemState aggregate = Combine([.. topics.Select(topic => topic.State), acl.State, size.State]);
         return new(
             CoreCdc.CdcJsonContract.CurrentContractVersion,
@@ -212,7 +229,8 @@ public static class CdcDeploymentKafkaPolicy
     internal static CoreCdc.CdcKafkaTopicPolicy ObserveTopic(
         CdcDeploymentRequest request,
         CdcKafkaTopicIntent intent,
-        CdcTransportResult<CdcKafkaTopicEvidence> result
+        CdcTransportResult<CdcKafkaTopicEvidence> result,
+        int? publicMaxRecordBytes = null
     )
     {
         if (result is not CdcTransportResult<CdcKafkaTopicEvidence>.Observed observed)
@@ -270,7 +288,7 @@ public static class CdcDeploymentKafkaPolicy
                     evidence,
                     "max.message.bytes",
                     true,
-                    value => value == request.ConnectorPolicy.MaxRecordBytes,
+                    value => value == (publicMaxRecordBytes ?? request.ConnectorPolicy.MaxRecordBytes),
                     out _
                 )
             );
@@ -293,7 +311,8 @@ public static class CdcDeploymentKafkaPolicy
     private static CoreCdc.CdcKafkaRecordSizePolicy ObserveSize(
         CdcDeploymentRequest request,
         CdcDeploymentKafkaPolicyPlan plan,
-        CdcKafkaDeploymentEvidence evidence
+        CdcKafkaDeploymentEvidence evidence,
+        int publicMaxRecordBytes
     )
     {
         List<ItemState> states = [];
@@ -306,7 +325,7 @@ public static class CdcDeploymentKafkaPolicy
                     topic.Value,
                     "max.message.bytes",
                     true,
-                    value => value == plan.MaxRecordBytes,
+                    value => value == publicMaxRecordBytes,
                     out messageBytes
                 )
             );

@@ -39,6 +39,9 @@ public sealed record CdcEstablishedValidationObservation(
     IReadOnlyList<CdcDeploymentDiagnostic> Diagnostics
 )
 {
+    [JsonIgnore]
+    public IReadOnlyDictionary<string, string> LiveConfiguration { get; init; } = null!;
+
     public CdcRecoveryObservation Recovery { get; init; } = new(CdcRecoveryBoundary.Unobserved, false);
 
     public override string ToString() => nameof(CdcEstablishedValidationObservation);
@@ -208,7 +211,8 @@ public sealed partial class CdcEstablishedValidation
         CancellationToken token,
         CdcEstablishedStatusProgress progress = null!,
         CdcNativeRecoveryObserver recovery = null!,
-        Guid managedResumeId = default
+        Guid managedResumeId = default,
+        CdcRecordSizeRollout rollout = null!
     )
     {
         recovery ??= _recovery;
@@ -222,6 +226,7 @@ public sealed partial class CdcEstablishedValidation
         var started = _time.GetUtcNow();
         var journal = await session.ReadAsync(request.TargetIdentity, token);
         Require(!journal.RetirementIntended);
+        rollout?.Invocation.RequireActive(session, journal);
         var history = await session.ReadSourcePublicationHistoryAsync(
             request.TargetIdentity,
             request.Binding.PhysicalSourceFingerprint,
@@ -514,7 +519,9 @@ public sealed partial class CdcEstablishedValidation
                 SourceHistory = continuity.Observation,
                 ConnectorConfig = configuration,
                 ConnectorRuntime = status.Runtime with { OperationId = operation },
-                KafkaPolicy = CdcDeploymentKafkaPolicy.ObserveBinding(request, operation, policyAt, policy),
+                KafkaPolicy = rollout is null
+                    ? CdcDeploymentKafkaPolicy.ObserveBinding(request, operation, policyAt, policy)
+                    : rollout.ObservePolicy(request, operation, policyAt, policy),
                 ConnectOffsetStore = CdcDeploymentKafkaPolicy.ObserveOffsetStore(
                     request,
                     operation,
@@ -587,9 +594,19 @@ public sealed partial class CdcEstablishedValidation
                 ConnectorRuntime = finalStatus.Runtime with { OperationId = operation },
                 Lag = telemetry?.ReadForEvaluation(pass),
             };
-            var result = Evaluate(mode, journal, input, continuity, finalStatus, worker, diagnostics) with
+            var result = Evaluate(
+                mode,
+                journal,
+                input,
+                continuity,
+                finalStatus,
+                worker,
+                diagnostics,
+                rollout is not null
+            ) with
             {
                 Recovery = recoveryObservation,
+                LiveConfiguration = new Dictionary<string, string>(live),
             };
             if (recoveryObservation.RequiresFreshPass)
             {
