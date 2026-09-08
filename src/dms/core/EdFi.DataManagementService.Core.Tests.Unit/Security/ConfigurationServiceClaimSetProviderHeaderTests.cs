@@ -19,9 +19,9 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Core.Tests.Unit.Security;
 
 /// <summary>
-/// Covers the outbound header contract of ConfigurationServiceClaimSetProvider. The provider shares one
-/// HttpClient with the token handler and the other Configuration Service providers, so authorization and
-/// tenant selection must travel on the individual request rather than on the client's default headers.
+/// Covers the outbound header contract of ConfigurationServiceClaimSetProvider. The provider is a
+/// singleton serving every tenant over one long-lived HttpClient, so authorization and tenant selection
+/// must travel on the individual request rather than on the client's default headers.
 /// </summary>
 public class ConfigurationServiceClaimSetProviderHeaderTests
 {
@@ -52,9 +52,9 @@ public class ConfigurationServiceClaimSetProviderHeaderTests
         private int _arrivedCount;
 
         /// <summary>
-        /// The client the provider shares with the token handler and the sibling providers. The handler
-        /// snapshots its default headers on arrival so a test can tell whether the fetch published its
-        /// tenant onto shared state.
+        /// The one long-lived client the provider uses for every tenant. The handler snapshots its
+        /// default headers on arrival so a test can tell whether the fetch published its tenant onto
+        /// that shared state.
         /// </summary>
         public HttpClient? SharedClient { get; set; }
 

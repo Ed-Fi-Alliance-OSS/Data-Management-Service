@@ -42,7 +42,7 @@ public class ConfigurationServiceClaimSetProvider(
 
     /// <summary>
     /// Fetches claim set metadata from the Configuration Service API. Authorization and tenant selection
-    /// travel on the individual request because the HttpClient is shared across tenants and callers.
+    /// travel on the individual request because this singleton serves every tenant over one HttpClient.
     /// </summary>
     private async Task<IList<ClaimSetMetadata>> FetchAuthorizationMetadata(
         string? configurationServiceToken,
