@@ -73,13 +73,17 @@ COPY backend/EdFi.DataManagementService.Backend.RelationalModel/*.csproj backend
 COPY backend/EdFi.DataManagementService.Backend.Postgresql/*.csproj backend/EdFi.DataManagementService.Backend.Postgresql/packages.lock.json ./backend/EdFi.DataManagementService.Backend.Postgresql/
 COPY clis/EdFi.DataManagementService.ApiSchemaDownloader/*.csproj clis/EdFi.DataManagementService.ApiSchemaDownloader/packages.lock.json ./clis/EdFi.DataManagementService.ApiSchemaDownloader/
 
-# Both plugin projects are restored even though nothing references them yet. Staging their lock
+# The plugin tree is restored even though nothing in the image references it yet. Staging its lock
 # files without restoring them would leave the failure this change is most likely to produce - a
 # committed lock file that --locked-mode rejects inside the image - undetected until the story
 # that adds the frontend's project reference.
+#
+# Restoring Hosting alone covers both projects. It carries a ProjectReference to the contract, and
+# restore walks that closure validating each project's own lock file, so a contract lock file
+# inconsistent with the contract's csproj fails here as an NU1004 naming the contract. Invoking
+# restore on the contract as well repeats that work and detects nothing further.
 RUN dotnet restore frontend/EdFi.DataManagementService.Frontend.AspNetCore/EdFi.DataManagementService.Frontend.AspNetCore.csproj --locked-mode && \
     dotnet restore clis/EdFi.DataManagementService.ApiSchemaDownloader/EdFi.DataManagementService.ApiSchemaDownloader.csproj --locked-mode && \
-    dotnet restore ../plugins/EdFi.Api.Plugins/EdFi.Api.Plugins.csproj --locked-mode && \
     dotnet restore ../plugins/EdFi.Api.Plugins.Hosting/EdFi.Api.Plugins.Hosting.csproj --locked-mode
 
 COPY frontend/EdFi.DataManagementService.Frontend.AspNetCore/ ./frontend/EdFi.DataManagementService.Frontend.AspNetCore/

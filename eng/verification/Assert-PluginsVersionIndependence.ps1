@@ -19,11 +19,21 @@
     later edit widening the helper's reach fails a check rather than silently changing what a
     published contract version means.
 
-    Run in two steps around a real build:
+    Run in two steps around a real build. Capture mode prints the two pre-build values; hand them
+    back afterwards:
 
-      ./eng/verification/Assert-PluginsVersionIndependence.ps1 -BaselineDirectory <dir> -CaptureBaseline
+      ./eng/verification/Assert-PluginsVersionIndependence.ps1 -CaptureBaseline
+        plugins-sha256=<hash>
+        dms-version-prefix=<version, or empty when the file declares none>
+
       ./build-dms.ps1 BuildAndPublish -Configuration Release -DMSVersion <v> -LockedMode
-      ./eng/verification/Assert-PluginsVersionIndependence.ps1 -BaselineDirectory <dir> -ExpectedDMSVersion <v>
+
+      ./eng/verification/Assert-PluginsVersionIndependence.ps1 `
+        -BaselinePluginsSha256 <hash> -BaselineDMSVersion <version> -ExpectedDMSVersion <v>
+
+    The two captured values are the whole of the state that crosses the build, so they are passed as
+    arguments rather than persisted. In CI the capture step appends them to $GITHUB_OUTPUT, which is
+    what the key=value shape is for, and the assert step reads them back as step outputs.
 
     The build in the middle is the real one. Invoking the Package command instead would prove
     nothing: Package dispatches to BuildPackage alone, and only the BuildAndPublish command reaches
@@ -56,25 +66,36 @@
 #>
 [CmdletBinding()]
 param(
-    # Where the pre-build baseline is held between the two invocations. Must be a dedicated
-    # directory: -CaptureBaseline requires it to be absent or empty, and writes exactly one file
-    # into it.
-    [Parameter(Mandatory)]
-    [string]
-    $BaselineDirectory,
-
     # Capture mode. Run this before the build; run without it afterwards to assert.
     [switch]
     $CaptureBaseline,
 
+    # The plugin props' SHA-256 as capture mode reported it before the build. Required when
+    # asserting: the assertion has nothing to compare against without it.
+    [AllowEmptyString()]
+    [string]
+    $BaselinePluginsSha256 = "",
+
+    # The DMS props' VersionPrefix as capture mode reported it before the build, empty when the file
+    # declared none - which is the committed state, so empty is a meaningful value and not an
+    # omission.
+    [AllowEmptyString()]
+    [string]
+    $BaselineDMSVersion = "",
+
     # The version passed to the build as -DMSVersion. Required when asserting: it is what the
     # positive control compares the regenerated VersionPrefix against.
+    [AllowEmptyString()]
     [string]
-    $ExpectedDMSVersion,
+    $ExpectedDMSVersion = "",
 
     [string]
     $RepositoryRoot = (Join-Path $PSScriptRoot "../..")
 )
+
+# Validated here rather than by Mandatory parameter attributes. Mandatory prompts on an interactive
+# host instead of failing, which would hang a developer running this by hand, and its binder message
+# cannot say why the missing value matters.
 
 $ErrorActionPreference = "Stop"
 
@@ -84,7 +105,6 @@ $resolvedRoot = (Resolve-Path -LiteralPath $RepositoryRoot).ProviderPath
 $pluginsPath = Join-Path $resolvedRoot "src/plugins/Directory.Build.props"
 # The file the stamping does rewrite. This is the positive control.
 $dmsPath = Join-Path $resolvedRoot "src/dms/Directory.Build.props"
-$baselineFile = Join-Path $BaselineDirectory "plugins-version-baseline.json"
 
 foreach ($path in @($pluginsPath, $dmsPath)) {
     if (-not (Test-Path -LiteralPath $path)) {
@@ -101,13 +121,13 @@ function Get-FileSha256 {
 function Get-PropsVersionPrefix {
     <#
     .SYNOPSIS
-        The VersionPrefix a props file declares, or $null when it declares none.
+        The VersionPrefix a props file declares, or an empty string when it declares none.
     .DESCRIPTION
         The committed src/dms/Directory.Build.props carries no VersionPrefix at all - it declares
         AssemblyVersion, FileVersion and InformationalVersion instead - and the file the build
         regenerates carries VersionPrefix and none of those three. So absence is a normal pre-build
-        state and is reported as $null rather than as an error; it is the assertion that decides
-        what to make of it.
+        state and is reported as an empty string rather than as an error; it is the caller that
+        decides what to make of it.
 
         More than one VersionPrefix would make "the stamped version" ambiguous, and the build writes
         exactly one, so that is refused rather than resolved by picking a winner.
@@ -125,7 +145,7 @@ function Get-PropsVersionPrefix {
     $nodes = @($document.SelectNodes("/Project/PropertyGroup/VersionPrefix"))
 
     if ($nodes.Count -eq 0) {
-        return $null
+        return ""
     }
 
     if ($nodes.Count -gt 1) {
@@ -136,28 +156,10 @@ function Get-PropsVersionPrefix {
 }
 
 if ($CaptureBaseline) {
-    if (Test-Path -LiteralPath $BaselineDirectory) {
-        $existingEntries = @(Get-ChildItem -LiteralPath $BaselineDirectory -Force)
-
-        if ($existingEntries.Count -gt 0) {
-            throw "Refusing to capture a baseline into $BaselineDirectory : it is not empty, and a stale baseline would be compared against a build it did not precede. Pass a fresh path per invocation."
-        }
-    }
-    else {
-        New-Item -ItemType Directory -Path $BaselineDirectory -Force | Out-Null
-    }
-
-    $pluginsSha256 = Get-FileSha256 -Path $pluginsPath
-    # Captured so the assertion can refuse a verification version the tree already carried, which
-    # would let a build that never stamped satisfy the positive control.
-    $dmsVersionPrefix = Get-PropsVersionPrefix -Path $dmsPath
-
-    [pscustomobject]@{
-        pluginsSha256    = $pluginsSha256
-        dmsVersionPrefix = $dmsVersionPrefix
-    } | ConvertTo-Json | Set-Content -LiteralPath $baselineFile -Encoding utf8
-
-    Write-Output "Captured pre-build baseline into $baselineFile (src/plugins/Directory.Build.props SHA-256 $pluginsSha256, src/dms/Directory.Build.props VersionPrefix $(if ($null -eq $dmsVersionPrefix) { '<none>' } else { $dmsVersionPrefix }))."
+    # key=value lines, shaped for $GITHUB_OUTPUT so CI can append them without reformatting, and
+    # readable as they stand when the sequence is run by hand.
+    Write-Output "plugins-sha256=$(Get-FileSha256 -Path $pluginsPath)"
+    Write-Output "dms-version-prefix=$(Get-PropsVersionPrefix -Path $dmsPath)"
     return
 }
 
@@ -165,42 +167,28 @@ if ([string]::IsNullOrWhiteSpace($ExpectedDMSVersion)) {
     throw "-ExpectedDMSVersion is required when asserting. It must be the version passed to the build as -DMSVersion; without it the positive control cannot tell a real stamping run from a build that never stamped."
 }
 
-if (-not (Test-Path -LiteralPath $baselineFile)) {
-    throw "No captured baseline at $baselineFile. Run this script with -CaptureBaseline before the build."
+if ([string]::IsNullOrWhiteSpace($BaselinePluginsSha256)) {
+    throw "-BaselinePluginsSha256 is empty, so there is nothing to compare src/plugins/Directory.Build.props against and the assertion would pass on any tree. Pass the value capture mode printed before the build."
 }
-
-try {
-    $baseline = Get-Content -LiteralPath $baselineFile -Raw | ConvertFrom-Json
-}
-catch {
-    throw "The captured baseline at $baselineFile is not readable as JSON: $($_.Exception.Message). Recapture it before the build rather than asserting against a baseline this check cannot interpret."
-}
-
-if ($null -eq $baseline -or [string]::IsNullOrWhiteSpace([string]$baseline.pluginsSha256)) {
-    throw "The captured baseline at $baselineFile carries no pluginsSha256, so there is nothing to compare src/plugins/Directory.Build.props against. Recapture it before the build."
-}
-
-$baselinePluginsSha256 = [string]$baseline.pluginsSha256
-$baselineDmsVersion = if ($null -eq $baseline.dmsVersionPrefix) { $null } else { [string]$baseline.dmsVersionPrefix }
 
 # 1. The assertion. The stamping must not have reached the plugin contract's props.
 $pluginsCurrentSha256 = Get-FileSha256 -Path $pluginsPath
 
-if ($pluginsCurrentSha256 -ne $baselinePluginsSha256) {
-    throw "src/plugins/Directory.Build.props changed during a build run with -DMSVersion $ExpectedDMSVersion (baseline $baselinePluginsSha256, now $pluginsCurrentSha256). The plugin contract is versioned on its own public surface and must stay outside SetDMSAssemblyInfo's reach."
+if ($pluginsCurrentSha256 -ne $BaselinePluginsSha256) {
+    throw "src/plugins/Directory.Build.props changed during a build run with -DMSVersion $ExpectedDMSVersion (baseline $BaselinePluginsSha256, now $pluginsCurrentSha256). The plugin contract is versioned on its own public surface and must stay outside SetDMSAssemblyInfo's reach."
 }
 
 # 2. The positive control, in two halves. The verification version has to be one the tree did not
 #    already carry, or a build that stamped nothing would satisfy the check below by accident.
 #    Compared case-insensitively, which is the conservative direction here: two versions differing
 #    only in the case of a prerelease label are too close to base a proof on.
-if ($null -ne $baselineDmsVersion -and $baselineDmsVersion -eq $ExpectedDMSVersion) {
-    throw "src/dms/Directory.Build.props already declared VersionPrefix $baselineDmsVersion before the build, which is the version under test. A build that never stamped would pass this check unnoticed. Verify with a version the pre-build tree does not already carry."
+if ($BaselineDMSVersion -ne "" -and $BaselineDMSVersion -eq $ExpectedDMSVersion) {
+    throw "src/dms/Directory.Build.props already declared VersionPrefix $BaselineDMSVersion before the build, which is the version under test. A build that never stamped would pass this check unnoticed. Verify with a version the pre-build tree does not already carry."
 }
 
 $dmsCurrentVersion = Get-PropsVersionPrefix -Path $dmsPath
 
-if ($null -eq $dmsCurrentVersion) {
+if ($dmsCurrentVersion -eq "") {
     throw "src/dms/Directory.Build.props declares no VersionPrefix after a build run with -DMSVersion $ExpectedDMSVersion, so this run proves nothing about version stamping. The Package command does not reach Invoke-SetAssemblyInfo; only BuildAndPublish does."
 }
 

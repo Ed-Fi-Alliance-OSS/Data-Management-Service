@@ -355,15 +355,10 @@ jobs:
           # Before the stamping build, because the assertion below is a before-and-after
           # comparison: the plugin props' SHA-256 and the DMS props' pre-build VersionPrefix, the
           # latter so a verification version the tree already carried is refused rather than proving
-          # nothing. A fresh directory per run: the helper refuses a non-empty one, so a warm runner
-          # cannot compare a build against a baseline it did not precede.
-          $baseline = Join-Path $env:RUNNER_TEMP "plugins-version-baseline-$([guid]::NewGuid().ToString('N'))"
-
-          ./eng/verification/Assert-PluginsVersionIndependence.ps1 `
-            -BaselineDirectory $baseline `
-            -CaptureBaseline
-
-          "baseline-directory=$baseline" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          # nothing. Capture mode prints both as key=value, which is what step outputs already
+          # are, so nothing has to be persisted or cleaned up between the two invocations.
+          ./eng/verification/Assert-PluginsVersionIndependence.ps1 -CaptureBaseline |
+            Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
       - name: Build DMS .NET Assemblies
         run: |
@@ -386,7 +381,8 @@ jobs:
           $packageVersion = "${{ steps.versions.outputs.dms-semver }}" -replace "dms-v", ""
 
           ./eng/verification/Assert-PluginsVersionIndependence.ps1 `
-            -BaselineDirectory "${{ steps.plugins-version-baseline.outputs.baseline-directory }}" `
+            -BaselinePluginsSha256 "${{ steps.plugins-version-baseline.outputs.plugins-sha256 }}" `
+            -BaselineDMSVersion "${{ steps.plugins-version-baseline.outputs.dms-version-prefix }}" `
             -ExpectedDMSVersion $packageVersion
 
       - name: Create SchemaTools NuGet Package

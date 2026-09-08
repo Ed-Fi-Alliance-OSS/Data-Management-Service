@@ -116,7 +116,7 @@ BeforeAll {
     function Invoke-Check {
         param(
             [Parameter(Mandatory)][string] $Root,
-            [Parameter(Mandatory)][string] $BaselineDirectory,
+            [Parameter(Mandatory)][hashtable] $Baseline,
             [string] $ExpectedDMSVersion
         )
 
@@ -125,8 +125,9 @@ BeforeAll {
 
         try {
             $arguments = @{
-                BaselineDirectory = $BaselineDirectory
-                RepositoryRoot    = $Root
+                BaselinePluginsSha256 = $Baseline["plugins-sha256"]
+                BaselineDMSVersion    = $Baseline["dms-version-prefix"]
+                RepositoryRoot        = $Root
             }
             if (-not [string]::IsNullOrWhiteSpace($ExpectedDMSVersion)) {
                 $arguments.ExpectedDMSVersion = $ExpectedDMSVersion
@@ -145,17 +146,23 @@ BeforeAll {
         }
     }
 
-    function New-Baseline {
-        [CmdletBinding(SupportsShouldProcess)]
+    # Capture mode's real output, parsed the way the CI step's $GITHUB_OUTPUT consumer would read it
+    # back. Going through the script rather than computing the two values here is what keeps a
+    # capture-side regression - a renamed key, a hash over the wrong file - visible to these tests.
+    function Get-Baseline {
         param([Parameter(Mandatory)][string] $Root)
 
-        $baseline = Join-Path $Root ".baseline"
+        $captured = @{}
 
-        if ($PSCmdlet.ShouldProcess($baseline, "Capture props baseline")) {
-            & $script:verifier -BaselineDirectory $baseline -CaptureBaseline -RepositoryRoot $Root | Out-Null
+        foreach ($line in @(& $script:verifier -CaptureBaseline -RepositoryRoot $Root)) {
+            $split = "$line".Split("=", 2)
+            $captured[$split[0]] = $split[1]
         }
 
-        return $baseline
+        $captured.Keys | Sort-Object |
+            Should -Be @("dms-version-prefix", "plugins-sha256") -Because "the assert step reads these two step outputs by name"
+
+        return $captured
     }
 }
 
@@ -171,7 +178,7 @@ Describe "Assert-PluginsVersionIndependence" {
 
         It "accepts a run that stamped the DMS props and left the plugin contract's props alone" {
             $root = New-FixtureRepository -Name "happy-path"
-            $baseline = New-Baseline -Root $root
+            $baseline = Get-Baseline -Root $root
             $dmsProps = Join-Path $root "src/dms/Directory.Build.props"
             $pluginsProps = Join-Path $root "src/plugins/Directory.Build.props"
 
@@ -179,7 +186,7 @@ Describe "Assert-PluginsVersionIndependence" {
             $stamped = Get-Content -LiteralPath $dmsProps -Raw
             $pluginsContent = Get-Content -LiteralPath $pluginsProps -Raw
 
-            $result = Invoke-Check -Root $root -BaselineDirectory $baseline -ExpectedDMSVersion "9.9.9"
+            $result = Invoke-Check -Root $root -Baseline $baseline -ExpectedDMSVersion "9.9.9"
 
             $result.Threw | Should -BeFalse -Because $result.Message
 
@@ -199,14 +206,14 @@ Describe "Assert-PluginsVersionIndependence" {
             # failure can only be about the plugin contract.
             $root = New-FixtureRepository -Name "plugins-stamped"
             $pluginsProps = Join-Path $root "src/plugins/Directory.Build.props"
-            $baseline = New-Baseline -Root $root
+            $baseline = Get-Baseline -Root $root
 
             Set-StampedDmsPropsContent -Root $root -Version "9.9.9"
             (Get-Content -LiteralPath $pluginsProps -Raw) -replace
                 "<VersionPrefix>1.0.0</VersionPrefix>", "<VersionPrefix>9.9.9</VersionPrefix>" |
                 Set-Content -LiteralPath $pluginsProps -NoNewline
 
-            $result = Invoke-Check -Root $root -BaselineDirectory $baseline -ExpectedDMSVersion "9.9.9"
+            $result = Invoke-Check -Root $root -Baseline $baseline -ExpectedDMSVersion "9.9.9"
 
             $result.Threw | Should -BeTrue
             $result.Message | Should -BeLike "*must stay outside SetDMSAssemblyInfo's reach*"
@@ -217,14 +224,14 @@ Describe "Assert-PluginsVersionIndependence" {
             # wholesale is caught even if it happened to leave VersionPrefix alone.
             $root = New-FixtureRepository -Name "plugins-edited"
             $pluginsProps = Join-Path $root "src/plugins/Directory.Build.props"
-            $baseline = New-Baseline -Root $root
+            $baseline = Get-Baseline -Root $root
 
             Set-StampedDmsPropsContent -Root $root -Version "9.9.9"
             (Get-Content -LiteralPath $pluginsProps -Raw) -replace
                 "<Product>Ed-Fi API</Product>", "<Product>Ed-Fi API </Product>" |
                 Set-Content -LiteralPath $pluginsProps -NoNewline
 
-            $result = Invoke-Check -Root $root -BaselineDirectory $baseline -ExpectedDMSVersion "9.9.9"
+            $result = Invoke-Check -Root $root -Baseline $baseline -ExpectedDMSVersion "9.9.9"
 
             $result.Threw | Should -BeTrue
             $result.Message | Should -BeLike "*must stay outside SetDMSAssemblyInfo's reach*"
@@ -235,9 +242,9 @@ Describe "Assert-PluginsVersionIndependence" {
 
         It "fails when no stamping run happened between capture and assert" {
             $root = New-FixtureRepository -Name "no-stamping"
-            $baseline = New-Baseline -Root $root
+            $baseline = Get-Baseline -Root $root
 
-            $result = Invoke-Check -Root $root -BaselineDirectory $baseline -ExpectedDMSVersion "9.9.9"
+            $result = Invoke-Check -Root $root -Baseline $baseline -ExpectedDMSVersion "9.9.9"
 
             $result.Threw | Should -BeTrue
             $result.Message | Should -BeLike "*declares no VersionPrefix*"
@@ -245,11 +252,11 @@ Describe "Assert-PluginsVersionIndependence" {
 
         It "fails when the DMS props was stamped to some other version" {
             $root = New-FixtureRepository -Name "wrong-version"
-            $baseline = New-Baseline -Root $root
+            $baseline = Get-Baseline -Root $root
 
             Set-StampedDmsPropsContent -Root $root -Version "1.2.3"
 
-            $result = Invoke-Check -Root $root -BaselineDirectory $baseline -ExpectedDMSVersion "9.9.9"
+            $result = Invoke-Check -Root $root -Baseline $baseline -ExpectedDMSVersion "9.9.9"
 
             $result.Threw | Should -BeTrue
             $result.Message | Should -BeLike "*declares VersionPrefix 1.2.3*"
@@ -259,11 +266,11 @@ Describe "Assert-PluginsVersionIndependence" {
             # PowerShell's -eq on strings is case-insensitive, so a comparison written with -ne would
             # accept a prerelease label the build was never given.
             $root = New-FixtureRepository -Name "case-only-version"
-            $baseline = New-Baseline -Root $root
+            $baseline = Get-Baseline -Root $root
 
             Set-StampedDmsPropsContent -Root $root -Version "9.9.9-PRE.1"
 
-            $result = Invoke-Check -Root $root -BaselineDirectory $baseline -ExpectedDMSVersion "9.9.9-pre.1"
+            $result = Invoke-Check -Root $root -Baseline $baseline -ExpectedDMSVersion "9.9.9-pre.1"
 
             $result.Threw | Should -BeTrue
             # -BeLikeExactly: Should -BeLike folds case, and case is the entire difference here.
@@ -275,9 +282,9 @@ Describe "Assert-PluginsVersionIndependence" {
             # accident, and the plugin-side assertion it is supposed to underwrite means nothing.
             $root = New-FixtureRepository -Name "already-at-version"
             Set-StampedDmsPropsContent -Root $root -Version "9.9.9"
-            $baseline = New-Baseline -Root $root
+            $baseline = Get-Baseline -Root $root
 
-            $result = Invoke-Check -Root $root -BaselineDirectory $baseline -ExpectedDMSVersion "9.9.9"
+            $result = Invoke-Check -Root $root -Baseline $baseline -ExpectedDMSVersion "9.9.9"
 
             $result.Threw | Should -BeTrue
             $result.Message | Should -BeLike "*already declared VersionPrefix 9.9.9 before the build*"
@@ -285,9 +292,9 @@ Describe "Assert-PluginsVersionIndependence" {
 
         It "requires the expected version, without which the positive control cannot fire" {
             $root = New-FixtureRepository -Name "missing-version"
-            $baseline = New-Baseline -Root $root
+            $baseline = Get-Baseline -Root $root
 
-            $result = Invoke-Check -Root $root -BaselineDirectory $baseline
+            $result = Invoke-Check -Root $root -Baseline $baseline
 
             $result.Threw | Should -BeTrue
             $result.Message | Should -BeLike "*-ExpectedDMSVersion is required*"
@@ -296,56 +303,20 @@ Describe "Assert-PluginsVersionIndependence" {
 
     Context "Baseline inputs" {
 
-        It "refuses to capture into a baseline directory that is not empty" {
-            $root = New-FixtureRepository -Name "stale-baseline"
-            $baseline = Join-Path $root ".stale"
-            New-Item -ItemType Directory -Path $baseline -Force | Out-Null
-            Set-Content -LiteralPath (Join-Path $baseline "stale.txt") -Value "x" -NoNewline
-
-            {
-                & $script:verifier -BaselineDirectory $baseline -CaptureBaseline -RepositoryRoot $root
-            } | Should -Throw -ExpectedMessage "*it is not empty*"
-        }
-
-        It "fails when no baseline was captured before the build" {
-            $root = New-FixtureRepository -Name "absent-baseline"
-            Set-StampedDmsPropsContent -Root $root -Version "9.9.9"
-
-            $result = Invoke-Check -Root $root -BaselineDirectory (Join-Path $root ".never-captured") `
-                -ExpectedDMSVersion "9.9.9"
-
-            $result.Threw | Should -BeTrue
-            $result.Message | Should -BeLike "*No captured baseline*"
-        }
-
-        It "fails when the captured baseline is not readable as JSON" {
-            $root = New-FixtureRepository -Name "corrupt-baseline"
-            $baseline = New-Baseline -Root $root
-            Set-Content -LiteralPath (Join-Path $baseline "plugins-version-baseline.json") `
-                -Value "{ not json" -NoNewline
+        It "refuses an empty plugin props hash rather than comparing against nothing" {
+            # The one way the two captured values can arrive wrong now that they are arguments: a
+            # step output that never got written resolves to an empty string, and an equality test
+            # against it would pass on any tree at all.
+            $root = New-FixtureRepository -Name "empty-baseline-hash"
+            $baseline = Get-Baseline -Root $root
+            $baseline["plugins-sha256"] = ""
 
             Set-StampedDmsPropsContent -Root $root -Version "9.9.9"
 
-            $result = Invoke-Check -Root $root -BaselineDirectory $baseline -ExpectedDMSVersion "9.9.9"
+            $result = Invoke-Check -Root $root -Baseline $baseline -ExpectedDMSVersion "9.9.9"
 
             $result.Threw | Should -BeTrue
-            $result.Message | Should -BeLike "*not readable as JSON*"
-        }
-
-        It "fails when the captured baseline carries no plugin props hash" {
-            # Valid JSON with the one field the assertion depends on missing. Comparing against
-            # nothing would pass silently, which is the shape of failure this check exists to avoid.
-            $root = New-FixtureRepository -Name "hashless-baseline"
-            $baseline = New-Baseline -Root $root
-            Set-Content -LiteralPath (Join-Path $baseline "plugins-version-baseline.json") `
-                -Value '{ "dmsVersionPrefix": null }' -NoNewline
-
-            Set-StampedDmsPropsContent -Root $root -Version "9.9.9"
-
-            $result = Invoke-Check -Root $root -BaselineDirectory $baseline -ExpectedDMSVersion "9.9.9"
-
-            $result.Threw | Should -BeTrue
-            $result.Message | Should -BeLike "*carries no pluginsSha256*"
+            $result.Message | Should -BeLike "*-BaselinePluginsSha256 is empty*"
         }
     }
 }
