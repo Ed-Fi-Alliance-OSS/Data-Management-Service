@@ -35,40 +35,40 @@ public class ConfigurationServiceClaimSetProvider(
             configurationServiceContext.clientSecret,
             configurationServiceContext.scope
         );
-        configurationServiceApiClient.Client.DefaultRequestHeaders.Authorization =
-            new AuthenticationHeaderValue("Bearer", configurationServiceToken);
-
-        // Set Tenant header for multi-tenant scenarios
-        SetTenantHeader(tenant);
-
-        return (await FetchAuthorizationMetadata()).Select(CreateClaimSet).ToList();
+        return (await FetchAuthorizationMetadata(configurationServiceToken, tenant))
+            .Select(CreateClaimSet)
+            .ToList();
     }
 
     /// <summary>
-    /// Sets or removes the Tenant header based on the tenant value.
+    /// Fetches claim set metadata from the Configuration Service API. Authorization and tenant selection
+    /// travel on the individual request because this singleton serves every tenant over one HttpClient.
     /// </summary>
-    private void SetTenantHeader(string? tenant)
-    {
-        // Remove existing Tenant header if present
-        configurationServiceApiClient.Client.DefaultRequestHeaders.Remove(TenantHeaderName);
-
-        // Add Tenant header if tenant is specified
-        if (!string.IsNullOrEmpty(tenant))
-        {
-            configurationServiceApiClient.Client.DefaultRequestHeaders.Add(TenantHeaderName, tenant);
-        }
-    }
-
-    /// <summary>
-    /// Fetches claim set metadata from the Configuration Service API.
-    /// </summary>
-    private async Task<IList<ClaimSetMetadata>> FetchAuthorizationMetadata()
+    private async Task<IList<ClaimSetMetadata>> FetchAuthorizationMetadata(
+        string? configurationServiceToken,
+        string? tenant
+    )
     {
         // Retrieve all claim sets with their authorization metadata in one call by omitting claimSetName
         string authorizationMetadataEndpoint = "v3/authorizationMetadata";
-        HttpResponseMessage response = await configurationServiceApiClient.Client.GetAsync(
-            authorizationMetadataEndpoint
-        );
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, authorizationMetadataEndpoint);
+
+        if (!string.IsNullOrEmpty(configurationServiceToken))
+        {
+            request.Headers.Authorization = new AuthenticationHeaderValue(
+                "Bearer",
+                configurationServiceToken
+            );
+        }
+
+        // Send the Tenant header for multi-tenant scenarios, omitting it entirely otherwise
+        if (!string.IsNullOrEmpty(tenant))
+        {
+            request.Headers.Add(TenantHeaderName, tenant);
+        }
+
+        HttpResponseMessage response = await configurationServiceApiClient.Client.SendAsync(request);
 
         string claimSetMetadataJson = await response.Content.ReadAsStringAsync();
         return JsonSerializer.Deserialize<IList<ClaimSetMetadata>>(claimSetMetadataJson, _jsonOptions) ?? [];
