@@ -47,6 +47,8 @@ internal static class CdcWorkflowJournalValidation
         DateTimeOffset prerequisiteCompletedAt = journal.CreatedAt;
         bool pendingIncrease = false;
         bool publicationIntended = false;
+        List<(int Ceiling, CdcConsumerCapacityEvidence Consumer)> consumerHistory = [];
+        HashSet<Guid> acknowledgementInvocations = [];
         foreach (CdcWorkflowOperation operation in journal.Operations)
         {
             Require(operation is not null);
@@ -126,7 +128,14 @@ internal static class CdcWorkflowJournalValidation
             if (operation.Effect == CdcWorkflowEffect.IncreaseRecordSize)
             {
                 Require(!pendingIncrease && operation.RecordSizeIncrease.Length == 1);
-                ValidateIncrease(operation, journal, completed, now);
+                ValidateIncrease(
+                    operation,
+                    journal,
+                    completed,
+                    now,
+                    consumerHistory,
+                    acknowledgementInvocations
+                );
                 pendingIncrease = operation.Completions.IsEmpty;
             }
             else
@@ -274,7 +283,9 @@ internal static class CdcWorkflowJournalValidation
         CdcWorkflowOperation operation,
         CdcWorkflowJournal journal,
         List<CdcWorkflowCompletion> completed,
-        DateTimeOffset now
+        DateTimeOffset now,
+        List<(int Ceiling, CdcConsumerCapacityEvidence Consumer)> consumerHistory,
+        HashSet<Guid> invocations
     )
     {
         CdcRecordSizeIncreaseJournal increase = operation.RecordSizeIncrease[0];
@@ -294,7 +305,6 @@ internal static class CdcWorkflowJournalValidation
                 && increase.RequestedMaxRecordBytes > increase.PreviousMaxRecordBytes
         );
         Require(!increase.Acknowledgements.IsDefaultOrEmpty);
-        HashSet<Guid> invocations = [];
         Require(
             increase.Acknowledgements[0] is not null
                 && increase.Acknowledgements[0].ConfirmedAt <= operation.IntendedAt
@@ -302,33 +312,50 @@ internal static class CdcWorkflowJournalValidation
         DateTimeOffset previous = journal.CreatedAt;
         foreach (CdcRecordSizeAcknowledgement acknowledgement in increase.Acknowledgements)
         {
-            Require(acknowledgement is not null);
-            Require(
-                acknowledgement!.InvocationId != Guid.Empty && invocations.Add(acknowledgement.InvocationId)
-            );
-            SafeToken(acknowledgement.OperatorIdentity);
-            Require(
-                acknowledgement.ConfirmedAt >= previous
-                    && acknowledgement.ConfirmedAt <= now
-                    && acknowledgement.ConfirmedAt.Offset == TimeSpan.Zero
-            );
-            Require(
-                !acknowledgement.Consumers.IsDefault
-                    && (acknowledgement.NoConsumers == acknowledgement.Consumers.IsEmpty)
-            );
+            ValidateAcknowledgement(acknowledgement, previous, now);
+            Require(invocations.Add(acknowledgement.InvocationId));
             foreach (CdcConsumerCapacityEvidence consumer in acknowledgement.Consumers)
             {
-                Require(consumer is not null);
-                SafeToken(consumer!.DeploymentIdentity);
-                SafeToken(consumer.Revision);
-                SafeToken(consumer.ConfirmingOwner);
-                SafeToken(consumer.EvidenceReference);
+                var deploymentHistory = consumerHistory
+                    .Where(entry => entry.Consumer.DeploymentIdentity == consumer.DeploymentIdentity)
+                    .ToList();
+                if (deploymentHistory.Count == 0)
+                {
+                    // Renaming/replacing a deployment cannot reuse a previous deployment's evidence.
+                    Require(
+                        !consumerHistory.Exists(entry =>
+                            entry.Consumer.EvidenceReference == consumer.EvidenceReference
+                        )
+                    );
+                }
+                else
+                {
+                    var latest = deploymentHistory[^1].Consumer;
+                    if (
+                        latest.Revision != consumer.Revision
+                        || latest.ConfirmingOwner != consumer.ConfirmingOwner
+                    )
+                    {
+                        Require(
+                            !deploymentHistory.Exists(entry =>
+                                entry.Consumer.EvidenceReference == consumer.EvidenceReference
+                            )
+                        );
+                    }
+                    Require(
+                        !deploymentHistory.Exists(entry =>
+                            entry.Consumer.EvidenceReference == consumer.EvidenceReference
+                            && (
+                                entry.Consumer.Revision != consumer.Revision
+                                || entry.Consumer.ConfirmingOwner != consumer.ConfirmingOwner
+                                || entry.Ceiling < increase.RequestedMaxRecordBytes
+                            )
+                        )
+                    );
+                }
             }
-            Require(
-                acknowledgement
-                    .Consumers.Select(consumer => consumer.DeploymentIdentity)
-                    .Distinct(StringComparer.Ordinal)
-                    .Count() == acknowledgement.Consumers.Length
+            consumerHistory.AddRange(
+                acknowledgement.Consumers.Select(consumer => (increase.RequestedMaxRecordBytes, consumer))
             );
             if (!operation.Completions.IsEmpty)
             {
@@ -336,6 +363,40 @@ internal static class CdcWorkflowJournalValidation
             }
             previous = acknowledgement.ConfirmedAt;
         }
+    }
+
+    internal static void ValidateAcknowledgement(
+        CdcRecordSizeAcknowledgement acknowledgement,
+        DateTimeOffset earliest,
+        DateTimeOffset now
+    )
+    {
+        Require(acknowledgement is not null);
+        Require(acknowledgement!.InvocationId != Guid.Empty);
+        SafeToken(acknowledgement.OperatorIdentity);
+        Require(
+            acknowledgement.ConfirmedAt >= earliest
+                && acknowledgement.ConfirmedAt <= now
+                && acknowledgement.ConfirmedAt.Offset == TimeSpan.Zero
+        );
+        Require(
+            !acknowledgement.Consumers.IsDefault
+                && acknowledgement.NoConsumers == acknowledgement.Consumers.IsEmpty
+        );
+        foreach (var consumer in acknowledgement.Consumers)
+        {
+            Require(consumer is not null);
+            SafeToken(consumer!.DeploymentIdentity);
+            SafeToken(consumer.Revision);
+            SafeToken(consumer.ConfirmingOwner);
+            SafeToken(consumer.EvidenceReference);
+        }
+        Require(
+            acknowledgement
+                .Consumers.Select(consumer => consumer.DeploymentIdentity)
+                .Distinct(StringComparer.Ordinal)
+                .Count() == acknowledgement.Consumers.Length
+        );
     }
 
     private static void SafeToken(string value)
