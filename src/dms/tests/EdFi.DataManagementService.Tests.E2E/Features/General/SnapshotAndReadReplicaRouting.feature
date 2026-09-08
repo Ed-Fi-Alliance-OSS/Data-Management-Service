@@ -168,3 +168,311 @@ Feature: Reads are served by the snapshot or read replica the request selects.
              When a GET request is made to "/changeQueries/v1/availableChangeVersions" with header "Use-Snapshot" value "true"
              Then it should respond with 200
               And the response body path "newestChangeVersion" should equal request variable "snapshotBefore"
+
+        @e2e-ci-shard-1
+        @MssqlRepresentative
+        Scenario: 06 A POST, PUT, or DELETE asking for a snapshot is refused as a mutation
+            # Target selection runs ahead of route semantics and of every content, body, and profile
+            # check, so a mutation asking for a snapshot is answered here however valid the rest of it
+            # is. Allow states what a snapshot permits - GET - rather than what the route permits on
+            # the primary, which for these paths is "GET, POST" and "GET, PUT, DELETE".
+             When a POST request is made to "/ed-fi/contentClassDescriptors" with header "Use-Snapshot" value "true"
+                  """
+                  {
+                      "codeValue": "SnapshotMutation-Post",
+                      "shortDescription": "Never written",
+                      "description": "Never written",
+                      "namespace": "uri://ed-fi.org/ContentClassDescriptor"
+                  }
+                  """
+             Then it should respond with 405
+              And the response body is
+                  """
+                  {
+                      "detail": "An attempt was made to modify data in a Snapshot, but this data is read-only.",
+                      "type": "urn:ed-fi:api:snapshots:method-not-allowed",
+                      "title": "Method Not Allowed with Snapshots",
+                      "status": 405,
+                      "correlationId": null,
+                      "validationErrors": {},
+                      "errors": []
+                  }
+                  """
+              And the response headers include
+                  """
+                    {
+                        "Allow": "GET",
+                        "Content-Type": "application/problem+json"
+                    }
+                  """
+            # A PUT and a DELETE need an item to address, so one is created on the primary first.
+             When a POST request is made to "/ed-fi/contentClassDescriptors" with
+                  """
+                  {
+                      "codeValue": "SnapshotMutation-Item",
+                      "shortDescription": "Written to the primary",
+                      "description": "Written to the primary",
+                      "namespace": "uri://ed-fi.org/ContentClassDescriptor"
+                  }
+                  """
+             Then it should respond with 201
+             When a PUT request is made to "/ed-fi/contentClassDescriptors/{id}" with header "Use-Snapshot" value "true" and
+                  """
+                  {
+                      "id": "{id}",
+                      "codeValue": "SnapshotMutation-Item",
+                      "shortDescription": "Never written",
+                      "description": "Never written",
+                      "namespace": "uri://ed-fi.org/ContentClassDescriptor"
+                  }
+                  """
+             Then it should respond with 405
+              And the response body is
+                  """
+                  {
+                      "detail": "An attempt was made to modify data in a Snapshot, but this data is read-only.",
+                      "type": "urn:ed-fi:api:snapshots:method-not-allowed",
+                      "title": "Method Not Allowed with Snapshots",
+                      "status": 405,
+                      "correlationId": null,
+                      "validationErrors": {},
+                      "errors": []
+                  }
+                  """
+              And the response headers include
+                  """
+                    {
+                        "Allow": "GET",
+                        "Content-Type": "application/problem+json"
+                    }
+                  """
+             When a DELETE request is made to "/ed-fi/contentClassDescriptors/{id}" with header "Use-Snapshot" value "true"
+             Then it should respond with 405
+              And the response body is
+                  """
+                  {
+                      "detail": "An attempt was made to modify data in a Snapshot, but this data is read-only.",
+                      "type": "urn:ed-fi:api:snapshots:method-not-allowed",
+                      "title": "Method Not Allowed with Snapshots",
+                      "status": 405,
+                      "correlationId": null,
+                      "validationErrors": {},
+                      "errors": []
+                  }
+                  """
+              And the response headers include
+                  """
+                    {
+                        "Allow": "GET",
+                        "Content-Type": "application/problem+json"
+                    }
+                  """
+            # Neither rejected mutation reached the primary: the item is still there, unchanged.
+             When a GET request is made to "/ed-fi/contentClassDescriptors/{id}"
+             Then it should respond with 200
+              And the response body should contain "Written to the primary"
+
+        @e2e-ci-shard-1
+        Scenario: 07 The invalid mutation shapes asking for a snapshot are refused as mutations
+            # A collection DELETE, a collection PUT, and an item POST have no route semantics of their
+            # own. Asking for a snapshot displaces the route-construction answer they would otherwise
+            # get, which scenario 08 asserts unchanged for these same three shapes without the header.
+             When a DELETE request is made to "/ed-fi/contentClassDescriptors" with header "Use-Snapshot" value "true"
+             Then it should respond with 405
+              And the response body is
+                  """
+                  {
+                      "detail": "An attempt was made to modify data in a Snapshot, but this data is read-only.",
+                      "type": "urn:ed-fi:api:snapshots:method-not-allowed",
+                      "title": "Method Not Allowed with Snapshots",
+                      "status": 405,
+                      "correlationId": null,
+                      "validationErrors": {},
+                      "errors": []
+                  }
+                  """
+              And the response headers include
+                  """
+                    {
+                        "Allow": "GET",
+                        "Content-Type": "application/problem+json"
+                    }
+                  """
+             When a PUT request is made to "/ed-fi/contentClassDescriptors" with header "Use-Snapshot" value "true" and
+                  """
+                  {
+                      "codeValue": "SnapshotInvalidShape-Put",
+                      "shortDescription": "Never written",
+                      "description": "Never written",
+                      "namespace": "uri://ed-fi.org/ContentClassDescriptor"
+                  }
+                  """
+             Then it should respond with 405
+              And the response body is
+                  """
+                  {
+                      "detail": "An attempt was made to modify data in a Snapshot, but this data is read-only.",
+                      "type": "urn:ed-fi:api:snapshots:method-not-allowed",
+                      "title": "Method Not Allowed with Snapshots",
+                      "status": 405,
+                      "correlationId": null,
+                      "validationErrors": {},
+                      "errors": []
+                  }
+                  """
+              And the response headers include
+                  """
+                    {
+                        "Allow": "GET",
+                        "Content-Type": "application/problem+json"
+                    }
+                  """
+            # The item id is well formed and names nothing, because whether the document exists must
+            # not change the answer.
+             When a POST request is made to "/ed-fi/contentClassDescriptors/00000000-0000-4000-a000-000000000000" with header "Use-Snapshot" value "true"
+                  """
+                  {
+                      "codeValue": "SnapshotInvalidShape-Post",
+                      "shortDescription": "Never written",
+                      "description": "Never written",
+                      "namespace": "uri://ed-fi.org/ContentClassDescriptor"
+                  }
+                  """
+             Then it should respond with 405
+              And the response body is
+                  """
+                  {
+                      "detail": "An attempt was made to modify data in a Snapshot, but this data is read-only.",
+                      "type": "urn:ed-fi:api:snapshots:method-not-allowed",
+                      "title": "Method Not Allowed with Snapshots",
+                      "status": 405,
+                      "correlationId": null,
+                      "validationErrors": {},
+                      "errors": []
+                  }
+                  """
+              And the response headers include
+                  """
+                    {
+                        "Allow": "GET",
+                        "Content-Type": "application/problem+json"
+                    }
+                  """
+
+        @e2e-ci-shard-1
+        Scenario: 08 The same invalid shapes without the header keep the route-semantics answer
+            # The pair to scenario 07: same three routes, same data store with a snapshot configured,
+            # header absent. Both answers are 405, so what separates them is the problem type, title,
+            # detail, content type, and Allow - each of which is asserted on both sides. Without this
+            # scenario the snapshot body could leak onto requests that never asked for a snapshot.
+             When a DELETE request is made to "/ed-fi/contentClassDescriptors"
+             Then it should respond with 405
+              And the response body is
+                  """
+                  {
+                      "detail": "The request construction was invalid.",
+                      "type": "urn:ed-fi:api:method-not-allowed",
+                      "title": "Method Not Allowed",
+                      "status": 405,
+                      "correlationId": null,
+                      "validationErrors": {},
+                      "errors": [
+                          "Resource collections cannot be deleted. To delete a specific item, use DELETE and include the 'id' in the route."
+                      ]
+                  }
+                  """
+              And the response headers include
+                  """
+                    {
+                        "Allow": "GET, POST",
+                        "Content-Type": "application/json; charset=utf-8"
+                    }
+                  """
+             When a PUT request is made to "/ed-fi/contentClassDescriptors" with
+                  """
+                  {
+                      "codeValue": "SnapshotInvalidShape-Put",
+                      "shortDescription": "Never written",
+                      "description": "Never written",
+                      "namespace": "uri://ed-fi.org/ContentClassDescriptor"
+                  }
+                  """
+             Then it should respond with 405
+              And the response body is
+                  """
+                  {
+                      "detail": "The request construction was invalid.",
+                      "type": "urn:ed-fi:api:method-not-allowed",
+                      "title": "Method Not Allowed",
+                      "status": 405,
+                      "correlationId": null,
+                      "validationErrors": {},
+                      "errors": [
+                          "Resource collections cannot be replaced. To 'upsert' an item in the collection, use POST. To update a specific item, use PUT and include the 'id' in the route."
+                      ]
+                  }
+                  """
+              And the response headers include
+                  """
+                    {
+                        "Allow": "GET, POST",
+                        "Content-Type": "application/json; charset=utf-8"
+                    }
+                  """
+             When a POST request is made to "/ed-fi/contentClassDescriptors/00000000-0000-4000-a000-000000000000" with
+                  """
+                  {
+                      "codeValue": "SnapshotInvalidShape-Post",
+                      "shortDescription": "Never written",
+                      "description": "Never written",
+                      "namespace": "uri://ed-fi.org/ContentClassDescriptor"
+                  }
+                  """
+             Then it should respond with 405
+              And the response body is
+                  """
+                  {
+                      "detail": "The request construction was invalid.",
+                      "type": "urn:ed-fi:api:method-not-allowed",
+                      "title": "Method Not Allowed",
+                      "status": 405,
+                      "correlationId": null,
+                      "validationErrors": {},
+                      "errors": [
+                          "Resource items can only be updated using PUT. To 'upsert' an item in the resource collection using POST, remove the 'id' from the route."
+                      ]
+                  }
+                  """
+              And the response headers include
+                  """
+                    {
+                        "Allow": "GET, PUT, DELETE",
+                        "Content-Type": "application/json; charset=utf-8"
+                    }
+                  """
+
+        @e2e-ci-shard-1
+        Scenario: 09 An unknown resource asking for a snapshot keeps its endpoint 404
+            # Endpoint validation runs before target selection, so a request that names no resource is
+            # answered before a snapshot is ever chosen. The detail is what separates this 404 from
+            # Snapshot Not Found, which is why the whole body is asserted rather than the status.
+             When a GET request is made to "/ed-fi/nonExistingResources" with header "Use-Snapshot" value "true"
+             Then it should respond with 404
+              And the response body is
+                  """
+                  {
+                      "detail": "The specified data could not be found.",
+                      "type": "urn:ed-fi:api:not-found",
+                      "title": "Not Found",
+                      "status": 404,
+                      "correlationId": null,
+                      "validationErrors": {},
+                      "errors": []
+                  }
+                  """
+              And the response headers include
+                  """
+                    {
+                        "Content-Type": "application/problem+json"
+                    }
+                  """

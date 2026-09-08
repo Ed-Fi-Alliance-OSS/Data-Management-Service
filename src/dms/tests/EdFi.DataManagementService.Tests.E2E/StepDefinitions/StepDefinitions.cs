@@ -143,11 +143,9 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 educationOrganizationIds,
                 systemAdministratorToken,
                 claimSetName,
-                // The snapshot/read-replica arrangement is opt-in: only routing scenarios get a data
-                // store with derivatives, so every other scenario's reads stay on the primary path.
-                attachDataStoreDerivatives: _scenarioContext.ScenarioInfo.CombinedTags.Contains(
-                    "derivative-routing"
-                )
+                // The derivative arrangement is opt-in: only a tagged scenario gets a data store with
+                // derivatives, so every other scenario's reads stay on the primary path.
+                AuthorizationDataProvider.ArrangementFromTags(_scenarioContext.ScenarioInfo.CombinedTags)
             );
         }
 
@@ -634,6 +632,44 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
         }
 
+        /// <summary>
+        /// The PUT counterpart of the POST-with-header step, for the request headers a scenario has to
+        /// send on a mutation rather than on a read - Use-Snapshot among them.
+        /// </summary>
+        [When("a PUT request is made to {string} with header {string} value {string} and")]
+        public async Task WhenAPUTRequestIsMadeToWithHeaderAnd(
+            string url,
+            string header,
+            string value,
+            string body
+        )
+        {
+            string id = GetCurrentId();
+            url = AddDataPrefixIfNecessary(url)
+                .Replace("{id}", id)
+                .Replace("{dependentId}", _dependentId)
+                .ReplacePlaceholdersWithDictionaryValues(_scenarioVariables.VariableByName);
+
+            body = body.Replace("{id}", id)
+                .Replace("{dependentId}", _dependentId)
+                .ReplacePlaceholdersWithDictionaryValues(_scenarioVariables.VariableByName);
+
+            _logger.log.Information($"PUT url: {url}");
+            _logger.log.Information($"PUT body: {body}");
+
+            var headers = GetWriteHeaders();
+            headers[header] = value;
+
+            SetCurrentApiResponse(
+                await _playwrightContext.ApiRequestContext?.PutAsync(
+                    url,
+                    new() { DataByte = System.Text.Encoding.UTF8.GetBytes(body), Headers = headers }
+                )!
+            );
+
+            extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
+        }
+
         private string GetCurrentId()
         {
             if (
@@ -700,6 +736,29 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 url,
                 new() { Headers = GetHeaders() }
             )!;
+        }
+
+        /// <summary>
+        /// The DELETE counterpart of the POST-with-header step. A DELETE carries no body, so it uses
+        /// the auth-only header set the plain DELETE step uses.
+        /// </summary>
+        [When("a DELETE request is made to {string} with header {string} value {string}")]
+        public async Task WhenADELETERequestIsMadeToWithHeader(string url, string header, string value)
+        {
+            string id = GetCurrentId();
+
+            url = AddDataPrefixIfNecessary(url)
+                .Replace("{id}", id)
+                .ReplacePlaceholdersWithDictionaryValues(_scenarioVariables.VariableByName);
+
+            _logger.log.Information($"DELETE url: {url}");
+
+            SetCurrentApiResponse(
+                await _playwrightContext.ApiRequestContext?.DeleteAsync(
+                    url,
+                    new() { Headers = GetHeaders(KeyValuePair.Create(header, value)) }
+                )!
+            );
         }
 
         [When("a relationship with {string} is deleted")]
