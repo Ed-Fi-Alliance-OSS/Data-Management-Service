@@ -82,7 +82,10 @@ public sealed record CdcControllerTargetStatus(
     CdcIncidentPersistenceState IncidentPersistence,
     CdcConnectorContainmentState Containment,
     IReadOnlyList<CdcDeploymentDiagnostic> Diagnostics
-);
+)
+{
+    public CdcRecoveryObservation Recovery { get; init; } = new(CdcRecoveryBoundary.Unobserved, false);
+}
 
 public sealed record CdcControllerStatusResult(
     CdcStatus Aggregate,

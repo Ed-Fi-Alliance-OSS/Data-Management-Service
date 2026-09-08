@@ -39,6 +39,8 @@ public sealed record CdcEstablishedValidationObservation(
     IReadOnlyList<CdcDeploymentDiagnostic> Diagnostics
 )
 {
+    public CdcRecoveryObservation Recovery { get; init; } = new(CdcRecoveryBoundary.Unobserved, false);
+
     public override string ToString() => nameof(CdcEstablishedValidationObservation);
 
     [JsonIgnore]
@@ -61,6 +63,7 @@ public sealed record CdcEstablishedValidationObservation(
 /// </summary>
 public sealed partial class CdcEstablishedValidation
 {
+    private readonly CdcNativeRecoveryObserver _recovery = new();
     private readonly LocalCdcWorkflowJournalStore _store;
     private readonly ICdcBindingLifecycleService _bindings;
     private readonly ICdcProviderSetupService _provider;
@@ -203,9 +206,12 @@ public sealed partial class CdcEstablishedValidation
         LocalCdcWorkflowJournalStore.Session session,
         Action<CdcDeploymentComponent> setComponent,
         CancellationToken token,
-        CdcEstablishedStatusProgress progress = null!
+        CdcEstablishedStatusProgress progress = null!,
+        CdcNativeRecoveryObserver recovery = null!,
+        Guid managedResumeId = default
     )
     {
+        recovery ??= _recovery;
         setComponent(CdcDeploymentComponent.WorkflowState);
         Require(
             Enum.IsDefined(mode)
@@ -431,6 +437,18 @@ public sealed partial class CdcEstablishedValidation
             var status = Observed(
                 await CallAsync(request, ct => _connect.ReadStatusAsync(request, ct), token)
             );
+            var recoveryObservation = recovery.Observe(
+                request,
+                journal,
+                worker,
+                status,
+                pass,
+                managedResumeId
+            );
+            if (progress is not null)
+            {
+                progress.Recovery = recoveryObservation;
+            }
             RequireStatus(request, worker, status);
             partialInput = partialInput with
             {
@@ -512,7 +530,7 @@ public sealed partial class CdcEstablishedValidation
             progress?.Capture(input, journal.HasPendingRecordSizeIncrease, continuity);
             // Pre-start must work without RUNNING task metrics. Publication always uses a new receipt.
             CdcConnectorTelemetryObservation telemetry = null!;
-            if (mode == CdcEstablishedValidationMode.RunningPublication && status.IsRunning)
+            if (mode == CdcEstablishedValidationMode.RunningPublication && status.IsRunning && pass.IsValid)
             {
                 setComponent(CdcDeploymentComponent.Metrics);
                 var collected = await CallAsync(
@@ -530,18 +548,29 @@ public sealed partial class CdcEstablishedValidation
                 }
             }
             setComponent(CdcDeploymentComponent.Worker);
-            CdcConnectorRegistration.RequireSameWorker(
-                request,
-                worker,
-                Observed(
-                    await CallAsync(request, ct => _worker.InspectAsync(request, ct), token),
-                    CdcDeploymentComponent.Worker
-                )
+            var finalWorker = Observed(
+                await CallAsync(request, ct => _worker.InspectAsync(request, ct), token),
+                CdcDeploymentComponent.Worker
             );
             setComponent(CdcDeploymentComponent.Connect);
             var finalStatus = Observed(
                 await CallAsync(request, ct => _connect.ReadStatusAsync(request, ct), token)
             );
+            recoveryObservation = recovery.Observe(
+                request,
+                journal,
+                finalWorker,
+                finalStatus,
+                pass,
+                managedResumeId
+            );
+            if (progress is not null)
+            {
+                progress.Recovery = recoveryObservation;
+            }
+            setComponent(CdcDeploymentComponent.Worker);
+            CdcConnectorRegistration.RequireSameWorker(request, worker, finalWorker);
+            setComponent(CdcDeploymentComponent.Connect);
             RequireStatus(request, worker, finalStatus);
             Require(
                 status.Runtime.ConnectorState == finalStatus.Runtime.ConnectorState
@@ -557,7 +586,14 @@ public sealed partial class CdcEstablishedValidation
                 ConnectorRuntime = finalStatus.Runtime with { OperationId = operation },
                 Lag = telemetry?.ReadForEvaluation(pass),
             };
-            var result = Evaluate(mode, journal, input, continuity, finalStatus, worker, diagnostics);
+            var result = Evaluate(mode, journal, input, continuity, finalStatus, worker, diagnostics) with
+            {
+                Recovery = recoveryObservation,
+            };
+            if (recoveryObservation.RequiresFreshPass)
+            {
+                result = result with { PreStartEligible = false, PublicationReady = false };
+            }
             if (progress is not null)
             {
                 input = input with

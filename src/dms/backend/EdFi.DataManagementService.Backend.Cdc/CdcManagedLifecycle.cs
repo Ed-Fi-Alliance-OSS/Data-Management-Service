@@ -35,7 +35,10 @@ public sealed record CdcManagedLifecycleResult(
     bool Ready,
     CdcManagedLifecycleBoundary Boundary,
     IReadOnlyList<CdcDeploymentDiagnostic> Diagnostics
-);
+)
+{
+    public CdcRecoveryObservation Recovery { get; init; } = new(CdcRecoveryBoundary.Unobserved, false);
+}
 
 /// <summary>Retains one controller lock through intent, fresh validation, mutation and read-back.</summary>
 public sealed class CdcManagedLifecycle
@@ -168,7 +171,10 @@ public sealed class CdcManagedLifecycle
                     false,
                     CdcManagedLifecycleBoundary.VerifiedManagedStop,
                     diagnostics
-                );
+                )
+                {
+                    Recovery = new(CdcRecoveryBoundary.VerifiedManagedStop, false),
+                };
             }
 
             // Persist resume intent before the final validation, so journal I/O cannot age the evidence
@@ -182,6 +188,10 @@ public sealed class CdcManagedLifecycle
                 value => eligibility = value
             );
             diagnostics.AddRange(preflight.Diagnostics);
+            if (preflight.Recovery.Boundary == CdcRecoveryBoundary.NativeRecovery)
+            {
+                boundary = CdcManagedLifecycleBoundary.NativeRecovery;
+            }
             Require(eligibility is { PreStartEligible: true } && diagnostics.Count == 0);
             var before = await session.ReadAsync(request.TargetIdentity, token);
             var latest = before.Operations.LastOrDefault(o =>
@@ -223,9 +233,14 @@ public sealed class CdcManagedLifecycle
                 token,
                 session,
                 CdcEstablishedValidationMode.PreStart,
-                value => eligibility = value
+                value => eligibility = value,
+                resumeId
             );
             diagnostics.AddRange(preflight.Diagnostics);
+            if (preflight.Recovery.Boundary == CdcRecoveryBoundary.NativeRecovery)
+            {
+                boundary = CdcManagedLifecycleBoundary.NativeRecovery;
+            }
             Require(eligibility is { PreStartEligible: true } && diagnostics.Count == 0);
             RequireUnchangedWorker(eligibility.Worker);
             if (operation == CdcManagedLifecycleOperation.Start && !eligibility.Connector.IsStopped)
@@ -266,7 +281,8 @@ public sealed class CdcManagedLifecycle
                     token,
                     session,
                     CdcEstablishedValidationMode.RunningPublication,
-                    value => current = value
+                    value => current = value,
+                    resumeId
                 );
                 if (status.Status.SourceHistory.Continuity == CdcSourceHistoryContinuity.Lost)
                 {
@@ -306,7 +322,8 @@ public sealed class CdcManagedLifecycle
                         token,
                         session,
                         CdcEstablishedValidationMode.RunningPublication,
-                        value => finalObservation = value
+                        value => finalObservation = value,
+                        resumeId
                     );
                     if (finalObservation is { Worker: not null })
                     {
@@ -322,7 +339,10 @@ public sealed class CdcManagedLifecycle
                         ready,
                         boundary,
                         diagnostics.DistinctBy(d => (d.Component, d.Failure)).ToArray()
-                    );
+                    )
+                    {
+                        Recovery = final.Recovery,
+                    };
                 }
                 diagnostics.AddRange(status.Diagnostics);
                 // Unknown/provenance failures reject; only an otherwise eligible transitioning task is polled.
@@ -361,7 +381,15 @@ public sealed class CdcManagedLifecycle
                 false,
                 boundary,
                 diagnostics.DistinctBy(d => (d.Component, d.Failure)).ToArray()
-            );
+            )
+            {
+                Recovery = new(
+                    boundary == CdcManagedLifecycleBoundary.NativeRecovery
+                        ? CdcRecoveryBoundary.NativeRecovery
+                        : CdcRecoveryBoundary.Unobserved,
+                    true
+                ),
+            };
         }
     }
 

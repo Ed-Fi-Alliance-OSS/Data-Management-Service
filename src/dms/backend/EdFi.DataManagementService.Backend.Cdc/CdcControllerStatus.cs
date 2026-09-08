@@ -18,6 +18,7 @@ namespace EdFi.DataManagementService.Backend.Cdc;
 /// </summary>
 public sealed partial class CdcControllerStatus
 {
+    private readonly CdcNativeRecoveryObserver _recovery = new();
     private readonly LocalCdcWorkflowJournalStore _store;
     private readonly ICdcBindingLifecycleService _bindings;
     private readonly ICdcConnectTransport _connect;
@@ -141,7 +142,8 @@ public sealed partial class CdcControllerStatus
         CancellationToken token,
         LocalCdcWorkflowJournalStore.Session retainedSession = null!,
         CdcEstablishedValidationMode mode = CdcEstablishedValidationMode.RunningPublication,
-        Action<CdcEstablishedValidationObservation> observed = null!
+        Action<CdcEstablishedValidationObservation> observed = null!,
+        Guid managedResumeId = default
     )
     {
         var request = target.Request;
@@ -173,6 +175,7 @@ public sealed partial class CdcControllerStatus
                     observationTimeout.Token
                 );
             var session = retainedSession ?? ownedSession!;
+            progress.Recovery = _recovery.Last(request);
             bool containmentAttempted = false;
             progress.ContainTerminal = async () =>
             {
@@ -227,7 +230,9 @@ public sealed partial class CdcControllerStatus
                         session,
                         c => component = c,
                         observationTimeout.Token,
-                        progress
+                        progress,
+                        _recovery,
+                        managedResumeId
                     );
                 diagnostics.AddRange(observation.Diagnostics);
                 observed?.Invoke(observation);
@@ -259,7 +264,11 @@ public sealed partial class CdcControllerStatus
         var status =
             progress.CompletedStatus
             ?? CdcTargetStatusEvaluator.EvaluatePostAdmission(progress.Input with { Lag = null });
-        if (progress.HasPendingRecordSizeIncrease || diagnostics.Count > 0)
+        if (
+            progress.HasPendingRecordSizeIncrease
+            || diagnostics.Count > 0
+            || progress.Recovery.RequiresFreshPass
+        )
         {
             status = Block(status, CdcBlockingCategory.StatusObservationUnavailable);
         }
@@ -287,7 +296,10 @@ public sealed partial class CdcControllerStatus
             persistence,
             containment,
             diagnostics.DistinctBy(d => (d.Component, d.Failure)).ToArray()
-        );
+        )
+        {
+            Recovery = progress.Recovery,
+        };
     }
 
     private static CdcControllerStatusPositions Positions(

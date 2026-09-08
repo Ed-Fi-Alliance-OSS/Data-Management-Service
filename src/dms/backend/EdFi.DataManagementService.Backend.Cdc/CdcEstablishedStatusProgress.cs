@@ -10,6 +10,7 @@ namespace EdFi.DataManagementService.Backend.Cdc;
 /// <summary>In-memory evidence collected in one locked pass; never persisted or reused by watch.</summary>
 internal sealed class CdcEstablishedStatusProgress(CdcTargetStatusEvaluationInput input)
 {
+    internal CdcRecoveryObservation Recovery { get; set; } = new(CdcRecoveryBoundary.Unobserved, false);
     internal CdcTargetStatusEvaluationInput Input { get; private set; } = input;
     internal CdcSourceHistoryClassificationResult SourceHistory { get; private set; } = null!;
     internal bool HasPendingRecordSizeIncrease { get; private set; }
