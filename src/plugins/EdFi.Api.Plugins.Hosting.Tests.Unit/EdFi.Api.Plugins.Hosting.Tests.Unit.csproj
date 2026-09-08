@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <IsPackable>false</IsPackable>
+        <IsTestProject>true</IsTestProject>
+    </PropertyGroup>
+    <!--
+        Fixtures/ holds whole plugin projects that are published as test assets, several of them
+        deliberately malformed. They are not part of this assembly and must not be compiled into it,
+        embedded in it, or copied by its default None glob; the staging target below is the only thing
+        that builds them.
+    -->
+    <ItemGroup>
+        <Compile Remove="Fixtures/**" />
+        <EmbeddedResource Remove="Fixtures/**" />
+        <None Remove="Fixtures/**" />
+    </ItemGroup>
+    <ItemGroup>
+        <PackageReference Include="FluentAssertions" />
+        <PackageReference Include="Microsoft.Extensions.Configuration" />
+        <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" />
+        <PackageReference Include="Microsoft.Extensions.Configuration.Json" />
+        <PackageReference Include="Microsoft.NET.Test.Sdk" />
+        <PackageReference Include="NUnit" />
+        <PackageReference Include="NUnit3TestAdapter" />
+        <PackageReference Include="NUnit.Analyzers" />
+        <PackageReference Include="coverlet.collector">
+            <PrivateAssets>all</PrivateAssets>
+            <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+        </PackageReference>
+        <PackageReference Include="coverlet.msbuild" />
+    </ItemGroup>
+    <ItemGroup>
+        <ProjectReference
+            Include="..\EdFi.Api.Plugins.Hosting\EdFi.Api.Plugins.Hosting.csproj"
+        />
+    </ItemGroup>
+    <Import Project="PluginFixtures.targets" />
+</Project>

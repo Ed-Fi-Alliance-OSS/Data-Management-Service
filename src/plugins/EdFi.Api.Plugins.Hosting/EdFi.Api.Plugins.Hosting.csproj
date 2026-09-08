@@ -10,13 +10,25 @@
         -->
         <IsPackable>false</IsPackable>
     </PropertyGroup>
-    <!--
-        Deliberately empty. This project exists now so that the solution entries and the committed
-        lock files for both production projects are settled by the story that creates src/plugins,
-        rather than arriving with the loader. The loader, its discovery and load-isolation code, and
-        this project's unit test project are added by the story that follows.
-    -->
     <ItemGroup>
         <ProjectReference Include="..\EdFi.Api.Plugins\EdFi.Api.Plugins.csproj" />
+    </ItemGroup>
+    <!--
+        The binder is what turns the Plugins section into PluginsOptions. IConfiguration itself
+        arrives from the contract's Microsoft.Extensions.Configuration.Abstractions reference; the
+        Get<T> extension lives in the Binder package and is the only reason it is here. It is a host
+        assembly dependency and not a contract one, so it places no obligation on a plugin author.
+    -->
+    <ItemGroup>
+        <PackageReference Include="Microsoft.Extensions.Configuration.Binder" />
+    </ItemGroup>
+    <!--
+        The loader's collaborators are the filesystem, the dependency manifest, and the runtime's own
+        binder, so the types that model them are internal: they are implementation, not a surface a
+        host composes against. The unit test project therefore needs access to them to assert the
+        rules directly rather than only through what Load happens to expose.
+    -->
+    <ItemGroup>
+        <InternalsVisibleTo Include="EdFi.Api.Plugins.Hosting.Tests.Unit" />
     </ItemGroup>
 </Project>

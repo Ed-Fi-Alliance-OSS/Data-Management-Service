@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <!--
+        A plugin directory that is well formed in every way except the one that matters: it references
+        the contract and exposes public types, and none of them is an EdFiApiPlugin. This is the shape
+        an implementer produces by forgetting to derive, so the loader has to name that rather than
+        report a missing file.
+    -->
+    <PropertyGroup>
+        <AssemblyName>Acme.NoSubclass</AssemblyName>
+        <RootNamespace>Acme.NoSubclass</RootNamespace>
+    </PropertyGroup>
+    <ItemGroup>
+        <ProjectReference
+            Include="..\..\..\..\EdFi.Api.Plugins\EdFi.Api.Plugins.csproj"
+        />
+    </ItemGroup>
+</Project>

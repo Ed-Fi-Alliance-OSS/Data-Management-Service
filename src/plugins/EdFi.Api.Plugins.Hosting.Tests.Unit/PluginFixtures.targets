@@ -1,0 +1,139 @@
+<Project>
+    <!--
+        Publishes the fixture plugin projects under Fixtures/ into the test output as real plugin
+        directories, because the loader's subject is a published directory and nothing smaller
+        exercises it honestly. Each fixture is published on its own, so a deliberately malformed one
+        cannot disturb the others.
+
+        The fixture tree is excluded from this project's compile, embedded-resource and None globs in
+        the csproj; this file is the only thing that builds it.
+    -->
+    <ItemGroup>
+        <PluginFixture Include="Fixtures/Plugins/Acme.Good/Acme.Good.csproj">
+            <StagedName>Acme.Good</StagedName>
+        </PluginFixture>
+        <PluginFixture Include="Fixtures/Plugins/Acme.NoSubclass/Acme.NoSubclass.csproj">
+            <StagedName>Acme.NoSubclass</StagedName>
+        </PluginFixture>
+    </ItemGroup>
+
+    <!--
+        Everything a fixture's published bytes can depend on. The plugin contract is listed because
+        every fixture references it by project, so a change to the contract has to re-publish them;
+        the loader assembly deliberately is not, because no fixture references it and listing it would
+        re-publish the whole tree on every edit to the code under test. It joins this list with the
+        story that adds a fixture host process, which does reference it.
+
+        bin/ and obj/ are excluded so that generated sources, which change on every build, cannot make
+        the staging permanently out of date.
+    -->
+    <ItemGroup>
+        <PluginFixtureInput Include="$(MSBuildThisFileFullPath)" />
+        <PluginFixtureInput Include="Fixtures/Directory.Build.props" />
+        <PluginFixtureInput
+            Include="Fixtures/**/*.cs;Fixtures/**/*.csproj"
+            Exclude="Fixtures/**/bin/**;Fixtures/**/obj/**"
+        />
+        <PluginFixtureInput
+            Include="../EdFi.Api.Plugins/**/*.cs;../EdFi.Api.Plugins/*.csproj"
+            Exclude="../EdFi.Api.Plugins/bin/**;../EdFi.Api.Plugins/obj/**"
+        />
+        <PluginFixtureInput
+            Include="../Directory.Build.props;../../Directory.Packages.props;../../nuget.config"
+        />
+    </ItemGroup>
+
+    <!--
+        Staging is invalidated wholesale when the shape of the request changes rather than only its
+        content. The fingerprint carries the configuration, the runtime identifier and the set of
+        fixture names, so a Release build, a run on another operating system, or a fixture added or
+        removed cannot reuse a tree staged for something else. Timestamp comparison alone sees none of
+        those.
+    -->
+    <Target
+        Name="PrunePluginFixtureStaging"
+        Condition="'$(BuildingPluginFixtures)' != 'true' AND '$(DesignTimeBuild)' != 'true'"
+    >
+        <PropertyGroup>
+            <PluginFixtureStageRoot
+            >$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', '$(OutDir)', 'Fixtures'))</PluginFixtureStageRoot>
+            <PluginFixtureStampDir
+            >$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', '$(IntermediateOutputPath)', 'fixtures'))</PluginFixtureStampDir>
+            <PluginFixtureFingerprintFile>$(PluginFixtureStampDir)staging.fingerprint</PluginFixtureFingerprintFile>
+            <PluginFixtureFingerprint
+            >$(Configuration)|$(NETCoreSdkRuntimeIdentifier)|@(PluginFixture->'%(StagedName)', '+')</PluginFixtureFingerprint>
+        </PropertyGroup>
+
+        <ReadLinesFromFile
+            File="$(PluginFixtureFingerprintFile)"
+            Condition="Exists('$(PluginFixtureFingerprintFile)')"
+        >
+            <Output TaskParameter="Lines" ItemName="PluginFixturePreviousFingerprintLine" />
+        </ReadLinesFromFile>
+
+        <PropertyGroup>
+            <PluginFixturePreviousFingerprint>@(PluginFixturePreviousFingerprintLine)</PluginFixturePreviousFingerprint>
+            <PluginFixtureStagingIsStale
+                Condition="'$(PluginFixturePreviousFingerprint)' != '$(PluginFixtureFingerprint)'"
+            >true</PluginFixtureStagingIsStale>
+        </PropertyGroup>
+
+        <RemoveDir
+            Directories="$(PluginFixtureStageRoot)"
+            Condition="'$(PluginFixtureStagingIsStale)' == 'true' AND Exists('$(PluginFixtureStageRoot)')"
+        />
+        <Delete
+            Files="$(PluginFixtureFingerprintFile)"
+            Condition="'$(PluginFixtureStagingIsStale)' == 'true'"
+        />
+
+        <!--
+            A fixture removed from the list above leaves its staged directory behind, where a test
+            enumerating the staged tree would still find it. The fingerprint already forces a full
+            re-stage in that case; this removes the directory the re-stage would not overwrite.
+        -->
+        <ItemGroup Condition="Exists('$(PluginFixtureStageRoot)')">
+            <PluginFixtureExpectedDir Include="@(PluginFixture->'$(PluginFixtureStageRoot)%(StagedName)')" />
+            <PluginFixtureExistingDir
+                Include="$([System.IO.Directory]::GetDirectories('$(PluginFixtureStageRoot)'))"
+            />
+            <PluginFixtureStaleDir
+                Include="@(PluginFixtureExistingDir)"
+                Exclude="@(PluginFixtureExpectedDir)"
+            />
+        </ItemGroup>
+        <RemoveDir Directories="@(PluginFixtureStaleDir)" />
+    </Target>
+
+    <!--
+        Outputs are the published entry assembly and manifest of each fixture rather than a stamp
+        file, so that deleting a staged directory by hand re-stages it instead of being reported as
+        up to date.
+    -->
+    <Target
+        Name="PublishPluginFixtures"
+        AfterTargets="Build"
+        DependsOnTargets="PrunePluginFixtureStaging"
+        Condition="'$(BuildingPluginFixtures)' != 'true' AND '$(DesignTimeBuild)' != 'true'"
+        Inputs="@(PluginFixtureInput)"
+        Outputs="@(PluginFixture->'$(PluginFixtureStageRoot)%(StagedName)/%(StagedName).dll');@(PluginFixture->'$(PluginFixtureStageRoot)%(StagedName)/%(StagedName).deps.json')"
+    >
+        <!--
+            BuildingPluginFixtures is passed down so that an inner publish can never re-enter this
+            target, and each fixture project is named explicitly so that nothing walks back up to this
+            test project.
+        -->
+        <Exec
+            Command="&quot;$(DOTNET_HOST_PATH)&quot; publish &quot;%(PluginFixture.FullPath)&quot; --configuration $(Configuration) --no-self-contained --output &quot;$(PluginFixtureStageRoot)%(PluginFixture.StagedName)&quot; -p:BuildingPluginFixtures=true --nologo --verbosity quiet"
+            WorkingDirectory="$(MSBuildProjectDirectory)"
+        />
+
+        <MakeDir Directories="$(PluginFixtureStampDir)" />
+        <WriteLinesToFile
+            File="$(PluginFixtureFingerprintFile)"
+            Lines="$(PluginFixtureFingerprint)"
+            Overwrite="true"
+            WriteOnlyWhenDifferent="true"
+        />
+    </Target>
+</Project>
