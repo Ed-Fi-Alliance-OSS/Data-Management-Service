@@ -414,7 +414,18 @@ internal static class DerivativeRoutingScenario
 
         string body = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.NotFound, body);
-        body.Should().Contain("Snapshot not found.");
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+
+        JsonNode problem = JsonNode.Parse(body)!;
+
+        // The shared not-found type and title, not a snapshot-specific pair: the design reuses the
+        // existing not-found response here, so only the detail names the snapshot. Asserted field by
+        // field because a 404 carrying any other body would satisfy the status assertion above.
+        problem["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:not-found");
+        problem["title"]!.GetValue<string>().Should().Be("Not Found");
+        problem["detail"]!.GetValue<string>().Should().Be("Snapshot not found.");
+        problem["status"]!.GetValue<int>().Should().Be(404);
+        problem["correlationId"]!.GetValue<string>().Should().NotBeNullOrWhiteSpace();
     }
 
     /// <summary>
@@ -441,18 +452,19 @@ internal static class DerivativeRoutingScenario
                 content
             );
 
-            await AssertGenericMethodNotAllowedAsync(
+            await DerivativeRoutingSupport.AssertSnapshotMethodNotAllowedAsync(
                 response,
-                $"{method} {uri} with a snapshot request",
-                expectedAllow: null
+                $"{method} {uri} with a snapshot request"
             );
         }
     }
 
     /// <summary>
     /// The same three shapes without the header, and with it parsed as false, keep the answer route
-    /// semantics has always given them: the identical generic method-not-allowed. That is what makes
-    /// the rejection above a selection decision rather than a change to how these shapes are answered.
+    /// semantics has always given them: the generic method-not-allowed, with its own body and the
+    /// route's own Allow set. Paired with the snapshot rejection above, this is what confines the
+    /// snapshot body to requests that carry a parsed true - the two answers now differ in type, title,
+    /// detail, content type, and Allow, so neither can leak onto the other's requests unnoticed.
     /// </summary>
     public static async Task It_keeps_the_route_semantics_answer_for_the_invalid_shapes(
         ApiIntegrationHarness harness
@@ -509,21 +521,20 @@ internal static class DerivativeRoutingScenario
     }
 
     /// <summary>
-    /// The generic method-not-allowed body both answers share: status, problem type, title, detail, and
-    /// content type.
+    /// The route-semantics method-not-allowed body: the request-construction rejection, its own problem
+    /// type, title, and detail, the route's own <c>Allow</c> set, and <c>application/json</c>.
     /// </summary>
     /// <param name="expectedAllow">
-    /// The exact <c>Allow</c> set expected, or null for the interim snapshot rejection, which carries
-    /// none because the allowed-method set for a snapshot request is defined by separate work. The two
-    /// answers differ here and only here, so this is the one thing a caller can use to tell them apart.
-    /// The set is asserted exactly rather than as merely present: an <c>Allow</c> naming the very
-    /// method being rejected, or silently narrowed to one entry, would satisfy a non-empty check and
-    /// still be wrong.
+    /// The exact <c>Allow</c> set expected. Asserted exactly rather than as merely present: an
+    /// <c>Allow</c> naming the very method being rejected, or silently narrowed to one entry, would
+    /// satisfy a non-empty check and still be wrong. Narrowing it to <c>GET</c> in particular would
+    /// make this answer indistinguishable from the snapshot one on its header, which is why there is
+    /// no longer an arm here that accepts no set at all.
     /// </param>
     private static async Task AssertGenericMethodNotAllowedAsync(
         HttpResponseMessage response,
         string because,
-        string[]? expectedAllow
+        string[] expectedAllow
     )
     {
         string body = await response.Content.ReadAsStringAsync();
@@ -533,22 +544,12 @@ internal static class DerivativeRoutingScenario
             .Content.Headers.ContentType?.ToString()
             .Should()
             .Be("application/json; charset=utf-8", because);
-
-        if (expectedAllow is not null)
-        {
-            response
-                .Content.Headers.Allow.Should()
-                .BeEquivalentTo(
-                    expectedAllow,
-                    $"{because}: route semantics advertises exactly the methods the path supports"
-                );
-        }
-        else
-        {
-            response
-                .Content.Headers.Allow.Should()
-                .BeEmpty($"{because}: the interim snapshot rejection defines no allowed-method set");
-        }
+        response
+            .Content.Headers.Allow.Should()
+            .BeEquivalentTo(
+                expectedAllow,
+                $"{because}: route semantics advertises exactly the methods the path supports"
+            );
 
         JsonNode problem = JsonNode.Parse(body)!;
         problem["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:method-not-allowed", because);
@@ -811,55 +812,123 @@ internal static class DerivativeRoutingScenario
     }
 
     /// <summary>
-    /// A mutation that would answer 415 or 400 on its own still stops at selection when it asks for a
-    /// snapshot: the rejection precedes content-type and body validation.
+    /// Every write shape a later validation step would answer differently still stops at selection once
+    /// a snapshot is asked for, and stops there with the full snapshot 405 rather than merely with that
+    /// status. Run against a resource and a descriptor, because the criteria cover both.
     /// </summary>
+    /// <remarks>
+    /// Selection sits ahead of route semantics, database validation, content-type validation, body
+    /// parsing, profile resolution, and document validation in the write pipelines, so each shape below
+    /// would otherwise be answered by one of those later steps: an unsupported media type, a bad
+    /// request for a body that cannot be parsed or fails validation, a data-policy failure for a
+    /// profile the caller has no assignment for, or - for the missing content type - an accepted write.
+    /// That last one is its own case rather than a variant of the unsupported content type, because
+    /// <c>ValidateContentTypeMiddleware</c> deliberately accepts an absent <c>Content-Type</c>: that
+    /// shape would be created on the primary if selection let it through.
+    /// </remarks>
     public static async Task It_stops_at_selection_before_content_and_body_validation(
         ApiIntegrationHarness harness
     )
     {
-        using (
-            HttpContent wrongMediaType = DerivativeRoutingSupport.RawContent(
-                """{"studentUniqueId":"derivative-routing-415"}""",
-                "text/plain"
-            )
-        )
-        using (
-            HttpResponseMessage response = await DerivativeRoutingSupport.SendAsync(
-                harness,
-                HttpMethod.Post,
-                DerivativeRoutingSupport.StudentsEndpoint,
-                useSnapshotHeaderValue: "true",
-                wrongMediaType
-            )
+        foreach (
+            (
+                string endpoint,
+                string profileResourceName,
+                string body,
+                string invalidBody
+            ) in MutationEndpoints()
         )
         {
-            response
-                .StatusCode.Should()
-                .Be(
-                    HttpStatusCode.MethodNotAllowed,
-                    "an unsupported media type must never be reached once a snapshot was asked for"
+            foreach (
+                (string shape, Func<HttpContent> content) in LaterValidationShapes(
+                    profileResourceName,
+                    body,
+                    invalidBody
+                )
+            )
+            {
+                using HttpContent requestContent = content();
+                using HttpResponseMessage response = await DerivativeRoutingSupport.SendAsync(
+                    harness,
+                    HttpMethod.Post,
+                    endpoint,
+                    useSnapshotHeaderValue: "true",
+                    requestContent
                 );
+
+                await DerivativeRoutingSupport.AssertSnapshotMethodNotAllowedAsync(
+                    response,
+                    $"POST {endpoint} with a snapshot request and {shape}"
+                );
+            }
         }
+    }
 
-        using HttpContent malformedBody = DerivativeRoutingSupport.RawContent(
-            "{ this is not json",
-            "application/json"
-        );
-        using HttpResponseMessage malformedResponse = await DerivativeRoutingSupport.SendAsync(
-            harness,
-            HttpMethod.Post,
+    /// <summary>
+    /// The two endpoint kinds the snapshot contract covers, each with the profile media type's resource
+    /// segment, a well-formed body, and a well-formed body its schema rejects: the Student is missing
+    /// its required studentUniqueId, the descriptor its required namespace and shortDescription.
+    /// </summary>
+    private static IEnumerable<(
+        string Endpoint,
+        string ProfileResourceName,
+        string Body,
+        string SchemaInvalidBody
+    )> MutationEndpoints()
+    {
+        yield return (
             DerivativeRoutingSupport.StudentsEndpoint,
-            useSnapshotHeaderValue: "true",
-            malformedBody
+            "student",
+            """{"studentUniqueId":"derivative-routing-later-validation","firstName":"Ada"}""",
+            """{"firstName":"Ada"}"""
         );
 
-        malformedResponse
-            .StatusCode.Should()
-            .Be(
-                HttpStatusCode.MethodNotAllowed,
-                "a malformed body must never be parsed once a snapshot was asked for"
-            );
+        yield return (
+            DerivativeRoutingSupport.SchoolTypeDescriptorsEndpoint,
+            "schooltypedescriptor",
+            """
+            {"namespace":"uri://ed-fi.org/SchoolTypeDescriptor","codeValue":"routing-later-validation","shortDescription":"Routing"}
+            """,
+            """{"codeValue":"routing-later-validation"}"""
+        );
+    }
+
+    /// <summary>
+    /// The shapes a later step would answer: no content type, an unsupported one, a body that cannot be
+    /// parsed, a body that parses and fails validation, and a content type naming a profile that does
+    /// not exist. Content is produced per case rather than shared, because each request disposes its own.
+    /// </summary>
+    private static IEnumerable<(string Shape, Func<HttpContent> Content)> LaterValidationShapes(
+        string profileResourceName,
+        string body,
+        string schemaInvalidBody
+    )
+    {
+        yield return ("no content type", () => DerivativeRoutingSupport.ContentWithNoMediaType(body));
+
+        yield return (
+            "an unsupported content type",
+            () => DerivativeRoutingSupport.RawContent(body, "text/plain")
+        );
+
+        yield return (
+            "a malformed body",
+            () => DerivativeRoutingSupport.RawContent("{ this is not json", "application/json")
+        );
+
+        yield return (
+            "a body that fails document validation",
+            () => DerivativeRoutingSupport.RawContent(schemaInvalidBody, "application/json")
+        );
+
+        yield return (
+            "an unknown profile",
+            () =>
+                DerivativeRoutingSupport.RawContent(
+                    body,
+                    $"application/vnd.ed-fi.{profileResourceName}.thisprofiledoesnotexist.writable+json"
+                )
+        );
     }
 
     /// <summary>

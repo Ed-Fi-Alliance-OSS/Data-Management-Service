@@ -154,6 +154,12 @@ internal static class DerivativeWholeRequestScenario
     /// <summary>
     /// A mutation rejected for asking for a snapshot is likewise decided before any database is opened.
     /// </summary>
+    /// <remarks>
+    /// Asserted for the shapes a later validation step would otherwise answer as well as for a plain
+    /// valid body, because those shapes reach selection through the same pipeline but would be answered
+    /// after the database-validation steps if selection let them through. With all three databases
+    /// unreachable, any acquisition would surface as a 503 or a 500 instead of the snapshot 405.
+    /// </remarks>
     public static async Task It_opens_no_database_for_a_rejected_mutation(
         ApiIntegrationHarness harness,
         IDerivativeTargetReachability reachability,
@@ -162,26 +168,40 @@ internal static class DerivativeWholeRequestScenario
         string snapshotConnectionString
     )
     {
+        const string ValidBody = """{"studentUniqueId":"derivative-routing-no-database","firstName":"Ada"}""";
+
+        (string Shape, Func<HttpContent> Content)[] shapes =
+        [
+            ("a valid body", () => DerivativeRoutingSupport.RawContent(ValidBody, "application/json")),
+            ("no content type", () => DerivativeRoutingSupport.ContentWithNoMediaType(ValidBody)),
+            (
+                "a body that fails document validation",
+                () => DerivativeRoutingSupport.RawContent("""{"firstName":"Ada"}""", "application/json")
+            ),
+        ];
+
         await reachability.MakeUnreachableAsync(primaryConnectionString);
         await reachability.MakeUnreachableAsync(replicaConnectionString);
         await reachability.MakeUnreachableAsync(snapshotConnectionString);
 
         try
         {
-            using HttpContent content = DerivativeRoutingSupport.StudentContent(
-                "derivative-routing-no-database"
-            );
-            using HttpResponseMessage response = await DerivativeRoutingSupport.SendAsync(
-                harness,
-                HttpMethod.Post,
-                DerivativeRoutingSupport.StudentsEndpoint,
-                useSnapshotHeaderValue: "true",
-                content
-            );
+            foreach ((string shape, Func<HttpContent> content) in shapes)
+            {
+                using HttpContent requestContent = content();
+                using HttpResponseMessage response = await DerivativeRoutingSupport.SendAsync(
+                    harness,
+                    HttpMethod.Post,
+                    DerivativeRoutingSupport.StudentsEndpoint,
+                    useSnapshotHeaderValue: "true",
+                    requestContent
+                );
 
-            response
-                .StatusCode.Should()
-                .Be(HttpStatusCode.MethodNotAllowed, "the rejection precedes every database acquisition");
+                await DerivativeRoutingSupport.AssertSnapshotMethodNotAllowedAsync(
+                    response,
+                    $"{shape} with every database unreachable: the rejection precedes every acquisition"
+                );
+            }
         }
         finally
         {
