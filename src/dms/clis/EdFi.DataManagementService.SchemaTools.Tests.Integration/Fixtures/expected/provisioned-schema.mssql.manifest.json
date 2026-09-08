@@ -66409,7 +66409,9 @@
       "table_name": "RepresentationRestampOperation",
       "constraint_name": "CK_RepresentationRestampOperation_ContractVersion",
       "constraint_type": "CHECK",
-      "columns": [],
+      "columns": [
+        "ContractVersion"
+      ],
       "referenced_schema": null,
       "referenced_table": null,
       "referenced_columns": null
@@ -66419,7 +66421,9 @@
       "table_name": "RepresentationRestampOperation",
       "constraint_name": "CK_RepresentationRestampOperation_Mode",
       "constraint_type": "CHECK",
-      "columns": [],
+      "columns": [
+        "Mode"
+      ],
       "referenced_schema": null,
       "referenced_table": null,
       "referenced_columns": null
@@ -66439,7 +66443,9 @@
       "table_name": "RepresentationRestampOperation",
       "constraint_name": "CK_RepresentationRestampOperation_State",
       "constraint_type": "CHECK",
-      "columns": [],
+      "columns": [
+        "State"
+      ],
       "referenced_schema": null,
       "referenced_table": null,
       "referenced_columns": null

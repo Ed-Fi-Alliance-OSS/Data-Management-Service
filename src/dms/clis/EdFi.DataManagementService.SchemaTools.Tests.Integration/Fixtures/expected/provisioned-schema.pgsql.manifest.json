@@ -66679,8 +66679,8 @@
       "constraint_name": "CK_RepresentationRestampOperation_CommittedCount",
       "constraint_type": "CHECK",
       "columns": [
-        "PreviewDocumentCount",
-        "CommittedDocumentCount"
+        "CommittedDocumentCount",
+        "PreviewDocumentCount"
       ],
       "referenced_schema": null,
       "referenced_table": null,
