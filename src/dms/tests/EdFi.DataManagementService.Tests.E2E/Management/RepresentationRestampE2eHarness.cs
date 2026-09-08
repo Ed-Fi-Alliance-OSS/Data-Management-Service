@@ -424,14 +424,15 @@ internal static class RepresentationRestampE2EHarness
                 "closedAndDrained",
             ]
         );
-        execute["result"]!["state"]!.GetValue<string>().Should().Be("completed");
+        execute["result"]!["state"]!.GetValue<string>().Should().Be("completed", "state must complete");
         execute["result"]!["claimLevel"]!
             .GetValue<string>()
             .Should()
             .Be(
                 mode == DocumentCacheRepresentationRestampMode.Tracking
                     ? "projectionWorkQueued"
-                    : "canonicalOnlyComplete"
+                    : "canonicalOnlyComplete",
+                "claimLevel must match the restamp mode"
             );
         await verifyCanonicalStateAsync();
         if (mode == DocumentCacheRepresentationRestampMode.Tracking)

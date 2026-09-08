@@ -107,6 +107,7 @@ public static class MssqlServiceExtensions
         );
         services.Replace(ServiceDescriptor.Singleton<IResourceKeyRowReader, MssqlResourceKeyRowReader>());
         services.TryAddSingleton<IRepresentationRestampStore, MssqlRepresentationRestampStore>();
+        services.TryAddSingleton<IDocumentCacheRepresentationRestampCommand, RepresentationRestampCommand>();
 
         return services;
     }

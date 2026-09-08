@@ -698,7 +698,10 @@ public class DocumentCacheAdministrativeContractsTests
                     "enterDisabled",
                     "scrubScan",
                     "setCacheAheadLatch",
-                    "complete"
+                    "complete",
+                    "createManifest",
+                    "selectDocuments",
+                    "stampDocuments"
                 );
         }
 
