@@ -38,9 +38,10 @@ recording the resolved version of every package in the full dependency graph.
 Committed to source control, it becomes an auditable, diffable record of exactly
 what is restored.
 
-This is enabled with `RestorePackagesWithLockFile` in **both**
-[`src/dms/Directory.Build.props`](../src/dms/Directory.Build.props) and
-[`src/config/Directory.Build.props`](../src/config/Directory.Build.props):
+This is enabled with `RestorePackagesWithLockFile` in **each** of
+[`src/dms/Directory.Build.props`](../src/dms/Directory.Build.props),
+[`src/config/Directory.Build.props`](../src/config/Directory.Build.props) and
+[`src/plugins/Directory.Build.props`](../src/plugins/Directory.Build.props):
 
 ```xml
 <PropertyGroup>
@@ -51,8 +52,13 @@ This is enabled with `RestorePackagesWithLockFile` in **both**
 > [!NOTE]
 > There is no shared `src/Directory.Build.props`, and a nested
 > `Directory.Build.props` does not auto-import a parent — so the property must be
-> present in **both** files. Each `src` project has its own committed
+> present in **every** one of those files. Each `src` project has its own committed
 > `packages.lock.json`.
+>
+> `src/plugins/` is the plugin contract tree. Both main solutions include its two
+> projects, so their lock files are restored and verified by both PR lanes. Unlike the
+> other two, that props file is hand-maintained and deliberately outside
+> `build-dms.ps1`'s `SetDMSAssemblyInfo`, which regenerates only `src/dms`'s.
 
 ### 2. Locked mode in PR CI
 
@@ -63,8 +69,8 @@ Each PR workflow has a dedicated `verify-lock-files` gate job that runs
 fast if a committed lock file is out of sync with the `.csproj` /
 `Directory.Packages.props` state — for example, if a package reference is added
 without regenerating. No `paths:` change is needed: neither PR workflow
-filters `pull_request` by path, and lock files live under `src/dms/**` /
-`src/config/**`, which the relevance detection already matches.
+filters `pull_request` by path, and lock files live under `src/dms/**`,
+`src/config/**` and `src/plugins/**`, all of which the relevance detection matches.
 
 ### 3. Locked mode in the source Docker image builds
 

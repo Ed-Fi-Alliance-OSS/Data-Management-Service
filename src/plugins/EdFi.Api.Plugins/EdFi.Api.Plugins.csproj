@@ -1,0 +1,52 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <Nullable>enable</Nullable>
+        <IsPackable>true</IsPackable>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <PackageId>EdFi.Api.Plugins</PackageId>
+        <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+        <PackageProjectUrl>https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service</PackageProjectUrl>
+        <Title>Ed-Fi API Plugin Contract</Title>
+        <Description>The base class every Ed-Fi API plugin implements, shared by the Data Management Service and the Configuration Service.</Description>
+        <PackageReadmeFile>PLUGINS.md</PackageReadmeFile>
+        <!--
+            The contract's load-bearing rules - that Name must equal the plugin directory name and
+            that the base ContributeServices does nothing - live only in /// comments, so the XML
+            file has to ship or an implementer's IDE shows them nothing. It is also what the pack
+            lane's exported-type assertion reads, since TreatWarningsAsErrors turns CS1591 into an
+            error and therefore makes the XML file a faithful list of the public surface.
+        -->
+        <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    </PropertyGroup>
+    <!--
+        Exactly two PackageReferences, and this is a deliberate divergence from the sibling
+        contract's zero-dependency policy
+        (src/dms/core/EdFi.DataManagementService.CustomValidation/EdFi.DataManagementService.CustomValidation.csproj).
+
+        EdFiApiPlugin's shipped hook signature names IConfiguration and IServiceCollection, so both
+        Abstractions assemblies are in the public surface rather than in the implementation, and a
+        contract cannot decline a dependency its own signatures require. IConfigurationBuilder joins
+        them from the same Microsoft.Extensions.Configuration.Abstractions assembly when the secrets
+        foundation story adds ContributeConfiguration, so that addition needs no new package
+        reference.
+
+        Nothing beyond those two is added for an implementer's convenience. The dependency closure a
+        third party inherits is part of the contract, and the pack lane asserts this exact set.
+
+        No ProjectReference: under host-first resolution this assembly is shared with every plugin,
+        so its public surface is a compatibility commitment to third parties forever, and it must
+        not drag any host assembly's surface along with it.
+    -->
+    <ItemGroup>
+        <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" />
+        <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    </ItemGroup>
+    <!--
+        PackageReadmeFile on its own does not pack the file: a markdown file beside a csproj is not
+        a packed item under default SDK behaviour. The sibling contract carries the same pair.
+    -->
+    <ItemGroup>
+        <None Include="PLUGINS.md" Pack="true" PackagePath="\" />
+    </ItemGroup>
+</Project>

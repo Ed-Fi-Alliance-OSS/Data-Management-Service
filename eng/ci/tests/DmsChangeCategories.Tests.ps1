@@ -166,6 +166,22 @@ Describe "DMS pull request change classifier" {
                     Path     = "src/dms/backend/EdFi.DataManagementService.Backend.Postgresql/Something.cs"
                     Expected = @('dms_api_relevant', 'schematools_relevant')
                 }
+                @{
+                    # The plugin contract is compiled by both main solutions but exercised by no
+                    # promoted lane today. It is classified to the DMS API lane rather than left to
+                    # the fail-open default, because that is the lane the frontend's coming
+                    # ProjectReference will make it genuinely reachable from.
+                    Path     = "src/plugins/EdFi.Api.Plugins/EdFiApiPlugin.cs"
+                    Expected = @('dms_api_relevant')
+                }
+                @{
+                    Path     = "src/plugins/EdFi.Api.Plugins.Hosting/EdFi.Api.Plugins.Hosting.csproj"
+                    Expected = @('dms_api_relevant')
+                }
+                @{
+                    Path     = "src/plugins/Directory.Build.props"
+                    Expected = @('dms_api_relevant')
+                }
             ) {
                 Get-SetCategory -Path $Path | Should -Be (@($Expected) | Sort-Object)
             }
@@ -375,6 +391,9 @@ Describe "DMS pull request change classifier" {
             @{ Path = "eng/ci/tests/DmsChangeCategories.Tests.ps1" }
             @{ Path = "src/dms/core/EdFi.DataManagementService.Core/Something.cs" }
             @{ Path = "src/config/backend/Something.cs" }
+            @{ Path = "src/plugins/Directory.Build.props" }
+            @{ Path = "src/plugins/EdFi.Api.Plugins/EdFiApiPlugin.cs" }
+            @{ Path = "src/plugins/EdFi.Api.Plugins.Hosting/EdFi.Api.Plugins.Hosting.csproj" }
             @{ Path = "src/Directory.Packages.props" }
             @{ Path = "src/nuget.config" }
             @{ Path = "src/.editorconfig" }

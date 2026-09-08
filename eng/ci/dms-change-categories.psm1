@@ -50,6 +50,9 @@ $script:DmsRelevantPathPrefix = @(
     'eng/'
     'src/dms/'
     'src/config/'
+    # The plugin contract tree. Both main solutions build it and the DMS image's build stage copies
+    # it, so a change here reaches the DMS lanes even though nothing references the assemblies yet.
+    'src/plugins/'
 )
 
 # Promoted-suite categories. Each names one or two integration lanes that a pull request runs only
@@ -133,6 +136,14 @@ $script:NarrowPathCategory = @(
     @{ Prefix = 'src/dms/clis/'; Category = @() }
     @{ Prefix = 'src/dms/tests/'; Category = @() }
     @{ Prefix = 'src/config/'; Category = @() }
+    # The plugin contract and its host-side project. Classified rather than left to the fail-open
+    # default, which would run every promoted lane for a tree no promoted lane builds today.
+    #
+    # dms_api_relevant rather than none: the DMS frontend takes a ProjectReference into
+    # src/plugins/EdFi.Api.Plugins.Hosting when the loader's startup guard lands, and that lane is
+    # the one that builds the frontend and its in-process pipeline. Naming it now costs one lane on
+    # a plugins-only pull request and means no later story has to remember to revisit this entry.
+    @{ Prefix = 'src/plugins/'; Category = @('dms_api_relevant') }
 )
 
 function Get-DmsCategoryDefault {

@@ -189,4 +189,45 @@ function Convert-ToAssemblyVersion {
     return "$mmp.$height"
 }
 
-Export-ModuleMember -Function Get-VersionNumber, Invoke-Promote, InstallCredentialHandler, Convert-ToAssemblyVersion
+<#
+.DESCRIPTION
+Reads the plugin contract's own declared version out of src/plugins/Directory.Build.props.
+
+The contract package is versioned on its own and deliberately outside SetDMSAssemblyInfo's reach,
+because the plugin loader's newer-plugin-on-older-host preflight compares AssemblyVersions: the
+version has to move when the contract's public surface moves and must not move when it does not.
+So no caller may substitute the DMS release version here.
+
+The props file is the single declaration. This function is what keeps it single: the pack target
+and every verification step that needs the version call this rather than repeating a literal that
+could drift from the file the compiler actually reads.
+
+.EXAMPLE
+Get-PluginsContractVersion
+# Returns: 1.0.0
+#>
+function Get-PluginsContractVersion {
+    param (
+        # The props file declaring the contract version. Defaults to the repository's own.
+        [string]
+        $PropsPath = (Join-Path $PSScriptRoot "src/plugins/Directory.Build.props")
+    )
+
+    if (-not (Test-Path -LiteralPath $PropsPath)) {
+        throw "Cannot read the plugin contract version: $PropsPath does not exist."
+    }
+
+    # SelectSingleNode rather than property access, so a props file that grew a second PropertyGroup
+    # cannot silently return an array and stringify into a version no package will ever carry.
+    $versionPrefix = ([xml] (Get-Content -LiteralPath $PropsPath -Raw)).SelectSingleNode(
+        "//PropertyGroup/VersionPrefix"
+    )
+
+    if ($null -eq $versionPrefix -or [string]::IsNullOrWhiteSpace($versionPrefix.InnerText)) {
+        throw "Cannot read the plugin contract version: $PropsPath declares no VersionPrefix."
+    }
+
+    return $versionPrefix.InnerText.Trim()
+}
+
+Export-ModuleMember -Function Get-VersionNumber, Invoke-Promote, InstallCredentialHandler, Convert-ToAssemblyVersion, Get-PluginsContractVersion
