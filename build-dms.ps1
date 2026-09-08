@@ -24,7 +24,7 @@
         * IntegrationTest: executes NUnit test in projects named `*.IntegrationTests`,
           which connect to a database.
         * BuildAndPublish: build and publish with `dotnet publish`
-        * Package: builds NuGet packages. The DMS API application, SchemaTools, and DocumentCacheAdmin packages are published by the release workflows; the custom-validation abstractions package is built and verified only, and is deliberately not published yet. Use -PackageTarget to build only one package.
+        * Package: builds NuGet packages. The DMS API application, SchemaTools, and DocumentCacheAdmin packages are published by the release workflows; the custom-validation abstractions and plugin contract packages are built and verified only, and are deliberately not published yet. Use -PackageTarget to build only one package.
         * Push: uploads a NuGet package to the NuGet feed.
         * DockerBuild: builds a Docker image from source code
         * DockerRun: runs the Docker image that was built from source code
@@ -71,7 +71,7 @@ param(
 
     # Selects which NuGet package(s) the Package command builds.
     [string]
-    [ValidateSet("All", "Api", "SchemaTools", "CustomValidation", "DocumentCacheAdmin")]
+    [ValidateSet("All", "Api", "SchemaTools", "CustomValidation", "DocumentCacheAdmin", "Plugins")]
     $PackageTarget = "All",
 
     # When set, `dotnet restore` runs with `--locked-mode`, failing the build if a committed
@@ -187,6 +187,9 @@ $packageName = "EdFi.Api"
 $schemaToolsPackageName = "EdFi.Api.SchemaTools"
 $customValidationPackageName = "EdFi.Api.CustomValidation"
 $customValidationProjectName = "EdFi.DataManagementService.CustomValidation"
+$pluginsPackageName = "EdFi.Api.Plugins"
+$pluginsProjectName = "EdFi.Api.Plugins"
+$pluginsRoot = "$PSScriptRoot/src/plugins"
 $documentCacheAdminPackageName = "EdFi.Api.DocumentCacheAdmin"
 $testResults = "$PSScriptRoot/TestResults"
 #Coverage
@@ -2031,6 +2034,45 @@ function BuildCustomValidationPackage {
     }
 }
 
+function BuildPluginsPackage {
+    $projectPath = "$pluginsRoot/$pluginsProjectName/$pluginsProjectName.csproj"
+
+    # Deliberately NOT $DMSVersion, and this is the difference between this target and every other
+    # one in this script. The plugin loader's newer-plugin-on-older-host preflight compares
+    # AssemblyVersions across contract packages, so the contract's version must move with its public
+    # surface and only with it. Under release-stamped versioning a vendor compiling against the 8.4
+    # contract would be refused by an 8.3 host whose surface is identical, and the resulting error
+    # would name two versions that differ in nothing the vendor can act on.
+    $packageVersion = Get-PluginsContractVersion
+    $expectedPackagePath = "$PSScriptRoot/$pluginsPackageName.$packageVersion.nupkg"
+
+    Write-Info "Building $pluginsPackageName package version $packageVersion"
+
+    Invoke-Execute {
+        # Removing the exact expected path, not a wildcard sweep, and doing it before packing. The
+        # contract version is fixed for the life of a surface rather than moving with every build,
+        # so a stale nupkg of the very same version is the normal state of a developer's working
+        # copy rather than a rare collision, and the verification lane downstream would happily
+        # assert against it.
+        if (Test-Path $expectedPackagePath) {
+            Remove-Item -LiteralPath $expectedPackagePath -ErrorAction Stop
+        }
+
+        # No -p:PackageVersion. The project's own declared version decides, which is what makes the
+        # existence check below a real assertion rather than a restatement of an argument just
+        # passed in: if the project ever produced a different version, nothing would be at this path.
+        dotnet pack $projectPath `
+            -c $Configuration `
+            --no-build `
+            --no-restore `
+            --output $PSScriptRoot
+
+        if (-not (Test-Path $expectedPackagePath)) {
+            throw "Expected plugin contract package was not created: $expectedPackagePath"
+        }
+    }
+}
+
 function BuildDocumentCacheAdminPackage {
     $projectPath = "$clisRoot/$documentCacheAdminProjectName/$documentCacheAdminProjectName.csproj"
     $expectedPackagePath = "$PSScriptRoot/$documentCacheAdminPackageName.$DMSVersion.nupkg"
@@ -2066,6 +2108,7 @@ function BuildPackage {
             BuildSchemaToolsPackage
             BuildCustomValidationPackage
             BuildDocumentCacheAdminPackage
+            BuildPluginsPackage
         }
         "Api" {
             BuildApiPackage
@@ -2078,6 +2121,9 @@ function BuildPackage {
         }
         "DocumentCacheAdmin" {
             BuildDocumentCacheAdminPackage
+        }
+        "Plugins" {
+            BuildPluginsPackage
         }
         default {
             throw "PackageTarget '$PackageTarget' is not recognized"

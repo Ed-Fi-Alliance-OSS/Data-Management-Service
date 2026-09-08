@@ -84,6 +84,10 @@ Describe "DocumentCacheAdmin package target" {
         }
     }
 
+    # Three of the assertions below pin the whole PackageTarget surface rather than only this
+    # fixture's own target: the ValidateSet list, the All dispatch order, and the single-target
+    # dispatch map are exact-set comparisons. Every package target the build script gains therefore
+    # lands here, whatever this file is named after.
     It "recognizes DocumentCacheAdmin as a public PackageTarget value" {
         $packageTargetParameter = $script:buildScriptAst.ParamBlock.Parameters |
             Where-Object { $_.Name.VariablePath.UserPath -eq "PackageTarget" } |
@@ -98,7 +102,7 @@ Describe "DocumentCacheAdmin package target" {
         $validateSet | Should -Not -BeNullOrEmpty
 
         $targetValues = @($validateSet.PositionalArguments | ForEach-Object { $_.Value })
-        $targetValues | Should -Be @("All", "Api", "SchemaTools", "CustomValidation", "DocumentCacheAdmin")
+        $targetValues | Should -Be @("All", "Api", "SchemaTools", "CustomValidation", "DocumentCacheAdmin", "Plugins")
     }
 
     It "dispatches PackageTarget All to every package builder" {
@@ -108,7 +112,8 @@ Describe "DocumentCacheAdmin package target" {
             "BuildApiPackage",
             "BuildSchemaToolsPackage",
             "BuildCustomValidationPackage",
-            "BuildDocumentCacheAdminPackage"
+            "BuildDocumentCacheAdminPackage",
+            "BuildPluginsPackage"
         )
     }
 
@@ -119,6 +124,7 @@ Describe "DocumentCacheAdmin package target" {
         $commandsByTarget["SchemaTools"] | Should -Be @("BuildSchemaToolsPackage")
         $commandsByTarget["CustomValidation"] | Should -Be @("BuildCustomValidationPackage")
         $commandsByTarget["DocumentCacheAdmin"] | Should -Be @("BuildDocumentCacheAdminPackage")
+        $commandsByTarget["Plugins"] | Should -Be @("BuildPluginsPackage")
     }
 
     It "preserves the existing API package builder behavior" {
