@@ -33,25 +33,27 @@
     Three properties are asserted, and the second is what keeps the first from being vacuous.
 
     1. src/plugins/Directory.Build.props is byte-identical to its baseline.
-    2. src/dms/Directory.Build.props carries the generated shape AND its VersionPrefix equals the
-       version the build was given. Asserting only that the file changed would pass on a machine
-       whose committed props already happened to match the stamped output, and would pass equally
-       if some unrelated edit had touched the file; asserting the requested version proves the
-       stamping ran and ran with the version under test.
+    2. src/dms/Directory.Build.props matches, in full, what SetDMSAssemblyInfo writes for the version
+       the build was given. Asserting only that the file changed would pass on a machine whose
+       committed props already happened to match the stamped output, and would pass equally if some
+       unrelated edit had touched the file.
     3. src/dms/Directory.Build.props is restored, byte-exactly, from the captured baseline.
 
     The restore is from the captured bytes and never from Git, so a developer holding uncommitted
     edits to that file gets their own content back rather than HEAD's. It runs in a finally, so a
-    failed assertion still leaves the tree as it was found. And it refuses to write when the current
-    content is not the build script's own output, because that means something else changed the file
-    and overwriting it would destroy work.
+    failed assertion still leaves the tree as it was found.
 
-    Two details of that restore are load-bearing and easy to get wrong, so they are stated here.
+    Three details of that restore are load-bearing and easy to get wrong, so they are stated here.
 
-    Whether the file is the build's output is decided by the generated-file marker alone, and
-    deliberately not by the version as well. A run stamped to some other version still produced a
-    file the build owns; treating it as a foreign edit would report a conflict that never happened
-    and leave the tree stamped.
+    Whether the file is the build's output is decided by comparing the complete content against the
+    template's expansion, and by nothing weaker. An earlier revision tested for the generated-file
+    marker comment: a developer can edit an already-stamped file and the marker survives, so the
+    check called the edit the build's output, passed, and restored the baseline over it. Anything
+    that is neither the baseline nor those exact bytes is now left untouched, marker or no marker,
+    and the baseline stays on disk for recovery.
+
+    The file is re-hashed immediately before the write, so a change arriving between validation and
+    restoration is refused rather than overwritten.
 
     A cleanup problem is reported as a warning when an assertion has already failed, and thrown only
     when the assertions passed. PowerShell lets an exception raised in a finally supersede the one
@@ -75,12 +77,22 @@ param(
     $ExpectedDMSVersion,
 
     [string]
-    $RepositoryRoot = (Join-Path $PSScriptRoot "../..")
+    $RepositoryRoot = (Join-Path $PSScriptRoot "../.."),
+
+    # The build script whose SetDMSAssemblyInfo template defines what a stamped
+    # src/dms/Directory.Build.props must look like. A parameter so a test can point this at a
+    # fixture copy rather than at the live script.
+    [string]
+    $BuildScriptPath
 )
 
 $ErrorActionPreference = "Stop"
 
 $resolvedRoot = (Resolve-Path -LiteralPath $RepositoryRoot).ProviderPath
+
+if ([string]::IsNullOrWhiteSpace($BuildScriptPath)) {
+    $BuildScriptPath = Join-Path $resolvedRoot "build-dms.ps1"
+}
 
 $trackedFiles = [ordered]@{
     # The file the stamping must never reach. This is the assertion.
@@ -141,29 +153,98 @@ function Get-FileSha256 {
     return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash
 }
 
+function ConvertTo-NormalizedText {
+    <#
+    .SYNOPSIS
+        Content with line endings and any trailing newline normalised away.
+    .DESCRIPTION
+        The comparison below is about content, not about how a given checkout or writer happened to
+        encode line breaks. Without this a CRLF working copy would report every stamped file as
+        unrecognised and refuse every restore.
+    #>
+    param([Parameter(Mandatory)][AllowEmptyString()][string] $Value)
+
+    return ($Value -replace "`r`n", "`n").TrimEnd("`n")
+}
+
+function Get-ExpectedStampedPropsContent {
+    <#
+    .SYNOPSIS
+        The complete content SetDMSAssemblyInfo writes for one version.
+    .DESCRIPTION
+        Read out of the build script and expanded, rather than restated here. A second copy of that
+        template would be free to drift from the one the build actually writes, and this check's
+        whole job is to know the difference between the build's output and somebody's edit.
+
+        Expansion goes through PowerShell's own string expander rather than through hand-written
+        substitution, so the template behaves exactly as it does at its real call site. That is not
+        a nicety: the template contains a malformed subexpression which expands to nothing, and any
+        hand-rolled substitution would have to reproduce that defect deliberately to stay faithful.
+        The defect itself is recorded elsewhere and is not this story's to fix.
+    #>
+    param(
+        [Parameter(Mandatory)][string] $BuildScript,
+        [Parameter(Mandatory)][string] $Version
+    )
+
+    if (-not (Test-Path -LiteralPath $BuildScript)) {
+        throw "Cannot determine what a stamped src/dms/Directory.Build.props should contain: $BuildScript does not exist."
+    }
+
+    $scriptText = Get-Content -LiteralPath $BuildScript -Raw
+
+    # Anchored on the call SetDMSAssemblyInfo makes, the same way
+    # eng/docker-compose/tests/LockFileParity.Tests.ps1 locates it. If the template is ever moved or
+    # rewritten this fails loudly rather than silently comparing against nothing.
+    $templateMatch = [regex]::Match(
+        $scriptText,
+        '(?s)Invoke-RegenerateFile\s+"\$solutionRoot/Directory\.Build\.props"\s+@"\r?\n(?<template>.*?)\r?\n"@'
+    )
+
+    if (-not $templateMatch.Success) {
+        throw "Could not locate the SetDMSAssemblyInfo props template in $BuildScript. This check compares the stamped file against that template's expansion, so it cannot run until the anchor is updated to match the build script."
+    }
+
+    # The template names $assembly_version and $maintainers. The first is the version under test; the
+    # second is a build-script variable, read from the same file so the two cannot disagree.
+    $maintainersMatch = [regex]::Match($scriptText, '\$maintainers\s*=\s*"(?<value>[^"]*)"')
+
+    if (-not $maintainersMatch.Success) {
+        throw "Could not read the maintainers value from $BuildScript, which the props template expands into its Authors and Company elements."
+    }
+
+    # Bound in this scope so ExpandString resolves them; the names must match the template's.
+    # Set-Variable rather than plain assignment because these are read only by the expander at
+    # runtime, which static analysis cannot see: as assignments they read as dead stores.
+    Set-Variable -Name "assembly_version" -Value $Version
+    Set-Variable -Name "maintainers" -Value $maintainersMatch.Groups['value'].Value
+
+    return $ExecutionContext.InvokeCommand.ExpandString($templateMatch.Groups['template'].Value)
+}
+
 $pluginsPath = $trackedFiles["plugins"].Path
 $pluginsBaseline = Join-Path $BaselineDirectory $trackedFiles["plugins"].Baseline
 $dmsPath = $trackedFiles["dms"].Path
 $dmsBaseline = Join-Path $BaselineDirectory $trackedFiles["dms"].Baseline
 
-$dmsCurrentContent = Get-Content -LiteralPath $dmsPath -Raw
 $dmsBaselineHash = Get-FileSha256 -Path $dmsBaseline
 $dmsCurrentHash = Get-FileSha256 -Path $dmsPath
 
-# Two different questions, deliberately not one.
+# Ownership is decided by comparing the whole file against what SetDMSAssemblyInfo writes for this
+# version, and by nothing weaker.
 #
-# "Is this the build script's output at all?" decides whether restoring the baseline over it is
-# safe, and it must not depend on which version was stamped: a run stamped to the wrong version
-# still produced a file the build owns, and refusing to restore it would leave the tree dirty while
-# reporting a foreign edit that never happened.
+# An earlier revision tested for the generated-file marker comment instead. That is not evidence of
+# anything: a developer can edit an already-stamped file - change a property, add an element - and
+# the marker survives. The check then called the edit "the build's output", passed, and restored the
+# baseline over it, destroying the edit while reporting success.
 #
-# "Was it stamped with the version under test?" is the positive control, and it needs both halves,
-# because the marker alone would also accept a stamping run for some other version.
-$dmsIsGeneratedShape =
-    $dmsCurrentContent -match "<!--\s*This file is generated by the build script\.\s*-->"
-$dmsCarriesExpectedVersion =
-    $dmsIsGeneratedShape -and
-    $dmsCurrentContent -match "<VersionPrefix>$([regex]::Escape($ExpectedDMSVersion))</VersionPrefix>"
+# So a file that is neither the captured baseline nor these exact bytes is left alone, marker or no
+# marker, and the baseline stays on disk for whoever needs to recover from it.
+$expectedStamped = ConvertTo-NormalizedText -Value (
+    Get-ExpectedStampedPropsContent -BuildScript $BuildScriptPath -Version $ExpectedDMSVersion
+)
+$dmsIsStampedOutput =
+    (ConvertTo-NormalizedText -Value (Get-Content -LiteralPath $dmsPath -Raw)) -eq $expectedStamped
 
 $assertionSucceeded = $false
 
@@ -176,13 +257,14 @@ try {
         throw "src/plugins/Directory.Build.props changed during a build run with -DMSVersion $ExpectedDMSVersion (baseline $pluginsBaselineHash, now $pluginsCurrentHash). The plugin contract is versioned on its own public surface and must stay outside SetDMSAssemblyInfo's reach."
     }
 
-    # 2. The positive control. Without this, assertion 1 passes on a build that never stamped
-    #    anything, which is the failure mode most likely to go unnoticed.
-    if (-not $dmsCarriesExpectedVersion) {
-        throw "src/dms/Directory.Build.props does not carry the build script's generated shape with VersionPrefix $ExpectedDMSVersion, so version stamping did not run with the version under test and the assertion above proves nothing. Run ./build-dms.ps1 BuildAndPublish -DMSVersion $ExpectedDMSVersion between the capture and this check; the Package command does not reach Invoke-SetAssemblyInfo."
+    # 2. The positive control. Without it, assertion 1 passes on a build that never stamped anything,
+    #    which is the failure mode most likely to go unnoticed. It compares the whole file, so a
+    #    stamped file someone then edited fails here too rather than being waved through.
+    if (-not $dmsIsStampedOutput) {
+        throw "src/dms/Directory.Build.props does not match what SetDMSAssemblyInfo writes for $ExpectedDMSVersion, so this run proves nothing about version stamping. Either the build did not run with that version - the Package command does not reach Invoke-SetAssemblyInfo, only BuildAndPublish does - or the stamped file was modified afterwards. It has been left untouched; the pre-build baseline is at $dmsBaseline."
     }
 
-    Write-Output "Verified src/plugins/Directory.Build.props is byte-identical ($pluginsCurrentHash) after a build stamped to $ExpectedDMSVersion, and that src/dms/Directory.Build.props was regenerated, so the check was not vacuous."
+    Write-Output "Verified src/plugins/Directory.Build.props is byte-identical ($pluginsCurrentHash) after a build stamped to $ExpectedDMSVersion, and that src/dms/Directory.Build.props matches SetDMSAssemblyInfo's complete output for that version, so the check was not vacuous."
     $assertionSucceeded = $true
 }
 finally {
@@ -190,29 +272,39 @@ finally {
     #    survives. In a finally so a failed assertion above does not leave the tree stamped.
     #
     #    A cleanup problem must never replace the assertion's own diagnostic. PowerShell lets an
-    #    exception thrown here supersede the one already in flight, which would report "something
-    #    else changed this file" in place of the real finding. So a cleanup failure is thrown only
-    #    when the assertions passed, and reported as a warning otherwise.
+    #    exception thrown here supersede the one already in flight, which would report a restore
+    #    complaint in place of the real finding. So a cleanup failure is thrown only when the
+    #    assertions passed, and reported as a warning otherwise.
     $cleanupProblem = $null
 
     if ($dmsCurrentHash -eq $dmsBaselineHash) {
         Write-Output "src/dms/Directory.Build.props already matches its baseline; nothing to restore."
     }
-    elseif ($dmsIsGeneratedShape) {
-        Copy-Item -LiteralPath $dmsBaseline -Destination $dmsPath -Force
+    elseif ($dmsIsStampedOutput) {
+        # Re-read immediately before writing. Ownership was established earlier, and this narrows the
+        # window in which something could have changed the file since: the write is only made over
+        # content still identical to what was validated.
+        $hashAtRestore = Get-FileSha256 -Path $dmsPath
 
-        $restoredHash = Get-FileSha256 -Path $dmsPath
-        if ($restoredHash -ne $dmsBaselineHash) {
-            $cleanupProblem = "Failed to restore src/dms/Directory.Build.props from its baseline: expected $dmsBaselineHash, got $restoredHash."
+        if ($hashAtRestore -ne $dmsCurrentHash) {
+            $cleanupProblem = "src/dms/Directory.Build.props changed between validation and restoration (was $dmsCurrentHash, now $hashAtRestore). Refusing to overwrite it; the pre-build baseline is at $dmsBaseline."
         }
         else {
-            Write-Output "Restored src/dms/Directory.Build.props from its captured baseline ($dmsBaselineHash)."
+            Copy-Item -LiteralPath $dmsBaseline -Destination $dmsPath -Force
+
+            $restoredHash = Get-FileSha256 -Path $dmsPath
+            if ($restoredHash -ne $dmsBaselineHash) {
+                $cleanupProblem = "Failed to restore src/dms/Directory.Build.props from its baseline: expected $dmsBaselineHash, got $restoredHash."
+            }
+            else {
+                Write-Output "Restored src/dms/Directory.Build.props from its captured baseline ($dmsBaselineHash)."
+            }
         }
     }
     else {
-        # Neither the baseline nor anything the build script wrote. Something else owns this content,
-        # and the captured bytes are no longer a safe thing to put back.
-        $cleanupProblem = "src/dms/Directory.Build.props is neither its captured baseline nor the build script's generated output, so it was changed by something other than this check. Refusing to overwrite it; inspect the file and restore it yourself if needed. Baseline held at $dmsBaseline."
+        # Neither the baseline nor SetDMSAssemblyInfo's output for this version. Whatever it is, this
+        # check did not produce it and has no basis for overwriting it.
+        $cleanupProblem = "src/dms/Directory.Build.props is neither its captured baseline nor SetDMSAssemblyInfo's output for $ExpectedDMSVersion, so this check has no basis for claiming it. Refusing to overwrite it; the pre-build baseline is at $dmsBaseline if you need to restore it yourself."
     }
 
     if ($null -ne $cleanupProblem) {
