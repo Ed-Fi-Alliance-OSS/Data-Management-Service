@@ -20,6 +20,7 @@ public class Given_CdcConnectorTemplateIntegrationBoundaryTests
 {
     private static readonly string[] ExpectedPackageReferences =
     [
+        "Confluent.Kafka",
         "Microsoft.Extensions.DependencyInjection.Abstractions",
     ];
 
@@ -131,7 +132,7 @@ public class Given_CdcConnectorTemplateIntegrationBoundaryTests
     }
 
     [Test]
-    public void It_limits_project_dependencies_to_contracts_and_non_http_projection_runtime()
+    public void It_limits_project_dependencies_to_contracts_non_http_runtime_and_kafka_admin()
     {
         XDocument project = XDocument.Load(CdcProjectFilePath());
         string[] packageReferences = project
@@ -158,10 +159,8 @@ public class Given_CdcConnectorTemplateIntegrationBoundaryTests
             string forbiddenDependencyToken in new[]
             {
                 "Http",
-                "Kafka",
                 "Docker",
                 "Testcontainers",
-                "Confluent",
                 "Connect",
                 "Topic",
                 "Acl",

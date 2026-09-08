@@ -19,11 +19,14 @@ public enum CdcKafkaTopicRole
 /// <summary>Creation intent. Validation permits stronger production durability and public retention.</summary>
 public sealed record CdcKafkaTopicIntent(
     CdcKafkaTopicRole Role,
-    string Name,
+    [property: JsonIgnore] string Name,
     int PartitionCount,
     int ReplicationFactor,
-    IReadOnlyDictionary<string, string> Configuration
-);
+    [property: JsonIgnore] IReadOnlyDictionary<string, string> Configuration
+)
+{
+    public override string ToString() => nameof(CdcKafkaTopicIntent);
+}
 
 public enum CdcKafkaAclResourceType
 {
@@ -133,11 +136,15 @@ public sealed record CdcKafkaTopicEvidence(
 }
 
 public sealed record CdcKafkaBrokerCapacity(
-    int BrokerId,
+    [property: JsonIgnore] int BrokerId,
     long SocketRequestMaxBytes,
     long ReplicaFetchMaxBytes,
-    long ReplicaFetchResponseMaxBytes
-);
+    long ReplicaFetchResponseMaxBytes,
+    long MessageMaxBytes = 0
+)
+{
+    public override string ToString() => nameof(CdcKafkaBrokerCapacity);
+}
 
 /// <summary>
 /// Complete live broker inventory/configuration, including brokers eligible for future assignment.
