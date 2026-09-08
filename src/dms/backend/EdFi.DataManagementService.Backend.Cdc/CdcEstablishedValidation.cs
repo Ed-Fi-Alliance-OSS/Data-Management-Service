@@ -202,7 +202,8 @@ public sealed partial class CdcEstablishedValidation
         CdcDeploymentIntegrityReport integrity,
         LocalCdcWorkflowJournalStore.Session session,
         Action<CdcDeploymentComponent> setComponent,
-        CancellationToken token
+        CancellationToken token,
+        CdcEstablishedStatusProgress progress = null!
     )
     {
         setComponent(CdcDeploymentComponent.WorkflowState);
@@ -233,27 +234,25 @@ public sealed partial class CdcEstablishedValidation
             Completed(journal, CdcWorkflowEffect.CreateProvider).Evidence;
         var establishment = (CdcWorkflowCompletion.Connector)
             Completed(journal, CdcWorkflowEffect.EstablishConnector).Evidence;
-        setComponent(CdcDeploymentComponent.Projection);
-        var database = await CallAsync(
-            request,
-            ct =>
-                new CdcInitialEnablement(_store, _bindings, _time).ObserveCurrentDatabaseAsync(
-                    runtime,
-                    request.Binding,
-                    started,
-                    request.Timing.MaximumObservationAge,
-                    ct
-                ),
-            token
-        );
-        Require(
-            database.Lifecycle.State == DocumentCacheLifecycleState.Tracking
-                && !database.Lifecycle.CacheAheadRecoveryRequired
-        );
+        if (progress is null)
+        {
+            setComponent(CdcDeploymentComponent.Projection);
+            await RequireEligibleProjectionAsync(request, runtime, started, token);
+        }
         var operation = Guid.NewGuid().ToString("D");
         using var pass = new CdcTelemetryObservationPass(request, operation, lagThresholdMilliseconds);
         List<CdcDeploymentDiagnostic> diagnostics = [];
 
+        var partialInput = new CdcTargetStatusEvaluationInput(
+            operation,
+            _time.GetUtcNow(),
+            request.TargetIdentity,
+            request.Binding.PhysicalSourceFingerprint
+        )
+        {
+            BindingState = exact.State,
+        };
+        progress?.Capture(partialInput, journal.HasPendingRecordSizeIncrease);
         setComponent(CdcDeploymentComponent.ProviderSetup);
         var setup = CdcProviderSetupOrchestration.CopyRequest(
             request.ProviderSetup,
@@ -288,8 +287,38 @@ public sealed partial class CdcEstablishedValidation
             }
         }
 
+        partialInput = partialInput with { ProviderSetup = mapped.ProviderSetup };
+        if (progress is not null)
+        {
+            // Classify already available provider loss before an offset/history endpoint can fail.
+            var early = await CallAsync(
+                request,
+                ct =>
+                    _positions.ObserveSourceHistoryAsync(
+                        new(operation, request.Binding, mapped.ProviderSetup, null, mapped.ProviderHistory)
+                        {
+                            ExpectedConnectSourcePartitionHash = establishment.SourcePartitionHash,
+                            LatchedIncident = exact.State!.Incident,
+                        },
+                        ct
+                    ),
+                token
+            );
+            partialInput = partialInput with
+            {
+                ObservedAt = _time.GetUtcNow(),
+                SourceHistory = early.Observation,
+            };
+            progress.Capture(partialInput, journal.HasPendingRecordSizeIncrease, early);
+            await progress.ContainTerminal();
+        }
         setComponent(CdcDeploymentComponent.Connect);
-        var rawOffset = await CallAsync(request, ct => _connect.ReadOffsetEvidenceAsync(request, ct), token);
+        var rawOffset = await ReadAsync(
+            request,
+            ct => _connect.ReadOffsetEvidenceAsync(request, ct),
+            CdcDeploymentComponent.Connect,
+            token
+        );
         // A REST endpoint failure/absence is unknown; only successful offset evidence proves loss.
         var offset = rawOffset is CdcTransportResult<CdcConnectOffsetEvidence>.Observed observed
             ? Offset(request, operation, observed.Value, establishment.SourcePartitionHash)
@@ -298,15 +327,46 @@ public sealed partial class CdcEstablishedValidation
         {
             diagnostics.Add(unavailable.Diagnostic);
         }
+        if (progress is not null)
+        {
+            var offsetHistory = await CallAsync(
+                request,
+                ct =>
+                    _positions.ObserveSourceHistoryAsync(
+                        new(operation, request.Binding, mapped.ProviderSetup, offset, mapped.ProviderHistory)
+                        {
+                            ExpectedConnectSourcePartitionHash = establishment.SourcePartitionHash,
+                            LatchedIncident = exact.State!.Incident,
+                        },
+                        ct
+                    ),
+                token
+            );
+            partialInput = partialInput with
+            {
+                ObservedAt = _time.GetUtcNow(),
+                SourceHistory = offsetHistory.Observation,
+            };
+            progress.Capture(partialInput, journal.HasPendingRecordSizeIncrease, offsetHistory);
+            await progress.ContainTerminal();
+        }
         setComponent(CdcDeploymentComponent.Kafka);
         var schemaHistory = CdcSqlServerSchemaHistoryState.NotApplicable;
         if (request.Binding.Provider == Core.DocumentCache.Cdc.CdcProvider.SqlServer)
         {
-            var rawHistory = await CallAsync(
+            var rawHistory = await ReadAsync(
                 request,
                 ct => _kafka.InspectSchemaHistoryAsync(request, ct),
+                CdcDeploymentComponent.Kafka,
                 token
             );
+            if (
+                rawHistory
+                is CdcTransportResult<CdcSqlServerSchemaHistoryState>.Unavailable historyUnavailable
+            )
+            {
+                diagnostics.Add(historyUnavailable.Diagnostic);
+            }
             schemaHistory = rawHistory switch
             {
                 CdcTransportResult<CdcSqlServerSchemaHistoryState>.Observed value => value.Value,
@@ -337,6 +397,16 @@ public sealed partial class CdcEstablishedValidation
             token
         );
 
+        partialInput = partialInput with
+        {
+            ObservedAt = _time.GetUtcNow(),
+            SourceHistory = continuity.Observation,
+        };
+        progress?.Capture(partialInput, journal.HasPendingRecordSizeIncrease, continuity);
+        if (progress is not null)
+        {
+            await progress.ContainTerminal();
+        }
         var downstream = new Boundary();
         var forwardComponent = setComponent;
         setComponent = component =>
@@ -346,6 +416,11 @@ public sealed partial class CdcEstablishedValidation
         };
         try
         {
+            if (progress is not null)
+            {
+                setComponent(CdcDeploymentComponent.Projection);
+                await RequireEligibleProjectionAsync(request, runtime, started, token);
+            }
             setComponent(CdcDeploymentComponent.Worker);
             var worker = Observed(
                 await CallAsync(request, ct => _worker.InspectAsync(request, ct), token),
@@ -357,6 +432,12 @@ public sealed partial class CdcEstablishedValidation
                 await CallAsync(request, ct => _connect.ReadStatusAsync(request, ct), token)
             );
             RequireStatus(request, worker, status);
+            partialInput = partialInput with
+            {
+                ObservedAt = _time.GetUtcNow(),
+                ConnectorRuntime = status.Runtime with { OperationId = operation },
+            };
+            progress?.Capture(partialInput, journal.HasPendingRecordSizeIncrease, continuity);
             setComponent(CdcDeploymentComponent.Connect);
             var live = Observed(
                 await CallAsync(request, ct => _connect.ReadConfigurationAsync(request, ct), token)
@@ -422,11 +503,13 @@ public sealed partial class CdcEstablishedValidation
                     policy
                 ),
             };
+            progress?.Capture(input, journal.HasPendingRecordSizeIncrease, continuity);
             if (mode == CdcEstablishedValidationMode.RunningPublication)
             {
                 setComponent(CdcDeploymentComponent.Projection);
                 input = input with { Projection = await ProjectionAsync(request, runtime, operation, token) };
             }
+            progress?.Capture(input, journal.HasPendingRecordSizeIncrease, continuity);
             // Pre-start must work without RUNNING task metrics. Publication always uses a new receipt.
             CdcConnectorTelemetryObservation telemetry = null!;
             if (mode == CdcEstablishedValidationMode.RunningPublication && status.IsRunning)
@@ -474,7 +557,18 @@ public sealed partial class CdcEstablishedValidation
                 ConnectorRuntime = finalStatus.Runtime with { OperationId = operation },
                 Lag = telemetry?.ReadForEvaluation(pass),
             };
-            return Evaluate(mode, journal, input, continuity, finalStatus, worker, diagnostics);
+            var result = Evaluate(mode, journal, input, continuity, finalStatus, worker, diagnostics);
+            if (progress is not null)
+            {
+                input = input with
+                {
+                    ObservedAt = _time.GetUtcNow(),
+                    Lag = telemetry?.ReadForEvaluation(pass),
+                };
+                progress.Capture(input, journal.HasPendingRecordSizeIncrease, continuity);
+                progress.Complete();
+            }
+            return result;
         }
         catch (Exception exception)
             when (exception is not OperationCanceledException
@@ -514,6 +608,31 @@ public sealed partial class CdcEstablishedValidation
                 },
             };
         }
+    }
+
+    private async Task RequireEligibleProjectionAsync(
+        CdcDeploymentRequest request,
+        ICdcProjectionRuntime runtime,
+        DateTimeOffset started,
+        CancellationToken token
+    )
+    {
+        var database = await CallAsync(
+            request,
+            ct =>
+                new CdcInitialEnablement(_store, _bindings, _time).ObserveCurrentDatabaseAsync(
+                    runtime,
+                    request.Binding,
+                    started,
+                    request.Timing.MaximumObservationAge,
+                    ct
+                ),
+            token
+        );
+        Require(
+            database.Lifecycle.State == DocumentCacheLifecycleState.Tracking
+                && !database.Lifecycle.CacheAheadRecoveryRequired
+        );
     }
 
     private static void ValidateProvenance(
@@ -608,6 +727,26 @@ public sealed partial class CdcEstablishedValidation
             _ => throw new EvidenceException(new(component, CdcDeploymentFailure.ValidationFailed)),
         };
 
+    private static async Task<CdcTransportResult<T>> ReadAsync<T>(
+        CdcDeploymentRequest request,
+        Func<CancellationToken, Task<CdcTransportResult<T>>> action,
+        CdcDeploymentComponent component,
+        CancellationToken token
+    )
+        where T : notnull
+    {
+        try
+        {
+            return await CallAsync(request, action, token);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            return new CdcTransportResult<T>.Unavailable(
+                CdcDeploymentDiagnostic.FromException(component, exception)
+            );
+        }
+    }
+
     private static async Task<T> CallAsync<T>(
         CdcDeploymentRequest request,
         Func<CancellationToken, Task<T>> action,
@@ -634,7 +773,7 @@ public sealed partial class CdcEstablishedValidation
         "S3871",
         Justification = "Private control flow caught inside the controller."
     )]
-    private sealed class EvidenceException(CdcDeploymentDiagnostic diagnostic) : Exception
+    internal sealed class EvidenceException(CdcDeploymentDiagnostic diagnostic) : Exception
     {
         public CdcDeploymentDiagnostic Diagnostic { get; } = diagnostic;
     }

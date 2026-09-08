@@ -39,7 +39,13 @@ public sealed record CdcTargetStatusEvaluationInput(
 
 public static class CdcTargetStatusEvaluator
 {
-    public static CdcTargetStatus Evaluate(CdcTargetStatusEvaluationInput input)
+    public static CdcTargetStatus Evaluate(CdcTargetStatusEvaluationInput input) => Evaluate(input, false);
+
+    /// <summary>Observational component health after admission; never captures or certifies a new baseline.</summary>
+    public static CdcTargetStatus EvaluatePostAdmission(CdcTargetStatusEvaluationInput input) =>
+        Evaluate(input, true);
+
+    private static CdcTargetStatus Evaluate(CdcTargetStatusEvaluationInput input, bool postAdmission)
     {
         ArgumentNullException.ThrowIfNull(input);
         ArgumentNullException.ThrowIfNull(input.TargetIdentity);
@@ -58,7 +64,9 @@ public static class CdcTargetStatusEvaluator
 
         CdcComponent projection = EvaluateProjection(input.Projection, context, diagnostics);
         CdcComponent providerSetup = EvaluateProviderSetup(input.ProviderSetup, context, diagnostics);
-        CdcComponent providerBarrier = EvaluateProviderBarrier(input.ProviderBarrier, context, diagnostics);
+        CdcComponent providerBarrier = postAdmission
+            ? CdcComponent.NotApplicable(observedAt, "Initial barrier is not renewed by status.")
+            : EvaluateProviderBarrier(input.ProviderBarrier, context, diagnostics);
         CdcSourceHistoryComponent sourceHistory = EvaluateSourceHistory(
             input.SourceHistory,
             binding.Binding,

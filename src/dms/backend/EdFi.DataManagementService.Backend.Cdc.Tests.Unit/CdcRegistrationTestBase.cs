@@ -50,6 +50,12 @@ internal abstract class CdcRegistrationTestBase(Ddl.CdcProvider provider)
     protected Func<Ddl.CdcProviderSetupResult, Ddl.CdcProviderSetupResult> _change = null!;
     protected CdcTargetIdentity Target => _request.TargetIdentity;
 
+    protected virtual CdcDeploymentRequest CreateRequest() =>
+        CdcDeploymentRequestTestData.Request(
+            Provider,
+            worker: CdcDeploymentRequestTestData.Worker(digest: CdcQualifiedWorkerImage.Digests.Single())
+        );
+
     [SetUp]
     public async Task Setup()
     {
@@ -57,10 +63,7 @@ internal abstract class CdcRegistrationTestBase(Ddl.CdcProvider provider)
         _onWrite = _ => { };
         _onCall = _ => { };
         _store = new(_root, TimeProvider.System, b => _onWrite(b));
-        _request = CdcDeploymentRequestTestData.Request(
-            Provider,
-            worker: CdcDeploymentRequestTestData.Worker(digest: CdcQualifiedWorkerImage.Digests.Single())
-        );
+        _request = CreateRequest();
         _trace = [];
         _connectorExists = false;
         _posts = _offsetReads = 0;
@@ -270,7 +273,11 @@ internal abstract class CdcRegistrationTestBase(Ddl.CdcProvider provider)
         Trace("provider");
         ReadJournal().Operations.Should().Contain(o => o.Effect == CdcWorkflowEffect.CreateProvider);
         _lifecycle.Should().Be(DocumentCacheLifecycleState.Tracking);
-        var result = CdcConnectorTemplateTestData.BuildProviderSetupResult(Provider, mode: r.Mode);
+        var result = CdcConnectorTemplateTestData.BuildProviderSetupResult(
+            Provider,
+            mode: r.Mode,
+            binding: _request.Binding
+        );
         bool created = !_exists && r.Mode == Ddl.CdcProviderSetupMode.InitialCreateOrExactMatch;
         if (created)
         {
@@ -325,7 +332,14 @@ internal abstract class CdcRegistrationTestBase(Ddl.CdcProvider provider)
             File.ReadAllText(
                 Directory
                     .GetFiles(Path.Combine(_root, "workflows"), "*.json", SearchOption.AllDirectories)
-                    .Single()
+                    .Single(p =>
+                    {
+                        using var document = JsonDocument.Parse(File.ReadAllText(p));
+                        return document
+                                .RootElement.GetProperty("target")
+                                .GetProperty("instanceKey")
+                                .GetString() == Target.InstanceKey;
+                    })
             ),
             new JsonSerializerOptions(JsonSerializerDefaults.Web)
             {
