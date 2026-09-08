@@ -807,6 +807,17 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
                     );
                     return classifiedResult;
                 }
+                catch (Exception exception)
+                    when (commandTimeout.IsTimeoutExpired
+                        && _providerCommandTimeoutClassifier.IsProviderCommandTimeout(exception)
+                    )
+                {
+                    classifiedResult = RecordAdministrativeCommandResult(
+                        AugmentResult(workflow, commandContext, CreateWorkflowTimeoutResult(commandContext)),
+                        commandContext
+                    );
+                    return classifiedResult;
+                }
                 catch (DocumentCacheAdministrativeMutexSessionLostException exception)
                 {
                     logger.LogWarning(

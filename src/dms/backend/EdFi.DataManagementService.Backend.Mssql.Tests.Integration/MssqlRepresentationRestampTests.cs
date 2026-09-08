@@ -352,12 +352,12 @@ public class Given_A_Mssql_RepresentationRestampStore
     [Test]
     public async Task It_bounds_a_SQL_Server_restamp_page_below_the_mirror_parameter_limit()
     {
-        await InsertManyAsync(701);
+        await InsertManyAsync(700);
         await LifecycleAsync("Disabled", false);
         DocumentCacheRepresentationRestampOperation operation = Operation(
             new DocumentCacheRepresentationRestampResourceScope("Ed-Fi", "Student"),
-            boundary: 701,
-            previewDocumentCount: 701
+            boundary: 700,
+            previewDocumentCount: 700
         );
 
         await using IDocumentCacheAdministrativeMutexLease lease = await LeaseAsync();
@@ -367,7 +367,7 @@ public class Given_A_Mssql_RepresentationRestampStore
         RepresentationRestampPage firstPage = await _store.SelectNextPageAsync(
             session,
             operation,
-            pageSize: 701,
+            pageSize: 700,
             CancellationToken.None
         );
 
@@ -377,7 +377,7 @@ public class Given_A_Mssql_RepresentationRestampStore
         RepresentationRestampPage finalPage = await _store.SelectNextPageAsync(
             session,
             operation,
-            pageSize: 701,
+            pageSize: 700,
             CancellationToken.None
         );
         finalPage.Count.Should().Be(1);

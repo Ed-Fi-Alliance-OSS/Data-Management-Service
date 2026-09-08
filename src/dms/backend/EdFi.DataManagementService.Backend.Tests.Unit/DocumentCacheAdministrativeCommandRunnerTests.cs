@@ -222,6 +222,45 @@ public class Given_DocumentCacheAdministrativeCommandRunner
     }
 
     [Test]
+    public async Task It_classifies_provider_command_timeout_after_expired_workflow_budget_as_workflow_timeout()
+    {
+        DocumentCacheTargetExecutionContext executionContext = ExecutionContext(
+            generation: 1,
+            providerToken: RelationalProviderToken.SqlServer,
+            workflowTimeout: TimeSpan.FromMilliseconds(30)
+        );
+        DocumentCacheAdministrativeCommandRunner runner = CreateRunner(
+            RegistryFor(executionContext),
+            new StubProjectionSupervisor([RuntimeContext(executionContext)]),
+            new RecordingAdministrativeMutex(providerToken: RelationalProviderToken.SqlServer)
+        );
+        var workflow = new DelegatingWorkflow(
+            preflight: static (context, _) => Task.FromResult(context.EligiblePreflightResult()),
+            execute: static async (context, _) =>
+            {
+                context.EnterPhase(DocumentCacheAdministrativeCommandPhase.StampDocuments);
+                await Task.Delay(TimeSpan.FromMilliseconds(60)).ConfigureAwait(false);
+
+                throw CreateSqlException(-2, "Execution Timeout Expired.");
+            }
+        );
+
+        DocumentCacheAdministrativeCommandResult result = await runner.ExecuteAsync(Request(), workflow);
+
+        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.FailedNoMutation);
+        result.Classification.Should().Be(DocumentCacheAdministrativeCommandClassification.WorkflowTimeout);
+        result.Mutated.Should().BeFalse();
+        result
+            .PhaseDiagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.CurrentPhase == DocumentCacheAdministrativeCommandPhase.StampDocuments
+                && diagnostic.DiagnosticCategory
+                    == DocumentCacheAdministrativeDiagnosticCategory.WorkflowTimeout
+                && !diagnostic.Retryable
+            );
+    }
+
+    [Test]
     public async Task It_runs_live_preflight_on_the_mutex_session_before_command_work()
     {
         DocumentCacheTargetExecutionContext executionContext = ExecutionContext(generation: 1);
