@@ -20,10 +20,10 @@ namespace EdFi.DataManagementService.Tests.Integration.Scenarios;
 
 /// <summary>
 /// Public-boundary coverage for OwnershipBased authorization: the exact ProblemDetails wire contracts from
-/// <c>auth.md</c> 2.13 and 2.14, stamping on create, the authorized round trip, the provider-independent token
-/// cap, and the scopes that stay withheld with a 501. The provider matrix lives in the backend suites; this
-/// scenario owns only what those cannot observe - the served response body and the real application-context
-/// plumbing that carries the caller's ownership tokens.
+/// <c>auth.md</c> 2.13 and 2.14, stamping on create, the authorized round trip, the GET-many page filter, the
+/// provider-independent token cap, and the descriptor scope that stays withheld with a 501. The provider matrix
+/// lives in the backend suites; this scenario owns only what those cannot observe - the served response body
+/// and the real application-context plumbing that carries the caller's ownership tokens.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -94,8 +94,9 @@ internal static class OwnershipAuthorizationIntegrationScenario
 
     /// <summary>
     /// <c>OwnershipBased</c> on every resource and action, which exercises the whole surface at once: a create
-    /// is stamped and never denied, every single-record read and write is enforced, and GET-many and descriptor
-    /// storage stay withheld. Seeding still works precisely because a create cannot be denied by ownership.
+    /// is stamped and never denied, every single-record read and write is enforced, GET-many is filtered, and
+    /// descriptor storage stays withheld. Seeding still works precisely because a create cannot be denied by
+    /// ownership.
     /// </summary>
     public static IClaimSetProvider CreateClaimSetProvider(FixtureContext fixture) =>
         new ConfigurableClaimSetProvider(
@@ -374,20 +375,92 @@ internal static class OwnershipAuthorizationIntegrationScenario
     }
 
     /// <summary>
-    /// GET-many ownership filtering belongs to a later story, so <c>OwnershipBased</c> on a collection read
-    /// stays a 501 rather than silently serving an unfiltered page. The 501 names the strategy, which is what
-    /// makes the withholding diagnosable rather than mysterious.
+    /// GET-many is filtered by the caller's ownership tokens rather than denied or withheld. The owner holds
+    /// the token its rows were stamped with, so it is served them and never a null-stamped row; a caller
+    /// holding only a token nothing was ever stamped with is served an empty page whose total count is zero,
+    /// not a 403. Every row the owner is served carries its token, which states the filter as a property of
+    /// the page rather than of one seeded row.
     /// </summary>
-    public static async Task It_withholds_get_many_from_ownership_with_a_501(ApiIntegrationHarness harness)
+    public static async Task It_filters_get_many_to_the_callers_ownership_tokens(
+        ApiIntegrationHarness harness
+    )
     {
-        await CreateAsync(harness, OwnerTenant, 1601, "ownership-get-many");
-
-        using HttpResponseMessage response = await harness.HttpClient.GetAsync(
-            string.Format(NullableResourcesEndpointFormat, OwnerTenant)
+        Guid ownedId = await CreateAsync(harness, OwnerTenant, 1601, "ownership-get-many-owned");
+        Guid unstampedId = await CreateAsync(
+            harness,
+            NoCreatorTokenTenant,
+            1602,
+            "ownership-get-many-unstamped"
         );
 
-        await AssertNotImplementedAsync(response);
+        using HttpResponseMessage ownerResponse = await harness.HttpClient.GetAsync(
+            $"{string.Format(NullableResourcesEndpointFormat, OwnerTenant)}?totalCount=true"
+        );
+        string ownerBody = await ownerResponse.Content.ReadAsStringAsync();
+
+        ownerResponse.StatusCode.Should().Be(HttpStatusCode.OK, ownerBody);
+        List<Guid> ownerIds = ReadServedIds(ownerBody);
+        ownerIds.Should().Contain(ownedId);
+        ownerIds.Should().NotContain(unstampedId);
+        ReadTotalCount(ownerResponse).Should().BeGreaterThanOrEqualTo(ownerIds.Count);
+
+        foreach (Guid servedId in ownerIds)
+        {
+            (await ReadStoredOwnershipTokenAsync(harness, servedId)).Should().Be(CreatorToken);
+        }
+
+        using HttpResponseMessage foreignResponse = await harness.HttpClient.GetAsync(
+            $"{string.Format(NullableResourcesEndpointFormat, ForeignTenant)}?totalCount=true"
+        );
+        string foreignBody = await foreignResponse.Content.ReadAsStringAsync();
+
+        foreignResponse.StatusCode.Should().Be(HttpStatusCode.OK, foreignBody);
+        ReadServedIds(foreignBody).Should().BeEmpty();
+        ReadTotalCount(foreignResponse).Should().Be(0);
     }
+
+    /// <summary>
+    /// The defensive cap gates the page filter as it gates the single-record check: 2,000 tokens fail closed
+    /// with the security-configuration 500 before any page runs, and 1,999 — which carries the creator token —
+    /// serves the stamped row.
+    /// </summary>
+    public static async Task It_fails_closed_for_get_many_at_the_ownership_token_cap_and_serves_just_under_it(
+        ApiIntegrationHarness harness
+    )
+    {
+        Guid documentId = await CreateAsync(harness, OwnerTenant, 1603, "ownership-get-many-token-cap");
+
+        using HttpResponseMessage overCapResponse = await harness.HttpClient.GetAsync(
+            string.Format(NullableResourcesEndpointFormat, TokenCapTenant)
+        );
+        string overCapBody = await overCapResponse.Content.ReadAsStringAsync();
+
+        overCapResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError, overCapBody);
+        overCapResponse.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+
+        JsonObject overCapProblem = JsonNode.Parse(overCapBody)!.AsObject();
+        overCapProblem["type"]!.GetValue<string>().Should().Be(SecurityConfigurationProblemDetails.Type);
+        overCapProblem["status"]!.GetValue<int>().Should().Be(SecurityConfigurationProblemDetails.Status);
+
+        using HttpResponseMessage underCapResponse = await harness.HttpClient.GetAsync(
+            string.Format(NullableResourcesEndpointFormat, UnderTokenCapTenant)
+        );
+        string underCapBody = await underCapResponse.Content.ReadAsStringAsync();
+
+        underCapResponse.StatusCode.Should().Be(HttpStatusCode.OK, underCapBody);
+        ReadServedIds(underCapBody).Should().Contain(documentId);
+    }
+
+    private static List<Guid> ReadServedIds(string collectionBody) =>
+        [
+            .. JsonNode
+                .Parse(collectionBody)!
+                .AsArray()
+                .Select(static item => Guid.Parse(item!["id"]!.GetValue<string>())),
+        ];
+
+    private static int ReadTotalCount(HttpResponseMessage response) =>
+        int.Parse(response.Headers.GetValues("Total-Count").Single(), CultureInfo.InvariantCulture);
 
     /// <summary>
     /// Descriptor ownership enforcement stays withheld on all four operations. The read and write paths are

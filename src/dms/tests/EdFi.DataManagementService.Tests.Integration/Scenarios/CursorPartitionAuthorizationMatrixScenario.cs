@@ -31,9 +31,11 @@ namespace EdFi.DataManagementService.Tests.Integration.Scenarios;
 /// the education-organization subject and the person subject, because those are the two the compiler
 /// emits different predicate shapes for; the named strategies within a kind differ upstream of the point
 /// the two surfaces share, and are covered where that difference lives. <c>OwnershipBased</c> is not
-/// among them for any operation, GET-many included: it is recognized but not enabled, so the request
-/// fails closed before a candidate relation exists, and enabling it for read-many is work this matrix
-/// does not cover. Descriptor coverage spans the
+/// among them either: for GET-many it is a page filter compiled into the same candidate relation, but it
+/// ranges over the <c>dms.Document</c> ownership stamp rather than a securable element this seed varies,
+/// so its page-to-boundary agreement is proven by the provider ownership fixtures
+/// (<c>PostgresqlRelationalOwnershipQueryAuthorizationTests</c> and its SQL Server twin) instead of here.
+/// Descriptor coverage spans the
 /// no-further, namespace, and custom-view strategies; relationship strategies are the descriptor
 /// exclusion, because descriptors expose no education-organization or person securable elements for one
 /// to range over. A descriptor custom view is not excluded: the descriptor read path plans custom-view

@@ -350,6 +350,61 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         ParameterValue(command, "@maxChangeVersion").Should().Be(42L);
     }
 
+    // Partition boundaries are cut over the same candidate relation a page selects from, so the ownership
+    // filter reaches the boundary statement through the shared authorization resolution with the same join,
+    // the same predicate, and the same short-typed token list.
+    [Test]
+    public async Task It_applies_the_ownership_filter_to_the_boundary_statement()
+    {
+        var partitionRequest = CreatePartitionRequest(
+            CreateQuerySupportedMappingSet(_schoolResourceInfo),
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
+            ],
+            ownershipTokenIds: [7, 3]
+        );
+
+        StubPartitionBoundaryStarts(10L);
+
+        await _sut.QueryPartitions(partitionRequest);
+
+        var command = _capturedPartitionCommands.Should().ContainSingle().Subject;
+
+        command.CommandText.Should().Contain(OwnershipDocumentJoinSql);
+        command.CommandText.Should().Contain(OwnershipPredicateSql);
+        ParameterValue(command, "@ownershipTokenIds")
+            .Should()
+            .BeAssignableTo<IReadOnlyList<short>>()
+            .Which.Should()
+            .Equal((short)3, (short)7);
+    }
+
+    // A caller with no ownership tokens can own no document, so there is nothing to partition: the shared
+    // resolution's empty page restates as an empty boundary set that costs no command.
+    [Test]
+    public async Task It_returns_no_ranges_without_a_command_when_the_caller_has_no_ownership_tokens()
+    {
+        var partitionRequest = CreatePartitionRequest(
+            CreateQuerySupportedMappingSet(_schoolResourceInfo),
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
+            ],
+            ownershipTokenIds: []
+        );
+
+        StubPartitionBoundaryStarts();
+
+        var result = await _sut.QueryPartitions(partitionRequest);
+
+        var success = result.Should().BeOfType<PartitionResult.PartitionSuccess>().Subject;
+
+        success.Ranges.Should().BeEmpty();
+        success.SelectionSkipped.Should().BeTrue();
+        _capturedPartitionCommands.Should().BeEmpty();
+    }
+
     // The statement orders its starts, so a non-ascending set means the compiled SQL changed. Reporting
     // it keeps a duplicated or inverted range from reaching a client as a walkable one.
     [Test]
@@ -543,7 +598,8 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         ResourceInfo? resourceInfo = null,
         ChangeVersionRange? changeVersionRange = null,
         int requestedPartitionCount = DefaultRequestedPartitionCount,
-        long minimumPartitionSize = DefaultMinimumPartitionSize
+        long minimumPartitionSize = DefaultMinimumPartitionSize,
+        IReadOnlyList<short>? ownershipTokenIds = null
     )
     {
         var partitionRequest = A.Fake<IPartitionRequest>();
@@ -557,7 +613,9 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             .Returns(
                 new RelationalAuthorizationContext(
                     claimEducationOrganizationIds ?? [],
-                    namespacePrefixes ?? []
+                    namespacePrefixes ?? [],
+                    creatorOwnershipTokenId: null,
+                    ownershipTokenIds ?? []
                 )
             );
         A.CallTo(() => partitionRequest.ChangeVersionRange)

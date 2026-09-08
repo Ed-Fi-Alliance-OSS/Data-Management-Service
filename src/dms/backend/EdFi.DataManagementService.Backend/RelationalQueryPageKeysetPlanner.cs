@@ -233,6 +233,12 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
             parameterValues,
             authorization?.NamespacePrefixParameterization
         );
+        if (authorization?.OwnershipTokenParameterization is { } ownershipTokenParameterization)
+        {
+            // Binds nothing for an empty token list, matching the compiler, which then emits a
+            // constant-false predicate that references no parameter.
+            OwnershipTokenParameterValueBinder.Bind(parameterValues, ownershipTokenParameterization);
+        }
 
         var querySpec = new PageDocumentIdQuerySpec(
             RootTable: rootTable.Table,

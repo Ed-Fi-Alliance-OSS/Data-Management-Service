@@ -157,7 +157,9 @@ Feature: RelationshipsWithEdOrgsOnly query authorization
                   """
 
         @e2e-ci-shard-2
-        Scenario: Known unsupported mixed strategies return not implemented for GET-many
+        Scenario: Mixed strategies with OwnershipBased filter GET-many by the client's ownership tokens
+            # The E2E API client holds no ownership tokens in CMS, so the OwnershipBased AND filter matches no
+            # document and the relationship-authorized week is filtered out: an empty page rather than a 501.
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "255901001"
               And the system has these "schools"
                   | schoolId  | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        |
@@ -167,12 +169,10 @@ Feature: RelationshipsWithEdOrgsOnly query authorization
                   | week 1         | { "schoolId": 255901001 } | 2023-08-01 | 2023-08-07 | 5                      |
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyMixedStrategyClaimSet" is authorized with educationOrganizationIds "255901001"
              When a GET request is made to "/ed-fi/academicWeeks"
-             Then it should respond with 501
+             Then it should respond with 200
               And the response body is
                   """
-                  {
-                      "error": "Relational query authorization is not implemented for resource 'Ed-Fi.AcademicWeek' when effective GET-many authorization includes strategies outside the current GET-many relationship query execution boundary. Unsupported strategies: ['OwnershipBased']. Supported GET-many relationship strategies are 'RelationshipsWithEdOrgsOnly', 'RelationshipsWithEdOrgsOnlyInverted', 'RelationshipsWithEdOrgsAndPeople', 'RelationshipsWithEdOrgsAndPeopleInverted', 'RelationshipsWithPeopleOnly', 'RelationshipsWithStudentsOnly', 'RelationshipsWithStudentsOnlyThroughResponsibility', and 'NoFurtherAuthorizationRequired' as a no-op."
-                  }
+                  []
                   """
 
     Rule: POST create-new scenarios use proposed-value relationship authorization

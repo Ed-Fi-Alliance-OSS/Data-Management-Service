@@ -29,6 +29,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         PlanSqlAliasRole.Document
     );
     private static readonly DbTableName _documentTable = new(new DbSchemaName("dms"), "Document");
+    private static readonly DbColumnName _ownershipTokenColumn = new("CreatedByOwnershipTokenId");
 
     private abstract record OrderedPageAuthorizationAndFilter(int RawConfiguredIndex, int StableTieBreaker)
     {
@@ -73,13 +74,19 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         var authorization = NormalizeAuthorization(spec.Authorization);
         var authorizationClaimParameterization = authorization?.ClaimEducationOrganizationIdParameterization;
         var namespacePrefixParameterization = authorization?.NamespacePrefixParameterization;
-        var requiresDocumentUuidJoin = rewrittenPredicates.Any(static predicate =>
-            predicate.Target is QueryPredicateTarget.DocumentUuid
-        );
+        var ownershipTokenParameterization = authorization?.OwnershipTokenParameterization;
+
+        // One dms.Document join serves both consumers: the ?id= predicate reads DocumentUuid from it and
+        // the ownership filter reads CreatedByOwnershipTokenId from it. The join is on the primary key, so
+        // it never adds rows.
+        var requiresDocumentJoin =
+            rewrittenPredicates.Any(static predicate => predicate.Target is QueryPredicateTarget.DocumentUuid)
+            || ownershipTokenParameterization is not null;
         var filterParametersInOrder = BuildFilterParametersInOrder(
             rewrittenPredicates,
             authorizationClaimParameterization,
-            namespacePrefixParameterization
+            namespacePrefixParameterization,
+            ownershipTokenParameterization
         );
         var filterParameterNamesInOrder = filterParametersInOrder
             .Select(static parameter => parameter.ParameterName)
@@ -96,7 +103,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
             rewrittenPredicates,
             authorization,
             authorizationClaimParameterization,
-            requiresDocumentUuidJoin
+            requiresDocumentJoin
         );
         var includeTotalCountSql = mode is PageCandidateMode.Traditional { IncludeTotalCountSql: true };
         var totalCountSql = includeTotalCountSql
@@ -105,7 +112,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
                 rewrittenPredicates,
                 authorization,
                 authorizationClaimParameterization,
-                requiresDocumentUuidJoin
+                requiresDocumentJoin
             )
             : null;
         var pageParametersInOrder = BuildPageParametersInOrder(filterParametersInOrder, modeParameters);
@@ -324,7 +331,8 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
     private static IReadOnlyList<QuerySqlParameter> BuildFilterParametersInOrder(
         IReadOnlyList<RewrittenPredicate> predicates,
         AuthorizationClaimEducationOrganizationIdParameterization? authorizationClaimParameterization,
-        NamespacePrefixParameterization? namespacePrefixParameterization
+        NamespacePrefixParameterization? namespacePrefixParameterization,
+        OwnershipTokenParameterization? ownershipTokenParameterization
     )
     {
         List<QuerySqlParameter> filterParametersInOrder =
@@ -339,6 +347,15 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         {
             filterParametersInOrder.AddRange(
                 NamespacePrefixSqlHelper.BuildFilterParametersInOrder(namespacePrefixParameterization)
+            );
+        }
+
+        if (ownershipTokenParameterization is not null)
+        {
+            // Empty for an empty token list: the emitted predicate is then a constant that references no
+            // parameter, and the inventory must not declare a parameter the SQL never mentions.
+            filterParametersInOrder.AddRange(
+                OwnershipTokenSqlHelper.BuildFilterParametersInOrder(ownershipTokenParameterization)
             );
         }
 
@@ -454,10 +471,26 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
 
         var hasCustomViewChecks =
             authorization.CustomViewChecks is not null && authorization.CustomViewChecks.Count > 0;
+        var hasOwnershipFilter = authorization.OwnershipTokenParameterization is not null;
 
-        if (normalizedStrategies.Length == 0 && normalizedNamespaceChecks.Length == 0 && !hasCustomViewChecks)
+        if (
+            normalizedStrategies.Length == 0
+            && normalizedNamespaceChecks.Length == 0
+            && !hasCustomViewChecks
+            && !hasOwnershipFilter
+        )
         {
             return null;
+        }
+
+        if (authorization.OwnershipTokenParameterization is { } ownershipTokenParameterization)
+        {
+            OwnershipTokenParameterizationValidator.ValidateOrThrow(
+                ownershipTokenParameterization,
+                _dialect,
+                nameof(PageDocumentIdAuthorizationSpec.OwnershipTokenParameterization),
+                "Page document-id SQL compilation"
+            );
         }
 
         if (normalizedStrategies.Length > 0)
@@ -521,7 +554,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         IReadOnlyList<RewrittenPredicate> predicates,
         PageDocumentIdAuthorizationSpec? authorization,
         AuthorizationClaimEducationOrganizationIdParameterization? authorizationClaimParameterization,
-        bool requiresDocumentUuidJoin
+        bool requiresDocumentJoin
     )
     {
         var writer = new SqlWriter(_sqlDialect);
@@ -542,7 +575,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
             .AppendRelation(new SqlRelationRef.PhysicalTable(spec.RootTable))
             .AppendLine($" {_rootAlias}");
 
-        AppendDocumentJoin(writer, requiresDocumentUuidJoin);
+        AppendDocumentJoin(writer, requiresDocumentJoin);
         AppendWhereClause(
             writer,
             spec.RootTable,
@@ -693,7 +726,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         IReadOnlyList<RewrittenPredicate> predicates,
         PageDocumentIdAuthorizationSpec? authorization,
         AuthorizationClaimEducationOrganizationIdParameterization? authorizationClaimParameterization,
-        bool requiresDocumentUuidJoin
+        bool requiresDocumentJoin
     )
     {
         var writer = new SqlWriter(_sqlDialect);
@@ -704,7 +737,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
             .AppendRelation(new SqlRelationRef.PhysicalTable(rootTable))
             .AppendLine($" {_rootAlias}");
 
-        AppendDocumentJoin(writer, requiresDocumentUuidJoin);
+        AppendDocumentJoin(writer, requiresDocumentJoin);
         AppendWhereClause(
             writer,
             rootTable,
@@ -719,11 +752,13 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
     }
 
     /// <summary>
-    /// Emits the optional <c>dms.Document</c> join required for <c>?id=</c> filtering.
+    /// Emits the optional <c>dms.Document</c> join required for <c>?id=</c> filtering and for the
+    /// <c>OwnershipBased</c> page filter. Both read the joined row under the same alias, so a query that needs
+    /// both still joins once, on the primary key.
     /// </summary>
-    private static void AppendDocumentJoin(SqlWriter writer, bool requiresDocumentUuidJoin)
+    private static void AppendDocumentJoin(SqlWriter writer, bool requiresDocumentJoin)
     {
-        if (!requiresDocumentUuidJoin)
+        if (!requiresDocumentJoin)
         {
             return;
         }
@@ -751,8 +786,16 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
     )
     {
         var orderedAndFilters = BuildOrderedAuthorizationAndFilters(authorization);
+        var ownershipTokenParameterization = authorization?.OwnershipTokenParameterization;
+        var ownershipFilterCount = ownershipTokenParameterization is null ? 0 : 1;
         var hasRelationshipGroup = (authorization?.Strategies.Count ?? 0) > 0;
+        var relationshipGroupCount = hasRelationshipGroup ? 1 : 0;
 
+        // Emission order is the AND-strategy execution order from auth.md: value predicates, then the
+        // namespace and custom-view filters in CMS-configured order, then the ownership filter, which
+        // executes last among the AND strategies whatever position CMS gave it, then the relationship OR
+        // group.
+        //
         // Cursor bounds are emitted last, alongside rather than instead of every authorization
         // predicate. Appending them keeps the filter and authorization fragments byte-identical to the
         // other candidate modes, which is what makes the shared-candidate guarantee checkable. The one
@@ -761,7 +804,11 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         // AppendPersonAuthViewMembershipSubquerySql); the candidate set is unchanged.
         var cursorBoundCount = cursor is null ? 0 : CursorBoundCount;
         var predicateCount =
-            predicates.Count + orderedAndFilters.Count + (hasRelationshipGroup ? 1 : 0) + cursorBoundCount;
+            predicates.Count
+            + orderedAndFilters.Count
+            + ownershipFilterCount
+            + relationshipGroupCount
+            + cursorBoundCount;
 
         writer.AppendWhereClause(
             predicateCount,
@@ -788,7 +835,15 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
 
                 var afterAuthorizationFilterIndex = authorizationFilterIndex - orderedAndFilters.Count;
 
-                if (hasRelationshipGroup && afterAuthorizationFilterIndex == 0)
+                if (ownershipTokenParameterization is not null && afterAuthorizationFilterIndex == 0)
+                {
+                    AppendOwnershipFilterSql(predicateWriter, ownershipTokenParameterization);
+                    return;
+                }
+
+                var afterOwnershipFilterIndex = afterAuthorizationFilterIndex - ownershipFilterCount;
+
+                if (hasRelationshipGroup && afterOwnershipFilterIndex == 0)
                 {
                     AppendAuthorizationSql(
                         predicateWriter,
@@ -809,9 +864,36 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
                         ?? throw new InvalidOperationException(
                             "Cursor bound SQL emission requires a cursor candidate mode."
                         ),
-                    afterAuthorizationFilterIndex - (hasRelationshipGroup ? 1 : 0)
+                    afterOwnershipFilterIndex - relationshipGroupCount
                 );
             }
+        );
+    }
+
+    /// <summary>
+    /// Emits the <c>OwnershipBased</c> page filter against the joined <c>dms.Document</c> row: a null guard,
+    /// then the dialect-specific membership predicate over the caller's ownership tokens. A stored null and a
+    /// non-matching stored token are both excluded from the page rather than denied. The null guard is
+    /// redundant with the membership test, which a null can never satisfy, and is kept so the predicate reads
+    /// like the namespace filter and states the exclusion explicitly.
+    /// </summary>
+    /// <remarks>
+    /// No outer parentheses are added here; <c>AppendWhereClause</c> brackets every predicate it emits.
+    /// The shared helper renders an empty token list as a constant false with no parameter, so a spec that
+    /// reaches this emitter with no tokens still fails closed.
+    /// </remarks>
+    private static void AppendOwnershipFilterSql(
+        SqlWriter writer,
+        OwnershipTokenParameterization ownershipTokenParameterization
+    )
+    {
+        OwnershipTokenSqlHelper.AppendIsNotNull(writer, _documentAlias, _ownershipTokenColumn);
+        writer.Append(" AND ");
+        OwnershipTokenSqlHelper.AppendMembershipPredicate(
+            writer,
+            _documentAlias,
+            _ownershipTokenColumn,
+            ownershipTokenParameterization
         );
     }
 

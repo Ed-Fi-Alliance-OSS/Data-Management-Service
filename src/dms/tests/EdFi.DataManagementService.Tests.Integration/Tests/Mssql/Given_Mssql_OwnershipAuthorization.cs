@@ -82,8 +82,16 @@ public sealed class Given_Mssql_OwnershipAuthorization : MssqlApiIntegrationTest
         );
 
     [Test]
-    public Task It_withholds_get_many_from_ownership_with_a_501() =>
-        OwnershipAuthorizationIntegrationScenario.It_withholds_get_many_from_ownership_with_a_501(Harness);
+    public Task It_filters_get_many_to_the_callers_ownership_tokens() =>
+        OwnershipAuthorizationIntegrationScenario.It_filters_get_many_to_the_callers_ownership_tokens(
+            Harness
+        );
+
+    [Test]
+    public Task It_fails_closed_for_get_many_at_the_ownership_token_cap_and_serves_just_under_it() =>
+        OwnershipAuthorizationIntegrationScenario.It_fails_closed_for_get_many_at_the_ownership_token_cap_and_serves_just_under_it(
+            Harness
+        );
 
     [Test]
     public Task It_withholds_descriptor_operations_from_ownership_with_a_501() =>

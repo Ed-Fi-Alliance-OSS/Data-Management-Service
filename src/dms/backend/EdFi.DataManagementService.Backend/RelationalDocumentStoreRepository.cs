@@ -1518,7 +1518,8 @@ public sealed class RelationalDocumentStoreRepository(
             plannedQuery.ParameterValues.Count
             - AuthorizationParameterBudget.CountAuthorizationParameters(
                 pageQueryAuthorization?.NamespacePrefixParameterization,
-                pageQueryAuthorization?.ClaimEducationOrganizationIdParameterization
+                pageQueryAuthorization?.ClaimEducationOrganizationIdParameterization,
+                pageQueryAuthorization?.OwnershipTokenParameterization
             );
 
         await ValidateAdaptedCustomViewsAsync(
@@ -1534,6 +1535,7 @@ public sealed class RelationalDocumentStoreRepository(
                 resource,
                 pageQueryAuthorization?.NamespacePrefixParameterization,
                 pageQueryAuthorization?.ClaimEducationOrganizationIdParameterization,
+                pageQueryAuthorization?.OwnershipTokenParameterization,
                 nonAuthorizationParameterCount
             ) is
             { } parameterBudgetFailure
@@ -1827,7 +1829,8 @@ public sealed class RelationalDocumentStoreRepository(
             partitionPlan.ParameterValues.Count
             - AuthorizationParameterBudget.CountAuthorizationParameters(
                 partitionAuthorization?.NamespacePrefixParameterization,
-                partitionAuthorization?.ClaimEducationOrganizationIdParameterization
+                partitionAuthorization?.ClaimEducationOrganizationIdParameterization,
+                partitionAuthorization?.OwnershipTokenParameterization
             );
 
         await ValidateAdaptedCustomViewsAsync(
@@ -1843,6 +1846,7 @@ public sealed class RelationalDocumentStoreRepository(
                 resource,
                 partitionAuthorization?.NamespacePrefixParameterization,
                 partitionAuthorization?.ClaimEducationOrganizationIdParameterization,
+                partitionAuthorization?.OwnershipTokenParameterization,
                 nonAuthorizationParameterCount
             ) is
             { } parameterBudgetFailure
@@ -2338,6 +2342,29 @@ public sealed class RelationalDocumentStoreRepository(
                     )
                 );
 
+            case RelationalAuthorizationPlanOutcome.OwnershipTokenCapExceeded ownershipTokenCapExceeded:
+                // Every resolved custom view runs before this terminal: OwnershipBased executes last among the
+                // AND strategies whatever position it is configured at, so all of them are validated first and
+                // an earlier missing or non-conforming view keeps its own error.
+                if (
+                    ownershipTokenCapExceeded.CustomViewStrategies
+                        is { Count: > 0 } customViewsBeforeOwnershipCap
+                    && await ValidateCustomViewsAsync(
+                        customViewsBeforeOwnershipCap,
+                        mappingSet,
+                        resource,
+                        cancellationToken
+                    )
+                        is { } customViewFailureBeforeOwnershipCap
+                )
+                {
+                    return new QueryAuthorizationResolution.Complete(customViewFailureBeforeOwnershipCap);
+                }
+
+                return new QueryAuthorizationResolution.Complete(
+                    BuildOwnershipTokenCapExceededQueryFailure(ownershipTokenCapExceeded.OwnershipTokenCount)
+                );
+
             case RelationalAuthorizationPlanOutcome.SecurityConfigurationError securityConfigurationError:
                 return await ResolveClassifiedQueryRelationshipAuthorization(
                     mappingSet,
@@ -2402,11 +2429,10 @@ public sealed class RelationalDocumentStoreRepository(
             ),
         ];
 
-        // OwnershipBased — the only known-but-not-enabled strategy — executes last per auth.md "Execution
-        // order", regardless of where the CMS configured it. Every resolved custom view therefore precedes
+        // A known-but-not-enabled strategy is not an ordered AND term, so every resolved custom view precedes
         // its 501 terminal and is validated first. A classifier security-configuration failure (500) is
-        // different: it is not an ordered AND term but a defect in the strategy metadata itself, so only
-        // custom views configured ahead of it may run.
+        // different: it is a defect in the strategy metadata itself, so only custom views configured ahead of
+        // it may run.
         IReadOnlyList<SupportedCustomViewAuthorizationStrategy> customViewStrategiesToValidate =
             relationshipClassification.SecurityConfigurationFailures.Count == 0
                 ? relationshipClassification.SupportedCustomViewStrategies
@@ -2417,7 +2443,7 @@ public sealed class RelationalDocumentStoreRepository(
                     )
                 );
 
-        return await ResolveQueryRelationshipAuthorization(
+        var resolution = await ResolveQueryRelationshipAuthorization(
             mappingSet,
             resource,
             relationshipConfiguredStrategies,
@@ -2426,8 +2452,23 @@ public sealed class RelationalDocumentStoreRepository(
             [],
             null,
             customViewStrategiesToValidate,
+            ownershipPageFilter: null,
             cancellationToken
         );
+
+        if (resolution is QueryAuthorizationResolution.Proceed)
+        {
+            // The planner reported a terminal outcome for this request, and this path carries no namespace
+            // checks and no ownership filter because none was needed to report it. Relationship planning
+            // must therefore report the same terminal; if it ever proceeded instead, the page would run
+            // without the AND filters the planner split out. Fail closed rather than serve that page.
+            throw new InvalidOperationException(
+                $"Relational query authorization for resource '{RelationalWriteSupport.FormatResource(resource)}' "
+                    + "reported a terminal planner outcome, but relationship planning proceeded. The request cannot be authorized safely."
+            );
+        }
+
+        return resolution;
     }
 
     private async Task<QueryAuthorizationResolution> ResolveQueryPlanAuthorization(
@@ -2450,6 +2491,7 @@ public sealed class RelationalDocumentStoreRepository(
                 [],
                 null,
                 plan.CustomViewStrategies,
+                plan.OwnershipPageFilter,
                 cancellationToken
             );
         }
@@ -2499,10 +2541,17 @@ public sealed class RelationalDocumentStoreRepository(
             plan.NamespaceChecks,
             namespacePrefixParameterization,
             plan.CustomViewStrategies,
+            plan.OwnershipPageFilter,
             cancellationToken
         );
     }
 
+    /// <param name="ownershipPageFilter">
+    /// The <c>OwnershipBased</c> page filter the planner requires, or <see langword="null"/> when none is
+    /// configured or the planner reported a terminal. When present, every proceeding arm below applies it
+    /// after the relationship OR group has planned, so a relationship security-configuration failure still
+    /// surfaces ahead of the ownership empty page and the two never trade places.
+    /// </param>
     private async Task<QueryAuthorizationResolution> ResolveQueryRelationshipAuthorization(
         MappingSet mappingSet,
         QualifiedResourceName resource,
@@ -2512,6 +2561,7 @@ public sealed class RelationalDocumentStoreRepository(
         IReadOnlyList<NamespaceAuthorizationCheckSpec> namespaceChecks,
         NamespacePrefixParameterization? namespacePrefixParameterization,
         IReadOnlyList<SupportedCustomViewAuthorizationStrategy> customViewStrategies,
+        PageOwnershipFilterSpec? ownershipPageFilter,
         CancellationToken cancellationToken
     )
     {
@@ -2553,23 +2603,29 @@ public sealed class RelationalDocumentStoreRepository(
         {
             case RelationshipAuthorizationResult.NoAuthorizationRequired:
             case RelationshipAuthorizationResult.NoFurtherAuthorizationRequired:
-                return new QueryAuthorizationResolution.Proceed(
-                    ComposePageQueryAuthorization(
-                        null,
-                        namespaceChecks,
-                        namespacePrefixParameterization,
-                        adaptedCustomViewChecks
-                    )
+                return await ResolvePageAuthorizationWithOwnershipFilterAsync(
+                    mappingSet,
+                    relationshipAuthorization: null,
+                    namespaceChecks,
+                    namespacePrefixParameterization,
+                    adaptedCustomViewChecks,
+                    ownershipPageFilter,
+                    authorizationContext,
+                    totalCount,
+                    cancellationToken
                 );
 
             case RelationshipAuthorizationResult.Authorized authorized:
-                return new QueryAuthorizationResolution.Proceed(
-                    ComposePageQueryAuthorization(
-                        PageDocumentIdAuthorizationSpecAdapter.Adapt(authorized),
-                        namespaceChecks,
-                        namespacePrefixParameterization,
-                        adaptedCustomViewChecks
-                    )
+                return await ResolvePageAuthorizationWithOwnershipFilterAsync(
+                    mappingSet,
+                    PageDocumentIdAuthorizationSpecAdapter.Adapt(authorized),
+                    namespaceChecks,
+                    namespacePrefixParameterization,
+                    adaptedCustomViewChecks,
+                    ownershipPageFilter,
+                    authorizationContext,
+                    totalCount,
+                    cancellationToken
                 );
 
             case RelationshipAuthorizationResult.NoClaims:
@@ -2617,6 +2673,101 @@ public sealed class RelationalDocumentStoreRepository(
                 );
         }
     }
+
+    /// <summary>
+    /// Applies the <c>OwnershipBased</c> page filter to a page whose namespace, custom-view, and relationship
+    /// strategies have all planned without a terminal, then composes the page authorization spec.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Ownership executes last among the AND strategies, so this runs after relationship planning has
+    /// produced a non-terminal result: a relationship security-configuration failure keeps its 500 for a
+    /// client with no tokens rather than being hidden behind an empty page, exactly as it already outranks the
+    /// relationship no-claims empty page.
+    /// </para>
+    /// <para>
+    /// An empty token list can match no document, so it is answered with the same empty page the no-claims
+    /// arm returns — count zero when requested, selection skipped, no page SQL — after every adapted custom
+    /// view has been validated, because each of them executes ahead of ownership. The preflight's cap failure
+    /// is defence in depth: the planner reports the cap as its own terminal before this point, so a request
+    /// that fails here bypassed the planner.
+    /// </para>
+    /// </remarks>
+    private async Task<QueryAuthorizationResolution> ResolvePageAuthorizationWithOwnershipFilterAsync(
+        MappingSet mappingSet,
+        PageDocumentIdAuthorizationSpec? relationshipAuthorization,
+        IReadOnlyList<NamespaceAuthorizationCheckSpec> namespaceChecks,
+        NamespacePrefixParameterization? namespacePrefixParameterization,
+        IReadOnlyList<PageDocumentIdAuthorizationCustomViewCheck>? customViewChecks,
+        PageOwnershipFilterSpec? ownershipPageFilter,
+        RelationalAuthorizationContext authorizationContext,
+        bool totalCount,
+        CancellationToken cancellationToken
+    )
+    {
+        OwnershipTokenParameterization? ownershipTokenParameterization = null;
+
+        if (ownershipPageFilter is not null)
+        {
+            if (authorizationContext.OwnershipTokenIds.Count == 0)
+            {
+                return await ResolveRelationshipTerminalAfterCustomViewValidation(
+                    mappingSet,
+                    customViewChecks,
+                    new QueryAuthorizationResolution.Complete(
+                        new QueryResult.QuerySuccess([], totalCount ? 0 : null) { SelectionSkipped = true }
+                    ),
+                    cancellationToken
+                );
+            }
+
+            if (
+                !OwnershipTokenParameterizationPreflight.TryCreate(
+                    mappingSet.Key.Dialect,
+                    authorizationContext.OwnershipTokenIds,
+                    out var parameterization,
+                    out var securityConfigurationMessage,
+                    out var securityConfigurationDiagnostics
+                )
+            )
+            {
+                return await ResolveRelationshipTerminalAfterCustomViewValidation(
+                    mappingSet,
+                    customViewChecks,
+                    new QueryAuthorizationResolution.Complete(
+                        new QueryResult.QueryFailureSecurityConfiguration(
+                            [securityConfigurationMessage],
+                            securityConfigurationDiagnostics
+                        )
+                    ),
+                    cancellationToken
+                );
+            }
+
+            ownershipTokenParameterization = parameterization;
+        }
+
+        return new QueryAuthorizationResolution.Proceed(
+            ComposePageQueryAuthorization(
+                relationshipAuthorization,
+                namespaceChecks,
+                namespacePrefixParameterization,
+                customViewChecks,
+                ownershipPageFilter,
+                ownershipTokenParameterization
+            )
+        );
+    }
+
+    private static QueryResult.QueryFailureSecurityConfiguration BuildOwnershipTokenCapExceededQueryFailure(
+        int ownershipTokenCount
+    ) =>
+        new(
+            [OwnershipAuthorizationSecurityConfigurationMessages.TokenCapExceeded(ownershipTokenCount)],
+            AuthorizationSecurityConfigurationDiagnostics.ForOwnershipTokenParameterization(
+                AuthorizationSecurityConfigurationDiagnostics.OwnershipTokenCapExceeded
+            )
+        );
 
     private async Task<QueryAuthorizationResolution> ResolveRelationshipTerminalAfterCustomViewValidation(
         MappingSet mappingSet,
@@ -2722,14 +2873,15 @@ public sealed class RelationalDocumentStoreRepository(
     /// <summary>
     /// Returns a security-configuration failure when the authorization parameters this query binds, plus
     /// its filter and paging parameters, exceed SQL Server's per-command parameter ceiling; otherwise
-    /// <see langword="null"/>. Either authorization parameterization may be <see langword="null"/>, so this
-    /// covers the namespace-only, relationship-only, and composed query shapes uniformly.
+    /// <see langword="null"/>. Every authorization parameterization may be <see langword="null"/>, so this
+    /// covers the namespace-only, relationship-only, ownership-only, and composed query shapes uniformly.
     /// </summary>
     private static QueryResult? BuildQueryParameterBudgetFailure(
         SqlDialect dialect,
         QualifiedResourceName resource,
         NamespacePrefixParameterization? namespacePrefixParameterization,
         AuthorizationClaimEducationOrganizationIdParameterization? claimEducationOrganizationIdParameterization,
+        OwnershipTokenParameterization? ownershipTokenParameterization,
         int nonAuthorizationParameterCount
     )
     {
@@ -2738,7 +2890,8 @@ public sealed class RelationalDocumentStoreRepository(
                 dialect,
                 namespacePrefixParameterization,
                 claimEducationOrganizationIdParameterization,
-                nonAuthorizationParameterCount
+                nonAuthorizationParameterCount,
+                ownershipTokenParameterization
             )
         )
         {
@@ -2750,6 +2903,7 @@ public sealed class RelationalDocumentStoreRepository(
                 NamespaceAuthorizationSecurityConfigurationMessages.CommandParameterCapExceeded(
                     namespacePrefixParameterization?.ConfiguredPrefixesInOrder.Count ?? 0,
                     claimEducationOrganizationIdParameterization?.ClaimEducationOrganizationIds.Count ?? 0,
+                    ownershipTokenParameterization?.TokensInOrder.Count ?? 0,
                     nonAuthorizationParameterCount
                 ),
             ],
@@ -2757,14 +2911,34 @@ public sealed class RelationalDocumentStoreRepository(
         );
     }
 
+    /// <summary>
+    /// The single point that turns planned AND filters and the relationship OR group into the page
+    /// authorization spec, and therefore the one place that can guarantee a required
+    /// <c>OwnershipBased</c> page filter is never dropped: a filter the planner required with no token
+    /// parameterization to bind fails closed here rather than composing an unfiltered page.
+    /// </summary>
     private static PageDocumentIdAuthorizationSpec? ComposePageQueryAuthorization(
         PageDocumentIdAuthorizationSpec? relationshipAuthorization,
         IReadOnlyList<NamespaceAuthorizationCheckSpec> namespaceChecks,
         NamespacePrefixParameterization? namespacePrefixParameterization,
-        IReadOnlyList<PageDocumentIdAuthorizationCustomViewCheck>? customViewChecks = null
+        IReadOnlyList<PageDocumentIdAuthorizationCustomViewCheck>? customViewChecks,
+        PageOwnershipFilterSpec? ownershipPageFilter,
+        OwnershipTokenParameterization? ownershipTokenParameterization
     )
     {
-        if (namespaceChecks.Count == 0 && (customViewChecks is null || customViewChecks.Count == 0))
+        if (ownershipPageFilter is not null && ownershipTokenParameterization is null)
+        {
+            throw new InvalidOperationException(
+                $"The relational authorization planner required the '{ownershipPageFilter.StrategyName}' page filter, "
+                    + "but no ownership-token parameterization was built for it. Refusing to compose an unfiltered page query."
+            );
+        }
+
+        if (
+            namespaceChecks.Count == 0
+            && (customViewChecks is null || customViewChecks.Count == 0)
+            && ownershipTokenParameterization is null
+        )
         {
             return relationshipAuthorization;
         }
@@ -2774,6 +2948,7 @@ public sealed class RelationalDocumentStoreRepository(
             NamespaceChecks = namespaceChecks,
             NamespacePrefixParameterization = namespacePrefixParameterization,
             CustomViewChecks = customViewChecks,
+            OwnershipTokenParameterization = ownershipTokenParameterization,
         };
     }
 

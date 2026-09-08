@@ -69,4 +69,31 @@ public static class NamespaceAuthorizationSecurityConfigurationMessages
             claimEducationOrganizationIdCount,
             nonAuthorizationParameterCount
         );
+
+    /// <summary>
+    /// The GET-many form that also names the <c>OwnershipBased</c> token list. When
+    /// <paramref name="ownershipTokenCount"/> is zero the text is exactly the three-argument message, so read
+    /// paths without an ownership filter, and every existing expectation of that text, are unaffected. Only
+    /// a count is reported, never a token value.
+    /// </summary>
+    public static string CommandParameterCapExceeded(
+        int namespacePrefixCount,
+        int claimEducationOrganizationIdCount,
+        int ownershipTokenCount,
+        int nonAuthorizationParameterCount
+    ) =>
+        ownershipTokenCount == 0
+            ? CommandParameterCapExceeded(
+                namespacePrefixCount,
+                claimEducationOrganizationIdCount,
+                nonAuthorizationParameterCount
+            )
+            : string.Format(
+                CultureInfo.InvariantCulture,
+                "The API client has {0} namespace prefixes, {1} authorization education organization ids, and {2} ownership tokens, which together with {3} query and paging parameters exceed the SQL Server parameter limit for a single query. Configure fewer namespace prefixes, reduce the client's authorized education organizations or ownership tokens, or use fewer query parameters.",
+                namespacePrefixCount,
+                claimEducationOrganizationIdCount,
+                ownershipTokenCount,
+                nonAuthorizationParameterCount
+            );
 }
