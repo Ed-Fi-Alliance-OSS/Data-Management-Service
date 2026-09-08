@@ -294,9 +294,22 @@ internal static class DocumentCacheAdminJsonRequestParser
     {
         failure = null;
 
-        if (!rootElement.TryGetProperty("mode", out _))
+        if (!rootElement.TryGetProperty("mode", out JsonElement modeElement))
         {
             failure = "Request JSON property 'mode' is required in request.";
+            return false;
+        }
+
+        if (modeElement.ValueKind != JsonValueKind.String)
+        {
+            failure = "Request JSON property 'mode' must be the string value 'tracking' or 'disabled'.";
+            return false;
+        }
+
+        string? mode = modeElement.GetString();
+        if (mode is not "tracking" and not "disabled")
+        {
+            failure = $"Request JSON property 'mode' value '{mode}' must be 'tracking' or 'disabled'.";
             return false;
         }
 

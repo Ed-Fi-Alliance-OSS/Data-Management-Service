@@ -139,6 +139,40 @@ public sealed class Given_DocumentCacheAdminJsonContracts
         failure.Should().Contain("'mode'").And.Contain("required");
     }
 
+    [TestCase("\"Tracking\"")]
+    [TestCase("\"Disabled\"")]
+    [TestCase("1")]
+    public void It_rejects_representation_restamp_preview_request_json_without_exact_lower_camel_mode(
+        string modeJson
+    )
+    {
+        var parseResult = ParseCommand(
+            DocumentCacheAdminCommandSurface.RestampPreviewCommandName,
+            DocumentCacheAdminCommandSurface.RequestJsonOptionName,
+            "-"
+        );
+
+        bool parsed = DocumentCacheAdminInvocationTargetParser.TryParse(
+            parseResult,
+            _ =>
+                $$"""
+                {
+                  "targetKey": { "tenantKey": "", "dataStoreId": 1 },
+                  "offlineWriterAdmission": "closedAndDrained",
+                  "mode": {{modeJson}},
+                  "reason": "representation correction",
+                  "scope": { "scopeType": "resource", "projectName": "Ed-Fi", "resourceName": "Student" }
+                }
+                """,
+            out DocumentCacheAdminInvocationTarget? invocationTarget,
+            out string? failure
+        );
+
+        parsed.Should().BeFalse();
+        invocationTarget.Should().BeNull();
+        failure.Should().Contain("'mode'").And.Contain("tracking").And.Contain("disabled");
+    }
+
     [Test]
     public void It_deserializes_lower_camel_representation_restamp_execute_request_json()
     {
