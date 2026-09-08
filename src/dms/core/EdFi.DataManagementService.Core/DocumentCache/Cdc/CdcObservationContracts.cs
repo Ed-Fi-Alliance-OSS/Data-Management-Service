@@ -644,6 +644,10 @@ public sealed record CdcConnectorRuntimeObservation(
     [property: JsonRequired] IReadOnlyList<CdcDiagnostic> Diagnostics
 ) : ICdcObservationContract;
 
+/// <summary>
+/// Current lag and its threshold determine lag readiness. Percentiles are optional diagnostic
+/// values; adapters supply null when unavailable or unusable, never fabricated zeroes.
+/// </summary>
 public sealed record CdcConnectorLagObservation(
     [property: JsonRequired] int ContractVersion,
     [property: JsonRequired] string OperationId,
@@ -2497,21 +2501,21 @@ public static class CdcConnectorLagObservationValidator
             observation.P50LagMilliseconds,
             "$.p50LagMilliseconds",
             "p50LagMilliseconds",
-            lagRequired,
+            required: false,
             diagnostics
         );
         ValidateLagValue(
             observation.P95LagMilliseconds,
             "$.p95LagMilliseconds",
             "p95LagMilliseconds",
-            lagRequired,
+            required: false,
             diagnostics
         );
         ValidateLagValue(
             observation.P99LagMilliseconds,
             "$.p99LagMilliseconds",
             "p99LagMilliseconds",
-            lagRequired,
+            required: false,
             diagnostics
         );
         ValidateLagStateConsistency(observation, diagnostics);

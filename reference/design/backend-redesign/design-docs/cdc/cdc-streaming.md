@@ -1121,11 +1121,18 @@ naming strategy, heartbeat topic prefix, or non-empty heartbeat topic name, beca
 `__debezium-heartbeat.<topic-prefix>` when that suffix exactly matches the Debezium
 source-partition `server` value before relational source-metadata validation.
 
-Every connector explicitly sets `statistics.metrics.enabled=true`. Debezium 3.6 then
-exposes minimum, maximum, average, P50, P95, and P99 statistics for
-`MilliSecondsBehindSource`. These quantiles are operational telemetry; current lag still
-participates in combined readiness and neither current nor historical lag substitutes for
-the provider source-position barrier.
+Every connector explicitly sets `statistics.metrics.enabled=true` to enable statistics
+where supported. Both providers must expose current `MilliSecondsBehindSource`.
+Minimum, maximum, average, P50, P95, and P99 are optional operational diagnostics for both
+providers and never prerequisites for readiness. The pinned Debezium 3.6.0.Final
+PostgreSQL connector exposes these statistics; the SQL Server connector does not expose
+them through its streaming JMX interface, even with this setting enabled. See the
+[qualification evidence and scope resolution](sqlserver-lag-qualification.md).
+Unavailable statistics remain absent in exported metrics and null in existing Core
+percentile fields; operator displays show them as unavailable, never zero. Do not synthesize
+replacement statistics from HTTP scrapes. Current lag still participates in combined
+readiness, and neither current nor historical lag substitutes for the provider
+source-position barrier.
 
 ### Local and CI Connector Telemetry
 
@@ -1134,9 +1141,13 @@ worker. Its qualified image includes a version-pinned standard Prometheus JMX Ex
 Java agent and fixed metric mappings for PostgreSQL and SQL Server. The controller reads
 the worker's `/metrics` HTTP endpoint directly on the management network; this workflow
 requires no Prometheus server, remote JMX/RMI service, or custom exporter implementation.
-The mappings expose current `MilliSecondsBehindSource` and its minimum, maximum, average,
-P50, P95, and P99 statistics, together with the identity evidence needed below. Exporter
-and mapping changes require image qualification and a new immutable image digest.
+The mappings expose current `MilliSecondsBehindSource`, together with the identity
+evidence needed below. They may additionally expose minimum, maximum, average, P50, P95,
+and P99 where available. Image qualification requires a finite, nonnegative current-lag
+gauge in milliseconds for each provider and validates any exported optional statistics
+for identity, types, and units; absence of optional statistics passes qualification for
+either provider. Exporter and mapping changes require image qualification and a new
+immutable image digest.
 
 Each readiness evaluation collects new evidence. The adapter matches the provider and
 the bound connector's validated `topic.prefix`, which is the connector name, and requires
@@ -1162,9 +1173,14 @@ task's metric set as the current task's evidence. During initial admission, an i
 readiness sequence also repeats the existing provider barrier and projection observation
 sequence. Missing, duplicate, malformed, expired, or incorrectly attributed metrics,
 exporter collection failure, and unavailable identity evidence produce `unknown` and
-prevent readiness. Current lag must independently satisfy its configured threshold;
-neither REST `RUNNING`, historical quantiles, nor a fresh HTTP response substitutes for
-the provider source-position barrier.
+prevent readiness when they affect required current-lag or identity evidence. Optional
+statistics are collected independently: missing, duplicate, malformed, or incorrectly
+attributed optional values are discarded and represented as unavailable, without
+invalidating otherwise valid current-lag evidence. The existing Core percentile fields
+remain nullable (explicit JSON null is valid); their values, when supplied, must be
+nonnegative and consistently ordered. They do not determine the lag state. Current lag
+must independently satisfy its configured threshold; neither REST `RUNNING`, historical
+quantiles, nor a fresh HTTP response substitutes for the provider source-position barrier.
 
 Automatic metrics-endpoint discovery across a distributed worker fleet is outside this
 local/CI adapter. A later deployment adapter may support that topology while preserving
@@ -1717,8 +1733,8 @@ Structured logs and metrics cover:
   validation failures.
 
 Deployment-owned CDC status additionally covers binding presence and match, connector
-running state, current lag plus Debezium 3.6 P50/P95/P99 source-lag telemetry, last error,
-snapshot completion, heartbeat/capture progress, the provider barrier and committed
+running state, current lag plus optional P50/P95/P99 source-lag diagnostics where available,
+last error, snapshot completion, heartbeat/capture progress, the provider barrier and committed
 Connect source offset in sanitized form, existing artifacts without binding state, source
 mismatch, shared Connect offset-store durability and ACL health, source-history continuity
 outcome and remaining provider-retention margin, and the durable terminal loss latch.

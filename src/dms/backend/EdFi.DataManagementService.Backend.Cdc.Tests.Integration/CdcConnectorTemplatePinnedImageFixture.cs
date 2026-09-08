@@ -22,7 +22,7 @@ using CoreCdc = EdFi.DataManagementService.Core.DocumentCache.Cdc;
 
 namespace EdFi.DataManagementService.Backend.Cdc.Tests.Integration;
 
-internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
+internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
 {
     private const string ConnectorPasswordEnvironmentVariable = "CDC_DATABASE_PASSWORD";
     internal const string ConnectorDatabasePassword = "EdFi_Dms1!";
@@ -113,7 +113,7 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
     ];
 
     private readonly CdcConnectorTemplateSmokeSettings _settings;
-    private readonly HttpClient _httpClient;
+    private HttpClient _httpClient;
     private readonly IDockerCli _docker;
     private readonly ServiceProvider _serviceProvider;
     private readonly string _resourcePrefix;
@@ -1017,6 +1017,8 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
             NetworkName,
             "-p",
             "127.0.0.1::8083",
+            "-p",
+            "127.0.0.1::9404",
             "-e",
             $"BOOTSTRAP_SERVERS={BrokerContainerName}:9092",
             "-e",

@@ -216,16 +216,20 @@ controller composes those contracts rather than introducing another set of rules
   only the telemetry-qualified digest on the CDC path.
 - Extend DMS-1321's existing pinned-image/provider fixtures in the DMS CDC integration
   project to qualify that image. Supply reusable assertions for metric identity, value
-  types and units, current lag and required statistics, worker identity evidence, and
-  removal or replacement of previous task metric state on restart. These extensions are
-  DMS-1323 work and feed this story's adapter/controller tests.
+  types and units, required current lag, optional statistics when exported, worker identity
+  evidence, and removal or replacement of previous task metric state on restart. These
+  extensions are DMS-1323 work and feed this story's adapter/controller tests.
 - Implement the direct JMX Exporter HTTP adapter and single-worker endpoint wiring from
   the design's [local/CI telemetry contract](../../design-docs/cdc/cdc-streaming.md#local-and-ci-connector-telemetry).
   Consume this story's qualified exporter-enabled image and reusable metric qualification
   extensions. Extend the typed deployment request with the configured
   worker metrics endpoint and maximum observation age; reuse the Core lag observation and
   evaluator contracts, extending their typed handoff only where required for the
-  design-owned statistics and identity evidence. Implement collection-time tracking,
+  identity evidence. Current lag and its threshold are required for a known lag state;
+  minimum/maximum/average/P50/P95/P99 are optional diagnostics for both providers.
+  Preserve nullable Core percentile fields and accept explicit nulls without blocking
+  readiness. Discard unusable optional statistics before the Core handoff; do not substitute
+  zeroes or derive replacement statistics from scrapes. Implement collection-time tracking,
   worker/task correlation, freshness validation, and readiness integration in the adapter
   and controller. Bound each external call and the complete wait, propagate cancellation,
   and return the failed component with sanitized diagnostics. Connection/authentication
@@ -364,17 +368,23 @@ controller composes those contracts rather than introducing another set of rules
 - Image packaging smoke tests verify the pinned exporter and mappings load with the
   worker and expose the configured management endpoint. Telemetry qualification uses
   real PostgreSQL and SQL Server and covers metric identity, value types and units,
-  current lag and minimum/maximum/average/P50/P95/P99 statistics, worker identity evidence,
-  isolation between connectors on the same worker, and worker/task restart behavior,
+  required current lag and optional minimum/maximum/average/P50/P95/P99 statistics when
+  exported, worker identity evidence, isolation between connectors on the same worker,
+  and worker/task restart behavior,
   including removal or replacement of previous task metric state. Publication records
-  that evidence against the new immutable image digest. Missing telemetry prerequisites
-  fail qualification CI; Compose resolution and mocked tests alone cannot qualify an image.
+  that evidence against the new immutable image digest. Both providers must pass with
+  current lag alone; optional statistics, when exported, must have valid identity, types,
+  and units. Missing required telemetry prerequisites fail qualification CI; absence of
+  optional statistics does not. Compose resolution and mocked tests alone cannot qualify
+  an image.
 - Telemetry adapter and controller tests consume the qualification extensions above and
   cover fresh successful collection, configured age boundaries and expiry before writer
   handoff, missing/duplicate/malformed metrics, exporter failure, timeout/cancellation,
   connector or worker mismatch, task/worker restart, reassignment, and rejection of
-  previous-pass evidence. Both provider admission paths prove that current lag and the
-  provider barrier remain independent requirements. Unsupported worker topology and
+  previous-pass evidence. Missing or unusable optional statistics do not invalidate
+  otherwise valid current-lag evidence; unknown/exceeded current lag still blocks readiness.
+  Both provider admission paths prove that current lag and the provider barrier remain
+  independent requirements. Unsupported worker topology and
   unavailable identity evidence cannot pass readiness.
 - Controller tests cover the design's deployment-state continuity boundary: intact-state
   validation/restart and interrupted initial retries succeed when otherwise eligible;
