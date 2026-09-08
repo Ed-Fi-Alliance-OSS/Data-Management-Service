@@ -12,6 +12,9 @@ on:
       - "v*.*.*"
     paths:
       - "src/dms/**"
+      # The plugin contract tree. Both main solutions build it and the DMS image build stage
+      # copies it, so a plugins-only merge must produce a DMS prerelease like any other.
+      - "src/plugins/**"
 
 env:
   API_URL: https://api.github.com/repos/${{ github.repository }}

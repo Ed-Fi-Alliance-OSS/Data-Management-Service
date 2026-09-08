@@ -46,6 +46,7 @@ concurrency:
 env:
   CONFIGURATION: "Release"
   CUSTOM_VALIDATION_PACKAGE_NAME: "EdFi.Api.CustomValidation"
+  PLUGINS_PACKAGE_NAME: "EdFi.Api.Plugins"
   MSSQL_IMAGE: "mcr.microsoft.com/mssql/server:2025-latest"
   MSSQL_CONTAINER_MEMORY: "10g"
   MSSQL_MEMORY_LIMIT_MB: "4096"
@@ -346,6 +347,22 @@ jobs:
           Import-Module ./package-helpers.psm1
           Get-VersionNumber -projectPrefix "dms"
 
+      - name: Capture Plugins Version-Stamping Baseline
+        id: plugins-version-baseline
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          # Before the stamping build, because the assertion below is a before-and-after comparison.
+          # A fresh directory per run: the helper refuses a non-empty one, so a warm runner cannot
+          # compare a build against a baseline it did not precede.
+          $baseline = Join-Path $env:RUNNER_TEMP "plugins-version-baseline-$([guid]::NewGuid().ToString('N'))"
+
+          ./eng/verification/Assert-PluginsVersionIndependence.ps1 `
+            -BaselineDirectory $baseline `
+            -CaptureBaseline
+
+          "baseline-directory=$baseline" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
       - name: Build DMS .NET Assemblies
         run: |
           $packageVersion = "${{ steps.versions.outputs.dms-semver }}" -replace "dms-v", ""
@@ -426,6 +443,98 @@ jobs:
           ./eng/verification/Invoke-CustomValidationConsumerCheck.ps1 `
             -PackageVersion $packageVersion `
             -NuGetPackagesDirectory (Join-Path $env:RUNNER_TEMP "nuget-verify-custom-validation")
+
+      - name: Create Plugins NuGet Package
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          # No -DMSVersion. The plugin contract is versioned on its own public surface, because the
+          # loader's newer-plugin-on-older-host preflight compares AssemblyVersions and a release-
+          # stamped contract would refuse a plugin built against an identical surface. The target
+          # reads src/plugins/Directory.Build.props and ignores the release version entirely.
+          ./build-dms.ps1 Package `
+            -Configuration ${{ env.CONFIGURATION }} `
+            -PackageTarget Plugins
+
+      - name: Assert Plugins Package Contents
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          Import-Module ./package-helpers.psm1
+          $contractVersion = Get-PluginsContractVersion
+
+          # A fresh extraction directory per run. The script refuses a non-empty one rather than
+          # emptying it, so a warm runner would otherwise fail here.
+          ./eng/verification/Assert-PluginsPackage.ps1 `
+            -PackageFile "${{ env.PLUGINS_PACKAGE_NAME }}.$contractVersion.nupkg" `
+            -ExtractTo (Join-Path $env:RUNNER_TEMP "plugins-nupkg-$([guid]::NewGuid().ToString('N'))") `
+            -PackageId "${{ env.PLUGINS_PACKAGE_NAME }}" `
+            -ExpectedPackageVersion $contractVersion
+
+      - name: Compile Plugins Scratch Consumer
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          Import-Module ./package-helpers.psm1
+          $contractVersion = Get-PluginsContractVersion
+
+          # The contract version is fixed at its own surface version rather than moving with every
+          # build, so the same version string extracts to the same cache path on every run. A fresh
+          # global-packages folder per run is what stops a previously extracted copy satisfying this
+          # restore in place of the package just packed.
+          ./eng/verification/Invoke-PluginsConsumerCheck.ps1 `
+            -PackageVersion $contractVersion `
+            -NuGetPackagesDirectory (Join-Path $env:RUNNER_TEMP "nuget-verify-plugins-$([guid]::NewGuid().ToString('N'))")
+
+      # Not preinstalled on the runner image, and this is the only Pester use in this job. The
+      # bootstrap and MSSQL lanes install the same pinned version the same way.
+      - name: Install Pester
+        run: Install-Module Pester -RequiredVersion 5.7.1 -Scope CurrentUser -Force
+
+      - name: Run Verification Script Tests
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          # After packing, deliberately. Two of these cases verify a real nupkg end to end and report
+          # themselves inconclusive without one, so running them earlier would leave that path
+          # unexercised while the suite still looked green.
+          $result = Invoke-Pester -Path "eng/verification/tests" -Output Detailed -PassThru
+
+          # Anything other than a pass fails the lane, inconclusive and skipped included. A suite
+          # that quietly stopped running half its cases is the failure this step exists to notice,
+          # and FailedCount alone cannot see it.
+          $nonPassing = @($result.Tests | Where-Object { $_.Result -ne "Passed" })
+
+          if ($result.TotalCount -eq 0) {
+              throw "The verification script test suite discovered no tests at all."
+          }
+
+          if ($nonPassing.Count -gt 0) {
+              $summary = ($nonPassing | ForEach-Object { "$($_.Result): $($_.ExpandedName)" }) -join "`n"
+              throw "$($nonPassing.Count) of $($result.TotalCount) verification script test(s) did not pass:`n$summary"
+          }
+
+          Write-Output "All $($result.TotalCount) verification script tests passed."
+
+      - name: Assert Plugins Version Independence
+        # Runs even when an earlier step failed, so the stamped src/dms/Directory.Build.props is
+        # restored rather than left behind, and gated on the baseline having actually been captured -
+        # without it this step has nothing to compare against and would report a confusing second
+        # failure. The build step keeps its own failure status either way.
+        if: ${{ !cancelled() && steps.plugins-version-baseline.outcome == 'success' }}
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          # Deliberately after the packaging steps rather than straight after the build. This
+          # restores the committed src/dms/Directory.Build.props, and the committed and generated
+          # files differ in their Copyright element, so restoring earlier would put different
+          # metadata in front of the `dotnet pack --no-build` invocations above and silently change
+          # the SchemaTools and custom-validation nuspecs.
+          $packageVersion = "${{ steps.versions.outputs.dms-semver }}" -replace "dms-v", ""
+
+          ./eng/verification/Assert-PluginsVersionIndependence.ps1 `
+            -BaselineDirectory "${{ steps.plugins-version-baseline.outputs.baseline-directory }}" `
+            -ExpectedDMSVersion $packageVersion
 
   build-dms-solution:
     name: Build DMS Solution
