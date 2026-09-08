@@ -297,7 +297,7 @@ public partial class MssqlDatabaseProvisioner(ILogger logger) : DatabaseProvisio
             if (!Convert.ToBoolean(result))
             {
                 var warning =
-                    $"READ_COMMITTED_SNAPSHOT is OFF for database '{LoggingSanitizer.SanitizeForConsole(targetDatabase)}'. "
+                    "READ_COMMITTED_SNAPSHOT is OFF for the target database. "
                     + "DMS strongly recommends enabling MVCC reads for correct concurrency behavior. "
                     + "Run: ALTER DATABASE [dbname] SET READ_COMMITTED_SNAPSHOT ON";
 

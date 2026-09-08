@@ -281,7 +281,7 @@ exit $ExitCode
     }
 
     Context "public script contracts" {
-        It "provision-dms-schema.ps1 exposes only the selector, env, engine overlay, and topology parameters" {
+        It "provision-dms-schema.ps1 exposes selectors, environment, topology, and managed provenance parameters" {
             $params = Get-DeclaredScriptParameters -Path $script:repo.ProvisionScript
 
             $params | Should -Contain "EnvironmentFile"
@@ -299,7 +299,11 @@ exit $ExitCode
             # Never a datastore-name parameter: the target comes from CMS, so a caller-authored name
             # here could only disagree with what will actually be provisioned.
             $params | Should -Not -Contain "DataStoreDatabaseName"
-            $params.Count | Should -Be 5
+            $params | Should -Contain "CdcBindingStatePath"
+            $params | Should -Contain "DeploymentKey"
+            $params | Should -Contain "InstanceKey"
+            $params | Should -Contain "Generation"
+            $params.Count | Should -Be 9
         }
 
         It "provision-dms-schema.ps1 forwards the topology declaration from its parameter surface into the phase function" {

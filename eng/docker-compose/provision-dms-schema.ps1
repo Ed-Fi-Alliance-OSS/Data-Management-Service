@@ -49,7 +49,13 @@ param(
     # data store (configure -NoDataStore) carries a STORED connection string this phase resolves,
     # decrypts, and hands to SchemaTools, so the dedicated database can be the effective target
     # without any name having been registered by this run.
-    [Switch]$SeparateConfigDatabase
+    [Switch]$SeparateConfigDatabase,
+
+    # Opt into controller-owned provenance for local managed provisioning, with or without CDC.
+    [string]$CdcBindingStatePath = "",
+    [string]$DeploymentKey = "local",
+    [string]$InstanceKey = "",
+    [long]$Generation = 1
 )
 
 $ErrorActionPreference = "Stop"
@@ -1494,7 +1500,13 @@ function Invoke-DmsSchemaProvision {
 
         [ValidateSet("pgsql", "mssql")]
         [string]
-        $Dialect = "pgsql"
+        $Dialect = "pgsql",
+        [string]$CdcBindingStatePath = "",
+        [string]$DeploymentKey = "local",
+        [string]$TenantKey = "",
+        [long]$DataStoreId = 0,
+        [string]$InstanceKey = "",
+        [long]$Generation = 1
     )
 
     $arguments = @("ddl", "provision")
@@ -1506,6 +1518,68 @@ function Invoke-DmsSchemaProvision {
         "--dialect", $Dialect,
         "--create-database"
     )
+
+    if (-not [string]::IsNullOrWhiteSpace($CdcBindingStatePath)) {
+        if ($DataStoreId -le 0 -or $Generation -le 0) {
+            throw "Managed provisioning requires a positive selected data store id and generation."
+        }
+        if ([string]::IsNullOrWhiteSpace($InstanceKey)) { $InstanceKey = "datastore-$DataStoreId" }
+        $arguments += @(
+            "--managed-state-path", [System.IO.Path]::GetFullPath($CdcBindingStatePath),
+            "--deployment-key", $DeploymentKey,
+            "--tenant-key", $TenantKey,
+            "--data-store-id", [string]$DataStoreId,
+            "--instance-key", $InstanceKey,
+            "--generation", [string]$Generation
+        )
+        # JSON is emitted only after the controller has durably associated its receipt and source.
+        # Never forward unvalidated native output (which may contain connection/source identifiers).
+        if ($ToolPath.EndsWith(".ps1", [System.StringComparison]::OrdinalIgnoreCase)) {
+            $receiptOutput = @(& pwsh -NoLogo -NoProfile -File $ToolPath @arguments)
+        }
+        else {
+            $receiptOutput = @(& $ToolPath @arguments)
+        }
+        if ($LASTEXITCODE -ne 0) { throw "Managed schema provisioning failed; inspect trusted workflow evidence before retrying." }
+        try { $receipt = ($receiptOutput -join "`n") | ConvertFrom-Json -ErrorAction Stop }
+        catch { throw "Managed schema provisioning did not return a valid receipt result." }
+        if ($null -eq $receipt -or $null -eq $receipt.PSObject.Properties['creationReceipt'] -or
+            $null -eq $receipt.PSObject.Properties['target'] -or
+            $receipt.target.dataStoreId -cne [string]$DataStoreId -or
+            $receipt.target.instanceKey -cne $InstanceKey -or
+            $receipt.target.deploymentKey -cne $DeploymentKey -or
+            $receipt.target.generation -ne $Generation) {
+            throw "Managed schema provisioning returned a mismatched receipt result."
+        }
+        $expectedTenant = if ($TenantKey -eq "") { "default" } else { $TenantKey }
+        $expectedProvider = if ($Dialect -eq "pgsql") { "Postgresql" } else { "SqlServer" }
+        try {
+            $workflowId = [guid]$receipt.workflowId
+            $receiptId = [guid]$receipt.creationReceipt.receiptId
+            if ($workflowId -eq [guid]::Empty -or $receiptId -eq [guid]::Empty -or
+                $receipt.target.tenantKey -cne $expectedTenant -or $receipt.target.provider -cne $expectedProvider -or
+                $receipt.creationReceipt.outcome -cnotin @("Created", "Reused") -or
+                $receipt.physicalSourceFingerprint -cnotmatch '^sha256:[0-9a-f]{64}$') {
+                throw "Invalid receipt"
+            }
+        }
+        catch { throw "Managed schema provisioning returned invalid creation/source evidence." }
+        # Only the typed, safe handoff fields cross the success pipeline. This result locates durable
+        # controller provenance; downstream controllers must read that provenance under their lock.
+        return [pscustomobject]@{
+            WorkflowId = $workflowId
+            Target = [pscustomobject]@{
+                DeploymentKey = $DeploymentKey
+                TenantKey = $expectedTenant
+                DataStoreId = [string]$DataStoreId
+                InstanceKey = $InstanceKey
+                Generation = $Generation
+                Provider = $expectedProvider
+            }
+            CreationReceipt = [pscustomobject]@{ ReceiptId = $receiptId; Outcome = $receipt.creationReceipt.outcome }
+            PhysicalSourceFingerprint = $receipt.physicalSourceFingerprint
+        }
+    }
 
     Write-Information "Invoking api-schema-tools ddl provision for database $(Format-LogSafeText $DatabaseName) with $($SchemaPaths.Count) schema file(s)." -InformationAction Continue
 
@@ -1684,7 +1758,11 @@ function Invoke-ProvisionDmsSchema {
         $DatabaseEngine = "postgresql",
 
         [Switch]
-        $SeparateConfigDatabase
+        $SeparateConfigDatabase,
+        [string]$CdcBindingStatePath = "",
+        [string]$DeploymentKey = "local",
+        [string]$InstanceKey = "",
+        [long]$Generation = 1
     )
 
     if ($DataStoreId.Count -gt 0 -and $SchoolYear.Count -gt 0) {
@@ -1783,19 +1861,52 @@ function Invoke-ProvisionDmsSchema {
     # that share a database name on different physical hosts or under different users.
     $groups = $targets | Group-Object -Property TargetKey
 
+    $managed = -not [string]::IsNullOrWhiteSpace($CdcBindingStatePath)
+    if ($managed) {
+        if ($Generation -le 0 -or ($InstanceKey -ne "" -and @($groups).Count -ne 1)) {
+            throw "Managed provisioning requires a positive generation and an instance key scoped to one target."
+        }
+        foreach ($group in $groups) {
+            if (@($group.Group).Count -ne 1) {
+                throw "Managed provisioning cannot attest ownership for multiple data store aliases of one target."
+            }
+            if (-not (Test-ProvisionTargetIsLocalComposeDatabase -Target @($group.Group)[0] -EnvValues $envValues)) {
+                throw "Managed creation receipts require the explicitly managed local Compose database service."
+            }
+        }
+    }
+
     $provisionedTargets = [System.Collections.ArrayList]::new()
 
     foreach ($group in $groups) {
         $target = @($group.Group)[0]
         $dataStoreIds = @($group.Group | ForEach-Object { [long]$_.DataStoreId })
         $ids = ($dataStoreIds | ForEach-Object { [string]$_ }) -join ", "
+        if ($managed) {
+            Write-Information "Managed schema provisioning for data store id(s): $(Format-LogSafeText $ids)." -InformationAction Continue
+        }
+        else {
         Write-Information "Provisioning target database $(Format-LogSafeText $target.DatabaseName) on $(Format-LogSafeText $target.Host):$(Format-LogSafeText $target.Port) for data store id(s): $(Format-LogSafeText $ids)." -InformationAction Continue
-        Invoke-DmsSchemaProvision `
-            -ToolPath $schemaTool `
-            -SchemaPaths $schemaPaths `
-            -ConnectionString $target.HostConnectionString `
-            -DatabaseName $target.DatabaseName `
-            -Dialect $target.Dialect
+        }
+        $invokeArgs = @{
+            ToolPath = $schemaTool
+            SchemaPaths = $schemaPaths
+            ConnectionString = $target.HostConnectionString
+            DatabaseName = $target.DatabaseName
+            Dialect = $target.Dialect
+        }
+        if ($managed) {
+            $invokeArgs.CdcBindingStatePath = $CdcBindingStatePath
+            $invokeArgs.DeploymentKey = $DeploymentKey
+            $invokeArgs.TenantKey = $tenant
+            $invokeArgs.DataStoreId = $dataStoreIds[0]
+            $invokeArgs.InstanceKey = $InstanceKey
+            $invokeArgs.Generation = $Generation
+            Invoke-DmsSchemaProvision @invokeArgs
+        }
+        else {
+            Invoke-DmsSchemaProvision @invokeArgs
+        }
 
         $null = $provisionedTargets.Add([pscustomobject]@{
             DatabaseName = $target.DatabaseName
@@ -1808,10 +1919,12 @@ function Invoke-ProvisionDmsSchema {
         })
     }
 
-    Write-ProvisionSummary `
-        -EnvValues $envValues `
-        -SchemaWorkspace $schemaWorkspace `
-        -ProvisionedTargets @($provisionedTargets)
+    if (-not $managed) {
+        Write-ProvisionSummary `
+            -EnvValues $envValues `
+            -SchemaWorkspace $schemaWorkspace `
+            -ProvisionedTargets @($provisionedTargets)
+    }
 }
 
 if ($MyInvocation.InvocationName -eq '.') { return }
@@ -1821,4 +1934,8 @@ Invoke-ProvisionDmsSchema `
     -DataStoreId $DataStoreId `
     -SchoolYear $SchoolYear `
     -DatabaseEngine $DatabaseEngine `
-    -SeparateConfigDatabase:$SeparateConfigDatabase
+    -SeparateConfigDatabase:$SeparateConfigDatabase `
+    -CdcBindingStatePath $CdcBindingStatePath `
+    -DeploymentKey $DeploymentKey `
+    -InstanceKey $InstanceKey `
+    -Generation $Generation
