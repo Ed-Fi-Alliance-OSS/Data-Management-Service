@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS "dmscs"."OpenIddictToken" (
     "Subject" varchar(100),
     "Type" varchar(50),
     "ReferenceId" varchar(100),
-    "ExpirationDate" timestamp without time zone,
+    "ExpirationDate" timestamp with time zone,
     "Status" varchar(50) DEFAULT 'valid',
     "CreatedAt" TIMESTAMP NOT NULL DEFAULT NOW(),
     "CreatedBy" VARCHAR(256),
