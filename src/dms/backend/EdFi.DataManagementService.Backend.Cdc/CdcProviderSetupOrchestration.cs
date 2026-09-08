@@ -335,7 +335,7 @@ public sealed class CdcProviderSetupOrchestration
         return new(templateRequest, template, observedAt);
     }
 
-    private static CdcProviderSetupRequest CopyRequest(
+    internal static CdcProviderSetupRequest CopyRequest(
         CdcProviderSetupRequest request,
         DdlMode mode,
         CdcPostgresqlInitialReplicationSlotProof? proof,
@@ -393,7 +393,7 @@ public sealed class CdcProviderSetupOrchestration
         );
     }
 
-    private static ImmutableArray<CdcRetainedProviderIdentity> Identities(
+    internal static ImmutableArray<CdcRetainedProviderIdentity> Identities(
         CdcDeploymentRequest request,
         CdcProviderSetupResult result
     )

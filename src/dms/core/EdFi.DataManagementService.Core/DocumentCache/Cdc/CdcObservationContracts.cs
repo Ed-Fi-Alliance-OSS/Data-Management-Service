@@ -2248,11 +2248,29 @@ public static class CdcConnectorRuntimeObservationValidator
         return diagnostics.ToValidationResult();
     }
 
+    /// <summary>Validates live identity and structural consistency before a controller starts a task.
+    /// STOPPED with no tasks and RUNNING with a failed task are valid lifecycle observations;
+    /// the ordinary validator continues to require the running-task readiness contract.</summary>
+    public static CdcContractValidationResult ValidateForLifecycle(
+        CdcConnectorRuntimeObservation observation,
+        CdcBinding binding,
+        CdcObservationValidationContext context
+    )
+    {
+        ArgumentNullException.ThrowIfNull(observation);
+        ArgumentNullException.ThrowIfNull(binding);
+        ArgumentNullException.ThrowIfNull(context);
+        CdcDiagnosticCollector diagnostics = new();
+        ValidateStructure(observation, context, binding, diagnostics, lifecycle: true);
+        return diagnostics.ToValidationResult();
+    }
+
     private static void ValidateStructure(
         CdcConnectorRuntimeObservation observation,
         CdcObservationValidationContext context,
         CdcBinding? binding,
-        CdcDiagnosticCollector diagnostics
+        CdcDiagnosticCollector diagnostics,
+        bool lifecycle = false
     )
     {
         CdcObservationValidationRules.ValidateEnvelope(observation, context, diagnostics);
@@ -2274,7 +2292,14 @@ public static class CdcConnectorRuntimeObservationValidator
         ValidateRuntimeState(observation.SoleTaskState, "$.soleTaskState", diagnostics);
         ValidateSnapshotState(observation.SnapshotState, diagnostics);
         ValidateLastError(observation, context.NowUtc, diagnostics);
-        ValidateRuntimeStateConsistency(observation, diagnostics);
+        if (lifecycle)
+        {
+            ValidateLifecycleConsistency(observation, diagnostics);
+        }
+        else
+        {
+            ValidateRuntimeStateConsistency(observation, diagnostics);
+        }
 
         if (binding is not null)
         {
@@ -2374,6 +2399,33 @@ public static class CdcConnectorRuntimeObservationValidator
                 CdcDiagnosticCategory.InvalidOrdering,
                 "$.lastErrorObservedAt",
                 "CDC connector runtime lastErrorObservedAt must not be later than observedAt."
+            );
+        }
+    }
+
+    private static void ValidateLifecycleConsistency(
+        CdcConnectorRuntimeObservation observation,
+        CdcDiagnosticCollector diagnostics
+    )
+    {
+        bool stopped =
+            observation.ConnectorState == CdcConnectorRuntimeState.Stopped
+            && observation.TaskCount == 0
+            && observation.RunningTaskCount == 0
+            && observation.SoleTaskState
+                is CdcConnectorRuntimeState.Unknown
+                    or CdcConnectorRuntimeState.Stopped;
+        bool single =
+            observation.ConnectorState != CdcConnectorRuntimeState.Stopped
+            && observation.TaskCount == 1
+            && observation.RunningTaskCount
+                == (observation.SoleTaskState == CdcConnectorRuntimeState.Running ? 1 : 0);
+        if (!stopped && !single)
+        {
+            diagnostics.Add(
+                CdcDiagnosticCategory.InvalidObservation,
+                "$.taskCount",
+                "CDC connector lifecycle observation requires verified stopped tasks or one consistent task."
             );
         }
     }

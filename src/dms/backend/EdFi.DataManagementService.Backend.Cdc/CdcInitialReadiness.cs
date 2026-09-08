@@ -418,7 +418,11 @@ public sealed class CdcInitialReadiness
                             KafkaPolicy = kafka,
                             ConnectOffsetStore = store,
                             ConnectorRuntime = status,
-                            ConnectorConfig = Configuration(request, operation, now),
+                            ConnectorConfig = CdcControllerObservations.Configuration(
+                                request,
+                                operation,
+                                now
+                            ),
                             Lag = telemetry.ReadForEvaluation(pass),
                         };
                         // Old first observations/barriers are never reusable. Restart the entire sequence when
@@ -619,48 +623,12 @@ public sealed class CdcInitialReadiness
         boundary.Component = CdcDeploymentComponent.Projection;
         var started = _time.GetUtcNow();
         var response = await CallAsync(request, ct => runtime.ObserveAsync(ct), token);
-        Require(response.Targets.Length == 1);
-        var target = response.Targets[0];
-        Require(
-            target.DurableObservedAt is not null
-                && target.DurableObservedAt >= started
-                && Fresh(request, target.DurableObservedAt.Value)
-                && CdcProviderToken.TryToRelationalProviderToken(request.Binding.Provider, out var provider)
-                && target.Provider == provider.Value
-                && target.PhysicalSourceFingerprint == request.Binding.PhysicalSourceFingerprint
-                && target.Lifecycle.State == DocumentCacheStatusLifecycleState.Tracking
-                && target.CacheAhead.RecoveryRequired is false
-        );
-        var observation = new CdcProjectionCorrelationObservation(
-            CdcJsonContract.CurrentContractVersion,
+        var observation = CdcControllerObservations.Projection(
+            request,
+            response,
             operation,
-            _time.GetUtcNow(),
-            request.TargetIdentity,
-            request.Binding.Provider,
-            target.PhysicalSourceFingerprint,
-            target.DurableObservedAt!.Value,
-            new(target.TargetKey.TenantKey.ToLowerInvariant(), target.TargetKey.DataStoreId),
-            CdcProjectionCorrelationState.Matched,
-            target.OperationalHealth.Status,
-            target.OperationalHealth.Reason,
-            target.CaughtUp.Status,
-            target.CaughtUp.Reason,
-            target.QueueSummary.Presence,
-            target.EnqueueFailures.ByCategory.Select(c => c.Category).ToArray(),
-            []
-        );
-        Require(
-            CdcProjectionCorrelationObservationValidator
-                .Validate(
-                    observation,
-                    new(
-                        operation,
-                        request.TargetIdentity,
-                        request.Binding.PhysicalSourceFingerprint,
-                        _time.GetUtcNow()
-                    )
-                )
-                .Succeeded
+            started,
+            _time.GetUtcNow()
         );
         Require(observation.OperationalHealthStatus == DocumentCacheOperationalHealthStatus.Operational);
         return observation;
@@ -732,36 +700,6 @@ public sealed class CdcInitialReadiness
             request.Binding.Provider == CoreProvider.SqlServer ? offset.SqlServer.CommitLsn : null,
             request.Binding.Provider == CoreProvider.SqlServer ? offset.SqlServer.ChangeLsn : null,
             request.Binding.Provider == CoreProvider.SqlServer ? offset.SqlServer.EventSerialNo : null,
-            []
-        );
-
-    private static CdcConnectorConfigurationObservation Configuration(
-        CdcDeploymentRequest request,
-        string operation,
-        DateTimeOffset now
-    ) =>
-        new(
-            CdcJsonContract.CurrentContractVersion,
-            operation,
-            now,
-            request.TargetIdentity,
-            request.Binding.Provider,
-            request.Binding.PhysicalSourceFingerprint,
-            request.Binding.ConnectorName,
-            CdcConnectorConfigurationState.Matched,
-            CdcConnectorTemplateBindingArtifacts
-                .From(request.Binding, nameof(request))
-                .ArtifactInventory.TopicPrefix,
-            1,
-            CdcConnectorConfigurationItemState.Matched,
-            CdcConnectorConfigurationItemState.Matched,
-            CdcConnectorConfigurationItemState.Matched,
-            CdcConnectorConfigurationItemState.Matched,
-            CdcConnectorConfigurationItemState.Matched,
-            CdcConnectorConfigurationItemState.Matched,
-            request.Binding.Provider == CoreProvider.SqlServer
-                ? CdcConnectorConfigurationItemState.Matched
-                : CdcConnectorConfigurationItemState.NotApplicable,
             []
         );
 
