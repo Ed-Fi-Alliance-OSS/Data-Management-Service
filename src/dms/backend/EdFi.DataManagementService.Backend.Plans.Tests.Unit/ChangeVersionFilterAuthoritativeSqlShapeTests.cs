@@ -27,6 +27,7 @@ public class Given_ChangeVersionFilters_Over_Authoritative_MappingSets
         "../Fixtures/authoritative/sample/inputs/sample-api-schema-authoritative.json";
 
     private static readonly ChangeVersionRange _changeVersionRange = new(100L, 200L);
+    private static readonly ChangeVersionRange _minOnlyChangeVersionRange = new(100L, null);
     private static readonly CollectionPaging _paginationParameters = new CollectionPaging.Traditional(
         new PaginationParameters(Limit: 25, Offset: 0, TotalCount: true, MaximumPageSize: 500)
     );
@@ -246,6 +247,87 @@ public class Given_ChangeVersionFilters_Over_Authoritative_MappingSets
 
         // Full generated SQL captured for the manual SQL Server plan-validation gate (Task 8).
         TestContext.Out.WriteLine(keyset.Plan.PageDocumentIdSql);
+    }
+
+    /// <summary>
+    /// The combination Core could not previously produce: a min-only window compiled under
+    /// <c>ContentVersion</c> ordering, which is what a change-version read served from a frozen
+    /// snapshot resolves. The floor must be applied and no ceiling may appear anywhere — a leaked
+    /// <c>maxChangeVersion</c> predicate would silently truncate a snapshot extraction at a bound the
+    /// client never asked for, and every row past it would simply be missing.
+    /// </summary>
+    [TestCase(SqlDialect.Pgsql, TestName = "Pgsql_min_only_under_content_version_ordering")]
+    [TestCase(SqlDialect.Mssql, TestName = "Mssql_min_only_under_content_version_ordering")]
+    public void It_compiles_a_min_only_window_under_content_version_ordering(SqlDialect dialect)
+    {
+        bool isPgsql = dialect == SqlDialect.Pgsql;
+        string contentVersion = isPgsql ? "r.\"ContentVersion\"" : "r.[ContentVersion]";
+
+        var readPlan = (isPgsql ? _ds52MappingSet : _ds52MssqlMappingSet).GetReadPlanOrThrow(
+            new QualifiedResourceName("Ed-Fi", "Student")
+        );
+        var planner = new RelationalQueryPageKeysetPlanner(dialect);
+
+        var keyset = planner.Plan(
+            readPlan.Model.Root,
+            new RelationalQueryPreprocessingResult(new RelationalQueryPreprocessingOutcome.Continue(), []),
+            _paginationParameters,
+            changeVersionRange: _minOnlyChangeVersionRange,
+            orderingMode: PageOrderingMode.ContentVersion
+        );
+
+        keyset.Plan.PageDocumentIdSql.Should().Contain($"ORDER BY {contentVersion} ASC");
+        keyset.Plan.PageDocumentIdSql.Should().Contain($"{contentVersion} >= @minChangeVersion");
+        keyset.Plan.PageDocumentIdSql.Should().NotContain("@maxChangeVersion");
+
+        keyset.Plan.TotalCountSql.Should().NotBeNull();
+        keyset.Plan.TotalCountSql.Should().Contain($"{contentVersion} >= @minChangeVersion");
+        keyset.Plan.TotalCountSql.Should().NotContain("@maxChangeVersion");
+
+        keyset.ParameterValues["minChangeVersion"].Should().Be(100L);
+        keyset
+            .ParameterValues.Should()
+            .NotContainKey(
+                "maxChangeVersion",
+                "an open-ended window must not carry a ceiling the client never supplied"
+            );
+    }
+
+    /// <summary>
+    /// The descriptor twin of the same combination, which keeps its project-qualified
+    /// <c>ResourceKeyId</c> scope: widening the anchor must not widen the result set.
+    /// </summary>
+    [Test]
+    public void It_compiles_a_min_only_descriptor_window_under_content_version_ordering()
+    {
+        var descriptorResource = new QualifiedResourceName("Ed-Fi", "AcademicSubjectDescriptor");
+        var planner = new DescriptorQueryPageKeysetPlanner(SqlDialect.Pgsql);
+
+        var keyset = planner.Plan(
+            _ds52MappingSet,
+            descriptorResource,
+            new DescriptorQueryPreprocessingResult(new RelationalQueryPreprocessingOutcome.Continue(), []),
+            _paginationParameters,
+            changeVersionRange: _minOnlyChangeVersionRange,
+            orderingMode: PageOrderingMode.ContentVersion
+        );
+
+        keyset.Plan.PageDocumentIdSql.Should().Contain("ORDER BY r.\"ContentVersion\" ASC");
+        keyset.Plan.PageDocumentIdSql.Should().Contain("r.\"ResourceKeyId\" = @resourceKeyId");
+        keyset.Plan.PageDocumentIdSql.Should().Contain("r.\"ContentVersion\" >= @minChangeVersion");
+        keyset.Plan.PageDocumentIdSql.Should().NotContain("@maxChangeVersion");
+
+        keyset.Plan.TotalCountSql.Should().NotBeNull();
+        keyset.Plan.TotalCountSql.Should().Contain("r.\"ResourceKeyId\" = @resourceKeyId");
+        keyset.Plan.TotalCountSql.Should().Contain("r.\"ContentVersion\" >= @minChangeVersion");
+        keyset.Plan.TotalCountSql.Should().NotContain("@maxChangeVersion");
+
+        keyset
+            .ParameterValues["resourceKeyId"]
+            .Should()
+            .Be(_ds52MappingSet.ResourceKeyIdByResource[descriptorResource]);
+        keyset.ParameterValues["minChangeVersion"].Should().Be(100L);
+        keyset.ParameterValues.Should().NotContainKey("maxChangeVersion");
     }
 
     private static void AssertRegularResourceChangeVersionSqlShape(

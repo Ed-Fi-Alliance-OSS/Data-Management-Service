@@ -144,10 +144,18 @@ internal class RequestInfo(
 
     /// <summary>
     /// The page anchor: the ordering key a page's cursor bounds, a partition's boundaries, and the
-    /// continuation token this request's response emits are all expressed in. Resolved from
-    /// <see cref="ChangeVersionRange"/> by ValidateQueryMiddleware or
-    /// ValidatePartitionQueryMiddleware, alongside the window it is a function of, so a request
-    /// cannot carry one without the other.
+    /// continuation token this request's response emits are all expressed in. Resolved by
+    /// ValidateQueryMiddleware or ValidatePartitionQueryMiddleware from two inputs: this request's
+    /// <see cref="ChangeVersionRange"/> and its effective data-store target. It is set alongside the
+    /// window, so a request cannot carry one without the other; the target is read from the request
+    /// scope, having been recorded by an earlier step.
+    /// <para>
+    /// The window alone does not determine it. The same min-only window resolves DocumentId against
+    /// live data, where an update can move a row later within a still-open window, and ContentVersion
+    /// against a frozen snapshot, where nothing moves. A read replica is not frozen and keeps the
+    /// live rule. Both inputs are overridden by the UseLegacyDocumentIdOrderingForChangeQueries
+    /// switch, which resolves DocumentId for every window shape on every data store.
+    /// </para>
     /// <para>
     /// Only the live GET-many and /partitions pipelines act on it. The Change Query pipeline composes
     /// the same validation step and so resolves a value here too — a /deletes request carrying

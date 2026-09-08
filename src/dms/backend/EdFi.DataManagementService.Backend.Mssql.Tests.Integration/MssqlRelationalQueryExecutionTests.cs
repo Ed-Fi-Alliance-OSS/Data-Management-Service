@@ -696,6 +696,41 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
     }
 
     /// <summary>
+    /// The combination a change-version read served from a frozen snapshot resolves: an open-ended
+    /// window paged under the ContentVersion anchor. Against live data this shape keeps DocumentId,
+    /// because an update can move a row later within the still-open window; nothing moves in a frozen
+    /// source, so the anchor that makes the window a range seek becomes safe to use.
+    /// </summary>
+    /// <remarks>
+    /// The expectation cannot be reached by accident. The fixture re-upserts the first school, so its
+    /// ContentVersion order and its DocumentId order differ — asserted here rather than assumed — and
+    /// the same window paged under the other anchor returns the other progression, which is exactly
+    /// what It_pages_a_min_only_change_version_window_by_document_id asserts.
+    /// </remarks>
+    [Test]
+    public async Task It_pages_a_min_only_change_version_window_by_content_version()
+    {
+        var refreshedSchools = await UpdateFirstSchoolAndReadStateAsync();
+        var byContentVersion = refreshedSchools.OrderBy(s => s.ContentVersion).ToArray();
+        var inDocumentOrder = refreshedSchools.Select(s => s.DocumentUuid).ToArray();
+        var expectedProgression = byContentVersion.Select(s => s.DocumentUuid).ToArray();
+
+        expectedProgression
+            .Should()
+            .NotEqual(inDocumentOrder, "the scenario must discriminate the two orders");
+
+        var walkedDocumentUuids = await WalkPagesAsync(
+            new ChangeVersionRange(byContentVersion[0].ContentVersion, null),
+            PageOrderingMode.ContentVersion,
+            pageCount: refreshedSchools.Count,
+            traceIdPrefix: "mssql-cv-ordering-min-only-content-version"
+        );
+
+        walkedDocumentUuids.Should().Equal(expectedProgression);
+        walkedDocumentUuids.Should().OnlyHaveUniqueItems();
+    }
+
+    /// <summary>
     /// The ordering a bounded window is paged in is the one the request carries, not one derived from
     /// the window here: a request whose anchor is DocumentId over a bounded window — what a deployment
     /// running with the legacy ordering switch produces — pages in DocumentId order.
@@ -885,7 +920,9 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
         AssertPageMaterialization(targetSchool.DocumentId);
     }
 
-    // A min-only window still orders by DocumentId, so a cursor page inside it continues normally.
+    // Against current data a min-only window still orders by DocumentId, so a cursor page inside it
+    // continues normally. The snapshot half of the rule is
+    // It_pages_a_min_only_change_version_window_by_content_version above.
     [Test]
     public async Task It_composes_a_min_only_change_version_window_with_the_cursor_range()
     {
@@ -904,8 +941,11 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
         success.HighestSelectedAnchor.Should().Be(_persistedSchoolsInDocumentOrder[^1].DocumentId);
     }
 
-    // A max-bearing window keeps the DocumentId ordering a cursor page always uses, so the page it
-    // selects can still anchor a continuation. What it must not do is silently order by something else.
+    // The ordering is supplied to the planner here rather than resolved from the window, so what this
+    // pins is composition: a max-bearing window has to narrow the rows a DocumentId-anchored cursor
+    // page selects without silently re-ordering it, and the page must still anchor a continuation in
+    // the units it was planned for. Which anchor a max-bearing window resolves to in production is
+    // ChangeQueryPageOrderingPolicy's decision, not this fixture's.
     [Test]
     public async Task It_composes_a_max_bearing_change_version_window_with_the_cursor_range()
     {

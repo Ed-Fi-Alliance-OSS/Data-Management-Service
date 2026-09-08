@@ -105,8 +105,9 @@ public sealed record HydratedPage(
     /// and planner early-empty paths, and zero-size pages.
     /// </summary>
     /// <remarks>
-    /// Its units follow the keyset's anchor: <c>DocumentId</c> for an unfiltered or min-only walk,
-    /// <c>ContentVersion</c> for a max-bearing change-version window. Deliberately independent of the
+    /// Its units follow the keyset's anchor: <c>ContentVersion</c> for a max-bearing change-version
+    /// window against any data source, and for any windowed shape served from a frozen snapshot;
+    /// <c>DocumentId</c> otherwise. Deliberately independent of the
     /// hydrated body: every selected row may be deleted before hydration completes, so this can be
     /// non-null while the body is empty. A body-derived boundary would stall a cursor walk on the last
     /// surviving document, or stop it entirely on an empty body. Populated from the keys the query

@@ -182,6 +182,44 @@ Data Store Derivatives are alternate database instances associated with a parent
 data store, such as read replicas or snapshots. Read replicas distribute query
 load, while snapshots preserve point-in-time data for backup, testing, or analysis.
 
+A `Snapshot` derivative must reference a database that is frozen for the duration
+of a client's paging session. Change-version-filtered collection reads served
+from a snapshot are paged in change-version order, and that ordering is only safe
+over data that cannot change while it is being walked. Configuring a source that
+continues to apply changes — a live secondary, or a standby still shipping logs —
+as a `Snapshot` rather than a `ReadReplica` can silently return one document
+twice and skip another within a single walk, with no error reported. A
+`ReadReplica` carries no such requirement: reads served from one keep the live
+paging rule. See [Cursor Paging](./CURSOR-PAGING.md).
+
+The requirement covers the derivative's identity as well as the database behind
+it. While reads against a snapshot are in progress, do not re-point the
+derivative at a different connection string, and do not re-create the database
+behind an unchanged one. Where the replacement is provisioned to the same
+effective schema, neither is reported: the pages already returned are not
+re-read, and the reads finish normally with their pages drawn from two different
+points in time. Re-creating the database at an unchanged connection string is the
+more severe of the two, because no configuration changed and nothing keyed on the
+connection string can observe the substitution. A replacement provisioned to a
+*different* effective schema is reported, as `503` with an effective-schema-hash
+mismatch, because that much the fingerprint check can see.
+
+Two changes do interrupt the reads rather than silently answering them from a
+different copy, and the two are answered differently. Removing the derivative row
+leaves nothing to select: the request is answered `404` with
+`Snapshot not found.`, decided during target selection before any database is
+opened. Dropping the snapshot database, or otherwise making a still-configured
+derivative unreachable, is invisible to selection — the connection string is
+still there and still non-blank — so the request travels on and fails when the
+connection is acquired, and is answered `503` with a service-configuration error
+describing a transient fault.
+
+The distinction matters to a client that retries. The `503` is transient: the
+next request at the same unchanged connection string succeeds once the database
+is reachable again, and no cached verdict has to be cleared first. The `404` is
+not transient — it says the deployment no longer offers a snapshot at all, and
+retrying will keep returning it until a derivative is configured again.
+
 Each derivative type is stored with its own encrypted connection string and is
 automatically deleted when its parent data store is removed (CASCADE DELETE).
 

@@ -216,4 +216,12 @@ public sealed class Given_Postgresql_DerivativeRouting : PostgresqlApiIntegratio
     [Test]
     public Task It_returns_not_found_for_an_unknown_resource() =>
         DerivativeRoutingScenario.It_returns_not_found_for_an_unknown_resource(Harness);
+
+    [Test]
+    public Task It_binds_a_min_only_walk_to_the_source_that_issued_its_token() =>
+        DerivativeRoutingScenario.It_binds_a_min_only_walk_to_the_source_that_issued_its_token(Harness);
+
+    [Test]
+    public Task It_partitions_a_min_only_window_on_the_snapshot_anchor() =>
+        DerivativeRoutingScenario.It_partitions_a_min_only_window_on_the_snapshot_anchor(Harness);
 }

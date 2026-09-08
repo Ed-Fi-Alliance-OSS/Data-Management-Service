@@ -19,8 +19,10 @@ public record QueryResult
     /// <param name="HighestSelectedAnchor">
     /// The maximum continuation-anchor value in the selected page keyset, or null when page selection
     /// was skipped or selected no keys, including early-empty paths and zero-size pages. Its units
-    /// follow the anchor the request resolved: DocumentId for an unfiltered or min-only walk,
-    /// ContentVersion for a max-bearing change-version window. Independent of
+    /// follow the anchor the request resolved: ContentVersion for a max-bearing change-version
+    /// window against any data source, and for any windowed shape served from a frozen snapshot;
+    /// DocumentId otherwise, and DocumentId throughout while the
+    /// UseLegacyDocumentIdOrderingForChangeQueries switch is set. Independent of
     /// <paramref name="EdfiDocs"/>: it can be non-null while the body is empty, because every selected
     /// row may be deleted before hydration completes.
     /// </param>

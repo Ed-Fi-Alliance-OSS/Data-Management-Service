@@ -7,7 +7,7 @@ namespace EdFi.DataManagementService.Core.External.Model;
 
 /// <summary>
 /// How a live collection query pages: traditional limit/offset, or cursor over an inclusive
-/// DocumentId range.
+/// anchor range.
 /// </summary>
 /// <remarks>
 /// An explicit choice rather than nullable combinations, so a cursor request without a range and a
@@ -34,9 +34,14 @@ public abstract record CollectionPaging
     }
 
     /// <summary>
-    /// Cursor paging over an inclusive DocumentId range.
+    /// Cursor paging over an inclusive anchor range.
     /// </summary>
-    /// <param name="Range">The inclusive DocumentId window to select from.</param>
+    /// <remarks>
+    /// The range is expressed in the units of the anchor the request resolved - <c>ContentVersion</c>
+    /// or <c>DocumentId</c> - which <c>PageOrderingMode</c> names and page selection binds the bounds
+    /// into. The range itself does not record which.
+    /// </remarks>
+    /// <param name="Range">The inclusive anchor window to select from.</param>
     /// <param name="PageSize">The number of items the page may select.</param>
     public sealed record Cursor(CursorRange Range, PageSize PageSize) : CollectionPaging
     {

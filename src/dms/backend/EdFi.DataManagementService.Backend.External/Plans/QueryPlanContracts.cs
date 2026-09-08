@@ -190,12 +190,15 @@ public enum QuerySqlParameterRole
     Limit,
 
     /// <summary>
-    /// Parameter for the inclusive lower <c>DocumentId</c> bound of a cursor page.
+    /// Parameter for the inclusive lower anchor bound of a cursor page. The column it is compared
+    /// against is the one the page's ordering mode names, so the bound carries <c>ContentVersion</c>
+    /// units as readily as <c>DocumentId</c> ones.
     /// </summary>
     CursorInclusiveMinimum,
 
     /// <summary>
-    /// Parameter for the inclusive upper <c>DocumentId</c> bound of a cursor page.
+    /// Parameter for the inclusive upper anchor bound of a cursor page, in the same units as
+    /// <see cref="CursorInclusiveMinimum" />.
     /// </summary>
     CursorInclusiveMaximum,
 

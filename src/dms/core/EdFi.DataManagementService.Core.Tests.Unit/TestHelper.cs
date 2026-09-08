@@ -44,6 +44,36 @@ public static class TestHelper
     }
 
     /// <summary>
+    /// A scoped service provider carrying the one service the paging middlewares resolve off the
+    /// request: an <see cref="IDataStoreSelection"/> whose effective target is of the given kind.
+    /// </summary>
+    /// <remarks>
+    /// <c>No.ServiceProvider</c> returns null for every type, so a step resolving the selection with
+    /// <c>GetRequiredService</c> throws against it. A fixture that is not about which database served
+    /// the request still needs a target, and <see cref="EffectiveTargetKind.Primary"/> is the one that
+    /// leaves the live ordering rule — and so every expectation written before targets mattered —
+    /// exactly as it was.
+    /// <para>
+    /// The connection string is a placeholder that only has to be non-blank:
+    /// <see cref="EffectiveDataStoreTarget"/> rejects a blank one, and nothing in these fixtures opens
+    /// a connection.
+    /// </para>
+    /// </remarks>
+    internal static IServiceProvider ServiceProviderWithEffectiveTarget(
+        EffectiveTargetKind kind = EffectiveTargetKind.Primary
+    )
+    {
+        var dataStoreSelection = A.Fake<IDataStoreSelection>();
+        A.CallTo(() => dataStoreSelection.GetEffectiveTarget())
+            .Returns(new EffectiveDataStoreTarget(kind, "test-connection-string"));
+
+        var serviceProvider = A.Fake<IServiceProvider>();
+        A.CallTo(() => serviceProvider.GetService(typeof(IDataStoreSelection))).Returns(dataStoreSelection);
+
+        return serviceProvider;
+    }
+
+    /// <summary>
     /// Builds a ResourceSchema for the given endpointName on the given apiSchemaDocument
     /// </summary>
     internal static ResourceSchema BuildResourceSchema(

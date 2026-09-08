@@ -18,6 +18,16 @@ public enum DataStoreDerivativeType
     /// <summary>
     /// A point-in-time copy of the parent database that serves explicitly requested reads.
     /// </summary>
+    /// <remarks>
+    /// The configured database must be frozen for the duration of a client's paging session.
+    /// Change-version-filtered reads served from a snapshot are paged in change-version order, and
+    /// that ordering is only safe over data that cannot change while it is being walked: on a source
+    /// that continues to apply changes, an update moves a row later within a still-open window, so
+    /// the walk returns it twice and its departure shifts another row past a page boundary. Anything
+    /// short of frozen belongs under <see cref="ReadReplica" />, which keeps the live paging rule.
+    /// Nothing here can verify the guarantee - selection reads the configured type and takes it at
+    /// its word - so it is stated as the obligation it is.
+    /// </remarks>
     Snapshot,
 }
 

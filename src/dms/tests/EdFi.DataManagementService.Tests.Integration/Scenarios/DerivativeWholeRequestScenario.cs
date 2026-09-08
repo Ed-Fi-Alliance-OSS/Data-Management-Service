@@ -213,9 +213,15 @@ internal static class DerivativeWholeRequestScenario
                 useSnapshotHeaderValue: "true"
             );
 
+            string unavailableBody = await unavailable.Content.ReadAsStringAsync();
+
             unavailable
                 .StatusCode.Should()
-                .NotBe(HttpStatusCode.OK, "the snapshot cannot be opened while it is unreachable");
+                .Be(
+                    HttpStatusCode.ServiceUnavailable,
+                    "a configured derivative whose database cannot be opened fails at connection "
+                        + $"acquisition, which is a transient fault rather than a missing snapshot: {unavailableBody}"
+                );
         }
         finally
         {

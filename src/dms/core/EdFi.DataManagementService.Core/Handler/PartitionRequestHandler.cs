@@ -290,9 +290,10 @@ internal class PartitionRequestHandler(
     /// no successor.
     /// </summary>
     /// <remarks>
-    /// Every token is stamped with the anchor the boundaries were computed against, so a client
-    /// replaying one against a different change-version window is rejected rather than served bounds
-    /// read from the wrong column.
+    /// Every token is stamped with the anchor the boundaries were computed against, so a client whose
+    /// replay resolves a different anchor — from its change-version window or from the data store
+    /// serving it — is rejected rather than served bounds read from the wrong column. A replay that
+    /// resolves the same anchor is served.
     /// </remarks>
     private static FrontendResponse CreateSuccessResponse(
         PartitionSuccess success,

@@ -37,7 +37,8 @@ namespace EdFi.DataManagementService.Core.Backend;
 /// </param>
 /// <param name="TenantKey">The normalized request tenant key.</param>
 /// <param name="PageOrderingMode">
-/// The boundary anchor Core resolved from the change-version window. Required rather than defaulted,
+/// The boundary anchor Core resolved from the change-version window and the data store serving the
+/// request. Required rather than defaulted,
 /// and placed ahead of the optional parameters to stay that way: a default would let a construction
 /// site that forgot it keep compiling while cutting boundaries on DocumentId for a request whose pages
 /// are walked by ContentVersion, and boundaries cut on the wrong key overlap and leave rows in no

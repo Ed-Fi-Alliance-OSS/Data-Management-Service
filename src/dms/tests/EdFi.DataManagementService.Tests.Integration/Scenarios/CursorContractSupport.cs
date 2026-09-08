@@ -67,9 +67,10 @@ internal static class CursorContractSupport
     /// it is placed in a query string.
     /// <para>
     /// Anchored on <c>DocumentId</c> because the scenarios that enter a walk with this token carry no
-    /// change-version window, and a request resolves that anchor for every window shape but a
-    /// max-bearing one. A token whose marker disagrees with the anchor its request resolves is rejected,
-    /// so the two have to be chosen together.
+    /// change-version window at all, and that shape resolves that anchor on every data source -
+    /// routing alone must not change the order an unfiltered collection is walked in. A token whose
+    /// marker disagrees with the anchor its request resolves is rejected, so the two have to be
+    /// chosen together.
     /// </para>
     /// </remarks>
     internal static string EntryPageToken { get; } =

@@ -18,7 +18,11 @@ This change turns windowed cursor walks and partitions into `ContentVersion` ind
 It removes the walk-entry dead run, makes page cost depend on page size rather than window
 position, and allows `Next-Page-Token` on `ContentVersion`-ordered pages.
 
-Min-only and unfiltered walks remain anchored on `DocumentId`.
+Min-only and unfiltered walks remain anchored on `DocumentId`. DMS-1396 later qualified the
+min-only half of that: a min-only window served from a frozen snapshot anchors on `ContentVersion`,
+because the hazard below is a property of the data moving rather than of the window. Unfiltered
+walks keep `DocumentId` on every source. The current statement of the rule lives in
+[`Page-selection ordering`](../../design-docs/change-queries.md#page-selection-ordering).
 
 ## Design References
 
@@ -37,10 +41,16 @@ acceptance gates instead of incorporating it into those gates retroactively.
 ## Implementation Scope
 
 - **Match traditional page selection.** Use `ContentVersion` anchors exactly when traditional
-  paging uses `ContentVersion` ordering: when `maxChangeVersion` is present.
+  paging uses `ContentVersion` ordering: when `maxChangeVersion` is present. The correspondence
+  between the two paging modes still holds; the condition on the right of it was widened by
+  DMS-1396, which added the frozen-snapshot branch noted below.
 - **Keep min-only walks on `DocumentId`.** In an open-ended min-only window, an update moves a
   row past the current `ContentVersion` anchor while the row remains eligible. The walk could
-  then return that row twice. A stable `DocumentId` anchor avoids this duplication.
+  then return that row twice. A stable `DocumentId` anchor avoids this duplication. Superseded by
+  DMS-1396 for a frozen snapshot only: nothing moves there, so the hazard this bullet describes
+  cannot arise and a min-only window takes `ContentVersion`. The bullet stands on every mutable
+  source, a read replica included. The current statement of the rule lives in
+  [`Page-selection ordering`](../../design-docs/change-queries.md#page-selection-ordering).
 - **Treat max-bearing windows as monotonic-escape windows.** An update advances the row beyond
   the maximum, so the row leaves the window instead of moving past the anchor within it.
 - **Assume `ContentVersion` is unique.** Anchors and tokens carry one `ContentVersion`, not a
@@ -50,8 +60,9 @@ acceptance gates instead of incorporating it into those gates retroactively.
 - **Record the ordering mode in each token.** Tokens do not store the request filters. The server
   infers anchor semantics from the filters that clients repeat on each request. Without an
   ordering marker, changing `maxChangeVersion` mid-walk could reinterpret a `ContentVersion`
-  anchor as a `DocumentId`. Reject a marker/filter mismatch with the standard invalid-token
-  response.
+  anchor as a `DocumentId`. Reject a token whose marker disagrees with the anchor the request
+  resolves — from its change-version window *and* the data store serving it — with the standard
+  invalid-token response. A change that leaves the anchor where it was is served.
 - **Balance windowed partitions by `ContentVersion`.** For a max-bearing `/partitions` request,
   calculate balanced `ContentVersion` subranges across the filtered and authorized candidate
   set. Include the ordering-mode marker in every partition token.
@@ -78,15 +89,16 @@ acceptance gates instead of incorporating it into those gates retroactively.
   traditional page-selection SQL was written before that case existed and is not amended here; the
   current statement of the invariant lives in
   [partitioned-cursor-paging.md](../../design-docs/partitioned-cursor-paging.md) under "Structural
-  invariants". `DocumentId`-anchored pages — every unfiltered and min-only request, and every request
-  under the legacy ordering switch — are unchanged.
+  invariants". `DocumentId`-anchored pages — every request that resolves that anchor, and every
+  request under the legacy ordering switch — are unchanged.
 - Do not change hydration, within-page `DocumentId` ordering, or Total-Count behavior.
 
 ## Acceptance Evidence and Test Expectations
 
 - Token round-trip tests cover the ordering marker and reject mismatches in both directions:
-  replaying a windowed token without `maxChangeVersion`, and replaying a `DocumentId` token with
-  `maxChangeVersion`.
+  replaying a max-bearing token without `maxChangeVersion`, and replaying a `DocumentId` token with
+  `maxChangeVersion`. A min-only token replayed without its window is *not* a mismatch against a
+  mutable source — both shapes resolve `DocumentId` there — so the accepting cases are covered too.
 - PostgreSQL and SQL Server integration tests show that a bounded cursor walk returns every
   member of a stable fixture exactly once. Include concurrent updates that move rows beyond the
   window maximum.
@@ -111,6 +123,8 @@ acceptance gates instead of incorporating it into those gates retroactively.
 
 ## Explicit Exclusions / Not Assigned
 
-- Snapshot data sources, which are deferred beyond DMS v1.0.
+- Snapshot data sources, which are deferred beyond DMS v1.0. Superseded: DMS-1396 brought snapshot
+  routing into this rule, and with it the min-only exclusion below.
 - A schema constraint that enforces `ContentVersion` uniqueness.
-- Any change to unfiltered or min-only cursor behavior.
+- Any change to unfiltered or min-only cursor behavior. Superseded for min-only against a frozen
+  snapshot only, by DMS-1396; unfiltered behavior is unchanged on every source.

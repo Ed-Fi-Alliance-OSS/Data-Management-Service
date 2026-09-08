@@ -6,10 +6,12 @@
 using System.Globalization;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
+using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Model;
+using EdFi.DataManagementService.Core.Paging;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Telemetry;
 using FluentAssertions;
@@ -122,7 +124,7 @@ public class ValidateQueryMiddlewareTests
                 TraceId: new TraceId(""),
                 RouteQualifiers: []
             );
-            _requestInfo = new(frontendRequest, RequestMethod.GET, No.ServiceProvider);
+            _requestInfo = new(frontendRequest, RequestMethod.GET, ServiceProviderWithEffectiveTarget());
             await Middleware().Execute(_requestInfo, NullNext);
         }
 
@@ -187,7 +189,7 @@ public class ValidateQueryMiddlewareTests
                 TraceId: new TraceId(""),
                 RouteQualifiers: []
             );
-            _requestInfo = new(frontendRequest, RequestMethod.GET, No.ServiceProvider);
+            _requestInfo = new(frontendRequest, RequestMethod.GET, ServiceProviderWithEffectiveTarget());
             await Middleware().Execute(_requestInfo, NullNext);
         }
 
@@ -247,7 +249,7 @@ public class ValidateQueryMiddlewareTests
 
         private static RequestInfo NewRequestInfo(FrontendRequest frontendRequest, RequestMethod method)
         {
-            RequestInfo docRefContext = new(frontendRequest, method, No.ServiceProvider)
+            RequestInfo docRefContext = new(frontendRequest, method, ServiceProviderWithEffectiveTarget())
             {
                 ApiSchemaDocuments = NewApiSchemaDocuments(),
                 PathComponents = new(
@@ -398,7 +400,7 @@ public class ValidateQueryMiddlewareTests
 
         private static RequestInfo NewRequestInfo(FrontendRequest frontendRequest, RequestMethod method)
         {
-            RequestInfo docRefContext = new(frontendRequest, method, No.ServiceProvider)
+            RequestInfo docRefContext = new(frontendRequest, method, ServiceProviderWithEffectiveTarget())
             {
                 ApiSchemaDocuments = NewApiSchemaDocuments(),
                 PathComponents = new(
@@ -484,7 +486,7 @@ public class ValidateQueryMiddlewareTests
 
         private static RequestInfo NewRequestInfo(FrontendRequest frontendRequest, RequestMethod method)
         {
-            RequestInfo docRefContext = new(frontendRequest, method, No.ServiceProvider)
+            RequestInfo docRefContext = new(frontendRequest, method, ServiceProviderWithEffectiveTarget())
             {
                 ApiSchemaDocuments = NewApiSchemaDocuments(),
                 PathComponents = new(
@@ -563,7 +565,7 @@ public class ValidateQueryMiddlewareTests
 
         private static RequestInfo NewRequestInfo(FrontendRequest frontendRequest, RequestMethod method)
         {
-            RequestInfo docRefContext = new(frontendRequest, method, No.ServiceProvider)
+            RequestInfo docRefContext = new(frontendRequest, method, ServiceProviderWithEffectiveTarget())
             {
                 ApiSchemaDocuments = NewApiSchemaDocuments(),
                 PathComponents = new(
@@ -642,7 +644,7 @@ public class ValidateQueryMiddlewareTests
 
         private static RequestInfo NewRequestInfo(FrontendRequest frontendRequest, RequestMethod method)
         {
-            RequestInfo docRefContext = new(frontendRequest, method, No.ServiceProvider)
+            RequestInfo docRefContext = new(frontendRequest, method, ServiceProviderWithEffectiveTarget())
             {
                 ApiSchemaDocuments = NewApiSchemaDocuments(),
                 PathComponents = new(
@@ -730,7 +732,7 @@ public class ValidateQueryMiddlewareTests
 
         private static RequestInfo NewRequestInfo(FrontendRequest frontendRequest, RequestMethod method)
         {
-            RequestInfo docRefContext = new(frontendRequest, method, No.ServiceProvider)
+            RequestInfo docRefContext = new(frontendRequest, method, ServiceProviderWithEffectiveTarget())
             {
                 ApiSchemaDocuments = NewApiSchemaDocuments(),
                 PathComponents = new(
@@ -829,7 +831,7 @@ public class ValidateQueryMiddlewareTests
 
         private static RequestInfo NewRequestInfo(FrontendRequest frontendRequest, RequestMethod method)
         {
-            RequestInfo docRefContext = new(frontendRequest, method, No.ServiceProvider)
+            RequestInfo docRefContext = new(frontendRequest, method, ServiceProviderWithEffectiveTarget())
             {
                 ApiSchemaDocuments = NewApiSchemaDocuments(),
                 PathComponents = new(
@@ -904,7 +906,7 @@ public class ValidateQueryMiddlewareTests
                 TraceId: new TraceId(""),
                 RouteQualifiers: []
             );
-            _requestInfo = new(frontendRequest, RequestMethod.GET, No.ServiceProvider);
+            _requestInfo = new(frontendRequest, RequestMethod.GET, ServiceProviderWithEffectiveTarget());
             await Middleware().Execute(_requestInfo, NullNext);
         }
 
@@ -950,7 +952,7 @@ public class ValidateQueryMiddlewareTests
                 TraceId: new TraceId(""),
                 RouteQualifiers: []
             );
-            _requestInfo = new(frontendRequest, RequestMethod.GET, No.ServiceProvider);
+            _requestInfo = new(frontendRequest, RequestMethod.GET, ServiceProviderWithEffectiveTarget());
             await Middleware().Execute(_requestInfo, NullNext);
         }
 
@@ -1000,7 +1002,7 @@ public class ValidateQueryMiddlewareTests
                 TraceId: new TraceId(""),
                 RouteQualifiers: []
             );
-            _requestInfo = new(frontendRequest, RequestMethod.GET, No.ServiceProvider);
+            _requestInfo = new(frontendRequest, RequestMethod.GET, ServiceProviderWithEffectiveTarget());
             await Middleware().Execute(_requestInfo, NullNext);
         }
 
@@ -1047,7 +1049,7 @@ public class ValidateQueryMiddlewareTests
 
         private static RequestInfo NewRequestInfo(FrontendRequest frontendRequest, RequestMethod method)
         {
-            RequestInfo docRefContext = new(frontendRequest, method, No.ServiceProvider)
+            RequestInfo docRefContext = new(frontendRequest, method, ServiceProviderWithEffectiveTarget())
             {
                 ApiSchemaDocuments = NewApiSchemaDocuments(),
                 PathComponents = new(
@@ -1123,7 +1125,7 @@ public class ValidateQueryMiddlewareTests
 
         private static RequestInfo NewRequestInfo(FrontendRequest frontendRequest, RequestMethod method)
         {
-            RequestInfo docRefContext = new(frontendRequest, method, No.ServiceProvider)
+            RequestInfo docRefContext = new(frontendRequest, method, ServiceProviderWithEffectiveTarget())
             {
                 ApiSchemaDocuments = NewApiSchemaDocuments(),
                 PathComponents = new(
@@ -1193,7 +1195,7 @@ public class ValidateQueryMiddlewareTests
 
         private static RequestInfo NewRequestInfo(FrontendRequest frontendRequest, RequestMethod method)
         {
-            RequestInfo docRefContext = new(frontendRequest, method, No.ServiceProvider)
+            RequestInfo docRefContext = new(frontendRequest, method, ServiceProviderWithEffectiveTarget())
             {
                 ApiSchemaDocuments = NewApiSchemaDocuments(),
                 PathComponents = new(
@@ -1272,7 +1274,10 @@ public class ValidateQueryMiddlewareTests
                 .ToApiSchemaDocuments();
         }
 
-        private static RequestInfo NewRequestInfo(params (string Key, string Value)[] queryParameters)
+        private static RequestInfo NewRequestInfo(
+            EffectiveTargetKind targetKind,
+            params (string Key, string Value)[] queryParameters
+        )
         {
             FrontendRequest frontendRequest = new(
                 Path: "/ed-fi/academicWeeks",
@@ -1288,7 +1293,11 @@ public class ValidateQueryMiddlewareTests
                 RouteQualifiers: []
             );
 
-            RequestInfo requestInfo = new(frontendRequest, RequestMethod.GET, No.ServiceProvider)
+            RequestInfo requestInfo = new(
+                frontendRequest,
+                RequestMethod.GET,
+                ServiceProviderWithEffectiveTarget(targetKind)
+            )
             {
                 ApiSchemaDocuments = NewApiSchemaDocuments(),
                 PathComponents = new(
@@ -1307,12 +1316,25 @@ public class ValidateQueryMiddlewareTests
             return requestInfo;
         }
 
-        private static async Task<RequestInfo> Execute(
+        /// <summary>
+        /// Executes against the primary, which is where every expectation written before the data
+        /// source mattered belongs.
+        /// </summary>
+        private static Task<RequestInfo> Execute(
             IPipelineStep middleware,
             params (string Key, string Value)[] queryParameters
         )
         {
-            RequestInfo requestInfo = NewRequestInfo(queryParameters);
+            return Execute(middleware, EffectiveTargetKind.Primary, queryParameters);
+        }
+
+        private static async Task<RequestInfo> Execute(
+            IPipelineStep middleware,
+            EffectiveTargetKind targetKind,
+            params (string Key, string Value)[] queryParameters
+        )
+        {
+            RequestInfo requestInfo = NewRequestInfo(targetKind, queryParameters);
 
             await middleware.Execute(requestInfo, NullNext);
 
@@ -1449,6 +1471,179 @@ public class ValidateQueryMiddlewareTests
             RequestInfo requestInfo = await Execute(
                 MiddlewareWithoutCursorRecognition(),
                 ("maxChangeVersion", "200")
+            );
+
+            requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+            requestInfo.PageOrderingMode.Should().Be(PageOrderingMode.ContentVersion);
+        }
+
+        /// <summary>
+        /// The window no longer decides the anchor on its own. A min-only window served from a frozen
+        /// snapshot anchors on ContentVersion, because nothing in a frozen source can move a row later
+        /// within the still-open window and take the duplicate-and-skip hazard with it.
+        /// </summary>
+        [Test]
+        public async Task It_anchors_a_min_only_window_on_the_content_version_against_a_snapshot()
+        {
+            RequestInfo requestInfo = await Execute(
+                Middleware(),
+                EffectiveTargetKind.Snapshot,
+                ("minChangeVersion", "100")
+            );
+
+            requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+            requestInfo.PageOrderingMode.Should().Be(PageOrderingMode.ContentVersion);
+        }
+
+        /// <summary>
+        /// The shapes that already anchored on ContentVersion are unchanged by the data source: the
+        /// snapshot rule widens which windows take that anchor, it does not narrow any.
+        /// </summary>
+        [Test]
+        public async Task It_anchors_the_max_bearing_windows_on_the_content_version_against_a_snapshot()
+        {
+            RequestInfo maxOnly = await Execute(
+                Middleware(),
+                EffectiveTargetKind.Snapshot,
+                ("maxChangeVersion", "200")
+            );
+            RequestInfo minAndMax = await Execute(
+                Middleware(),
+                EffectiveTargetKind.Snapshot,
+                ("minChangeVersion", "100"),
+                ("maxChangeVersion", "200")
+            );
+
+            maxOnly.FrontendResponse.Should().Be(No.FrontendResponse);
+            maxOnly.PageOrderingMode.Should().Be(PageOrderingMode.ContentVersion);
+            minAndMax.FrontendResponse.Should().Be(No.FrontendResponse);
+            minAndMax.PageOrderingMode.Should().Be(PageOrderingMode.ContentVersion);
+        }
+
+        /// <summary>
+        /// An unfiltered read keeps DocumentId even on a snapshot. With no window predicate there is
+        /// no planner pathology to fix and nothing to gain, and routing a request to a snapshot must
+        /// not by itself change the order a collection is walked in.
+        /// </summary>
+        [Test]
+        public async Task It_anchors_an_unfiltered_snapshot_request_on_the_document_id()
+        {
+            RequestInfo requestInfo = await Execute(
+                Middleware(),
+                EffectiveTargetKind.Snapshot,
+                ("schoolId", "255901")
+            );
+
+            requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+            requestInfo.PageOrderingMode.Should().Be(PageOrderingMode.DocumentId);
+        }
+
+        /// <summary>
+        /// The snapshot rule reads the parsed window like the live one does, so a bound that is
+        /// present but does not parse is an absent bound on either data source.
+        /// </summary>
+        [TestCase("", TestName = "snapshot, empty maximum")]
+        [TestCase("   ", TestName = "snapshot, whitespace maximum")]
+        public async Task It_anchors_a_present_but_blank_snapshot_maximum_on_the_document_id(string maximum)
+        {
+            RequestInfo requestInfo = await Execute(
+                Middleware(),
+                EffectiveTargetKind.Snapshot,
+                ("maxChangeVersion", maximum)
+            );
+
+            requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+            requestInfo.PageOrderingMode.Should().Be(PageOrderingMode.DocumentId);
+        }
+
+        /// <summary>
+        /// A window this step is about to reject resolves no anchor at all, so an incoming token is
+        /// never compared against one. The client is told what is actually wrong - the maximum it
+        /// typed - and keeps the one piece of state it cannot rebuild.
+        /// </summary>
+        /// <remarks>
+        /// Asserting the reported message is what makes this able to fail, and the ContentVersion
+        /// token is what gives it something to report. The resolved anchor itself is not observable
+        /// here: this rejection is taken at the change-version parameter-validation exit, which runs
+        /// before the PageOrderingMode assignment, so PageOrderingMode still carries its DocumentId
+        /// default whatever the snapshot rule would have returned - which is why asserting that
+        /// default proves nothing. That is a property of this exit and not of rejection in general:
+        /// the filter-validation rejections
+        /// below the assignment do carry a resolved anchor. A regression that resolved an anchor
+        /// from the faulty window would resolve DocumentId from its surviving bounds, disagree with
+        /// this token, and answer with the invalid-token message instead of the one asserted here.
+        /// </remarks>
+        [TestCase("abc", TestName = "snapshot, maximum is not a number")]
+        [TestCase("-2", TestName = "snapshot, negative maximum")]
+        public async Task It_reports_an_unparseable_snapshot_maximum_rather_than_the_token(string maximum)
+        {
+            RequestInfo requestInfo = await Execute(
+                Middleware(),
+                EffectiveTargetKind.Snapshot,
+                ("pageToken", PageTokenCodec.Encode(new CursorRange(7, 42), PageOrderingMode.ContentVersion)),
+                ("maxChangeVersion", maximum)
+            );
+
+            requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+            requestInfo
+                .FrontendResponse.Body?["errors"]?[0]?.GetValue<string>()
+                .Should()
+                .Be("MaxChangeVersion must be a numeric value greater than or equal to 0.");
+        }
+
+        /// <summary>
+        /// Only a frozen source qualifies. A read replica keeps applying changes, so a row can still
+        /// move later within an open window there and the live rule stands — which is what stops a
+        /// later simplification to "anything that is not the primary" from passing.
+        /// </summary>
+        [TestCase(EffectiveTargetKind.Primary, TestName = "primary keeps the live rule")]
+        [TestCase(EffectiveTargetKind.ReadReplica, TestName = "read replica keeps the live rule")]
+        public async Task It_anchors_a_min_only_window_on_the_document_id_for_every_unfrozen_target(
+            EffectiveTargetKind targetKind
+        )
+        {
+            RequestInfo requestInfo = await Execute(Middleware(), targetKind, ("minChangeVersion", "100"));
+
+            requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+            requestInfo.PageOrderingMode.Should().Be(PageOrderingMode.DocumentId);
+        }
+
+        /// <summary>
+        /// The kill switch overrides every branch, the snapshot one included, so a legacy deployment
+        /// issues DocumentId tokens whichever database served the request.
+        /// </summary>
+        [Test]
+        public async Task It_anchors_a_snapshot_window_on_the_document_id_under_legacy_ordering()
+        {
+            RequestInfo minOnly = await Execute(
+                MiddlewareWithLegacyDocumentIdOrdering(),
+                EffectiveTargetKind.Snapshot,
+                ("minChangeVersion", "100")
+            );
+            RequestInfo maxOnly = await Execute(
+                MiddlewareWithLegacyDocumentIdOrdering(),
+                EffectiveTargetKind.Snapshot,
+                ("maxChangeVersion", "200")
+            );
+
+            minOnly.FrontendResponse.Should().Be(No.FrontendResponse);
+            minOnly.PageOrderingMode.Should().Be(PageOrderingMode.DocumentId);
+            maxOnly.FrontendResponse.Should().Be(No.FrontendResponse);
+            maxOnly.PageOrderingMode.Should().Be(PageOrderingMode.DocumentId);
+        }
+
+        /// <summary>
+        /// The Change Query composition resolves by the target too. Nothing on that pipeline reads the
+        /// anchor, so this is inert by design — and asserted so that the rule stays in one place
+        /// rather than acquiring a second, composition-specific form.
+        /// </summary>
+        [Test]
+        public async Task It_resolves_by_the_target_without_cursor_recognition()
+        {
+            RequestInfo requestInfo = await Execute(
+                MiddlewareWithoutCursorRecognition(),
+                EffectiveTargetKind.Snapshot,
+                ("minChangeVersion", "100")
             );
 
             requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);

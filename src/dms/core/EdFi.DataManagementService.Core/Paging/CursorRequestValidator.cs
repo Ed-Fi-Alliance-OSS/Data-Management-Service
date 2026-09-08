@@ -97,12 +97,12 @@ internal static class CursorRequestValidator
     /// </param>
     /// <param name="maximumPageSize">The configured maximum page size.</param>
     /// <param name="orderingMode">
-    /// The anchor this request resolved from its change-version window, or <see langword="null"/> when
-    /// that window did not parse and the request therefore resolves no anchor. A token carries the
-    /// anchor it was issued for, and replaying it under a request that resolves a different one would
-    /// read its bounds against the wrong column, so the two have to agree. The resolved value already
-    /// accounts for the legacy ordering kill switch, which is what keeps tokens issued under that
-    /// setting replayable instead of failing mid-walk.
+    /// The anchor this request resolved from its change-version window and the data store serving it,
+    /// or <see langword="null"/> when that window did not parse and the request therefore resolves no
+    /// anchor. A token carries the anchor it was issued for, and replaying it under a request that
+    /// resolves a different one would read its bounds against the wrong column, so the two have to
+    /// agree. The resolved value already accounts for the legacy ordering kill switch, which is what
+    /// keeps tokens issued under that setting replayable instead of failing mid-walk.
     /// </param>
     internal static CursorValidationResult Validate(
         IReadOnlyDictionary<string, string> queryParameters,
@@ -149,11 +149,16 @@ internal static class CursorRequestValidator
             return new CursorValidationResult.Invalid(InvalidPageToken);
         }
 
-        // Still phase 0: a token whose anchor disagrees with this request's window decodes cleanly but
-        // names bounds in the wrong units, which makes it no more replayable than a malformed one. The
-        // same answer in both directions - a windowed token replayed without the window, and an
-        // unwindowed token replayed with one - because a token is opaque and neither direction tells
-        // the client anything it could act on beyond "start over".
+        // Still phase 0: a token whose anchor disagrees with the one this request resolved decodes
+        // cleanly but names bounds in the wrong units, which makes it no more replayable than a
+        // malformed one. What is compared is the resolved anchor, never the request shape, so a
+        // change that leaves the anchor where it was is served and goes on walking the token's own
+        // range: a move to a different maxChangeVersion value, and on a snapshot a move between any
+        // two windows that each keep a bound. Only a change that flips the anchor is rejected, and
+        // the window is not the only input that can flip it - the anchor is resolved from the window
+        // and the data store serving the request, so a min-only token also stops matching when the
+        // request changes data source. The same answer whichever input moved, because a token is
+        // opaque and none of them tells the client anything it could act on beyond "start over".
         //
         // A request whose window did not parse resolves no anchor, so there is nothing to disagree
         // with and this comparison is skipped. Reporting a perfectly replayable token as invalid

@@ -6,6 +6,7 @@
 using System.Net;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.Paging;
 using EdFi.DataManagementService.Tests.Integration.Doubles;
 using FluentAssertions;
 
@@ -21,6 +22,15 @@ namespace EdFi.DataManagementService.Tests.Integration.Scenarios;
 internal static class DerivativeRoutingScenario
 {
     private const string PartitionsEndpoint = "/data/ed-fi/students/partitions?number=2";
+
+    /// <summary>
+    /// The window every min-only scenario here uses. It is open below every seeded row, so the same
+    /// query is answered with the whole collection on each of the three databases and a difference in
+    /// what a walk returns is a difference in which database served it, never in the window.
+    /// </summary>
+    private const string MinOnlyWindowQuery = "minChangeVersion=1";
+
+    private const string MinOnlyPartitionsEndpoint = $"{PartitionsEndpoint}&{MinOnlyWindowQuery}";
 
     /// <summary>
     /// With a replica configured and no snapshot asked for, an eligible read is served by the replica.
@@ -152,9 +162,16 @@ internal static class DerivativeRoutingScenario
     /// continuation to its end, and returns the studentUniqueId values the walk produced. Every request
     /// carries the snapshot header, because a walk that dropped it would page a different database.
     /// </summary>
+    /// <param name="windowQuery">
+    /// The change-version window the boundaries were cut over, repeated on every request of the walk.
+    /// A window is not carried in a token, and the anchor is resolved from it, so a walk that dropped
+    /// it would resolve a different anchor than the boundaries were computed under and reject them.
+    /// Empty for an unwindowed partition set.
+    /// </param>
     private static async Task<HashSet<string>> WalkPartitionsAsync(
         ApiIntegrationHarness harness,
-        IReadOnlyList<string> pageTokens
+        IReadOnlyList<string> pageTokens,
+        string windowQuery = ""
     )
     {
         HashSet<string> walked = new(StringComparer.Ordinal);
@@ -170,7 +187,8 @@ internal static class DerivativeRoutingScenario
                     harness,
                     HttpMethod.Get,
                     $"{DerivativeRoutingSupport.StudentsEndpoint}"
-                        + $"?pageToken={Uri.EscapeDataString(pageToken)}&pageSize=1",
+                        + $"?pageToken={Uri.EscapeDataString(pageToken)}&pageSize=1"
+                        + (windowQuery.Length == 0 ? "" : $"&{windowQuery}"),
                     useSnapshotHeaderValue: "true"
                 );
 
@@ -194,6 +212,171 @@ internal static class DerivativeRoutingScenario
         }
 
         return walked;
+    }
+
+    /// <summary>
+    /// A min-only walk belongs to the data source it started against. The snapshot resolves the
+    /// <c>ContentVersion</c> anchor for that window and every live source resolves <c>DocumentId</c>, so
+    /// the token a page hands out names bounds in units only its own source reads. Adding or dropping
+    /// the snapshot header mid-walk is answered with the invalid-page-token response, exactly as
+    /// changing the window would be.
+    /// </summary>
+    /// <remarks>
+    /// The verdict is reached by comparing the token's marker against the anchor the request resolves,
+    /// before any row is read, so this proves the two sources resolve different anchors without needing
+    /// the snapshot database to hold a ContentVersion order that diverges from its DocumentId order.
+    /// </remarks>
+    public static async Task It_binds_a_min_only_walk_to_the_source_that_issued_its_token(
+        ApiIntegrationHarness harness
+    )
+    {
+        string snapshotToken = await IssueMinOnlyPageTokenAsync(harness, useSnapshotHeaderValue: "true");
+        string liveToken = await IssueMinOnlyPageTokenAsync(harness, useSnapshotHeaderValue: null);
+
+        snapshotToken
+            .Should()
+            .NotBe(
+                liveToken,
+                "the two sources anchor the same window differently, so their tokens cannot be identical"
+            );
+
+        await AssertReplayAsync(harness, snapshotToken, useSnapshotHeaderValue: "true", accepted: true);
+        await AssertReplayAsync(harness, snapshotToken, useSnapshotHeaderValue: null, accepted: false);
+
+        // The mirror. The replica serves this one, and it is walked exactly as the parent would be:
+        // anything short of a frozen source keeps the live anchor.
+        await AssertReplayAsync(harness, liveToken, useSnapshotHeaderValue: null, accepted: true);
+        await AssertReplayAsync(harness, liveToken, useSnapshotHeaderValue: "true", accepted: false);
+    }
+
+    /// <summary>
+    /// The cross-operation half of the same rule. Boundaries are cut in the units the walk that
+    /// consumes them reads, so /partitions resolves its anchor from the same two inputs GET-many does:
+    /// against a frozen snapshot a min-only window balances on <c>ContentVersion</c>, not
+    /// <c>DocumentId</c>. The boundaries therefore belong to the snapshot, and a walk that drops the
+    /// header is answered with the invalid-page-token response rather than served rows read against
+    /// the wrong column.
+    /// </summary>
+    /// <remarks>
+    /// The unwindowed twin, <see cref="It_partitions_the_selected_target" />, runs entirely on the
+    /// DocumentId anchor and would pass unchanged if the partition-side resolution regressed to the
+    /// live rule. This is the scenario that fails if /partitions and GET-many ever resolve their
+    /// anchors differently — the defect the partition step resolves its anchor at all to prevent,
+    /// which neither operation's own tests can see.
+    /// </remarks>
+    public static async Task It_partitions_a_min_only_window_on_the_snapshot_anchor(
+        ApiIntegrationHarness harness
+    )
+    {
+        using HttpResponseMessage partitionsResponse = await DerivativeRoutingSupport.SendAsync(
+            harness,
+            HttpMethod.Get,
+            MinOnlyPartitionsEndpoint,
+            useSnapshotHeaderValue: "true"
+        );
+
+        string partitionsBody = await partitionsResponse.Content.ReadAsStringAsync();
+        partitionsResponse.StatusCode.Should().Be(HttpStatusCode.OK, partitionsBody);
+
+        string[] pageTokens =
+        [
+            .. JsonNode.Parse(partitionsBody)!["pageTokens"]!
+                .AsArray()
+                .Select(token => token!.GetValue<string>()),
+        ];
+
+        pageTokens.Should().NotBeEmpty("the snapshot holds Students inside the window");
+
+        // The walk these boundaries were cut for. What this pins is the anchor the partition step
+        // resolved, not where it cut: the seed is far under the minimum partition size, so the set is
+        // a single unbounded range and no interior boundary is placed. Had the step applied the live
+        // rule instead, this min-only window would have resolved DocumentId and marked its tokens
+        // accordingly, and the walk below - which resolves ContentVersion from the same window on the
+        // snapshot - would reject the first token it replayed. Boundaries actually cut on the
+        // ContentVersion column are covered by WindowedPartitionAnchoringScenario, which lowers the
+        // host's maximum page size so interior cuts are reachable over HTTP.
+        HashSet<string> walked = await WalkPartitionsAsync(harness, pageTokens, MinOnlyWindowQuery);
+
+        walked
+            .Should()
+            .HaveCount(
+                DerivativeRoutingSupport.SnapshotStudentCount,
+                "the walk must cover the snapshot's Students, whose count differs from the "
+                    + "parent's and the replica's"
+            );
+        walked
+            .Should()
+            .Contain(
+                DerivativeRoutingSupport.SnapshotStudentUniqueId,
+                "the snapshot's marker row must be among them"
+            );
+
+        // Dropping the header resolves the live anchor for this window, so a boundary named in
+        // ContentVersion units is no longer replayable — the same verdict a GET-many continuation gets.
+        await AssertReplayAsync(harness, pageTokens[0], useSnapshotHeaderValue: null, accepted: false);
+    }
+
+    /// <summary>
+    /// Takes the first page of a min-only walk and returns the continuation it hands out. The window is
+    /// open below every seeded row, so the page is served and a continuation exists on all three
+    /// databases.
+    /// </summary>
+    /// <remarks>
+    /// The opening page is a traditional one: <c>pageSize</c> is the continuation's page size and is
+    /// rejected without a <c>pageToken</c> to accompany it. That a traditional page hands out a
+    /// continuation at all is the property this scenario turns on — the anchor is stamped into the
+    /// token of every successful page, so a walk can start traditionally and continue by cursor.
+    /// </remarks>
+    private static async Task<string> IssueMinOnlyPageTokenAsync(
+        ApiIntegrationHarness harness,
+        string? useSnapshotHeaderValue
+    )
+    {
+        using HttpResponseMessage response = await DerivativeRoutingSupport.SendAsync(
+            harness,
+            HttpMethod.Get,
+            $"{DerivativeRoutingSupport.StudentsEndpoint}?{MinOnlyWindowQuery}&limit=1",
+            useSnapshotHeaderValue
+        );
+
+        string body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+
+        response
+            .Headers.TryGetValues("Next-Page-Token", out var tokens)
+            .Should()
+            .BeTrue("a min-only page hands out a continuation on every data source");
+
+        return tokens!.Single();
+    }
+
+    private static async Task AssertReplayAsync(
+        ApiIntegrationHarness harness,
+        string pageToken,
+        string? useSnapshotHeaderValue,
+        bool accepted
+    )
+    {
+        string source = useSnapshotHeaderValue is null ? "without the header" : "with the header";
+
+        using HttpResponseMessage response = await DerivativeRoutingSupport.SendAsync(
+            harness,
+            HttpMethod.Get,
+            $"{DerivativeRoutingSupport.StudentsEndpoint}"
+                + $"?{MinOnlyWindowQuery}&pageToken={Uri.EscapeDataString(pageToken)}&pageSize=1",
+            useSnapshotHeaderValue
+        );
+
+        string body = await response.Content.ReadAsStringAsync();
+
+        if (accepted)
+        {
+            response.StatusCode.Should().Be(HttpStatusCode.OK, $"replayed {source}: {body}");
+            return;
+        }
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, $"replayed {source}: {body}");
+        body.Should().Contain(CursorRequestValidator.InvalidPageToken);
     }
 
     /// <summary>

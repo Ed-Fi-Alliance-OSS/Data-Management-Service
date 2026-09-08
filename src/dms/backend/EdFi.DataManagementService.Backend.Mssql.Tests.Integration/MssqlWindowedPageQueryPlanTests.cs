@@ -157,6 +157,110 @@ public class Given_A_Mssql_Windowed_Page_Query_Plan
     }
 
     /// <summary>
+    /// The window shape a frozen snapshot resolves this anchor for, and the one the fixture had no
+    /// case for. What it pins is that the floor alone is enough to enter the tail: the ceiling was
+    /// never what made the seek possible, so dropping it does not cost the seek.
+    /// </summary>
+    /// <remarks>
+    /// One variable away from It_seeks_the_content_version_index_for_a_regular_resource_upper_tail:
+    /// the same selective floor, the same seeded volume, the same assertions, ceiling removed. That
+    /// is what makes any difference in the plan attributable to the missing ceiling and nothing else,
+    /// and it reuses that helper's assertion that the tail really is a small fraction of the rows.
+    /// <para>
+    /// A floor naming most of the collection is the companion case below, and it resolves the same
+    /// way for a reason worth naming here: page selection always carries ORDER BY on the anchor and
+    /// a row limit, so the index supplies the ordering and the limit bounds what is read. Selectivity
+    /// therefore does not decide the plan, which is why one assertion covers both floors. Reaching
+    /// the page key from the anchor index costs nothing extra on SQL Server: the table is clustered
+    /// on its primary key, so the nonclustered anchor index carries that key as its row locator and
+    /// the seek already has it in hand.
+    /// </para>
+    /// </remarks>
+    [Test]
+    public async Task It_seeks_the_content_version_index_for_a_regular_resource_min_only_window()
+    {
+        var upperTail = await UpperTailWindowAsync("[edfi].[School]");
+        var window = upperTail with { MaxChangeVersion = (long?)null };
+
+        var keyset = new RelationalQueryPageKeysetPlanner(SqlDialect.Mssql).Plan(
+            _fixture.MappingSet.GetReadPlanOrThrow(SchoolResource).Model.Root,
+            new RelationalQueryPreprocessingResult(new RelationalQueryPreprocessingOutcome.Continue(), []),
+            _paging,
+            changeVersionRange: window,
+            orderingMode: PageOrderingMode.ContentVersion
+        );
+
+        string plan = await CapturePlanAsync(keyset);
+
+        plan.Should().Contain("[IX_School_ContentVersion]");
+        plan.Should()
+            .Contain(
+                "PhysicalOp=\"Index Seek\"",
+                "an open-ended window is still a range over the index's leading column, so the tail is "
+                    + "sought rather than arrived at by reading forward"
+            );
+        plan.Should()
+            .NotContain(
+                "[PK_School]",
+                "an open-ended window still enters the tail through the anchor index, so the dead-run "
+                    + "primary-key scan the ordering exists to avoid must not reappear without a ceiling"
+            );
+    }
+
+    /// <summary>
+    /// The min-only window at its worst selectivity: a floor below every row, so the predicate names
+    /// the whole collection. This is the case the anchor rule had no evidence for, min-only being the
+    /// natural shape against a frozen snapshot and a snapshot sync reading from the beginning being
+    /// the natural request. Provider independence is why it is asserted here as well: a PostgreSQL
+    /// plan establishes nothing about SQL Server.
+    /// </summary>
+    /// <remarks>
+    /// The measured plan is an ordered index seek under the row goal, with no sort operator. Page
+    /// selection always orders by the anchor and always takes a bounded number of rows, so the index
+    /// is worth reading for the ordering alone and the row goal stops it early - which is requirement
+    /// 1, depth insensitivity, holding for this shape. Asserting the absence of a sort is what makes
+    /// this more than a duplicate of the selective case: a plan that sorted the admitted rows would
+    /// still name the index and still avoid the primary key.
+    /// </remarks>
+    [Test]
+    public async Task It_reads_the_content_version_index_in_order_for_an_unselective_min_only_floor()
+    {
+        var upperTail = await UpperTailWindowAsync("[edfi].[School]");
+        var window = upperTail with { MinChangeVersion = 0L, MaxChangeVersion = (long?)null };
+
+        var keyset = new RelationalQueryPageKeysetPlanner(SqlDialect.Mssql).Plan(
+            _fixture.MappingSet.GetReadPlanOrThrow(SchoolResource).Model.Root,
+            new RelationalQueryPreprocessingResult(new RelationalQueryPreprocessingOutcome.Continue(), []),
+            _paging,
+            changeVersionRange: window,
+            orderingMode: PageOrderingMode.ContentVersion
+        );
+
+        string plan = await CapturePlanAsync(keyset);
+
+        plan.Should().Contain("[IX_School_ContentVersion]");
+        plan.Should()
+            .Contain(
+                "PhysicalOp=\"Index Seek\"",
+                "the measured plan is an ordered index seek under a Top; asserting it positively is "
+                    + "what stops the absence assertions below from passing over a plan that never "
+                    + "reached the index at all"
+            );
+        plan.Should()
+            .NotContain(
+                "PhysicalOp=\"Sort\"",
+                "the anchor index supplies the ordering, so no amount of the collection admitted by "
+                    + "the floor turns page selection into a materialize-and-sort"
+            );
+        plan.Should()
+            .NotContain(
+                "[PK_School]",
+                "the dead-run primary-key scan the ContentVersion ordering exists to avoid must not "
+                    + "reappear at the one selectivity where a planner might prefer it"
+            );
+    }
+
+    /// <summary>
     /// A descriptor's windowed first page seeks the composite descriptor index, whose leading column is
     /// the authoritative <c>ResourceKeyId</c> the descriptor page predicate filters on and whose second
     /// is the anchor it orders by.

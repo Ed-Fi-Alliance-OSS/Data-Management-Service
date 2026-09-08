@@ -13,10 +13,12 @@ namespace EdFi.DataManagementService.Backend;
 /// </summary>
 /// <remarks>
 /// Pure, provider-neutral, and anchor-neutral: the starts are <c>DocumentId</c> or
-/// <c>ContentVersion</c> values depending on how the request resolved its anchor, and both are dense
-/// integer sequences, so the same arithmetic assembles both. Both providers return the same ordered
-/// starts for equivalent data, so both produce the same ranges and therefore the same tokens. Core
-/// encodes the ranges; nothing here touches token text.
+/// <c>ContentVersion</c> values depending on how the request resolved its anchor, and the same
+/// arithmetic assembles both because it needs nothing from them but that they be strictly ascending
+/// <c>long</c> values. Density is deliberately not assumed - neither anchor is dense, and a range
+/// here is closed at the next start rather than at a computed width. Both providers return the same
+/// ordered starts for equivalent data, so both produce the same ranges and therefore the same tokens.
+/// Core encodes the ranges; nothing here touches token text.
 /// </remarks>
 internal static class PartitionRangeAssembler
 {
@@ -27,13 +29,16 @@ internal static class PartitionRangeAssembler
     /// is unreachable for want of a range to hold it.
     /// </summary>
     /// <remarks>
-    /// What that last range actually reaches depends on the anchor, because the request's own filters
-    /// are reapplied on every page walked from it. Under a <c>DocumentId</c> anchor it reaches
-    /// documents created after the boundary set was calculated. Under a <c>ContentVersion</c> anchor
-    /// the request carries a <c>maxChangeVersion</c> by construction, and that ceiling still applies,
-    /// so the range reaches only what the window admits — a later write leaves the window rather than
-    /// arriving in the last partition. Unbounded above is a property of the range, not a promise about
-    /// what the walk returns.
+    /// What that last range actually reaches depends on the anchor and the source, because the
+    /// request's own filters are reapplied on every page walked from it. Under a <c>DocumentId</c>
+    /// anchor it reaches documents created after the boundary set was calculated. Under a
+    /// <c>ContentVersion</c> anchor there are two cases, and only the first is closed by a bound: a
+    /// max-bearing window supplies a ceiling that still applies on every page, so the range reaches
+    /// only what the window admits and a later write leaves the window rather than arriving in the
+    /// last partition. A min-only window resolves this anchor on a frozen snapshot alone, and there
+    /// the request carries no ceiling at all — nothing clips the range, and nothing needs to, because
+    /// the source admits no later write to arrive. Unbounded above is a property of the range, not a
+    /// promise about what the walk returns.
     /// </remarks>
     /// <param name="ascendingStarts">
     /// The starting anchor values, strictly ascending. Empty when no candidates are accessible.
