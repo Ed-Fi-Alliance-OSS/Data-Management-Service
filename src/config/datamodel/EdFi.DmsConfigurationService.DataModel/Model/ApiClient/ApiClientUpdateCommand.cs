@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.ComponentModel;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using FluentValidation;
@@ -16,6 +17,14 @@ public class ApiClientUpdateCommand
     public required int ApplicationId { get; set; }
     public required string Name { get; set; } = "";
     public required bool IsApproved { get; set; }
+
+    [Description(
+        "Data Store ids to assign to the API client. Optional, and a full replacement of the "
+            + "client's existing assignments: an empty array, or omitting the property, removes "
+            + "every existing assignment and leaves a client that authenticates but reaches no "
+            + "Data Store data. An explicit null is rejected. Supplied ids must already exist in "
+            + "the caller's tenant."
+    )]
     public int[] DataStoreIds { get; set; } = [];
 
     /// <summary>
