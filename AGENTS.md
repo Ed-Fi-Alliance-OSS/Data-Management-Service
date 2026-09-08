@@ -39,7 +39,7 @@ Do not infer the current release line from `src/dms/Directory.Build.props`; it i
 git log --oneline --date=short --format="%h %cd %s" -G "public const string RelationalMappingVersion" -- src\dms\core\EdFi.DataManagementService.Core\Utilities\SchemaHashConstants.cs
 ```
 
-Why the cadence matters: `EffectiveSchemaHashProvider` includes the constant in the hashed manifest, so changing it changes `EffectiveSchemaHash` for every dialect. Databases provisioned against the previous hash then fail startup validation in `ValidateStartupInstancesTask` and receive HTTP 503 at request time until they are re-provisioned. Every bump is a forced re-provision of every existing database, so each extra bump within one release cycle forces an extra one. See `docs/RELATIONAL-BACKEND.md` for the full schema-fingerprint validation flow.
+Why the cadence matters: `EffectiveSchemaHashProvider` includes the constant in the hashed manifest, so changing it changes `EffectiveSchemaHash` for every dialect. Databases provisioned against the previous hash then fail startup validation in `ValidateStartupInstancesTask` and receive HTTP 503 at request time until they are re-provisioned. Every bump is a forced re-provision of every existing database, so each extra bump within one release cycle forces an extra one. Holding the value also has a cost: `EffectiveSchemaHash` does not include generated DDL or mapping-set output, so a mapping-only physical change made without a bump can leave validation unable to detect a database provisioned before that change; those databases must be deliberately reprovisioned. See `docs/RELATIONAL-BACKEND.md` for the full schema-fingerprint validation flow.
 
 ## Working with Data Management Service E2E Tests
 
