@@ -103,8 +103,10 @@ retry only while deployment state proves that the same new database has not left
 workflow. Initial enablement creates or exact-matches the immutable binding before guarded
 tracking activation, so that binding is durable proof of CDC intent across the activation
 crash boundary. A successfully enabled CDC database may later exact-match its binding,
-validate artifacts, restart, and use guarded source-replacement recovery. Those operations
-never modify core E18 schema or clear a possibly published cache-ahead latch.
+validate artifacts, and restart against that same physical source with intact deployment
+provenance. Those operations never modify core E18 schema or clear a possibly published
+cache-ahead latch. Physical-source replacement is deferred from v1 as defined
+[below](#v1-physical-source-replacement-deferral).
 
 Change Queries remain a separate polling API compatibility surface, including
 `/deletes`, `/keyChanges`, and live-resource version filters based on `ContentVersion`,
@@ -745,11 +747,12 @@ Conformance vectors for source identity
 The row is inserted only when absent and ordinary provisioning never changes it. Provider
 replication and failover retain it. Creation of an independent writable data store from a
 template, clone, or copied backup assigns a new UUID before the data store becomes
-available. A rollback or restore that replaces an existing source rotates
-`SourceIdentity` through the explicit CDC recovery workflow and, when CDC state exists,
-uses a new binding generation, public and progress topics, a SQL Server schema-history topic
-when applicable, and consumer state namespace. Rotation is never part of ordinary DDL
-rerun or DMS startup.
+available. A future workflow for rollback or restore that replaces an existing CDC source
+must rotate `SourceIdentity` and use a new binding generation, public and progress topics,
+a SQL Server schema-history topic when applicable, and consumer state namespace. That
+[replacement workflow is deferred from v1](#v1-physical-source-replacement-deferral);
+these identity requirements do not authorize CDC enablement of a clone or restored database.
+Rotation is never part of ordinary DDL rerun or DMS startup.
 Diagnostics identify conflicting opaque data-store IDs without credentials, tenant
 display names, or unsanitized physical identifiers.
 
@@ -969,16 +972,39 @@ These rules apply only to a controller-proven, not-yet-admitted initial workflow
 restart after admission exact-matches the binding and validates existing artifacts instead
 of applying the empty-table retry classification.
 
-V1 never reassigns an existing topic or connector generation to a different physical
-database. Guarded source replacement is supported only for a database previously enabled
-through the v1 new-database path. It fences the old connector, rotates `SourceIdentity`
-through the binding-state operation, and creates a new binding generation, connector,
-public topic, progress topic, SQL Server schema-history topic when applicable, consumer
-state namespace, and snapshot. The old generation is retained or explicitly retired; none
-of its governed artifacts is reused. The new generation reports eventual operational status
-rather than another exact baseline. It cannot clear a published cache-ahead latch or recover
-a binding whose source-history loss is terminal. Removing a target requires explicit
-retain-or-delete decisions for every generation.
+### V1 physical-source replacement deferral
+
+V1 supports initial CDC enablement of a controller-proven new physical database and
+subsequent lifecycle operations against that same source with intact deployment provenance.
+Physical-source replacement is deferred. V1 exposes no source-replacement command and
+performs no replacement-driven source-identity rotation, database restore/copy, CMS cutover,
+or new-generation capture setup. Accepting an operator-prepared replacement database is
+also outside this boundary.
+
+An observed physical-source mismatch rejects validation and controller-issued
+start/restart/resume without rebinding or creating replacement artifacts. Status/watch
+uses the existing source-history classification, incident latching, and containment
+contracts; mismatch does not authorize repair or change DMS request routing. Missing
+provenance, terminal source-history loss, and a published cache-ahead latch retain their
+existing rejection behavior.
+
+A separate replacement design must assign database preparation, writer/projector fencing,
+and CMS cutover ownership; define when old-source committed-offset/provider-history proof
+is obtained and retained and how it is tied to the replacement; and establish replacement
+canonical/cache/work integrity evidence, consumer transition, and crash-safe recovery.
+It must respect E18's integrity-scrub requirements after suspected restore rather than
+treating queue emptiness as proof of a valid restored projection.
+
+Any future replacement must fence the old connector before source-identity rotation and
+use a new binding generation, connector, public topic, progress topic, SQL Server
+schema-history topic when applicable, consumer state namespace, and snapshot. V1 never
+reassigns an existing topic or connector generation to a different physical database.
+These constraints do not supply a supported replacement procedure or authorize clearing a
+published cache-ahead latch or recovering a terminal generation. Removing a target requires
+explicit retain-or-delete decisions for every generation. Retirement does not restore a
+surviving database's initial-enable eligibility or erase publication history. Provisioning
+an independent new CDC database does not certify migration or continuity from an existing
+source.
 
 In-place source reset and topic reuse are deferred. The same-source provisioning workflow
 remains idempotent for an exact binding match, and deployment automation rejects separately
@@ -1695,8 +1721,7 @@ running state, current lag plus Debezium 3.6 P50/P95/P99 source-lag telemetry, l
 snapshot completion, heartbeat/capture progress, the provider barrier and committed
 Connect source offset in sanitized form, existing artifacts without binding state, source
 mismatch, shared Connect offset-store durability and ACL health, source-history continuity
-outcome and remaining provider-retention margin, the durable terminal loss latch, and
-guarded source-replacement state.
+outcome and remaining provider-retention margin, and the durable terminal loss latch.
 
 Use provider, safe project/resource identity, failure category, target-resolution state,
 and opaque data-store identity only where cardinality policy permits. Never log
@@ -1717,7 +1742,7 @@ queue backlog, oldest work, poison failures, work-anomaly scrub, activation/deac
 mismatch, enqueue-failure diagnosis, ordinary monotonic projection lag,
 source-history continuity monitoring, progress-topic
 diagnosis, shared Connect offset-store durability and ACL diagnosis, SQL Server
-schema-history diagnosis, target migration/retirement, and provider artifact cleanup. They
+schema-history diagnosis, target removal/retirement, and provider artifact cleanup. They
 also cover sensitive-data disclosure containment and destructive
 binding-generation retirement, require recorded platform purge evidence, and leave CDC
 unavailable rather than republishing into or recreating the affected topic.
@@ -1740,8 +1765,10 @@ failure backoff, target concurrency, and baseline high-water mark; how to identi
 same-document canonical-write contention; and why projector downtime permits queued
 writes while enqueue-schema failure rejects canonical writes.
 They cover preservation of intact deployment state, interrupted initial-setup retry,
-intact-state validation/restart, cleanup ordering, and guarded new-generation source
-replacement. They distinguish managed stop/start from native worker/task recovery using the
+intact-state validation/restart, cleanup ordering, and the
+[physical-source replacement deferral](#v1-physical-source-replacement-deferral), including
+source-mismatch rejection and the limits of independent new-database provisioning.
+They distinguish managed stop/start from native worker/task recovery using the
 [recovery boundary](#controller-managed-lifecycle-and-native-recovery-boundary), including
 incomplete shutdown, possible publication before revalidation, and the absence of retrospective
 continuity certification. They link to the

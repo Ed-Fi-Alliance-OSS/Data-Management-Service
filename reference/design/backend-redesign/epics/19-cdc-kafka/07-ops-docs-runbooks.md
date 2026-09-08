@@ -10,6 +10,7 @@ epic: DMS-1309
 
 - **Configuration, integration, readiness, and operations**: reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md
 - **V1 deployment-state continuity and adoption deferral**: reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#v1-deployment-state-continuity-and-adoption-deferral
+- **V1 physical-source replacement deferral**: reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#v1-physical-source-replacement-deferral
 - **Topic and message contract**: reference/design/backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md
 - **Projector and source decision**: reference/design/backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md
 
@@ -50,8 +51,12 @@ Publish verified operator guidance for the implemented relational CDC capability
 - State that projector downtime permits canonical writes to queue work, while enqueue
   failure rejects the complete canonical transaction. Projection status never gates
   ordinary API routing.
-- Document only the implemented restart, recovery, containment, source-replacement, and
+- Document only the implemented restart, recovery, containment, and
   destructive-retirement commands.
+- Link to the design's physical-source replacement deferral and document DMS-1323's
+  source-mismatch rejection diagnostics. Do not present an operator-prepared replacement,
+  retirement, or independent new-database provisioning as a supported migration or
+  continuity-preserving replacement procedure.
 - Document managed shutdown/startup and native worker/task recovery using the design's
   [recovery boundary](../../design-docs/cdc/cdc-streaming.md#controller-managed-lifecycle-and-native-recovery-boundary)
   and DMS-1323's shipped commands and diagnostics, including incomplete shutdown and the
@@ -79,6 +84,9 @@ Publish verified operator guidance for the implemented relational CDC capability
 - Documentation checks or exercised scenarios cover the deployment-state continuity
   boundary, unsupported missing-state adoption, terminal-incident rejection, and retirement
   limitations using DMS-1323's shipped diagnostics and rejection fixtures.
+- Documentation checks cover the physical-source replacement deferral and source-mismatch
+  rejection using DMS-1323's command help and provider rejection fixtures; no replacement
+  command or successful replacement runbook is documented.
 - Recovery guidance is checked against DMS-1323's managed lifecycle and native recovery
   qualification evidence; it does not describe eventual containment as pre-consumption
   fencing or later healthy observations as retrospective continuity certification.

@@ -73,5 +73,5 @@ is evidenced by these behavioral suites:
 - Provider object provisioning, connector rendering, Kafka and ACL changes, Connect REST
   orchestration, public message behavior, and end-to-end Kafka scenarios are assigned to
   E19-S01 through E19-S06 as mapped by the authoritative traceability table.
-- Operator command and transport wiring, including source-replacement orchestration, is
-  assigned to E19-S04.
+- Operator command and transport wiring is assigned to E19-S04. Physical-source replacement
+  is [deferred from v1](../../design-docs/cdc/cdc-streaming.md#v1-physical-source-replacement-deferral).

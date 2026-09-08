@@ -15,6 +15,7 @@ epic: DMS-1309
 - **Local and CI connector telemetry**: reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#local-and-ci-connector-telemetry
 - **Deployment-owned physical source binding**: reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding
 - **V1 deployment-state continuity and adoption deferral**: reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#v1-deployment-state-continuity-and-adoption-deferral
+- **V1 physical-source replacement deferral**: reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#v1-physical-source-replacement-deferral
 - **Source-history continuity**: reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#source-history-continuity
 - **Managed lifecycle and native recovery boundary**: reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#controller-managed-lifecycle-and-native-recovery-boundary
 - **Bootstrap phase ownership**: reference/design/backend-redesign/design-docs/bootstrap/command-boundaries.md
@@ -56,8 +57,8 @@ needed to provision, validate, start, stop, and retire a target.
   commands rejected with no mutation.
 - Add cluster-scoped Kafka Connect offset-store provisioning/validation and binding-scoped
   Kafka topic, durability, record-size, and ACL provisioning/validation.
-- Add Kafka Connect registration, live validation, status polling, restart, guarded
-  source replacement, and teardown operations.
+- Add Kafka Connect registration, live validation, status polling, restart, and teardown
+  operations.
 - Expose the same workflow to the E2E harness.
 
 ## Resolved Bootstrap and Controller Scope
@@ -83,8 +84,8 @@ controller composes those contracts rather than introducing another set of rules
   currently in `DocumentCacheAdmin` into a shared runtime composition helper if needed;
   do not reference one CLI executable from another or copy its initialization pipeline.
   Lifecycle mutations still execute through the E18 command and its provider mutex.
-- Expose explicit enable, validate, status/watch, restart, stop, source-replacement,
-  record-size increase, and retire operations. Validate inspects without repairing;
+- Expose explicit enable, validate, status/watch, restart, stop, record-size increase,
+  and retire operations. Validate inspects without repairing;
   status/watch also performs the design-required incident latching and connector containment.
   Stop retains artifacts; retire requires an explicit generation and destructive-cleanup
   intent. Configuration
@@ -265,14 +266,14 @@ controller composes those contracts rather than introducing another set of rules
   expose an adoption command or call `ImportVerifiedBindingAsync` from the controller.
   The existing lower-level import capability may remain unused; removing it is not required
   by this story. Preserve intact interrupted-initial-workflow retries through 19-00.
-- Source replacement uses the design's guarded
-  previously-enabled-source path, with an explicit old/new generation request and durable
-  crash checkpoints around connector fencing, source-identity rotation, and new artifacts.
-  Factor any missing rotation/state-operation seam into the existing control-plane/provider
-  abstractions, including an explicitly guarded new-generation provider-creation path;
-  do not mislabel replacement as an initial-empty retry to bypass 19-01's mode guards.
-  It is not recovery from lost deployment provenance, terminal history loss, or a published
-  cache-ahead latch, and it does not implement the deferred baseline-replacing cutover.
+- Enforce the design's
+  [physical-source replacement deferral](../../design-docs/cdc/cdc-streaming.md#v1-physical-source-replacement-deferral).
+  Expose no source-replacement command or replacement-specific rotation/provider-creation
+  seam. Use the existing binding/source validators to reject validation and controller-issued
+  start/restart/resume against a different physical source without rebinding or creating
+  replacement artifacts. Status/watch continues through the existing incident-classification
+  and containment contracts. Command help explains that an independent new CDC database
+  does not certify migration or continuity from an existing source.
 - Teardown keeps infrastructure reachable while stopping the connector, removing its own
   committed offsets through the supported stopped-connector API, and deleting/verifying
   the connector and remaining governed artifacts. Use 19-00's typed cleanup inventory and
@@ -346,8 +347,16 @@ controller composes those contracts rather than introducing another set of rules
   state rollback reject without mutation. Healthy artifacts and operator-supplied binding
   JSON do not bypass rejection. Retained terminal incidents prevent restart; normal incident
   file absence remains valid for an intact workflow. Tests also reject attempts to route
-  state loss through initial enablement or source replacement and prove retirement does not
+  state loss through initial enablement and prove retirement does not
   restore a surviving database's initial eligibility or internal-only publication history.
+- Command-surface tests prove no source-replacement operation is exposed. PostgreSQL and
+  SQL Server integration tests prove an existing binding used against a different physical
+  source rejects validation and controller-issued start/restart/resume without binding,
+  source-identity, CMS, provider-artifact, topic, or connector mutation. Cover both an empty
+  different source and a populated replacement so neither can bypass the guard through
+  initial-enable retry. Status/watch cases retain the existing incident-classification
+  and containment behavior. Help checks identify source replacement as deferred and do not
+  present retirement or independent new-database provisioning as a migration procedure.
 - Production-path tests prove the E18 `activate-offline`, `deactivate-offline`, and
   `recover-cache-ahead` commands no longer receive the default `unknown` downstream
   history when trusted CDC evidence proves `internalOnly`, and still reject active,
@@ -361,6 +370,9 @@ controller composes those contracts rather than introducing another set of rules
   19-05.
 - Missing-state adoption and recovery from deployment-state rollback are deferred by the
   owning integration design; this story adds no replacement provenance mechanism.
+- Physical-source replacement, including operator-prepared replacements, replacement-driven
+  identity rotation, database restore/copy, CMS cutover, and new-generation capture setup,
+  is deferred by the owning integration design.
 - Distributed-worker metrics-endpoint discovery is deferred to a later deployment adapter.
   Exporter packaging/image publication belongs to DMS-1322, and reusable image/metric
   qualification fixtures belong to DMS-1321.
@@ -416,7 +428,7 @@ controller composes those contracts rather than introducing another set of rules
 ### Questions 2
 
 1. Does the requirement to validate continuity before every connector start/resume also cover retained connectors restarting with the Connect worker after a clean stop or crash? If so, what shipped mechanism keeps their tasks from consuming until the controller can read offsets through the worker REST API and validate provenance/provider history; if automatic worker/task recovery is outside that guarantee, what explicit support boundary and restart tests apply?
-2. For the supported source-replacement operation, what is the concrete successful input scenario: does the controller receive an already prepared replacement database, or must it create/restore/copy the database and update CMS connection metadata? Specify who owns those steps and what old-source continuity and replacement projection-state evidence must be available before source-identity rotation and new-generation capture, so the success tests distinguish this path from deferred history-loss or baseline-replacing recovery.
+2. Should v1 support physical-source replacement? If retained in scope, what is the concrete successful input scenario: does the controller receive an already prepared replacement database, or must it create/restore/copy the database and update CMS connection metadata? Specify who owns those steps and what old-source continuity and replacement projection-state evidence must be available before source-identity rotation and new-generation capture, so the success tests distinguish this path from deferred history-loss or baseline-replacing recovery.
 
 
 ### Answers 2
@@ -437,24 +449,24 @@ controller composes those contracts rather than introducing another set of rules
    suites above distinguish prevention during managed startup from observation and containment
    after native recovery for both providers.
 
-2. **Requires human decision:** Define one supported source-replacement input and preparation
-   handoff, including ownership of database creation/restore/copy, CMS connection changes,
-   and writer/projector fencing. The owning
-   [binding lifecycle](../../design-docs/cdc/cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding)
-   specifies the rotation and new artifacts, but does not establish an admissible prepared
-   replacement state or assign those preparation steps. Ordinary bootstrap phase ownership
-   does not define a replacement migration workflow. The settled constraints are a source
-   previously enabled through the v1 new-database path, intact deployment provenance, no
-   terminal source-history loss or published cache-ahead latch, verified old-connector
-   fencing before rotation, and entirely new generation artifacts and consumer namespace.
-   Source replacement cannot reconstruct missing provenance, clear published projection
-   state, or certify another exact baseline. The decision must define when and against
-   which source the old committed-offset/provider-history proof is obtained and retained,
-   how it is tied to the replacement, and what replacement canonical/cache/work integrity
-   evidence is required before rotation and capture. E18 requires `Tracking` with a clear
-   latch for operational health and an explicit integrity scrub after suspected restore
-   before relying on queue-empty status; queue emptiness alone cannot prove a valid restored
-   projection. Update the owning design and story with the concrete successful scenario,
-   preparation owner, evidence handoff, and crash boundaries, then use that same scenario
-   for both provider success tests. Keep state-loss, terminal-history-loss, cache-ahead,
-   and baseline-replacing recovery scenarios as rejections.
+2. **Resolved: defer physical-source replacement from v1.** Implement the owning design's
+   [physical-source replacement deferral](../../design-docs/cdc/cdc-streaming.md#v1-physical-source-replacement-deferral).
+   DMS-1323 supports initial enablement of a controller-proven new database and subsequent
+   lifecycle operations against that same physical source with intact deployment provenance.
+   It exposes no source-replacement command and performs no replacement-driven source-identity
+   rotation, database restore/copy, CMS cutover, or new-generation capture setup, including
+   for operator-prepared replacements.
+
+   An observed physical-source mismatch rejects validation and controller-issued
+   start/restart/resume without rebinding or creating replacement artifacts. Status/watch
+   uses the existing incident-classification and containment contracts. Missing provenance,
+   terminal source-history loss, and a published cache-ahead latch retain their existing
+   rejection behavior. DMS-1323 owns command-surface, provider rejection, and help evidence;
+   it adds no replacement-success scenarios or replacement-specific provider mode.
+
+   Source replacement is deferred until a separate design defines database preparation,
+   writer/projector fencing, CMS cutover ownership, old-source continuity evidence,
+   replacement projection integrity, consumer transition, and crash-safe recovery.
+   Retirement does not restore initial-enable eligibility or erase publication history.
+   Provisioning an independent new CDC database does not certify migration or continuity
+   from an existing source.
