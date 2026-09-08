@@ -30,6 +30,9 @@ public class ValidationCachePolicyTests
     private static EffectiveDataStoreTarget ReplicaTarget(string connectionString = ConnectionString) =>
         new(EffectiveTargetKind.ReadReplica, connectionString);
 
+    private static EffectiveDataStoreTarget SnapshotTarget(string connectionString = ConnectionString) =>
+        new(EffectiveTargetKind.Snapshot, connectionString);
+
     private static DatabaseFingerprintProvider FingerprintProviderOf(
         IDatabaseFingerprintReader reader,
         TimeProvider timeProvider,
@@ -66,9 +69,24 @@ public class ValidationCachePolicyTests
         public void It_maps_a_snapshot_to_the_derivative_policy_class()
         {
             ValidationCacheKey
-                .For(new EffectiveDataStoreTarget(EffectiveTargetKind.Snapshot, ConnectionString))
+                .For(SnapshotTarget())
                 .PolicyClass.Should()
                 .Be(ValidationCachePolicyClass.Derivative);
+        }
+
+        /// <summary>
+        /// The two derivative kinds share the policy class but not the key. Sharing the key would
+        /// share the entry, and with it the single in-flight production whose exception describes
+        /// only the kind that started it.
+        /// </summary>
+        [Test]
+        public void It_keeps_the_two_derivative_kinds_apart_at_byte_identical_text()
+        {
+            ValidationCacheKey snapshot = ValidationCacheKey.For(SnapshotTarget());
+            ValidationCacheKey replica = ValidationCacheKey.For(ReplicaTarget());
+
+            snapshot.Should().NotBe(replica);
+            snapshot.PolicyClass.Should().Be(replica.PolicyClass);
         }
 
         [Test]
@@ -77,7 +95,7 @@ public class ValidationCachePolicyTests
             const string ExactText = "  Server=replica ; Database=edfi;;  ";
 
             ValidationCacheKey
-                .For(new EffectiveDataStoreTarget(EffectiveTargetKind.Snapshot, ExactText))
+                .For(SnapshotTarget(ExactText))
                 .ConfiguredConnectionString.Should()
                 .Be(ExactText);
         }
@@ -209,6 +227,30 @@ public class ValidationCachePolicyTests
 
             second.Should().NotBeNull();
             A.CallTo(() => reader.ReadFingerprintAsync(ReplicaTarget())).MustHaveHappenedTwiceExactly();
+        }
+
+        /// <summary>
+        /// Fault retention reads the policy class, not the kind, so the snapshot key that is now
+        /// distinct from the read-replica key retains nothing either. The kind separates which request
+        /// is answered from which production; it does not separate lifetimes.
+        /// </summary>
+        [Test]
+        public async Task It_evicts_a_malformed_fingerprint_failure_for_a_snapshot_too()
+        {
+            ControlledTimeProvider time = new(Start);
+            var reader = A.Fake<IDatabaseFingerprintReader>();
+            A.CallTo(() => reader.ReadFingerprintAsync(SnapshotTarget()))
+                .Throws(() => new DatabaseFingerprintValidationException(["malformed"]))
+                .Once()
+                .Then.Returns(Fingerprint());
+
+            var provider = FingerprintProviderOf(reader, time);
+            await CatchAsync(provider.ReadFingerprint(SnapshotKey(), SnapshotTarget()).Value);
+
+            var second = await provider.ReadFingerprint(SnapshotKey(), SnapshotTarget()).Value;
+
+            second.Should().NotBeNull();
+            A.CallTo(() => reader.ReadFingerprintAsync(SnapshotTarget())).MustHaveHappenedTwiceExactly();
         }
 
         /// <summary>

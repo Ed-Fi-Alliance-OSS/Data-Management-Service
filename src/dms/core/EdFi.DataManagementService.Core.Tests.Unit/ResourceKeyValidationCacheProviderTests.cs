@@ -26,10 +26,7 @@ public class ResourceKeyValidationCacheProviderTests
         ResourceKeyValidationCacheProvider provider,
         string connectionString,
         Func<Task<ResourceKeyValidationResult>> factory
-    ) =>
-        provider
-            .Read(new ValidationCacheKey(ValidationCachePolicyClass.Primary, connectionString), factory)
-            .Value;
+    ) => provider.Read(new ValidationCacheKey(EffectiveTargetKind.Primary, connectionString), factory).Value;
 
     private static readonly ResourceKeyValidationResult _successResult =
         new ResourceKeyValidationResult.ValidationSuccess();

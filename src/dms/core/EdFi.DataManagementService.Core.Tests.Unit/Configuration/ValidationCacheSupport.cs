@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.External.Backend;
 
 namespace EdFi.DataManagementService.Core.Tests.Unit.Configuration;
 
@@ -43,10 +44,18 @@ internal static class ValidationCacheSupport
         };
 
     public static ValidationCacheKey PrimaryKey(string connectionString = ConnectionString) =>
-        new(ValidationCachePolicyClass.Primary, connectionString);
+        new(EffectiveTargetKind.Primary, connectionString);
 
+    /// <summary>
+    /// A derivative key of the read-replica kind. The two derivative kinds are distinct keys but share
+    /// one policy class, so a fixture about the derivative policy names this one and a fixture about
+    /// the kinds staying apart names both.
+    /// </summary>
     public static ValidationCacheKey DerivativeKey(string connectionString = ConnectionString) =>
-        new(ValidationCachePolicyClass.Derivative, connectionString);
+        new(EffectiveTargetKind.ReadReplica, connectionString);
+
+    public static ValidationCacheKey SnapshotKey(string connectionString = ConnectionString) =>
+        new(EffectiveTargetKind.Snapshot, connectionString);
 
     public static async Task<Exception?> CatchAsync(Task task)
     {

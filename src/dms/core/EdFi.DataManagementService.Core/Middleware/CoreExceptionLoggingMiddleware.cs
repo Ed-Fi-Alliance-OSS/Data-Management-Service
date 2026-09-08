@@ -18,9 +18,12 @@ namespace EdFi.DataManagementService.Core.Middleware;
 
 /// <summary>
 /// Converts exceptions escaping the core pipeline into error responses: 403 for
-/// authorization failures, 503 when the backend circuit is open, 500 otherwise. The 500-path
+/// authorization failures, 503 when the backend circuit is open, Snapshot Not Found when a read could
+/// not acquire a connection to a selected snapshot, 500 otherwise. The 500-path
 /// exception is captured on the request so the outer request logging middleware attaches it to the
-/// structured request-failure event; this middleware does not log it.
+/// structured request-failure event; this middleware does not log it. The snapshot path is the
+/// exception: it logs, and deliberately captures nothing, because the exception it catches carries a
+/// connection string in its inner message.
 /// </summary>
 /// <param name="_circuitBreakDuration">
 /// Break duration quoted as <c>Retry-After</c> on a circuit-open 503. Required rather than
@@ -82,8 +85,37 @@ internal class CoreExceptionLoggingMiddleware(ILogger _logger, TimeSpan? _circui
         {
             throw;
         }
+        catch (DatabaseConnectionUnavailableException ex) when (ex.TargetKind == EffectiveTargetKind.Snapshot)
+        {
+            // The one translation point for every read-path connection seam below the two validation
+            // middlewares - the repository query, descriptor reads, document hydration - and so for
+            // GET-by-id, GET-many, descriptors, /partitions, /deletes, /keyChanges, and
+            // /availableChangeVersions alike. Nothing in the backend intercepts this type, which is
+            // why one arm here covers all of them instead of an edit at every call site.
+            //
+            // Deliberately not recorded as a caught exception, for the same reason as the
+            // circuit-open arm above and one more: RequestResponseLoggingMiddleware passes
+            // requestInfo.CaughtException to LogError with its full message chain, and the provider
+            // exception carried as InnerException quotes the offending connection string in its
+            // message. The type and the target kind are logged here instead.
+#pragma warning disable S6667
+            _logger.LogWarning(
+                "Snapshot connection unavailable ({ExceptionType}) for {TargetKind} target. "
+                    + "Answering Snapshot Not Found. TraceId: {TraceId}",
+                ex.InnerException?.GetType().Name,
+                ex.TargetKind,
+                requestInfo.FrontendRequest.TraceId.Value
+            );
+#pragma warning restore S6667
+
+            requestInfo.FrontendResponse = SnapshotFailureResponse.NotFound(
+                requestInfo.FrontendRequest.TraceId
+            );
+        }
         catch (Exception ex)
         {
+            // A Primary or ReadReplica connection-unavailable wrapper lands here too, deliberately:
+            // only a snapshot's response depends on the failure being a connection failure.
             requestInfo.CaughtException = ex;
             // Replace the frontend response (if any) with a 500 error
             requestInfo.FrontendResponse = new FrontendResponse(

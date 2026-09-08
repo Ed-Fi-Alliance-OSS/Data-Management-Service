@@ -30,38 +30,57 @@ internal enum ValidationCachePolicyClass
 }
 
 /// <summary>
-/// What a cached validation verdict is about: which database, and under which policy.
+/// What a cached validation verdict is about: which database, and as which kind of target.
 /// </summary>
-/// <param name="PolicyClass">Which lifetime and invalidation rules apply.</param>
+/// <param name="TargetKind">
+/// The kind of target the verdict was reached for. Every lifetime and invalidation rule reads
+/// <see cref="PolicyClass" /> rather than this, so the two derivative kinds still behave identically;
+/// the kind is in the key so they do not share an entry.
+/// </param>
 /// <param name="ConfiguredConnectionString">
 /// The connection string as configured, never a provider-realized form. Using the configured text
 /// means cache identity requires no provider parsing, so a value that no provider could open still has
 /// a stable identity and fails where provider errors belong - at acquisition.
 /// </param>
 /// <remarks>
-/// Including the policy class in the key is what keeps a primary and a derivative apart when their
-/// configured text is byte-identical, which is exactly the case where one entry would otherwise be
-/// given two different lifetimes.
+/// <para>
+/// Including the target kind in the key is what keeps two targets apart when their configured text is
+/// byte-identical - a replica reachable at the same address, a snapshot pointed back at its source.
+/// For a primary against a derivative that separation is about lifetime: one entry would otherwise be
+/// given two different ones.
+/// </para>
+/// <para>
+/// For a snapshot against a read replica it is about the answer. <see cref="ValidationEntryCache{TValue}" />'s
+/// <c>Read</c> hands back the in-flight task rather than awaiting it, so one entry means one production, and every
+/// waiter observes whatever exception that single production raised. A connection-acquisition failure
+/// now describes the kind it was raised for, and a snapshot's failure and a read replica's failure
+/// produce different responses, so a shared production would answer one kind's request from the other
+/// kind's exception. Eviction cannot rescue it: the entry is removed and the exception rethrown, but
+/// every waiter is already attached to that one task.
+/// </para>
 /// </remarks>
 internal readonly record struct ValidationCacheKey(
-    ValidationCachePolicyClass PolicyClass,
+    EffectiveTargetKind TargetKind,
     string ConfiguredConnectionString
 )
 {
     /// <summary>
-    /// The key for the database a request is being served from. The mapping from target kind to policy
-    /// class lives here so the several call sites cannot disagree about it.
+    /// Which lifetime and invalidation rules apply. Derived from the target kind so the several call
+    /// sites that branch on it cannot disagree about the mapping.
+    /// </summary>
+    public ValidationCachePolicyClass PolicyClass =>
+        TargetKind == EffectiveTargetKind.Primary
+            ? ValidationCachePolicyClass.Primary
+            : ValidationCachePolicyClass.Derivative;
+
+    /// <summary>
+    /// The key for the database a request is being served from.
     /// </summary>
     public static ValidationCacheKey For(EffectiveDataStoreTarget target)
     {
         ArgumentNullException.ThrowIfNull(target);
 
-        return new ValidationCacheKey(
-            target.Kind == EffectiveTargetKind.Primary
-                ? ValidationCachePolicyClass.Primary
-                : ValidationCachePolicyClass.Derivative,
-            target.ConnectionString
-        );
+        return new ValidationCacheKey(target.Kind, target.ConnectionString);
     }
 }
 

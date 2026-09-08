@@ -43,7 +43,9 @@ internal sealed class ResourceKeyValidator(
 
         // Slow path: read actual rows and diff. Wrap in try-catch so that
         // read failures (missing table, permissions, broken schema) produce a
-        // cached ValidationFailure rather than an evicted exception.
+        // cached ValidationFailure rather than an evicted exception. The one read failure that is
+        // not a statement about the database's contents - an unreachable snapshot, which never got
+        // as far as reading a row - is rethrown instead; see the arm below.
         logger.LogDebug("Resource key fingerprint mismatch detected, performing row-level validation");
 
         IReadOnlyList<ResourceKeyRow> actualRows;
@@ -53,6 +55,18 @@ internal sealed class ResourceKeyValidator(
         }
         catch (OperationCanceledException)
         {
+            throw;
+        }
+        catch (DatabaseConnectionUnavailableException ex) when (ex.TargetKind == EffectiveTargetKind.Snapshot)
+        {
+            // A snapshot that cannot be reached is not a seed mismatch. Reporting it as one would
+            // tell an operator to reprovision a database whose rows were never read, and would answer
+            // the request with the mismatch 503 instead of Snapshot Not Found. Rethrown so
+            // ValidateResourceKeySeedMiddleware can translate it; the entry faults rather than
+            // caching a verdict, and this provider retains no fault, so the next request revalidates.
+            //
+            // Deliberately conditioned on Snapshot. A primary or read-replica connection failure
+            // still becomes the ValidationFailure below, with the exact body it produces today.
             throw;
         }
         catch (Exception ex)

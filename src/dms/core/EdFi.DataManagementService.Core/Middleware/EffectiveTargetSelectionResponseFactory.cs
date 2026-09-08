@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Core.External.Frontend;
-using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Response;
 
@@ -25,31 +24,23 @@ internal interface IEffectiveTargetSelectionResponseFactory
 }
 
 /// <summary>
-/// The two snapshot failure responses: Snapshot Not Found for a read with no usable snapshot, and the
-/// snapshot-specific method-not-allowed for a request that would modify one.
+/// The two snapshot failure responses as the selection step produces them: Snapshot Not Found for a
+/// read with no usable snapshot, and the snapshot-specific method-not-allowed for a request that would
+/// modify one.
 /// </summary>
 /// <remarks>
-/// Both carry the shared DMS ProblemDetails envelope, the request correlation identifier, and
-/// <c>application/problem+json</c>. Neither assigns a target, so no database is opened for either.
+/// Both bodies come from <see cref="SnapshotFailureResponse" />, which is also what the
+/// connection-unavailable translation sites use, so a read refused here and a read whose selected
+/// snapshot could not be reached are indistinguishable to a client.
 /// </remarks>
 internal sealed class DefaultEffectiveTargetSelectionResponseFactory
     : IEffectiveTargetSelectionResponseFactory
 {
-    /// <summary>
-    /// The snapshot-support design reuses the existing not-found response for a snapshot that is not
-    /// configured, so the body comes from the shared not-found factory rather than a snapshot-specific
-    /// one; only the detail names the snapshot.
-    /// </summary>
     public IFrontendResponse ForMissingSnapshot(RequestInfo requestInfo)
     {
         ArgumentNullException.ThrowIfNull(requestInfo);
 
-        return new FrontendResponse(
-            StatusCode: 404,
-            Body: FailureResponse.ForNotFound("Snapshot not found.", requestInfo.FrontendRequest.TraceId),
-            Headers: [],
-            ContentType: "application/problem+json"
-        );
+        return SnapshotFailureResponse.NotFound(requestInfo.FrontendRequest.TraceId);
     }
 
     /// <summary>
@@ -61,24 +52,14 @@ internal sealed class DefaultEffectiveTargetSelectionResponseFactory
     /// <c>false</c>, keeps the route-semantics response unchanged.
     /// </summary>
     /// <remarks>
-    /// <c>Allow: GET</c> states what is permitted in snapshot context, where the target is read-only,
-    /// rather than what the route would permit on the primary - so it stays GET even on a route whose
-    /// own set is <c>GET, POST</c> or <c>GET, PUT, DELETE</c>. It is deliberately not
-    /// <see cref="ValidateRouteSemanticsMiddleware.AllowedMethodsFor" />: that the two coincide on a
-    /// partitions path is incidental, and reusing it would make the snapshot set follow route changes
-    /// it has nothing to do with. On a partitions path the ProblemDetails fields and the content type
-    /// are therefore the only things separating the two 405s.
+    /// Why the accompanying <c>Allow</c> is the snapshot-context set rather than
+    /// <see cref="ValidateRouteSemanticsMiddleware.AllowedMethodsFor" /> is recorded on
+    /// <see cref="SnapshotFailureResponse" />, alongside the header it produces.
     /// </remarks>
     public IFrontendResponse ForRejectedAsMutation(RequestInfo requestInfo)
     {
         ArgumentNullException.ThrowIfNull(requestInfo);
 
-        return new FrontendResponse(
-            StatusCode: 405,
-            Body: FailureResponse.ForSnapshotMethodNotAllowed(requestInfo.FrontendRequest.TraceId),
-            // RFC 9110 section 15.5.6 requires Allow on a 405.
-            Headers: new Dictionary<string, string> { ["Allow"] = "GET" },
-            ContentType: "application/problem+json"
-        );
+        return SnapshotFailureResponse.MethodNotAllowed(requestInfo.FrontendRequest.TraceId);
     }
 }
