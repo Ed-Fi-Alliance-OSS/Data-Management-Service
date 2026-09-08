@@ -468,6 +468,57 @@ Maintainability & Supply Chain).
   per tenant or per routing context, so validation can vary by district or
   tenant without deploying separate validator code per tenant.
 
+### 3.11 Logging & Correlation ID — Safe-Character Handling (extends FR-LOG)
+
+This sub-capability extends FR-LOG (Logging & Correlation ID, v8.0 companion
+PRD §3.10). FR-LOG-1 and FR-LOG-2 establish that every request receives a
+Correlation ID and that a client may supply its own, and NFR-OBS-1 (v8.0
+companion PRD §4.4) requires that the same Correlation ID appear in both the
+client-facing error response and the corresponding log entry — but neither
+requirement specifies what characters a client-supplied value may contain,
+how long it may be, or what the system does when either limit is exceeded.
+That gap allows a client-supplied Correlation ID to diverge between the
+response and the log, or to be echoed to the client with no bound on size.
+
+- **FR-LOG-3.** The system SHALL apply a documented, logging-safe character
+  allowlist to a correlation ID — whether client-supplied or
+  system-generated — before it is used in a log entry or in any error
+  response body. The allowlist SHALL exclude, at minimum, control characters
+  capable of forging additional log lines or otherwise corrupting structured
+  log output (e.g., carriage return, line feed). It SHALL NOT be limited to
+  only alphanumeric characters: a client-supplied correlation ID commonly
+  originates from an upstream system's own identifier scheme, and narrowing
+  the allowlist to alphanumerics defeats the purpose of accepting a
+  client-supplied value in the first place (see FR-LOG-2). This
+  correlation-ID-specific allowlist is distinct from, and SHALL NOT be
+  conflated with, any stricter allowlist the system applies to
+  internally-controlled logged values such as the request method or path.
+- **FR-LOG-4.** The system SHALL enforce a maximum length on a correlation
+  ID, whether client-supplied or system-generated, with a documented default
+  and a host-configurable override.
+- **FR-LOG-5.** When a client-supplied correlation ID contains one or more
+  characters excluded by the allowlist (FR-LOG-3), exceeds the maximum length
+  (FR-LOG-4), or both, the system SHALL NOT reject the request solely for
+  this reason. It SHALL instead deterministically adjust the value —
+  removing disallowed characters, truncating to the maximum length, or both —
+  before using it anywhere, so the request the client is actually trying to
+  make still succeeds or fails on its own merits rather than on the shape of
+  an operational identifier.
+- **FR-LOG-6.** The adjustment described in FR-LOG-5 SHALL be applied
+  identically everywhere a correlation ID is used — every log entry and every
+  error response body, regardless of HTTP status code or which part of the
+  system produces the response — so that NFR-OBS-1's log/response parity
+  guarantee holds for every failed request, not only a subset of failure
+  types.
+
+_Note:_ a client-supplied value that is itself adjusted under FR-LOG-5 may no
+longer match the identifier recorded in the upstream system that generated
+it; this is an accepted, documented residual limitation (an upstream ID using
+characters outside the allowlist, or exceeding the maximum length, cannot be
+fully preserved), not a defect — hosts who need to rule this out entirely can
+disable client-supplied Correlation IDs via NFR-OPS-8 (v8.0 companion PRD
+§4.5).
+
 ## 4. Non-Functional Requirements
 
 ### Compatibility
@@ -822,6 +873,12 @@ Maintainability & Supply Chain).
   or not tied to any specific location (resource-level) — which determine
   where the failure appears in the standardized HTTP 400 response (see
   FR-CUSTVAL-7).
+- **Logging-Safe Character Allowlist:** The set of characters a correlation
+  ID is permitted to contain when used in a log entry or an error response
+  body, per FR-LOG-3. Deliberately broader than the stricter allowlist
+  applied to internally-controlled logged values (such as the request method
+  or path), since a client-supplied correlation ID may originate from an
+  upstream system's own identifier scheme.
 - **SBOM (Software Bill of Materials):** A structured manifest listing a
   software package's components and dependencies, used here (in SPDX 2.2
   format) to give consumers of the custom-validation contract package
