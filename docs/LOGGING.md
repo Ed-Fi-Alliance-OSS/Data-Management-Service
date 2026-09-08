@@ -66,7 +66,9 @@ request logging layer:
   events when aggregating DMS request volume or failure rates.
 * `TraceId`: the application-visible trace or correlation ID. CMS uses
   `HttpContext.TraceIdentifier`; DMS uses the configured correlation header
-  when present and falls back to `HttpContext.TraceIdentifier`.
+  when present and falls back to `HttpContext.TraceIdentifier`. DMS normalizes
+  this value before logging it — see [Correlation ID
+  normalization](#correlation-id-normalization).
 * `Method`: sanitized HTTP method.
 * `Path`: sanitized request path without the query string.
 * `StatusCode`: HTTP response status code. An unhandled exception before a
@@ -180,12 +182,9 @@ propagates through the request logging middleware, which logs it on
 `HttpRequestFailed` and rethrows it for the host.
 DMS frontend preserves its existing behavior of wrapping the original exception
 after logging and writing its existing JSON error response when the response has
-not started. The `traceId` in that error response body is the raw correlation
-value for the request — the same raw value every other DMS error response body
-returns — while log events always carry the sanitized `TraceId`. The two differ
-only when a client-supplied correlation id contains characters outside the
-logging whitelist; applying that whitelist to a client-reported trace id yields
-the `TraceId` to search for in the logs. DMS core preserves its existing
+not started. The `traceId` in that error response body is the same normalized
+value the request's log events carry, so the ID a client reads from that
+response is the ID to search for in the logs. DMS core preserves its existing
 behavior of wrapping core pipeline failures after logging them.
 
 Information-level request logs must not include request bodies, response
@@ -194,6 +193,38 @@ connection strings, raw query strings, arbitrary headers, route values, or raw
 tenant header values. Remote IP address and user agent are also excluded unless
 a later story defines the privacy, retention, and cardinality requirements for
 those fields.
+
+### Correlation ID normalization
+
+A correlation ID is normalized before it is used anywhere — whether it came from
+the configured correlation header or from `HttpContext.TraceIdentifier`:
+
+* Characters outside a logging-safe allowlist are removed. The allowlist exists
+  to prevent log forging and structured-log template injection; a
+  client-supplied value containing a carriage return or line feed cannot
+  introduce additional log lines. This allowlist is scoped to correlation IDs
+  and is deliberately broader than the stricter one applied to
+  internally-controlled logged values such as `Method` and `Path`, because a
+  client-supplied correlation ID normally originates in an upstream system's own
+  identifier scheme.
+* Values longer than `AppSettings:CorrelationIdMaxLength` (default `255`) are
+  truncated. See [Configuration](./CONFIGURATION.md).
+
+Normalization is applied identically everywhere a correlation ID appears: every
+request log event, and the `correlationId` (or `traceId`) of every error response
+body, whatever the status code and whichever layer produced it. The ID a client
+reads from a failed request is therefore always the ID to search for in the logs.
+
+A correlation ID that the allowlist or the length cap alters is normalized, not
+rejected — the request still succeeds or fails on its own merits rather than on
+the shape of an operational identifier. A value altered by normalization no
+longer matches the identifier recorded in the upstream system that generated it;
+hosts who need to rule that out entirely can leave
+`AppSettings:CorrelationIdHeader` empty, which disables client-supplied
+correlation IDs and uses the server-generated trace identifier for every request.
+
+This behavior is specified as FR-LOG-3 through FR-LOG-6 in
+[PRD v8.1](./PRD-v8.1.md).
 
 ## Log Routing and Export
 
