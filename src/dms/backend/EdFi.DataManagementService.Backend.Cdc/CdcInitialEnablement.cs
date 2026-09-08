@@ -325,7 +325,7 @@ public sealed class CdcInitialEnablement
         }
     }
 
-    private async Task<(
+    internal async Task<(
         InitialCdcEligibilityObservation Eligibility,
         DocumentCacheTargetKey RuntimeTarget
     )> ObserveAsync(
@@ -336,20 +336,12 @@ public sealed class CdcInitialEnablement
         CancellationToken token
     )
     {
-        var observation = await runtime.ObserveInitialDatabaseAsync(token);
-        token.ThrowIfCancellationRequested();
-        Require(
-            CdcTargetValidator.MapE18TenantKeyToBindingTenantKey(
-                observation.TargetKey.TenantKey.ToLowerInvariant()
-            ) == binding.TenantKey
-                && observation.TargetKey.DataStoreId.ToString(CultureInfo.InvariantCulture)
-                    == binding.DataStoreId
-                && CdcProviderToken.TryToRelationalProviderToken(binding.Provider, out var provider)
-                && provider == observation.Provider
-                && observation.PhysicalSourceFingerprint == binding.PhysicalSourceFingerprint
-                && observation.ObservedAt >= proof.IssuedAt
-                && observation.ObservedAt <= _timeProvider.GetUtcNow()
-                && _timeProvider.GetUtcNow() - observation.ObservedAt <= maximumAge
+        var observation = await ObserveCurrentDatabaseAsync(
+            runtime,
+            binding,
+            proof.IssuedAt,
+            maximumAge,
+            token
         );
         InitialCdcEligibilityObservation eligibility = new(
             CdcJsonContract.CurrentContractVersion,
@@ -382,7 +374,33 @@ public sealed class CdcInitialEnablement
         return (eligibility, observation.TargetKey);
     }
 
-    private CdcRetry Classify(
+    internal async Task<CdcInitialDatabaseObservation> ObserveCurrentDatabaseAsync(
+        ICdcProjectionRuntime runtime,
+        CdcBinding binding,
+        DateTimeOffset notBefore,
+        TimeSpan maximumAge,
+        CancellationToken token
+    )
+    {
+        var observation = await runtime.ObserveInitialDatabaseAsync(token);
+        token.ThrowIfCancellationRequested();
+        Require(
+            CdcTargetValidator.MapE18TenantKeyToBindingTenantKey(
+                observation.TargetKey.TenantKey.ToLowerInvariant()
+            ) == binding.TenantKey
+                && observation.TargetKey.DataStoreId.ToString(CultureInfo.InvariantCulture)
+                    == binding.DataStoreId
+                && CdcProviderToken.TryToRelationalProviderToken(binding.Provider, out var provider)
+                && provider == observation.Provider
+                && observation.PhysicalSourceFingerprint == binding.PhysicalSourceFingerprint
+                && observation.ObservedAt >= notBefore
+                && observation.ObservedAt <= _timeProvider.GetUtcNow()
+                && _timeProvider.GetUtcNow() - observation.ObservedAt <= maximumAge
+        );
+        return observation;
+    }
+
+    internal CdcRetry Classify(
         CdcBinding binding,
         InitialCdcProvisioningProof proof,
         InitialCdcEligibilityObservation eligibility,

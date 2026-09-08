@@ -242,7 +242,7 @@ public sealed record CdcPostgresqlInitialReplicationSlotProof
         return new CdcSafeName($"{DatabaseIdentityTokenPrefix}{hash}");
     }
 
-    private static CdcSafeName ValidateDatabaseIdentityToken(CdcSafeName token, string parameterName)
+    public static CdcSafeName ValidateDatabaseIdentityToken(CdcSafeName token, string parameterName)
     {
         if (!token.Value.StartsWith(DatabaseIdentityTokenPrefix, StringComparison.Ordinal))
         {
@@ -554,7 +554,8 @@ public sealed record CdcProviderSetupRequest
         IReadOnlyList<CdcDmsManagedTableInventory> dmsManagedTableInventory,
         CdcPostgresqlInitialReplicationSlotProof? postgresqlInitialReplicationSlotProof = null,
         ICdcConnectorPrincipalProbeFactory? connectorPrincipalProbeFactory = null,
-        ICdcProviderDatabaseExecutor? databaseExecutor = null
+        ICdcProviderDatabaseExecutor? databaseExecutor = null,
+        bool requireUnconsumedInitialSlot = false
     )
     {
         ArgumentNullException.ThrowIfNull(boundPhysicalSourceFingerprint);
@@ -590,10 +591,14 @@ public sealed record CdcProviderSetupRequest
         PostgresqlInitialReplicationSlotProof = postgresqlInitialReplicationSlotProof;
         ConnectorPrincipalProbeFactory = connectorPrincipalProbeFactory;
         DatabaseExecutor = databaseExecutor;
+        RequireUnconsumedInitialSlot = requireUnconsumedInitialSlot;
     }
 
     public CdcProvider Provider { get; }
     public CdcProviderSetupMode Mode { get; }
+
+    /// <summary>Inspect the original unconsumed slot without enabling provider mutations.</summary>
+    public bool RequireUnconsumedInitialSlot { get; }
     public CdcSourceFingerprint BoundPhysicalSourceFingerprint { get; }
     public CdcSetupPrincipalContext SetupPrincipal { get; }
     public CdcConnectorPrincipal ConnectorPrincipal { get; }
@@ -624,7 +629,11 @@ public sealed record CdcProviderSetupResult(
     IReadOnlyList<CdcProviderHistoryObservation> ProviderHistoryObservations,
     CdcProviderManifestPayload? ManifestPayload,
     IReadOnlyList<CdcProviderDiagnostic> Diagnostics
-);
+)
+{
+    /// <summary>Only emitted when this invocation actually created and inspected the slot.</summary>
+    public CdcPostgresqlInitialReplicationSlotProof? InitialReplicationSlotProof { get; init; }
+}
 
 public sealed record CdcProviderArtifactObservation(
     CdcProviderArtifactKind ArtifactKind,

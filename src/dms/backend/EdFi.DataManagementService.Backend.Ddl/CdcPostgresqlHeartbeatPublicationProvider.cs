@@ -563,7 +563,12 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
                 );
             }
 
-            if (context.Mode == CdcProviderSetupStepMode.CreateOrExactMatch && !createdDuringCurrentCall)
+            if (
+                (
+                    context.Mode == CdcProviderSetupStepMode.CreateOrExactMatch
+                    || context.Request.RequireUnconsumedInitialSlot
+                ) && !createdDuringCurrentCall
+            )
             {
                 var proofDiagnostics = InitialReplicationSlotProofDiagnostics(
                     context.Request,
@@ -594,7 +599,20 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
                 ? AddInitialSlotProofObservedValues(context.Request, replicationSlotName, slot)
                 : slot.ObservedValues;
 
-            return ReplicationSlotResult(replicationSlotName, state, observedValues, slot.Classification);
+            return ReplicationSlotResult(replicationSlotName, state, observedValues, slot.Classification) with
+            {
+                InitialReplicationSlotProof = createdDuringCurrentCall
+                    ? new CdcPostgresqlInitialReplicationSlotProof(
+                        replicationSlotName,
+                        context.Request.BoundPhysicalSourceFingerprint,
+                        CdcPostgresqlInitialReplicationSlotProof.CreateDatabaseIdentityToken(
+                            slot.DatabaseIdentity!
+                        ),
+                        slot.RestartLsn!,
+                        slot.ConfirmedFlushLsn!
+                    )
+                    : null,
+            };
         }
         catch (DbException exception)
         {
@@ -2578,6 +2596,10 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
         }
 
         List<string> mismatches = [];
+        if (!slot.ObservedValues.TryGetValue("active", out var active) || active != bool.FalseString)
+        {
+            mismatches.Add("slot_not_inactive");
+        }
         if (!proof.ReplicationSlotName.Equals(replicationSlotName))
         {
             mismatches.Add(

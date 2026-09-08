@@ -73,6 +73,14 @@ public class Given_PostgresqlCdcProviderArtifacts
             );
 
             result.Outcome.Should().Be(CdcProviderSetupOutcome.CreatedOrMatched);
+            result.InitialReplicationSlotProof.Should().NotBeNull();
+            result.InitialReplicationSlotProof!.ReplicationSlotName.Value.Should().Be(ReplicationSlotName);
+            result
+                .InitialReplicationSlotProof.SourceFingerprint.Should()
+                .Be(result.ObservedSourceFingerprint);
+            result
+                .InitialReplicationSlotProof.DatabaseIdentityToken.Value.Should()
+                .StartWith("postgresql_database_identity_sha256:");
             result.Diagnostics.Should().BeEmpty();
             (await ReadEffectiveSchemaHashAsync(connection)).Should().Be(effectiveSchemaHashBeforeSetup);
 

@@ -429,6 +429,39 @@ public class Given_PostgresqlCdcHeartbeatPublication_ValidateOnly
 [TestFixture]
 public class Given_PostgresqlCdcSlotHistory_Initial_Setup
 {
+    [TestCase(false, "0/16B6C50", true, CdcProviderSetupOutcome.ExactMatch)]
+    [TestCase(true, "0/16B6C50", true, CdcProviderSetupOutcome.Failed)]
+    [TestCase(false, "0/16B6D00", true, CdcProviderSetupOutcome.Failed)]
+    [TestCase(false, "0/16B6C40", true, CdcProviderSetupOutcome.Failed)]
+    [TestCase(false, "0/16B6C50", false, CdcProviderSetupOutcome.Failed)]
+    public async Task It_inspects_the_original_slot_without_mutations_before_registration(
+        bool active,
+        string flush,
+        bool hasProof,
+        CdcProviderSetupOutcome expected
+    )
+    {
+        var executor = RecordingPostgresqlCdcExecutor.WithExistingProviderArtifacts(
+            slotActive: active,
+            slotConfirmedFlushLsn: flush
+        );
+        var result = await new CdcProviderSetupService([
+            new CdcPostgresqlHeartbeatPublicationProvider(),
+        ]).SetupAsync(
+            CdcProviderSetupContractTestData.BuildPostgresqlRequest(
+                mode: CdcProviderSetupMode.ValidateOnly,
+                databaseExecutor: executor,
+                postgresqlInitialReplicationSlotProof: hasProof
+                    ? CdcProviderSetupContractTestData.BuildPostgresqlInitialSlotProof()
+                    : null,
+                requireUnconsumedInitialSlot: true
+            )
+        );
+        result.Outcome.Should().Be(expected);
+        result.InitialReplicationSlotProof.Should().BeNull();
+        executor.ExecutedSql.Should().BeEmpty();
+    }
+
     [Test]
     public async Task It_should_create_one_permanent_pgoutput_slot_and_return_retained_history_observation()
     {
@@ -439,6 +472,14 @@ public class Given_PostgresqlCdcSlotHistory_Initial_Setup
             CdcProviderSetupContractTestData.BuildPostgresqlRequest(databaseExecutor: executor)
         );
 
+        result
+            .InitialReplicationSlotProof.Should()
+            .BeEquivalentTo(
+                CdcProviderSetupContractTestData.BuildPostgresqlInitialSlotProof(
+                    retainedRestartLsn: "0/16B6C50",
+                    retainedConfirmedFlushLsn: "0/16B6C50"
+                )
+            );
         result.Outcome.Should().Be(CdcProviderSetupOutcome.CreatedOrMatched);
         result.Diagnostics.Should().BeEmpty();
         executor

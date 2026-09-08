@@ -15,7 +15,7 @@ namespace EdFi.DataManagementService.Backend.Cdc.Tests.Integration;
 
 [TestFixture]
 [Parallelizable]
-public sealed class Given_PostgresqlProviderSetupToConnectorTemplateHandoff
+public sealed class Given_CdcConnectorTemplateProviderSetupHandoff
 {
     private const long BindingGeneration = 11;
     private const string SourceIdentity = "f81d4fae-7dec-11d0-a765-00a0c91e6bf6";
@@ -111,7 +111,52 @@ public sealed class Given_PostgresqlProviderSetupToConnectorTemplateHandoff
         liveReadBack.Diagnostics.Should().BeEmpty();
     }
 
-    private static CdcProviderSetupRequest BuildProviderSetupRequest()
+    [Test]
+    public async Task It_hands_the_typed_creation_proof_to_fresh_inspection_and_template_rendering()
+    {
+        var initial = BuildProviderSetupRequest(
+            CdcProviderSetupMode.InitialCreateOrExactMatch,
+            createSlot: true
+        );
+        var provider = new CdcProviderSetupService([new CdcPostgresqlHeartbeatPublicationProvider()]);
+        var created = await provider.SetupAsync(initial);
+        created.Outcome.Should().Be(CdcProviderSetupOutcome.CreatedOrMatched);
+        created.InitialReplicationSlotProof.Should().NotBeNull();
+        var proof = created.InitialReplicationSlotProof!;
+        proof.ReplicationSlotName.Value.Should().Be(ReplicationSlotName);
+        proof.RetainedRestartLsn.Should().Be("0/16B6C50");
+        var inspect = new CdcProviderSetupRequest(
+            initial.Provider,
+            CdcProviderSetupMode.ValidateOnly,
+            initial.BoundPhysicalSourceFingerprint,
+            initial.SetupPrincipal,
+            initial.ConnectorPrincipal,
+            initial.ArtifactNames,
+            new(false),
+            initial.ExpectedSourceInventory,
+            initial.DmsManagedTableInventory,
+            proof,
+            databaseExecutor: initial.DatabaseExecutor,
+            requireUnconsumedInitialSlot: true
+        );
+        var fresh = await provider.SetupAsync(inspect);
+        fresh.Outcome.Should().Be(CdcProviderSetupOutcome.ExactMatch);
+        fresh.InitialReplicationSlotProof.Should().BeNull();
+        await using var services = new ServiceCollection().AddCdcConnectorTemplates().BuildServiceProvider();
+        var rendered = services
+            .GetRequiredService<ICdcConnectorTemplateService>()
+            .Render(BuildTemplateRequest(inspect, fresh));
+        rendered.Outcome.Should().Be(CdcConnectorTemplateOutcome.Rendered);
+        rendered.Config["slot.name"].Should().Be(proof.ReplicationSlotName.Value);
+        var lostProofRetry = await provider.SetupAsync(initial);
+        lostProofRetry.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+        lostProofRetry.InitialReplicationSlotProof.Should().BeNull();
+    }
+
+    private static CdcProviderSetupRequest BuildProviderSetupRequest(
+        CdcProviderSetupMode mode = CdcProviderSetupMode.ValidateOnly,
+        bool createSlot = false
+    )
     {
         ISqlDialect dialect = SqlDialectFactory.Create(SqlDialect.Pgsql);
         IReadOnlyList<CdcSourceTableInventory> sourceInventory = new CoreDdlEmitter(dialect)
@@ -128,7 +173,7 @@ public sealed class Given_PostgresqlProviderSetupToConnectorTemplateHandoff
 
         return new CdcProviderSetupRequest(
             provider: CdcProvider.Postgresql,
-            mode: CdcProviderSetupMode.ValidateOnly,
+            mode: mode,
             boundPhysicalSourceFingerprint: sourceFingerprint,
             setupPrincipal: new CdcSetupPrincipalContext(new CdcSafeName("handoff_setup_principal")),
             connectorPrincipal: new CdcConnectorPrincipal(new CdcSafeName("handoff_connector_principal")),
@@ -136,7 +181,7 @@ public sealed class Given_PostgresqlProviderSetupToConnectorTemplateHandoff
             artifactOutput: new CdcProviderArtifactOutputRequest(IncludeManifestPayload: false),
             expectedSourceInventory: sourceInventory,
             dmsManagedTableInventory: BuildDmsManagedTableInventory(dialect, sourceInventory),
-            databaseExecutor: new HandoffPostgresqlCdcExecutor(sourceInventory)
+            databaseExecutor: new HandoffPostgresqlCdcExecutor(sourceInventory, !createSlot)
         );
     }
 
@@ -233,19 +278,32 @@ public sealed class Given_PostgresqlProviderSetupToConnectorTemplateHandoff
     private static string ColumnNames(IReadOnlyList<DbColumnName> columns) =>
         string.Join(",", columns.Select(column => column.Value));
 
-    private sealed class HandoffPostgresqlCdcExecutor(IReadOnlyList<CdcSourceTableInventory> sourceInventory)
-        : ICdcProviderDatabaseExecutor
+    private sealed class HandoffPostgresqlCdcExecutor(
+        IReadOnlyList<CdcSourceTableInventory> sourceInventory,
+        bool slotExists = true
+    ) : ICdcProviderDatabaseExecutor
     {
         private const string CurrentDatabaseName = "dms_test";
 
-        public Task ExecuteNonQueryAsync(string sql, CancellationToken cancellationToken) =>
-            throw new InvalidOperationException($"Validate-only handoff setup should not execute SQL: {sql}");
+        private bool _slotExists = slotExists;
+
+        public Task ExecuteNonQueryAsync(string sql, CancellationToken cancellationToken)
+        {
+            sql.Should().Contain("pg_create_logical_replication_slot");
+            _slotExists.Should().BeFalse();
+            _slotExists = true;
+            return Task.CompletedTask;
+        }
 
         public Task<IReadOnlyList<IReadOnlyDictionary<string, string?>>> QueryAsync(
             string sql,
             CancellationToken cancellationToken
         )
         {
+            if (!_slotExists && sql.Contains("cdc:postgresql:replication-slot", StringComparison.Ordinal))
+            {
+                return Task.FromResult<IReadOnlyList<IReadOnlyDictionary<string, string?>>>([]);
+            }
             IReadOnlyList<IReadOnlyDictionary<string, string?>> rows = sql switch
             {
                 var text when text.Contains("cdc:postgresql:source-fingerprint", StringComparison.Ordinal) =>
