@@ -50,6 +50,9 @@ public sealed record CdcKafkaBrokerAuthorization(
 /// </summary>
 public interface ICdcKafkaAdminAdapter
 {
+    Task<
+        CdcTransportResult<EdFi.DataManagementService.Core.DocumentCache.Cdc.CdcSqlServerSchemaHistoryState>
+    > InspectSchemaHistoryAsync(CdcDeploymentRequest request, CancellationToken cancellationToken);
     Task<CdcTransportResult<CdcKafkaTopicEvidence>> InspectTopicAsync(
         CdcDeploymentRequest request,
         string topic,
@@ -108,6 +111,7 @@ public sealed partial class CdcKafkaAdminAdapter
         _client = client;
         _authorization = authorization;
         _ownsClient = ownsClient;
+        ListOffsets = (specs, options) => client.ListOffsetsAsync(specs, options);
     }
 
     public static CdcTransportResult<CdcKafkaAdminAdapter> Create(

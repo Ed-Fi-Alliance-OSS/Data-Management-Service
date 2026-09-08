@@ -133,7 +133,8 @@ public sealed class CdcProviderSetupOrchestration
         ICdcProjectionRuntime runtime,
         LocalCdcWorkflowJournalStore.Session session,
         Action<CdcDeploymentComponent> setComponent,
-        CancellationToken token
+        CancellationToken token,
+        bool observeProjection = true
     )
     {
         var binding = request.Binding;
@@ -207,7 +208,11 @@ public sealed class CdcProviderSetupOrchestration
         setComponent(CdcDeploymentComponent.Projection);
         // Established inspection must not manufacture a closed-never-opened initial proof.
         var initial = new CdcInitialEnablement(_store, _bindings, _time);
-        if (consumptionPossible)
+        if (!observeProjection)
+        {
+            Require(consumptionPossible && retained.Length == 1);
+        }
+        else if (consumptionPossible)
         {
             var current = await initial.ObserveCurrentDatabaseAsync(
                 runtime,

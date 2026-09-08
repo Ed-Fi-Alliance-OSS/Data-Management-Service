@@ -490,7 +490,7 @@ public sealed class CdcConnectorRegistration
         );
     }
 
-    private sealed class EffectiveProducer(
+    internal sealed class EffectiveProducer(
         IReadOnlyDictionary<string, string> configuration,
         CdcWorkerInspection worker
     ) : ICdcKafkaProducerInspection
@@ -540,7 +540,7 @@ public sealed class CdcConnectorRegistration
             token
         );
 
-    private static void RequireWorker(CdcDeploymentRequest request, CdcWorkerInspection worker)
+    internal static void RequireWorker(CdcDeploymentRequest request, CdcWorkerInspection worker)
     {
         Require(
             !string.IsNullOrWhiteSpace(worker.ProcessIdentity)
@@ -558,7 +558,7 @@ public sealed class CdcConnectorRegistration
         );
     }
 
-    private static void RequireSameWorker(
+    internal static void RequireSameWorker(
         CdcDeploymentRequest request,
         CdcWorkerInspection first,
         CdcWorkerInspection last
@@ -591,7 +591,7 @@ public sealed class CdcConnectorRegistration
         RequireFresh(request, status.Runtime.ObservedAt);
     }
 
-    private static void RequireAssigned(CdcWorkerInspection worker, CdcConnectStatus status) =>
+    internal static void RequireAssigned(CdcWorkerInspection worker, CdcConnectStatus status) =>
         Require(
             status.WorkerId == worker.ConnectWorkerId
                 && status.Tasks[0].WorkerId == worker.ConnectWorkerId

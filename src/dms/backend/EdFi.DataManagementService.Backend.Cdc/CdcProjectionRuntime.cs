@@ -6,6 +6,7 @@
 using EdFi.DataManagementService.Backend.DocumentCacheRuntime;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
+using EdFi.DataManagementService.Core.DocumentCache.Cdc;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -25,6 +26,11 @@ public interface ICdcProjectionRuntime : IAsyncDisposable
         CancellationToken cancellationToken
     );
     Task<CdcInitialDatabaseObservation> ObserveInitialDatabaseAsync(CancellationToken cancellationToken);
+    Task<CdcProviderBarrierCaptureResult> CaptureBarrierAsync(
+        CdcDeploymentRequest request,
+        ICdcProviderSourcePositionAdapter adapter,
+        CancellationToken cancellationToken
+    );
     Task StartProcessingAsync(CancellationToken cancellationToken);
     Task<DocumentCacheStatusResponse> ObserveAsync(CancellationToken cancellationToken);
 }
@@ -183,6 +189,39 @@ internal sealed class CdcProjectionRuntime(
             await DisposeAsync().ConfigureAwait(false);
             throw;
         }
+    }
+
+    public async Task<CdcProviderBarrierCaptureResult> CaptureBarrierAsync(
+        CdcDeploymentRequest request,
+        ICdcProviderSourcePositionAdapter adapter,
+        CancellationToken cancellationToken
+    )
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (!_started || adapter.Provider != request.Binding.Provider)
+        {
+            throw new CdcWorkflowStateException(CdcWorkflowStateFailure.Contradictory);
+        }
+        var registry = provider.GetRequiredService<IDocumentCacheTargetRegistry>();
+        var context =
+            registry.CurrentRuntimeSnapshot.GetExecutionContext(targetKey)
+            ?? throw new CdcWorkflowStateException(CdcWorkflowStateFailure.Unavailable);
+        var source = await provider
+            .GetRequiredService<IDocumentCachePhysicalSourceFingerprintReader>()
+            .ReadFingerprintAsync(context.ConnectionInput.Value, cancellationToken);
+        if (!source.Succeeded || source.Fingerprint?.Value != request.Binding.PhysicalSourceFingerprint)
+        {
+            throw new CdcWorkflowStateException(CdcWorkflowStateFailure.Contradictory);
+        }
+        return await adapter.CaptureBarrierAsync(
+            new(context.ConnectionInput.Value, request.Binding)
+            {
+                CommandTimeout = request.Timing.CallTimeout,
+                CaptureWaitTimeout = request.Timing.WaitTimeout,
+                PollInterval = request.Timing.PollInterval,
+            },
+            cancellationToken
+        );
     }
 
     public Task<DocumentCacheStatusResponse> ObserveAsync(CancellationToken cancellationToken)

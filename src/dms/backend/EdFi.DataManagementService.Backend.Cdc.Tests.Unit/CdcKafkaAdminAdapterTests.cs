@@ -15,7 +15,7 @@ using ItemState = EdFi.DataManagementService.Core.DocumentCache.Cdc.CdcKafkaPoli
 namespace EdFi.DataManagementService.Backend.Cdc.Tests.Unit;
 
 [TestFixture]
-public class Given_CdcKafkaAdminAdapter
+public partial class Given_CdcKafkaAdminAdapter
 {
     private const string Sentinel = "secret-password-private-host-document-body";
     private IAdminClient _client = null!;
