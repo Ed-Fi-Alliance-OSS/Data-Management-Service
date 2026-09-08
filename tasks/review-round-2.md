@@ -47,3 +47,8 @@ All Phase 1–3 tasks (Tasks 1–7) and Checkpoints A, B, C are complete. Diff i
 committed on `copilot/copilotdms-1457-validate-correlation-id`
 (`e7aee532` round 1 implementation, `c58c0d2e` round 2 correction). No PR opened per
 plan §9.6 unless explicitly requested.
+
+## Note
+
+PR title/description were rewritten to reflect the full DMS-1457 task (Tasks 1-7,
+FR-LOG-3..6) rather than only round 2's comment fix.
