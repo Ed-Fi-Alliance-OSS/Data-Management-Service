@@ -27,7 +27,9 @@
     check validate an artifact other than the one just packed.
   -->
     <PropertyGroup>
-        <PluginsPackageVersion Condition="'$(PluginsPackageVersion)' == ''">0.0.0-local</PluginsPackageVersion>
+        <PluginsPackageVersion Condition="'$(PluginsPackageVersion)' == ''"
+            >0.0.0-local</PluginsPackageVersion
+        >
     </PropertyGroup>
 
     <!--

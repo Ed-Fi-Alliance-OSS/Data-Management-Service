@@ -26,7 +26,9 @@ internal sealed class AcmePlugin : EdFiApiPlugin
 
     public override void ContributeServices(IServiceCollection services, IConfiguration configuration)
     {
-        services.AddSingleton<IAcmeEndpoint>(new AcmeEndpoint(configuration["Acme:Endpoint"] ?? "https://localhost"));
+        services.AddSingleton<IAcmeEndpoint>(
+            new AcmeEndpoint(configuration["Acme:Endpoint"] ?? "https://localhost")
+        );
     }
 }
 
