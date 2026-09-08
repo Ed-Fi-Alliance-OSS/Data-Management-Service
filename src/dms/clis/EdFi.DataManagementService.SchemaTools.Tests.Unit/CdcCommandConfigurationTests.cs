@@ -105,6 +105,75 @@ public class Given_Cdc_command_configuration(string providerToken, CoreProvider 
         );
     }
 
+    [TestCase("verified")]
+    [TestCase("missing")]
+    [TestCase("incomplete")]
+    [TestCase("legacy")]
+    [TestCase("resume")]
+    [TestCase("retire")]
+    public async Task It_requires_the_latest_typed_managed_shutdown_before_worker_rest_startup(
+        string evidence
+    )
+    {
+        var request = await RequestAsync();
+        if (evidence != "missing")
+        {
+            await using var session = await new LocalCdcWorkflowJournalStore(_root).AcquireAsync(
+                request.Timing.CallTimeout,
+                request.Timing.PollInterval,
+                CancellationToken.None
+            );
+            var journal = await session.ReadAsync(_target, CancellationToken.None);
+            var operation = Guid.NewGuid();
+            await session.RecordIntentAsync(
+                _target,
+                journal.WorkflowId,
+                operation,
+                CdcWorkflowEffect.StopConnector,
+                [],
+                CancellationToken.None
+            );
+            if (evidence != "incomplete")
+            {
+                await session.ReconcileCompletionAsync(
+                    _target,
+                    journal.WorkflowId,
+                    operation,
+                    (_, _) =>
+                        Task.FromResult<CdcTransportResult<CdcWorkflowCompletion>>(
+                            new CdcTransportResult<CdcWorkflowCompletion>.Observed(
+                                evidence == "legacy"
+                                    ? new CdcWorkflowCompletion.Reconciled()
+                                    : new CdcWorkflowCompletion.Shutdown()
+                            )
+                        ),
+                    CancellationToken.None
+                );
+            }
+            if (evidence is "resume" or "retire")
+            {
+                await session.RecordIntentAsync(
+                    _target,
+                    journal.WorkflowId,
+                    Guid.NewGuid(),
+                    evidence == "resume" ? CdcWorkflowEffect.ResumeConnector : CdcWorkflowEffect.Retire,
+                    [],
+                    CancellationToken.None
+                );
+            }
+        }
+        Func<Task> act = () =>
+            CdcCommandRunner.RequireManagedShutdownAsync(_root, request, CancellationToken.None);
+        if (evidence == "verified")
+        {
+            await act.Should().NotThrowAsync();
+        }
+        else
+        {
+            await act.Should().ThrowAsync<Exception>();
+        }
+    }
+
     [TearDown]
     public void Cleanup()
     {

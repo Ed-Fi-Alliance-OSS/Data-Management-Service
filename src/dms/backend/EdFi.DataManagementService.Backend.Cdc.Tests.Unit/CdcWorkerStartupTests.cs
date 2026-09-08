@@ -10,8 +10,9 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Cdc.Tests.Unit;
 
-[TestFixture]
-public sealed class Given_CdcWorkerStartup
+[TestFixture(false)]
+[TestFixture(true)]
+public sealed class Given_CdcWorkerStartup(bool retained)
 {
     private readonly List<string> _effects = [];
     private CdcDeploymentRequest _request = null!;
@@ -33,49 +34,53 @@ public sealed class Given_CdcWorkerStartup
             .Invokes(() => _effects.Add("broker"));
         A.CallTo(() => _infrastructure.StartWorkerAsync(_request, A<CancellationToken>._))
             .Invokes(() => _effects.Add("worker"));
-        A.CallTo(() => _kafka.ProvisionOffsetStoreAsync(_request, A<CancellationToken>._))
-            .ReturnsLazily(() =>
-            {
-                _effects.Add("offset");
-                return Task.FromResult<CdcTransportResult<CdcConnectOffsetStorePolicyObservation>>(
-                    new CdcTransportResult<CdcConnectOffsetStorePolicyObservation>.Observed(
-                        _change(
-                            new(
-                                CdcJsonContract.CurrentContractVersion,
-                                "startup",
-                                DateTimeOffset.UtcNow,
-                                _request.TargetIdentity,
-                                _request.Binding.Provider,
-                                _request.Binding.PhysicalSourceFingerprint,
-                                "worker",
-                                "connect-offsets",
-                                CdcConnectOffsetStorePolicyState.Satisfied,
-                                "compact",
-                                1,
-                                1,
-                                CdcConnectOffsetStoreItemState.Satisfied,
-                                []
-                            )
-                            {
-                                TopicState = CdcConnectOffsetStoreItemState.Satisfied,
-                            }
+        Task<CdcTransportResult<CdcConnectOffsetStorePolicyObservation>> OffsetEvidence()
+        {
+            _effects.Add("offset");
+            return Task.FromResult<CdcTransportResult<CdcConnectOffsetStorePolicyObservation>>(
+                new CdcTransportResult<CdcConnectOffsetStorePolicyObservation>.Observed(
+                    _change(
+                        new(
+                            CdcJsonContract.CurrentContractVersion,
+                            "startup",
+                            DateTimeOffset.UtcNow,
+                            _request.TargetIdentity,
+                            _request.Binding.Provider,
+                            _request.Binding.PhysicalSourceFingerprint,
+                            "worker",
+                            "connect-offsets",
+                            CdcConnectOffsetStorePolicyState.Satisfied,
+                            "compact",
+                            1,
+                            1,
+                            CdcConnectOffsetStoreItemState.Satisfied,
+                            []
                         )
+                        {
+                            TopicState = CdcConnectOffsetStoreItemState.Satisfied,
+                        }
                     )
-                );
-            });
+                )
+            );
+        }
+        A.CallTo(() => _kafka.ProvisionOffsetStoreAsync(_request, A<CancellationToken>._))
+            .ReturnsLazily(OffsetEvidence);
+        A.CallTo(() => _kafka.ObserveOffsetStoreAsync(_request, A<CancellationToken>._))
+            .ReturnsLazily(OffsetEvidence);
         _startup = new(_kafka, _infrastructure);
     }
 
     [Test]
     public async Task It_prepares_and_validates_offsets_after_broker_and_before_every_worker_start()
     {
-        (await _startup.StartAsync(_request, CancellationToken.None))
-            .State.Should()
-            .Be(CdcTransportEvidenceState.Observed);
-        (await _startup.StartAsync(_request, CancellationToken.None))
-            .State.Should()
-            .Be(CdcTransportEvidenceState.Observed);
+        (await StartAsync(CancellationToken.None)).State.Should().Be(CdcTransportEvidenceState.Observed);
+        (await StartAsync(CancellationToken.None)).State.Should().Be(CdcTransportEvidenceState.Observed);
         _effects.Should().Equal("broker", "offset", "worker", "broker", "offset", "worker");
+        if (retained)
+        {
+            A.CallTo(() => _kafka.ProvisionOffsetStoreAsync(_request, A<CancellationToken>._))
+                .MustNotHaveHappened();
+        }
     }
 
     [TestCase("stale")]
@@ -100,9 +105,7 @@ public sealed class Given_CdcWorkerStartup
                 "cleanup" => value with { CleanupPolicy = "delete" },
                 _ => value with { AclState = CdcConnectOffsetStoreItemState.Unknown },
             };
-        (await _startup.StartAsync(_request, CancellationToken.None))
-            .State.Should()
-            .Be(CdcTransportEvidenceState.Unavailable);
+        (await StartAsync(CancellationToken.None)).State.Should().Be(CdcTransportEvidenceState.Unavailable);
         _effects.Should().Equal("broker", "offset");
     }
 
@@ -111,7 +114,7 @@ public sealed class Given_CdcWorkerStartup
     {
         A.CallTo(() => _infrastructure.StartBrokerAsync(_request, A<CancellationToken>._))
             .ThrowsAsync(new IOException("sentinel-secret"));
-        var result = await _startup.StartAsync(_request, CancellationToken.None);
+        var result = await StartAsync(CancellationToken.None);
         result.State.Should().Be(CdcTransportEvidenceState.Unavailable);
         result.Diagnostics.Single().Message.Should().NotContain("sentinel-secret");
         _effects.Should().NotContain("offset").And.NotContain("worker");
@@ -126,9 +129,13 @@ public sealed class Given_CdcWorkerStartup
                     new(CdcDeploymentComponent.Kafka, CdcDeploymentFailure.Unavailable)
                 )
             );
-        (await _startup.StartAsync(_request, CancellationToken.None))
-            .State.Should()
-            .Be(CdcTransportEvidenceState.Unavailable);
+        A.CallTo(() => _kafka.ObserveOffsetStoreAsync(_request, A<CancellationToken>._))
+            .Returns(
+                new CdcTransportResult<CdcConnectOffsetStorePolicyObservation>.Unavailable(
+                    new(CdcDeploymentComponent.Kafka, CdcDeploymentFailure.Unavailable)
+                )
+            );
+        (await StartAsync(CancellationToken.None)).State.Should().Be(CdcTransportEvidenceState.Unavailable);
         _effects.Should().Equal("broker");
     }
 
@@ -138,9 +145,29 @@ public sealed class Given_CdcWorkerStartup
         using var cancellation = new CancellationTokenSource();
         _change = _ => throw new OperationCanceledException(cancellation.Token);
         await cancellation.CancelAsync();
-        Func<Task> act = () => _startup.StartAsync(_request, cancellation.Token);
+        Func<Task> act = () => StartAsync(cancellation.Token);
         await act.Should().ThrowAsync<OperationCanceledException>();
         _effects.Should().NotContain("worker");
+    }
+
+    private Task<CdcTransportResult<CdcTransportAcknowledgement>> StartAsync(CancellationToken token) =>
+        retained ? _startup.StartRetainedAsync(_request, token) : _startup.StartAsync(_request, token);
+
+    [Test]
+    public async Task It_never_prepares_or_repairs_a_retained_offset_store()
+    {
+        A.CallTo(() => _kafka.ObserveOffsetStoreAsync(_request, A<CancellationToken>._))
+            .Returns(
+                new CdcTransportResult<CdcConnectOffsetStorePolicyObservation>.Unavailable(
+                    new(CdcDeploymentComponent.Kafka, CdcDeploymentFailure.Unavailable)
+                )
+            );
+        var result = await _startup.StartRetainedAsync(_request, CancellationToken.None);
+        result.State.Should().Be(CdcTransportEvidenceState.Unavailable);
+        A.CallTo(() => _kafka.ProvisionOffsetStoreAsync(_request, A<CancellationToken>._))
+            .MustNotHaveHappened();
+        A.CallTo(() => _infrastructure.StartWorkerAsync(_request, A<CancellationToken>._))
+            .MustNotHaveHappened();
     }
 }
 

@@ -47,6 +47,7 @@ public class Given_Cdc_command_contract
         _error.Dispose();
     }
 
+    [TestCase(CdcCommandOperation.StartWorker)]
     [TestCase(CdcCommandOperation.Enable)]
     [TestCase(CdcCommandOperation.Validate)]
     [TestCase(CdcCommandOperation.Status)]

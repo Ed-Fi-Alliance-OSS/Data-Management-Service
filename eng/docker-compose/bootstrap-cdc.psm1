@@ -228,6 +228,8 @@ function Invoke-BootstrapCdcEnable {
             $Receipt.Target.Generation -ne $Handoff.Settings.Cdc.Generation) { throw 'Receipt' }
     }
     catch { throw 'CDC selected target and authoritative creation receipt must match the supplied settings; reused databases require cleanup/reprovisioning.' }
+    Import-Module (Join-Path $PSScriptRoot 'cdc-lifecycle.psm1')
+    Register-CdcDeploymentHandoff -Handoff $Handoff -StatePath $StatePath
     Import-Module (Join-Path $PSScriptRoot 'bootstrap-schema-tool.psm1') -Force
     $tool = Resolve-DmsSchemaTool -RequestedPath $ToolPath
     $arguments = @('cdc', 'enable', '--settings', $Handoff.SettingsPath, '--state-path', $StatePath, '--json')

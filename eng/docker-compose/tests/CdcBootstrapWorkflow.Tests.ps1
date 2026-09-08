@@ -14,6 +14,10 @@ Describe 'CDC bootstrap wrapper phase contract' {
         foreach ($name in @('bootstrap-local-dms.ps1', 'bootstrap-published-dms.ps1', 'bootstrap-wrapper.psm1')) {
             Copy-Item (Join-Path $script:composeRoot $name) $script:sandbox
         }
+        @'
+function Invoke-CdcAdmittedHost { param($Project, $StartScript, $Parameters) & $StartScript @Parameters }
+Export-ModuleMember -Function Invoke-CdcAdmittedHost
+'@ | Set-Content (Join-Path $script:sandbox 'cdc-lifecycle.psm1')
         'local=test' | Set-Content (Join-Path $script:sandbox '.env')
         @'
 function Resolve-DataStandardEnvironmentFile { param($DataStandardVersion, $BaseEnvironmentFile, $DockerComposeRoot, $OverlayPrefix) return $BaseEnvironmentFile }
@@ -138,7 +142,7 @@ Add-Content (Join-Path $PSScriptRoot 'calls') "seed:$($DataStoreId -join ',')"
     }
 
     It 'does not route explicit CDC teardown through ungoverned volume removal' {
-        { & (Join-Path $script:sandbox 'bootstrap-local-dms.ps1') -d -v -EnableKafkaCdc } | Should -Throw '*governed controller cleanup*'
+        { & (Join-Path $script:sandbox 'bootstrap-local-dms.ps1') -d -v -EnableKafkaCdc } | Should -Throw '*original retained deployment inventory*'
         Test-Path (Join-Path $script:sandbox 'calls') | Should -BeFalse
     }
 
@@ -208,9 +212,11 @@ Describe 'CDC local ownership inspection' {
 Describe 'CDC controller result handoff' {
     BeforeAll {
         Import-Module (Join-Path $script:composeRoot 'bootstrap-cdc.psm1') -Force
+        Import-Module (Join-Path $script:composeRoot 'cdc-lifecycle.psm1') -Force
         $script:workflow = '90c9769b-e70f-4c54-97ec-abbdc2d18879'
     }
     BeforeEach {
+        Mock -ModuleName bootstrap-cdc Register-CdcDeploymentHandoff {}
         $script:tool = Join-Path $TestDrive 'cdc-tool.ps1'
         @'
 param()

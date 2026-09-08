@@ -1953,12 +1953,12 @@ Copy-Item -LiteralPath `$EnvironmentFile -Destination '$capturedEnvPath' -Force
             $params | Should -Contain "v"
         }
 
-        It "bootstrap-published-dms.ps1 does not declare -d or -v (teardown is local-only)" {
+        It "bootstrap-published-dms.ps1 declares -d and -v for governed deployment teardown" {
             $params = Get-DeclaredScriptParameters -Path (
                 Join-Path $script:sourceDockerComposeRoot "bootstrap-published-dms.ps1"
             )
-            $params | Should -Not -Contain "d"
-            $params | Should -Not -Contain "v"
+            $params | Should -Contain "d"
+            $params | Should -Contain "v"
         }
 
         It "start-local-dms.ps1 still owns -d, -v, and -RemoveBootstrap" {
@@ -2445,7 +2445,7 @@ DMS_CONFIG_IDENTITY_CLIENT_SECRET_MINIMUM_LENGTH=not-an-integer
                 $source.IndexOf('"bootstrap-dms.yml"', $applicationComposeGuardIndex) |
                     Should -BeGreaterThan $applicationComposeGuardIndex
                 $source | Should -Match 'docker compose \$files --env-file \$EnvironmentFile -p dms-(?:local|published) up \$upArgs db'
-                $source | Should -Match '(?s)\$upArgs\s*=\s*@\("--detach"\).*?if \(-not \$databaseOnlyStartup\) \{.*?\$upArgs\s*\+=\s*"--remove-orphans"' -Because "DbOnly must not remove already-running application containers omitted from its reduced compose set"
+                $source | Should -Match '(?s)\$upArgs\s*=\s*@\("--detach"\).*?if \(-not \$databaseOnlyStartup -and -not \$DmsOnly\) \{.*?\$upArgs\s*\+=\s*"--remove-orphans"' -Because "DbOnly must not remove already-running application containers omitted from its reduced compose set"
             }
         }
 

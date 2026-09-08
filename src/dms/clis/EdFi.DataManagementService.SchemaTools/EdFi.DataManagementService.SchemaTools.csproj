@@ -31,6 +31,9 @@
         <PackageReference Include="System.CommandLine" />
     </ItemGroup>
     <ItemGroup>
+        <InternalsVisibleTo Include="EdFi.DataManagementService.SchemaTools.Tests.Unit" />
+    </ItemGroup>
+    <ItemGroup>
         <AssemblyAttribute Include="System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverageAttribute" />
     </ItemGroup>
     <ItemGroup>

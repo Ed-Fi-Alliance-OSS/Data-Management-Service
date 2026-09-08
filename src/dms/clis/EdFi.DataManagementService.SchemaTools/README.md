@@ -433,7 +433,7 @@ and [source replacement deferral](../../../../reference/design/backend-redesign/
 
 ### Bootstrap CDC handoff
 
-On an exclusively owned Unix local deployment, supply the DMS/CDC settings above with
+On an exclusively owned Linux local deployment, supply the DMS/CDC settings above with
 one explicit `DataManagement:DocumentCache:Targets` entry for the ID the configure phase
 will select. Keep the CMS URL on its published loopback port and use a dedicated database
 name distinct from the infrastructure initialization database:
@@ -461,5 +461,58 @@ environment overrides; place required controller secrets in the protected suppli
 completes CDC and remains offline; the controller's printed status command identifies its
 retained settings and state. On failure, retain those files and use the controller to inspect
 or resume the original unfinished workflow while writers remain stopped. This bootstrap
-entry point does not implement managed restart or destructive CDC teardown yet; use the
-explicit controller lifecycle operations while infrastructure remains reachable.
+entry point resumes established deployments through the retained lifecycle inventory described below.
+
+### Managed stack lifecycle
+
+After initial bootstrap, both bootstrap wrappers and both `start-*-dms.ps1` primitives
+recognize `.cdc-deployments/<project>.json`. This private, durable inventory is separate
+from the bootstrap manifest and the controller journals. It retains every registered
+settings snapshot, custom state root, generation, worker identity, effective environment,
+and shared broker-size override. Removing command-line opt-in flags does not remove a
+connector from management. Missing inventory with surviving managed containers or labeled
+Kafka volumes rejects startup and teardown.
+
+```powershell
+# Stop all managed connectors, verify STOPPED/no tasks, then stop infrastructure; retain volumes.
+pwsh eng/docker-compose/bootstrap-local-dms.ps1 -d
+# Restore infrastructure and worker REST; validate retained stopped connectors and resume them.
+pwsh eng/docker-compose/bootstrap-local-dms.ps1
+# Governed generation retirement before deleting this project's volumes.
+pwsh eng/docker-compose/bootstrap-local-dms.ps1 -d -v
+# The published wrapper accepts the same lifecycle switches.
+pwsh eng/docker-compose/bootstrap-published-dms.ps1 -d -v
+```
+
+Omit environment/provider/settings/state arguments to inherit the original selection.
+Explicit arguments must agree with the retained deployment; the original base environment
+path is also accepted. Compose environment overrides must match the original process
+values. Settings identity, credentials, endpoints, schemas and worker policy remain fixed;
+after a successful acknowledged size rollout, update only `Cdc:MaxRecordBytes` and
+`Cdc:ProducerBufferBytes` in the retained settings. Controllers validate these operational
+ceilings against live evidence before resuming.
+
+The deployment lock serializes wrapper operations across all registered bindings. Each
+binding still takes its own controller state lock and uses its original provenance.
+`stop` requires each command's fresh `TargetShutdownVerified` result and an independent
+complete REST inventory check before stopping the worker. Startup consumes that deployment
+shutdown checkpoint, exposes REST through `cdc start-worker` with observational shared-offset
+policy checks, verifies every retained connector is STOPPED, then invokes guarded `cdc start`
+for each. The start command temporarily runs the existing selected projection executor so
+retained work can drain while the HTTP host is offline; it disposes that executor on every
+exit. No initial barrier or exact baseline is recertified. Unknown state, native recovery,
+failed validation or resume prevents DMS startup; reconcile via controller inspection and a
+fresh managed stop before retrying. Direct `start-worker` is an infrastructure building block;
+the wrappers own the complete worker inventory and it never resumes connectors.
+
+Multiple registered bindings may use separate original state roots but must share the same
+worker, environment and broker-size override path. Additional explicitly provisioned handoffs
+are registered with `Register-CdcDeploymentHandoff` from `cdc-lifecycle.psm1` before their
+controller enable call. Automatic DMS startup combines their explicit DocumentCache targets
+and requires matching other DMS host settings; local `-InfraOnly` restores CDC without launching
+an HTTP host. Partial retirement retains infrastructure and inventory and retries each
+controller's resumable cleanup. Per-binding retirement retains shared offset topics, peers and
+source-history journals. Destructive stack teardown removes volumes only after all governed
+cleanup and an empty worker inventory. The CDC settings workspace and all controller roots
+remain retained, including through shared E2E teardown, so cleanup cannot accidentally erase
+nested history or another deployment's settings.

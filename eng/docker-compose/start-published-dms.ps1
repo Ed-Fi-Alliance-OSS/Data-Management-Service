@@ -49,6 +49,10 @@ param (
     [switch]$SuppressWriterGuidance,
     [string]$CdcDmsComposeFile,
 
+    [string]$CdcBindingStatePath,
+    [string]$CdcSettingsPath,
+    [string]$CdcBrokerSizeOverrideFile,
+
     # Enable Kafka UI. This also enables Kafka infrastructure.
     [Switch]
     $EnableKafkaUI,
@@ -140,6 +144,16 @@ param (
     [Switch]
     $SeparateConfigDatabase
 )
+
+Import-Module (Join-Path $PSScriptRoot 'cdc-lifecycle.psm1')
+if (-not (Test-CdcInfrastructureInvocation)) {
+    if (Test-CdcDeployment -Project 'dms-published') {
+        Invoke-CdcDeploymentLifecycle -Project 'dms-published' -StartScript $PSCommandPath -Parameters (@{} + $PSBoundParameters)
+        return
+    }
+    if ($CdcBindingStatePath -or $CdcSettingsPath) { throw 'CDC lifecycle requires its original retained deployment inventory.' }
+    Assert-CdcUnregisteredInfrastructure -Project 'dms-published'
+}
 
 $databaseOnlyStartup = $DbOnly -and -not $d
 if (-not $databaseOnlyStartup) {
@@ -442,6 +456,10 @@ if (-not $databaseOnlyStartup) {
     }
 }
 
+if ($CdcBrokerSizeOverrideFile -and (Test-Path -LiteralPath $CdcBrokerSizeOverrideFile)) {
+    $files += @('-f', $CdcBrokerSizeOverrideFile)
+}
+
 if ($CdcDmsComposeFile) {
     if (-not $DmsOnly -or -not (Test-Path -LiteralPath $CdcDmsComposeFile -PathType Leaf)) {
         throw 'CDC DMS settings handoff requires -DmsOnly and an existing Compose override.'
@@ -458,7 +476,13 @@ if ($d) {
     else {
         Write-Output "Shutting down"
     }
-    docker compose $files --env-file $EnvironmentFile -p dms-published down $downArgs
+    if ($CdcKafkaInfrastructure -and -not $v) {
+        docker compose $files --env-file $EnvironmentFile -p dms-published --profile cdc-managed-worker stop
+    }
+    elseif ($CdcKafkaInfrastructure) {
+        docker compose $files --env-file $EnvironmentFile -p dms-published --profile cdc-managed-worker down $downArgs
+    }
+    else { docker compose $files --env-file $EnvironmentFile -p dms-published down $downArgs }
     # Fail before workspace removal: a failed down can leave services running against the
     # bind-mounted .bootstrap schema and claims, so removing the workspace would pull it
     # out from under a live stack.
@@ -476,11 +500,14 @@ else {
     }
 
     $upArgs = @("--detach")
-    if (-not $databaseOnlyStartup) {
+    if (-not $databaseOnlyStartup -and -not $DmsOnly) {
+        # The DbOnly and DmsOnly compose sets must preserve CDC/peer services.
         # The DbOnly compose set intentionally contains only the database definition. Passing
         # --remove-orphans there would remove already-running DMS/CMS containers from this project.
         $upArgs += "--remove-orphans"
     }
+
+    if ($DmsOnly) { $upArgs += "--no-deps" }
 
     function Wait-HttpEndpointHealthy {
         param(

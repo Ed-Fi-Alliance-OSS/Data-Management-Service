@@ -676,6 +676,10 @@ function Remove-BootstrapWorkspaceIfRequested {
     }
 
     $bootstrapDir = Get-BootstrapRoot
+    if (Test-Path -LiteralPath (Join-Path $bootstrapDir 'cdc-runtime')) {
+        Write-Output 'Retaining CDC configuration workspace and any nested state roots after governed teardown.'
+        return
+    }
     if (Test-Path -LiteralPath $bootstrapDir) {
         Write-Output "Removing bootstrap workspace at $(Format-LogSafeText $bootstrapDir)"
         # Remove-Item is non-terminating by default; promote to a terminating error so a failed

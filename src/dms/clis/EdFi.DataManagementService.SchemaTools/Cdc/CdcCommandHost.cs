@@ -22,6 +22,7 @@ public enum CdcCommandOperation
     Stop,
     IncreaseRecordSize,
     Retire,
+    StartWorker,
 }
 
 public sealed record CdcCommandInvocation(
@@ -83,6 +84,8 @@ public static class CdcCommandHost
                 name,
                 operation switch
                 {
+                    CdcCommandOperation.StartWorker =>
+                        "Expose retained worker REST after verified shutdown and observational offset-store checks. Deployment wrappers must account for every connector; this does not resume connectors.",
                     CdcCommandOperation.Enable =>
                         "Enable within the owned offline initial workflow; dispose projection before returning writer permission.",
                     CdcCommandOperation.Validate =>
@@ -247,9 +250,12 @@ public static class CdcCommandHost
     }
 
     public static string Name(CdcCommandOperation operation) =>
-        operation == CdcCommandOperation.IncreaseRecordSize
-            ? "increase-record-size"
-            : operation.ToString().ToLowerInvariant();
+        operation switch
+        {
+            CdcCommandOperation.IncreaseRecordSize => "increase-record-size",
+            CdcCommandOperation.StartWorker => "start-worker",
+            _ => operation.ToString().ToLowerInvariant(),
+        };
 
     public static CdcCommandResult Failure(
         string operation,

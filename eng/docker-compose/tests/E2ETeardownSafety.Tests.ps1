@@ -238,6 +238,15 @@ exit 0
             }
         }
 
+        It "retains CDC snapshots and nested source history after governed volume cleanup" {
+            $workspace = Join-Path $TestDrive 'retained-cdc-workspace'
+            New-Item -ItemType Directory (Join-Path $workspace 'cdc-runtime') -Force | Out-Null
+            New-Item -ItemType Directory (Join-Path $workspace 'custom-state') -Force | Out-Null
+            'historical' | Set-Content (Join-Path $workspace 'custom-state/source-history.json')
+            Remove-E2EBootstrapWorkspace -BootstrapWorkspacePath $workspace
+            Get-Content (Join-Path $workspace 'custom-state/source-history.json') | Should -Be 'historical'
+        }
+
         It "removes the shared bootstrap workspace after every compose project is down" {
             $bootstrapWorkspace = Join-Path $script:composeRoot ".bootstrap"
             New-Item -ItemType Directory -Path (Join-Path $bootstrapWorkspace "ApiSchema") -Force | Out-Null

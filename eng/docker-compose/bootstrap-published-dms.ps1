@@ -115,6 +115,9 @@
 #>
 [CmdletBinding()]
 param(
+    [Switch]$d,
+    [Switch]$v,
+
     [Switch]$LoadSeedData,
 
     [ValidateSet("Minimal", "Populated")]
@@ -184,9 +187,29 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+if ($v -and -not $d) { throw '-v requires -d.' }
+if (Test-Path -LiteralPath (Join-Path $PSScriptRoot '.cdc-deployments/dms-published.json')) {
+    Import-Module (Join-Path $PSScriptRoot 'cdc-lifecycle.psm1')
+    $lifecycleArgs = @{} + $PSBoundParameters
+    if ($d -and $v) { $lifecycleArgs.RemoveBootstrap = $true }
+    Invoke-CdcDeploymentLifecycle -Project 'dms-published' -StartScript (Join-Path $PSScriptRoot 'start-published-dms.ps1') -Parameters $lifecycleArgs
+    return
+}
+if ($d) {
+    if ($EnableKafkaCdc -or $CdcBindingStatePath -or $CdcSettingsPath) { throw 'CDC lifecycle requires its original retained deployment inventory.' }
+    $teardownArgs = @{ d = $true; v = $v; RemoveBootstrap = $v }
+    foreach ($name in @('EnvironmentFile', 'IdentityProvider', 'EnableKafkaUI', 'EnableSwaggerUI', 'DatabaseEngine', 'SeparateConfigDatabase')) {
+        if ($PSBoundParameters.ContainsKey($name)) { $teardownArgs[$name] = $PSBoundParameters[$name] }
+    }
+    & "$PSScriptRoot/start-published-dms.ps1" @teardownArgs
+    return
+}
+
 Import-Module "$PSScriptRoot/bootstrap-wrapper.psm1" -Force
 
 $wrapperArgs = @{} + $PSBoundParameters
+$wrapperArgs.Remove("d")
+$wrapperArgs.Remove("v")
 $wrapperArgs["StartScriptName"] = "start-published-dms.ps1"
 
 Invoke-BootstrapWrapper @wrapperArgs

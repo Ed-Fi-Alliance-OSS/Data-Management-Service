@@ -148,6 +148,27 @@ public sealed class CdcCommandRunner(IApiSchemaFileLoader loader, EffectiveSchem
             );
             switch (invocation.Operation)
             {
+                case CdcCommandOperation.StartWorker:
+                    // The wrapper holds its deployment inventory lock and accounts for every peer.
+                    // This target still needs the controller's original completed shutdown intent.
+                    await RequireManagedShutdownAsync(invocation.StatePath, request, ct);
+                    var retained = Require(
+                        await new CdcWorkerStartup(
+                            new CdcKafkaProvisioning(
+                                invocation.StatePath,
+                                kafka,
+                                runtime,
+                                new CdcKafkaProducerInspection(connect, worker)
+                            ),
+                            new CdcComposeWorkerStartupTransport(
+                                config.ComposeFile,
+                                config.EnvironmentFile,
+                                config.Project,
+                                config.BrokerSizeOverride
+                            )
+                        ).StartRetainedAsync(request, ct)
+                    );
+                    return Result(true, retained, []);
                 case CdcCommandOperation.Enable:
                     Require(
                         await new CdcInitialEnablement(invocation.StatePath).ActivateAsync(
@@ -287,6 +308,26 @@ public sealed class CdcCommandRunner(IApiSchemaFileLoader loader, EffectiveSchem
                         CdcCommandOperation.Stop => CdcManagedLifecycleOperation.Stop,
                         _ => throw new ArgumentException("CDC command input is invalid."),
                     };
+                    if (operation == CdcManagedLifecycleOperation.Start)
+                    {
+                        await RequireManagedShutdownAsync(invocation.StatePath, request, ct);
+                        var eligibility = Require(
+                            await validation.ValidateAsync(
+                                request,
+                                runtime,
+                                CdcEstablishedValidationMode.PreStart,
+                                config.LagThreshold,
+                                cancellationToken: ct
+                            )
+                        );
+                        if (!eligibility.PreStartEligible)
+                        {
+                            return Result(false, eligibility, eligibility.Diagnostics);
+                        }
+                        // Managed stack startup still has the HTTP host offline. Drain retained
+                        // projection work through its existing executor, disposed with this invocation.
+                        await runtime.StartProcessingAsync(ct);
+                    }
                     var lifecycle = await new CdcManagedLifecycle(
                         invocation.StatePath,
                         setup,
@@ -346,6 +387,32 @@ public sealed class CdcCommandRunner(IApiSchemaFileLoader loader, EffectiveSchem
                     ? CdcDeploymentFailure.InvalidInput
                     : CdcDeploymentDiagnostic.FromException(component, exception).Failure
             );
+        }
+    }
+
+    internal static async Task RequireManagedShutdownAsync(
+        string statePath,
+        CdcDeploymentRequest request,
+        CancellationToken token
+    )
+    {
+        await using var session = await new LocalCdcWorkflowJournalStore(statePath).AcquireAsync(
+            request.Timing.CallTimeout,
+            request.Timing.PollInterval < request.Timing.CallTimeout
+                ? request.Timing.PollInterval
+                : request.Timing.CallTimeout,
+            token
+        );
+        var journal = await session.ReadAsync(request.TargetIdentity, token);
+        var latest = journal.Operations.Last();
+        if (
+            latest.Effect != CdcWorkflowEffect.StopConnector
+            || latest.Completions is not [{ Evidence: CdcWorkflowCompletion.Shutdown }]
+        )
+        {
+            throw new CdcCommandEvidenceException([
+                new(CdcDeploymentComponent.WorkflowState, CdcDeploymentFailure.ValidationFailed),
+            ]);
         }
     }
 

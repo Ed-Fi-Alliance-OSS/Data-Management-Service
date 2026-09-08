@@ -28,6 +28,18 @@ public sealed class CdcWorkerStartup(
     public async Task<CdcTransportResult<CdcTransportAcknowledgement>> StartAsync(
         CdcDeploymentRequest request,
         CancellationToken cancellationToken
+    ) => await StartAsync(request, createMissingOffsetStore: true, cancellationToken);
+
+    /// <summary>Retained deployment startup inspects shared offset storage without repairing it.</summary>
+    public Task<CdcTransportResult<CdcTransportAcknowledgement>> StartRetainedAsync(
+        CdcDeploymentRequest request,
+        CancellationToken cancellationToken
+    ) => StartAsync(request, createMissingOffsetStore: false, cancellationToken);
+
+    private async Task<CdcTransportResult<CdcTransportAcknowledgement>> StartAsync(
+        CdcDeploymentRequest request,
+        bool createMissingOffsetStore,
+        CancellationToken cancellationToken
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -37,7 +49,9 @@ public sealed class CdcWorkerStartup(
         {
             await infrastructure.StartBrokerAsync(request, timeout.Token);
             DateTimeOffset started = DateTimeOffset.UtcNow;
-            var result = await kafka.ProvisionOffsetStoreAsync(request, timeout.Token);
+            var result = createMissingOffsetStore
+                ? await kafka.ProvisionOffsetStoreAsync(request, timeout.Token)
+                : await kafka.ObserveOffsetStoreAsync(request, timeout.Token);
             DateTimeOffset now = DateTimeOffset.UtcNow;
             if (result is not CdcTransportResult<CdcConnectOffsetStorePolicyObservation>.Observed observed)
             {

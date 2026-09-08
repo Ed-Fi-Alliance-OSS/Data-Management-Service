@@ -880,6 +880,7 @@ function Invoke-BootstrapWrapper {
 
         if ($EnableKafkaCdc) {
             $cdcHandoff = New-BootstrapCdcHandoff -Settings $cdcSettings -StatePath $CdcBindingStatePath -EnvironmentFile $effectiveEnvFile -Project $cdcProject -DatabaseName $DataStoreDatabaseName
+            $cdcHandoff | Add-Member -NotePropertyName OriginalEnvironmentFile -NotePropertyValue $callerEnvFile -Force
         }
 
         # Infrastructure phase
@@ -1134,7 +1135,11 @@ function Invoke-BootstrapWrapper {
             $dmsStartArgs.CdcDmsComposeFile = $cdcHandoff.DmsComposePath
         }
 
-        & "$PSScriptRoot/$StartScriptName" @dmsStartArgs
+        if ($EnableKafkaCdc) {
+            Import-Module (Join-Path $PSScriptRoot 'cdc-lifecycle.psm1')
+            Invoke-CdcAdmittedHost -Project $cdcProject -StartScript "$PSScriptRoot/$StartScriptName" -Parameters $dmsStartArgs
+        }
+        else { & "$PSScriptRoot/$StartScriptName" @dmsStartArgs }
         if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
             throw "$StartScriptName -DmsOnly failed with exit code $LASTEXITCODE."
         }
