@@ -639,7 +639,7 @@ Feature: ApiClients endpoints
              Then it should respond with 201
               And the response body has key and secret
               And the response body credentials are captured as "initial"
-             When a token is requested with the credentials captured as "initial"
+             When a token is requested with the credentials captured as "initial" and scope "TestClaim01"
              Then it should respond with 200
               And the response body has a non-empty access_token
              When a GET request is made to "/v3/apiClients/{initialKey}"
@@ -672,7 +672,7 @@ Feature: ApiClients endpoints
               And the response body has key and secret
               And the response body credentials are captured as "additional"
               And the response body id is captured as "additionalApiClientId"
-             When a token is requested with the credentials captured as "additional"
+             When a token is requested with the credentials captured as "additional" and scope "TestClaim01"
              Then it should respond with 200
               And the response body has a non-empty access_token
              When a GET request is made to "/v3/apiClients/{additionalKey}"
@@ -745,10 +745,10 @@ Feature: ApiClients endpoints
                     "dataStoreIds": []
                   }
                   """
-             When a token is requested with the credentials captured as "initial"
+             When a token is requested with the credentials captured as "initial" and scope "TestClaim01"
              Then it should respond with 200
               And the response body has a non-empty access_token
-             When a token is requested with the credentials captured as "additional"
+             When a token is requested with the credentials captured as "additional" and scope "TestClaim01"
              Then it should respond with 200
               And the response body has a non-empty access_token
              When a PUT request is made to "/v3/apiClients/{initialApiClientId}/reset-credential" with
@@ -758,7 +758,7 @@ Feature: ApiClients endpoints
              Then it should respond with 200
               And the response body has key and secret
               And the response body credentials are captured as "initial"
-             When a token is requested with the credentials captured as "initial"
+             When a token is requested with the credentials captured as "initial" and scope "TestClaim01"
              Then it should respond with 200
               And the response body has a non-empty access_token
              When a PUT request is made to "/v3/apiClients/{additionalApiClientId}/reset-credential" with
@@ -768,7 +768,7 @@ Feature: ApiClients endpoints
              Then it should respond with 200
               And the response body has key and secret
               And the response body credentials are captured as "additional"
-             When a token is requested with the credentials captured as "additional"
+             When a token is requested with the credentials captured as "additional" and scope "TestClaim01"
              Then it should respond with 200
               And the response body has a non-empty access_token
              When a GET request is made to "/v3/apiClients/{initialKey}"
@@ -840,7 +840,7 @@ Feature: ApiClients endpoints
                   """
              Then it should respond with 201
               And the response body credentials are captured as "identityOnly"
-             When a token is requested with the credentials captured as "identityOnly"
+             When a token is requested with the credentials captured as "identityOnly" and scope "TestClaim01"
              Then it should respond with 200
               And the response body has a non-empty access_token
               And the token has an empty dataStoreIds claim

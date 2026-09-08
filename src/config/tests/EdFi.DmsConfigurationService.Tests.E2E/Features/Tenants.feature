@@ -389,6 +389,6 @@ Feature: Tenants endpoints
                         "dataStoreIds": []
                     }
                   """
-             When a token is requested with the credentials captured as "tenantAEmpty"
+             When a token is requested with the credentials captured as "tenantAEmpty" and scope "TenantAClaimSet"
              Then it should respond with 200
               And the response body has a non-empty access_token

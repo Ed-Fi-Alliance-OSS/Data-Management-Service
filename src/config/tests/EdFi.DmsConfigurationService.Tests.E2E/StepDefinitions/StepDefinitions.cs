@@ -643,10 +643,12 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
         _ids[$"{slot}Key"] = key;
     }
 
-    // No scope is requested: the identity provider then issues the client's own default scopes,
-    // which is the only token request shape that behaves the same on self-contained and Keycloak.
-    [When("a token is requested with the credentials captured as {string}")]
-    public async Task WhenATokenIsRequestedWithTheCredentialsCapturedAs(string slot)
+    // The scope must be the client's own claim set name, which is the scope both identity
+    // providers register for an application's client. Omitting it is not portable: the token
+    // endpoint forwards an empty scope parameter, which Keycloak rejects as invalid_scope while
+    // the self-contained provider falls back to the client's default permissions.
+    [When("a token is requested with the credentials captured as {string} and scope {string}")]
+    public async Task WhenATokenIsRequestedWithTheCredentialsCapturedAs(string slot, string scope)
     {
         _credentialSlots.Should().ContainKey(slot, $"credentials should have been captured as '{slot}'");
         (string key, string secret) = _credentialSlots[slot];
@@ -657,6 +659,7 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
                 { "client_id", key },
                 { "client_secret", secret },
                 { "grant_type", "client_credentials" },
+                { "scope", scope },
             }
         );
         APIRequestContextOptions options = new()
