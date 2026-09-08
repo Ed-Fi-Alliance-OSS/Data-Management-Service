@@ -12,6 +12,7 @@ epic: DMS-1309
 - **V1 readiness scope**: reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#v1-readiness-scope
 - **Local bootstrap and CI**: reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#local-bootstrap-and-ci
 - **Connector topology and provider setup**: reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#connector-topology-and-provider-setup
+- **Local and CI connector telemetry**: reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#local-and-ci-connector-telemetry
 - **Deployment-owned physical source binding**: reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding
 - **V1 deployment-state continuity and adoption deferral**: reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#v1-deployment-state-continuity-and-adoption-deferral
 - **Source-history continuity**: reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#source-history-continuity
@@ -196,11 +197,18 @@ controller composes those contracts rather than introducing another set of rules
   then read committed offsets through the supported REST surface.
   Reuse the provider offset parser and source-partition hash; do not consume progress-topic
   records or substitute topic offsets for source-position evidence.
-- Add a deployment telemetry adapter for current connector lag and the design-owned lag
-  statistics; a REST `RUNNING` response supplies neither. Bound each external call and the
-  complete wait, propagate cancellation, and return the failed component with sanitized
-  diagnostics. Connection/authentication failure and an authoritative missing artifact must
-  remain distinguishable inputs to continuity classification.
+- Implement the direct JMX Exporter HTTP adapter and single-worker endpoint wiring from
+  the design's [local/CI telemetry contract](../../design-docs/cdc/cdc-streaming.md#local-and-ci-connector-telemetry).
+  Consume DMS-1322's qualified exporter-enabled image and DMS-1321's reusable metric
+  qualification fixtures. Extend the typed deployment request with the configured worker
+  metrics endpoint and maximum observation age; reuse the Core lag observation and
+  evaluator contracts, extending their typed handoff only where required for the
+  design-owned statistics and identity evidence. Implement collection-time tracking,
+  worker/task correlation, freshness validation, and readiness integration in the adapter
+  and controller. Bound each external call and the complete wait, propagate cancellation,
+  and return the failed component with sanitized diagnostics. Connection/authentication
+  failure and an authoritative missing artifact must remain distinguishable inputs to
+  continuity classification.
 - Keep an explicit record-size increase separate from ordinary validation/retry. Compose
   broker/topic policy changes and regenerated connector config through the design's
   [coordinated increase procedure](../../design-docs/cdc/cdc-streaming.md#in-place-record-size-increase);
@@ -292,6 +300,13 @@ controller composes those contracts rather than introducing another set of rules
   image validation.
 - Provider tests cover the initial readiness and post-enablement lifecycle paths for
   PostgreSQL and SQL Server.
+- Telemetry adapter and controller tests consume the sibling qualification fixtures and
+  cover fresh successful collection, configured age boundaries and expiry before writer
+  handoff, missing/duplicate/malformed metrics, exporter failure, timeout/cancellation,
+  connector or worker mismatch, task/worker restart, reassignment, and rejection of
+  previous-pass evidence. Both provider admission paths prove that current lag and the
+  provider barrier remain independent requirements. Unsupported worker topology and
+  unavailable identity evidence cannot pass readiness.
 - Controller tests cover the design's deployment-state continuity boundary: intact-state
   validation/restart and interrupted initial retries succeed when otherwise eligible;
   missing binding, journal, establishment/provider-identity evidence, or source-history
@@ -314,6 +329,9 @@ controller composes those contracts rather than introducing another set of rules
   19-05.
 - Missing-state adoption and recovery from deployment-state rollback are deferred by the
   owning integration design; this story adds no replacement provenance mechanism.
+- Distributed-worker metrics-endpoint discovery is deferred to a later deployment adapter.
+  Exporter packaging/image publication belongs to DMS-1322, and reusable image/metric
+  qualification fixtures belong to DMS-1321.
 
 ## Clarifying Questions and Answers
 
@@ -336,20 +354,16 @@ controller composes those contracts rather than introducing another set of rules
    excludes recovery from suspected incident-history deletion or state rollback; this story
    does not add an always-present generation ledger or infer historical proof from live health.
 
-2. **Requires human decision:** Select the supported local/CI telemetry transport and its
-   observation contract, and assign any required exporter/image delivery work. The design
-   requires `statistics.metrics.enabled=true`, current `MilliSecondsBehindSource`, and
-   P50/P95/P99 lag telemetry, but names no transport, endpoint, sample-age limit, or worker
-   restart/task-reassignment identity policy. DMS-1323 already owns the deployment telemetry
-   adapter; DMS-1322 owns the qualified plugin image and DMS-1321 its qualification fixtures,
-   but neither sibling assigns exporter implementation. The decision must establish how
-   samples are tied to the bound connector and its current sole task, how collection time
-   and freshness are verified, and when restart or reassignment invalidates a sample.
-   Until that contract is defined, unavailable or unverified lag must remain unknown and
-   cannot pass readiness. Preserve the independent lag threshold and provider barrier
-   requirements from
-   [connector setup](../../design-docs/cdc/cdc-streaming.md#connector-topology-and-provider-setup);
-   neither REST `RUNNING` nor historical quantiles replace current lag or the barrier.
+2. **Resolved: use direct worker-local JMX Exporter HTTP telemetry for local/CI.** Implement
+   the owning design's
+   [local/CI telemetry contract](../../design-docs/cdc/cdc-streaming.md#local-and-ci-connector-telemetry)
+   for collection, connector/task and worker identity, observation age, restart invalidation,
+   and fail-closed readiness. DMS-1322 owns the pinned standard exporter, fixed mappings,
+   and qualified image publication; DMS-1321 owns reusable image/metric qualification
+   fixtures; DMS-1323 owns the configured endpoint, HTTP adapter, typed observation handoff,
+   and controller integration tests. The shipped adapter supports the explicitly configured
+   single-worker local/CI topology; distributed-worker endpoint discovery is deferred.
+   Preserve the independent current-lag threshold and provider barrier requirements.
 
 3. **Requires human decision:** Define the trusted consumer-capacity confirmation contract
    before tasking the record-size increase operation. The

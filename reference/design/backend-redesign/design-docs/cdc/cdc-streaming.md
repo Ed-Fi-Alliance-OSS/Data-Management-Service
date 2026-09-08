@@ -1058,6 +1058,50 @@ exposes minimum, maximum, average, P50, P95, and P99 statistics for
 participates in combined readiness and neither current nor historical lag substitutes for
 the provider source-position barrier.
 
+### Local and CI Connector Telemetry
+
+The shipped local/CI telemetry adapter supports one explicitly configured Kafka Connect
+worker. Its qualified image includes a version-pinned standard Prometheus JMX Exporter
+Java agent and fixed metric mappings for PostgreSQL and SQL Server. The controller reads
+the worker's `/metrics` HTTP endpoint directly on the management network; this workflow
+requires no Prometheus server, remote JMX/RMI service, or custom exporter implementation.
+The mappings expose current `MilliSecondsBehindSource` and its minimum, maximum, average,
+P50, P95, and P99 statistics, together with the identity evidence needed below. Exporter
+and mapping changes require image qualification and a new immutable image digest.
+
+Each readiness evaluation collects new evidence. The adapter matches the provider and
+the bound connector's validated `topic.prefix`, which is the connector name, and requires
+exactly one matching streaming metric set. It checks Connect status before and after
+collection: the connector and its sole task must be `RUNNING`, with that task assigned to
+the explicitly configured worker. Deployment inspection must also establish that the
+metrics endpoint belongs to that worker and its process identity remains unchanged across
+collection. A worker address or task number alone is not proof of an unchanged process.
+
+The deployment request supplies a positive maximum telemetry observation age, defaulting
+to 10 seconds. The controller records collection start and completion times and measures
+age conservatively from scrape start with a monotonic elapsed-time clock. Each external
+call and the complete observation pass are bounded and cancellable. The evidence must
+still be within the maximum age when used for the readiness decision, including initial
+writer handoff. It is not persisted as reusable readiness evidence or reused in a later
+evaluation. HTTP success timestamps establish collection time, not the time of the last
+source event; a fresh read remains only Debezium's reported lag.
+
+A worker or task restart, reassignment, identity change, or ambiguous collection invalidates
+the observation and requires fresh status and metrics. The qualified runtime must remove
+or replace a task's previous metric state on restart; the adapter cannot accept an old
+task's metric set as the current task's evidence. During initial admission, an interrupted
+readiness sequence also repeats the existing provider barrier and projection observation
+sequence. Missing, duplicate, malformed, expired, or incorrectly attributed metrics,
+exporter collection failure, and unavailable identity evidence produce `unknown` and
+prevent readiness. Current lag must independently satisfy its configured threshold;
+neither REST `RUNNING`, historical quantiles, nor a fresh HTTP response substitutes for
+the provider source-position barrier.
+
+Automatic metrics-endpoint discovery across a distributed worker fleet is outside this
+local/CI adapter. A later deployment adapter may support that topology while preserving
+the same evidence requirements. The single-worker scope does not limit the number of
+bindings hosted by that worker; their metric sets must remain distinguishable.
+
 ### PostgreSQL
 
 - Use the Debezium PostgreSQL connector with `pgoutput` and logical replication.

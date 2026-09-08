@@ -13,6 +13,7 @@ related:
 - **Connector transformation**: reference/design/backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#connector-transformation
 - **Topic and message contract**: reference/design/backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md
 - **Pinned connector runtime**: reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#pinned-connector-runtime
+- **Local and CI connector telemetry**: reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#local-and-ci-connector-telemetry
 - **Completed generic expand-JSON transform**: reference/design/backend-redesign/design-docs/expandjsonsmt-replacement.md
 
 The referenced design sections define source classification, record transformation, public
@@ -49,6 +50,11 @@ Connect plugin without changing the completed generic transform.
   the transform.
 - Package the transform, converter, and partitioner in the qualified Ed-Fi Kafka Connect
   image.
+- Package a version-pinned standard Prometheus JMX Exporter Java agent and fixed provider
+  metric mappings in that image for the linked local/CI telemetry contract. Own the agent
+  startup configuration, management endpoint configuration, artifact pinning, and publication
+  of the new qualified image digest. DMS-1321 owns reusable provider/metric qualification
+  fixtures; DMS-1323 owns endpoint wiring and the controller telemetry adapter.
 - Retain regression coverage for the existing generic transform.
 
 ## Implementation Contract
@@ -120,6 +126,9 @@ Connect plugin without changing the completed generic transform.
   `kafka-murmur2-v1` token before the image is consumed by DMS-1321.
 - Plugin-loading tests pass on the qualified connector runtime for the transform,
   converter, and partitioner.
+- Image packaging smoke tests verify the pinned exporter and mappings load with the
+  qualified worker and expose the configured management endpoint. Image publication
+  includes the telemetry qualification evidence supplied by DMS-1321.
 - Regression tests cover the unchanged generic transform artifact.
 
 ## Not Assigned to This Story
