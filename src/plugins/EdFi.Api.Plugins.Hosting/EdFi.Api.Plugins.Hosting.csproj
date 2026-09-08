@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <!--
+            Never packaged. The loader that will live here is ordinary host code, and its public
+            surface must not become a compatibility commitment to third parties the way the contract
+            assembly's is. Both host frontends reference it by project.
+        -->
+        <IsPackable>false</IsPackable>
+    </PropertyGroup>
+    <!--
+        Deliberately empty. This project exists now so that the solution entries and the committed
+        lock files for both production projects are settled by the story that creates src/plugins,
+        rather than arriving with the loader. The loader, its discovery and load-isolation code, and
+        this project's unit test project are added by the story that follows.
+    -->
+    <ItemGroup>
+        <ProjectReference Include="..\EdFi.Api.Plugins\EdFi.Api.Plugins.csproj" />
+    </ItemGroup>
+</Project>
