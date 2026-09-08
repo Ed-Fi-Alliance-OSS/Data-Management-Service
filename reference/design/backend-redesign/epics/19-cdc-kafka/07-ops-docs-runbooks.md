@@ -52,6 +52,10 @@ Publish verified operator guidance for the implemented relational CDC capability
   ordinary API routing.
 - Document only the implemented restart, recovery, containment, source-replacement, and
   destructive-retirement commands.
+- Document managed shutdown/startup and native worker/task recovery using the design's
+  [recovery boundary](../../design-docs/cdc/cdc-streaming.md#controller-managed-lifecycle-and-native-recovery-boundary)
+  and DMS-1323's shipped commands and diagnostics, including incomplete shutdown and the
+  limits of post-recovery readiness observations.
 - Document preservation of deployment state, intact-state validation/restart, interrupted
   initial-setup retry, and independently guarded retirement. Link state-loss diagnostics and
   backup/rollback limitations to the owning adoption deferral; do not present adoption,
@@ -75,6 +79,9 @@ Publish verified operator guidance for the implemented relational CDC capability
 - Documentation checks or exercised scenarios cover the deployment-state continuity
   boundary, unsupported missing-state adoption, terminal-incident rejection, and retirement
   limitations using DMS-1323's shipped diagnostics and rejection fixtures.
+- Recovery guidance is checked against DMS-1323's managed lifecycle and native recovery
+  qualification evidence; it does not describe eventual containment as pre-consumption
+  fencing or later healthy observations as retrospective continuity certification.
 - Documentation checks or exercised runbook scenarios cover both admitted `internalOnly`
   paths and rejected active, historical, possible, unknown, missing, or mismatched
   downstream-history evidence for the E18 command gate.

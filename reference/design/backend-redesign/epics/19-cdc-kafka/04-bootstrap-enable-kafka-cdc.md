@@ -16,6 +16,7 @@ epic: DMS-1309
 - **Deployment-owned physical source binding**: reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding
 - **V1 deployment-state continuity and adoption deferral**: reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#v1-deployment-state-continuity-and-adoption-deferral
 - **Source-history continuity**: reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#source-history-continuity
+- **Managed lifecycle and native recovery boundary**: reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#controller-managed-lifecycle-and-native-recovery-boundary
 - **Bootstrap phase ownership**: reference/design/backend-redesign/design-docs/bootstrap/command-boundaries.md
 - **Projection administrative serialization**: reference/design/backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#administrative-serialization-and-state-row-fencing
 
@@ -247,10 +248,17 @@ controller composes those contracts rather than introducing another set of rules
 ### Post-Enablement Operations and Delivery Evidence
 
 - After admission, use the 19-00 observational status/continuity services and 19-01
-  validate-only inspection before restart/resume and on each watch interval. Persist any
-  terminal incident and stop the affected connector; report failures to persist or stop
+  validate-only inspection before controller-issued start/restart/resume and on each watch
+  interval. Persist any terminal incident and stop the affected connector; report failures to persist or stop
   without concealing the incident. Never restart on unknown continuity or reuse initial
   readiness evidence to claim another exact baseline.
+- Implement the design's managed shutdown/startup ordering through the existing Connect
+  stop/resume and offset APIs. Journal verified connector shutdown before worker stop and
+  reconcile retained stopped state on startup. Route incomplete or unverified shutdown to
+  the native recovery boundary. On observed worker/task recovery or reassignment, invalidate
+  prior readiness evidence and collect fresh observations through the shared services.
+  DMS-1323 owns this orchestration and its provider/image qualification; reuse sibling
+  fixtures without adding a worker or task interception mechanism.
 - Enforce the design's v1 deployment-state continuity and adoption deferral before
   validation/restart. Return sanitized diagnostics identifying unavailable or contradictory
   provenance without reconstructing it from operator input or healthy artifacts. Do not
@@ -310,6 +318,20 @@ controller composes those contracts rather than introducing another set of rules
   confirmation prevents advancement while a partial rollout remains not ready.
 - Provider tests cover the initial readiness and post-enablement lifecycle paths for
   PostgreSQL and SQL Server.
+- Managed lifecycle tests for both providers use the qualified image to prove that verified
+  stopped connectors remain stopped across worker restart, expose committed offsets through
+  REST, and perform no source consumption or offset advancement before successful validation
+  and controller resume. Cover healthy continuity, unavailable observations, missing
+  provenance, and retained or newly detected terminal history loss. Wrapper tests prove
+  connector shutdown verification precedes worker shutdown; an acknowledgement without
+  verified completion is insufficient.
+- Native recovery tests exercise worker crash, task recovery/reassignment, and incomplete
+  or unverified managed shutdown using the same evidence cases. Assert readiness invalidation,
+  fresh observation, rejection of unauthorized controller restart/resume, and terminal
+  incident retention/latching and containment. These scenarios allow consumption before
+  revalidation and must not claim prevention or retrospective continuity certification from
+  eventual containment, current healthy offsets, or later ready status. Include a case with
+  observed pre-validation consumption to make that limitation executable.
 - Telemetry adapter and controller tests consume the sibling qualification fixtures and
   cover fresh successful collection, configured age boundaries and expiry before writer
   handoff, missing/duplicate/malformed metrics, exporter failure, timeout/cancellation,
@@ -342,6 +364,9 @@ controller composes those contracts rather than introducing another set of rules
 - Distributed-worker metrics-endpoint discovery is deferred to a later deployment adapter.
   Exporter packaging/image publication belongs to DMS-1322, and reusable image/metric
   qualification fixtures belong to DMS-1321.
+- Strict pre-consumption fencing across native worker/task recovery is deferred by the
+  owning design; custom worker startup hooks, task interceptors, and infrastructure fences
+  are not part of this story.
 - Automated inspection or certification of independently operated consumers is deferred;
   this story implements the design-owned deployment-operator attestation contract.
 
@@ -387,3 +412,49 @@ controller composes those contracts rather than introducing another set of rules
    renewed confirmation on resumed invocations, live rollout reconciliation, command help,
    and acceptance tests. Follow the design's rejection and partial-rollout readiness rules.
    Automated inspection or certification of independently operated consumers is deferred.
+
+### Questions 2
+
+1. Does the requirement to validate continuity before every connector start/resume also cover retained connectors restarting with the Connect worker after a clean stop or crash? If so, what shipped mechanism keeps their tasks from consuming until the controller can read offsets through the worker REST API and validate provenance/provider history; if automatic worker/task recovery is outside that guarantee, what explicit support boundary and restart tests apply?
+2. For the supported source-replacement operation, what is the concrete successful input scenario: does the controller receive an already prepared replacement database, or must it create/restore/copy the database and update CMS connection metadata? Specify who owns those steps and what old-source continuity and replacement projection-state evidence must be available before source-identity rotation and new-generation capture, so the success tests distinguish this path from deferred history-loss or baseline-replacing recovery.
+
+
+### Answers 2
+
+1. **Resolved: scope pre-start continuity validation to controller-managed lifecycle operations.**
+   Implement the owning design's
+   [managed lifecycle and native recovery boundary](../../design-docs/cdc/cdc-streaming.md#controller-managed-lifecycle-and-native-recovery-boundary).
+   DMS-1323 owns managed shutdown/startup orchestration, durable shutdown evidence, REST
+   observation and resume wiring, readiness invalidation, and provider/image qualification.
+   Managed shutdown verifies stopped connectors before stopping the worker; managed startup
+   validates retained stopped connectors before resuming them. Native worker recovery, task
+   reassignment/internal recovery, and startup after an incomplete or unverified shutdown
+   receive observational monitoring and containment, with no pre-consumption guarantee or
+   retrospective continuity certification. Controller-issued starts/restarts/resumes remain
+   prohibited without intact provenance, no terminal incident, and affirmative continuity
+   evidence. Use the existing Connect APIs, shared classifiers/provider adapters, and sibling
+   pinned-image fixtures. Strict fencing across native recovery is deferred. The acceptance
+   suites above distinguish prevention during managed startup from observation and containment
+   after native recovery for both providers.
+
+2. **Requires human decision:** Define one supported source-replacement input and preparation
+   handoff, including ownership of database creation/restore/copy, CMS connection changes,
+   and writer/projector fencing. The owning
+   [binding lifecycle](../../design-docs/cdc/cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding)
+   specifies the rotation and new artifacts, but does not establish an admissible prepared
+   replacement state or assign those preparation steps. Ordinary bootstrap phase ownership
+   does not define a replacement migration workflow. The settled constraints are a source
+   previously enabled through the v1 new-database path, intact deployment provenance, no
+   terminal source-history loss or published cache-ahead latch, verified old-connector
+   fencing before rotation, and entirely new generation artifacts and consumer namespace.
+   Source replacement cannot reconstruct missing provenance, clear published projection
+   state, or certify another exact baseline. The decision must define when and against
+   which source the old committed-offset/provider-history proof is obtained and retained,
+   how it is tied to the replacement, and what replacement canonical/cache/work integrity
+   evidence is required before rotation and capture. E18 requires `Tracking` with a clear
+   latch for operational health and an explicit integrity scrub after suspected restore
+   before relying on queue-empty status; queue emptiness alone cannot prove a valid restored
+   projection. Update the owning design and story with the concrete successful scenario,
+   preparation owner, evidence handoff, and crash boundaries, then use that same scenario
+   for both provider success tests. Keep state-loss, terminal-history-loss, cache-ahead,
+   and baseline-replacing recovery scenarios as rejections.

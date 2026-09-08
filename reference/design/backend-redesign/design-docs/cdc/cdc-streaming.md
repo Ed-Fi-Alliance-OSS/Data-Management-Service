@@ -603,8 +603,9 @@ The provider source-position barrier proves catch-up only while the source histo
 to resume from the committed connector offset still exists. Connector `RUNNING` state,
 current or quantile lag, a recreated provider artifact with the expected name, and a new
 snapshot do not prove that no source changes were skipped. Deployment automation therefore
-checks source-history continuity before every connector start or resume after initial
-enablement and on every combined-status polling interval.
+checks source-history continuity before every controller-issued connector start, restart,
+or resume after initial enablement and on every combined-status polling interval. Native
+worker recovery and task reassignment follow the explicitly narrower recovery boundary below.
 
 The PostgreSQL check requires the binding-derived logical replication slot and publication
 to exist with their exact expected database, plug-in, and captured-table configuration. It
@@ -635,8 +636,8 @@ The deployment-owned status has three continuity outcomes:
   source artifact;
 - `unknown`: a provider or Connect query is temporarily unavailable, times out, or returns
   no authoritative result without disproving continuity. Combined readiness is false,
-  automation does not start or resume the connector, and an already failed/stopped connector
-  is not automatically restarted. A later check may return to `healthy` only with complete
+  the controller does not start, restart, or resume the connector. Native recovery is subject
+  to the boundary below. A later check may return to `healthy` only with complete
   affirmative evidence; and
 - `lost`: a required artifact was removed or re-created, the committed position fell
   outside retained history, or a successful Connect query proves the established binding's
@@ -657,6 +658,48 @@ public and progress topics, SQL Server schema-history topic when applicable, fre
 state namespace, and snapshot. That baseline-replacing cutover is deferred from v1. The old
 binding remains terminal; provisioning or migrating to a replacement database and namespace
 requires a separately designed workflow.
+
+#### Controller-managed lifecycle and native recovery boundary
+
+V1 guarantees pre-start continuity validation for controller-managed lifecycle operations.
+Before issuing a post-enablement start, restart, or resume, the controller requires intact
+deployment provenance, no retained terminal incident, and fresh affirmative source-history
+evidence. Missing or unknown evidence prevents the operation. This guarantee does not
+intercept Kafka Connect's native worker recovery, task reassignment, or internal recovery.
+
+For a managed stack shutdown, the controller requests `STOPPED` for each managed connector
+on the worker and verifies that its tasks have shut down before stopping that worker.
+It retains the connector configuration and persisted target state in Connect's configuration
+store, committed offsets, provider artifacts, and deployment state. A REST acknowledgement
+alone is not proof that shutdown completed. The workflow journal records the verified
+shutdown outcome; an incomplete or unverified shutdown does not qualify as a managed stop.
+
+On managed startup, the worker exposes REST while retained connectors remain stopped.
+The controller reads back their stopped state and committed offsets, validates provenance
+and source history, and resumes only eligible connectors. Qualification against the pinned
+image must prove that stopped target state survives worker restart and permits offset
+inspection without task consumption. A worker startup that recovers a connector without
+a verified stopped state follows the native recovery boundary, even if startup was requested
+through a bootstrap wrapper.
+
+After an unclean worker exit, unverified shutdown, native task reassignment, or internal
+recovery, records may be consumed and published before the controller revalidates continuity.
+When the controller observes recovery, it invalidates prior readiness observations and
+collects fresh deployment-provenance, provider-history, committed-offset, connector/task,
+and telemetry evidence. Missing or unknown evidence cannot produce readiness or authorize a
+controller-issued restart/resume. Detected terminal history loss is durably latched and
+triggers connector containment; a retained terminal incident remains terminal. Neither
+later healthy observations nor eventual containment certify continuity or absence of
+publication during the unobserved interval. These are post-admission observational checks;
+they do not change initial offline admission or gate ordinary DMS traffic.
+
+Strict pre-consumption fencing across native recovery is deferred. V1 uses the existing
+Kafka Connect stop/resume and offset APIs; it adds no custom worker startup hook, task
+interceptor, or infrastructure fence. DMS-1323 owns managed lifecycle orchestration and
+recovery-boundary qualification using the existing provider adapters and sibling pinned-image
+fixtures. Kafka Connect's [administration API](https://kafka.apache.org/43/kafka-connect/administration/)
+and [persisted target-state behavior](https://cwiki.apache.org/confluence/spaces/KAFKA/pages/263429324/KIP-980%2BAllow%2Bcreating%2Bconnectors%2Bin%2Ba%2Bstopped%2Bstate)
+provide the underlying controls; their presence alone is not qualification evidence.
 
 ## Deployment-Owned CDC Target and Physical Source Binding
 
@@ -962,9 +1005,9 @@ Production deployments pre-create this topic before starting the worker with
 topic-level `min.insync.replicas` of at least two. Local development and CI may use
 replication factor one and `min.insync.replicas=1`. Deployment automation resolves the
 configured topic name and validates its actual cleanup policy, replica count, and
-topic-level override before accepting a worker, before connector registration or
-start/resume, and during live status checks. It never relies on Connect topic auto-creation
-or broker defaults.
+topic-level override before accepting a worker, before controller-issued connector
+registration/start/restart/resume, and during live status checks. It never relies on Connect
+topic auto-creation or broker defaults.
 
 On this topic, an authorization-enabled deployment grants the Kafka Connect worker service
 principal only literal `READ`, `WRITE`, and `DESCRIBE` access. The deployment control plane
@@ -1502,16 +1545,18 @@ Local bootstrap exposes an explicit opt-in such as `-EnableKafkaCdc`.
   outside the bootstrap manifest. DMS startup itself has no authority to enable tracking.
 - Binding reservation and registration are idempotent for an exact binding match and
   fail closed for missing or mismatched state around existing artifacts.
-- After initial enablement, bootstrap/status automation checks provider source-history
-  continuity before every connector start/resume and on each status interval. It leaves an
-  `unknown` connector stopped until affirmative evidence returns and durably terminates a
-  binding whose continuity is `lost`; it never resets offsets or resnapshots the existing
-  public topic.
+- After initial enablement, bootstrap/status automation follows the
+  [controller-managed lifecycle and native recovery boundary](#controller-managed-lifecycle-and-native-recovery-boundary).
+  It checks provider source-history continuity before every controller-issued connector
+  start/restart/resume and on each status interval. Missing or `unknown` evidence prevents
+  controller-issued starts/restarts/resumes; `lost` durably terminates the binding. Native
+  recovery has no pre-consumption validation guarantee. Automation never resets offsets or
+  resnapshots the existing public topic.
 - Before bootstrap starts local Kafka Connect, it pre-creates and validates the configured
   shared offset topic and its worker-only ACLs using the cluster-scoped contract above. For
   an already-running or externally managed worker, it requires equivalent authoritative
-  validation before registering, starting, or resuming a connector. The shared topic is not
-  a binding-governed artifact and is never removed by per-binding teardown.
+  validation before controller-issued connector registration, start, restart, or resume.
+  The shared topic is not a binding-governed artifact and is never removed by per-binding teardown.
 - Binding-topic provisioning applies the explicit durability profile above to the public and
   progress topics and to the SQL Server schema-history topic when applicable. The local
   single-broker default is replication factor one with `min.insync.replicas=1`;
@@ -1552,9 +1597,12 @@ Local bootstrap exposes an explicit opt-in such as `-EnableKafkaCdc`.
   opens writes as ready.
 - E2E setup creates a fresh database, provisions its current schema, and registers capture
   against that same database before issuing writes it expects to consume.
-- A normal local stop retains the binding, connector, Kafka offsets, ACLs, provider capture
-  artifacts, and every governed topic. Destructive local volume teardown removes the
-  connector; its offsets; public, progress, and SQL Server schema-history topics and ACLs;
+- A managed local stop verifies connectors are stopped before stopping their worker, using
+  the recovery boundary above. It retains the binding, connector configuration and stopped
+  target state, Kafka offsets, ACLs, provider capture artifacts, and every governed topic.
+  An incomplete or unverified stop follows the native recovery boundary on startup.
+  Destructive local volume teardown removes the connector; its offsets; public, progress,
+  and SQL Server schema-history topics and ACLs;
   the PostgreSQL slot/publication or SQL Server capture instances/jobs; and any other
   governed artifact before deleting terminal incident state and the binding record last.
 
@@ -1693,7 +1741,10 @@ same-document canonical-write contention; and why projector downtime permits que
 writes while enqueue-schema failure rejects canonical writes.
 They cover preservation of intact deployment state, interrupted initial-setup retry,
 intact-state validation/restart, cleanup ordering, and guarded new-generation source
-replacement. They link to the
+replacement. They distinguish managed stop/start from native worker/task recovery using the
+[recovery boundary](#controller-managed-lifecycle-and-native-recovery-boundary), including
+incomplete shutdown, possible publication before revalidation, and the absence of retrospective
+continuity certification. They link to the
 [v1 deployment-state continuity and adoption deferral](#v1-deployment-state-continuity-and-adoption-deferral)
 for missing-state diagnostics and backup/rollback limitations; they provide no adoption,
 replacement-binding JSON, or stale-backup restoration procedure as recovery. They never
