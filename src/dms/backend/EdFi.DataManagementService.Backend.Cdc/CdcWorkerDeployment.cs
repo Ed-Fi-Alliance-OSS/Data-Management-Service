@@ -23,6 +23,9 @@ public sealed class CdcWorkerDeployment : ICdcWorkerInspectionTransport
     private readonly ICdcWorkerDockerCommand _docker;
     private readonly IReadOnlySet<string> _qualifiedDigests;
 
+    public CdcWorkerDeployment(string composeProject, string composeService)
+        : this(composeProject, composeService, CdcQualifiedWorkerImage.Digests) { }
+
     public CdcWorkerDeployment(
         string composeProject,
         string composeService,

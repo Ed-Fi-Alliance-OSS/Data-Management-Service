@@ -1,0 +1,29 @@
+{
+  "image": "edfialliance/ed-fi-kafka-connect@sha256:4bb2d798bf63a43db36842ba7670db4c7b4c304c621db967c9771cc0059ff0b7",
+  "companionCommit": "a82ad494dc7b9b58a1d75475a42dc18c5b98884d",
+  "dmsFixtureCommit": "1823ae76ca54dbbed2e7dd54e63a457863fee673",
+  "runId": "34240299620",
+  "exporterVersion": "1.5.0",
+  "exporterSha256": "0315f3f657876302c6205a98d4036ec775dca529c5d0419ca60ee669c688239f",
+  "mappingSha256": "bc81eafc084baf3caf98341f218d288387c177b13759b756f42907df42bfb8ac",
+  "providers": [
+    "Postgresql",
+    "SqlServer"
+  ],
+  "requiredLag": "currentMilliseconds",
+  "optionalStatistics": [
+    "min",
+    "max",
+    "average",
+    "p50",
+    "p95",
+    "p99"
+  ],
+  "packaging": true,
+  "connectorIsolation": true,
+  "taskRestart": true,
+  "workerRestart": true,
+  "workerInspection": true,
+  "qualificationRunUrl": "https://github.com/Ed-Fi-Alliance-OSS/Ed-Fi-Kafka-Connect/actions/runs/34240299620",
+  "platform": "linux/amd64"
+}

@@ -23,7 +23,7 @@ services:
   # A general compose up, including UI, must never activate this profile.
   kafka-cdc-worker:
     profiles: [cdc-managed-worker]
-    image: ${CDC_CONNECT_IMAGE:?A published qualified immutable CDC image is required}
+    image: ${CDC_CONNECT_IMAGE:-edfialliance/ed-fi-kafka-connect@sha256:4bb2d798bf63a43db36842ba7670db4c7b4c304c621db967c9771cc0059ff0b7}
     labels:
       org.edfi.cdc.worker: ${CDC_WORKER_KEY:-local-worker}
     environment:

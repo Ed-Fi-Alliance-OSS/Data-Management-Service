@@ -15,6 +15,9 @@
         <ProjectReference Include="..\EdFi.DataManagementService.Backend.Ddl\EdFi.DataManagementService.Backend.Ddl.csproj" />
     </ItemGroup>
     <ItemGroup>
+        <EmbeddedResource Include="CdcQualifiedWorkerImage.json" />
+    </ItemGroup>
+    <ItemGroup>
         <InternalsVisibleTo Include="EdFi.DataManagementService.Backend.Cdc.Tests.Unit" />
         <InternalsVisibleTo Include="EdFi.DataManagementService.Backend.Cdc.Tests.Integration" />
         <InternalsVisibleTo Include="EdFi.DataManagementService.SchemaTools.Tests.Integration" />

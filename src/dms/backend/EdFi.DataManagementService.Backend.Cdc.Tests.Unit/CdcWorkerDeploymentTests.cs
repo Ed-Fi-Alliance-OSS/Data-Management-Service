@@ -93,6 +93,15 @@ public sealed class Given_CdcWorkerDeployment
     }
 
     [Test]
+    public async Task It_rejects_an_unqualified_request_using_the_shipped_image_inventory_before_docker_access()
+    {
+        var inspector = new CdcWorkerDeployment("dms-local", "kafka-cdc-worker");
+        var result = await inspector.InspectAsync(_request, CancellationToken.None);
+        result.State.Should().Be(CdcTransportEvidenceState.Unavailable);
+        result.Diagnostics.Single().Failure.Should().Be(CdcDeploymentFailure.ValidationFailed);
+    }
+
+    [Test]
     public async Task It_rejects_a_requested_digest_without_independent_qualification()
     {
         _inspection = new("dms-local", "kafka-cdc-worker", new HashSet<string>(), _docker);

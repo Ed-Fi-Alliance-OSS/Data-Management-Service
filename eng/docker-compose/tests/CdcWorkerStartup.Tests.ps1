@@ -97,6 +97,18 @@ Describe 'CDC Compose service selection' {
         $worker.depends_on | Should -BeNullOrEmpty
     }
 
+    It 'selects the shipped qualified image when no override is supplied' {
+        $override = $env:CDC_CONNECT_IMAGE
+        try {
+            $env:CDC_CONNECT_IMAGE = $null
+            $config = (& docker compose -f (Join-Path $script:root 'kafka-cdc.yml') --profile cdc-managed-worker config --format json | ConvertFrom-Json)
+            $LASTEXITCODE | Should -Be 0
+            $record = Get-Content -Raw (Join-Path $script:root '../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc/CdcQualifiedWorkerImage.json') | ConvertFrom-Json
+            $config.services.'kafka-cdc-worker'.image | Should -Be $record.image
+        }
+        finally { $env:CDC_CONNECT_IMAGE = $override }
+    }
+
     It 'preserves the ordinary legacy Kafka and UI-only service inventory' {
         $config = (& docker compose -f (Join-Path $script:root 'kafka.yml') -f (Join-Path $script:root 'kafka-ui.yml') config --format json | ConvertFrom-Json)
         $LASTEXITCODE | Should -Be 0

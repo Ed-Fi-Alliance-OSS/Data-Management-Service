@@ -95,6 +95,9 @@ public sealed class CdcComposeWorkerStartupTransport : ICdcWorkerStartupTranspor
     private readonly ICdcWorkerDockerCommand _docker;
     private readonly IReadOnlySet<string> _qualifiedImages;
 
+    public CdcComposeWorkerStartupTransport(string composeFile, string environmentFile, string project)
+        : this(composeFile, environmentFile, project, CdcQualifiedWorkerImage.Images) { }
+
     public CdcComposeWorkerStartupTransport(
         string composeFile,
         string environmentFile,
