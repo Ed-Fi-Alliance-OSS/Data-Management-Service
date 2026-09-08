@@ -115,7 +115,7 @@ internal sealed class CdcProjectionRuntime(
     private bool _started;
     private bool _disposed;
 
-    public Task<DocumentCacheAdministrativeCommandResult> ActivateAsync(
+    public async Task<DocumentCacheAdministrativeCommandResult> ActivateAsync(
         DocumentCacheGuardedNewEmptyActivationRequest request,
         CancellationToken cancellationToken
     )
@@ -130,9 +130,18 @@ internal sealed class CdcProjectionRuntime(
                 nameof(request)
             );
         }
-        return provider
+        // Registry initialization validates prerequisites but does not create the supervisor's
+        // command context. Match the administrative host's refresh before dispatch, without
+        // starting background processing during the offline activation window.
+        await provider
+            .GetRequiredService<IDocumentCacheProjectionSupervisor>()
+            .RefreshAsync(DocumentCacheTargetRefreshReason.Startup, cancellationToken)
+            .ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+        return await provider
             .GetRequiredService<IDocumentCacheGuardedNewEmptyActivationCommand>()
-            .ExecuteAsync(request, cancellationToken);
+            .ExecuteAsync(request, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     public async Task StartProcessingAsync(CancellationToken cancellationToken)

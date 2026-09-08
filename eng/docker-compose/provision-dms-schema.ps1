@@ -53,6 +53,7 @@ param(
 
     # Opt into controller-owned provenance for local managed provisioning, with or without CDC.
     [string]$CdcBindingStatePath = "",
+    [switch]$PrepareCdcProjectionPrerequisites,
     [string]$DeploymentKey = "local",
     [string]$InstanceKey = "",
     [long]$Generation = 1
@@ -1484,6 +1485,32 @@ function Assert-SeparateTopologyProvisionTarget {
     }
 }
 
+function Assert-CdcOwnedLocalSqlServer {
+    param($Target, [hashtable]$EnvValues)
+
+    if (-not (Test-ProvisionTargetIsLocalComposeDatabase -Target $Target -EnvValues $EnvValues)) {
+        throw "CDC server preparation requires the owned local Compose SQL Server endpoint."
+    }
+    # Read only ownership and endpoint metadata, never container credentials or native diagnostics.
+    $format = '{"running":{{json .State.Running}},"project":{{json (index .Config.Labels "com.docker.compose.project")}},"service":{{json (index .Config.Labels "com.docker.compose.service")}},"directory":{{json (index .Config.Labels "com.docker.compose.project.working_dir")}},"ports":{{json (index .NetworkSettings.Ports "1433/tcp")}}}'
+    try {
+        $raw = @(& docker inspect --format $format dms-mssql 2>$null)
+        if ($LASTEXITCODE -ne 0) { throw 'Unavailable' }
+        $evidence = ($raw -join "`n") | ConvertFrom-Json -ErrorAction Stop
+        $port = (Get-LocalComposeDatabaseHostSideEndpoint -Dialect 'mssql' -EnvValues $EnvValues).Port
+        if ($evidence.running -ne $true -or $evidence.project -notin @('cs-local', 'dms-local') -or
+            $evidence.service -ne 'db' -or
+            [System.IO.Path]::GetFullPath($evidence.directory) -cne [System.IO.Path]::GetFullPath($PSScriptRoot) -or
+            @($evidence.ports).Count -ne 1 -or $evidence.ports[0].HostIp -ne '127.0.0.1' -or
+            -not (Test-PortNumberEquivalent -Left $evidence.ports[0].HostPort -Right $port)) {
+            throw 'Mismatched'
+        }
+    }
+    catch {
+        throw "CDC server preparation requires live ownership and port evidence for this deployment's local Compose SQL Server."
+    }
+}
+
 function Invoke-DmsSchemaProvision {
     param(
         [string]
@@ -1506,9 +1533,14 @@ function Invoke-DmsSchemaProvision {
         [string]$TenantKey = "",
         [long]$DataStoreId = 0,
         [string]$InstanceKey = "",
-        [long]$Generation = 1
+        [long]$Generation = 1,
+        [ValidateSet('none', 'inspect', 'owned-local-sql-server')]
+        [string]$CdcProjectionPrerequisites = 'none'
     )
 
+    if ($CdcProjectionPrerequisites -ne 'none' -and [string]::IsNullOrWhiteSpace($CdcBindingStatePath)) {
+        throw 'CDC prerequisite preparation requires managed provisioning.'
+    }
     $arguments = @("ddl", "provision")
     foreach ($schemaPath in $SchemaPaths) {
         $arguments += @("--schema", $schemaPath)
@@ -1532,6 +1564,9 @@ function Invoke-DmsSchemaProvision {
             "--instance-key", $InstanceKey,
             "--generation", [string]$Generation
         )
+        if ($CdcProjectionPrerequisites -ne 'none') {
+            $arguments += @('--cdc-projection-prerequisites', $CdcProjectionPrerequisites)
+        }
         # JSON is emitted only after the controller has durably associated its receipt and source.
         # Never forward unvalidated native output (which may contain connection/source identifiers).
         if ($ToolPath.EndsWith(".ps1", [System.StringComparison]::OrdinalIgnoreCase)) {
@@ -1760,6 +1795,7 @@ function Invoke-ProvisionDmsSchema {
         [Switch]
         $SeparateConfigDatabase,
         [string]$CdcBindingStatePath = "",
+        [switch]$PrepareCdcProjectionPrerequisites,
         [string]$DeploymentKey = "local",
         [string]$InstanceKey = "",
         [long]$Generation = 1
@@ -1862,6 +1898,9 @@ function Invoke-ProvisionDmsSchema {
     $groups = $targets | Group-Object -Property TargetKey
 
     $managed = -not [string]::IsNullOrWhiteSpace($CdcBindingStatePath)
+    if ($PrepareCdcProjectionPrerequisites -and -not $managed) {
+        throw 'CDC prerequisite preparation requires managed provisioning.'
+    }
     if ($managed) {
         if ($Generation -le 0 -or ($InstanceKey -ne "" -and @($groups).Count -ne 1)) {
             throw "Managed provisioning requires a positive generation and an instance key scoped to one target."
@@ -1902,6 +1941,13 @@ function Invoke-ProvisionDmsSchema {
             $invokeArgs.DataStoreId = $dataStoreIds[0]
             $invokeArgs.InstanceKey = $InstanceKey
             $invokeArgs.Generation = $Generation
+            if ($PrepareCdcProjectionPrerequisites) {
+                $invokeArgs.CdcProjectionPrerequisites = 'inspect'
+                if ($target.Dialect -eq 'mssql') {
+                    Assert-CdcOwnedLocalSqlServer -Target $target -EnvValues $envValues
+                    $invokeArgs.CdcProjectionPrerequisites = 'owned-local-sql-server'
+                }
+            }
             Invoke-DmsSchemaProvision @invokeArgs
         }
         else {
@@ -1936,6 +1982,7 @@ Invoke-ProvisionDmsSchema `
     -DatabaseEngine $DatabaseEngine `
     -SeparateConfigDatabase:$SeparateConfigDatabase `
     -CdcBindingStatePath $CdcBindingStatePath `
+    -PrepareCdcProjectionPrerequisites:$PrepareCdcProjectionPrerequisites `
     -DeploymentKey $DeploymentKey `
     -InstanceKey $InstanceKey `
     -Generation $Generation

@@ -70,6 +70,13 @@ public static class DdlProvisionCommand
                 "Controller state root for exclusively managed provisioning; emits one JSON receipt result.",
             DefaultValueFactory = _ => string.Empty,
         };
+        var prerequisitesOption = new Option<string>("--cdc-projection-prerequisites")
+        {
+            Description =
+                "Managed CDC preflight: inspect, or configure nested triggers on an explicitly owned local SQL Server after a new CREATE. Retries inspect only.",
+            DefaultValueFactory = _ => "none",
+        };
+        prerequisitesOption.AcceptOnlyFromAmong("none", "inspect", "owned-local-sql-server");
         var deploymentOption = new Option<string>("--deployment-key") { DefaultValueFactory = _ => "local" };
         var tenantOption = new Option<string>("--tenant-key") { DefaultValueFactory = _ => string.Empty };
         var dataStoreOption = new Option<string>("--data-store-id")
@@ -86,6 +93,7 @@ public static class DdlProvisionCommand
         command.Options.Add(createDatabaseOption);
         command.Options.Add(timeoutOption);
         command.Options.Add(statePathOption);
+        command.Options.Add(prerequisitesOption);
         command.Options.Add(deploymentOption);
         command.Options.Add(tenantOption);
         command.Options.Add(dataStoreOption);
@@ -109,6 +117,12 @@ public static class DdlProvisionCommand
                 createDatabase,
                 timeout,
                 parseResult.GetValue(statePathOption)!,
+                parseResult.GetValue(prerequisitesOption) switch
+                {
+                    "inspect" => CdcProjectionPrerequisiteMode.Inspect,
+                    "owned-local-sql-server" => CdcProjectionPrerequisiteMode.OwnedLocalSqlServer,
+                    _ => CdcProjectionPrerequisiteMode.None,
+                },
                 new CdcTargetIdentity(
                     parseResult.GetValue(deploymentOption)!,
                     CdcTargetValidator.MapE18TenantKeyToBindingTenantKey(
@@ -135,6 +149,7 @@ public static class DdlProvisionCommand
         bool createDatabase,
         int commandTimeoutSeconds,
         string managedStatePath,
+        CdcProjectionPrerequisiteMode projectionPrerequisites,
         CdcTargetIdentity managedTarget
     )
     {
@@ -145,6 +160,17 @@ public static class DdlProvisionCommand
         }
 
         bool managed = managedStatePath.Length > 0;
+        if (
+            projectionPrerequisites != CdcProjectionPrerequisiteMode.None && !managed
+            || projectionPrerequisites == CdcProjectionPrerequisiteMode.OwnedLocalSqlServer
+                && dialectName != "mssql"
+        )
+        {
+            Console.Error.WriteLine(
+                "CDC prerequisite preparation requires managed provisioning; local SQL Server authority requires the mssql dialect."
+            );
+            return 1;
+        }
         if (
             managed
             && (
@@ -222,7 +248,8 @@ public static class DdlProvisionCommand
                             connectionString,
                             effectiveSchemaInfo,
                             result.CombinedSql,
-                            commandTimeoutSeconds
+                            commandTimeoutSeconds,
+                            projectionPrerequisites
                         );
                         var receipt = controller
                             .ProvisionAsync(managedTarget, adapter)

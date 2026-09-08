@@ -320,8 +320,39 @@ public class Given_CdcProjectionRuntimeLifetime
         DocumentCacheGuardedNewEmptyActivationRequest request = new(
             DocumentCacheAdministrativeTargetKey.FromTargetKey(_target)
         );
+        A.CallTo(() => _supervisor.RefreshAsync(DocumentCacheTargetRefreshReason.Startup, cancellation.Token))
+            .Invokes(() => _lifetime.Events.Add("refresh"));
+        A.CallTo(() => _activation.ExecuteAsync(request, cancellation.Token))
+            .Invokes(() => _lifetime.Events.Add("activate"));
         await _runtime.ActivateAsync(request, cancellation.Token);
         A.CallTo(() => _activation.ExecuteAsync(request, cancellation.Token)).MustHaveHappenedOnceExactly();
+        _lifetime.Events.Should().Equal("refresh", "activate");
+        _lifetime.StartCount.Should().Be(0);
+    }
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task It_does_not_activate_when_prerequisite_context_refresh_fails(bool canceled)
+    {
+        using CancellationTokenSource cancellation = new();
+        Exception failure = canceled
+            ? new OperationCanceledException(cancellation.Token)
+            : new InvalidOperationException("Prerequisites unavailable");
+        A.CallTo(() => _supervisor.RefreshAsync(DocumentCacheTargetRefreshReason.Startup, cancellation.Token))
+            .ThrowsAsync(failure);
+        Func<Task> activate = () =>
+            _runtime.ActivateAsync(
+                new(DocumentCacheAdministrativeTargetKey.FromTargetKey(_target)),
+                cancellation.Token
+            );
+        (await activate.Should().ThrowAsync<Exception>()).Which.Should().BeSameAs(failure);
+        A.CallTo(() =>
+                _activation.ExecuteAsync(
+                    A<DocumentCacheGuardedNewEmptyActivationRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
         _lifetime.StartCount.Should().Be(0);
     }
 

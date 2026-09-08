@@ -15,5 +15,6 @@
     </ItemGroup>
     <ItemGroup>
         <InternalsVisibleTo Include="EdFi.DataManagementService.Backend.Cdc.Tests.Unit" />
+        <InternalsVisibleTo Include="EdFi.DataManagementService.SchemaTools.Tests.Integration" />
     </ItemGroup>
 </Project>

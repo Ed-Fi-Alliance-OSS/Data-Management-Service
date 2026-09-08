@@ -16,7 +16,8 @@ public sealed class ManagedDatabaseProvisioner(
     string connectionString,
     EffectiveSchemaInfo schema,
     string sql,
-    int timeoutSeconds
+    int timeoutSeconds,
+    CdcProjectionPrerequisiteMode projectionPrerequisites = CdcProjectionPrerequisiteMode.None
 ) : ICdcManagedDatabaseProvisioner
 {
     public bool CreateDatabase() => provisioner.CreateDatabaseIfNotExists(connectionString);
@@ -24,11 +25,30 @@ public sealed class ManagedDatabaseProvisioner(
     public void ProvisionSchema(bool databaseWasCreated)
     {
         provisioner.CheckOrConfigureMvcc(connectionString, databaseWasCreated);
+        CheckProjectionPrerequisites(databaseWasCreated);
         provisioner.PreflightSeedValidation(connectionString, schema);
         provisioner.ExecuteInTransaction(connectionString, sql, timeoutSeconds);
     }
 
-    public void ValidateSchema() => provisioner.PreflightSeedValidation(connectionString, schema);
+    public void ValidateSchema()
+    {
+        // The controller has reconciled the durable receipt and live source before entering here.
+        // Even an initial retry is inspection-only; ownership never authorizes drift repair.
+        CheckProjectionPrerequisites(databaseWasCreated: false);
+        provisioner.PreflightSeedValidation(connectionString, schema);
+    }
+
+    private void CheckProjectionPrerequisites(bool databaseWasCreated)
+    {
+        if (projectionPrerequisites != CdcProjectionPrerequisiteMode.None)
+        {
+            provisioner.CheckCdcProjectionPrerequisites(
+                connectionString,
+                databaseWasCreated
+                    && projectionPrerequisites == CdcProjectionPrerequisiteMode.OwnedLocalSqlServer
+            );
+        }
+    }
 
     public async Task<string> ReadSourceFingerprintAsync(CancellationToken cancellationToken)
     {
@@ -37,4 +57,12 @@ public sealed class ManagedDatabaseProvisioner(
             ? fingerprint.Value
             : throw new CdcWorkflowStateException(CdcWorkflowStateFailure.Unavailable);
     }
+}
+
+/// <summary>Deployment configuration, not database ownership or reusable readiness evidence.</summary>
+public enum CdcProjectionPrerequisiteMode
+{
+    None,
+    Inspect,
+    OwnedLocalSqlServer,
 }

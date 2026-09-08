@@ -111,6 +111,14 @@ public abstract class DatabaseProvisionerBase(ILogger logger) : IDatabaseProvisi
 
     public abstract void CheckOrConfigureMvcc(string connectionString, bool databaseWasCreated);
 
+    public virtual void CheckCdcProjectionPrerequisites(
+        string connectionString,
+        bool configureOwnedLocalServer
+    )
+    {
+        // PostgreSQL has no SQL Server projection prerequisites.
+    }
+
     public void PreflightSeedValidation(string connectionString, EffectiveSchemaInfo expectedSchema)
     {
         using var connection = CreateConnection(connectionString);

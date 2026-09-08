@@ -300,10 +300,11 @@ exit $ExitCode
             # here could only disagree with what will actually be provisioned.
             $params | Should -Not -Contain "DataStoreDatabaseName"
             $params | Should -Contain "CdcBindingStatePath"
+            $params | Should -Contain "PrepareCdcProjectionPrerequisites"
             $params | Should -Contain "DeploymentKey"
             $params | Should -Contain "InstanceKey"
             $params | Should -Contain "Generation"
-            $params.Count | Should -Be 9
+            $params.Count | Should -Be 10
         }
 
         It "provision-dms-schema.ps1 forwards the topology declaration from its parameter surface into the phase function" {
