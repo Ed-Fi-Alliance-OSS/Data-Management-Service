@@ -3,6 +3,32 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
+# The plugin tree, with host build output filtered out of it.
+#
+# The build stage below needs every source file under src/plugins, recursively, so that a file
+# added to either plugin project reaches the image without anyone editing this Dockerfile. A
+# directory copy is the only way to get that, and copying that tree straight from the parentdir
+# named context is unsafe: src/dms/.dockerignore filters the default build context, but a named
+# context is filtered by a .dockerignore of its own and src/ has none. Measured, after a local
+# solution build: a direct directory copy carried the host's bin/, obj/ and results.sarif into the
+# image, and obj/ arriving after the restore would land on top of the Linux-generated
+# project.assets.json.
+#
+# So the tree is staged here and the generated directories are removed before the build stage
+# sees it. This is deliberately not solved with a src/.dockerignore, which would also change the
+# Configuration Service image's context, nor with COPY --exclude, which needs a labs Dockerfile
+# frontend. The stage reuses the SDK image the build stage already pulls, so it costs no extra
+# download.
+FROM mcr.microsoft.com/dotnet/sdk:10.0.103-alpine3.23@sha256:9b4b31da5246f575086b1901e9871b189ae2a80eb42fe9234e9d000b51febd4b AS pluginsource
+
+WORKDIR /plugins
+
+# hadolint ignore=DL3022
+COPY --from=parentdir plugins/ ./
+
+RUN find . \( -type d \( -name bin -o -name obj \) \) -prune -exec rm -rf {} + && \
+    find . -type f -name results.sarif -delete
+
 FROM mcr.microsoft.com/dotnet/sdk:10.0.103-alpine3.23@sha256:9b4b31da5246f575086b1901e9871b189ae2a80eb42fe9234e9d000b51febd4b AS build
 
 # /source is the common parent, holding only the files both trees share, and the DMS and plugin
@@ -20,10 +46,9 @@ COPY --from=parentdir .editorconfig Directory.Packages.props nuget.config ./
 # by the story that creates the tree so that no merge order can leave the frontend pointing at a
 # tree this build stage cannot reach, once the plugin startup guard adds that project reference.
 #
-# Sources are copied file by file rather than as whole directories. The default build context is
-# governed by src/dms/.dockerignore, which excludes bin/ and obj/; the parentdir named context has
-# no such file, so a directory copy would drop a developer's host build output on top of the
-# Linux restore performed below.
+# Only the project files and lock files are copied here, so that editing a source file does not
+# invalidate the restore layer below. The sources themselves arrive after the restore, from the
+# pluginsource stage.
 # hadolint ignore=DL3022
 COPY --from=parentdir plugins/Directory.Build.props ./plugins/
 # hadolint ignore=DL3022
@@ -70,11 +95,14 @@ COPY backend/EdFi.DataManagementService.Backend.RelationalModel/ ./backend/EdFi.
 COPY backend/EdFi.DataManagementService.Backend.Postgresql/ ./backend/EdFi.DataManagementService.Backend.Postgresql/
 COPY clis/EdFi.DataManagementService.ApiSchemaDownloader/ ./clis/EdFi.DataManagementService.ApiSchemaDownloader/
 
-# EdFi.Api.Plugins.Hosting is deliberately empty today, so it has no source line here; its csproj
-# is already staged above and the restore above proves its lock file. The story that gives it
-# code adds its source copy.
-# hadolint ignore=DL3022
-COPY --from=parentdir plugins/EdFi.Api.Plugins/*.cs plugins/EdFi.Api.Plugins/PLUGINS.md /source/plugins/EdFi.Api.Plugins/
+# Both plugin source trees, recursively, from the filtered stage above rather than from the
+# named context. A whole-tree copy is what keeps a newly added file - nested or not, in either
+# project - reaching the image without a change here, and it is why the empty Hosting project
+# needs no special case: a directory copy of an empty tree is not a missing glob.
+#
+# This lands after the restore, exactly as the DMS source copies above do. It cannot disturb that
+# restore's output because the staged tree has had its obj/ removed.
+COPY --from=pluginsource /plugins/ /source/plugins/
 
 ARG VERSION=""
 ARG ASSEMBLY_VERSION=""
