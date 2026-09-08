@@ -294,4 +294,31 @@ internal static class DerivativeRoutingSupport
         problem["status"]!.GetValue<int>().Should().Be(405, because);
         problem["correlationId"]!.GetValue<string>().Should().NotBeNullOrWhiteSpace(because);
     }
+
+    /// <summary>
+    /// The Snapshot Not Found body: the shared not-found type and title, the detail that names the
+    /// snapshot, and <c>application/problem+json</c>.
+    /// </summary>
+    /// <remarks>
+    /// Several production sites answer with this - selection for a read with no snapshot configured,
+    /// and each connection-unavailable translation site for a snapshot that could not be reached - and
+    /// a client must not be able to tell them apart. Every field is therefore asserted against this one
+    /// definition, so a body that drifted at one site could not pass on its status code alone.
+    /// </remarks>
+    public static async Task AssertSnapshotNotFoundAsync(HttpResponseMessage response, string because)
+    {
+        ArgumentNullException.ThrowIfNull(response);
+
+        string body = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound, $"{because}: {body}");
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json", because);
+
+        JsonNode problem = JsonNode.Parse(body)!;
+        problem["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:not-found", because);
+        problem["title"]!.GetValue<string>().Should().Be("Not Found", because);
+        problem["detail"]!.GetValue<string>().Should().Be("Snapshot not found.", because);
+        problem["status"]!.GetValue<int>().Should().Be(404, because);
+        problem["correlationId"]!.GetValue<string>().Should().NotBeNullOrWhiteSpace(because);
+    }
 }

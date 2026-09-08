@@ -32,4 +32,17 @@ public interface IDerivativeTargetReachability
     /// opened at all. Unlike an unreachable database this needs no cleanup.
     /// </summary>
     string AbsentDatabaseConnectionString(string leasedConnectionString);
+
+    /// <summary>
+    /// A connection string that is present and non-blank but that this engine's provider cannot parse
+    /// at all, so acquisition fails before any server is contacted.
+    /// </summary>
+    /// <remarks>
+    /// Distinct from <see cref="AbsentDatabaseConnectionString" />, which is perfectly well-formed text
+    /// that fails at the open. A target is selectable on the strength of its configured text alone -
+    /// selection deliberately does no provider parsing - so a value like this one must be classified at
+    /// the acquisition boundary rather than escape as an unhandled argument failure. It also exercises
+    /// the half of each seam guard that a wrap around the open call alone would miss.
+    /// </remarks>
+    string ProviderInvalidConnectionString(string leasedConnectionString);
 }

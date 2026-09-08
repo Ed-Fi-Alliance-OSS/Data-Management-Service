@@ -126,6 +126,14 @@ public abstract class MssqlApiIntegrationTestBase : ApiIntegrationTestBase
                 InitialCatalog = $"absent_{Guid.NewGuid():N}",
             }.ConnectionString;
 
+        /// <summary>
+        /// Otherwise valid text carrying a keyword SqlClient does not support, which
+        /// <see cref="SqlConnectionStringBuilder" /> rejects while parsing. Built off the leased string
+        /// so the value is realistic in every other respect.
+        /// </summary>
+        public string ProviderInvalidConnectionString(string leasedConnectionString) =>
+            $"{leasedConnectionString};NotASqlClientKeyword=1";
+
         private static Task SetOfflineAsync(string leasedConnectionString, bool offline)
         {
             string databaseName = new SqlConnectionStringBuilder(leasedConnectionString).InitialCatalog;

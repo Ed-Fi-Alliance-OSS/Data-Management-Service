@@ -412,20 +412,13 @@ internal static class DerivativeRoutingScenario
             useSnapshotHeaderValue: "true"
         );
 
-        string body = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound, body);
-        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
-
-        JsonNode problem = JsonNode.Parse(body)!;
-
-        // The shared not-found type and title, not a snapshot-specific pair: the design reuses the
-        // existing not-found response here, so only the detail names the snapshot. Asserted field by
-        // field because a 404 carrying any other body would satisfy the status assertion above.
-        problem["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:not-found");
-        problem["title"]!.GetValue<string>().Should().Be("Not Found");
-        problem["detail"]!.GetValue<string>().Should().Be("Snapshot not found.");
-        problem["status"]!.GetValue<int>().Should().Be(404);
-        problem["correlationId"]!.GetValue<string>().Should().NotBeNullOrWhiteSpace();
+        // Asserted through the shared helper, which is also what the connection-unavailable sites use:
+        // a snapshot that is not configured and one that could not be reached must be indistinguishable,
+        // and two separate copies of the assertion could drift apart without noticing.
+        await DerivativeRoutingSupport.AssertSnapshotNotFoundAsync(
+            response,
+            "the snapshot is not configured, so selection answers"
+        );
     }
 
     /// <summary>

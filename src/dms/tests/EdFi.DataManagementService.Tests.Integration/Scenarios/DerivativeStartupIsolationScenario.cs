@@ -75,14 +75,23 @@ internal static class DerivativeStartupIsolationScenario
     }
 
     /// <summary>
-    /// And a read that does ask for the snapshot fails, rather than the configuration having been
-    /// quietly discarded at startup - the derivative is configured, it is simply unusable. The
-    /// recorder sees that request realize the snapshot, which is what makes the zero counts above a
+    /// And a read that does ask for the snapshot is answered as Snapshot Not Found, rather than the
+    /// configuration having been quietly discarded at startup. The recorder is what separates those
+    /// two: it sees this request realize the snapshot, which also makes the zero counts above a
     /// statement about the requests that ran rather than about a boundary nothing ever reaches.
     /// </summary>
     /// <remarks>
+    /// <para>
+    /// The response deliberately cannot make that distinction. A configured snapshot that cannot be
+    /// reached and a snapshot that was never configured answer identically - same status, same body,
+    /// same content type - because whether a snapshot exists is a deployment fact a client has no
+    /// business reading off an error. Asserting the retained configuration therefore has to go through
+    /// the realization recorder, which observes the acquisition boundary rather than the answer.
+    /// </para>
+    /// <para>
     /// Runs after <see cref="It_realizes_no_derivative" />, because it is the one request in the
     /// fixture that deliberately does realize a derivative.
+    /// </para>
     /// </remarks>
     public static async Task It_still_offers_the_configured_snapshot(
         ApiIntegrationHarness harness,
@@ -97,15 +106,10 @@ internal static class DerivativeStartupIsolationScenario
             useSnapshotHeaderValue: "true"
         );
 
-        response
-            .StatusCode.Should()
-            .NotBe(
-                HttpStatusCode.NotFound,
-                "the snapshot is configured, so this is an unusable target rather than a missing one"
-            );
-        response
-            .StatusCode.Should()
-            .NotBe(HttpStatusCode.OK, "and it cannot be opened, so the request cannot succeed");
+        await DerivativeRoutingSupport.AssertSnapshotNotFoundAsync(
+            response,
+            "the configured snapshot names a database that does not exist, so its acquisition fails"
+        );
 
         recorder
             .CountFor(snapshotConnectionString)
@@ -114,7 +118,8 @@ internal static class DerivativeStartupIsolationScenario
                 0,
                 "a request that selects the snapshot reaches its database through the recorded "
                     + "acquisition boundary, starting with the fingerprint and resource-key "
-                    + "validation reads"
+                    + "validation reads - which is what proves the configuration was retained, "
+                    + "since the response no longer distinguishes unusable from absent"
             );
     }
 }

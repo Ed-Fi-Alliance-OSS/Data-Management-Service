@@ -99,6 +99,14 @@ public abstract class PostgresqlApiIntegrationTestBase : ApiIntegrationTestBase
                 Database = $"absent_{Guid.NewGuid():N}",
             }.ConnectionString;
 
+        /// <summary>
+        /// Otherwise valid text carrying a keyword Npgsql does not support, which
+        /// <see cref="NpgsqlConnectionStringBuilder" /> rejects while parsing. Built off the leased
+        /// string so the value is realistic in every other respect.
+        /// </summary>
+        public string ProviderInvalidConnectionString(string leasedConnectionString) =>
+            $"{leasedConnectionString};NotAnNpgsqlKeyword=1";
+
         private static async Task SetAllowConnectionsAsync(string leasedConnectionString, bool allow)
         {
             NpgsqlConnectionStringBuilder leased = new(leasedConnectionString);

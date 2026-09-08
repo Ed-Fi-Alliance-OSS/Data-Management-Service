@@ -134,15 +134,10 @@ internal static class DerivativeWholeRequestScenario
                 useSnapshotHeaderValue: "true"
             );
 
-            string body = await response.Content.ReadAsStringAsync();
-
-            response
-                .StatusCode.Should()
-                .Be(
-                    HttpStatusCode.NotFound,
-                    $"the answer is decided at selection, with every database unreachable: {body}"
-                );
-            body.Should().Contain("Snapshot not found.");
+            await DerivativeRoutingSupport.AssertSnapshotNotFoundAsync(
+                response,
+                "the answer is decided at selection, with every database unreachable"
+            );
         }
         finally
         {
