@@ -1498,7 +1498,7 @@ function Assert-CdcOwnedLocalSqlServer {
         if ($LASTEXITCODE -ne 0) { throw 'Unavailable' }
         $evidence = ($raw -join "`n") | ConvertFrom-Json -ErrorAction Stop
         $port = (Get-LocalComposeDatabaseHostSideEndpoint -Dialect 'mssql' -EnvValues $EnvValues).Port
-        if ($evidence.running -ne $true -or $evidence.project -notin @('cs-local', 'dms-local') -or
+        if ($evidence.running -ne $true -or $evidence.project -notin @('cs-local', 'dms-local', 'dms-published') -or
             $evidence.service -ne 'db' -or
             [System.IO.Path]::GetFullPath($evidence.directory) -cne [System.IO.Path]::GetFullPath($PSScriptRoot) -or
             @($evidence.ports).Count -ne 1 -or $evidence.ports[0].HostIp -ne '127.0.0.1' -or

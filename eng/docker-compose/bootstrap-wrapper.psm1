@@ -509,6 +509,11 @@ function Invoke-BootstrapWrapper {
 
         [Switch]$EnableKafkaUI,
 
+        [Switch]$EnableKafkaCdc,
+        [string]$CdcBindingStatePath,
+        [string]$CdcSettingsPath,
+        [string]$DataStoreDatabaseName,
+
         [Switch]$EnableSwaggerUI,
 
         [Switch]$EnableConfig,
@@ -569,6 +574,24 @@ function Invoke-BootstrapWrapper {
     )
 
     $ErrorActionPreference = "Stop"
+
+    if ($EnableKafkaCdc) {
+        if (-not $SeparateConfigDatabase -or $NoDataStore -or $SchoolYearRange -or $DmsBaseUrl -or
+            [string]::IsNullOrWhiteSpace($CdcSettingsPath) -or
+            $DataStoreDatabaseName -cnotmatch '^[a-z][a-z0-9_]{0,62}$') {
+            throw 'CDC bootstrap requires -SeparateConfigDatabase, -CdcSettingsPath and a dedicated -DataStoreDatabaseName; NoDataStore, SchoolYearRange and DmsBaseUrl are unsupported.'
+        }
+        $CdcSettingsPath = [IO.Path]::GetFullPath($CdcSettingsPath)
+        if (-not $CdcBindingStatePath) { $CdcBindingStatePath = Join-Path $PSScriptRoot '.cdc-state' }
+        $CdcBindingStatePath = [IO.Path]::GetFullPath($CdcBindingStatePath)
+        Import-Module (Join-Path $PSScriptRoot 'bootstrap-cdc.psm1') -Force
+        $cdcSettings = Read-BootstrapCdcSettings -Path $CdcSettingsPath -DatabaseEngine $DatabaseEngine
+        $cdcProject = if ($StartScriptName -eq 'start-local-dms.ps1') { 'dms-local' } else { 'dms-published' }
+        $cdcOwnership = @{ Project = $cdcProject; DatabaseEngine = $DatabaseEngine; CmsPort = ([uri]$cdcSettings.ConfigurationServiceSettings.BaseUrl).Port }
+        Assert-BootstrapCdcOfflineOwnership @cdcOwnership
+    }
+    elseif ($CdcSettingsPath) { throw '-CdcSettingsPath requires -EnableKafkaCdc.' }
+    elseif ($CdcBindingStatePath) { $CdcBindingStatePath = [IO.Path]::GetFullPath($CdcBindingStatePath) }
 
     # Fail fast: IDE workflow shape parameter validation — runs before any phase invocation.
     # -DmsBaseUrl is only valid with -InfraOnly; reject it without -InfraOnly so a misuse
@@ -855,6 +878,10 @@ function Invoke-BootstrapWrapper {
 
         Assert-WrapperStagedSchemaWorkspace
 
+        if ($EnableKafkaCdc) {
+            $cdcHandoff = New-BootstrapCdcHandoff -Settings $cdcSettings -StatePath $CdcBindingStatePath -EnvironmentFile $effectiveEnvFile -Project $cdcProject -DatabaseName $DataStoreDatabaseName
+        }
+
         # Infrastructure phase
         $startArgs = @{
             IdentityProvider = $resolvedIdentityProvider
@@ -862,6 +889,7 @@ function Invoke-BootstrapWrapper {
             EnableConfig = $true
         }
         if ($EnableKafkaUI) { $startArgs.EnableKafkaUI = $true }
+        if ($EnableKafkaCdc) { $startArgs.CdcKafkaInfrastructure = $true; $startArgs.SuppressWriterGuidance = $true }
         if ($EnableSwaggerUI) { $startArgs.EnableSwaggerUI = $true }
         if ($AddExtensionSecurityMetadata) { $startArgs.AddExtensionSecurityMetadata = $true }
         $startArgs.DatabaseEngine = $DatabaseEngine
@@ -891,6 +919,7 @@ function Invoke-BootstrapWrapper {
         $configureScriptPath = "$PSScriptRoot/configure-local-data-store.ps1"
         $provisionScriptPath = "$PSScriptRoot/provision-dms-schema.ps1"
         if (-not (Test-Path -LiteralPath $configureScriptPath) -or -not (Test-Path -LiteralPath $provisionScriptPath)) {
+            if ($EnableKafkaCdc) { throw 'CDC requires the configure and provision phase commands.' }
             # Isolated wrapper Pester fixtures copy only the wrapper and stub phase scripts. The
             # production checkout always has these siblings, so the real wrapper path continues
             # below through configure -> provision -> DMS-only -> seed.
@@ -916,6 +945,8 @@ function Invoke-BootstrapWrapper {
         }
 
         $configureArgs = @{ EnvironmentFile = $effectiveEnvFile }
+        if ($DataStoreDatabaseName) { $configureArgs.DataStoreDatabaseName = $DataStoreDatabaseName }
+        if ($EnableKafkaCdc) { Assert-BootstrapCdcOfflineOwnership @cdcOwnership -InfrastructureReady }
         if ($NoDataStore) { $configureArgs.NoDataStore = $true }
         if ($AddSmokeTestCredentials) { $configureArgs.AddSmokeTestCredentials = $true }
         if (-not [string]::IsNullOrWhiteSpace($SchoolYearRange)) { $configureArgs.SchoolYearRange = $SchoolYearRange }
@@ -938,6 +969,10 @@ function Invoke-BootstrapWrapper {
         }
         $configured = $configurationResults[0]
         $configuredDataStoreIds = [long[]]@(Resolve-WrapperSelectedDataStoreIds -ConfigureResult $configured)
+        if ($EnableKafkaCdc -and ($configuredDataStoreIds.Count -ne 1 -or
+            [string]$configuredDataStoreIds[0] -cne $cdcSettings.Cdc.DataStoreId)) {
+            throw 'The configure phase selected a different target from the explicit CDC settings. No schema or CDC effects were authorized.'
+        }
 
         $provisionArgs = @{
             EnvironmentFile = $effectiveEnvFile
@@ -948,12 +983,36 @@ function Invoke-BootstrapWrapper {
         # becomes the real target database, so it needs the same topology declaration the configure
         # and start phases got. Forwarded exactly as the configure args are.
         if ($SeparateConfigDatabase) { $provisionArgs.SeparateConfigDatabase = $true }
+        if ($CdcBindingStatePath) { $provisionArgs.CdcBindingStatePath = $CdcBindingStatePath }
+        if ($EnableKafkaCdc) {
+            Assert-BootstrapCdcOfflineOwnership @cdcOwnership -InfrastructureReady
+            $provisionArgs.PrepareCdcProjectionPrerequisites = $true
+            $provisionArgs.DeploymentKey = $cdcSettings.Cdc.DeploymentKey
+            $provisionArgs.InstanceKey = $cdcSettings.Cdc.InstanceKey
+            $provisionArgs.Generation = $cdcSettings.Cdc.Generation
+        }
 
         # provision-dms-schema.ps1 throws on failure (no exit code); clear any stale native exit code first.
         $global:LASTEXITCODE = 0
-        & "$PSScriptRoot/provision-dms-schema.ps1" @provisionArgs
+        if ($CdcBindingStatePath) {
+            $provisionReceipts = @(& "$PSScriptRoot/provision-dms-schema.ps1" @provisionArgs)
+        }
+        else { & "$PSScriptRoot/provision-dms-schema.ps1" @provisionArgs }
         if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
             throw "provision-dms-schema.ps1 failed with exit code $LASTEXITCODE."
+        }
+
+        if ($EnableKafkaCdc) {
+            if ($provisionReceipts.Count -ne 1) { throw 'CDC requires exactly one authoritative provisioning receipt.' }
+            Assert-BootstrapCdcOfflineOwnership @cdcOwnership -InfrastructureReady
+            Invoke-BootstrapCdcEnable -Handoff $cdcHandoff -Receipt $provisionReceipts[0] -SelectedDataStoreIds $configuredDataStoreIds -StatePath $CdcBindingStatePath
+            Assert-BootstrapCdcOfflineOwnership @cdcOwnership -InfrastructureReady
+            Write-Information 'CDC controller durably authorized writer publication. Local authorization is disabled; this is not ACL isolation evidence.' -InformationAction Continue
+            Write-Information ("Inspect CDC: api-schema-tools cdc status --settings '" + $cdcHandoff.SettingsPath.Replace("'", "''") + "' --state-path '" + $CdcBindingStatePath.Replace("'", "''") + "' --json") -InformationAction Continue
+            if ($InfraOnly) {
+                Write-Information 'Offline preparation is complete. Launch IDE DMS with the DataManagement:DocumentCache target, CMS access and staged schema settings from the supplied CDC settings. Use SchemaTools cdc status with the original state root to inspect continuity.' -InformationAction Continue
+                return
+            }
         }
 
         if ($InfraOnly) {
@@ -1069,6 +1128,11 @@ function Invoke-BootstrapWrapper {
         if ($AddExtensionSecurityMetadata) { $dmsStartArgs.AddExtensionSecurityMetadata = $true }
         $dmsStartArgs.DatabaseEngine = $DatabaseEngine
         if ($SeparateConfigDatabase) { $dmsStartArgs.SeparateConfigDatabase = $true }
+        if ($EnableKafkaCdc) {
+            # DmsOnly must not select legacy Kafka or restart the worker through UI flags.
+            $dmsStartArgs.Remove('EnableKafkaUI')
+            $dmsStartArgs.CdcDmsComposeFile = $cdcHandoff.DmsComposePath
+        }
 
         & "$PSScriptRoot/$StartScriptName" @dmsStartArgs
         if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {

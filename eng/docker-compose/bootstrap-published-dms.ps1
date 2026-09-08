@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: Apache-2.0
+﻿# SPDX-License-Identifier: Apache-2.0
 # Licensed to the Ed-Fi Alliance under one or more agreements.
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
@@ -55,6 +55,24 @@
 
 .PARAMETER IdentityProvider
     Forwarded to both phase commands for OAuth endpoint selection.
+
+.PARAMETER EnableKafkaCdc
+    Run the deployment controller after schema provisioning and before DMS or seed writes.
+    Requires -SeparateConfigDatabase, -CdcSettingsPath and a dedicated -DataStoreDatabaseName.
+    The supplied DataManagement:DocumentCache target must match the configure phase's selected ID.
+
+.PARAMETER CdcSettingsPath
+    Explicit DMS and CDC settings JSON. Bootstrap snapshots the settings with the ordinary staged
+    schema and selected Compose environment. DMS_CDC__ environment overrides are rejected so the
+    controller and eventual DMS receive the same target configuration. Protect this credential file.
+
+.PARAMETER CdcBindingStatePath
+    Original durable controller state root (defaults to .cdc-state beside these scripts for CDC).
+    Without -EnableKafkaCdc, opts ordinary provisioning into managed creation/source receipts.
+
+.PARAMETER DataStoreDatabaseName
+    Database name forwarded to configure-local-data-store.ps1. CDC requires a dedicated new name,
+    distinct from the database created by infrastructure initialization and the CMS database.
 
 .PARAMETER EnableKafkaUI
     Forwarded to `start-published-dms.ps1`.
@@ -115,6 +133,11 @@ param(
     [string]$IdentityProvider,
 
     [Switch]$EnableKafkaUI,
+
+    [Switch]$EnableKafkaCdc,
+    [string]$CdcBindingStatePath,
+    [string]$CdcSettingsPath,
+    [string]$DataStoreDatabaseName,
 
     [Switch]$EnableSwaggerUI,
 

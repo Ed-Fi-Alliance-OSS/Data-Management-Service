@@ -1557,12 +1557,12 @@ param(
             $startScript | Should -Match 'if \(\$enableKafkaInfrastructure -and \$DatabaseEngine -eq "postgresql"\)\s*\{[^}]*\$files \+= @\("-f", "kafka\.yml"\)'
         }
 
-        It "start-local-dms.ps1 gates the Kafka UI startup on the PostgreSQL engine (no Debezium CDC on the MSSQL path)" {
+        It "start-local-dms.ps1 permits MSSQL Kafka UI only through the explicit CDC infrastructure path" {
             $startScript = Get-Content -LiteralPath (
                 Join-Path $script:sourceDockerComposeRoot "start-local-dms.ps1"
             ) -Raw
 
-            $startScript | Should -Match 'if \(\$EnableKafkaUI -and \$DatabaseEngine -eq "postgresql"\)\s*\{[^}]*up \$upArgs kafka-ui'
+            $startScript | Should -Match 'if \(\$EnableKafkaUI -and \(\$DatabaseEngine -eq "postgresql" -or \$CdcKafkaInfrastructure\)\)\s*\{[^}]*up \$upArgs kafka-ui'
             $startScript | Should -Match 'elseif \(\$EnableKafkaUI -and \$DatabaseEngine -eq "mssql"\)\s*\{[^}]*Skipping Kafka UI'
         }
 
@@ -2036,14 +2036,15 @@ Copy-Item -LiteralPath `$EnvironmentFile -Destination '$capturedEnvPath' -Force
                 # files a teardown must cover: local-config.yml is unconditional in
                 # start-local-dms.ps1's compose set. So it is excluded, like the other
                 # non-compose-shaping options.
-                'SeparateConfigDatabase'
+                'SeparateConfigDatabase', 'DataStoreDatabaseName'
             )
+            $rejectedCdc = @('EnableKafkaCdc', 'CdcSettingsPath', 'CdcBindingStatePath')
 
             # Completeness guard: every parameter the entry script declares must be classified here
             # as a teardown switch, forwarded, or excluded (and bound below), so a new parameter
             # fails this assertion and forces an explicit forwarding decision.
             $declared = Get-DeclaredScriptParameters -Path $script:repo.WrapperScript
-            ($declared | Sort-Object) | Should -Be ((@('d', 'v') + $forwarded + $excluded) | Sort-Object)
+            ($declared | Sort-Object) | Should -Be ((@('d', 'v') + $forwarded + $excluded + $rejectedCdc) | Sort-Object)
 
             # Binds every excluded parameter (the teardown short-circuit returns before the wrapper's
             # option-validation rules run, so all of them can be bound in one invocation); an unbound
@@ -2066,6 +2067,7 @@ Copy-Item -LiteralPath `$EnvironmentFile -Destination '$capturedEnvPath' -Force
                 -NoDataStore `
                 -AddSmokeTestCredentials `
                 -SeparateConfigDatabase `
+                -DataStoreDatabaseName ignored_by_teardown `
                 -d
 
             $log = @(Get-Content -LiteralPath $callLog)

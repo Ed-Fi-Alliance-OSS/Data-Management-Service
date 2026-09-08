@@ -33,6 +33,7 @@ public static class CdcCommandServices
             DocumentCacheRuntimeTargetSelection.RequireConfiguredMembership
         );
         services.AddCdcDownstreamPublicationHistory(settings);
+        CdcComposeDataStoreProvider.Register(services, settings, targetKey);
         if (settings["AppSettings:Datastore"] == "postgresql")
         {
             services.AddPostgresqlDmsCdcControlPlane();

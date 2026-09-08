@@ -42,7 +42,7 @@ public class Given_Cdc_command_configuration(string providerToken, CoreProvider 
                 {
                     ["ConfigurationServiceSettings:BaseUrl"] = "http://localhost:8081",
                     ["AppSettings:Datastore"] = provider == CoreProvider.Postgresql ? "postgresql" : "mssql",
-                    ["DocumentCache:Targets:0:DataStoreId"] = "42",
+                    ["DataManagement:DocumentCache:Targets:0:DataStoreId"] = "42",
                     ["Cdc:LagThresholdMilliseconds"] = "5000",
                     ["Cdc:Provider"] = providerToken,
                     ["Cdc:DeploymentKey"] = "local",
@@ -138,7 +138,7 @@ public class Given_Cdc_command_configuration(string providerToken, CoreProvider 
         Directory.GetFiles(_root, "*.json", SearchOption.AllDirectories).Should().BeEmpty();
     }
 
-    [TestCase("DocumentCache:Targets:0:DataStoreId", "99")]
+    [TestCase("DataManagement:DocumentCache:Targets:0:DataStoreId", "99")]
     [TestCase("Cdc:Generation", "0")]
     [TestCase("Cdc:Provider", "mssql")]
     [TestCase("Cdc:AuthorizationProfile", "AuthorizationEnabled")]
@@ -149,6 +149,15 @@ public class Given_Cdc_command_configuration(string providerToken, CoreProvider 
     public void It_rejects_unsupported_or_mismatched_configuration_before_runtime(string key, string value)
     {
         _settings[key] = value;
+        Action act = _config.Validate;
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Test]
+    public void It_does_not_accept_membership_in_an_unused_configuration_section()
+    {
+        _settings["DataManagement:DocumentCache:Targets:0:DataStoreId"] = "99";
+        _settings["DocumentCache:Targets:0:DataStoreId"] = "42";
         Action act = _config.Validate;
         act.Should().Throw<ArgumentException>();
     }

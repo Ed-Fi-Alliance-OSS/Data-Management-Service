@@ -305,14 +305,14 @@ api-schema-tools cdc retire --settings ./cdc-postgresql.json --state-path "$PWD/
 ```
 
 Each settings file contains the normal DMS configuration (including CMS access,
-schema packages, and `DocumentCache:Targets`) plus a `Cdc` section. For example,
+schema packages, and `DataManagement:DocumentCache:Targets`) plus a `Cdc` section. For example,
 merge the following into your PostgreSQL DMS settings, replacing local paths and
 principals with those of your deployment:
 
 ```json
 {
   "AppSettings": { "Datastore": "postgresql" },
-  "DocumentCache": { "Targets": [{ "DataStoreId": 42 }] },
+  "DataManagement": { "DocumentCache": { "Targets": [{ "DataStoreId": 42 }] } },
   "Cdc": {
     "Provider": "postgresql",
     "DeploymentKey": "local",
@@ -429,3 +429,37 @@ Owning design: [initial enablement](../../../../reference/design/backend-redesig
 [native recovery](../../../../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#controller-managed-lifecycle-and-native-recovery-boundary),
 [record-size increases](../../../../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#in-place-record-size-increase),
 and [source replacement deferral](../../../../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#v1-physical-source-replacement-deferral).
+
+
+### Bootstrap CDC handoff
+
+On an exclusively owned Unix local deployment, supply the DMS/CDC settings above with
+one explicit `DataManagement:DocumentCache:Targets` entry for the ID the configure phase
+will select. Keep the CMS URL on its published loopback port and use a dedicated database
+name distinct from the infrastructure initialization database:
+
+```powershell
+pwsh eng/docker-compose/bootstrap-local-dms.ps1 -EnableKafkaCdc -SeparateConfigDatabase -DataStoreDatabaseName edfi_cdc -CdcSettingsPath ./cdc-postgresql.json -CdcBindingStatePath ./.cdc-state -EnableKafkaUI
+pwsh eng/docker-compose/bootstrap-published-dms.ps1 -DatabaseEngine mssql -EnableKafkaCdc -SeparateConfigDatabase -DataStoreDatabaseName edfi_cdc -CdcSettingsPath ./cdc-mssql.json -CdcBindingStatePath ./.cdc-state
+```
+
+The wrappers require no running DMS/IDE writers or unrelated containers on the selected
+CMS/database network. Shared CMS/database topology, route-qualified or multiple targets,
+`-NoDataStore`, and `-DmsBaseUrl` are unsupported for initial CDC bootstrap. The physical
+CREATE DATABASE receipt remains authoritative; preexisting databases do not qualify.
+A selected-ID mismatch rejects before schema provisioning; it never inserts target membership.
+
+The shared phase snapshots supplied settings into owner-only files under
+`.bootstrap/cdc-runtime`, binds ordinary staged schema inputs, and uses the selected Compose
+environment, project and original state root. Host-side runtime connections translate only
+the known CMS Compose database address to its published loopback port. The eventual DMS
+receives the same projection settings and CMS credentials through an explicit Compose
+override; Kafka credentials stay with the controller. Bootstrap does not accept `DMS_CDC__`
+environment overrides; place required controller secrets in the protected supplied settings.
+
+`-LoadSeedData` runs only after publication authorization and DMS startup. Local `-InfraOnly`
+completes CDC and remains offline; the controller's printed status command identifies its
+retained settings and state. On failure, retain those files and use the controller to inspect
+or resume the original unfinished workflow while writers remain stopped. This bootstrap
+entry point does not implement managed restart or destructive CDC teardown yet; use the
+explicit controller lifecycle operations while infrastructure remains reachable.

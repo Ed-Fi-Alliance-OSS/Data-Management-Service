@@ -101,7 +101,7 @@ public sealed class CdcCommandConfiguration(IConfigurationRoot settings)
             throw new ArgumentException("CDC command input is invalid.");
         }
         var options = new DocumentCacheOptions();
-        Settings.GetSection("DocumentCache").Bind(options);
+        Settings.GetSection(DocumentCacheOptions.SectionName).Bind(options);
         var key = DocumentCacheTargetKey.Create(
             Settings["Cdc:TenantKey"] ?? "",
             long.Parse(Target.DataStoreId, CultureInfo.InvariantCulture)

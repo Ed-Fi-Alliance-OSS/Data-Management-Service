@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: Apache-2.0
+﻿# SPDX-License-Identifier: Apache-2.0
 # Licensed to the Ed-Fi Alliance under one or more agreements.
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
@@ -45,6 +45,9 @@ param (
     # CDC phase seam: start broker/UI only; controller owns the later worker launch.
     [switch]
     $CdcKafkaInfrastructure,
+
+    [switch]$SuppressWriterGuidance,
+    [string]$CdcDmsComposeFile,
 
     # Enable Kafka UI. This also enables Kafka infrastructure.
     [Switch]
@@ -437,6 +440,13 @@ if (-not $databaseOnlyStartup) {
     if ($EnableSwaggerUI) {
         $files += @("-f", "swagger-ui.yml")
     }
+}
+
+if ($CdcDmsComposeFile) {
+    if (-not $DmsOnly -or -not (Test-Path -LiteralPath $CdcDmsComposeFile -PathType Leaf)) {
+        throw 'CDC DMS settings handoff requires -DmsOnly and an existing Compose override.'
+    }
+    $files += @('-f', $CdcDmsComposeFile)
 }
 
 if ($d) {

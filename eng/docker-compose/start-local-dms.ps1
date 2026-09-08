@@ -106,6 +106,9 @@ param (
     [switch]
     $CdcKafkaInfrastructure,
 
+    [switch]$SuppressWriterGuidance,
+    [string]$CdcDmsComposeFile,
+
     # Enable Kafka UI. This also enables Kafka infrastructure.
     [Switch]
     $EnableKafkaUI,
@@ -462,6 +465,13 @@ if (-not $databaseOnlyStartup) {
     if ($EnableSwaggerUI) {
         $files += @("-f", "swagger-ui.yml")
     }
+}
+
+if ($CdcDmsComposeFile) {
+    if (-not $DmsOnly -or -not (Test-Path -LiteralPath $CdcDmsComposeFile -PathType Leaf)) {
+        throw 'CDC DMS settings handoff requires -DmsOnly and an existing Compose override.'
+    }
+    $files += @('-f', $CdcDmsComposeFile)
 }
 
 if ($d) {
@@ -973,7 +983,7 @@ else {
             Wait-HttpEndpointHealthy -Url "$($DmsBaseUrl.TrimEnd('/'))/health" -Name "DMS (IDE-hosted)" -TimeoutSeconds 300
             Write-Output "DMS (IDE-hosted) is healthy. Infrastructure and DMS health-wait complete."
         }
-        else {
+        elseif (-not $SuppressWriterGuidance) {
             # Terminal guidance contract (DMS-1153 AC): print actionable phase next-steps but do
             # NOT present a second start-local-dms.ps1 run as a resume mechanism. The wrapper
             # continuation shape is the supported health-wait path after a terminal stop.

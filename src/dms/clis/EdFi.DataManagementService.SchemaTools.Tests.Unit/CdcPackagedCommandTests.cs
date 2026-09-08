@@ -115,7 +115,7 @@ public class Given_Cdc_packaged_command
                 new Dictionary<string, object>
                 {
                     ["AppSettings:Datastore"] = "postgresql",
-                    ["DocumentCache:Targets:0:DataStoreId"] = "42",
+                    ["DataManagement:DocumentCache:Targets:0:DataStoreId"] = "42",
                     ["Cdc:LagThresholdMilliseconds"] = "5000",
                     ["Cdc:Provider"] = "postgresql",
                     ["Cdc:DeploymentKey"] = "local",
