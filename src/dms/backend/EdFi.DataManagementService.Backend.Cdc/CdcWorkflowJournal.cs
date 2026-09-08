@@ -106,6 +106,8 @@ public sealed record CdcWorkflowOperation(
 )
 {
     public ImmutableArray<CdcConnectorRegistrationIntent> ConnectorRegistration { get; init; } = [];
+
+    public ImmutableArray<CdcRetirementJournal> Retirement { get; init; } = [];
 }
 
 /// <summary>Exact template payload identity; no raw configuration or readiness.</summary>
@@ -130,6 +132,10 @@ public sealed record CdcWorkflowJournal(
     [JsonIgnore]
     public bool WriterPublicationAuthorized =>
         Operations.Any(operation => operation.Effect == CdcWorkflowEffect.AuthorizeWriterPublication);
+
+    [JsonIgnore]
+    public bool RetirementIntended =>
+        Operations.Any(operation => operation.Effect == CdcWorkflowEffect.Retire);
 
     [JsonIgnore]
     public bool HasPendingRecordSizeIncrease =>

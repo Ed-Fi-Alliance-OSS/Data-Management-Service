@@ -16,7 +16,7 @@ namespace EdFi.DataManagementService.Backend.Cdc;
 /// Never disables database-wide CDC, drops source tables/users, terminates slot users, or cascades.
 /// Managed concurrency is excluded by the controller lock; out-of-band DDL is outside that lock.
 /// </summary>
-public sealed class CdcProviderArtifactCleanupAdapter : ICdcArtifactCleanupAdapter
+public sealed class CdcProviderArtifactCleanupAdapter : ICdcProviderArtifactCleanupAdapter
 {
     private readonly ICdcProviderDatabaseExecutor database;
 

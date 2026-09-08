@@ -8,7 +8,7 @@ using EdFi.DataManagementService.Core.DocumentCache.Cdc;
 
 namespace EdFi.DataManagementService.Backend.Cdc;
 
-internal static class CdcWorkflowJournalValidation
+internal static partial class CdcWorkflowJournalValidation
 {
     internal static void Require(
         [DoesNotReturnIf(false)] bool condition,
@@ -47,6 +47,7 @@ internal static class CdcWorkflowJournalValidation
         DateTimeOffset prerequisiteCompletedAt = journal.CreatedAt;
         bool pendingIncrease = false;
         bool publicationIntended = false;
+        bool retirementIntended = false;
         List<(int Ceiling, CdcConsumerCapacityEvidence Consumer)> consumerHistory = [];
         HashSet<Guid> acknowledgementInvocations = [];
         foreach (CdcWorkflowOperation operation in journal.Operations)
@@ -54,6 +55,9 @@ internal static class CdcWorkflowJournalValidation
             Require(operation is not null);
             Require(operation!.OperationId != Guid.Empty && ids.Add(operation.OperationId));
             Require(Enum.IsDefined(operation.Effect));
+            Require(!retirementIntended, CdcWorkflowStateFailure.Contradictory);
+            ValidateRetirement(operation, journal, now);
+            retirementIntended = operation.Effect == CdcWorkflowEffect.Retire;
             Require(
                 operation.IntendedAt >= previous
                     && operation.IntendedAt >= prerequisiteCompletedAt

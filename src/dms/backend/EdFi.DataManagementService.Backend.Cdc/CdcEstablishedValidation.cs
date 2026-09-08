@@ -221,6 +221,7 @@ public sealed partial class CdcEstablishedValidation
         );
         var started = _time.GetUtcNow();
         var journal = await session.ReadAsync(request.TargetIdentity, token);
+        Require(!journal.RetirementIntended);
         var history = await session.ReadSourcePublicationHistoryAsync(
             request.TargetIdentity,
             request.Binding.PhysicalSourceFingerprint,

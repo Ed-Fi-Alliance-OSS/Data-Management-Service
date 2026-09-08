@@ -68,6 +68,15 @@ public interface ICdcArtifactCleanupAdapter
     );
 }
 
+public interface ICdcProviderArtifactCleanupAdapter : ICdcArtifactCleanupAdapter
+{
+    Task<CdcTransportResult<CdcTransportAcknowledgement>> DeleteOwnedSqlServerJobsAsync(
+        CdcArtifactCleanupScope scope,
+        LocalCdcWorkflowJournalStore.Session session,
+        CancellationToken cancellationToken
+    );
+}
+
 internal static class CdcArtifactCleanup
 {
     internal static CdcTransportResult<CoreCdc.CdcGovernedArtifact> Removed(
@@ -192,13 +201,11 @@ public sealed class CdcConnectArtifactCleanupAdapter(ICdcConnectTransport connec
                 var stop = await connect
                     .StopAsync(request, token)
                     .WaitAsync(request.Timing.WaitTimeout, token);
+                var statusStarted = DateTimeOffset.UtcNow;
                 var status = await connect
                     .ReadStatusAsync(request, token)
                     .WaitAsync(request.Timing.CallTimeout, token);
-                if (
-                    status is not CdcTransportResult<CdcConnectStatus>.Observed stopped
-                    || !stopped.Value.IsStopped
-                )
+                if (!IsFreshStopped(scope, status, statusStarted))
                 {
                     return CdcArtifactCleanup.Failure(
                         CdcDeploymentComponent.Connect,
@@ -220,14 +227,14 @@ public sealed class CdcConnectArtifactCleanupAdapter(ICdcConnectTransport connec
                 var offsets = await connect
                     .ReadOffsetEvidenceAsync(request, token)
                     .WaitAsync(request.Timing.CallTimeout, token);
+                var afterStarted = DateTimeOffset.UtcNow;
                 var after = await connect
                     .ReadStatusAsync(request, token)
                     .WaitAsync(request.Timing.CallTimeout, token);
                 if (
                     offsets is not CdcTransportResult<CdcConnectOffsetEvidence>.Observed observed
                     || observed.Value.State != CdcConnectOffsetState.Missing
-                    || after is not CdcTransportResult<CdcConnectStatus>.Observed last
-                    || !last.Value.IsStopped
+                    || !IsFreshStopped(scope, after, afterStarted)
                 )
                 {
                     return CdcArtifactCleanup.Failure(CdcDeploymentComponent.Connect);
@@ -258,4 +265,36 @@ public sealed class CdcConnectArtifactCleanupAdapter(ICdcConnectTransport connec
             },
             cancellationToken
         );
+
+    private static bool IsFreshStopped(
+        CdcArtifactCleanupScope scope,
+        CdcTransportResult<CdcConnectStatus> result,
+        DateTimeOffset started
+    )
+    {
+        if (result is not CdcTransportResult<CdcConnectStatus>.Observed observed)
+        {
+            return false;
+        }
+        var status = observed.Value;
+        var now = DateTimeOffset.UtcNow;
+        return status.IsStopped
+            && status.Runtime.TaskCount == 0
+            && status.Runtime.RunningTaskCount == 0
+            && status.Runtime.ObservedAt >= started
+            && status.Runtime.ObservedAt <= now
+            && now - status.Runtime.ObservedAt <= scope.Request.Timing.MaximumObservationAge
+            && CoreCdc
+                .CdcConnectorRuntimeObservationValidator.ValidateForLifecycle(
+                    status.Runtime,
+                    scope.Request.Binding,
+                    new(
+                        status.Runtime.OperationId,
+                        scope.Request.TargetIdentity,
+                        scope.Request.Binding.PhysicalSourceFingerprint,
+                        now
+                    )
+                )
+                .Succeeded;
+    }
 }
