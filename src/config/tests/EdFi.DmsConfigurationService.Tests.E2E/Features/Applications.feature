@@ -928,3 +928,48 @@ Feature: Applications endpoints
                         "errors": []
                     }
                   """
+
+        Scenario: 29 Ensure clients can POST an application with no dataStoreIds
+             When a POST request is made to "/v3/applications" with
+                  """
+                  {
+                   "vendorId": {vendorId},
+                   "applicationName": "Identity Only Application 29",
+                   "claimSetName": "ClaimScenario29",
+                   "dataStoreIds": []
+                  }
+                  """
+             Then it should respond with 201
+              And the response body has key and secret
+              And the response body credentials are captured as "identityOnlyApplication"
+             When a GET request is made to "/v3/applications/{applicationId}"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  {
+                    "id": {applicationId},
+                    "applicationName": "Identity Only Application 29",
+                    "vendorId": {vendorId},
+                    "claimSetName": "ClaimScenario29",
+                    "educationOrganizationIds": [],
+                    "dataStoreIds": [],
+                    "profileIds": [],
+                    "enabled": true
+                  }
+                  """
+             When a GET request is made to "/v3/apiClients/{identityOnlyApplicationKey}"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  {
+                    "id": {id},
+                    "applicationId": {applicationId},
+                    "clientId": "{identityOnlyApplicationKey}",
+                    "clientUuid": "{clientUuid}",
+                    "name": "Identity Only Application 29",
+                    "isApproved": true,
+                    "creatorOwnershipTokenId": null,
+                    "ownershipTokenIds": [],
+                    "dataStoreIds": []
+                  }
+                  """
