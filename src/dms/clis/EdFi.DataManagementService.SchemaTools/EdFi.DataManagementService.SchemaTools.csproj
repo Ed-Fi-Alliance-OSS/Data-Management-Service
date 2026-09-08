@@ -35,6 +35,7 @@
         <None Include="README.md" Pack="true" PackagePath="\" />
     </ItemGroup>
     <ItemGroup>
+        <ProjectReference Include="..\..\backend\EdFi.DataManagementService.Backend.Cdc\EdFi.DataManagementService.Backend.Cdc.csproj" />
         <ProjectReference Include="..\..\backend\EdFi.DataManagementService.Backend.Ddl\EdFi.DataManagementService.Backend.Ddl.csproj" />
         <ProjectReference Include="..\..\core\EdFi.DataManagementService.Core\EdFi.DataManagementService.Core.csproj" />
     </ItemGroup>

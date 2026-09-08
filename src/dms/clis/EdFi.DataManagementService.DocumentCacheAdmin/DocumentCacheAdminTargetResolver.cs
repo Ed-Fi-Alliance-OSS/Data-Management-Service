@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Backend.DocumentCacheRuntime;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
 
@@ -30,7 +31,7 @@ internal sealed record DocumentCacheAdminTargetResolutionResult(
         ArgumentNullException.ThrowIfNull(targetKey);
         ArgumentNullException.ThrowIfNull(registrySnapshot);
 
-        if (registrySnapshot.Targets.Length != 1 || !registrySnapshot.Targets[0].TargetKey.Equals(targetKey))
+        if (!DocumentCacheRuntimeTargetResolver.ContainsOnlyTarget(registrySnapshot, targetKey))
         {
             return new DocumentCacheAdminTargetResolutionResult(
                 DocumentCacheAdminTargetResolutionOutcome.UnexpectedTargetMembership,
@@ -63,8 +64,8 @@ internal sealed class DocumentCacheAdminTargetResolver(IDocumentCacheTargetRegis
     {
         ArgumentNullException.ThrowIfNull(targetKey);
 
-        DocumentCacheTargetRegistrySnapshot registrySnapshot = await targetRegistry
-            .RefreshAsync(DocumentCacheTargetRefreshReason.Startup, cancellationToken)
+        DocumentCacheTargetRegistrySnapshot registrySnapshot = await DocumentCacheRuntimeTargetResolver
+            .ResolveAsync(targetRegistry, targetKey, cancellationToken)
             .ConfigureAwait(false);
 
         return DocumentCacheAdminTargetResolutionResult.FromSnapshot(targetKey, registrySnapshot);

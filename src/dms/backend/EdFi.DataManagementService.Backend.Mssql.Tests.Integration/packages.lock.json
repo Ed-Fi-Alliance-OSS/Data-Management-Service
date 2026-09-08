@@ -477,6 +477,7 @@
         "type": "Project",
         "dependencies": {
           "EdFi.DataManagementService.Backend.Ddl": "[1.0.0, )",
+          "EdFi.DataManagementService.Backend.DocumentCacheRuntime": "[1.0.0, )",
           "EdFi.DataManagementService.Core": "[1.0.0, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.1, )"
         }
@@ -486,6 +487,13 @@
         "dependencies": {
           "EdFi.DataManagementService.Backend.External": "[1.0.0, )",
           "EdFi.DataManagementService.Backend.RelationalModel": "[1.0.0, )"
+        }
+      },
+      "edfi.datamanagementservice.backend.documentcacheruntime": {
+        "type": "Project",
+        "dependencies": {
+          "EdFi.DataManagementService.Backend.Mssql": "[1.0.0, )",
+          "EdFi.DataManagementService.Backend.Postgresql": "[1.0.0, )"
         }
       },
       "edfi.datamanagementservice.backend.external": {
@@ -513,6 +521,17 @@
           "Microsoft.Data.SqlClient": "[6.1.4, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.1, )",
           "Microsoft.Extensions.Options": "[10.0.1, )"
+        }
+      },
+      "edfi.datamanagementservice.backend.postgresql": {
+        "type": "Project",
+        "dependencies": {
+          "EdFi.DataManagementService.Backend": "[1.0.0, )",
+          "EdFi.DataManagementService.Backend.Plans": "[1.0.0, )",
+          "EdFi.DataManagementService.Core.External": "[1.0.0, )",
+          "Microsoft.CodeAnalysis": "[4.12.0, )",
+          "Microsoft.Extensions.Logging.Abstractions": "[10.0.1, )",
+          "Npgsql": "[8.0.4, )"
         }
       },
       "edfi.datamanagementservice.backend.relationalmodel": {

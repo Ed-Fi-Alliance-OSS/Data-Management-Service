@@ -26,6 +26,7 @@ public class Given_CdcConnectorTemplateIntegrationBoundaryTests
     private static readonly string[] ExpectedProjectReferences =
     [
         "EdFi.DataManagementService.Backend.Ddl",
+        "EdFi.DataManagementService.Backend.DocumentCacheRuntime",
         "EdFi.DataManagementService.Core",
     ];
 
@@ -130,7 +131,7 @@ public class Given_CdcConnectorTemplateIntegrationBoundaryTests
     }
 
     [Test]
-    public void It_limits_project_dependencies_to_template_contracts()
+    public void It_limits_project_dependencies_to_contracts_and_non_http_projection_runtime()
     {
         XDocument project = XDocument.Load(CdcProjectFilePath());
         string[] packageReferences = project

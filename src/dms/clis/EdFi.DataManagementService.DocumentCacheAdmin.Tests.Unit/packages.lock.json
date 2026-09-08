@@ -465,6 +465,7 @@
         "type": "Project",
         "dependencies": {
           "EdFi.DataManagementService.Backend": "[1.0.0, )",
+          "EdFi.DataManagementService.Backend.DocumentCacheRuntime": "[1.0.0, )",
           "EdFi.DataManagementService.Backend.Mssql": "[1.0.0, )",
           "EdFi.DataManagementService.Backend.Postgresql": "[1.0.0, )",
           "EdFi.DataManagementService.Core": "[1.0.0, )",
@@ -502,6 +503,13 @@
         "dependencies": {
           "EdFi.DataManagementService.Backend.External": "[1.0.0, )",
           "EdFi.DataManagementService.Backend.RelationalModel": "[1.0.0, )"
+        }
+      },
+      "edfi.datamanagementservice.backend.documentcacheruntime": {
+        "type": "Project",
+        "dependencies": {
+          "EdFi.DataManagementService.Backend.Mssql": "[1.0.0, )",
+          "EdFi.DataManagementService.Backend.Postgresql": "[1.0.0, )"
         }
       },
       "edfi.datamanagementservice.backend.external": {
