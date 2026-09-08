@@ -5,11 +5,34 @@
 
 FROM mcr.microsoft.com/dotnet/sdk:10.0.103-alpine3.23@sha256:9b4b31da5246f575086b1901e9871b189ae2a80eb42fe9234e9d000b51febd4b AS build
 
+# /source is the common parent, holding only the files both trees share, and the DMS and plugin
+# trees sit beside each other under it exactly as src/dms sits beside src/plugins in the
+# repository. That layout is what lets MSBuild resolve each tree's own Directory.Build.props while
+# both find the same Directory.Packages.props and nuget.config one level up, and it is why the
+# working directory moves down to /source/dms rather than every DMS path moving up.
 WORKDIR /source
 
 # Named context support https://github.com/hadolint/hadolint/issues/830
 # hadolint ignore=DL3022
 COPY --from=parentdir .editorconfig Directory.Packages.props nuget.config ./
+
+# The plugin contract tree. Nothing in the image references these assemblies yet: they are staged
+# by the story that creates the tree so that no merge order can leave the frontend pointing at a
+# tree this build stage cannot reach, once the plugin startup guard adds that project reference.
+#
+# Sources are copied file by file rather than as whole directories. The default build context is
+# governed by src/dms/.dockerignore, which excludes bin/ and obj/; the parentdir named context has
+# no such file, so a directory copy would drop a developer's host build output on top of the
+# Linux restore performed below.
+# hadolint ignore=DL3022
+COPY --from=parentdir plugins/Directory.Build.props ./plugins/
+# hadolint ignore=DL3022
+COPY --from=parentdir plugins/EdFi.Api.Plugins/*.csproj plugins/EdFi.Api.Plugins/packages.lock.json ./plugins/EdFi.Api.Plugins/
+# hadolint ignore=DL3022
+COPY --from=parentdir plugins/EdFi.Api.Plugins.Hosting/*.csproj plugins/EdFi.Api.Plugins.Hosting/packages.lock.json ./plugins/EdFi.Api.Plugins.Hosting/
+
+WORKDIR /source/dms
+
 COPY Directory.Build.props Directory.Build.targets ./
 
 COPY frontend/EdFi.DataManagementService.Frontend.AspNetCore/*.csproj frontend/EdFi.DataManagementService.Frontend.AspNetCore/packages.lock.json ./frontend/EdFi.DataManagementService.Frontend.AspNetCore/
@@ -25,8 +48,14 @@ COPY backend/EdFi.DataManagementService.Backend.RelationalModel/*.csproj backend
 COPY backend/EdFi.DataManagementService.Backend.Postgresql/*.csproj backend/EdFi.DataManagementService.Backend.Postgresql/packages.lock.json ./backend/EdFi.DataManagementService.Backend.Postgresql/
 COPY clis/EdFi.DataManagementService.ApiSchemaDownloader/*.csproj clis/EdFi.DataManagementService.ApiSchemaDownloader/packages.lock.json ./clis/EdFi.DataManagementService.ApiSchemaDownloader/
 
+# Both plugin projects are restored even though nothing references them yet. Staging their lock
+# files without restoring them would leave the failure this change is most likely to produce - a
+# committed lock file that --locked-mode rejects inside the image - undetected until the story
+# that adds the frontend's project reference.
 RUN dotnet restore frontend/EdFi.DataManagementService.Frontend.AspNetCore/EdFi.DataManagementService.Frontend.AspNetCore.csproj --locked-mode && \
-    dotnet restore clis/EdFi.DataManagementService.ApiSchemaDownloader/EdFi.DataManagementService.ApiSchemaDownloader.csproj --locked-mode
+    dotnet restore clis/EdFi.DataManagementService.ApiSchemaDownloader/EdFi.DataManagementService.ApiSchemaDownloader.csproj --locked-mode && \
+    dotnet restore ../plugins/EdFi.Api.Plugins/EdFi.Api.Plugins.csproj --locked-mode && \
+    dotnet restore ../plugins/EdFi.Api.Plugins.Hosting/EdFi.Api.Plugins.Hosting.csproj --locked-mode
 
 COPY frontend/EdFi.DataManagementService.Frontend.AspNetCore/ ./frontend/EdFi.DataManagementService.Frontend.AspNetCore/
 COPY core/EdFi.DataManagementService.Core/ ./core/EdFi.DataManagementService.Core/
@@ -40,6 +69,12 @@ COPY backend/EdFi.DataManagementService.Backend.Plans/ ./backend/EdFi.DataManage
 COPY backend/EdFi.DataManagementService.Backend.RelationalModel/ ./backend/EdFi.DataManagementService.Backend.RelationalModel/
 COPY backend/EdFi.DataManagementService.Backend.Postgresql/ ./backend/EdFi.DataManagementService.Backend.Postgresql/
 COPY clis/EdFi.DataManagementService.ApiSchemaDownloader/ ./clis/EdFi.DataManagementService.ApiSchemaDownloader/
+
+# EdFi.Api.Plugins.Hosting is deliberately empty today, so it has no source line here; its csproj
+# is already staged above and the restore above proves its lock file. The story that gives it
+# code adds its source copy.
+# hadolint ignore=DL3022
+COPY --from=parentdir plugins/EdFi.Api.Plugins/*.cs plugins/EdFi.Api.Plugins/PLUGINS.md /source/plugins/EdFi.Api.Plugins/
 
 ARG VERSION=""
 ARG ASSEMBLY_VERSION=""
