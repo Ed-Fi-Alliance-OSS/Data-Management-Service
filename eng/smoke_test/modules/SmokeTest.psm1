@@ -72,9 +72,23 @@ function Invoke-SmokeTestUtility {
         $options += @("-l", $SdkPath)
     }
 
+    # Build a brand-new array for the echo rather than assigning $options to another
+    # variable: PowerShell array assignment is a reference copy, so redacting elements
+    # of a variable that still points at $options would redact the real array that
+    # gets passed to dotnet below and break authentication for every smoke-test leg.
+    $display = @()
+    for ($i = 0; $i -lt $options.Length; $i++) {
+        if ($i -gt 0 -and ($options[$i - 1] -eq "-k" -or $options[$i - 1] -eq "-s")) {
+            $display += "***"
+        }
+        else {
+            $display += $options[$i]
+        }
+    }
+
     $previousForegroundColor = $host.UI.RawUI.ForegroundColor
     $host.UI.RawUI.ForegroundColor = "Cyan"
-    Write-Output $ToolPath $options
+    Write-Output $ToolPath $display
     $host.UI.RawUI.ForegroundColor = $previousForegroundColor
 
     $path = (Join-Path -Path ($ToolPath).Trim() -ChildPath "tools/net*/any/EdFi.SmokeTest.Console.dll")

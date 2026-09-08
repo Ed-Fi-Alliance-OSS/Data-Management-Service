@@ -56,12 +56,25 @@ $credentials = Get-SmokeTestCredential -ConfigServiceUrl "http://localhost:8081"
 
 - `ConfigServiceUrl` (Required): The URL of the Configuration Service
 - `SysAdminId` (Optional): System administrator ID (default: "smoke-test-admin")
-- `SysAdminSecret` (Optional): System administrator secret (default: "SmokeTest12!")
+- `SysAdminSecret` (Optional): System administrator secret. The default is a fixed
+  bootstrap literal defined in `modules/SmokeTest.psm1`, not a generated credential.
 - `VendorName` (Optional): Vendor name (default: "Smoke Test Vendor")
 - `ApplicationName` (Optional): Application name (default: "Smoke Test Application")
 - `ClaimSetName` (Optional): Claim set name (default: "EdFiSandbox")
-- `EducationOrganizationIds` (Optional): Array of education organization IDs
+- `EducationOrganizationIds` (Optional): Array of education organization IDs (default:
+  5, 6, 7, 255901, 19255901, 100000, 200000, 300000). The first three keep the TPDM
+  sample education organizations reachable, since `educatorPreparationProgram` defaults
+  to a `RelationshipsWithEdOrgsOnly` claim.
+- `DataStoreIds` (Optional): Array of data store IDs to associate with the application
+  (default: empty, in which case the first available data store is used)
+- `Tenant` (Optional): Tenant name, for multi-tenant Configuration Service deployments
+  (default: empty, meaning single tenant)
+
+The function returns the key and secret to the caller and does not write them to the
+console. Keep them in a variable and pass them onward rather than echoing them.
 
 ### Example
 
-See `Example-GetCredentials.ps1` for a complete example of how to use the function.
+The `Usage` section above is a complete example. For a working invocation inside a
+larger script, see `eng/docker-compose/start-published-dms.ps1`, which calls
+`Get-SmokeTestCredential` when run with `-AddSmokeTestCredentials`.
