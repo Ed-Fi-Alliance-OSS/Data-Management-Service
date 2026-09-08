@@ -48,6 +48,7 @@ public static class CdcProjectionRuntimeFactory
                 targetKey,
                 DocumentCacheRuntimeTargetSelection.RequireConfiguredMembership
             );
+            services.AddCdcDownstreamPublicationHistory(configuration);
             ServiceProvider provider = services.BuildServiceProvider();
             return await OpenAsync(provider, targetKey, cancellationToken).ConfigureAwait(false);
         }

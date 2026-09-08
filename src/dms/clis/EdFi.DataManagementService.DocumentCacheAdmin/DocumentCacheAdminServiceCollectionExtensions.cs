@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Backend.Cdc;
 using EdFi.DataManagementService.Backend.DocumentCacheRuntime;
 using EdFi.DataManagementService.Core.Configuration;
 using Microsoft.Extensions.Configuration;
@@ -27,6 +28,7 @@ internal static class DocumentCacheAdminServiceCollectionExtensions
             invocationTarget,
             DocumentCacheRuntimeTargetSelection.InvocationTarget
         );
+        services.AddCdcDownstreamPublicationHistory(configuration);
         services.AddSingleton<IDocumentCacheAdminTargetResolver, DocumentCacheAdminTargetResolver>();
         services.AddSingleton<
             IDocumentCacheAdminMutatingCommandDispatcher,
