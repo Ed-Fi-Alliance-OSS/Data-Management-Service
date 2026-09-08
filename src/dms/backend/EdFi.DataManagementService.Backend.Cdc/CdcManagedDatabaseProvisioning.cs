@@ -89,6 +89,11 @@ public sealed class CdcManagedDatabaseProvisioning(LocalCdcWorkflowJournalStore 
             // Keep ordinary create-only schema compatibility checks on repeated provisioning.
             provisioner.ValidateSchema();
             cancellationToken.ThrowIfCancellationRequested();
+            if (receipt.Receipt.Outcome == CdcDatabaseCreationOutcome.Created)
+            {
+                // A completed receipt is not permission to recreate missing publication history.
+                await session.ReadSourcePublicationHistoryAsync(target, current, cancellationToken);
+            }
             return new(journal.WorkflowId, target, receipt.Receipt, current);
         }
 

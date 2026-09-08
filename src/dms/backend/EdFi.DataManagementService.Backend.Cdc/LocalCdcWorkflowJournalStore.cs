@@ -10,6 +10,7 @@ using System.Security;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using EdFi.DataManagementService.Backend.Ddl;
+using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.DocumentCache.Cdc;
 using static EdFi.DataManagementService.Backend.Cdc.CdcWorkflowJournalValidation;
 
@@ -20,7 +21,7 @@ namespace EdFi.DataManagementService.Backend.Cdc;
 /// across intent, external effects and live reconciliation, including binding mutations. Watch releases
 /// it between passes. The persistent lock file must never be deleted (including on session disposal).
 /// </summary>
-public sealed class LocalCdcWorkflowJournalStore
+public sealed partial class LocalCdcWorkflowJournalStore
 {
     private readonly CdcStateStorePathResolver _paths;
     private readonly TimeProvider _time;
@@ -108,7 +109,7 @@ public sealed class LocalCdcWorkflowJournalStore
         }
     }
 
-    public sealed class Session : IAsyncDisposable
+    public sealed partial class Session : IAsyncDisposable
     {
         private readonly LocalCdcWorkflowJournalStore _store;
         private readonly FileStream _lock;
@@ -168,6 +169,16 @@ public sealed class LocalCdcWorkflowJournalStore
                         []
                     );
                     CdcWorkflowJournal next = journal with { Operations = journal.Operations.Add(operation) };
+                    Validate(next, _store.Now());
+                    if (CanExposeSource(effect))
+                    {
+                        // Exposure is durable before intent can authorize any downstream side effect.
+                        await _store.AdvanceSourceHistoryAsync(
+                            journal,
+                            DocumentCacheDownstreamPublicationStatus.Possible,
+                            cancellationToken
+                        );
+                    }
                     await _store.WriteAsync(next, create: false, cancellationToken);
                     return next;
                 },
@@ -234,6 +245,28 @@ public sealed class LocalCdcWorkflowJournalStore
                             }
                         ),
                     };
+                    Validate(next, _store.Now());
+                    if (
+                        operation.Effect == CdcWorkflowEffect.AssociateSource
+                        && CreationReceipt(next).Outcome == CdcDatabaseCreationOutcome.Created
+                    )
+                    {
+                        // Create-only attestation belongs to the original source association, never a retry
+                        // of completed provisioning. If either write is lost, the pair fails closed.
+                        await _store.CreateSourceHistoryAsync(next, cancellationToken);
+                    }
+                    else if (
+                        operation.Effect is CdcWorkflowEffect.EstablishConnector or CdcWorkflowEffect.Retire
+                    )
+                    {
+                        await _store.AdvanceSourceHistoryAsync(
+                            journal,
+                            operation.Effect == CdcWorkflowEffect.Retire
+                                ? DocumentCacheDownstreamPublicationStatus.Historical
+                                : DocumentCacheDownstreamPublicationStatus.Active,
+                            cancellationToken
+                        );
+                    }
                     await _store.WriteAsync(next, create: false, cancellationToken);
                     return next;
                 },
@@ -301,10 +334,7 @@ public sealed class LocalCdcWorkflowJournalStore
             return index;
         }
 
-        private async Task<CdcWorkflowJournal> RunAsync(
-            Func<Task<CdcWorkflowJournal>> action,
-            CancellationToken cancellationToken
-        )
+        private async Task<T> RunAsync<T>(Func<Task<T>> action, CancellationToken cancellationToken)
         {
             await _gate.WaitAsync(cancellationToken);
             try
@@ -387,6 +417,16 @@ public sealed class LocalCdcWorkflowJournalStore
     {
         Validate(journal, Now());
         string path = JournalPath(journal.Target, createDirectories: true);
+        await WritePayloadAsync(path, JsonSerializer.Serialize(journal, _json), create, cancellationToken);
+    }
+
+    private async Task WritePayloadAsync(
+        string path,
+        string payload,
+        bool create,
+        CancellationToken cancellationToken
+    )
+    {
         Require(create ? !File.Exists(path) : File.Exists(path), CdcWorkflowStateFailure.Contradictory);
         string temporary = Path.Combine(Path.GetDirectoryName(path)!, $".{Guid.NewGuid():N}.tmp");
         try
@@ -394,7 +434,7 @@ public sealed class LocalCdcWorkflowJournalStore
             _onWrite(CdcWorkflowWriteBoundary.BeforeTemporaryWrite);
             await CdcLocalStateStoreFileSystem.Current.WriteAllTextCreateNewFlushAsync(
                 temporary,
-                JsonSerializer.Serialize(journal, _json),
+                payload,
                 FileOptions(FileMode.CreateNew, FileShare.None),
                 cancellationToken
             );
