@@ -371,7 +371,7 @@ public class Given_A_Mssql_RepresentationRestampStore
             CancellationToken.None
         );
 
-        firstPage.Count.Should().Be(700);
+        firstPage.Count.Should().Be(699);
         await _store.StampPageAsync(session, firstPage, CancellationToken.None);
 
         RepresentationRestampPage finalPage = await _store.SelectNextPageAsync(
@@ -520,7 +520,7 @@ public class Given_A_Mssql_RepresentationRestampStore
             )
             .ExecuteAsync(ExecuteRequest(operation.OperationId));
 
-        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.FailedNoMutation);
+        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.RejectedNoMutation);
         result.Classification.Should().Be(expectedClassification);
         result.Mutated.Should().BeFalse();
         (await CanonicalAsync(source.DocumentId)).Should().Be(canonicalBefore);

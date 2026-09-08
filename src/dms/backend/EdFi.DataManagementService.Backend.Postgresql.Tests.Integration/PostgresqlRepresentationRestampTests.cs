@@ -452,7 +452,7 @@ public class Given_A_Postgresql_RepresentationRestampStore
             )
             .ExecuteAsync(ExecuteRequest(operation.OperationId));
 
-        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.FailedNoMutation);
+        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.RejectedNoMutation);
         result.Classification.Should().Be(expectedClassification);
         result.Mutated.Should().BeFalse();
         (await CanonicalAsync(source.DocumentId)).Should().Be(canonicalBefore);

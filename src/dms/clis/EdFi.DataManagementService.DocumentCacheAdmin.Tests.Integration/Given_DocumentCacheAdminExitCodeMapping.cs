@@ -385,6 +385,25 @@ public sealed class Given_DocumentCacheAdminRepresentationRestampExitCodes
     }
 
     [Test]
+    public async Task It_maps_a_known_restamp_guard_rejection_to_rejected_no_mutation()
+    {
+        (int exitCode, string jsonOutput) = await ExecuteRestampExecuteAsync(
+            Result(
+                DocumentCacheAdministrativeCommandStatus.RejectedNoMutation,
+                DocumentCacheAdministrativeCommandClassification.LifecycleMismatch,
+                mutated: false,
+                DocumentCacheRepresentationRestampOperationState.Incomplete,
+                DocumentCacheRepresentationRestampClaimLevel.Incomplete
+            )
+        );
+
+        exitCode.Should().Be(DocumentCacheAdminExitCodes.RejectedNoMutation);
+        jsonOutput.Should().Contain("\"status\":\"rejectedNoMutation\"");
+        jsonOutput.Should().Contain("\"classification\":\"lifecycleMismatch\"");
+        jsonOutput.Should().Contain("\"mutated\":false");
+    }
+
+    [Test]
     public async Task It_only_maps_success_after_the_operation_reconciles_to_completed()
     {
         (int exitCode, string jsonOutput) = await ExecuteRestampExecuteAsync(
@@ -468,6 +487,10 @@ public sealed class Given_DocumentCacheAdminRepresentationRestampExitCodes
                         DocumentCacheAdministrativeCommandClassification.SessionLossNoMutation
                         or DocumentCacheAdministrativeCommandClassification.SessionLossAfterMutation =>
                             DocumentCacheAdministrativeDiagnosticCategory.SessionLoss,
+                        DocumentCacheAdministrativeCommandClassification.LifecycleMismatch =>
+                            DocumentCacheAdministrativeDiagnosticCategory.LifecycleMismatch,
+                        DocumentCacheAdministrativeCommandClassification.CacheAheadLatchSet =>
+                            DocumentCacheAdministrativeDiagnosticCategory.CacheAheadLatchSet,
                         DocumentCacheAdministrativeCommandClassification.ProviderCommandTimeout =>
                             DocumentCacheAdministrativeDiagnosticCategory.ProviderCommandTimeout,
                         _ => DocumentCacheAdministrativeDiagnosticCategory.Cancellation,

@@ -78,7 +78,7 @@ public class Given_RepresentationRestampCommand
             ExecuteRequest(operationId)
         );
 
-        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.FailedNoMutation);
+        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.RejectedNoMutation);
         result
             .Classification.Should()
             .Be(DocumentCacheAdministrativeCommandClassification.RepresentationRestampOperationStateMismatch);
@@ -110,7 +110,7 @@ public class Given_RepresentationRestampCommand
             ExecuteRequest(operationId)
         );
 
-        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.FailedNoMutation);
+        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.RejectedNoMutation);
         result
             .Classification.Should()
             .Be(DocumentCacheAdministrativeCommandClassification.RepresentationRestampOperationStateMismatch);
@@ -165,7 +165,7 @@ public class Given_RepresentationRestampCommand
             ExecuteRequest(operationId)
         );
 
-        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.FailedNoMutation);
+        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.RejectedNoMutation);
         result
             .Classification.Should()
             .Be(DocumentCacheAdministrativeCommandClassification.RepresentationRestampOperationStateMismatch);
@@ -214,7 +214,7 @@ public class Given_RepresentationRestampCommand
             ExecuteRequest(operationId)
         );
 
-        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.FailedNoMutation);
+        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.RejectedNoMutation);
         result.Classification.Should().Be(expectedClassification);
         AssertIncompleteRestampResult(
             result,
@@ -263,7 +263,7 @@ public class Given_RepresentationRestampCommand
 
         DocumentCacheAdministrativeCommandResult result = await harness.Command.ExecuteAsync(request);
 
-        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.FailedNoMutation);
+        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.RejectedNoMutation);
         result
             .Classification.Should()
             .Be(DocumentCacheAdministrativeCommandClassification.InvalidRepresentationRestampScope);
@@ -316,7 +316,7 @@ public class Given_RepresentationRestampCommand
             ExecuteRequest(operationId)
         );
 
-        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.FailedNoMutation);
+        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.RejectedNoMutation);
         result
             .Classification.Should()
             .Be(DocumentCacheAdministrativeCommandClassification.InvalidRepresentationRestampMapping);
@@ -379,7 +379,7 @@ public class Given_RepresentationRestampCommand
             ExecuteRequest(operationId)
         );
 
-        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.FailedNoMutation);
+        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.RejectedNoMutation);
         result
             .Classification.Should()
             .Be(DocumentCacheAdministrativeCommandClassification.InvalidRepresentationRestampMirror);
@@ -419,7 +419,7 @@ public class Given_RepresentationRestampCommand
             ExecuteRequest(operationId)
         );
 
-        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.FailedNoMutation);
+        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.RejectedNoMutation);
         result.Classification.Should().Be(DocumentCacheAdministrativeCommandClassification.LifecycleMismatch);
         A.CallTo(() =>
                 harness.Store.SelectNextPageAsync(

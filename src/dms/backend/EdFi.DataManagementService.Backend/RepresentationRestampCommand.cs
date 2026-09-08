@@ -457,12 +457,27 @@ internal sealed class RepresentationRestampCommand(
         context.Failed(
             context.Mutated
                 ? DocumentCacheAdministrativeCommandStatus.IncompleteRetryable
-                : DocumentCacheAdministrativeCommandStatus.FailedNoMutation,
+                : StatusBeforeMutation(classification),
             classification,
             diagnosticCategory,
             message,
             context.Mutated
         );
+
+    private static DocumentCacheAdministrativeCommandStatus StatusBeforeMutation(
+        DocumentCacheAdministrativeCommandClassification classification
+    ) =>
+        classification
+            is DocumentCacheAdministrativeCommandClassification.LifecycleMismatch
+                or DocumentCacheAdministrativeCommandClassification.CacheAheadLatchSet
+                or DocumentCacheAdministrativeCommandClassification.InvalidRepresentationRestampScope
+                or DocumentCacheAdministrativeCommandClassification.InvalidRepresentationRestampMapping
+                or DocumentCacheAdministrativeCommandClassification.InvalidRepresentationRestampMirror
+                or DocumentCacheAdministrativeCommandClassification.RepresentationRestampOperationNotFound
+                or DocumentCacheAdministrativeCommandClassification.RepresentationRestampOperationStateMismatch
+                or DocumentCacheAdministrativeCommandClassification.RepresentationRestampCountReconciliationFailure
+            ? DocumentCacheAdministrativeCommandStatus.RejectedNoMutation
+            : DocumentCacheAdministrativeCommandStatus.FailedNoMutation;
 
     private static DocumentCacheAdministrativeCommandResult Failure(
         DocumentCacheAdministrativeCommandExecutionContext context,
