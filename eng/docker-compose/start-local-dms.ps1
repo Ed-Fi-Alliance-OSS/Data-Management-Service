@@ -446,6 +446,7 @@ if (-not $databaseOnlyStartup) {
             throw "CDC infrastructure startup does not accept COMPOSE_PROFILES."
         }
         $files += @("-f", "kafka-cdc.yml")
+        if ($DatabaseEngine -eq "mssql") { $files += @("-f", "mssql-cdc.yml") }
     }
     elseif ($enableKafkaInfrastructure -and $DatabaseEngine -eq "postgresql") {
         $files += @("-f", "kafka.yml")

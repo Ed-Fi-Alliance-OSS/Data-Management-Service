@@ -295,7 +295,7 @@ public sealed class CdcConnectorRegistration
                 var status = Observed(
                     await CallAsync(request, ct => _connect.ReadStatusAsync(request, ct), token)
                 );
-                RequireStatusIdentity(request, status);
+                RequireStatusIdentity(request, status, startup: true);
                 if (!status.IsRunning)
                 {
                     // Startup may be asynchronous, but a failed/stopped task requires the guarded lifecycle path.
@@ -322,7 +322,12 @@ public sealed class CdcConnectorRegistration
                 var offset = Observed(
                     await CallAsync(request, ct => _connect.ReadOffsetEvidenceAsync(request, ct), token)
                 );
-                if (offset.State is CdcConnectOffsetState.Missing or CdcConnectOffsetState.Snapshot)
+                if (
+                    offset.State
+                    is CdcConnectOffsetState.Missing
+                        or CdcConnectOffsetState.Snapshot
+                        or CdcConnectOffsetState.AwaitingStreaming
+                )
                 {
                     Require(!offsetPreviouslySeen);
                     await Task.Delay(request.Timing.PollInterval, _time, token);
@@ -570,24 +575,30 @@ public sealed class CdcConnectorRegistration
         );
     }
 
-    private void RequireStatusIdentity(CdcDeploymentRequest request, CdcConnectStatus status)
+    private void RequireStatusIdentity(
+        CdcDeploymentRequest request,
+        CdcConnectStatus status,
+        bool startup = false
+    )
     {
-        Require(
-            CdcConnectorRuntimeObservationValidator
-                .ValidateForBinding(
-                    status.Runtime,
-                    request.Binding,
-                    new(
-                        status.Runtime.OperationId,
-                        request.TargetIdentity,
-                        request.Binding.PhysicalSourceFingerprint,
-                        _time.GetUtcNow()
-                    )
-                )
-                .Succeeded
-                && status.Tasks.Count <= 1
-                && status.Tasks.All(t => t.Id == 0)
+        var context = new CdcObservationValidationContext(
+            status.Runtime.OperationId,
+            request.TargetIdentity,
+            request.Binding.PhysicalSourceFingerprint,
+            _time.GetUtcNow()
         );
+        var validation = startup
+            ? CdcConnectorRuntimeObservationValidator.ValidateForStartup(
+                status.Runtime,
+                request.Binding,
+                context
+            )
+            : CdcConnectorRuntimeObservationValidator.ValidateForBinding(
+                status.Runtime,
+                request.Binding,
+                context
+            );
+        Require(validation.Succeeded && status.Tasks.Count <= 1 && status.Tasks.All(t => t.Id == 0));
         RequireFresh(request, status.Runtime.ObservedAt);
     }
 

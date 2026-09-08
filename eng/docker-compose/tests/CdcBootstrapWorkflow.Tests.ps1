@@ -113,6 +113,32 @@ Add-Content (Join-Path $PSScriptRoot 'calls') "seed:$($DataStoreId -join ',')"
         ($information -join ' ') | Should -Not -Match 'early writer|authorized writer|Launch DMS|Launch IDE'
     }
 
+    It 'runs E2E snapshot preparation between managed provisioning and CDC admission for <provider>' -ForEach @(
+        @{ provider = 'postgresql' }, @{ provider = 'mssql' }
+    ) {
+        Import-Module (Join-Path $script:sandbox 'bootstrap-wrapper.psm1') -Force
+        $callsPath = Join-Path $script:sandbox 'calls'
+        $callback = { param($effectiveEnvironment) Add-Content $callsPath "snapshot:$effectiveEnvironment" }.GetNewClosure()
+        Invoke-BootstrapWrapper -StartScriptName 'start-local-dms.ps1' @script:arguments `
+            -DatabaseEngine $provider -UseEnvironmentFileSchemaSettings -BeforeCdcAdmission $callback
+        $calls = @(Get-Content $callsPath)
+        $calls.Count | Should -Be 7
+        $calls[2] | Should -Match '^provision:'
+        $calls[3] | Should -Match '^snapshot:'
+        $calls[4] | Should -Match '^cdc:'
+        $calls[5] | Should -Match '^dms:'
+        $calls[6] | Should -Match '^seed:'
+    }
+
+    It 'rejects snapshot failure before CDC registration, DMS, or seed' {
+        Import-Module (Join-Path $script:sandbox 'bootstrap-wrapper.psm1') -Force
+        { Invoke-BootstrapWrapper -StartScriptName 'start-local-dms.ps1' @script:arguments `
+            -UseEnvironmentFileSchemaSettings -BeforeCdcAdmission { throw 'Snapshot failed' } } | Should -Throw '*Snapshot failed*'
+        $calls = @(Get-Content (Join-Path $script:sandbox 'calls'))
+        $calls.Count | Should -Be 3
+        @($calls | Where-Object { $_ -match '^(cdc|dms|seed):' }).Count | Should -Be 0
+    }
+
     It 'rejects selected target mismatch before provisioning' {
         '' | Set-Content (Join-Path $script:sandbox 'mismatch')
         { & (Join-Path $script:sandbox 'bootstrap-local-dms.ps1') @script:arguments } | Should -Throw '*different target*'
@@ -248,6 +274,18 @@ exit 0
         "'private-secret'; exit $code" | Set-Content $script:tool
         { Invoke-BootstrapCdcEnable @script:enableArgs } | Should -Throw "*exit $code*"
     }
+    It 'retains only allow-listed controller failure codes' {
+        @'
+'{"diagnostics":[{"component":"WriterPublication","failure":"ValidationFailed","message":"private-secret"},{"component":"private-secret","failure":"Timeout"}]}'
+exit 1
+'@ | Set-Content $script:tool
+        try { Invoke-BootstrapCdcEnable @script:enableArgs; throw 'Expected failure' }
+        catch {
+            $_.Exception.Data['CdcFailureCodes'] | Should -Be @('WriterPublication/ValidationFailed')
+            $_.Exception.Message | Should -Not -Match 'private-secret'
+        }
+    }
+
 }
 
 Describe 'Explicit CDC settings reach the controller and eventual HTTP host' {
@@ -274,7 +312,7 @@ Export-ModuleMember -Function Get-ComposeResolvedEnvValue
             AppSettings = @{ Datastore = 'postgresql' }
             DataManagement = @{ DocumentCache = @{ Targets = @(@{ DataStoreId = 42 }); Projector = @{ PageSize = 55 } } }
             ConfigurationServiceSettings = @{ BaseUrl = 'http://localhost:8081'; ClientSecret = 'private-$secret'; EncryptionKey = 'private-key' }
-            Cdc = @{ TenantKey = ''; DataStoreId = '42'; DeploymentKey = 'local'; InstanceKey = 'datastore-42'; Generation = 1; SetupConnectionString = 'private-connection' }
+            Cdc = @{ TenantKey = ''; DataStoreId = '42'; DeploymentKey = 'local'; InstanceKey = 'datastore-42'; Generation = 1; SetupConnectionString = 'private-connection'; ConnectEndpoint = 'http://127.0.0.1:8083'; WorkerMetricsEndpoint = 'http://127.0.0.1:9404/metrics' }
         }
         $script:settingsFile = Join-Path $TestDrive 'explicit.json'
         $script:settings | ConvertTo-Json -Depth 20 | Set-Content $script:settingsFile
@@ -297,6 +335,16 @@ Export-ModuleMember -Function Get-ComposeResolvedEnvValue
         $script:settings.ConfigurationServiceSettings.BaseUrl = 'http://shared.example:8081'
         $script:settings | ConvertTo-Json -Depth 20 | Set-Content $script:settingsFile
         { Read-BootstrapCdcSettings -Path $script:settingsFile -DatabaseEngine postgresql } | Should -Throw '*explicit DMS settings*'
+    }
+    It 'rejects an unsupported qualified-worker endpoint before infrastructure (<field>, <value>)' -ForEach @(
+        @{ field = 'ConnectEndpoint'; value = 'http://localhost:8083' },
+        @{ field = 'WorkerMetricsEndpoint'; value = 'http://localhost:9404/metrics' },
+        @{ field = 'WorkerMetricsEndpoint'; value = 'http://127.0.0.1:9404/wrong' },
+        @{ field = 'ConnectEndpoint'; value = 'https://127.0.0.1:8083' }
+    ) {
+        $script:settings.Cdc[$field] = $value
+        $script:settings | ConvertTo-Json -Depth 20 | Set-Content $script:settingsFile
+        { Read-BootstrapCdcSettings -Path $script:settingsFile -DatabaseEngine postgresql } | Should -Throw '*worker/metrics endpoints*'
     }
     It 'rejects the infrastructure-created database before producing a handoff' {
         { New-BootstrapCdcHandoff -Settings $script:settings -StatePath '/unused' -EnvironmentFile '/selected/env' -Project 'dms-local' -DatabaseName 'edfi_datamanagementservice' } | Should -Throw '*distinct from infrastructure-created*'

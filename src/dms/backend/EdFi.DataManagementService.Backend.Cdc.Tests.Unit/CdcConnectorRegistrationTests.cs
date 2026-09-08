@@ -41,6 +41,45 @@ internal class Given_CdcConnectorRegistration(Ddl.CdcProvider provider) : CdcReg
         ReadJournal().WriterPublicationAuthorized.Should().BeFalse();
     }
 
+    [TestCase(CdcConnectorRuntimeState.Unassigned, 0)]
+    [TestCase(CdcConnectorRuntimeState.Running, 0)]
+    [TestCase(CdcConnectorRuntimeState.Running, 1)]
+    public async Task It_waits_for_task_assignment_before_reading_offsets(
+        CdcConnectorRuntimeState connectorState,
+        int taskCount
+    )
+    {
+        int reads = 0;
+        A.CallTo(() => _connect.ReadStatusAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
+            .ReturnsLazily(() =>
+            {
+                var status = Status();
+                if (++reads == 1)
+                {
+                    _offsetReads.Should().Be(0);
+                    status = new(
+                        status.Runtime with
+                        {
+                            ConnectorState = connectorState,
+                            TaskCount = taskCount,
+                            RunningTaskCount = 0,
+                            SoleTaskState =
+                                taskCount == 0
+                                    ? CdcConnectorRuntimeState.Unknown
+                                    : CdcConnectorRuntimeState.Unassigned,
+                        },
+                        status.WorkerId,
+                        taskCount == 0 ? [] : [new(0, CdcConnectorRuntimeState.Unassigned, "worker:8083")]
+                    );
+                }
+                return Observed(status);
+            });
+        (await RunAsync()).State.Should().Be(CdcTransportEvidenceState.Observed);
+        reads.Should().BeGreaterThan(1);
+        _offsetReads.Should().BeGreaterThan(0);
+        _posts.Should().Be(1);
+    }
+
     [Test]
     public async Task It_reconciles_an_existing_exact_connector_without_creation_or_rewriting_establishment()
     {
@@ -103,11 +142,14 @@ internal class Given_CdcConnectorRegistration(Ddl.CdcProvider provider) : CdcReg
         _posts.Should().Be(stage == "post-before" ? 2 : 1);
     }
 
-    [Test]
-    public async Task It_retains_initial_awaiting_offset_state_and_resumes_without_recreation()
+    [TestCase(CdcConnectOffsetState.Missing)]
+    [TestCase(CdcConnectOffsetState.AwaitingStreaming)]
+    public async Task It_retains_initial_awaiting_offset_state_and_resumes_without_recreation(
+        CdcConnectOffsetState state
+    )
     {
         ShortTiming();
-        _offsetState = CdcConnectOffsetState.Missing;
+        _offsetState = state;
         (await RunAsync()).State.Should().Be(CdcTransportEvidenceState.Unavailable);
         ReadJournal()
             .Operations.Single(o => o.Effect == CdcWorkflowEffect.RegisterConnector)
@@ -122,11 +164,12 @@ internal class Given_CdcConnectorRegistration(Ddl.CdcProvider provider) : CdcReg
         _posts.Should().Be(1);
     }
 
-    [Test]
-    public async Task It_rejects_established_offset_loss_without_wait_or_repair()
+    [TestCase(CdcConnectOffsetState.Missing)]
+    [TestCase(CdcConnectOffsetState.AwaitingStreaming)]
+    public async Task It_rejects_established_offset_loss_without_wait_or_repair(CdcConnectOffsetState state)
     {
         (await RunAsync()).State.Should().Be(CdcTransportEvidenceState.Observed);
-        _offsetState = CdcConnectOffsetState.Missing;
+        _offsetState = state;
         _offsetReads = 0;
         (await RunAsync()).State.Should().Be(CdcTransportEvidenceState.Unavailable);
         _offsetReads.Should().Be(1);

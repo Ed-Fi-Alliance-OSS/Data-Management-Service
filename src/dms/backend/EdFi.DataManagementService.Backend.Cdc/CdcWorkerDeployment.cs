@@ -153,7 +153,16 @@ public sealed class CdcWorkerDeployment : ICdcWorkerInspectionTransport
             string after = await _docker.RunAsync(["inspect", id], timeout.Token);
             using var afterDocument = JsonDocument.Parse(after);
             JsonElement final = afterDocument.RootElement.EnumerateArray().Single();
-            Require(final.GetProperty("State").GetRawText() == state.GetRawText());
+            // Docker updates State.Health.Log on every probe without changing the worker process.
+            // Compare process identity/liveness; REST and metrics own connector readiness.
+            JsonElement finalState = final.GetProperty("State");
+            string[] processProperties = ["Running", "Restarting", "Paused", "Pid", "StartedAt"];
+            foreach (string property in processProperties)
+            {
+                Require(
+                    finalState.GetProperty(property).GetRawText() == state.GetProperty(property).GetRawText()
+                );
+            }
             Require(
                 final.GetProperty("RestartCount").GetInt32()
                     == container.GetProperty("RestartCount").GetInt32()

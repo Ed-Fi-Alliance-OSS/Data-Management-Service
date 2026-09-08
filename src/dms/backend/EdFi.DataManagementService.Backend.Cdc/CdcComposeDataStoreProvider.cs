@@ -5,9 +5,11 @@
 
 using System.Diagnostics.CodeAnalysis;
 using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.DocumentCache;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Npgsql;
 
 namespace EdFi.DataManagementService.Backend.Cdc;
@@ -46,6 +48,12 @@ public sealed class CdcComposeDataStoreProvider(
             configuration["AppSettings:Datastore"]!,
             port
         ));
+        // Core's HTTP composition deliberately prefers the concrete CMS provider for registry
+        // authority. This non-HTTP host must retain CMS authority through the selected endpoint
+        // adapter, including the registry's reads, rather than bypassing the translation.
+        services.Replace(
+            ServiceDescriptor.Singleton<IDocumentCacheTargetRegistry, DocumentCacheTargetRegistry>()
+        );
     }
 
     public async Task<IList<DataStore>> LoadDataStores(

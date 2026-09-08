@@ -18,6 +18,71 @@ namespace EdFi.DataManagementService.Backend.Cdc.Tests.Unit;
 [Platform(Exclude = "Win", Reason = "Local CDC state requires Unix owner-only permissions.")]
 internal class Given_CdcInitialReadiness(Ddl.CdcProvider provider) : CdcReadinessTestBase(provider)
 {
+    [TestCase(
+        CdcConnectOffsetState.Streaming,
+        CdcConnectorSnapshotState.Unknown,
+        CdcTransportEvidenceState.Observed
+    )]
+    [TestCase(
+        CdcConnectOffsetState.Snapshot,
+        CdcConnectorSnapshotState.Unknown,
+        CdcTransportEvidenceState.Unavailable
+    )]
+    [TestCase(
+        CdcConnectOffsetState.AwaitingStreaming,
+        CdcConnectorSnapshotState.Unknown,
+        CdcTransportEvidenceState.Unavailable
+    )]
+    [TestCase(
+        CdcConnectOffsetState.Streaming,
+        CdcConnectorSnapshotState.Running,
+        CdcTransportEvidenceState.Unavailable
+    )]
+    public async Task It_requires_streaming_barrier_evidence_when_REST_cannot_report_snapshot_completion(
+        CdcConnectOffsetState offsetState,
+        CdcConnectorSnapshotState snapshotState,
+        CdcTransportEvidenceState expected
+    )
+    {
+        A.CallTo(() => _connect.ReadStatusAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
+            .ReturnsLazily(() =>
+            {
+                var status = Status();
+                return Observed(
+                    new CdcConnectStatus(
+                        status.Runtime with
+                        {
+                            SnapshotState = snapshotState,
+                        },
+                        status.WorkerId,
+                        status.Tasks
+                    )
+                );
+            });
+        A.CallTo(() => _connect.ReadOffsetEvidenceAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
+            .ReturnsLazily(() =>
+            {
+                var offset = Offsets();
+                return Observed(
+                    new CdcConnectOffsetEvidence(
+                        offsetState,
+                        offset.SourcePartitionHash,
+                        offset.Postgresql,
+                        offset.SqlServer with
+                        {
+                            EventSerialNo = CdcSqlServerProviderPosition.HeartbeatAfterImageEventSerialNo,
+                        }
+                    )
+                    {
+                        SourcePartition = offset.SourcePartition,
+                    }
+                );
+            });
+
+        (await ReadyAsync()).State.Should().Be(expected);
+        ReadJournal().WriterPublicationAuthorized.Should().Be(expected == CdcTransportEvidenceState.Observed);
+    }
+
     [Test]
     public async Task It_orders_fresh_admission_and_disposal_before_durable_publication()
     {

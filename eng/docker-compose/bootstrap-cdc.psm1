@@ -31,9 +31,16 @@ function Read-BootstrapCdcSettings {
         # conversion and the complete policy contract remain with the CLI.
         $cms = [uri]$settings.ConfigurationServiceSettings.BaseUrl
         if (-not $cms.IsLoopback -or $cms.Scheme -ne 'http' -or $cms.AbsolutePath -ne '/') { throw 'CMS' }
+        # The qualified worker inspector proves an exact published IPv4 loopback endpoint.
+        # Reject unsupported aliases before creating a database or retaining an initial workflow.
+        foreach ($endpoint in @(@('ConnectEndpoint', '/'), @('WorkerMetricsEndpoint', '/metrics'))) {
+            $uri = [uri]$settings.Cdc[$endpoint[0]]
+            if ($uri.Host -cne '127.0.0.1' -or $uri.Scheme -cne 'http' -or
+                $uri.AbsolutePath -cne $endpoint[1] -or $uri.Query -or $uri.UserInfo -or $uri.Fragment) { throw 'Worker endpoint' }
+        }
         return $settings
     }
-    catch { throw 'CDC requires valid explicit DMS settings with one default-tenant target and local CMS; environment overrides are not accepted by bootstrap.' }
+    catch { throw 'CDC requires valid explicit DMS settings with one default-tenant target, local CMS, and explicit http://127.0.0.1 worker/metrics endpoints; environment overrides are not accepted by bootstrap.' }
 }
 
 function Invoke-BootstrapCdcDockerInspection {
@@ -240,7 +247,22 @@ function Invoke-BootstrapCdcEnable {
     }
     else { $output = @(& $tool @arguments 2>$null) }
     $exitCode = $LASTEXITCODE
-    if ($exitCode -ne 0) { throw "CDC enable did not authorize writer publication (exit $exitCode). Retain the original state and inspect with SchemaTools cdc status." }
+    if ($exitCode -ne 0) {
+        $codes = @()
+        try {
+            $failure = ($output -join "`n") | ConvertFrom-Json
+            $codes = @($failure.diagnostics | ForEach-Object {
+                if ($_.component -cin @('Request', 'WorkflowState', 'Projection', 'ProviderSetup', 'Kafka', 'Connect', 'Worker', 'Metrics', 'WriterPublication') -and
+                    $_.failure -cin @('InvalidInput', 'Unavailable', 'Timeout', 'AuthenticationFailed', 'Conflict', 'ValidationFailed')) {
+                    "$($_.component)/$($_.failure)"
+                }
+            } | Select-Object -Unique)
+        }
+        catch { $codes = @() }
+        $enableError = [InvalidOperationException]::new("CDC enable did not authorize writer publication (exit $exitCode). Retain the original state and inspect with SchemaTools cdc status.")
+        $enableError.Data['CdcFailureCodes'] = $codes
+        throw $enableError
+    }
     try {
         $result = ($output -join "`n") | ConvertFrom-Json
         if ($result.operation -cne 'enable' -or $result.succeeded -ne $true -or $result.exitCode -ne 0 -or

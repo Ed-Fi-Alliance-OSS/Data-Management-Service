@@ -29,6 +29,59 @@ public class Given_CdcConnectorLifecycleObservation
         );
     }
 
+    [TestCase(CdcConnectorRuntimeState.Unassigned)]
+    [TestCase(CdcConnectorRuntimeState.Running)]
+    public void It_accepts_pending_assignment_only_for_startup_validation(CdcConnectorRuntimeState state)
+    {
+        _runtime = _runtime with
+        {
+            ConnectorState = state,
+            TaskCount = 0,
+            RunningTaskCount = 0,
+            SoleTaskState = CdcConnectorRuntimeState.Unknown,
+        };
+        CdcConnectorRuntimeObservationValidator
+            .ValidateForStartup(_runtime, _binding, _context)
+            .Succeeded.Should()
+            .BeTrue();
+        CdcConnectorRuntimeObservationValidator
+            .ValidateForBinding(_runtime, _binding, _context)
+            .Succeeded.Should()
+            .BeFalse();
+        CdcConnectorRuntimeObservationValidator
+            .ValidateForLifecycle(_runtime, _binding, _context)
+            .Succeeded.Should()
+            .BeFalse();
+    }
+
+    [TestCase("target")]
+    [TestCase("source")]
+    [TestCase("future")]
+    [TestCase("count")]
+    [TestCase("runningCount")]
+    public void It_rejects_invalid_pending_assignment(string scenario)
+    {
+        _runtime = _runtime with
+        {
+            ConnectorState = CdcConnectorRuntimeState.Running,
+            TaskCount = 0,
+            RunningTaskCount = 0,
+            SoleTaskState = CdcConnectorRuntimeState.Unknown,
+        };
+        _runtime = scenario switch
+        {
+            "target" => _runtime with { TargetIdentity = _runtime.TargetIdentity with { Generation = 2 } },
+            "source" => _runtime with { PhysicalSourceFingerprint = "sha256:" + new string('f', 64) },
+            "future" => _runtime with { ObservedAt = _runtime.ObservedAt.AddMinutes(1) },
+            "count" => _runtime with { TaskCount = 2 },
+            _ => _runtime with { RunningTaskCount = 1 },
+        };
+        CdcConnectorRuntimeObservationValidator
+            .ValidateForStartup(_runtime, _binding, _context)
+            .Succeeded.Should()
+            .BeFalse();
+    }
+
     [TestCase(CdcConnectorRuntimeState.Unknown)]
     [TestCase(CdcConnectorRuntimeState.Stopped)]
     public void It_accepts_verified_shutdown_only_for_lifecycle_validation(CdcConnectorRuntimeState soleTask)

@@ -55,6 +55,7 @@ public enum CdcConnectOffsetState
     Snapshot,
     Malformed,
     Streaming,
+    AwaitingStreaming,
 }
 
 /// <summary>In-memory provider evidence; no source identifiers or offsets enter workflow output.</summary>
@@ -188,7 +189,13 @@ public sealed class CdcConnectOffsetEvidence(
                 snapshot.ValueKind == JsonValueKind.True
                 || (
                     snapshot.ValueKind == JsonValueKind.String
-                    && snapshot.GetString() is "true" or "last" or "incremental"
+                    && snapshot.GetString()
+                        is "true"
+                            or "last"
+                            or "incremental"
+                            or "INITIAL"
+                            or "BLOCKING"
+                            or "INCREMENTAL"
                 )
             )
             {
@@ -239,6 +246,20 @@ public sealed class CdcConnectOffsetEvidence(
         )
         {
             return Empty(CdcConnectOffsetState.Malformed);
+        }
+        // The pinned SQL Server connector has no change LSN until its first captured change,
+        // even when the snapshot has a valid commit LSN. This initial marker is not a streaming
+        // position, an absent offset, or authority to repair an established connector.
+        if (
+            change == "NULL"
+            && serialNumber == 1
+            && (
+                commit == "NULL"
+                || CoreCdc.CdcSqlServerProviderPositionParser.ParseLsn(commit, "$.commitLsn").Succeeded
+            )
+        )
+        {
+            return Empty(CdcConnectOffsetState.AwaitingStreaming);
         }
         CoreCdc.CdcSqlServerConnectorOffset sqlOffset = new(
             match,

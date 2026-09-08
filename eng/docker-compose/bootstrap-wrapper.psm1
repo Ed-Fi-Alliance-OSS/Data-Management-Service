@@ -514,6 +514,13 @@ function Invoke-BootstrapWrapper {
         [string]$CdcSettingsPath,
         [string]$DataStoreDatabaseName,
 
+        # Shared E2E composition preserves its already selected package surface and prepares
+        # its separate snapshot before admission. Ordinary bootstrap keeps its defaults.
+        [switch]$UseEnvironmentFileSchemaSettings,
+        [switch]$RebuildLocalImages,
+        [scriptblock]$BeforeCdcAdmission,
+        [string]$OriginalEnvironmentFile,
+
         [Switch]$EnableSwaggerUI,
 
         [Switch]$EnableConfig,
@@ -719,7 +726,7 @@ function Invoke-BootstrapWrapper {
         # Custom or extension schema sets remain expert -ApiSchemaPath territory either way.
         $composeDataStandardOverlay = ($StartScriptName -eq "start-local-dms.ps1") -or
             $PSBoundParameters.ContainsKey('DataStandardVersion')
-        if ($composeDataStandardOverlay) {
+        if ($composeDataStandardOverlay -and -not $UseEnvironmentFileSchemaSettings) {
             # env-utility is imported here because the wrapper's other imports live inside helper
             # functions that run after this block.
             Import-Module (Join-Path $PSScriptRoot "env-utility.psm1") -Force
@@ -881,6 +888,9 @@ function Invoke-BootstrapWrapper {
         if ($EnableKafkaCdc) {
             $cdcHandoff = New-BootstrapCdcHandoff -Settings $cdcSettings -StatePath $CdcBindingStatePath -EnvironmentFile $effectiveEnvFile -Project $cdcProject -DatabaseName $DataStoreDatabaseName
             $cdcHandoff | Add-Member -NotePropertyName OriginalEnvironmentFile -NotePropertyValue $callerEnvFile -Force
+            if ($OriginalEnvironmentFile) {
+                $cdcHandoff.OriginalEnvironmentFile = $OriginalEnvironmentFile
+            }
         }
 
         # Infrastructure phase
@@ -906,6 +916,7 @@ function Invoke-BootstrapWrapper {
         # hint, and start-published-dms.ps1 does not declare the switch.
         if ($StartScriptName -eq "start-local-dms.ps1") {
             $startArgs.SuppressWrapperContinuationGuidance = $true
+            if ($RebuildLocalImages) { $startArgs.r = $true }
         }
 
         # Reset the native exit-code sentinel so the check below reflects only this start invocation and
@@ -1005,6 +1016,9 @@ function Invoke-BootstrapWrapper {
 
         if ($EnableKafkaCdc) {
             if ($provisionReceipts.Count -ne 1) { throw 'CDC requires exactly one authoritative provisioning receipt.' }
+            if ($null -ne $BeforeCdcAdmission) {
+                & $BeforeCdcAdmission $effectiveEnvFile
+            }
             Assert-BootstrapCdcOfflineOwnership @cdcOwnership -InfrastructureReady
             Invoke-BootstrapCdcEnable -Handoff $cdcHandoff -Receipt $provisionReceipts[0] -SelectedDataStoreIds $configuredDataStoreIds -StatePath $CdcBindingStatePath
             Assert-BootstrapCdcOfflineOwnership @cdcOwnership -InfrastructureReady

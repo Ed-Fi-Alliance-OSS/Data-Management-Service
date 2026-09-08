@@ -557,6 +557,13 @@ function Set-BootstrapStartupEnvironment {
 }
 
 $script:BootstrapEnvVarNames = @(
+    # Startup temporarily selects identity endpoints as well as staged schema/claims. Restore
+    # them before a later phase fingerprints the caller's Compose environment for CDC lifecycle.
+    "DMS_CONFIG_IDENTITY_PROVIDER",
+    "OAUTH_TOKEN_ENDPOINT",
+    "DMS_JWT_AUTHORITY",
+    "DMS_JWT_METADATA_ADDRESS",
+    "DMS_CONFIG_IDENTITY_AUTHORITY",
     "DMS_CONFIG_CLAIMS_SOURCE",
     "DMS_CONFIG_CLAIMS_DIRECTORY",
     "DMS_CONFIG_CLAIMS_MOUNT_SOURCE",

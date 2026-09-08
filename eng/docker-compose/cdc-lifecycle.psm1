@@ -4,7 +4,6 @@
 # See the LICENSE and NOTICES files in the project root for more information.
 
 Set-StrictMode -Version Latest
-$script:InfrastructureInvocation = $false
 
 function Get-CdcDeploymentPath {
     param([string]$Project)
@@ -51,7 +50,13 @@ function Test-CdcInfrastructureInvocation {
     .SYNOPSIS
     Identifies the infrastructure phase currently owned by this module in this process.
     #>
-    return $script:InfrastructureInvocation
+    # Child .ps1 files invoked from a module acquire their own script scope. A script-scoped
+    # flag is therefore unavailable to commands reached through that child. The owning call
+    # frame proves this invocation is inside the lifecycle infrastructure boundary.
+    return @(Get-PSCallStack | Where-Object {
+        $_.FunctionName -ceq 'Invoke-CdcInfrastructure' -and
+        $_.ScriptName -ceq (Join-Path $PSScriptRoot 'cdc-lifecycle.psm1')
+    }).Count -gt 0
 }
 
 function Assert-CdcPrivatePath {
@@ -292,12 +297,8 @@ function Invoke-CdcInfrastructure {
     Runs an infrastructure primitive within its owning lifecycle phase without recursive dispatch.
     #>
     param([string]$StartScript, [hashtable]$Parameters)
-    $script:InfrastructureInvocation = $true
-    try {
-        & $StartScript @Parameters
-        if ($LASTEXITCODE -ne 0) { throw 'CDC infrastructure phase failed; retain deployment configuration.' }
-    }
-    finally { $script:InfrastructureInvocation = $false }
+    & $StartScript @Parameters
+    if ($LASTEXITCODE -ne 0) { throw 'CDC infrastructure phase failed; retain deployment configuration.' }
 }
 
 function Get-CdcDmsComposeHandoff {

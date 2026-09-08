@@ -346,7 +346,14 @@ exit 0
 
 Describe "Teardown down set keeps every volume-bearing compose file" {
     BeforeAll {
-        $script:realComposeRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+        $sourceComposeRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+        # Execute unchanged primitives in an isolated directory: retained real CDC inventory must
+        # never change a recording-Docker test into a managed lifecycle invocation.
+        $script:realComposeRoot = Join-Path $TestDrive 'compose'
+        New-Item -ItemType Directory -Path $script:realComposeRoot | Out-Null
+        Get-ChildItem -LiteralPath $sourceComposeRoot -File -Force |
+            Where-Object { $_.Name -match '\.(ps1|psm1|yml)$|^\.env' } |
+            Copy-Item -Destination $script:realComposeRoot
         $script:standardE2EEnvironmentFile = Join-Path $script:realComposeRoot ".env.e2e"
 
         # `docker compose down -v` removes the named volumes of the services in the composed set only,

@@ -454,3 +454,32 @@ Describe 'Live worker REST evidence shape' {
         $names.Count | Should -Be 0
     }
 }
+
+Describe 'Lifecycle ownership across a real child script' {
+    BeforeAll {
+        Import-Module (Join-Path $PSScriptRoot '../cdc-lifecycle.psm1') -Force
+        $script:child = Join-Path $TestDrive 'child.ps1'
+        @'
+param([switch]$Fail)
+Import-Module "$PSScriptRoot/cdc-lifecycle.psm1"
+if (-not (Test-CdcInfrastructureInvocation)) { throw 'Lost lifecycle ownership' }
+if ($Fail) { throw 'Child failure' }
+$global:LASTEXITCODE = 0
+'@ | Set-Content $script:child
+        Copy-Item (Join-Path $PSScriptRoot '../cdc-lifecycle.psm1') (Join-Path $TestDrive 'cdc-lifecycle.psm1')
+        # Use the same module path in the child as the owning invocation, just like real primitives.
+        Import-Module (Join-Path $TestDrive 'cdc-lifecycle.psm1') -Force
+    }
+    AfterAll { Remove-Module cdc-lifecycle -Force }
+
+    It 'preserves lifecycle ownership through the child and ends it after return' {
+        Test-CdcInfrastructureInvocation | Should -BeFalse
+        Invoke-CdcInfrastructure -StartScript $script:child -Parameters @{}
+        Test-CdcInfrastructureInvocation | Should -BeFalse
+    }
+
+    It 'ends ownership after a child failure' {
+        { Invoke-CdcInfrastructure -StartScript $script:child -Parameters @{ Fail = $true } } | Should -Throw '*Child failure*'
+        Test-CdcInfrastructureInvocation | Should -BeFalse
+    }
+}

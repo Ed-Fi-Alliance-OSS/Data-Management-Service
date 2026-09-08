@@ -57,6 +57,14 @@ public sealed class Given_CdcWorkerDeployment
         result.Value.ConnectWorkerId.Should().Be("172.20.0.4:8083");
     }
 
+    [Test]
+    public async Task It_accepts_a_health_probe_log_update_when_the_worker_process_is_unchanged()
+    {
+        _docker.Fault = "health-probe";
+        var result = await _inspection.InspectAsync(_request, CancellationToken.None);
+        result.State.Should().Be(CdcTransportEvidenceState.Observed);
+    }
+
     [TestCase("none")]
     [TestCase("multiple")]
     [TestCase("stopped")]
@@ -296,6 +304,13 @@ public sealed class Given_CdcWorkerDeployment
                     break;
                 case "recovery" when Inspections == 2:
                     container["State"]!["StartedAt"] = "2026-09-08T11:00:00Z";
+                    break;
+                case "health-probe":
+                    container["State"]!["Health"] = new JsonObject
+                    {
+                        ["Status"] = "healthy",
+                        ["Log"] = new JsonArray(new JsonObject { ["End"] = $"probe-{Inspections}" }),
+                    };
                     break;
                 case "malformed":
                     return Task.FromResult("sentinel-secret");

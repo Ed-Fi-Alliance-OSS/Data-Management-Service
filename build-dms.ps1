@@ -126,6 +126,10 @@ param(
     [switch]
     $LoadSeedData,
 
+    [switch] $EnableKafkaCdc,
+    [string] $CdcSettingsPath,
+    [string] $CdcBindingStatePath,
+
     # Database engine backing the stack. Used by StartEnvironment (forwarded to the bootstrap
     # wrapper) and by E2ETest (forwarded through the E2E orchestration to the engine-aware
     # start/configure/provision leaf scripts). When omitted it is normalized to postgresql, which is
@@ -403,6 +407,7 @@ function Get-E2ETestEnvironmentContext {
         if ([string]::IsNullOrWhiteSpace($DatabaseEngine)) { "postgresql" } else { $DatabaseEngine }
 
     $environmentFilePath = Resolve-E2EEnvironmentFilePath -Path $EnvironmentFile
+    $originalEnvironmentFilePath = $environmentFilePath
 
     Import-Module -Name "$PSScriptRoot/eng/docker-compose/env-utility.psm1" -Force
     Import-Module -Name "$PSScriptRoot/eng/Dms-Management.psm1" -Force
@@ -490,6 +495,7 @@ function Get-E2ETestEnvironmentContext {
 
     return [pscustomobject]@{
         EnvironmentFile = $environmentFilePath
+        OriginalEnvironmentFile = $originalEnvironmentFilePath
         ShouldProvisionE2EDatabase = $true
         DataStoreDatabaseName = $e2eDatabaseName
         SnapshotDatabaseName = $e2eSnapshotDatabaseName
@@ -1298,6 +1304,10 @@ function E2ETests {
         [switch]
         $LoadSeedData,
 
+        [switch] $EnableKafkaCdc,
+        [string] $CdcSettingsPath,
+        [string] $CdcBindingStatePath,
+
         [string]
         $IdentityProvider="self-contained",
 
@@ -1324,6 +1334,23 @@ function E2ETests {
         -TestFilter $TestFilter `
         -DatabaseEngine $DatabaseEngine `
         -UsePublishedImage:$UsePublishedImage
+
+    Import-Module -Name "$PSScriptRoot/eng/docker-compose/e2e-cdc.psm1"
+    if ($EnableKafkaCdc) {
+        Invoke-Step {
+            Invoke-E2ECdcSetup -EnvironmentFile $e2eTestSettings.EnvironmentFile `
+                -OriginalEnvironmentFile $e2eTestSettings.OriginalEnvironmentFile `
+                -DatabaseEngine $e2eTestSettings.DatabaseEngine -DatabaseName $e2eTestSettings.DataStoreDatabaseName `
+                -SnapshotDatabaseName $e2eTestSettings.SnapshotDatabaseName `
+                -CdcSettingsPath $CdcSettingsPath -CdcBindingStatePath $CdcBindingStatePath `
+                -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild `
+                -Configuration $Configuration -UsePrebuiltTools:$UsePrebuiltOutput -IdentityProvider $IdentityProvider
+        }
+        Invoke-Step { RunE2E -TestFilter $TestFilter -E2ETestSettings $e2eTestSettings }
+        return
+    }
+    if ($CdcSettingsPath -or $CdcBindingStatePath) { throw 'CDC settings/state parameters require -EnableKafkaCdc.' }
+    Assert-E2ECdcWorkspaceAvailable
 
     # Resolve the startup phase plan once (single decision point, unit-tested in
     # E2EEngineForwarding.Tests.ps1). SQL Server requires the generated relational DDL to exist before
@@ -2200,6 +2227,10 @@ function Invoke-TestExecution {
         [switch]
         $LoadSeedData,
 
+        [switch] $EnableKafkaCdc,
+        [string] $CdcSettingsPath,
+        [string] $CdcBindingStatePath,
+
         [string]
         $IdentityProvider="self-contained",
 
@@ -2213,7 +2244,7 @@ function Invoke-TestExecution {
         $DatabaseEngine = "postgresql"
     )
     switch ($Filter) {
-        E2ETests { Invoke-Step { E2ETests -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild -LoadSeedData:$LoadSeedData -IdentityProvider $IdentityProvider -TestFilter $TestFilter -EnvironmentOverlayFile $EnvironmentOverlayFile -DatabaseEngine $DatabaseEngine } }
+        E2ETests { Invoke-Step { E2ETests -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild -LoadSeedData:$LoadSeedData -IdentityProvider $IdentityProvider -TestFilter $TestFilter -EnvironmentOverlayFile $EnvironmentOverlayFile -DatabaseEngine $DatabaseEngine -EnableKafkaCdc:$EnableKafkaCdc -CdcSettingsPath $CdcSettingsPath -CdcBindingStatePath $CdcBindingStatePath } }
         UnitTests { Invoke-Step { UnitTests } }
         IntegrationTests { Invoke-Step { IntegrationTests } }
         Default { "Unknown Test Type" }
@@ -2319,7 +2350,7 @@ Invoke-Main {
             Invoke-Publish
         }
         UnitTest { Invoke-TestExecution UnitTests }
-        E2ETest { Invoke-TestExecution E2ETests -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild -LoadSeedData:$LoadSeedData -IdentityProvider $IdentityProvider -TestFilter $TestFilter -EnvironmentOverlayFile $EnvironmentOverlayFile -DatabaseEngine $DatabaseEngine }
+        E2ETest { Invoke-TestExecution E2ETests -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild -LoadSeedData:$LoadSeedData -IdentityProvider $IdentityProvider -TestFilter $TestFilter -EnvironmentOverlayFile $EnvironmentOverlayFile -DatabaseEngine $DatabaseEngine -EnableKafkaCdc:$EnableKafkaCdc -CdcSettingsPath $CdcSettingsPath -CdcBindingStatePath $CdcBindingStatePath }
         InstanceE2ETest {
             $instanceE2EArguments = @{
                 SkipDockerBuild     = [bool]$SkipDockerBuild

@@ -2248,6 +2248,22 @@ public static class CdcConnectorRuntimeObservationValidator
         return diagnostics.ToValidationResult();
     }
 
+    /// <summary>Validates identity and consistent task counts while a newly registered connector
+    /// awaits assignment. This observation does not establish readiness.</summary>
+    public static CdcContractValidationResult ValidateForStartup(
+        CdcConnectorRuntimeObservation observation,
+        CdcBinding binding,
+        CdcObservationValidationContext context
+    )
+    {
+        ArgumentNullException.ThrowIfNull(observation);
+        ArgumentNullException.ThrowIfNull(binding);
+        ArgumentNullException.ThrowIfNull(context);
+        CdcDiagnosticCollector diagnostics = new();
+        ValidateStructure(observation, context, binding, diagnostics, lifecycle: true, startup: true);
+        return diagnostics.ToValidationResult();
+    }
+
     /// <summary>Validates live identity and structural consistency before a controller starts a task.
     /// STOPPED with no tasks and RUNNING with a failed task are valid lifecycle observations;
     /// the ordinary validator continues to require the running-task readiness contract.</summary>
@@ -2270,7 +2286,8 @@ public static class CdcConnectorRuntimeObservationValidator
         CdcObservationValidationContext context,
         CdcBinding? binding,
         CdcDiagnosticCollector diagnostics,
-        bool lifecycle = false
+        bool lifecycle = false,
+        bool startup = false
     )
     {
         CdcObservationValidationRules.ValidateEnvelope(observation, context, diagnostics);
@@ -2294,7 +2311,7 @@ public static class CdcConnectorRuntimeObservationValidator
         ValidateLastError(observation, context.NowUtc, diagnostics);
         if (lifecycle)
         {
-            ValidateLifecycleConsistency(observation, diagnostics);
+            ValidateLifecycleConsistency(observation, diagnostics, startup);
         }
         else
         {
@@ -2405,7 +2422,8 @@ public static class CdcConnectorRuntimeObservationValidator
 
     private static void ValidateLifecycleConsistency(
         CdcConnectorRuntimeObservation observation,
-        CdcDiagnosticCollector diagnostics
+        CdcDiagnosticCollector diagnostics,
+        bool startup
     )
     {
         bool stopped =
@@ -2420,7 +2438,15 @@ public static class CdcConnectorRuntimeObservationValidator
             && observation.TaskCount == 1
             && observation.RunningTaskCount
                 == (observation.SoleTaskState == CdcConnectorRuntimeState.Running ? 1 : 0);
-        if (!stopped && !single)
+        bool awaitingAssignment =
+            startup
+            && observation.ConnectorState
+                is CdcConnectorRuntimeState.Unassigned
+                    or CdcConnectorRuntimeState.Running
+            && observation.TaskCount == 0
+            && observation.RunningTaskCount == 0
+            && observation.SoleTaskState == CdcConnectorRuntimeState.Unknown;
+        if (!stopped && !single && !awaitingAssignment)
         {
             diagnostics.Add(
                 CdcDiagnosticCategory.InvalidObservation,

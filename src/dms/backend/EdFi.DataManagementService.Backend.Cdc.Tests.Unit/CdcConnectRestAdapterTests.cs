@@ -439,6 +439,9 @@ public class Given_CdcConnectRestAdapter_offsets
                 (fixture.Offsets("null"), CdcConnectOffsetState.Null),
                 (fixture.Offsets("{\"snapshot\":true}"), CdcConnectOffsetState.Snapshot),
                 (fixture.Offsets("{\"snapshot\":\"last\"}"), CdcConnectOffsetState.Snapshot),
+                (fixture.Offsets("{\"snapshot\":\"INITIAL\"}"), CdcConnectOffsetState.Snapshot),
+                (fixture.Offsets("{\"snapshot\":\"BLOCKING\"}"), CdcConnectOffsetState.Snapshot),
+                (fixture.Offsets("{\"snapshot\":\"INCREMENTAL\"}"), CdcConnectOffsetState.Snapshot),
             }
         )
         {
@@ -455,6 +458,26 @@ public class Given_CdcConnectRestAdapter_offsets
         }
     }
 
+    [TestCase("NULL")]
+    [TestCase("00000032:00003ff8:0050")]
+    public async Task It_distinguishes_the_sql_server_initial_null_lsn_marker_from_an_absent_offset(
+        string commit
+    )
+    {
+        using CdcConnectHttpFixture fixture = new(CdcProvider.SqlServer);
+        fixture.Respond(
+            body: fixture.Offsets($$"""{"commit_lsn":"{{commit}}","change_lsn":"NULL","event_serial_no":1}""")
+        );
+        var result = await fixture.Adapter.ReadOffsetEvidenceAsync(fixture.Request, CancellationToken.None);
+        var value = result
+            .Should()
+            .BeOfType<CdcTransportResult<CdcConnectOffsetEvidence>.Observed>()
+            .Which.Value;
+        value.State.Should().Be(CdcConnectOffsetState.AwaitingStreaming);
+        value.SourcePartitionHash.Should().NotBeNullOrEmpty();
+        value.SqlServer.CommitLsn.Should().BeNull();
+    }
+
     [Test]
     public async Task It_compares_the_actual_sql_server_catalog_case_sensitively()
     {
@@ -468,6 +491,12 @@ public class Given_CdcConnectRestAdapter_offsets
             .Be(CdcConnectOffsetState.SourcePartitionMismatch);
     }
 
+    [TestCase(CdcProvider.SqlServer, """{"commit_lsn":"NULL","change_lsn":"NULL","event_serial_no":2}""")]
+    [TestCase(
+        CdcProvider.SqlServer,
+        """{"commit_lsn":"NULL","change_lsn":"00000001:00000002:0003","event_serial_no":1}"""
+    )]
+    [TestCase(CdcProvider.SqlServer, """{"commit_lsn":null,"change_lsn":null,"event_serial_no":1}""")]
     [TestCase(CdcProvider.Postgresql, "{}")]
     [TestCase(CdcProvider.Postgresql, "{\"lsn_proc\":\"42\"}")]
     [TestCase(CdcProvider.Postgresql, "{\"lsn_proc\":1.5}")]

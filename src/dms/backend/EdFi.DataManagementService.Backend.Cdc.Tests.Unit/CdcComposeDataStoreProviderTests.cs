@@ -3,12 +3,15 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Core;
 using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.DocumentCache;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Npgsql;
 using NUnit.Framework;
 
@@ -132,5 +135,70 @@ public class Given_CdcComposeDataStoreProvider(string provider)
         CdcComposeDataStoreProvider.Register(services, settings, target);
         using var translated = services.BuildServiceProvider();
         translated.GetRequiredService<IDataStoreProvider>().Should().BeOfType<CdcComposeDataStoreProvider>();
+    }
+
+    [Test]
+    public async Task It_resolves_registry_inventory_through_the_host_endpoint_adapter()
+    {
+        var target = DocumentCacheTargetKey.Create("", 42);
+        var settings = new ConfigurationBuilder()
+            .AddInMemoryCollection(
+                new Dictionary<string, string?>
+                {
+                    ["AppSettings:Datastore"] = provider,
+                    ["Cdc:Compose:DatabaseHostPort"] = "15432",
+                    ["DataManagement:DocumentCache:Targets:0:DataStoreId"] = "42",
+                }
+            )
+            .Build();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddDmsDocumentCacheTargetRegistry(settings);
+        services.AddSingleton<IDataStoreProvider>(_ => _inner);
+        // Reproduce the concrete CMS registration preferred by Core's HTTP registry factory.
+        // CDC must resolve through its CMS-backed adapter instead of resolving this directly.
+        services.AddSingleton<ConfigurationServiceDataStoreProvider>(_ =>
+            throw new InvalidOperationException("Registry bypassed the host endpoint adapter.")
+        );
+        var builder = A.Fake<IDocumentCacheTargetContextBuilder>();
+        A.CallTo(() =>
+                builder.BuildAsync(
+                    target,
+                    A<DocumentCacheResolvedTargetDataStore>.Ignored,
+                    A<DocumentCacheTargetContextGeneration>.Ignored,
+                    A<CancellationToken>.Ignored
+                )
+            )
+            .Returns(
+                new DocumentCacheTargetContextBuildResult(
+                    DocumentCacheTargetObservation.Unresolved(
+                        target,
+                        DocumentCacheTargetEffectiveSettings.FromOptions(new()),
+                        null,
+                        []
+                    ),
+                    null
+                )
+            );
+        services.Replace(ServiceDescriptor.Singleton(builder));
+        CdcComposeDataStoreProvider.Register(services, settings, target);
+        await using var runtime = services.BuildServiceProvider();
+
+        await runtime
+            .GetRequiredService<IDocumentCacheTargetRegistry>()
+            .RefreshAsync(DocumentCacheTargetRefreshReason.Startup);
+
+        var expected = _subject.GetById(42)!.ConnectionString;
+        A.CallTo(() =>
+                builder.BuildAsync(
+                    target,
+                    A<DocumentCacheResolvedTargetDataStore>.That.Matches(d =>
+                        d.Id == 42 && d.ConnectionFactoryInput == expected
+                    ),
+                    A<DocumentCacheTargetContextGeneration>.Ignored,
+                    A<CancellationToken>.Ignored
+                )
+            )
+            .MustHaveHappenedOnceExactly();
     }
 }

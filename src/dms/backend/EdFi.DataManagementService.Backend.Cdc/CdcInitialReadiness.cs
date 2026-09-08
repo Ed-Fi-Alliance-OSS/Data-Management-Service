@@ -417,7 +417,16 @@ public sealed class CdcInitialReadiness
                             ProviderSetup = mapped.ProviderSetup,
                             KafkaPolicy = kafka,
                             ConnectOffsetStore = store,
-                            ConnectorRuntime = status,
+                            // REST status has no snapshot-completion field. The exact committed
+                            // streaming offset that crossed this pass's provider barrier supplies
+                            // that evidence; RUNNING status alone never does.
+                            ConnectorRuntime = status with
+                            {
+                                SnapshotState =
+                                    status.SnapshotState is CdcConnectorSnapshotState.Unknown
+                                        ? CdcConnectorSnapshotState.Completed
+                                        : status.SnapshotState,
+                            },
                             ConnectorConfig = CdcControllerObservations.Configuration(
                                 request,
                                 operation,

@@ -325,8 +325,8 @@ principals with those of your deployment:
     "Schemas": ["/absolute/path/to/ApiSchema.json"],
     "SetupPrincipal": "postgres",
     "DatabaseConnectorPrincipal": "cdc_reader",
-    "ConnectEndpoint": "http://localhost:8083",
-    "WorkerMetricsEndpoint": "http://localhost:9404/metrics",
+    "ConnectEndpoint": "http://127.0.0.1:8083",
+    "WorkerMetricsEndpoint": "http://127.0.0.1:9404/metrics",
     "KafkaBootstrapServers": "dms-kafka1:9092",
     "KafkaAdminBootstrapServers": "127.0.0.1:9092",
     "MaxRecordBytes": 10000000,
@@ -464,6 +464,32 @@ or resume the original unfinished workflow while writers remain stopped. This bo
 entry point resumes established deployments through the retained lifecycle inventory described below.
 
 ### Managed stack lifecycle
+
+The DMS E2E harness accepts the same explicit CDC settings and original state root:
+
+```powershell
+pwsh src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1 -EnableKafkaCdc -CdcSettingsPath ./cdc-postgresql.json -CdcBindingStatePath ./.cdc-e2e -EnvironmentFile ./eng/docker-compose/.env.e2e
+pwsh ./build-dms.ps1 E2ETest -DatabaseEngine mssql -EnableKafkaCdc -CdcSettingsPath ./cdc-mssql.json -CdcBindingStatePath ./.cdc-e2e-mssql -EnvironmentFile ./.env.e2e -Configuration Release -TestFilter 'FullyQualifiedName~Given_CdcE2ESetup'
+```
+
+Use a fresh owned stack and settings for the actual `E2E_DATABASE_NAME`, CMS-selected
+data store ID, provider, worker, and metrics endpoint. Supply a pre-existing restricted
+connector login (and database user on SQL Server); provider setup grants its CDC access.
+E2E uses separate CMS topology, enables SQL Server Agent for the CDC lane,
+and uses the selected E2E schema packages, including test extensions. Managed provisioning
+creates the primary and retains its receipt; the legacy reset provisioner only prepares
+the distinct `E2E_SNAPSHOT_DATABASE_NAME`. CDC admission completes before DMS or API
+tests start. `-SkipDockerBuild` reuses existing local images in either entry point.
+
+Failures prevent test launch, retain sanitized `.cdc-diagnostics` artifacts and original
+CDC settings/state, and attempt governed stop. If shutdown cannot be verified,
+infrastructure remains available for reconciliation. The standard E2E teardown invokes
+governed retirement before volume deletion and retains source history and CDC settings.
+Subsequent E2E reset attempts reject a retained CDC workspace; finish retirement and
+archive its configuration/history before preparing a new workspace. Detailed API-driven
+Kafka message scenarios remain part of the separate CDC E2E suite. The explicitly
+selected `Given_CdcE2ESetup` fixture checks HTTP/database health without feature reset
+hooks, so setup qualification retains the admitted source for governed teardown.
 
 After initial bootstrap, both bootstrap wrappers and both `start-*-dms.ps1` primitives
 recognize `.cdc-deployments/<project>.json`. This private, durable inventory is separate
