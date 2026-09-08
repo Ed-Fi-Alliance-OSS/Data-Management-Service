@@ -302,6 +302,9 @@ controller composes those contracts rather than introducing another set of rules
   cleanup boundaries. Reuse sibling fixtures; detailed public-message and API-driven Kafka
   scenarios remain in 19-05/19-06, and full operator runbooks remain in 19-07. Add command
   help and local invocation examples here so those stories have a concrete shipped surface.
+- Documentation testing is excluded from this story. Author command help, local examples,
+  and the test-to-design evidence index without adding tests of those artifacts. CLI tests
+  exercise command parsing, supported operations, controller behavior, and runtime output.
 
 ## Acceptance Evidence
 
@@ -361,8 +364,7 @@ controller composes those contracts rather than introducing another set of rules
   source-identity, CMS, provider-artifact, topic, or connector mutation. Cover both an empty
   different source and a populated replacement so neither can bypass the guard through
   initial-enable retry. Status/watch cases retain the existing incident-classification
-  and containment behavior. Help checks identify source replacement as deferred and do not
-  present retirement or independent new-database provisioning as a migration procedure.
+  and containment behavior.
 - Production-path tests prove the E18 `activate-offline`, `deactivate-offline`, and
   `recover-cache-ahead` commands no longer receive the default `unknown` downstream
   history when trusted CDC evidence proves `internalOnly`, and still reject active,
@@ -371,6 +373,9 @@ controller composes those contracts rather than introducing another set of rules
 
 ## Not Assigned to This Story
 
+- Documentation testing, including help-text assertions, documentation drift checks,
+  example verification, and tests of Markdown structure, wording, links, or the evidence
+  index. Broader runbook and documentation checks remain assigned to 19-07.
 - Managed-provider-specific deployment automation is deployment work.
 - Projector behavior is assigned to E18; message behavior is owned by the ADR and tested in
   19-05.
