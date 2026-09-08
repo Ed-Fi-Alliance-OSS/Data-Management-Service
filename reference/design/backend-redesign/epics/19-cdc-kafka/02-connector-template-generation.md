@@ -254,11 +254,9 @@ implements those contracts.
   prove the same template remains valid against retained provider and Connect state. They do
   not reset offsets, recreate slots/capture instances, resnapshot an admitted database, or
   clear source-history incident state.
-- Extend the reusable pinned-image fixtures to qualify the standard JMX Exporter agent
-  and fixed provider metric mappings delivered by DMS-1322 against the linked telemetry
-  contract. Supply DMS-1323 with reusable assertions for metric identity, value types and
-  units, required statistics, worker identity evidence, and task metric replacement on
-  restart. This story does not package the exporter or implement the controller adapter.
+- DMS-1323 extends these reusable pinned-image/provider fixtures with telemetry
+  qualification for the linked local/CI telemetry contract. That follow-on work was
+  identified after this story was completed and is owned by DMS-1323.
 
 ## Acceptance Evidence
 
@@ -286,15 +284,13 @@ implements those contracts.
 - Live connector validation confirms the work table is absent from effective capture.
 - Pinned-image tests cover transform loading, producer/partition behavior, heartbeat and
   offset visibility, and provider restart integration.
-- Telemetry qualification uses both real providers and covers the required streaming
-  metrics, isolation between connectors on the same worker, and worker/task restart
-  behavior, including removal or replacement of previous task metric state. Required
-  telemetry prerequisites follow the existing qualification CI failure policy.
 - SQL Server image coverage includes the qualified database/runtime combination identified
   by the integration design.
 
 ## Not Assigned to This Story
 
+- Follow-on exporter metric qualification is assigned to DMS-1323, which extends this
+  story's existing fixtures and retains the qualification CI failure policy.
 - Bootstrap command wiring and Connect REST lifecycle are assigned to 19-04.
 - Detailed transform behavior and public-record assertions are assigned to 19-03 and
   19-05.

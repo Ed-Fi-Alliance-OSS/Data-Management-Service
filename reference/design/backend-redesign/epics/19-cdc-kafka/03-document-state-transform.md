@@ -50,11 +50,10 @@ Connect plugin without changing the completed generic transform.
   the transform.
 - Package the transform, converter, and partitioner in the qualified Ed-Fi Kafka Connect
   image.
-- Package a version-pinned standard Prometheus JMX Exporter Java agent and fixed provider
-  metric mappings in that image for the linked local/CI telemetry contract. Own the agent
-  startup configuration, management endpoint configuration, artifact pinning, and publication
-  of the new qualified image digest. DMS-1321 owns reusable provider/metric qualification
-  fixtures; DMS-1323 owns endpoint wiring and the controller telemetry adapter.
+- DMS-1323 extends this image with the standard JMX Exporter and fixed provider mappings
+  for the linked local/CI telemetry contract. That follow-on work was identified after
+  this story was completed; DMS-1323 owns the companion change in Ed-Fi-Kafka-Connect,
+  telemetry qualification, and publication of the new immutable image digest.
 - Retain regression coverage for the existing generic transform.
 
 ## Implementation Contract
@@ -126,13 +125,13 @@ Connect plugin without changing the completed generic transform.
   `kafka-murmur2-v1` token before the image is consumed by DMS-1321.
 - Plugin-loading tests pass on the qualified connector runtime for the transform,
   converter, and partitioner.
-- Image packaging smoke tests verify the pinned exporter and mappings load with the
-  qualified worker and expose the configured management endpoint. Image publication
-  includes the telemetry qualification evidence supplied by DMS-1321.
 - Regression tests cover the unchanged generic transform artifact.
 
 ## Not Assigned to This Story
 
+- Follow-on exporter packaging, startup/management endpoint configuration, artifact
+  pinning, packaging smoke tests, and image publication are assigned to DMS-1323.
+  Packaging remains in Ed-Fi-Kafka-Connect and reuses this story's plugin artifacts.
 - Connector generation/registration and API-driven E2E scenarios are assigned to other
   E19 stories.
 - DMS materialization is assigned to E18.

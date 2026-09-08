@@ -33,6 +33,11 @@ needed to provision, validate, start, stop, and retire a target.
 ## Dependencies
 
 - Depends on 19-00 through 19-03 and the E18 projection/status inputs consumed by 19-00.
+- DMS-1321 and DMS-1322 were completed before the local/CI exporter requirements were
+  finalized. DMS-1323 owns the resulting telemetry follow-on work: a companion image
+  packaging/publication change in Ed-Fi-Kafka-Connect and extensions to the existing DMS
+  pinned-image/provider qualification fixtures. Their completed plugin/template work is
+  reused; exporter delivery is part of this story's scope.
 
 ## Implementation Scope
 
@@ -59,6 +64,8 @@ needed to provision, validate, start, stop, and retire a target.
   Kafka topic, durability, record-size, and ACL provisioning/validation.
 - Add Kafka Connect registration, live validation, status polling, restart, and teardown
   operations.
+- Deliver and qualify the exporter-enabled Connect image, then wire its direct metrics
+  endpoint into deployment inspection and controller readiness.
 - Expose the same workflow to the E2E harness.
 
 ## Resolved Bootstrap and Controller Scope
@@ -176,9 +183,9 @@ controller composes those contracts rather than introducing another set of rules
 - Separate Kafka broker startup from Connect worker startup in the existing Compose path.
   Pre-create/validate the configured shared offset store before launching the qualified
   digest-pinned worker, including when `-EnableKafkaUI` is also selected. Replace the legacy
-  floating connector-image selection on the CDC path; consume the 19-03 image and 19-02
-  qualification fixtures rather than rebuilding
-  plugin behavior in this repository. UI-only startup never registers a connector.
+  floating connector-image selection on the CDC path; extend the 19-03 image and 19-02
+  qualification fixtures with this story's telemetry work while reusing their existing
+  plugin behavior. UI-only startup never registers a connector.
 - Implement narrow Kafka administration and Connect REST adapters behind the controller
   interfaces. Kafka administration observes actual topic configs, replicas, broker limits,
   and effective deployment-managed ACLs. Worker configuration/deployment inspection supplies
@@ -199,11 +206,23 @@ controller composes those contracts rather than introducing another set of rules
   then read committed offsets through the supported REST surface.
   Reuse the provider offset parser and source-partition hash; do not consume progress-topic
   records or substitute topic offsets for source-position evidence.
+- Extend the existing Ed-Fi-Kafka-Connect image through a companion PR associated with
+  DMS-1323. Package a version-pinned standard Prometheus JMX Exporter Java agent and fixed
+  PostgreSQL/SQL Server metric mappings. Own agent activation, management endpoint
+  configuration, artifact pinning, packaging smoke tests, and publication of a new
+  immutable image digest with qualification evidence. Keep packaging in Ed-Fi-Kafka-Connect
+  and reuse its transform, converter, and partitioner. Establish the concrete mappings,
+  port, and worker/task identity contract before wiring the deployment adapter; consume
+  only the telemetry-qualified digest on the CDC path.
+- Extend DMS-1321's existing pinned-image/provider fixtures in the DMS CDC integration
+  project to qualify that image. Supply reusable assertions for metric identity, value
+  types and units, current lag and required statistics, worker identity evidence, and
+  removal or replacement of previous task metric state on restart. These extensions are
+  DMS-1323 work and feed this story's adapter/controller tests.
 - Implement the direct JMX Exporter HTTP adapter and single-worker endpoint wiring from
   the design's [local/CI telemetry contract](../../design-docs/cdc/cdc-streaming.md#local-and-ci-connector-telemetry).
-  Consume DMS-1322's qualified exporter-enabled image and DMS-1321's reusable metric
-  qualification fixtures; DMS-1322 owns the pinned standard exporter, fixed mappings,
-  and qualified image publication. Extend the typed deployment request with the configured
+  Consume this story's qualified exporter-enabled image and reusable metric qualification
+  extensions. Extend the typed deployment request with the configured
   worker metrics endpoint and maximum observation age; reuse the Core lag observation and
   evaluator contracts, extending their typed handoff only where required for the
   design-owned statistics and identity evidence. Implement collection-time tracking,
@@ -342,7 +361,15 @@ controller composes those contracts rather than introducing another set of rules
   revalidation and must not claim prevention or retrospective continuity certification from
   eventual containment, current healthy offsets, or later ready status. Include a case with
   observed pre-validation consumption to make that limitation executable.
-- Telemetry adapter and controller tests consume the sibling qualification fixtures and
+- Image packaging smoke tests verify the pinned exporter and mappings load with the
+  worker and expose the configured management endpoint. Telemetry qualification uses
+  real PostgreSQL and SQL Server and covers metric identity, value types and units,
+  current lag and minimum/maximum/average/P50/P95/P99 statistics, worker identity evidence,
+  isolation between connectors on the same worker, and worker/task restart behavior,
+  including removal or replacement of previous task metric state. Publication records
+  that evidence against the new immutable image digest. Missing telemetry prerequisites
+  fail qualification CI; Compose resolution and mocked tests alone cannot qualify an image.
+- Telemetry adapter and controller tests consume the qualification extensions above and
   cover fresh successful collection, configured age boundaries and expiry before writer
   handoff, missing/duplicate/malformed metrics, exporter failure, timeout/cancellation,
   connector or worker mismatch, task/worker restart, reassignment, and rejection of
@@ -386,8 +413,6 @@ controller composes those contracts rather than introducing another set of rules
   identity rotation, database restore/copy, CMS cutover, and new-generation capture setup,
   is deferred by the owning integration design.
 - Distributed-worker metrics-endpoint discovery is deferred to a later deployment adapter.
-  Exporter packaging/image publication belongs to DMS-1322, and reusable image/metric
-  qualification fixtures belong to DMS-1321.
 - Strict pre-consumption fencing across native worker/task recovery is deferred by the
   owning design; custom worker startup hooks, task interceptors, and infrastructure fences
   are not part of this story.
