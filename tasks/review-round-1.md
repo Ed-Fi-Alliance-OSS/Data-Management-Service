@@ -1,5 +1,11 @@
 # Review Round 1 — DMS-1457 Correlation ID Normalization
 
+> [!WARNING]
+> The files in this `tasks` directory are ephemeral, committed only for the duration
+> of the autonomous coding run. `plan.md`, `todo.md`, `declined-findings.md`,
+> `review-round-1.md`, `review-round-2.md`, and any `review-round-*.md` files must
+> be removed with `git rm` before final merge by a human.
+
 ## Round summary
 
 Implementation sub-agent completed Tasks 1–7 in this round. Both reviewers ran

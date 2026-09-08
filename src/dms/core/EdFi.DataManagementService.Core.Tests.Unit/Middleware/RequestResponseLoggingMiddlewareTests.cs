@@ -244,7 +244,7 @@ public class Given_RequestResponseLoggingMiddleware
         record.Level.Should().Be(LogLevel.Error);
         record.Exception.Should().BeSameAs(exception);
         record.Properties.Should().Contain("EventName", "HttpRequestFailed");
-        record.Properties.Should().Contain("TraceId", "traceidwithunsafe");
+        record.Properties.Should().Contain("TraceId", "traceidwith{unsafe}");
         record.Properties.Should().Contain("Method", "GET");
         record.Properties.Should().Contain("Path", "/ed-fi/students/id");
         record.Properties.Should().Contain("StatusCode", 500);
@@ -255,7 +255,7 @@ public class Given_RequestResponseLoggingMiddleware
         var scope = record.ActiveScopes.Single();
         scope.Should().Contain("Application", "EdFi.DataManagementService");
         scope.Should().Contain("RequestLayer", "Core");
-        scope.Should().Contain("TraceId", "traceidwithunsafe");
+        scope.Should().Contain("TraceId", "traceidwith{unsafe}");
         scope.Should().Contain("Method", "GET");
         scope.Should().Contain("Path", "/ed-fi/students/id");
         scope.Should().NotContainKey("PathBase");

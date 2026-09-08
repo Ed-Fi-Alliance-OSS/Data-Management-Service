@@ -17,7 +17,6 @@ public class LoggingMiddleware
 {
     private readonly RequestDelegate _next;
     private readonly IOptions<AppSettings> _appSettings;
-    private readonly int _correlationIdMaxLength;
     private const string ApplicationName = "EdFi.DataManagementService";
     private const string RequestLayer = "Frontend";
 
@@ -25,16 +24,6 @@ public class LoggingMiddleware
     {
         _next = next ?? throw new ArgumentNullException(nameof(next));
         _appSettings = appSettings ?? throw new ArgumentNullException(nameof(appSettings));
-        try
-        {
-            var configuredMaxLength = appSettings.Value.CorrelationIdMaxLength;
-            _correlationIdMaxLength =
-                configuredMaxLength > 0 ? configuredMaxLength : AppSettings.DefaultCorrelationIdMaxLength;
-        }
-        catch (OptionsValidationException)
-        {
-            _correlationIdMaxLength = AppSettings.DefaultCorrelationIdMaxLength;
-        }
     }
 
     public async Task Invoke(HttpContext context, ILogger<LoggingMiddleware> logger)
@@ -212,7 +201,7 @@ public class LoggingMiddleware
         catch (OptionsValidationException)
         {
             return AspNetCoreFrontend
-                .NormalizeTraceId(context.TraceIdentifier, _correlationIdMaxLength)
+                .NormalizeTraceId(context.TraceIdentifier, AppSettings.DefaultCorrelationIdMaxLength)
                 .Value;
         }
     }

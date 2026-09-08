@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Net;
+using System.Reflection;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
@@ -22,9 +23,22 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace EdFi.DataManagementService.Tests.Integration.Tests;
 
+/// <summary>
+/// Parity test covering three distinct in-process failure paths without leasing a real database.
+/// </summary>
+/// <remarks>
+/// Carries the API CI-selection categories so both API integration lanes select it: each lane runs an
+/// AND filter (<c>Category=ApiIntegration&amp;Category=PostgresqlIntegration</c> or
+/// <c>Category=ApiIntegration&amp;Category=MssqlIntegration</c>). This fixture uses only a plain
+/// <see cref="WebApplicationFactory{TEntryPoint}"/> plus faked providers, so it leases no database despite
+/// carrying the engine categories. <see cref="CorrelationIdNormalizationParityCiSelectionGuardrail"/> keeps
+/// these categories from being dropped.
+/// </remarks>
 [TestFixture]
 [NonParallelizable]
-[Category("CorrelationIdNormalization")]
+[Category("ApiIntegration")]
+[Category("PostgresqlIntegration")]
+[Category("MssqlIntegration")]
 public class Given_CorrelationIdNormalization_Parity
 {
     private const string HostileCorrelationId = "12\r{34}\t567890";
@@ -78,12 +92,7 @@ public class Given_CorrelationIdNormalization_Parity
     [Test]
     public void It_applies_the_same_normalized_correlation_id_to_401_404_and_429_responses()
     {
-        string expected = EdFi
-            .DataManagementService.Frontend.AspNetCore.AspNetCoreFrontend.NormalizeTraceId(
-                HostileCorrelationId,
-                CorrelationIdMaxLength
-            )
-            .Value;
+        const string expected = "12{34}";
 
         _unauthorizedResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
         _notFoundResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
@@ -183,5 +192,42 @@ public class Given_CorrelationIdNormalization_Parity
         A.CallTo(() => backendMappingInitializer.InitializeAsync(A<CancellationToken>._))
             .Returns(Task.CompletedTask);
         services.Replace(ServiceDescriptor.Singleton(backendMappingInitializer));
+    }
+}
+
+[TestFixture]
+[Category("ApiIntegration")]
+[Category("PostgresqlIntegration")]
+[Category("MssqlIntegration")]
+public class CorrelationIdNormalizationParityCiSelectionGuardrail
+{
+    private static readonly string[] RequiredCiSelectionCategories =
+    [
+        "ApiIntegration",
+        "PostgresqlIntegration",
+        "MssqlIntegration",
+    ];
+
+    [Test]
+    public void It_keeps_the_correlation_id_parity_fixture_selected_by_both_api_ci_lanes()
+    {
+        string[] declaredCategories =
+        [
+            .. typeof(Given_CorrelationIdNormalization_Parity)
+                .GetCustomAttributes<CategoryAttribute>(inherit: true)
+                .Select(category => category.Name),
+        ];
+
+        string[] missingCategories = [.. RequiredCiSelectionCategories.Except(declaredCategories)];
+
+        missingCategories
+            .Should()
+            .BeEmpty(
+                "{0} must declare the API CI-selection categories {1} so both API lanes "
+                    + "(Category=ApiIntegration&Category=PostgresqlIntegration and "
+                    + "Category=ApiIntegration&Category=MssqlIntegration) keep selecting it",
+                nameof(Given_CorrelationIdNormalization_Parity),
+                string.Join(", ", RequiredCiSelectionCategories)
+            );
     }
 }

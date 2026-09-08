@@ -20,6 +20,12 @@ public class LoggingSanitizerTests
         {
             LoggingSanitizer.SanitizeForLogging("trace\r\nid\nwith\runsafe").Should().Be("traceidwithunsafe");
         }
+
+        [Test]
+        public void It_keeps_using_the_stricter_allowlist_than_correlation_ids()
+        {
+            LoggingSanitizer.SanitizeForLogging("trace+={}@|,id").Should().Be("traceid");
+        }
     }
 
     [TestFixture]
@@ -55,6 +61,27 @@ public class LoggingSanitizerTests
         public void It_removes_every_control_character()
         {
             _result.Should().Be("traceidwithunsafe");
+        }
+
+        [Test]
+        public void It_removes_unicode_line_separator_characters()
+        {
+            LoggingSanitizer
+                .SanitizeForCorrelationId("trace\u2028id\u2029unsafe")
+                .Should()
+                .Be("traceidunsafe");
+        }
+    }
+
+    [TestFixture]
+    public class Given_SanitizeForCorrelationId_With_Representative_TraceId_Punctuation
+        : LoggingSanitizerTests
+    {
+        [Test]
+        public void It_preserves_characters_that_the_strict_log_allowlist_would_strip()
+        {
+            LoggingSanitizer.SanitizeForCorrelationId("3f2a{b}+1").Should().Be("3f2a{b}+1");
+            LoggingSanitizer.SanitizeForLogging("3f2a{b}+1").Should().Be("3f2ab1");
         }
     }
 

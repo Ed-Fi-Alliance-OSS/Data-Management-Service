@@ -375,7 +375,7 @@ internal sealed class DescriptorWriteHandler(
                 ex,
                 "Transient conflict on descriptor POST for {Resource} - {TraceId}",
                 RelationalWriteSupport.FormatResource(request.Resource),
-                LoggingSanitizer.SanitizeForLogging(request.TraceId.Value)
+                LoggingSanitizer.SanitizeForCorrelationId(request.TraceId.Value)
             );
 
             return new UpsertResult.UpsertFailureWriteConflict();
@@ -648,7 +648,7 @@ internal sealed class DescriptorWriteHandler(
                 ex,
                 "Transient conflict on descriptor PUT for {Resource} - {TraceId}",
                 RelationalWriteSupport.FormatResource(request.Resource),
-                LoggingSanitizer.SanitizeForLogging(request.TraceId.Value)
+                LoggingSanitizer.SanitizeForCorrelationId(request.TraceId.Value)
             );
 
             return new UpdateResult.UpdateFailureWriteConflict();
@@ -692,7 +692,7 @@ internal sealed class DescriptorWriteHandler(
             "Deleting descriptor document {DocumentUuid} for {Resource} - {TraceId}",
             request.DocumentUuid.Value,
             RelationalWriteSupport.FormatResource(request.Resource),
-            LoggingSanitizer.SanitizeForLogging(request.TraceId.Value)
+            LoggingSanitizer.SanitizeForCorrelationId(request.TraceId.Value)
         );
 
         // Namespace planner terminals (no usable root column, no prefixes, MSSQL prefix cap) and
@@ -750,7 +750,7 @@ internal sealed class DescriptorWriteHandler(
                 ex,
                 "Transient conflict creating write session for descriptor DELETE on {DocumentUuid} - {TraceId}",
                 request.DocumentUuid.Value,
-                LoggingSanitizer.SanitizeForLogging(request.TraceId.Value)
+                LoggingSanitizer.SanitizeForCorrelationId(request.TraceId.Value)
             );
 
             return new DeleteResult.DeleteFailureWriteConflict();
@@ -761,7 +761,7 @@ internal sealed class DescriptorWriteHandler(
                 ex,
                 "Database error creating write session for descriptor DELETE on {DocumentUuid} - {TraceId}",
                 request.DocumentUuid.Value,
-                LoggingSanitizer.SanitizeForLogging(request.TraceId.Value)
+                LoggingSanitizer.SanitizeForCorrelationId(request.TraceId.Value)
             );
 
             return new DeleteResult.UnknownFailure(
@@ -949,7 +949,7 @@ internal sealed class DescriptorWriteHandler(
                     ex,
                     "Transient conflict resolving descriptor DELETE target for {DocumentUuid} - {TraceId}",
                     request.DocumentUuid.Value,
-                    LoggingSanitizer.SanitizeForLogging(request.TraceId.Value)
+                    LoggingSanitizer.SanitizeForCorrelationId(request.TraceId.Value)
                 );
 
                 await TryRollbackAsync(writeSession, cancellationToken).ConfigureAwait(false);
@@ -961,7 +961,7 @@ internal sealed class DescriptorWriteHandler(
                     ex,
                     "Database error resolving descriptor DELETE target for {DocumentUuid} - {TraceId}",
                     request.DocumentUuid.Value,
-                    LoggingSanitizer.SanitizeForLogging(request.TraceId.Value)
+                    LoggingSanitizer.SanitizeForCorrelationId(request.TraceId.Value)
                 );
 
                 await TryRollbackAsync(writeSession, cancellationToken).ConfigureAwait(false);
@@ -982,7 +982,7 @@ internal sealed class DescriptorWriteHandler(
                         ex,
                         "Transient conflict committing descriptor DELETE for {DocumentUuid} - {TraceId}",
                         request.DocumentUuid.Value,
-                        LoggingSanitizer.SanitizeForLogging(request.TraceId.Value)
+                        LoggingSanitizer.SanitizeForCorrelationId(request.TraceId.Value)
                     );
 
                     return new DeleteResult.DeleteFailureWriteConflict();
@@ -993,7 +993,7 @@ internal sealed class DescriptorWriteHandler(
                         ex,
                         "Database error committing descriptor DELETE for {DocumentUuid} - {TraceId}",
                         request.DocumentUuid.Value,
-                        LoggingSanitizer.SanitizeForLogging(request.TraceId.Value)
+                        LoggingSanitizer.SanitizeForCorrelationId(request.TraceId.Value)
                     );
 
                     return new DeleteResult.UnknownFailure(

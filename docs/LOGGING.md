@@ -196,8 +196,12 @@ those fields.
 
 ### Correlation ID normalization
 
-A correlation ID is normalized before it is used anywhere — whether it came from
-the configured correlation header or from `HttpContext.TraceIdentifier`:
+This section describes **DMS-specific** correlation-ID behavior. CMS uses its own
+server-generated `HttpContext.TraceIdentifier` flow and does not apply DMS's
+client-header normalization rules.
+
+In DMS, a correlation ID is normalized before it is used anywhere — whether it
+came from the configured correlation header or from `HttpContext.TraceIdentifier`:
 
 * Values longer than `AppSettings:CorrelationIdMaxLength` (default `255`) are
   truncated first. See [Configuration](./CONFIGURATION.md).
@@ -209,10 +213,12 @@ the configured correlation header or from `HttpContext.TraceIdentifier`:
   is deliberately distinct from the stricter one applied to internally
   controlled logged values such as `Method` and `Path`.
 
-Normalization is applied identically everywhere a correlation ID appears: every
-request log event, and the `correlationId` (or `traceId`) of every error response
-body, whatever the status code and whichever layer produced it. The ID a client
-reads from a failed request is therefore always the ID to search for in the logs.
+Except for the 413 Payload Too Large path, which intentionally returns no body,
+normalization is applied identically everywhere a correlation ID appears in DMS:
+every request log event, and the `correlationId` (or `traceId`) of every error
+response body, whatever the status code and whichever layer produced it. The ID
+a client reads from a failed request is therefore the ID to search for in the
+logs whenever that path returns a body.
 
 A correlation ID that the allowlist or the length cap alters is normalized, not
 rejected — the request still succeeds or fails on its own merits rather than on

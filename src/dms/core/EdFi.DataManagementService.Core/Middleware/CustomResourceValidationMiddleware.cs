@@ -26,10 +26,10 @@ internal class CustomResourceValidationMiddleware(ILogger _logger, CustomValidat
     public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
         // TraceId is client-supplied whenever AppSettings:CorrelationIdHeader is configured, so it
-        // is sanitized before it reaches any log template here, per the repository's logging rule.
+        // is sanitized with the correlation-ID allowlist before it reaches any log template here, per the repository's logging rule.
         // Only the log records are sanitized: the trace id handed to a validator, and the one that
         // becomes the 400 body's correlationId, must stay the client's real value.
-        string sanitizedTraceId = LoggingSanitizer.SanitizeForLogging(
+        string sanitizedTraceId = LoggingSanitizer.SanitizeForCorrelationId(
             requestInfo.FrontendRequest.TraceId.Value
         );
 

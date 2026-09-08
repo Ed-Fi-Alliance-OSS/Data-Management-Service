@@ -24,7 +24,8 @@ public class Given_The_MapFallback_Correlation_Id
         string correlationIdHeader,
         int correlationIdMaxLength,
         string injectedCorrelationIdHeader,
-        string injectedCorrelationId
+        string injectedCorrelationId,
+        string traceIdentifier = "server-trace-id"
     )
     {
         return new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
@@ -48,7 +49,8 @@ public class Given_The_MapFallback_Correlation_Id
                 services.AddSingleton<IStartupFilter>(
                     new CorrelationIdHeaderInjectionStartupFilter(
                         injectedCorrelationIdHeader,
-                        injectedCorrelationId
+                        injectedCorrelationId,
+                        traceIdentifier
                     )
                 );
             });
@@ -70,21 +72,20 @@ public class Given_The_MapFallback_Correlation_Id
         JsonNode body = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-        body["correlationId"]!
-            .GetValue<string>()
-            .Should()
-            .Be(AspNetCoreFrontend.NormalizeTraceId(hostileCorrelationId, 8).Value);
+        body["correlationId"]!.GetValue<string>().Should().Be("12{34}");
     }
 
     [Test]
     public async Task It_ignores_the_correlationid_header_when_client_supplied_correlation_ids_are_disabled()
     {
         const string hostileCorrelationId = "12\r{34}\t567890";
+        const string hostileTraceIdentifier = "host\r{34}\t567890";
         await using WebApplicationFactory<Program> factory = CreateFactory(
             string.Empty,
             8,
             "correlationid",
-            hostileCorrelationId
+            hostileCorrelationId,
+            hostileTraceIdentifier
         );
         using HttpClient client = factory.CreateClient();
         HttpResponseMessage response = await client.GetAsync("/missing-route");
@@ -92,12 +93,15 @@ public class Given_The_MapFallback_Correlation_Id
         string correlationId = body["correlationId"]!.GetValue<string>();
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-        correlationId.Should().NotBeEmpty();
-        correlationId.Should().NotBe(AspNetCoreFrontend.NormalizeTraceId(hostileCorrelationId, 8).Value);
+        correlationId.Should().Be("host{34");
+        correlationId.Should().NotContain("12");
     }
 
-    private sealed class CorrelationIdHeaderInjectionStartupFilter(string headerName, string headerValue)
-        : IStartupFilter
+    private sealed class CorrelationIdHeaderInjectionStartupFilter(
+        string headerName,
+        string headerValue,
+        string traceIdentifier
+    ) : IStartupFilter
     {
         public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next)
         {
@@ -106,6 +110,7 @@ public class Given_The_MapFallback_Correlation_Id
                 app.Use(
                     async (context, nextMiddleware) =>
                     {
+                        context.TraceIdentifier = traceIdentifier;
                         context.Request.Headers[headerName] = headerValue;
                         await nextMiddleware();
                     }

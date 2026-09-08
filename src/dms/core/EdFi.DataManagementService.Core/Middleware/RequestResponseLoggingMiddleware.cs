@@ -29,7 +29,7 @@ internal class RequestResponseLoggingMiddleware(ILogger _logger) : IPipelineStep
         // client-supplied on that path, so it must keep flowing through LoggingSanitizer.
         string method = LoggingSanitizer.SanitizeForLogging(requestInfo.MethodName);
         string path = LoggingSanitizer.SanitizeForLogging(requestInfo.FrontendRequest.Path);
-        string sanitizedTraceId = LoggingSanitizer.SanitizeForLogging(traceId);
+        string sanitizedTraceId = LoggingSanitizer.SanitizeForCorrelationId(traceId);
 
         var scopeValues = new Dictionary<string, object>
         {

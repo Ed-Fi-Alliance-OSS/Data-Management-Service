@@ -248,10 +248,7 @@ public class Given_HealthCheckEndpointModule
         JsonNode body = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-        body["correlationId"]!
-            .GetValue<string>()
-            .Should()
-            .Be(AspNetCoreFrontend.NormalizeTraceId(hostileCorrelationId, 8).Value);
+        body["correlationId"]!.GetValue<string>().Should().Be("12{34}");
         documentCacheStatusService.CallCount.Should().Be(0);
     }
 

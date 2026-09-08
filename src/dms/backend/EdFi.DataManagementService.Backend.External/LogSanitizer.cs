@@ -36,9 +36,11 @@ public static class LogSanitizer
             return string.Empty;
         }
 
-        // Behaviorally redundant with the whitelist below, which also rejects every
-        // line-ending character. Kept because static log-injection analysis (CodeQL)
-        // models ReplaceLineEndings as a sanitizer but not the custom whitelist loop.
+        // Required for the correlation-ID path, whose broader allowlist is only
+        // !char.IsControl(c) and would otherwise preserve Unicode line/paragraph
+        // separators that ReplaceLineEndings removes. Also kept because static
+        // log-injection analysis (CodeQL) models ReplaceLineEndings as a sanitizer
+        // but not the custom allowlist loop.
         input = input.ReplaceLineEndings(string.Empty);
 
         // First pass: check if sanitization is needed and count safe characters
