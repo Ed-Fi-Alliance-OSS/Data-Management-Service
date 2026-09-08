@@ -176,7 +176,7 @@ public class LoggingMiddleware
                                     message = "The server encountered an unexpected condition that prevented it from fulfilling the request.",
                                     // The error response body echoes the sanitized and truncated
                                     // correlation value so it always matches the TraceId searchable
-                                    // in the logs. Applying the same logging whitelist and length cap
+                                    // in the logs. Echoing that already-normalized value
                                     // to the response ensures log/response parity.
                                     traceId = traceId,
                                 }
