@@ -400,16 +400,39 @@ public static class AspNetCoreFrontend
     /// </summary>
     public static TraceId ExtractTraceIdFrom(HttpRequest request, IOptions<AppSettings> options)
     {
-        string headerName = options.Value.CorrelationIdHeader;
+        return ExtractTraceIdFrom(
+            request,
+            options.Value.CorrelationIdHeader,
+            options.Value.CorrelationIdMaxLength
+        );
+    }
+
+    internal static TraceId ExtractTraceIdFrom(
+        HttpRequest request,
+        string correlationIdHeader,
+        int correlationIdMaxLength
+    )
+    {
+        string headerName = correlationIdHeader;
         if (
             !string.IsNullOrEmpty(headerName)
             && request.Headers.TryGetValue(headerName, out var correlationId)
             && !string.IsNullOrEmpty(correlationId)
         )
         {
-            return new TraceId(correlationId!);
+            return NormalizeTraceId(correlationId.ToString(), correlationIdMaxLength);
         }
-        return new TraceId(request.HttpContext.TraceIdentifier);
+
+        return NormalizeTraceId(request.HttpContext.TraceIdentifier, correlationIdMaxLength);
+    }
+
+    internal static TraceId NormalizeTraceId(string? traceId, int correlationIdMaxLength)
+    {
+        string value = traceId ?? string.Empty;
+        int maxLength =
+            correlationIdMaxLength > 0 ? correlationIdMaxLength : AppSettings.DefaultCorrelationIdMaxLength;
+        string truncatedTraceId = value.Length > maxLength ? value[..maxLength] : value;
+        return new TraceId(LoggingSanitizer.SanitizeForCorrelationId(truncatedTraceId));
     }
 
     /// <summary>

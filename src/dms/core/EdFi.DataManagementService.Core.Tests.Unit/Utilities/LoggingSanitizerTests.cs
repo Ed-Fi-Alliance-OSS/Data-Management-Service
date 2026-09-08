@@ -23,6 +23,52 @@ public class LoggingSanitizerTests
     }
 
     [TestFixture]
+    public class Given_SanitizeForCorrelationId_With_Printable_Characters : LoggingSanitizerTests
+    {
+        private string _result = string.Empty;
+
+        [SetUp]
+        public void Setup()
+        {
+            _result = LoggingSanitizer.SanitizeForCorrelationId("trace+={}@|,#()[]<>\"'ß");
+        }
+
+        [Test]
+        public void It_preserves_every_printable_non_control_character()
+        {
+            _result.Should().Be("trace+={}@|,#()[]<>\"'ß");
+        }
+    }
+
+    [TestFixture]
+    public class Given_SanitizeForCorrelationId_With_Control_Characters : LoggingSanitizerTests
+    {
+        private string _result = string.Empty;
+
+        [SetUp]
+        public void Setup()
+        {
+            _result = LoggingSanitizer.SanitizeForCorrelationId("trace\r\nid\twith\0unsafe");
+        }
+
+        [Test]
+        public void It_removes_every_control_character()
+        {
+            _result.Should().Be("traceidwithunsafe");
+        }
+    }
+
+    [TestFixture]
+    public class Given_SanitizeForCorrelationId_With_Null_Input : LoggingSanitizerTests
+    {
+        [Test]
+        public void It_returns_empty_string()
+        {
+            LoggingSanitizer.SanitizeForCorrelationId(null).Should().BeEmpty();
+        }
+    }
+
+    [TestFixture]
     public class Given_SanitizeForConsole_With_Newlines : LoggingSanitizerTests
     {
         private string _result = string.Empty;

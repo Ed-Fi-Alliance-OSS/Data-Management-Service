@@ -43,10 +43,7 @@ public class LoggingMiddleware
         var sanitizedMethod = LoggingSanitizer.SanitizeForLogging(context.Request.Method);
         var sanitizedPath = LoggingSanitizer.SanitizeForLogging(context.Request.Path.Value);
         var pathBase = LoggingSanitizer.SanitizeForLogging(context.Request.PathBase.Value);
-        var rawTraceId = ExtractTraceId(context) ?? string.Empty;
-        var truncatedTraceId =
-            rawTraceId.Length > _correlationIdMaxLength ? rawTraceId[.._correlationIdMaxLength] : rawTraceId;
-        var traceId = LoggingSanitizer.SanitizeForLogging(truncatedTraceId);
+        var traceId = ExtractTraceId(context);
 
         var scopeValues = new Dictionary<string, object>
         {
@@ -206,7 +203,7 @@ public class LoggingMiddleware
         }
     }
 
-    private string? ExtractTraceId(HttpContext context)
+    private string ExtractTraceId(HttpContext context)
     {
         try
         {
@@ -214,7 +211,9 @@ public class LoggingMiddleware
         }
         catch (OptionsValidationException)
         {
-            return context.TraceIdentifier;
+            return AspNetCoreFrontend
+                .NormalizeTraceId(context.TraceIdentifier, _correlationIdMaxLength)
+                .Value;
         }
     }
 

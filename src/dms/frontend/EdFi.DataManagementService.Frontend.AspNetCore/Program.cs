@@ -6,7 +6,6 @@
 using System.Linq;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Configuration;
-using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Response;
 using EdFi.DataManagementService.Core.Startup;
 using EdFi.DataManagementService.Core.Utilities;
@@ -209,24 +208,21 @@ if (invalidConfigurationException is null)
         app.MapHealthChecks("/health");
 
         // Catch-all fallback for unmatched routes
-        app.MapFallback(context =>
-        {
-            context.Response.StatusCode = 404;
-            context.Response.ContentType = "application/problem+json";
+        app.MapFallback(
+            (HttpContext context, IOptions<AppSettings> appSettings) =>
+            {
+                context.Response.StatusCode = 404;
+                context.Response.ContentType = "application/problem+json";
 
-            var traceId = context.Request.Headers.TryGetValue(
-                app.Configuration.GetValue<string>("AppSettings:CorrelationIdHeader") ?? "correlationid",
-                out var correlationId
-            )
-                ? correlationId.ToString()
-                : context.TraceIdentifier;
-
-            var response = FailureResponse.ForNotFound(
-                "The specified data could not be found.",
-                new TraceId(traceId)
-            );
-            return context.Response.WriteAsJsonAsync(response);
-        });
+                var traceId =
+                    EdFi.DataManagementService.Frontend.AspNetCore.AspNetCoreFrontend.ExtractTraceIdFrom(
+                        context.Request,
+                        appSettings
+                    );
+                var response = FailureResponse.ForNotFound("The specified data could not be found.", traceId);
+                return context.Response.WriteAsJsonAsync(response);
+            }
+        );
     }
     catch (Exception ex)
     {

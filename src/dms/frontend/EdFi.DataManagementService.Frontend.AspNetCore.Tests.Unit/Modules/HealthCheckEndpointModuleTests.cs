@@ -10,9 +10,12 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Security;
+using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Modules;
 using FluentAssertions;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Configuration;
@@ -37,7 +40,11 @@ public class Given_HealthCheckEndpointModule
         string? requiredRole,
         ScriptedJwtValidationService? jwtValidationService = null,
         string? roleClaimType = RoleClaimType,
-        RecordingLoggerProvider? loggerProvider = null
+        RecordingLoggerProvider? loggerProvider = null,
+        string correlationIdHeader = "",
+        int correlationIdMaxLength = AppSettings.DefaultCorrelationIdMaxLength,
+        string injectedCorrelationIdHeader = "",
+        string? injectedCorrelationId = null
     )
     {
         return new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
@@ -63,6 +70,8 @@ public class Given_HealthCheckEndpointModule
 
                     Dictionary<string, string?> jwtConfiguration = new()
                     {
+                        ["AppSettings:CorrelationIdHeader"] = correlationIdHeader,
+                        ["AppSettings:CorrelationIdMaxLength"] = correlationIdMaxLength.ToString(),
                         ["JwtAuthentication:ClientRole"] = "legacy-service",
                     };
                     if (roleClaimType is not null)
@@ -76,6 +85,16 @@ public class Given_HealthCheckEndpointModule
             builder.ConfigureServices(services =>
             {
                 TestMockHelper.AddEssentialMocks(services);
+                if (injectedCorrelationId is not null)
+                {
+                    services.AddSingleton<IStartupFilter>(
+                        new CorrelationIdHeaderInjectionStartupFilter(
+                            injectedCorrelationIdHeader,
+                            injectedCorrelationId
+                        )
+                    );
+                }
+
                 services.Replace(
                     ServiceDescriptor.Singleton<IJwtValidationService>(
                         jwtValidationService
@@ -211,6 +230,32 @@ public class Given_HealthCheckEndpointModule
     }
 
     [Test]
+    public async Task It_normalizes_the_correlation_id_in_unauthorized_problem_details()
+    {
+        const string hostileCorrelationId = "12\r{34}\t567890";
+        ScriptedDocumentCacheStatusService documentCacheStatusService = EmptyStatusService();
+        await using WebApplicationFactory<Program> factory = CreateFactory(
+            documentCacheStatusService,
+            ValidRequiredRole,
+            correlationIdHeader: "correlationid",
+            correlationIdMaxLength: 8,
+            injectedCorrelationIdHeader: "correlationid",
+            injectedCorrelationId: hostileCorrelationId
+        );
+        using HttpClient client = factory.CreateClient();
+
+        HttpResponseMessage response = await client.GetAsync("/health/document-cache");
+        JsonNode body = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        body["correlationId"]!
+            .GetValue<string>()
+            .Should()
+            .Be(AspNetCoreFrontend.NormalizeTraceId(hostileCorrelationId, 8).Value);
+        documentCacheStatusService.CallCount.Should().Be(0);
+    }
+
+    [Test]
     public async Task It_returns_DocumentCacheStatusAuthorization_401_when_token_is_malformed()
     {
         ScriptedDocumentCacheStatusService documentCacheStatusService = EmptyStatusService();
@@ -342,6 +387,25 @@ public class Given_HealthCheckEndpointModule
             .Metadata.GetMetadata<IExcludeFromDescriptionMetadata>()!
             .ExcludeFromDescription.Should()
             .BeTrue();
+    }
+
+    private sealed class CorrelationIdHeaderInjectionStartupFilter(string headerName, string headerValue)
+        : IStartupFilter
+    {
+        public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next)
+        {
+            return app =>
+            {
+                app.Use(
+                    async (context, nextMiddleware) =>
+                    {
+                        context.Request.Headers[headerName] = headerValue;
+                        await nextMiddleware();
+                    }
+                );
+                next(app);
+            };
+        }
     }
 
     private sealed class ScriptedDocumentCacheStatusService(DocumentCacheStatusResponse response)

@@ -286,10 +286,10 @@ public class Given_LoggingMiddleware
         await middleware.Invoke(httpContext, logger);
 
         var entry = logger.Entries.Single(e => e.EventId.Name == "HttpRequestCompleted");
-        entry.State.ContainStructuredProperty("TraceId", "traceidwithunsafe");
+        entry.State.ContainStructuredProperty("TraceId", "traceidwith{unsafe}");
         entry
             .ActiveScopes.Should()
-            .Contain(scope => scope.HasStructuredProperty("TraceId", "traceidwithunsafe"));
+            .Contain(scope => scope.HasStructuredProperty("TraceId", "traceidwith{unsafe}"));
     }
 
     [Test]
@@ -449,13 +449,13 @@ public class Given_LoggingMiddleware
         // Response must reflect the sanitized (not raw) value so it matches what is searchable in logs
         (body?["traceId"]?.GetValue<string>())
             .Should()
-            .Be("operatorcorrelationid");
+            .Be("operator{correlation}id");
 
         var entry = logger.Entries.Single(e => e.EventId.Name == "HttpRequestFailed");
-        entry.State.ContainStructuredProperty("TraceId", "operatorcorrelationid");
+        entry.State.ContainStructuredProperty("TraceId", "operator{correlation}id");
         entry
             .ActiveScopes.Should()
-            .Contain(scope => scope.HasStructuredProperty("TraceId", "operatorcorrelationid"));
+            .Contain(scope => scope.HasStructuredProperty("TraceId", "operator{correlation}id"));
     }
 
     [Test]
@@ -485,6 +485,23 @@ public class Given_LoggingMiddleware
         var entry = logger.Entries.Single(e => e.EventId.Name == "HttpRequestFailed");
         entry.State.ContainStructuredProperty("TraceId", truncated);
         entry.ActiveScopes.Should().Contain(scope => scope.HasStructuredProperty("TraceId", truncated));
+    }
+
+    [Test]
+    public async Task It_normalizes_hostile_correlation_ids_in_the_request_scope()
+    {
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Method = "GET";
+        httpContext.Request.Path = "/ed-fi/students";
+        httpContext.Request.Headers["x-correlation-id"] = "12\r{34}\t567890";
+        var logger = new TestLogger<LoggingMiddleware>();
+        var middleware = new LoggingMiddleware(_next, AppSettingsWithCorrelationHeader("x-correlation-id"));
+
+        await middleware.Invoke(httpContext, logger);
+
+        var entry = logger.Entries.Single(e => e.EventId.Name == "HttpRequestCompleted");
+        entry.State.ContainStructuredProperty("TraceId", "12{34}567890");
+        entry.ActiveScopes.Should().Contain(scope => scope.HasStructuredProperty("TraceId", "12{34}567890"));
     }
 
     [Test]

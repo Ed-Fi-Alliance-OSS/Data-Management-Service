@@ -199,16 +199,15 @@ those fields.
 A correlation ID is normalized before it is used anywhere — whether it came from
 the configured correlation header or from `HttpContext.TraceIdentifier`:
 
-* Characters outside a logging-safe allowlist are removed. The allowlist exists
-  to prevent log forging and structured-log template injection; a
-  client-supplied value containing a carriage return or line feed cannot
-  introduce additional log lines. This allowlist is scoped to correlation IDs
-  and is deliberately broader than the stricter one applied to
-  internally-controlled logged values such as `Method` and `Path`, because a
-  client-supplied correlation ID normally originates in an upstream system's own
-  identifier scheme.
 * Values longer than `AppSettings:CorrelationIdMaxLength` (default `255`) are
-  truncated. See [Configuration](./CONFIGURATION.md).
+  truncated first. See [Configuration](./CONFIGURATION.md).
+* After truncation, every control character is removed. The correlation-ID
+  allowlist is therefore "all printable non-control characters": it strips
+  carriage return, line feed, tab, NUL, and the rest of the Unicode control
+  range, while preserving every other printable character, including punctuation
+  and non-ASCII text. This broader allowlist is scoped to correlation IDs and
+  is deliberately distinct from the stricter one applied to internally
+  controlled logged values such as `Method` and `Path`.
 
 Normalization is applied identically everywhere a correlation ID appears: every
 request log event, and the `correlationId` (or `traceId`) of every error response

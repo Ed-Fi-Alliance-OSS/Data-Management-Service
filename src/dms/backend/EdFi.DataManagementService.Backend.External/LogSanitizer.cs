@@ -17,6 +17,20 @@ public static class LogSanitizer
     /// </summary>
     public static string SanitizeForLog(string? input)
     {
+        return Sanitize(input, IsAllowedChar);
+    }
+
+    /// <summary>
+    /// Sanitizes a correlation ID by removing control characters and preserving every
+    /// other printable character.
+    /// </summary>
+    public static string SanitizeCorrelationId(string? input)
+    {
+        return Sanitize(input, static c => !char.IsControl(c));
+    }
+
+    private static string Sanitize(string? input, Func<char, bool> isAllowedChar)
+    {
         if (string.IsNullOrEmpty(input))
         {
             return string.Empty;
@@ -33,7 +47,7 @@ public static class LogSanitizer
 
         foreach (char c in input)
         {
-            if (IsAllowedChar(c))
+            if (isAllowedChar(c))
             {
                 safeCount++;
             }
@@ -57,13 +71,13 @@ public static class LogSanitizer
 #pragma warning disable S3267 // Loop intentionally avoids LINQ for performance - no intermediate allocations
         return string.Create(
             safeCount,
-            input,
-            static (span, source) =>
+            (Input: input, IsAllowedChar: isAllowedChar),
+            static (span, state) =>
             {
                 int index = 0;
-                foreach (char c in source)
+                foreach (char c in state.Input)
                 {
-                    if (IsAllowedChar(c))
+                    if (state.IsAllowedChar(c))
                     {
                         span[index++] = c;
                     }

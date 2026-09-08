@@ -25,6 +25,12 @@ public static class LoggingSanitizer
     public static string SanitizeForLogging(string? input) => LogSanitizer.SanitizeForLog(input);
 
     /// <summary>
+    /// Sanitizes a correlation ID by removing control characters while preserving every
+    /// other printable character.
+    /// </summary>
+    public static string SanitizeForCorrelationId(string? input) => LogSanitizer.SanitizeCorrelationId(input);
+
+    /// <summary>
     /// Sanitizes input for console/stderr output by stripping control characters,
     /// except newline (\n) and carriage return (\r) which are preserved for
     /// multi-line output readability (e.g., diff reports from SeedValidator).
