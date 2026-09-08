@@ -40,9 +40,10 @@ param(
     [string]
     $PackageFile,
 
-    # Directory to extract into. Must not be inside the folder feed the consumer restores from.
-    # Emptied first, so a previous extraction cannot satisfy a presence check for a file the
-    # package under test no longer carries.
+    # A dedicated extraction directory, which must either not exist or be empty. This script never
+    # deletes anything the caller owns, so callers pass a fresh unique path per invocation rather
+    # than reusing one. Requiring it to be empty is also what stops a previous extraction from
+    # satisfying a presence check for a file the package under test no longer carries.
     [Parameter(Mandatory)]
     [string]
     $ExtractTo,
@@ -96,51 +97,32 @@ if (-not (Test-Path -LiteralPath $PackageFile)) {
     throw "Expected plugin contract package was not found: $PackageFile"
 }
 
-# Refuse to recursively delete anything that is not recognisably a previous extraction of this
-# script's own making. Without this the parameter is an arbitrary rm -rf target.
+# This script never deletes anything the caller owns, and that is a deliberate reversal of the
+# sibling custom-validation script's approach rather than an omission.
 #
-# "Contains a nuspec" is not on its own a safe test, because the caller could point this at a
-# directory that happens to hold one. So the directory must ALSO be one this script would itself
-# have produced: a resolved path that is not a filesystem root, not the repository root, and not an
-# ancestor of either this script or the package under test.
+# The sibling treats "this directory contains a *.nuspec" as evidence that a previous run of its own
+# produced it, and then recursively deletes the directory. That test cannot establish ownership: any
+# directory holding any package's nuspec passes it, and every other file in that directory is
+# removed. Excluding known ancestors such as the repository root does not repair it either, because
+# the set of directories the caller might legitimately own is not enumerable from in here.
+#
+# So the destructive branch is gone. The requirement moves to the caller, where it is checkable: pass
+# a path that does not exist, or one that is empty. Callers use a fresh unique directory per
+# invocation. An emptiness requirement preserves the property the deletion was there for, which is
+# that a file left by an earlier extraction must not satisfy a presence check for a file the package
+# under test no longer carries.
 if (Test-Path -LiteralPath $ExtractTo) {
-    $resolvedExtractTo = (Resolve-Path -LiteralPath $ExtractTo).ProviderPath.TrimEnd(
-        [System.IO.Path]::DirectorySeparatorChar,
-        [System.IO.Path]::AltDirectorySeparatorChar
-    )
-    $repositoryRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "../..")).ProviderPath
-    $packageDirectory = [System.IO.Path]::GetDirectoryName(
-        (Resolve-Path -LiteralPath $PackageFile).ProviderPath
-    )
-
-    if ([string]::IsNullOrEmpty($resolvedExtractTo)) {
-        throw "Refusing to empty a filesystem root: $ExtractTo"
-    }
-
-    foreach ($protected in @($repositoryRoot, $packageDirectory, $PSScriptRoot)) {
-        $resolvedProtected = (Resolve-Path -LiteralPath $protected).ProviderPath
-        if (
-            $resolvedProtected -eq $resolvedExtractTo -or
-            $resolvedProtected.StartsWith(
-                $resolvedExtractTo + [System.IO.Path]::DirectorySeparatorChar,
-                [System.StringComparison]::OrdinalIgnoreCase
-            )
-        ) {
-            throw "Refusing to empty $ExtractTo : it contains $resolvedProtected. Pass a dedicated scratch directory."
-        }
-    }
-
     $existingEntries = @(Get-ChildItem -LiteralPath $ExtractTo -Force)
-    $priorExtraction = @(Get-ChildItem -LiteralPath $ExtractTo -Filter "*.nuspec" -File).Count -gt 0
 
-    if ($existingEntries.Count -gt 0 -and -not $priorExtraction) {
-        throw "Refusing to empty $ExtractTo : it is not empty and does not look like a previous package extraction. Pass a dedicated scratch directory."
+    if ($existingEntries.Count -gt 0) {
+        throw "Refusing to extract into $ExtractTo : it is not empty, and this script never deletes caller content. Pass a dedicated extraction directory that is empty or does not exist."
     }
-
-    Remove-Item -LiteralPath $ExtractTo -Recurse -Force
+}
+else {
+    New-Item -ItemType Directory -Path $ExtractTo -Force | Out-Null
 }
 
-Expand-Archive -LiteralPath $PackageFile -DestinationPath $ExtractTo -Force
+Expand-Archive -LiteralPath $PackageFile -DestinationPath $ExtractTo
 
 [xml]$nuspec = Get-Content -LiteralPath (Join-Path $ExtractTo "$PackageId.nuspec")
 $metadata = $nuspec.package.metadata
