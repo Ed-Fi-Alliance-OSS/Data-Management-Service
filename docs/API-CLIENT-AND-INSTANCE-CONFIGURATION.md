@@ -49,8 +49,8 @@ It exists so an operator can provision a client for operations that are not
 scoped to a data store, and it is provisioned through the ordinary API-client
 lifecycle rather than through any special route.
 
-`dataStoreIds` behaves as follows on both `POST /v3/applications` and the
-`/v3/apiClients` endpoints:
+On `POST /v3/apiClients` and `PUT /v3/apiClients/{id}`, the request's
+`dataStoreIds` behaves as follows:
 
 | Request value | Behavior |
 | --- | --- |
@@ -59,6 +59,13 @@ lifecycle rather than through any special route.
 | `null` | Rejected with `400` and a `DataStoreIds` validation error. |
 | `[1, 2]` | Accepted when every id exists **in the caller's tenant**. |
 | ids that are absent, or belong to another tenant | Rejected with `409` unresolved reference; nothing is created, and on update the client's existing assignment is left unchanged. |
+
+Application creation is a separate contract and only its empty-list path is
+described here: `POST /v3/applications` with `"dataStoreIds": []` is accepted
+and creates the application's initial client with no data store assignment,
+which is the supported way to provision one. The table above states the
+API-client endpoints' behavior and does not describe how the application
+endpoints treat other `dataStoreIds` values.
 
 Two properties of this contract are easy to get wrong:
 
@@ -71,10 +78,10 @@ Two properties of this contract are easy to get wrong:
   to another tenant as one with an assignment.
 
 Removing a client's last data store assignment does not relax anything else.
-The client still requires approval to obtain a token: `isApproved` is
-unchanged by this contract, and an unapproved client is refused a token whether
-or not it has a data store. Ownership configuration, credential handling and
-tenant isolation are likewise unaffected.
+Approval is still required to obtain a token: this contract changes neither
+`isApproved` nor how it is enforced, and the approval gate does not consider a
+client's data store assignments. Ownership configuration, credential handling
+and tenant isolation are likewise unaffected.
 
 The `dataStoreIds` **token claim** for such a client differs between the two
 supported identity providers, and consumers must treat the two as the same
@@ -118,12 +125,19 @@ initial client's. To act on that client, read it with
    with an empty body `{}`. The response returns the client's **new** secret
    alongside its unchanged key; use the returned pair from then on. The data
    store assignment is untouched.
-7. **Exchange the current credentials for a token** — `POST /connect/token` with
-   `grant_type=client_credentials`, the client's current `key`/`secret`, and
-   `scope` set to the application's **claim set name**. Supply the scope
-   explicitly: the token endpoint always forwards a `scope` parameter, so
-   omitting it sends an empty scope, which the self-contained provider ignores
-   but Keycloak rejects with `invalid_scope`.
+7. **Exchange the current credentials for a token** — `POST /connect/token` as
+   `application/x-www-form-urlencoded`. The client's current `key` and `secret`
+   are values, not parameter names: send them as the form fields `client_id` and
+   `client_secret`, with `grant_type=client_credentials` and `scope` set to the
+   application's **claim set name**.
+
+   ```text
+   grant_type=client_credentials&client_id=<key>&client_secret=<secret>&scope=<claim set name>
+   ```
+
+   Supply the scope explicitly: the token endpoint always forwards a `scope`
+   parameter, so omitting it sends an empty scope, which the self-contained
+   provider ignores but Keycloak rejects with `invalid_scope`.
 8. **Delete a client** — `DELETE /v3/apiClients/{numeric id}`, after which
    `GET /v3/apiClients/{key}` reports `404`.
 
