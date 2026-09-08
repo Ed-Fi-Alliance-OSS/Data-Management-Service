@@ -352,9 +352,11 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
 
-          # Before the stamping build, because the assertion below is a before-and-after comparison.
-          # A fresh directory per run: the helper refuses a non-empty one, so a warm runner cannot
-          # compare a build against a baseline it did not precede.
+          # Before the stamping build, because the assertion below is a before-and-after
+          # comparison: the plugin props' SHA-256 and the DMS props' pre-build VersionPrefix, the
+          # latter so a verification version the tree already carried is refused rather than proving
+          # nothing. A fresh directory per run: the helper refuses a non-empty one, so a warm runner
+          # cannot compare a build against a baseline it did not precede.
           $baseline = Join-Path $env:RUNNER_TEMP "plugins-version-baseline-$([guid]::NewGuid().ToString('N'))"
 
           ./eng/verification/Assert-PluginsVersionIndependence.ps1 `
@@ -371,6 +373,21 @@ jobs:
             -Configuration ${{ env.CONFIGURATION }} `
             -DMSVersion $packageVersion `
             -LockedMode
+
+      - name: Assert Plugins Version Independence
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          # Immediately after the stamping build, and it reads the tree rather than writing to it:
+          # the regenerated src/dms/Directory.Build.props is deliberately left in place for the
+          # `dotnet pack --no-build` steps below, which take their nuspec metadata from it. The
+          # version here must be the one the build was given, or the positive control is asserting
+          # against a stamping run that never happened.
+          $packageVersion = "${{ steps.versions.outputs.dms-semver }}" -replace "dms-v", ""
+
+          ./eng/verification/Assert-PluginsVersionIndependence.ps1 `
+            -BaselineDirectory "${{ steps.plugins-version-baseline.outputs.baseline-directory }}" `
+            -ExpectedDMSVersion $packageVersion
 
       - name: Create SchemaTools NuGet Package
         run: |
@@ -500,6 +517,22 @@ jobs:
           # unexercised while the suite still looked green.
           $result = Invoke-Pester -Path "eng/verification/tests" -Output Detailed -PassThru
 
+          # A syntax error or a discovery-time failure is recorded in FailedContainersCount or
+          # FailedBlocksCount and produces no test object at all, so neither FailedCount nor the
+          # non-passing sweep below can see it. The bootstrap Pester lane fails on the same two
+          # counters; this one checked neither.
+          if ($result.FailedContainersCount -gt 0 -or $result.FailedBlocksCount -gt 0) {
+              $containerErrors = @(
+                  $result.Containers |
+                      Where-Object { -not $_.Passed } |
+                      ForEach-Object {
+                          $reason = ($_.ErrorRecord | ForEach-Object { $_.ToString() }) -join "; "
+                          "$($_.Item): $reason"
+                      }
+              )
+              throw "The verification script test suite failed to run: $($result.FailedContainersCount) container(s), $($result.FailedBlocksCount) block(s).`n$($containerErrors -join "`n")"
+          }
+
           # Anything other than a pass fails the lane, inconclusive and skipped included. A suite
           # that quietly stopped running half its cases is the failure this step exists to notice,
           # and FailedCount alone cannot see it.
@@ -515,26 +548,6 @@ jobs:
           }
 
           Write-Output "All $($result.TotalCount) verification script tests passed."
-
-      - name: Assert Plugins Version Independence
-        # Runs even when an earlier step failed, so the stamped src/dms/Directory.Build.props is
-        # restored rather than left behind, and gated on the baseline having actually been captured -
-        # without it this step has nothing to compare against and would report a confusing second
-        # failure. The build step keeps its own failure status either way.
-        if: ${{ !cancelled() && steps.plugins-version-baseline.outcome == 'success' }}
-        run: |
-          $ErrorActionPreference = "Stop"
-
-          # Deliberately after the packaging steps rather than straight after the build. This
-          # restores the committed src/dms/Directory.Build.props, and the committed and generated
-          # files differ in their Copyright element, so restoring earlier would put different
-          # metadata in front of the `dotnet pack --no-build` invocations above and silently change
-          # the SchemaTools and custom-validation nuspecs.
-          $packageVersion = "${{ steps.versions.outputs.dms-semver }}" -replace "dms-v", ""
-
-          ./eng/verification/Assert-PluginsVersionIndependence.ps1 `
-            -BaselineDirectory "${{ steps.plugins-version-baseline.outputs.baseline-directory }}" `
-            -ExpectedDMSVersion $packageVersion
 
   build-dms-solution:
     name: Build DMS Solution

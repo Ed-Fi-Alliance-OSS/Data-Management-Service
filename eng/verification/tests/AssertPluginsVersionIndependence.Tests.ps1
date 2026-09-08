@@ -7,74 +7,88 @@
 
 # Regression cover for Assert-PluginsVersionIndependence.ps1.
 #
-# Two properties are pinned here, and the second is the one an earlier revision got wrong.
+# Two properties are pinned here, and the second is the one that keeps the first honest.
 #
-# The check must not be vacuous: it has to fail when no stamping run happened, because otherwise its
-# real assertion - that the plugin contract's props was untouched - passes trivially.
+# The check must fail when src/plugins/Directory.Build.props moved during a stamping build - that is
+# the whole point of it - and it must also fail when no stamping happened at all, because otherwise
+# the plugin-side assertion passes trivially on a run that proves nothing.
 #
-# And it must not claim ownership of a file it did not write. That revision decided "this is the
-# build's output" from the presence of the generated-file marker comment. A developer can edit an
-# already-stamped file and the marker survives, so the check accepted the edit, reported success,
-# and restored the baseline over it. Both edit shapes that defeat a marker test are covered below:
-# changing an existing property, and adding new content.
+# The stamped fixtures below carry a VersionPrefix and nothing else of interest. They deliberately do
+# not reproduce what SetDMSAssemblyInfo writes: the verifier reads only the version out of that file,
+# so a second copy of the build script's template here would pin behaviour neither side has.
 #
-# Every fixture is a purpose-created repository under the temp directory, passed via -RepositoryRoot
-# with a copy of the real build script. Nothing here writes into the working tree.
+# Every fixture is a purpose-created repository under the temp directory, passed via -RepositoryRoot.
+# Nothing here writes into the working tree, and nothing here reads from it either - see
+# New-FixtureRepository for why the second half matters as much as the first.
 
 BeforeAll {
     $script:verifier = [System.IO.Path]::GetFullPath(
         (Join-Path $PSScriptRoot "../Assert-PluginsVersionIndependence.ps1")
     )
-    $script:repositoryRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../.."))
-    $script:realBuildScript = Join-Path $script:repositoryRoot "build-dms.ps1"
-
     $script:fixtureRoot = Join-Path ([System.IO.Path]::GetTempPath()) "dms1496-versioncheck-tests-$([guid]::NewGuid().ToString('N'))"
     New-Item -ItemType Directory -Path $script:fixtureRoot -Force | Out-Null
 
-    # A copy of the real build script travels with each fixture, so the expected stamped content the
-    # verifier derives is the production template rather than a restatement of it.
+    # A fixture's props files are written from the literals below rather than copied out of the
+    # working tree, and that is not a stylistic choice.
+    #
+    # The CI lane runs this suite in the same workspace as, and after, the BuildAndPublish that
+    # stamps src/dms/Directory.Build.props - the verifier no longer restores it, deliberately,
+    # because the `dotnet pack --no-build` steps in between need the stamped metadata. So by the
+    # time Pester runs, the working-tree DMS props already declares a VersionPrefix. A fixture
+    # copied from it would carry that version, and the not-stamped case below would silently stop
+    # being a not-stamped case: it would get the wrong-version diagnostic instead of the missing-
+    # VersionPrefix one and fail the lane.
+    #
+    # The plugin-side literal is fixed here for the same reason in the other direction - the
+    # fixtures edit it by name, so the contract's real version bumping must not decide whether a
+    # test exercises anything.
+    #
+    # Both are the shape of their committed counterparts reduced to what the verifier reads: the
+    # DMS one carries no VersionPrefix, which is the pre-build state, and the plugin one carries a
+    # VersionPrefix that must never move.
     function New-FixtureRepository {
         [CmdletBinding(SupportsShouldProcess)]
         param([Parameter(Mandatory)][string] $Name)
 
         $root = Join-Path $script:fixtureRoot "$Name-$([guid]::NewGuid().ToString('N'))"
 
+        $pluginsProps = @"
+<Project>
+    <PropertyGroup>
+        <VersionPrefix>1.0.0</VersionPrefix>
+        <AssemblyVersion>1.0.0</AssemblyVersion>
+        <FileVersion>1.0.0</FileVersion>
+        <Product>Ed-Fi API</Product>
+    </PropertyGroup>
+</Project>
+"@
+
+        $dmsProps = @"
+<Project>
+    <PropertyGroup>
+        <AssemblyVersion>8.0.0</AssemblyVersion>
+        <FileVersion>8.0.0</FileVersion>
+        <InformationalVersion>8.0.0</InformationalVersion>
+        <Product>Ed-Fi API</Product>
+    </PropertyGroup>
+</Project>
+"@
+
         if ($PSCmdlet.ShouldProcess($root, "Create fixture repository")) {
             New-Item -ItemType Directory -Path (Join-Path $root "src/plugins") -Force | Out-Null
             New-Item -ItemType Directory -Path (Join-Path $root "src/dms") -Force | Out-Null
 
-            Copy-Item -LiteralPath (Join-Path $script:repositoryRoot "src/plugins/Directory.Build.props") `
-                -Destination (Join-Path $root "src/plugins/Directory.Build.props")
-            Copy-Item -LiteralPath (Join-Path $script:repositoryRoot "src/dms/Directory.Build.props") `
-                -Destination (Join-Path $root "src/dms/Directory.Build.props")
-            Copy-Item -LiteralPath $script:realBuildScript -Destination (Join-Path $root "build-dms.ps1")
+            Set-Content -LiteralPath (Join-Path $root "src/plugins/Directory.Build.props") `
+                -Value $pluginsProps -NoNewline
+            Set-Content -LiteralPath (Join-Path $root "src/dms/Directory.Build.props") `
+                -Value $dmsProps -NoNewline
         }
 
         return $root
     }
 
-    # What a real stamping run leaves behind, produced the same way the verifier derives it, so the
-    # fixtures exercise the production template rather than a hand-written approximation of it.
-    function Get-StampedPropsContent {
-        param([Parameter(Mandatory)][string] $Version)
-
-        $scriptText = Get-Content -LiteralPath $script:realBuildScript -Raw
-        $templateMatch = [regex]::Match(
-            $scriptText,
-            '(?s)Invoke-RegenerateFile\s+"\$solutionRoot/Directory\.Build\.props"\s+@"\r?\n(?<template>.*?)\r?\n"@'
-        )
-        $templateMatch.Success | Should -BeTrue -Because "the fixtures depend on the same template anchor the verifier uses"
-
-        $maintainersMatch = [regex]::Match($scriptText, '\$maintainers\s*=\s*"(?<value>[^"]*)"')
-
-        # Set-Variable rather than plain assignment: these are read only by the expander at runtime,
-        # so as assignments they read to static analysis as dead stores.
-        Set-Variable -Name "assembly_version" -Value $Version
-        Set-Variable -Name "maintainers" -Value $maintainersMatch.Groups['value'].Value
-
-        return $ExecutionContext.InvokeCommand.ExpandString($templateMatch.Groups['template'].Value)
-    }
-
+    # Stands in for what a stamping build leaves behind, reduced to the one element the verifier
+    # reads. Everything else SetDMSAssemblyInfo writes is that script's business, not this check's.
     function Set-StampedDmsPropsContent {
         [CmdletBinding(SupportsShouldProcess)]
         param(
@@ -84,8 +98,18 @@ BeforeAll {
 
         $path = Join-Path $Root "src/dms/Directory.Build.props"
 
+        $content = @"
+<Project>
+    <!-- This file is generated by the build script. -->
+    <PropertyGroup>
+        <VersionPrefix>$Version</VersionPrefix>
+        <VersionSuffix></VersionSuffix>
+    </PropertyGroup>
+</Project>
+"@
+
         if ($PSCmdlet.ShouldProcess($path, "Write stamped props")) {
-            Set-Content -LiteralPath $path -Value (Get-StampedPropsContent -Version $Version) -NoNewline
+            Set-Content -LiteralPath $path -Value $content -NoNewline
         }
     }
 
@@ -96,7 +120,6 @@ BeforeAll {
             [string] $ExpectedDMSVersion
         )
 
-        $warnings = @()
         $threw = $false
         $message = ""
 
@@ -104,9 +127,6 @@ BeforeAll {
             $arguments = @{
                 BaselineDirectory = $BaselineDirectory
                 RepositoryRoot    = $Root
-                BuildScriptPath   = (Join-Path $Root "build-dms.ps1")
-                WarningVariable   = "+warnings"
-                WarningAction     = "SilentlyContinue"
             }
             if (-not [string]::IsNullOrWhiteSpace($ExpectedDMSVersion)) {
                 $arguments.ExpectedDMSVersion = $ExpectedDMSVersion
@@ -120,9 +140,8 @@ BeforeAll {
         }
 
         return [pscustomobject]@{
-            Threw    = $threw
-            Message  = $message
-            Warnings = ($warnings | ForEach-Object { "$_" }) -join " | "
+            Threw   = $threw
+            Message = $message
         }
     }
 
@@ -133,8 +152,7 @@ BeforeAll {
         $baseline = Join-Path $Root ".baseline"
 
         if ($PSCmdlet.ShouldProcess($baseline, "Capture props baseline")) {
-            & $script:verifier -BaselineDirectory $baseline -CaptureBaseline -RepositoryRoot $Root `
-                -BuildScriptPath (Join-Path $Root "build-dms.ps1") | Out-Null
+            & $script:verifier -BaselineDirectory $baseline -CaptureBaseline -RepositoryRoot $Root | Out-Null
         }
 
         return $baseline
@@ -149,111 +167,67 @@ AfterAll {
 
 Describe "Assert-PluginsVersionIndependence" {
 
-    Context "A file the check did not write is never overwritten" {
+    Context "A genuine stamping run" {
 
-        It "rejects an edit to an already-stamped file that changed an existing property, and preserves it" {
-            # The shape that defeated the marker test: still stamped, still carrying the generated
-            # comment and the expected VersionPrefix, but with one property altered by a person.
-            $root = New-FixtureRepository -Name "edited-existing-property"
+        It "accepts a run that stamped the DMS props and left the plugin contract's props alone" {
+            $root = New-FixtureRepository -Name "happy-path"
             $baseline = New-Baseline -Root $root
-            $props = Join-Path $root "src/dms/Directory.Build.props"
+            $dmsProps = Join-Path $root "src/dms/Directory.Build.props"
+            $pluginsProps = Join-Path $root "src/plugins/Directory.Build.props"
 
             Set-StampedDmsPropsContent -Root $root -Version "9.9.9"
-            $edited = (Get-Content -LiteralPath $props -Raw) -replace
-                "<Product>Ed-Fi API</Product>", "<Product>User edit made after version stamping</Product>"
-            Set-Content -LiteralPath $props -Value $edited -NoNewline
+            $stamped = Get-Content -LiteralPath $dmsProps -Raw
+            $pluginsContent = Get-Content -LiteralPath $pluginsProps -Raw
 
             $result = Invoke-Check -Root $root -BaselineDirectory $baseline -ExpectedDMSVersion "9.9.9"
 
-            $result.Threw | Should -BeTrue
-            $result.Message | Should -BeLike "*does not match what SetDMSAssemblyInfo writes*"
+            $result.Threw | Should -BeFalse -Because $result.Message
 
-            Get-Content -LiteralPath $props -Raw |
-                Should -BeExactly $edited -Because "the check must not overwrite an edit it did not make"
-            $result.Warnings | Should -BeLike "*has no basis for claiming it*"
+            # The check verifies; it does not tidy up. A caller who wants the committed file back
+            # restores it themselves, and a caller mid-way through a packaging sequence needs the
+            # stamped metadata still in place.
+            Get-Content -LiteralPath $dmsProps -Raw |
+                Should -BeExactly $stamped -Because "the check no longer restores the stamped file"
+            Get-Content -LiteralPath $pluginsProps -Raw | Should -BeExactly $pluginsContent
         }
+    }
 
-        It "rejects an addition to an already-stamped file, and preserves it" {
-            $root = New-FixtureRepository -Name "added-content"
+    Context "The plugin contract's props must not move" {
+
+        It "fails when the stamping reached the plugin contract's props" {
+            # The defect the whole check exists to catch, with the DMS side genuinely stamped so the
+            # failure can only be about the plugin contract.
+            $root = New-FixtureRepository -Name "plugins-stamped"
+            $pluginsProps = Join-Path $root "src/plugins/Directory.Build.props"
             $baseline = New-Baseline -Root $root
-            $props = Join-Path $root "src/dms/Directory.Build.props"
 
             Set-StampedDmsPropsContent -Root $root -Version "9.9.9"
-            $edited = (Get-Content -LiteralPath $props -Raw) -replace
-                "</PropertyGroup>", "    <NoWarn>NU1701</NoWarn>`n    </PropertyGroup>"
-            Set-Content -LiteralPath $props -Value $edited -NoNewline
+            (Get-Content -LiteralPath $pluginsProps -Raw) -replace
+                "<VersionPrefix>1.0.0</VersionPrefix>", "<VersionPrefix>9.9.9</VersionPrefix>" |
+                Set-Content -LiteralPath $pluginsProps -NoNewline
 
             $result = Invoke-Check -Root $root -BaselineDirectory $baseline -ExpectedDMSVersion "9.9.9"
 
             $result.Threw | Should -BeTrue
-            Get-Content -LiteralPath $props -Raw | Should -BeExactly $edited
+            $result.Message | Should -BeLike "*must stay outside SetDMSAssemblyInfo's reach*"
         }
 
-        It "rejects a case-only edit to an already-stamped file, and preserves it" {
-            # PowerShell's -eq on strings is case-insensitive, so a full-content comparison written
-            # with -eq still called this the build's own output and overwrote it. The file differs
-            # from the generated bytes in nothing but letter case.
-            $root = New-FixtureRepository -Name "case-only-edit"
+        It "fails on any change to the plugin contract's props, not only a version change" {
+            # SHA-256 over the whole file, so a widened stamping helper that rewrote the file
+            # wholesale is caught even if it happened to leave VersionPrefix alone.
+            $root = New-FixtureRepository -Name "plugins-edited"
+            $pluginsProps = Join-Path $root "src/plugins/Directory.Build.props"
             $baseline = New-Baseline -Root $root
-            $props = Join-Path $root "src/dms/Directory.Build.props"
 
             Set-StampedDmsPropsContent -Root $root -Version "9.9.9"
-            $generated = Get-Content -LiteralPath $props -Raw
-            $edited = $generated.Replace("<Product>Ed-Fi API</Product>", "<Product>ed-fi api</Product>")
-            $edited | Should -Not -BeExactly $generated -Because "the fixture must actually differ, in case alone"
-            $edited | Should -Be $generated -Because "and it must be indistinguishable to a case-insensitive comparison, or this test proves nothing"
-            Set-Content -LiteralPath $props -Value $edited -NoNewline
-            $editedHash = (Get-FileHash -LiteralPath $props -Algorithm SHA256).Hash
+            (Get-Content -LiteralPath $pluginsProps -Raw) -replace
+                "<Product>Ed-Fi API</Product>", "<Product>Ed-Fi API </Product>" |
+                Set-Content -LiteralPath $pluginsProps -NoNewline
 
             $result = Invoke-Check -Root $root -BaselineDirectory $baseline -ExpectedDMSVersion "9.9.9"
 
             $result.Threw | Should -BeTrue
-            $result.Message | Should -BeLike "*does not match what SetDMSAssemblyInfo writes*"
-
-            # -BeExactly, and a hash beside it: Should -Be would ignore exactly the difference under
-            # test and pass on the overwritten file.
-            Get-Content -LiteralPath $props -Raw |
-                Should -BeExactly $edited -Because "a case-only edit is still the caller's content"
-            (Get-FileHash -LiteralPath $props -Algorithm SHA256).Hash |
-                Should -Be $editedHash -Because "byte equality, independent of any string comparison's casing rules"
-        }
-
-        It "rejects content that carries the generated marker but is not the generated output" {
-            # A marker and one matching property were once enough. They must not be.
-            $root = New-FixtureRepository -Name "marker-only"
-            $baseline = New-Baseline -Root $root
-            $props = Join-Path $root "src/dms/Directory.Build.props"
-
-            $fake = @"
-<Project>
-    <!-- This file is generated by the build script. -->
-    <PropertyGroup>
-        <VersionPrefix>9.9.9</VersionPrefix>
-    </PropertyGroup>
-</Project>
-"@
-            Set-Content -LiteralPath $props -Value $fake -NoNewline
-
-            $result = Invoke-Check -Root $root -BaselineDirectory $baseline -ExpectedDMSVersion "9.9.9"
-
-            $result.Threw |
-                Should -BeTrue -Because "a marker plus one property is not evidence that the build wrote this"
-            Get-Content -LiteralPath $props -Raw | Should -BeExactly $fake
-        }
-
-        It "rejects a file stamped to a version other than the one under test, and preserves it" {
-            $root = New-FixtureRepository -Name "wrong-version"
-            $baseline = New-Baseline -Root $root
-            $props = Join-Path $root "src/dms/Directory.Build.props"
-
-            Set-StampedDmsPropsContent -Root $root -Version "1.2.3"
-            $stampedToOther = Get-Content -LiteralPath $props -Raw
-
-            $result = Invoke-Check -Root $root -BaselineDirectory $baseline -ExpectedDMSVersion "9.9.9"
-
-            $result.Threw | Should -BeTrue
-            Get-Content -LiteralPath $props -Raw |
-                Should -BeExactly $stampedToOther -Because "the baseline is retained for explicit recovery rather than assumed"
+            $result.Message | Should -BeLike "*must stay outside SetDMSAssemblyInfo's reach*"
         }
     }
 
@@ -266,7 +240,47 @@ Describe "Assert-PluginsVersionIndependence" {
             $result = Invoke-Check -Root $root -BaselineDirectory $baseline -ExpectedDMSVersion "9.9.9"
 
             $result.Threw | Should -BeTrue
-            $result.Message | Should -BeLike "*proves nothing about version stamping*"
+            $result.Message | Should -BeLike "*declares no VersionPrefix*"
+        }
+
+        It "fails when the DMS props was stamped to some other version" {
+            $root = New-FixtureRepository -Name "wrong-version"
+            $baseline = New-Baseline -Root $root
+
+            Set-StampedDmsPropsContent -Root $root -Version "1.2.3"
+
+            $result = Invoke-Check -Root $root -BaselineDirectory $baseline -ExpectedDMSVersion "9.9.9"
+
+            $result.Threw | Should -BeTrue
+            $result.Message | Should -BeLike "*declares VersionPrefix 1.2.3*"
+        }
+
+        It "fails when the stamped version matches only once case is folded" {
+            # PowerShell's -eq on strings is case-insensitive, so a comparison written with -ne would
+            # accept a prerelease label the build was never given.
+            $root = New-FixtureRepository -Name "case-only-version"
+            $baseline = New-Baseline -Root $root
+
+            Set-StampedDmsPropsContent -Root $root -Version "9.9.9-PRE.1"
+
+            $result = Invoke-Check -Root $root -BaselineDirectory $baseline -ExpectedDMSVersion "9.9.9-pre.1"
+
+            $result.Threw | Should -BeTrue
+            # -BeLikeExactly: Should -BeLike folds case, and case is the entire difference here.
+            $result.Message | Should -BeLikeExactly "*declares VersionPrefix 9.9.9-PRE.1*"
+        }
+
+        It "refuses a verification version the pre-build tree already carried" {
+            # Without this guard a build that stamped nothing satisfies the positive control by
+            # accident, and the plugin-side assertion it is supposed to underwrite means nothing.
+            $root = New-FixtureRepository -Name "already-at-version"
+            Set-StampedDmsPropsContent -Root $root -Version "9.9.9"
+            $baseline = New-Baseline -Root $root
+
+            $result = Invoke-Check -Root $root -BaselineDirectory $baseline -ExpectedDMSVersion "9.9.9"
+
+            $result.Threw | Should -BeTrue
+            $result.Message | Should -BeLike "*already declared VersionPrefix 9.9.9 before the build*"
         }
 
         It "requires the expected version, without which the positive control cannot fire" {
@@ -278,70 +292,60 @@ Describe "Assert-PluginsVersionIndependence" {
             $result.Threw | Should -BeTrue
             $result.Message | Should -BeLike "*-ExpectedDMSVersion is required*"
         }
+    }
 
-        It "refuses a baseline directory that is not empty" {
+    Context "Baseline inputs" {
+
+        It "refuses to capture into a baseline directory that is not empty" {
             $root = New-FixtureRepository -Name "stale-baseline"
             $baseline = Join-Path $root ".stale"
             New-Item -ItemType Directory -Path $baseline -Force | Out-Null
             Set-Content -LiteralPath (Join-Path $baseline "stale.txt") -Value "x" -NoNewline
 
             {
-                & $script:verifier -BaselineDirectory $baseline -CaptureBaseline -RepositoryRoot $root `
-                    -BuildScriptPath (Join-Path $root "build-dms.ps1")
+                & $script:verifier -BaselineDirectory $baseline -CaptureBaseline -RepositoryRoot $root
             } | Should -Throw -ExpectedMessage "*it is not empty*"
         }
 
-        It "fails loudly when the build script's template anchor no longer matches" {
-            # The expected content is read out of the build script. If that template is moved or
-            # rewritten, this check must stop rather than compare against nothing.
-            $root = New-FixtureRepository -Name "template-moved"
-            $baseline = New-Baseline -Root $root
+        It "fails when no baseline was captured before the build" {
+            $root = New-FixtureRepository -Name "absent-baseline"
             Set-StampedDmsPropsContent -Root $root -Version "9.9.9"
-            Set-Content -LiteralPath (Join-Path $root "build-dms.ps1") -Value "# the template moved" -NoNewline
+
+            $result = Invoke-Check -Root $root -BaselineDirectory (Join-Path $root ".never-captured") `
+                -ExpectedDMSVersion "9.9.9"
+
+            $result.Threw | Should -BeTrue
+            $result.Message | Should -BeLike "*No captured baseline*"
+        }
+
+        It "fails when the captured baseline is not readable as JSON" {
+            $root = New-FixtureRepository -Name "corrupt-baseline"
+            $baseline = New-Baseline -Root $root
+            Set-Content -LiteralPath (Join-Path $baseline "plugins-version-baseline.json") `
+                -Value "{ not json" -NoNewline
+
+            Set-StampedDmsPropsContent -Root $root -Version "9.9.9"
 
             $result = Invoke-Check -Root $root -BaselineDirectory $baseline -ExpectedDMSVersion "9.9.9"
 
             $result.Threw | Should -BeTrue
-            $result.Message | Should -BeLike "*Could not locate the SetDMSAssemblyInfo props template*"
-        }
-    }
-
-    Context "A genuine stamping run is accepted and cleaned up" {
-
-        It "accepts the stamped output and restores the baseline" {
-            $root = New-FixtureRepository -Name "happy-path"
-            $props = Join-Path $root "src/dms/Directory.Build.props"
-            $original = Get-Content -LiteralPath $props -Raw
-            $baseline = New-Baseline -Root $root
-
-            Set-StampedDmsPropsContent -Root $root -Version "9.9.9"
-
-            $result = Invoke-Check -Root $root -BaselineDirectory $baseline -ExpectedDMSVersion "9.9.9"
-
-            $result.Threw | Should -BeFalse -Because $result.Message
-            Get-Content -LiteralPath $props -Raw | Should -BeExactly $original
+            $result.Message | Should -BeLike "*not readable as JSON*"
         }
 
-        It "reports a stamped plugins props and still restores the DMS baseline" {
-            # The defect the whole check exists to catch, with the DMS side genuinely the build's
-            # output: the failure must be about the plugin contract, and cleanup must still happen.
-            $root = New-FixtureRepository -Name "plugins-stamped"
-            $dmsProps = Join-Path $root "src/dms/Directory.Build.props"
-            $pluginsProps = Join-Path $root "src/plugins/Directory.Build.props"
-            $originalDms = Get-Content -LiteralPath $dmsProps -Raw
+        It "fails when the captured baseline carries no plugin props hash" {
+            # Valid JSON with the one field the assertion depends on missing. Comparing against
+            # nothing would pass silently, which is the shape of failure this check exists to avoid.
+            $root = New-FixtureRepository -Name "hashless-baseline"
             $baseline = New-Baseline -Root $root
+            Set-Content -LiteralPath (Join-Path $baseline "plugins-version-baseline.json") `
+                -Value '{ "dmsVersionPrefix": null }' -NoNewline
 
             Set-StampedDmsPropsContent -Root $root -Version "9.9.9"
-            (Get-Content -LiteralPath $pluginsProps -Raw) -replace
-                "<VersionPrefix>1.0.0</VersionPrefix>", "<VersionPrefix>9.9.9</VersionPrefix>" |
-                Set-Content -LiteralPath $pluginsProps -NoNewline
 
             $result = Invoke-Check -Root $root -BaselineDirectory $baseline -ExpectedDMSVersion "9.9.9"
 
             $result.Threw | Should -BeTrue
-            $result.Message | Should -BeLike "*must stay outside SetDMSAssemblyInfo's reach*"
-            Get-Content -LiteralPath $dmsProps -Raw |
-                Should -BeExactly $originalDms -Because "a failed assertion must not leave the tree stamped"
+            $result.Message | Should -BeLike "*carries no pluginsSha256*"
         }
     }
 }

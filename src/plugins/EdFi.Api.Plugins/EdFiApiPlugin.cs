@@ -15,7 +15,7 @@ namespace EdFi.Api.Plugins;
 /// <para>
 /// A plugin is published as a directory of assemblies, dropped into a host's plugin root, and named
 /// in the host's allowlist. The host loads the directory's entry assembly into an isolated load
-/// context and invokes the contribution hooks below on the single instance it finds there. The entry
+/// context and invokes the contribution hook below on the single instance it finds there. The entry
 /// assembly must expose exactly one public, non-abstract subclass of this type with a public
 /// parameterless constructor: zero is fatal, because the operator allowlisted a directory that
 /// contributes nothing, and more than one is fatal, because choosing between them would be
@@ -52,17 +52,22 @@ public abstract class EdFiApiPlugin
     /// <remarks>
     /// Override to register the plugin's own services. The body is ordinary registration code; the
     /// host calls it on every loaded plugin unconditionally, so there is no interface to implement
-    /// and no way for an allowlisted plugin to be skipped for this phase. The base implementation is
-    /// a no-op, so a plugin that contributes no services simply does not override it.
+    /// and no way for an allowlisted plugin to be skipped. The base implementation is a no-op, so a
+    /// plugin that contributes no services simply does not override it.
     /// </remarks>
     /// <param name="services">The host's service collection, as it stands before the container is built.</param>
-    /// <param name="configuration">The host's configuration, fully layered and read-only to the plugin.</param>
+    /// <param name="configuration">
+    /// The host's own configuration, fully layered, supplied so the plugin can read the settings it
+    /// needs. It is the live instance rather than a copy or a read-only facade, so nothing stops a
+    /// plugin reaching through <see cref="IConfiguration"/> to write; doing so is outside what this
+    /// contract supports and the effect on the host is undefined.
+    /// </param>
     public virtual void ContributeServices(IServiceCollection services, IConfiguration configuration)
     {
-        // Intentionally does nothing. The host calls both hooks on every loaded plugin rather than
-        // testing for an optional interface, so the base body is what lets a plugin override only the
-        // phase it cares about. Adding a virtual with a no-op body is also the only evolution this
-        // contract's additive-only policy allows, and it is binary-compatible with every plugin
-        // already published against an earlier version.
+        // Intentionally does nothing. The host calls this hook on every loaded plugin rather than
+        // testing for an optional interface, so the base body is what lets a plugin that contributes
+        // no services simply not override it. Adding a further virtual with a no-op body is also the
+        // only evolution this contract's additive-only policy allows, and it is binary-compatible
+        // with every plugin already published against an earlier version.
     }
 }

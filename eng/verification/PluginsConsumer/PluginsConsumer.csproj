@@ -53,10 +53,18 @@
       outside project rather than like one that happens to inherit what it needs.
 
       These versions are deliberately independent of src/Directory.Packages.props and
-      of Dependabot, whose nuget scope is directory: src/. They happen to match today
-      and are not required to: an outside implementer picks their own versions, and
-      this project exists to behave like one. Bump them only to exercise a version an
-      implementer might realistically use, never to track DMS's own.
+      of Dependabot, whose nuget scope is directory: src/. They are not required to
+      equal what DMS itself resolves, and today they happen to: an outside implementer
+      picks their own versions, and this project exists to behave like one.
+
+      What they cannot be independent of is the contract's own floor. NuGet resolves a
+      PackageReference declared here in preference to the same package pulled in
+      transitively, so a version below what EdFi.Api.Plugins requires is a downgrade
+      this project would fail on - and it would fail here, in the check, rather than in
+      an implementer's build. So a change to the contract's minimum versions for
+      Microsoft.Extensions.Configuration.Abstractions or
+      Microsoft.Extensions.DependencyInjection.Abstractions means checking these two and
+      raising them in the same change when they no longer clear the new floor.
     -->
         <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.1" />
         <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.1" />
