@@ -4,6 +4,9 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Globalization;
+using System.Net.Http.Json;
+using System.Text.Json;
+using EdFi.DataManagementService.Backend.Cdc.Tests.Unit;
 using EdFi.DataManagementService.Backend.Ddl;
 using FluentAssertions;
 using NUnit.Framework;
@@ -29,18 +32,107 @@ public sealed class Given_CdcConnectorTelemetryQualification(CdcProvider provide
         await fixture.AssertRuntimeLoadsRequiredClassesAsync(rendered, timeout.Token);
         await fixture.RegisterRenderedConnectorConfigDirectlyAsync(rendered, timeout.Token);
         await fixture.AssertHeartbeatAndCommittedOffsetProgressAsync(request, timeout.Token);
-        await fixture.QualifyTelemetryAsync(request, timeout.Token);
+        await using var peer = await fixture.StartTelemetryPeerAsync(timeout.Token);
+        var peerRequest = peer.BuildTelemetryPeerRequest();
+        await fixture.QualifyTelemetryAsync(request, peer, peerRequest, timeout.Token);
     }
 }
 
 internal sealed partial class CdcConnectorTemplatePinnedImageFixture
 {
-    public async Task QualifyTelemetryAsync(CdcConnectorTemplateRequest request, CancellationToken token)
+    public async Task<CdcConnectorTemplatePinnedImageFixture> StartTelemetryPeerAsync(CancellationToken token)
     {
+        var peer = new CdcConnectorTemplatePinnedImageFixture(
+            Provider,
+            _settings,
+            new Uri("http://127.0.0.1:8083"),
+            "dms-cdc-template-" + Guid.NewGuid().ToString("N"),
+            _docker
+        );
+        try
+        {
+            await _docker.RunAsync(["network", "create", peer.NetworkName], token);
+            await peer.StartProviderAsync(token);
+            await peer.CreateMinimalProviderObjectsAsync(token);
+            await peer.AssertSqlServer2025Async(token);
+            peer._telemetrySetup = await peer.RunProviderSetupAsync(
+                CdcProviderSetupMode.InitialCreateOrExactMatch,
+                token
+            );
+            return peer;
+        }
+        catch
+        {
+            await peer.DisposeAsync();
+            throw;
+        }
+    }
+
+    private CdcProviderSetupResult _telemetrySetup = null!;
+
+    public CdcConnectorTemplateRequest BuildTelemetryPeerRequest() => BuildRequest(_telemetrySetup);
+
+    public async Task QualifyTelemetryAsync(
+        CdcConnectorTemplateRequest request,
+        CdcConnectorTemplatePinnedImageFixture peer,
+        CdcConnectorTemplateRequest peerRequest,
+        CancellationToken token
+    )
+    {
+        // Independent physical source, same worker: stopping one connector must remove only its beans.
+        await _docker.RunAsync(["network", "connect", NetworkName, peer.ProviderContainerName], token);
+        string peerName = request.ConnectorName.Value + "-peer";
+        var peerConfig = new Dictionary<string, string>(peer.Render(peerRequest).Config)
+        {
+            ["name"] = peerName,
+            ["topic.prefix"] = peerName,
+            ["transforms.documentState.target.topic"] = request.PublicTopicName + ".peer",
+            ["transforms.documentState.progress.topic"] = request.PublicTopicName + ".peer.cdc-progress",
+        };
+        List<string> peerTopics =
+        [
+            request.PublicTopicName + ".peer",
+            request.PublicTopicName + ".peer.cdc-progress",
+        ];
+        if (Provider == CdcProvider.SqlServer)
+        {
+            peerConfig["schema.history.internal.kafka.bootstrap.servers"] = KafkaBootstrapServers;
+            peerConfig["schema.history.internal.kafka.topic"] = request.SchemaHistoryTopicName + ".peer";
+            peerTopics.Add(request.SchemaHistoryTopicName + ".peer");
+        }
+        await _docker.RunAsync(
+            [
+                "exec",
+                BrokerContainerName,
+                "rpk",
+                "topic",
+                "create",
+                "--if-not-exists",
+                .. peerTopics,
+                "--brokers",
+                KafkaBootstrapServers,
+            ],
+            token
+        );
+        using var created = await _httpClient.PostAsJsonAsync(
+            "/connectors",
+            new CdcKafkaConnectRegistrationPayload(new(peerName), peerConfig),
+            token
+        );
+        created.EnsureSuccessStatusCode();
+        await WaitForRegisteredConnectorRunningAsync(peerName, token);
         using var metrics = await CreateMetricsClientAsync(token);
+        await WaitForTelemetryAsync(
+            metrics,
+            text => CdcTelemetryQualification.HasCurrentLag(text, peerName),
+            token
+        );
         string initial = await metrics.GetStringAsync("/metrics", token);
         CdcTelemetryQualification.AssertStreamingMetrics(initial, Provider, request.ConnectorName.Value);
+        CdcTelemetryQualification.AssertStreamingMetrics(initial, Provider, peerName);
+        string processIdentity = await QualifyWorkerDeploymentAsync(metrics, initial, token);
         double start = CdcTelemetryQualification.Scalar(initial, "edfi_cdc_worker_start_time_seconds");
+        start.Should().BeGreaterThan(0);
         CdcTelemetryQualification.Scalar(initial, "edfi_cdc_worker_heap_max_bytes").Should().BeGreaterThan(0);
 
         using var stopped = await _httpClient.PutAsync(
@@ -53,6 +145,11 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
             metrics,
             text => !CdcTelemetryQualification.HasConnector(text, request.ConnectorName.Value),
             token
+        );
+        CdcTelemetryQualification.AssertStreamingMetrics(
+            await metrics.GetStringAsync("/metrics", token),
+            Provider,
+            peerName
         );
         using var resumed = await _httpClient.PutAsync(
             $"/connectors/{request.ConnectorName.Value}/resume",
@@ -79,16 +176,69 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
         using var restartedMetrics = await CreateMetricsClientAsync(token);
         await WaitForKafkaConnectAsync(token);
         await AssertHeartbeatAndCommittedOffsetProgressAsync(request, token);
+        await WaitForTelemetryAsync(
+            restartedMetrics,
+            text => CdcTelemetryQualification.HasCurrentLag(text, peerName),
+            token
+        );
         string restartedWorker = await restartedMetrics.GetStringAsync("/metrics", token);
         CdcTelemetryQualification.AssertStreamingMetrics(
             restartedWorker,
             Provider,
             request.ConnectorName.Value
         );
+        CdcTelemetryQualification.AssertStreamingMetrics(restartedWorker, Provider, peerName);
+        (await QualifyWorkerDeploymentAsync(restartedMetrics, restartedWorker, token))
+            .Should()
+            .NotBe(processIdentity);
         CdcTelemetryQualification
             .Scalar(restartedWorker, "edfi_cdc_worker_start_time_seconds")
             .Should()
             .BeGreaterThan(start);
+    }
+
+    private async Task<string> QualifyWorkerDeploymentAsync(
+        HttpClient metrics,
+        string text,
+        CancellationToken token
+    )
+    {
+        string digest = _settings.ConnectImage[(_settings.ConnectImage.IndexOf('@') + 1)..];
+        var request = CdcDeploymentRequestTestData.Request(
+            Provider,
+            endpoint: _httpClient.BaseAddress!.AbsoluteUri,
+            metricsEndpoint: new Uri(metrics.BaseAddress!, "/metrics").AbsoluteUri,
+            worker: CdcDeploymentRequestTestData.Worker(
+                heapBytes: checked(
+                    (long)CdcTelemetryQualification.Scalar(text, "edfi_cdc_worker_heap_max_bytes")
+                ),
+                digest: digest,
+                offsetTopic: _resourcePrefix + ".connect.offsets",
+                workerKey: _resourcePrefix
+            )
+        );
+        var inspector = new CdcWorkerDeployment(
+            _resourcePrefix,
+            "kafka-cdc-worker",
+            new HashSet<string> { digest }
+        );
+        var result = await inspector.InspectAsync(request, token);
+        result
+            .State.Should()
+            .Be(
+                CdcTransportEvidenceState.Observed,
+                "the real Docker worker must satisfy the local deployment inspection contract"
+            );
+        var worker = ((CdcTransportResult<CdcWorkerInspection>.Observed)result).Value;
+        worker.EffectiveConfiguration["bootstrap.servers"].Should().Be(KafkaBootstrapServers);
+        var status = await _httpClient.GetFromJsonAsync<JsonElement>(
+            $"/connectors/{BuildBinding(Provider).ConnectorName}/status",
+            token
+        );
+        worker
+            .ConnectWorkerId.Should()
+            .Be(status.GetProperty("tasks").EnumerateArray().Single().GetProperty("worker_id").GetString());
+        return worker.ProcessIdentity;
     }
 
     private async Task<HttpClient> CreateMetricsClientAsync(CancellationToken token)
@@ -124,6 +274,21 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
 /// </summary>
 internal static class CdcTelemetryQualification
 {
+    public static bool HasCurrentLag(string text, string connector) =>
+        Array.Exists(
+            text.Split('\n'),
+            line =>
+                line.StartsWith("edfi_cdc_source_lag_current_milliseconds{", StringComparison.Ordinal)
+                && line.Contains($"connector=\"{connector}\"", StringComparison.Ordinal)
+                && double.TryParse(
+                    line[(line.LastIndexOf('}') + 1)..],
+                    CultureInfo.InvariantCulture,
+                    out double value
+                )
+                && double.IsFinite(value)
+                && value >= 0
+        );
+
     public static bool HasConnector(string text, string connector) =>
         text.Contains($"connector=\"{connector}\"", StringComparison.Ordinal);
 
@@ -137,7 +302,6 @@ internal static class CdcTelemetryQualification
                 .Where(line =>
                     line.StartsWith(name + "{", StringComparison.Ordinal)
                     && line.Contains($"connector=\"{connector}\"", StringComparison.Ordinal)
-                    && line.Contains($"provider=\"{providerLabel}\"", StringComparison.Ordinal)
                 )
                 .ToArray();
             if (statistic != "current" && samples.Length == 0)
@@ -147,6 +311,7 @@ internal static class CdcTelemetryQualification
 
             text.Split('\n').Should().Contain($"# TYPE {name} gauge");
             samples.Should().ContainSingle();
+            samples.Single().Should().Contain($"provider=\"{providerLabel}\"");
             double value = double.Parse(
                 samples.Single()[(samples.Single().LastIndexOf('}') + 1)..],
                 CultureInfo.InvariantCulture
@@ -162,5 +327,31 @@ internal static class CdcTelemetryQualification
         string sample = text.Split('\n')
             .Single(line => line.StartsWith(name + " ", StringComparison.Ordinal));
         return double.Parse(sample[(name.Length + 1)..], CultureInfo.InvariantCulture);
+    }
+}
+
+[TestFixture]
+public sealed class Given_CdcTelemetryMetricContract
+{
+    [TestCase(CdcProvider.Postgresql, "postgres")]
+    [TestCase(CdcProvider.SqlServer, "sql_server")]
+    public void It_accepts_current_lag_without_optional_statistics(CdcProvider provider, string label)
+    {
+        string text =
+            $"# TYPE edfi_cdc_source_lag_current_milliseconds gauge\nedfi_cdc_source_lag_current_milliseconds{{connector=\"one\",provider=\"{label}\"}} 5\n";
+        CdcTelemetryQualification.AssertStreamingMetrics(text, provider, "one");
+    }
+
+    [TestCase("postgres", "NaN")]
+    [TestCase("postgres", "-1")]
+    [TestCase("wrong", "10")]
+    public void It_rejects_exported_optional_values_with_invalid_identity_or_value(string label, string value)
+    {
+        string text =
+            "# TYPE edfi_cdc_source_lag_current_milliseconds gauge\nedfi_cdc_source_lag_current_milliseconds{connector=\"one\",provider=\"postgres\"} 5\n"
+            + $"# TYPE edfi_cdc_source_lag_p95_milliseconds gauge\nedfi_cdc_source_lag_p95_milliseconds{{connector=\"one\",provider=\"{label}\"}} {value}\n";
+        Action act = () =>
+            CdcTelemetryQualification.AssertStreamingMetrics(text, CdcProvider.Postgresql, "one");
+        act.Should().Throw<AssertionException>();
     }
 }

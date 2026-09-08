@@ -116,11 +116,15 @@ public sealed class CdcWorkerInspection(
     Uri metricsEndpoint,
     IReadOnlyDictionary<string, string> effectiveConfiguration,
     string imageDigest,
-    long heapBytes
+    long heapBytes,
+    string connectWorkerId = ""
 )
 {
     [JsonIgnore]
     public string ProcessIdentity { get; } = processIdentity;
+
+    [JsonIgnore]
+    public string ConnectWorkerId { get; } = connectWorkerId;
 
     [JsonIgnore]
     public Uri MetricsEndpoint { get; } = metricsEndpoint;

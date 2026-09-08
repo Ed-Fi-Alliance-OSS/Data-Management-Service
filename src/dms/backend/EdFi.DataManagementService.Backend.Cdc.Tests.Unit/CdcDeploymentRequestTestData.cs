@@ -18,10 +18,11 @@ internal static class CdcDeploymentRequestTestData
         string digest = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         CdcKafkaDurabilityProfile durability = CdcKafkaDurabilityProfile.LocalSingleBroker,
         CdcKafkaAuthorizationProfile authorization = CdcKafkaAuthorizationProfile.AuthorizationDisabledLocal,
-        string offsetTopic = "connect-offsets"
+        string offsetTopic = "connect-offsets",
+        string workerKey = "worker"
     ) =>
         new(
-            new("worker"),
+            new(workerKey),
             new(offsetTopic),
             digest,
             heapBytes,

@@ -42,6 +42,10 @@ param (
     [Switch]
     $EnableKafka,
 
+    # CDC phase seam: start broker/UI only; controller owns the later worker launch.
+    [switch]
+    $CdcKafkaInfrastructure,
+
     # Enable Kafka UI. This also enables Kafka infrastructure.
     [Switch]
     $EnableKafkaUI,
@@ -385,11 +389,19 @@ if ($usePostgresqlTmpfs -and $DatabaseEngine -eq "postgresql") {
 if (-not $databaseOnlyStartup) {
     $files += @("-f", "published-dms.yml")
 
-    # Kafka (and KafkaUI) back the PostgreSQL Debezium CDC path only and are opt-in via
-    # -EnableKafka / -EnableKafkaUI. The relational MSSQL path serves writes and queries directly
-    # from SQL and registers no connector, so Kafka is omitted.
-    $enableKafkaInfrastructure = $EnableKafka -or $EnableKafkaUI
-    if ($enableKafkaInfrastructure -and $DatabaseEngine -eq "postgresql") {
+    # CDC selects the same broker/qualified worker for either provider. The worker's
+    # profile stays inactive until the controller completes fresh offset-store preparation.
+    $enableKafkaInfrastructure = $EnableKafka -or $EnableKafkaUI -or $CdcKafkaInfrastructure
+    if ($CdcKafkaInfrastructure) {
+        if (-not $InfraOnly -and -not $d) {
+            throw "CDC infrastructure startup requires -InfraOnly; the controller owns writer handoff."
+        }
+        if (-not [string]::IsNullOrWhiteSpace($env:COMPOSE_PROFILES)) {
+            throw "CDC infrastructure startup does not accept COMPOSE_PROFILES."
+        }
+        $files += @("-f", "kafka-cdc.yml")
+    }
+    elseif ($enableKafkaInfrastructure -and $DatabaseEngine -eq "postgresql") {
         $files += @("-f", "kafka.yml")
     }
 
@@ -402,7 +414,7 @@ if (-not $databaseOnlyStartup) {
         $files += @("-f", "keycloak.yml")
     }
 
-    if ($EnableKafkaUI -and $DatabaseEngine -eq "postgresql") {
+    if ($EnableKafkaUI -and ($DatabaseEngine -eq "postgresql" -or $CdcKafkaInfrastructure)) {
         $files += @("-f", "kafka-ui.yml")
     }
 
@@ -729,7 +741,14 @@ else {
             ./setup-openiddict.ps1 -InsertData @identityRoleParams -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access" -EnvironmentFile $EnvironmentFile @identityDbParams
         }
 
-        if ($enableKafkaInfrastructure -and $DatabaseEngine -eq "postgresql") {
+        if ($CdcKafkaInfrastructure) {
+            Write-Output "Starting CDC broker; Connect remains stopped until offset-store preparation succeeds."
+            docker compose $files --env-file $EnvironmentFile -p dms-published up $upArgs --wait kafka
+            if ($LASTEXITCODE -ne 0) {
+                throw "Failed to start CDC broker. Exit code $LASTEXITCODE"
+            }
+        }
+        elseif ($enableKafkaInfrastructure -and $DatabaseEngine -eq "postgresql") {
             Write-Output "Starting Kafka infrastructure..."
             docker compose $files --env-file $EnvironmentFile -p dms-published up $upArgs kafka kafka-postgresql-source
             if ($LASTEXITCODE -ne 0) {
@@ -740,7 +759,7 @@ else {
             Write-Output "Skipping Kafka infrastructure: the MSSQL relational path does not use Debezium CDC (PostgreSQL-only)."
         }
 
-        if ($EnableKafkaUI -and $DatabaseEngine -eq "postgresql") {
+        if ($EnableKafkaUI -and ($DatabaseEngine -eq "postgresql" -or $CdcKafkaInfrastructure)) {
             Write-Output "Starting Kafka UI..."
             docker compose $files --env-file $EnvironmentFile -p dms-published up $upArgs kafka-ui
             if ($LASTEXITCODE -ne 0) {

@@ -1,0 +1,67 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+services:
+  kafka:
+    extends:
+      file: kafka-broker.yml
+      service: kafka
+    # Host-side SchemaTools must receive reachable broker metadata; Connect uses INTERNAL.
+    environment:
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://dms-kafka1:9092,EXTERNAL://127.0.0.1:${KAFKA_PORT:-9092}
+      KAFKA_LISTENERS: INTERNAL://0.0.0.0:9092,EXTERNAL://0.0.0.0:19092,CONTROLLER://dms-kafka1:9093
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_MESSAGE_MAX_BYTES: ${CDC_MAX_RECORD_BYTES:-67108864}
+      KAFKA_REPLICA_FETCH_MAX_BYTES: ${CDC_MAX_RECORD_BYTES:-67108864}
+    ports: !override
+      - '127.0.0.1:${KAFKA_PORT:-9092}:19092'
+
+  # Explicit service startup only, after CdcWorkerStartup's live offset-store policy gate.
+  # A general compose up, including UI, must never activate this profile.
+  kafka-cdc-worker:
+    profiles: [cdc-managed-worker]
+    image: ${CDC_CONNECT_IMAGE:?A published qualified immutable CDC image is required}
+    labels:
+      org.edfi.cdc.worker: ${CDC_WORKER_KEY:-local-worker}
+    environment:
+      BOOTSTRAP_SERVERS: dms-kafka1:9092
+      GROUP_ID: ${CDC_WORKER_KEY:-local-worker}
+      CONFIG_STORAGE_TOPIC: ${CDC_CONFIG_STORAGE_TOPIC:-dms-connect-config}
+      OFFSET_STORAGE_TOPIC: ${CDC_OFFSET_STORAGE_TOPIC:-dms-connect-offsets}
+      STATUS_STORAGE_TOPIC: ${CDC_STATUS_STORAGE_TOPIC:-dms-connect-status}
+      CONFIG_STORAGE_REPLICATION_FACTOR: 1
+      OFFSET_STORAGE_REPLICATION_FACTOR: 1
+      STATUS_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_REST_ADVERTISED_HOST_NAME: kafka-cdc-worker
+      CONNECT_REST_ADVERTISED_PORT: 8083
+      CONNECT_CONNECTOR_CLIENT_CONFIG_OVERRIDE_POLICY: All
+      CONNECT_CONFIG_PROVIDERS: env
+      CONNECT_CONFIG_PROVIDERS_ENV_CLASS: org.apache.kafka.common.config.provider.EnvVarConfigProvider
+      CDC_DATABASE_PASSWORD: ${CDC_DATABASE_PASSWORD:-}
+      KAFKA_HEAP_OPTS: -Xms${CDC_WORKER_HEAP_MIB:-512}m -Xmx${CDC_WORKER_HEAP_MIB:-512}m
+    ports:
+      - '127.0.0.1:${CONNECT_SOURCE_PORT:-8083}:8083'
+      - '127.0.0.1:${CDC_METRICS_PORT:-9404}:9404'
+    networks:
+      - dms
+    healthcheck:
+      test: ['CMD-SHELL', 'curl --fail --silent http://localhost:8083/ >/dev/null && curl --fail --silent http://localhost:9404/metrics >/dev/null']
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    logging:
+      driver: json-file
+      options:
+        max-size: '${DOCKER_LOG_MAX_SIZE:-50m}'
+        max-file: '${DOCKER_LOG_MAX_FILE:-5}'
+
+networks:
+  dms:
+    external: true
+
+volumes:
+  kafka-data:
+  kafka-logs:
