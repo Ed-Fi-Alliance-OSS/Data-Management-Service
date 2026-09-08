@@ -202,8 +202,9 @@ controller composes those contracts rather than introducing another set of rules
 - Implement the direct JMX Exporter HTTP adapter and single-worker endpoint wiring from
   the design's [local/CI telemetry contract](../../design-docs/cdc/cdc-streaming.md#local-and-ci-connector-telemetry).
   Consume DMS-1322's qualified exporter-enabled image and DMS-1321's reusable metric
-  qualification fixtures. Extend the typed deployment request with the configured worker
-  metrics endpoint and maximum observation age; reuse the Core lag observation and
+  qualification fixtures; DMS-1322 owns the pinned standard exporter, fixed mappings,
+  and qualified image publication. Extend the typed deployment request with the configured
+  worker metrics endpoint and maximum observation age; reuse the Core lag observation and
   evaluator contracts, extending their typed handoff only where required for the
   design-owned statistics and identity evidence. Implement collection-time tracking,
   worker/task correlation, freshness validation, and readiness integration in the adapter
@@ -217,8 +218,10 @@ controller composes those contracts rather than introducing another set of rules
   do not rewrite the binding or make ordinary drift validation a configuration repair loop.
   Add its structured deployment-operator consumer-capacity acknowledgement to the command
   input, with scope validation, workflow-journal persistence, and resumed-invocation
-  confirmation handling. Add command help and invocation examples explaining the operator's
-  responsibility for consumer inventory and capacity evidence.
+  confirmation handling, using the existing administrative trust boundary. Support the
+  operator's attestation to complete consumer inventory and owner capacity evidence or an
+  explicit no-consumers declaration. Add command help and invocation examples explaining
+  that responsibility.
 
 ### Publication-History Bridge to E18 Administration
 
@@ -253,14 +256,17 @@ controller composes those contracts rather than introducing another set of rules
   interval. Persist any terminal incident and stop the affected connector; report failures to persist or stop
   without concealing the incident. Never restart on unknown continuity or reuse initial
   readiness evidence to claim another exact baseline.
-- Implement the design's managed shutdown/startup ordering through the existing Connect
-  stop/resume and offset APIs. Journal verified connector shutdown before worker stop and
-  reconcile retained stopped state on startup. Route incomplete or unverified shutdown to
-  the native recovery boundary. On observed worker/task recovery or reassignment, invalidate
+- Implement the design's
+  [managed lifecycle and native recovery boundary](../../design-docs/cdc/cdc-streaming.md#controller-managed-lifecycle-and-native-recovery-boundary)
+  through the existing Connect stop/resume and offset APIs. Journal verified connector
+  shutdown before worker stop and validate retained stopped connectors before resuming
+  them on startup. Route incomplete or unverified shutdown to the native recovery boundary.
+  On observed worker/task recovery or reassignment, invalidate
   prior readiness evidence and collect fresh observations through the shared services.
   DMS-1323 owns this orchestration and its provider/image qualification; reuse sibling
   fixtures without adding a worker or task interception mechanism.
-- Enforce the design's v1 deployment-state continuity and adoption deferral before
+- Enforce the design's
+  [v1 deployment-state continuity and adoption deferral](../../design-docs/cdc/cdc-streaming.md#v1-deployment-state-continuity-and-adoption-deferral) before
   validation/restart. Return sanitized diagnostics identifying unavailable or contradictory
   provenance without reconstructing it from operator input or healthy artifacts. Do not
   expose an adoption command or call `ImportVerifiedBindingAsync` from the controller.
@@ -369,7 +375,8 @@ controller composes those contracts rather than introducing another set of rules
 - Projector behavior is assigned to E18; message behavior is owned by the ADR and tested in
   19-05.
 - Missing-state adoption and recovery from deployment-state rollback are deferred by the
-  owning integration design; this story adds no replacement provenance mechanism.
+  owning integration design; this story adds no replacement provenance mechanism or
+  always-present generation ledger.
 - Physical-source replacement, including operator-prepared replacements, replacement-driven
   identity rotation, database restore/copy, CMS cutover, and new-generation capture setup,
   is deferred by the owning integration design.
@@ -381,92 +388,3 @@ controller composes those contracts rather than introducing another set of rules
   are not part of this story.
 - Automated inspection or certification of independently operated consumers is deferred;
   this story implements the design-owned deployment-operator attestation contract.
-
-## Clarifying Questions and Answers
-
-### Questions 1
-
-1. For explicit adoption, which durable provenance must survive besides the operator-supplied binding and live artifacts? Define the supported cases when the workflow journal, connector-establishment/provider-identity evidence, source-history record, or incident state is missing, and how adoption avoids reviving a previously terminal generation when live artifacts currently look healthy.
-2. Which concrete telemetry transport must the shipped local/CI controller use to obtain current connector lag and the required lag statistics, and who owns any exporter or qualified-image changes it needs? What observation freshness and connector/task identity checks must that adapter satisfy before its lag value can participate in readiness?
-3. For the explicit record-size increase operation, what evidence confirms that independently operated consumers have raised fetch and deserialization capacity, and how is that confirmation scoped and persisted for crash-safe retries? Is an operator-supplied acknowledgement sufficient, or must this story deliver a consumer/deployment verification adapter before broker/topic and producer changes can proceed?
-
-
-### Answers 1
-
-1. **Resolved: defer missing-state adoption from v1.** Implement the owning design's
-   [deployment-state continuity and adoption deferral](../../design-docs/cdc/cdc-streaming.md#v1-deployment-state-continuity-and-adoption-deferral).
-   Ship intact-state validation/restart, interrupted initial-workflow retry, and independently
-   guarded retirement, with rejection diagnostics and evidence for unsupported state-loss
-   recovery. Remove adoption from the command surface and successful integration scenarios;
-   do not invoke `ImportVerifiedBindingAsync` from the controller. The lower-level capability
-   may remain unused. The design retains the normally absent incident file and explicitly
-   excludes recovery from suspected incident-history deletion or state rollback; this story
-   does not add an always-present generation ledger or infer historical proof from live health.
-
-2. **Resolved: use direct worker-local JMX Exporter HTTP telemetry for local/CI.** Implement
-   the owning design's
-   [local/CI telemetry contract](../../design-docs/cdc/cdc-streaming.md#local-and-ci-connector-telemetry)
-   for collection, connector/task and worker identity, observation age, restart invalidation,
-   and fail-closed readiness. DMS-1322 owns the pinned standard exporter, fixed mappings,
-   and qualified image publication; DMS-1321 owns reusable image/metric qualification
-   fixtures; DMS-1323 owns the configured endpoint, HTTP adapter, typed observation handoff,
-   and controller integration tests. The shipped adapter supports the explicitly configured
-   single-worker local/CI topology; distributed-worker endpoint discovery is deferred.
-   Preserve the independent current-lag threshold and provider barrier requirements.
-
-3. **Resolved: use deployment-operator consumer-capacity attestation for v1.** Implement the
-   owning design's attestation contract in the
-   [coordinated increase procedure](../../design-docs/cdc/cdc-streaming.md#in-place-record-size-increase)
-   using the existing administrative trust boundary. The deployment operator supplies a
-   structured acknowledgement based on every affected consumer owner's capacity evidence
-   and attests to inventory completeness; an explicit no-consumers declaration is supported.
-   DMS-1323 owns the command input, operation-scope validation, durable journal integration,
-   renewed confirmation on resumed invocations, live rollout reconciliation, command help,
-   and acceptance tests. Follow the design's rejection and partial-rollout readiness rules.
-   Automated inspection or certification of independently operated consumers is deferred.
-
-### Questions 2
-
-1. Does the requirement to validate continuity before every connector start/resume also cover retained connectors restarting with the Connect worker after a clean stop or crash? If so, what shipped mechanism keeps their tasks from consuming until the controller can read offsets through the worker REST API and validate provenance/provider history; if automatic worker/task recovery is outside that guarantee, what explicit support boundary and restart tests apply?
-2. Should v1 support physical-source replacement? If retained in scope, what is the concrete successful input scenario: does the controller receive an already prepared replacement database, or must it create/restore/copy the database and update CMS connection metadata? Specify who owns those steps and what old-source continuity and replacement projection-state evidence must be available before source-identity rotation and new-generation capture, so the success tests distinguish this path from deferred history-loss or baseline-replacing recovery.
-
-
-### Answers 2
-
-1. **Resolved: scope pre-start continuity validation to controller-managed lifecycle operations.**
-   Implement the owning design's
-   [managed lifecycle and native recovery boundary](../../design-docs/cdc/cdc-streaming.md#controller-managed-lifecycle-and-native-recovery-boundary).
-   DMS-1323 owns managed shutdown/startup orchestration, durable shutdown evidence, REST
-   observation and resume wiring, readiness invalidation, and provider/image qualification.
-   Managed shutdown verifies stopped connectors before stopping the worker; managed startup
-   validates retained stopped connectors before resuming them. Native worker recovery, task
-   reassignment/internal recovery, and startup after an incomplete or unverified shutdown
-   receive observational monitoring and containment, with no pre-consumption guarantee or
-   retrospective continuity certification. Controller-issued starts/restarts/resumes remain
-   prohibited without intact provenance, no terminal incident, and affirmative continuity
-   evidence. Use the existing Connect APIs, shared classifiers/provider adapters, and sibling
-   pinned-image fixtures. Strict fencing across native recovery is deferred. The acceptance
-   suites above distinguish prevention during managed startup from observation and containment
-   after native recovery for both providers.
-
-2. **Resolved: defer physical-source replacement from v1.** Implement the owning design's
-   [physical-source replacement deferral](../../design-docs/cdc/cdc-streaming.md#v1-physical-source-replacement-deferral).
-   DMS-1323 supports initial enablement of a controller-proven new database and subsequent
-   lifecycle operations against that same physical source with intact deployment provenance.
-   It exposes no source-replacement command and performs no replacement-driven source-identity
-   rotation, database restore/copy, CMS cutover, or new-generation capture setup, including
-   for operator-prepared replacements.
-
-   An observed physical-source mismatch rejects validation and controller-issued
-   start/restart/resume without rebinding or creating replacement artifacts. Status/watch
-   uses the existing incident-classification and containment contracts. Missing provenance,
-   terminal source-history loss, and a published cache-ahead latch retain their existing
-   rejection behavior. DMS-1323 owns command-surface, provider rejection, and help evidence;
-   it adds no replacement-success scenarios or replacement-specific provider mode.
-
-   Source replacement is deferred until a separate design defines database preparation,
-   writer/projector fencing, CMS cutover ownership, old-source continuity evidence,
-   replacement projection integrity, consumer transition, and crash-safe recovery.
-   Retirement does not restore initial-enable eligibility or erase publication history.
-   Provisioning an independent new CDC database does not certify migration or continuity
-   from an existing source.
