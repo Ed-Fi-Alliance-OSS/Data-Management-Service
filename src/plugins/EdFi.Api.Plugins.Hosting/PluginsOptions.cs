@@ -27,16 +27,29 @@ public sealed class PluginsOptions
     /// The plugin root, defaulting to <c>/app/plugins</c> and resolved against
     /// <see cref="AppContext.BaseDirectory"/> when it is not fully qualified.
     /// </summary>
-    public string Directory { get; set; } = "/app/plugins";
+    /// <remarks>
+    /// Nullable because binding says so rather than because a null is meaningful: configuration
+    /// binding assigns a JSON null straight over a property initializer, so a section that writes
+    /// <c>"Directory": null</c> leaves this null while an absent key leaves the default. The two are
+    /// therefore distinguishable, and a null is treated as a value that is not a path rather than as an
+    /// absent key.
+    /// </remarks>
+    public string? Directory { get; set; } = "/app/plugins";
 
     /// <summary>
     /// The comma-delimited list of plugin directory names that may load, defaulting to the empty
     /// string, which asks for no plugins at all.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// The written order is the invocation order for the composition phases, so the list is never
     /// sorted. A delimited string rather than an array follows the convention
     /// <c>AppSettings:AllowIdentityUpdateOverrides</c> already sets for a list with no entries.
+    /// </para>
+    /// <para>
+    /// Nullable for the same binding reason as <see cref="Directory"/>. Here a null and an absent key
+    /// do mean the same thing, because both say the operator asked for no plugins.
+    /// </para>
     /// </remarks>
-    public string Allowed { get; set; } = string.Empty;
+    public string? Allowed { get; set; } = string.Empty;
 }

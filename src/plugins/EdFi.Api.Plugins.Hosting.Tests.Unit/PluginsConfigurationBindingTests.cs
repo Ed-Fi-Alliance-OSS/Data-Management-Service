@@ -12,19 +12,33 @@ using NUnit.Framework;
 namespace EdFi.Api.Plugins.Hosting.Tests.Unit;
 
 /// <summary>
-/// Builds an <see cref="IConfiguration"/> the way a host does, from JSON, so that the binder is
-/// exercised through real configuration rather than through a hand-made options instance.
+/// Builds an <see cref="IConfiguration"/> the way a host does, from real providers, so that the binder
+/// is exercised through configuration rather than through a hand-made options instance. The JSON
+/// provider is used deliberately: it is the one that can put a null where a property initializer put a
+/// default, which a hand-made instance can never reproduce.
 /// </summary>
 internal static class PluginsConfigurationFrom
 {
+    /// <summary>A directory value no platform can turn into a path.</summary>
+    internal const string MalformedDirectory = "bad\u0000path";
+
     internal static IConfiguration Json(string json) =>
         new ConfigurationBuilder().AddJsonStream(new MemoryStream(Encoding.UTF8.GetBytes(json))).Build();
 
     internal static IConfiguration Allowed(string allowed) =>
         Json("{\"Plugins\": {\"Allowed\": " + JsonSerializer.Serialize(allowed) + "}}");
 
-    internal static IConfiguration Directory(string directory) =>
-        Json("{\"Plugins\": {\"Directory\": " + JsonSerializer.Serialize(directory) + "}}");
+    internal static IConfiguration AllowedAndDirectory(string allowed, string directory) =>
+        Json(
+            "{\"Plugins\": {\"Allowed\": "
+                + JsonSerializer.Serialize(allowed)
+                + ", \"Directory\": "
+                + JsonSerializer.Serialize(directory)
+                + "}}"
+        );
+
+    /// <summary>A section that writes a literal JSON null for the named key.</summary>
+    internal static IConfiguration NullValued(string key) => Json("{\"Plugins\": {\"" + key + "\": null}}");
 }
 
 [TestFixture]
@@ -45,18 +59,42 @@ public class Given_a_configuration_with_no_plugins_section
     }
 
     [Test]
+    public void It_resolves_no_plugin_root()
+    {
+        // The shipped default asks for nothing, so there is nothing to read and no root to resolve.
+        // Reporting a root here would make "no plugins were asked for" indistinguishable from "the
+        // plugin root happens to be missing", which are different rows in the failure semantics.
+        _configuration.TryGetResolvedRoot(out string? root).Should().BeFalse();
+        root.Should().BeNull();
+    }
+}
+
+[TestFixture]
+public class Given_an_allowlist_and_no_configured_directory
+{
+    private PluginsConfiguration _configuration = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _configuration = PluginsConfigurationBinder.Bind(PluginsConfigurationFrom.Allowed("Acme.Good"));
+    }
+
+    [Test]
     public void It_uses_the_default_plugin_root()
     {
         // The shipped default is /app/plugins. On a platform where that is rooted but not fully
         // qualified it acquires the base directory's volume, so the assertion is on the tail rather
         // than on the whole string.
-        _configuration.ResolvedRoot.Replace('\\', '/').Should().EndWith("/app/plugins");
+        _configuration.TryGetResolvedRoot(out string? root).Should().BeTrue();
+        root!.Replace('\\', '/').Should().EndWith("/app/plugins");
     }
 
     [Test]
     public void It_resolves_the_root_to_a_fully_qualified_path()
     {
-        Path.IsPathFullyQualified(_configuration.ResolvedRoot).Should().BeTrue();
+        _configuration.TryGetResolvedRoot(out string? root).Should().BeTrue();
+        Path.IsPathFullyQualified(root!).Should().BeTrue();
     }
 }
 
@@ -129,6 +167,151 @@ public class Given_an_allowlist_that_is_only_separators_and_whitespace
         // Indistinguishable from an absent allowlist, which is the continue-silently case rather than
         // a list of empty names.
         _configuration.AllowedNames.Should().BeEmpty();
+    }
+
+    [Test]
+    public void It_resolves_no_plugin_root()
+    {
+        _configuration.TryGetResolvedRoot(out _).Should().BeFalse();
+    }
+}
+
+[TestFixture]
+public class Given_an_allowlist_written_as_a_json_null
+{
+    private PluginsConfiguration _configuration = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        // Configuration binding assigns a null straight over a property initializer, so this is the one
+        // input a hand-made options instance cannot reproduce, and the one that reached the split as a
+        // null reference before this case existed.
+        _configuration = PluginsConfigurationBinder.Bind(PluginsConfigurationFrom.NullValued("Allowed"));
+    }
+
+    [Test]
+    public void It_reads_as_asking_for_no_plugins()
+    {
+        _configuration.AllowedNames.Should().BeEmpty();
+    }
+
+    [Test]
+    public void It_resolves_no_plugin_root()
+    {
+        _configuration.TryGetResolvedRoot(out _).Should().BeFalse();
+    }
+
+    [Test]
+    public void It_binds_a_json_null_over_the_property_default()
+    {
+        // Pins the runtime behaviour the two cases above exist for, so neither of them can pass
+        // vacuously: if binding left the initializer in place, the null handling in the binder would be
+        // unreachable and these assertions would prove nothing.
+        PluginsConfigurationFrom
+            .NullValued("Allowed")
+            .GetSection(PluginsConfigurationBinder.SectionName)
+            .Get<PluginsOptions>()!
+            .Allowed.Should()
+            .BeNull();
+
+        PluginsConfigurationFrom
+            .NullValued("Directory")
+            .GetSection(PluginsConfigurationBinder.SectionName)
+            .Get<PluginsOptions>()!
+            .Directory.Should()
+            .BeNull();
+    }
+}
+
+[TestFixture]
+public class Given_no_plugins_are_asked_for_and_the_directory_is_unusable
+{
+    private static readonly string[] UnusableDirectories =
+    [
+        "",
+        "   ",
+        PluginsConfigurationFrom.MalformedDirectory,
+    ];
+
+    [TestCaseSource(nameof(UnusableDirectories))]
+    public void It_still_asks_for_no_plugins(string directory)
+    {
+        // The shipped default is an empty allowlist, so a deployment that adopts nothing has to boot
+        // whatever Plugins:Directory says. Validating an unused setting would turn every such
+        // deployment's stray value into a startup failure.
+        PluginsConfiguration configuration = PluginsConfigurationBinder.Bind(
+            PluginsConfigurationFrom.AllowedAndDirectory(string.Empty, directory)
+        );
+
+        configuration.AllowedNames.Should().BeEmpty();
+        configuration.TryGetResolvedRoot(out _).Should().BeFalse();
+    }
+
+    [Test]
+    public void It_still_asks_for_no_plugins_when_the_directory_is_a_json_null()
+    {
+        PluginsConfiguration configuration = PluginsConfigurationBinder.Bind(
+            PluginsConfigurationFrom.NullValued("Directory")
+        );
+
+        configuration.AllowedNames.Should().BeEmpty();
+        configuration.TryGetResolvedRoot(out _).Should().BeFalse();
+    }
+}
+
+[TestFixture]
+public class Given_plugins_are_asked_for_and_the_directory_is_unusable
+{
+    private static readonly string[] UnusableDirectories =
+    [
+        "",
+        "   ",
+        PluginsConfigurationFrom.MalformedDirectory,
+    ];
+
+    [TestCaseSource(nameof(UnusableDirectories))]
+    public void It_refuses_with_a_named_failure(string directory)
+    {
+        // Once a plugin has been asked for, the root is load-bearing, so an unusable value is fatal
+        // rather than quietly replaced by the default.
+        PluginLoadException exception = CaptureLoadFailure.From(() =>
+            PluginsConfigurationBinder.Bind(
+                PluginsConfigurationFrom.AllowedAndDirectory("Acme.Good", directory)
+            )
+        );
+
+        exception.Reason.Should().Be(PluginLoadFailure.PluginPathUnresolvable);
+        exception.PluginName.Should().BeNull();
+    }
+
+    [Test]
+    public void It_refuses_a_directory_written_as_a_json_null()
+    {
+        PluginLoadException exception = CaptureLoadFailure.From(() =>
+            PluginsConfigurationBinder.Bind(
+                PluginsConfigurationFrom.Json(
+                    "{\"Plugins\": {\"Allowed\": \"Acme.Good\", \"Directory\": null}}"
+                )
+            )
+        );
+
+        exception.Reason.Should().Be(PluginLoadFailure.PluginPathUnresolvable);
+    }
+
+    [Test]
+    public void It_escapes_a_control_character_in_the_refused_directory()
+    {
+        PluginLoadException exception = CaptureLoadFailure.From(() =>
+            PluginsConfigurationBinder.Bind(
+                PluginsConfigurationFrom.AllowedAndDirectory(
+                    "Acme.Good",
+                    PluginsConfigurationFrom.MalformedDirectory
+                )
+            )
+        );
+
+        exception.Message.Should().Contain(@"bad\u0000path");
     }
 }
 
@@ -372,13 +555,16 @@ public class Given_a_relative_plugin_directory
     [SetUp]
     public void Setup()
     {
-        _configuration = PluginsConfigurationBinder.Bind(PluginsConfigurationFrom.Directory("local-plugins"));
+        _configuration = PluginsConfigurationBinder.Bind(
+            PluginsConfigurationFrom.AllowedAndDirectory("Acme.Good", "local-plugins")
+        );
     }
 
     [Test]
     public void It_resolves_the_directory_against_the_application_base_directory()
     {
-        _configuration.ResolvedRoot.Should().Be(Path.GetFullPath("local-plugins", AppContext.BaseDirectory));
+        _configuration.TryGetResolvedRoot(out string? root).Should().BeTrue();
+        root.Should().Be(Path.GetFullPath("local-plugins", AppContext.BaseDirectory));
     }
 }
 
@@ -392,41 +578,77 @@ public class Given_a_plugin_directory_that_needs_normalizing
     {
         string unnormalized = Path.Combine(AppContext.BaseDirectory, "a", "..", "b");
 
-        _configuration = PluginsConfigurationBinder.Bind(PluginsConfigurationFrom.Directory(unnormalized));
+        _configuration = PluginsConfigurationBinder.Bind(
+            PluginsConfigurationFrom.AllowedAndDirectory("Acme.Good", unnormalized)
+        );
     }
 
     [Test]
     public void It_normalizes_the_directory()
     {
-        _configuration.ResolvedRoot.Should().Be(Path.Combine(AppContext.BaseDirectory, "b"));
-    }
-}
-
-[TestFixture]
-public class Given_a_plugin_directory_that_is_present_but_empty
-{
-    private PluginLoadException _exception = null!;
-
-    [SetUp]
-    public void Setup()
-    {
-        _exception = CaptureLoadFailure.From(() =>
-            PluginsConfigurationBinder.Bind(PluginsConfigurationFrom.Directory("   "))
-        );
-    }
-
-    [Test]
-    public void It_refuses_rather_than_falling_back_to_the_default_root()
-    {
-        // An operator who cleared the setting did not ask for /app/plugins to be read, so silently
-        // restoring the default would load plugins nobody asked for.
-        _exception.Reason.Should().Be(PluginLoadFailure.PluginPathUnresolvable);
+        _configuration.TryGetResolvedRoot(out string? root).Should().BeTrue();
+        root.Should().Be(Path.Combine(AppContext.BaseDirectory, "b"));
     }
 }
 
 /// <summary>
-/// Captures the loader failure a call is expected to produce, so that every fixture asserts on the
-/// same shape rather than each spelling its own try/catch.
+/// The environment-variable form is the one deployments actually use, so it is asserted against the
+/// JSON form rather than assumed equivalent.
+/// </summary>
+[TestFixture]
+[NonParallelizable]
+public class Given_the_allowlist_supplied_as_an_environment_variable
+{
+    private const string VariableName = "Plugins__Allowed";
+    private const string Written = "  Zulu.Plugin , ,Alpha.Plugin,Mike.Plugin  ";
+
+    private string? _previousValue;
+    private PluginsConfiguration _fromEnvironment = null!;
+    private PluginsConfiguration _fromJson = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _previousValue = Environment.GetEnvironmentVariable(VariableName);
+        Environment.SetEnvironmentVariable(VariableName, Written);
+
+        _fromEnvironment = PluginsConfigurationBinder.Bind(
+            new ConfigurationBuilder().AddEnvironmentVariables().Build()
+        );
+        _fromJson = PluginsConfigurationBinder.Bind(PluginsConfigurationFrom.Allowed(Written));
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        // Restores whatever was there, which for an absent variable means null and therefore removal.
+        // Deleting unconditionally would discard a value this process did not own.
+        Environment.SetEnvironmentVariable(VariableName, _previousValue);
+    }
+
+    [Test]
+    public void It_binds_to_the_same_ordered_list_as_the_json_form()
+    {
+        _fromEnvironment.AllowedNames.Should().Equal(_fromJson.AllowedNames);
+    }
+
+    [Test]
+    public void It_keeps_the_order_the_operator_wrote()
+    {
+        _fromEnvironment.AllowedNames.Should().Equal("Zulu.Plugin", "Alpha.Plugin", "Mike.Plugin");
+    }
+
+    [Test]
+    public void It_resolves_the_default_plugin_root()
+    {
+        _fromEnvironment.TryGetResolvedRoot(out string? root).Should().BeTrue();
+        root!.Replace('\\', '/').Should().EndWith("/app/plugins");
+    }
+}
+
+/// <summary>
+/// Captures the loader failure a call is expected to produce, so that every fixture asserts on the same
+/// shape rather than each spelling its own try/catch.
 /// </summary>
 internal static class CaptureLoadFailure
 {
@@ -435,11 +657,11 @@ internal static class CaptureLoadFailure
         try
         {
             PluginsConfiguration configuration = act();
+            configuration.TryGetResolvedRoot(out string? root);
 
             throw new AssertionException(
-                "Expected a PluginLoadException, but the configuration bound successfully to "
-                    + $"root '{configuration.ResolvedRoot}' with "
-                    + $"[{string.Join(", ", configuration.AllowedNames)}]."
+                "Expected a PluginLoadException, but the configuration bound successfully to root "
+                    + $"'{root ?? "<none>"}' with [{string.Join(", ", configuration.AllowedNames)}]."
             );
         }
         catch (PluginLoadException exception)

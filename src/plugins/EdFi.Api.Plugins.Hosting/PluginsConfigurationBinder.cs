@@ -36,21 +36,38 @@ internal static partial class PluginsConfigurationBinder
         PluginsOptions options =
             configuration.GetSection(SectionName).Get<PluginsOptions>() ?? new PluginsOptions();
 
+        // A null Allowed is an absent allowlist rather than a malformed one: binding assigns a JSON
+        // null straight over the property initializer, and an operator who wrote null asked for no
+        // plugins just as surely as one who omitted the key.
+        IReadOnlyList<string> allowedNames = ParseAllowed(options.Allowed);
+
+        if (allowedNames.Count == 0)
+        {
+            // The shipped default. No plugin was asked for, so the configured directory is neither
+            // resolved nor validated: a deployment that adopts nothing boots the same way whatever
+            // Plugins:Directory says, and refusing it here would turn an unused setting into a startup
+            // failure.
+            return PluginsConfiguration.NoPluginsRequested;
+        }
+
         // The allowlist is validated in full before the root is resolved, and the root is resolved
         // before anything asks the filesystem a question. An operator who wrote a bad entry learns
         // about the entry rather than about a path that could never have been composed from it.
-        IReadOnlyList<string> allowedNames = ParseAllowed(options.Allowed);
-
-        return new PluginsConfiguration(ResolveRoot(options.Directory), allowedNames);
+        return PluginsConfiguration.Rooted(ResolveRoot(options.Directory), allowedNames);
     }
 
     /// <summary>
     /// Splits the delimited allowlist once, trims each entry, drops empty entries, and refuses an
     /// ambiguous or malformed list.
     /// </summary>
-    private static IReadOnlyList<string> ParseAllowed(string allowed)
+    private static IReadOnlyList<string> ParseAllowed(string? allowed)
     {
         List<string> names = [];
+
+        if (allowed is null)
+        {
+            return names;
+        }
 
         // Ambiguity is settled case-insensitively, because two entries differing only in case would
         // resolve to one directory on a case-insensitive filesystem and to two on the image's, so the
@@ -106,14 +123,14 @@ internal static partial class PluginsConfigurationBinder
     /// Turns the configured directory into a fully qualified path, resolving a relative one against
     /// the application's base directory.
     /// </summary>
-    private static string ResolveRoot(string directory)
+    private static string ResolveRoot(string? directory)
     {
         if (string.IsNullOrWhiteSpace(directory))
         {
             throw new PluginLoadException(
                 PluginLoadFailure.PluginPathUnresolvable,
                 null,
-                "Plugins:Directory is present but empty. Remove the setting to use the default "
+                "Plugins:Directory is present but carries no path. Remove the setting to use the default "
                     + "'/app/plugins', or give it a path. An empty value is refused rather than treated "
                     + "as the default, because an operator who cleared the setting did not ask for the "
                     + "default root to be read."

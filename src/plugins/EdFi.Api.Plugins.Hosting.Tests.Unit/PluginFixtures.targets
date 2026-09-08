@@ -44,11 +44,21 @@
     </ItemGroup>
 
     <!--
-        Staging is invalidated wholesale when the shape of the request changes rather than only its
-        content. The fingerprint carries the configuration, the runtime identifier and the set of
-        fixture names, so a Release build, a run on another operating system, or a fixture added or
-        removed cannot reuse a tree staged for something else. Timestamp comparison alone sees none of
-        those.
+        Freshness is decided by a recorded fingerprint rather than by timestamps alone, because the two
+        things most likely to go wrong here are both invisible to a timestamp comparison.
+
+        Removing a source file makes nothing newer, so an Inputs/Outputs check sees an up-to-date tree
+        and keeps serving an entry assembly built from source that no longer exists. The fingerprint
+        therefore carries the identity and modification time of every input, so a removal changes it.
+
+        Deleting a staged *dependency* leaves the staged entry assembly and manifest untouched, so an
+        Outputs check on those two files also sees an up-to-date tree while the fixture's closure is
+        incomplete and every test over it would fail for the wrong reason. The fingerprint therefore
+        also carries the whole staged file set.
+
+        The rest of the fingerprint is the shape of the request: the configuration, the runtime
+        identifier, and the fixture names. That is what stops a Release build, a run on another
+        operating system, or a fixture added or removed from reusing a tree staged for something else.
     -->
     <Target
         Name="PrunePluginFixtureStaging"
@@ -60,8 +70,19 @@
             <PluginFixtureStampDir
             >$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', '$(IntermediateOutputPath)', 'fixtures'))</PluginFixtureStampDir>
             <PluginFixtureFingerprintFile>$(PluginFixtureStampDir)staging.fingerprint</PluginFixtureFingerprintFile>
+            <PluginFixtureInputList>@(PluginFixtureInput->'%(Identity)@%(ModifiedTime)', '|')</PluginFixtureInputList>
+            <PluginFixtureFingerprintPrefix
+            >$(Configuration)+$(NETCoreSdkRuntimeIdentifier)+@(PluginFixture->'%(StagedName)', '&amp;')+$([MSBuild]::StableStringHash($(PluginFixtureInputList)))</PluginFixtureFingerprintPrefix>
+        </PropertyGroup>
+
+        <ItemGroup Condition="Exists('$(PluginFixtureStageRoot)')">
+            <PluginFixtureStagedFile Include="$(PluginFixtureStageRoot)**/*" />
+        </ItemGroup>
+
+        <PropertyGroup>
+            <PluginFixtureStagedList>@(PluginFixtureStagedFile->'%(RecursiveDir)%(Filename)%(Extension)', '|')</PluginFixtureStagedList>
             <PluginFixtureFingerprint
-            >$(Configuration)|$(NETCoreSdkRuntimeIdentifier)|@(PluginFixture->'%(StagedName)', '+')</PluginFixtureFingerprint>
+            >$(PluginFixtureFingerprintPrefix)+$([MSBuild]::StableStringHash($(PluginFixtureStagedList)))</PluginFixtureFingerprint>
         </PropertyGroup>
 
         <ReadLinesFromFile
@@ -78,9 +99,16 @@
             >true</PluginFixtureStagingIsStale>
         </PropertyGroup>
 
+        <!--
+            A stale tree is removed wholesale rather than patched. That is what makes a removed
+            dependency, a removed fixture, and a directory left over from an earlier fixture set all
+            resolve the same way, and it is why the republish below cannot inherit a file from a
+            previous publish. The path is composed from OutDir and a literal, so it is always inside
+            this project's own output.
+        -->
         <RemoveDir
             Directories="$(PluginFixtureStageRoot)"
-            Condition="'$(PluginFixtureStagingIsStale)' == 'true' AND Exists('$(PluginFixtureStageRoot)')"
+            Condition="'$(PluginFixtureStagingIsStale)' == 'true' AND '$(PluginFixtureStageRoot)' != '' AND Exists('$(PluginFixtureStageRoot)')"
         />
         <Delete
             Files="$(PluginFixtureFingerprintFile)"
@@ -88,9 +116,9 @@
         />
 
         <!--
-            A fixture removed from the list above leaves its staged directory behind, where a test
-            enumerating the staged tree would still find it. The fingerprint already forces a full
-            re-stage in that case; this removes the directory the re-stage would not overwrite.
+            A directory carrying no files is invisible to the staged file set above, because the glob
+            matches files. That is the one leftover the fingerprint cannot see, so it is removed by
+            name. Each path is composed from the stage root and a literal fixture name.
         -->
         <ItemGroup Condition="Exists('$(PluginFixtureStageRoot)')">
             <PluginFixtureExpectedDir Include="@(PluginFixture->'$(PluginFixtureStageRoot)%(StagedName)')" />
@@ -106,9 +134,9 @@
     </Target>
 
     <!--
-        Outputs are the published entry assembly and manifest of each fixture rather than a stamp
-        file, so that deleting a staged directory by hand re-stages it instead of being reported as
-        up to date.
+        Outputs are each fixture's staged entry assembly and manifest. They are not the whole freshness
+        story, which is what the fingerprint above is for; they are what makes the common case cheap and
+        what re-runs this target once the prune has emptied the tree.
     -->
     <Target
         Name="PublishPluginFixtures"
@@ -119,6 +147,16 @@
         Outputs="@(PluginFixture->'$(PluginFixtureStageRoot)%(StagedName)/%(StagedName).dll');@(PluginFixture->'$(PluginFixtureStageRoot)%(StagedName)/%(StagedName).deps.json')"
     >
         <!--
+            Each fixture's directory is emptied before it is published into, so that a file dropped from
+            a fixture's closure cannot survive as a leftover from the previous publish. dotnet publish
+            overwrites what it produces but removes nothing it no longer produces.
+        -->
+        <RemoveDir
+            Directories="@(PluginFixture->'$(PluginFixtureStageRoot)%(StagedName)')"
+            Condition="'$(PluginFixtureStageRoot)' != ''"
+        />
+
+        <!--
             BuildingPluginFixtures is passed down so that an inner publish can never re-enter this
             target, and each fixture project is named explicitly so that nothing walks back up to this
             test project.
@@ -128,10 +166,25 @@
             WorkingDirectory="$(MSBuildProjectDirectory)"
         />
 
+        <!--
+            The fingerprint is recorded from the tree that was just produced, so the next build compares
+            against what is actually staged rather than against what was staged when this target last
+            looked.
+        -->
+        <ItemGroup>
+            <PluginFixtureStagedFileAfterPublish Include="$(PluginFixtureStageRoot)**/*" />
+        </ItemGroup>
+
+        <PropertyGroup>
+            <PluginFixtureStagedListAfterPublish>@(PluginFixtureStagedFileAfterPublish->'%(RecursiveDir)%(Filename)%(Extension)', '|')</PluginFixtureStagedListAfterPublish>
+            <PluginFixtureFingerprintAfterPublish
+            >$(PluginFixtureFingerprintPrefix)+$([MSBuild]::StableStringHash($(PluginFixtureStagedListAfterPublish)))</PluginFixtureFingerprintAfterPublish>
+        </PropertyGroup>
+
         <MakeDir Directories="$(PluginFixtureStampDir)" />
         <WriteLinesToFile
             File="$(PluginFixtureFingerprintFile)"
-            Lines="$(PluginFixtureFingerprint)"
+            Lines="$(PluginFixtureFingerprintAfterPublish)"
             Overwrite="true"
             WriteOnlyWhenDifferent="true"
         />

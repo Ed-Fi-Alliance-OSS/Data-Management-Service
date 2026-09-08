@@ -79,18 +79,56 @@ public class Given_the_fixture_plugins_have_been_staged
     }
 
     [TestCaseSource(typeof(PluginFixtures), nameof(PluginFixtures.All))]
-    public void It_publishes_a_manifest_a_framework_dependent_publish_produces(string name)
+    public void It_publishes_a_manifest_naming_the_target_framework(string name)
     {
         using JsonDocument manifest = JsonDocument.Parse(File.ReadAllText(PluginFixtures.ManifestOf(name)));
 
-        // runtimeTarget naming the framework rather than a runtime pack is what distinguishes the
-        // publish the implementer guide prescribes from a self-contained one.
+        // runtimeTarget names the framework the fixture was published for. It is deliberately not
+        // asserted to discriminate a self-contained publish, because it does not: a RID-specific
+        // framework-dependent publish names a runtime identifier here too, and a runtimepack entry
+        // among the libraries is what actually distinguishes the two.
         manifest
             .RootElement.GetProperty("runtimeTarget")
             .GetProperty("name")
             .GetString()
             .Should()
             .StartWith(".NETCoreApp,Version=v10.0");
+    }
+
+    [TestCaseSource(typeof(PluginFixtures), nameof(PluginFixtures.All))]
+    public void It_stages_every_managed_file_the_manifest_declares(string name)
+    {
+        // The entry assembly and the manifest are the staging target's declared outputs, so they are
+        // the two files a timestamp check can see. This asserts the rest of the closure, which is what
+        // a test over a half-staged fixture would otherwise fail on for the wrong reason.
+        using JsonDocument manifest = JsonDocument.Parse(File.ReadAllText(PluginFixtures.ManifestOf(name)));
+
+        string targetName = manifest
+            .RootElement.GetProperty("runtimeTarget")
+            .GetProperty("name")
+            .GetString()!;
+        JsonElement target = manifest.RootElement.GetProperty("targets").GetProperty(targetName);
+
+        List<string> declared = [];
+
+        foreach (JsonProperty library in target.EnumerateObject())
+        {
+            if (!library.Value.TryGetProperty("runtime", out JsonElement runtime))
+            {
+                continue;
+            }
+
+            // A portable framework-dependent publish flattens every runtime asset to the plugin
+            // directory root, so the declared path's file name is where the file actually sits. The
+            // fuller mapping, which a RID-specific publish needs, belongs with the loader's inventory.
+            declared.AddRange(runtime.EnumerateObject().Select(asset => Path.GetFileName(asset.Name)));
+        }
+
+        declared.Should().NotBeEmpty();
+        declared
+            .Where(file => !File.Exists(Path.Combine(PluginFixtures.DirectoryOf(name), file)))
+            .Should()
+            .BeEmpty();
     }
 
     [Test]
