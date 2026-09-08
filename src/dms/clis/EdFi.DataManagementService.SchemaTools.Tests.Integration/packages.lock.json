@@ -479,6 +479,8 @@
           "EdFi.DataManagementService.Backend.Ddl": "[1.0.0, )",
           "EdFi.DataManagementService.Core": "[1.0.0, )",
           "Microsoft.Data.SqlClient": "[6.1.4, )",
+          "Microsoft.Extensions.Configuration.EnvironmentVariables": "[10.0.1, )",
+          "Microsoft.Extensions.Configuration.Json": "[10.0.1, )",
           "Microsoft.Extensions.DependencyInjection": "[10.0.1, )",
           "Microsoft.Extensions.Logging": "[10.0.1, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.1, )",
@@ -713,6 +715,16 @@
         "requested": "[10.0.1, )",
         "resolved": "10.0.1",
         "contentHash": "Lp4CZIuTVXtlvkAnTq6QvMSW7+H62gX2cU2vdFxHQUxvrWTpi7LwYI3X+YAyIS0r12/p7gaosco7efIxL4yFNw==",
+        "dependencies": {
+          "Microsoft.Extensions.Configuration": "10.0.1",
+          "Microsoft.Extensions.Configuration.Abstractions": "10.0.1"
+        }
+      },
+      "Microsoft.Extensions.Configuration.EnvironmentVariables": {
+        "type": "CentralTransitive",
+        "requested": "[10.0.1, )",
+        "resolved": "10.0.1",
+        "contentHash": "csD8Eps3HQ3yc0x6NhgTV+aIFKSs3qVlVCtFnMHz/JOjnv7eEj/qSXKXiK9LzBzB1qSfAVqFnB5iaX2nUmagIQ==",
         "dependencies": {
           "Microsoft.Extensions.Configuration": "10.0.1",
           "Microsoft.Extensions.Configuration.Abstractions": "10.0.1"

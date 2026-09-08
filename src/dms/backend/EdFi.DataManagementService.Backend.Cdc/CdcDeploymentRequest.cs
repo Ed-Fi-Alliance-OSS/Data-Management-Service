@@ -17,6 +17,10 @@ namespace EdFi.DataManagementService.Backend.Cdc;
 /// </summary>
 public sealed class CdcDeploymentRequest
 {
+    /// <summary>Reuse the template's validated Core-to-provider artifact mapping at host boundaries.</summary>
+    public static CdcProviderArtifactNames GetProviderArtifactNames(CoreCdc.CdcBinding binding) =>
+        CdcConnectorTemplateBindingArtifacts.From(binding, nameof(binding)).ProviderArtifactNames;
+
     public CdcDeploymentRequest(
         CoreCdc.CdcBinding binding,
         IConfiguration dmsSettings,

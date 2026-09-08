@@ -20,6 +20,9 @@
         <PackageReference Include="Microsoft.CodeAnalysis" />
     </ItemGroup>
     <ItemGroup>
+        <None Include="../EdFi.DataManagementService.SchemaTools.Tests.Integration/Fixtures/minimal-api-schema.json" Link="Fixtures/minimal-api-schema.json" CopyToOutputDirectory="PreserveNewest" />
+    </ItemGroup>
+    <ItemGroup>
         <Using Include="NUnit.Framework" />
     </ItemGroup>
     <ItemGroup>

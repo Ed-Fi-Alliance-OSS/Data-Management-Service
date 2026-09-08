@@ -273,3 +273,159 @@ api-schema-tools hash core/ApiSchema.json
 ```
 
 The `hash` subcommand is now required.
+
+## CDC deployment commands
+
+`api-schema-tools cdc` uses the deployment controllers in `Backend.Cdc`. The shipped
+CLI composes the qualified single-worker, single-broker local Compose deployment
+(`LocalSingleBroker` / `AuthorizationDisabledLocal`); it reports that this profile
+has no ACL isolation proof. Other deployments must supply their own live deployment
+authority adapters. DMS HTTP startup does not register connectors.
+
+Use the **original** managed provisioning state root and the same DMS settings and
+selected target as the eventual DMS host. The database must already have its managed
+CREATE receipt and source-history record (`ddl provision --managed-state-path ...`).
+`enable` requires the exclusively owned initial offline window, before any canonical
+writer or seed process starts. It returns a writer-publication receipt only after
+the temporary projection runtime has stopped. Configuration is not provenance.
+
+These invocation shapes apply to PostgreSQL and SQL Server respectively:
+
+```bash
+api-schema-tools cdc enable --settings ./cdc-postgresql.json --state-path "$PWD/.cdc-state" --json
+api-schema-tools cdc enable --settings ./cdc-mssql.json --state-path "$PWD/.cdc-state" --json
+api-schema-tools cdc validate --settings ./cdc-postgresql.json --state-path "$PWD/.cdc-state" --json
+api-schema-tools cdc status --settings ./cdc-mssql.json --state-path "$PWD/.cdc-state" --json
+api-schema-tools cdc watch --settings ./cdc-postgresql.json --state-path "$PWD/.cdc-state" --maximum-passes 20 --json
+api-schema-tools cdc stop --settings ./cdc-postgresql.json --state-path "$PWD/.cdc-state" --json
+api-schema-tools cdc start --settings ./cdc-postgresql.json --state-path "$PWD/.cdc-state" --json
+api-schema-tools cdc restart --settings ./cdc-mssql.json --state-path "$PWD/.cdc-state" --json
+api-schema-tools cdc resume --settings ./cdc-mssql.json --state-path "$PWD/.cdc-state" --json
+api-schema-tools cdc retire --settings ./cdc-postgresql.json --state-path "$PWD/.cdc-state" --generation 1 --destructive-cleanup --json
+```
+
+Each settings file contains the normal DMS configuration (including CMS access,
+schema packages, and `DocumentCache:Targets`) plus a `Cdc` section. For example,
+merge the following into your PostgreSQL DMS settings, replacing local paths and
+principals with those of your deployment:
+
+```json
+{
+  "AppSettings": { "Datastore": "postgresql" },
+  "DocumentCache": { "Targets": [{ "DataStoreId": 42 }] },
+  "Cdc": {
+    "Provider": "postgresql",
+    "DeploymentKey": "local",
+    "TenantKey": "",
+    "DataStoreId": "42",
+    "InstanceKey": "datastore-42",
+    "Generation": 1,
+    "TopicPrefix": "edfi",
+    "PartitionCount": 1,
+    "Schemas": ["/absolute/path/to/ApiSchema.json"],
+    "SetupPrincipal": "postgres",
+    "DatabaseConnectorPrincipal": "cdc_reader",
+    "ConnectEndpoint": "http://localhost:8083",
+    "WorkerMetricsEndpoint": "http://localhost:9404/metrics",
+    "KafkaBootstrapServers": "dms-kafka1:9092",
+    "KafkaAdminBootstrapServers": "127.0.0.1:9092",
+    "MaxRecordBytes": 10000000,
+    "DurabilityProfile": "LocalSingleBroker",
+    "AuthorizationProfile": "AuthorizationDisabledLocal",
+    "LagThresholdMilliseconds": 5000,
+    "Worker": {
+      "Key": "local-worker",
+      "OffsetStorageTopic": "dms-connect-offsets",
+      "HeapBytes": 536870912,
+      "Principal": "worker",
+      "ConnectorPrincipal": "connector",
+      "AdministratorPrincipal": "administrator"
+    },
+    "Consumers": [],
+    "ProviderConnectionProperties": {
+      "database.hostname": "dms-postgresql",
+      "database.port": "5432",
+      "database.dbname": "edfi_cdc",
+      "database.user": "cdc_reader",
+      "database.password": "${env:CDC_DATABASE_PASSWORD}"
+    },
+    "KafkaClientSecurityProperties": {},
+    "KafkaAdminProperties": {},
+    "Compose": {
+      "File": "/absolute/path/to/eng/docker-compose/kafka-cdc.yml",
+      "EnvironmentFile": "/absolute/path/to/eng/docker-compose/.env",
+      "Project": "dms-local",
+      "BrokerSizeOverrideFile": "/absolute/path/to/retained/broker-size.json"
+    },
+    "Timing": {
+      "CallMilliseconds": 30000,
+      "WaitMilliseconds": 300000,
+      "PollMilliseconds": 1000,
+      "MaximumObservationAgeMilliseconds": 10000
+    }
+  }
+}
+```
+
+For SQL Server use `AppSettings:Datastore=mssql`, `Cdc:Provider=sqlserver`, the
+SQL Server setup/connector principals, port `1433`, and `database.names` instead of
+`database.dbname`. The schema inputs must match the deployed schema, including
+extensions. `KafkaBootstrapServers` is the address seen by the worker;
+`KafkaAdminBootstrapServers` is reachable from the CLI. Worker identity, offset topic,
+heap, image, ports and project must match the selected Compose deployment. The image
+digest comes from the shipped qualification record; there is no image override.
+The broker-size override's parent directory must already exist and survive restarts.
+
+Environment variables with prefix `DMS_CDC__` override settings in memory. For
+example, provide the setup connection through
+`DMS_CDC__Cdc__SetupConnectionString`; this connection reaches the selected physical
+DMS database as the setup principal. Supply normal CMS credentials through the same
+prefix, such as `DMS_CDC__ConfigurationServiceSettings__ClientSecret`. Connector secret
+properties must contain externalized references resolved by the worker; literal
+connector passwords are rejected. The controller never emits connector payloads.
+
+Commands emit one JSON result on stdout (also the default without `--json`), with
+safe diagnostics and watch passes on stderr. Exit codes: `0` successful operation or
+ready observation; `1` rejected/not-ready/unavailable/timed-out operation; `2` invalid
+command/configuration input; `130` cancellation. `data` contains the operation's
+typed result; `deploymentProfile` explicitly reports disabled local authorization and
+`aclIsolationProven: false`. `binding`, when present, is validated scope for downstream command
+input, not independent ownership evidence. `validate` never repairs. `status/watch`
+can persist terminal incidents and stop affected connectors. `stop` retains all
+artifacts; only a fresh verified stop result for every connector permits shared
+worker shutdown. `start` requires retained STOPPED state and the managed stop receipt.
+`retire` removes only this generation's governed artifacts while infrastructure stays
+reachable, and retains source history and shared worker state.
+
+Record-size increases require `increase-record-size --acknowledgement ./increase.json
+--confirm-consumer-capacity` together with `--settings`, `--state-path`, and `--json`.
+The acknowledgement has `operationId` (a stable UUID reused for retries),
+`bindingIdentity` (the complete identity fields from the command result's binding),
+`previousMaxRecordBytes`, `requestedMaxRecordBytes`, `requestedProducerBufferBytes`,
+`operatorIdentity`, `noConsumers`, and `consumers`. Each consumer entry contains
+`deploymentIdentity`, `revision`, `confirmingOwner`, and `evidenceReference`, using
+credential-free opaque tokens. Complete identity fields are `deploymentKey`,
+`tenantKey`, `dataStoreId`, `instanceKey`, `generation`, `provider`,
+`physicalSourceFingerprint`, `connectorName`, and `topicName`.
+
+The operator is responsible for complete consumer inventory and owner evidence of
+fetch/deserialization capacity maintained through consumption, or an explicit
+`noConsumers: true` with an empty inventory. The CLI does not certify consumers.
+Every invocation requires the confirmation flag again; it creates a fresh invocation
+ID and confirmation time. Retain the previous settings and the same acknowledgement
+scope while retrying a partial rollout. After success, update normal settings to the
+new ceilings. Increase `CallMilliseconds` (at most 300000) and `WaitMilliseconds`
+when broker recreation requires more time. The same durable broker-size override
+path is used for size changes and subsequent worker startup.
+
+Intact binding, journal, source history and provider/offset evidence are required.
+There is no adoption, force, import, or physical-source replacement operation. Native
+worker/task recovery can consume before revalidation; later containment or readiness
+does not certify unsampled continuity. Independently provisioning a new source and
+retiring an old one does not certify migration or continuity.
+
+Owning design: [initial enablement](../../../../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#enablement-and-initial-readiness-sequence),
+[state continuity](../../../../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#v1-deployment-state-continuity-and-adoption-deferral),
+[native recovery](../../../../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#controller-managed-lifecycle-and-native-recovery-boundary),
+[record-size increases](../../../../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#in-place-record-size-increase),
+and [source replacement deferral](../../../../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#v1-physical-source-replacement-deferral).
