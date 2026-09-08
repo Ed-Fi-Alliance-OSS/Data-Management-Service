@@ -64,6 +64,27 @@ public interface ICdcConnectTransport
         CdcDeploymentRequest request,
         CancellationToken cancellationToken
     );
+    Task<CdcTransportResult<CdcConnectStatus>> ReadStatusAsync(
+        CdcDeploymentRequest request,
+        CancellationToken cancellationToken
+    );
+    Task<CdcTransportResult<CdcConnectOffsetEvidence>> ReadOffsetEvidenceAsync(
+        CdcDeploymentRequest request,
+        CancellationToken cancellationToken
+    );
+    Task<CdcTransportResult<CdcTransportAcknowledgement>> UpdateConfigurationForRecordSizeIncreaseAsync(
+        CdcDeploymentRequest request,
+        CdcKafkaConnectRegistrationPayload payload,
+        CancellationToken cancellationToken
+    );
+    Task<CdcTransportResult<CdcTransportAcknowledgement>> ResumeAsync(
+        CdcDeploymentRequest request,
+        CancellationToken cancellationToken
+    );
+    Task<CdcTransportResult<CdcTransportAcknowledgement>> DeleteOffsetsAsync(
+        CdcDeploymentRequest request,
+        CancellationToken cancellationToken
+    );
     Task<CdcTransportResult<CdcTransportAcknowledgement>> RestartAsync(
         CdcDeploymentRequest request,
         CancellationToken cancellationToken
