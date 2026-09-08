@@ -483,6 +483,8 @@ public sealed class Given_DocumentCacheAdminRepresentationRestampExitCodes
                 5,
                 state == DocumentCacheRepresentationRestampOperationState.Completed ? 5 : 3,
                 state == DocumentCacheRepresentationRestampOperationState.Completed ? null : 2,
+                new DocumentCacheRepresentationRestampResourceScope("Ed-Fi", "Student"),
+                "representation correction",
                 DocumentCacheRepresentationRestampMode.Tracking,
                 new DocumentCachePhysicalSourceFingerprint($"sha256:{new string('a', 64)}"),
                 claimLevel

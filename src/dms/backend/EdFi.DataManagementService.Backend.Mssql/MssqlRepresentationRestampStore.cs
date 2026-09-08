@@ -9,9 +9,9 @@ using System.Data.Common;
 using System.Text.Json;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.External;
-using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Core.DocumentCache;
 using Microsoft.Data.SqlClient;
+using static EdFi.DataManagementService.Backend.RepresentationRestampStoreHelpers;
 
 namespace EdFi.DataManagementService.Backend.Mssql;
 
@@ -27,10 +27,9 @@ public sealed class MssqlRepresentationRestampStore(
     IRuntimeMappingSetCompiler runtimeMappingSetCompiler
 ) : IRepresentationRestampStore
 {
-    // UpdateMirrorAsync uses three scalar parameters for every selected document. SQL Server
-    // supports at most 2,100 parameters per command, so a page must contain no more than 700
-    // documents even when the shared projector page-size setting is larger.
-    private const int MaxMirrorStampsPerCommand = 700;
+    // UpdateMirrorAsync uses three scalar parameters for every selected document. Keep below
+    // SQL Server's 2,100-parameter limit with headroom for future command-level parameters.
+    private const int MaxMirrorStampsPerCommand = 699;
 
     private const string BigIntTableType = "dms.BigIntTable";
     private const string UniqueIdentifierTableType = "dms.UniqueIdentifierTable";
@@ -431,7 +430,6 @@ public sealed class MssqlRepresentationRestampStore(
     {
         short resourceKeyId = ResolveResourceKeyId(mappingSet, scope);
 
-        _ = ResolveRoute(mappingSet, resourceKeyId);
         long count = await ExecuteScalarAsync<long>(
                 session,
                 new RelationalCommand(
@@ -727,91 +725,23 @@ public sealed class MssqlRepresentationRestampStore(
     private static RepresentationRestampDocument ToRepresentationDocument(
         MappingSet mappingSet,
         SelectedDocument document
-    ) => new(document.DocumentId, document.DocumentUuid, ResolveRoute(mappingSet, document.ResourceKeyId));
+    ) =>
+        RepresentationRestampStoreHelpers.ToRepresentationDocument(
+            mappingSet,
+            document.DocumentId,
+            document.DocumentUuid,
+            document.ResourceKeyId
+        );
 
     private static short ResolveResourceKeyId(
         MappingSet mappingSet,
         DocumentCacheRepresentationRestampResourceScope scope
-    )
-    {
-        QualifiedResourceName resource = new(scope.ProjectName, scope.ResourceName);
-        if (!mappingSet.ResourceKeyIdByResource.TryGetValue(resource, out short resourceKeyId))
-        {
-            throw ValidationFailure(
-                DocumentCacheAdministrativeCommandClassification.InvalidRepresentationRestampScope,
-                DocumentCacheAdministrativeDiagnosticCategory.InvalidRepresentationRestampScope,
-                "Representation restamp resource scope did not resolve to a compiled resource key."
-            );
-        }
+    ) => RepresentationRestampStoreHelpers.ResolveResourceKeyId(mappingSet, scope);
 
-        _ = ResolveRoute(mappingSet, resourceKeyId);
-        return resourceKeyId;
-    }
-
-    private static RepresentationRestampMirrorRoute ResolveRoute(MappingSet mappingSet, short resourceKeyId)
-    {
-        if (!mappingSet.ResourceKeyById.TryGetValue(resourceKeyId, out ResourceKeyEntry? resourceKey))
-        {
-            throw ValidationFailure(
-                DocumentCacheAdministrativeCommandClassification.InvalidRepresentationRestampMapping,
-                DocumentCacheAdministrativeDiagnosticCategory.InvalidRepresentationRestampMapping,
-                "Representation restamp document resource key is not present in the compiled mapping set."
-            );
-        }
-
-        ConcreteResourceModel? model = mappingSet.TryGetDescriptorResourceModel(
-            resourceKey.Resource,
-            out ConcreteResourceModel? descriptorModel
-        )
-            ? descriptorModel
-            : mappingSet.Model.ConcreteResourcesInNameOrder.SingleOrDefault(candidate =>
-                candidate.ResourceKey.Resource.Equals(resourceKey.Resource)
-            );
-        if (model is null)
-        {
-            throw ValidationFailure(
-                DocumentCacheAdministrativeCommandClassification.InvalidRepresentationRestampMapping,
-                DocumentCacheAdministrativeDiagnosticCategory.InvalidRepresentationRestampMapping,
-                "Representation restamp document resource is missing compiled metadata."
-            );
-        }
-        if (model.ResourceKey.ResourceKeyId != resourceKeyId)
-        {
-            throw ValidationFailure(
-                DocumentCacheAdministrativeCommandClassification.InvalidRepresentationRestampMapping,
-                DocumentCacheAdministrativeDiagnosticCategory.InvalidRepresentationRestampMapping,
-                "Representation restamp document resource key does not match compiled resource metadata."
-            );
-        }
-        if (model.StorageKind is ResourceStorageKind.SharedDescriptorTable)
-        {
-            DbTableName descriptorTable = model.RelationalModel.Root.Table;
-            return new RepresentationRestampMirrorRoute(
-                resourceKeyId,
-                descriptorTable.Schema.Value,
-                descriptorTable.Name
-            );
-        }
-
-        DbTriggerInfo? trigger = mappingSet.Model.TriggersInCreateOrder.SingleOrDefault(trigger =>
-            trigger.Table.Equals(model.RelationalModel.Root.Table)
-            && trigger.Parameters is TriggerKindParameters.DocumentStamping
-        );
-        if (trigger?.MirrorStampTargetTable is not { } mirrorTarget)
-        {
-            throw ValidationFailure(
-                DocumentCacheAdministrativeCommandClassification.InvalidRepresentationRestampMirror,
-                DocumentCacheAdministrativeDiagnosticCategory.InvalidRepresentationRestampMirror,
-                "Representation restamp document resource has no unique compiled document-stamping mirror route."
-            );
-        }
-
-        return new RepresentationRestampMirrorRoute(
-            resourceKeyId,
-            mirrorTarget.Schema.Value,
-            mirrorTarget.Name
-        );
-    }
+    private static RepresentationRestampMirrorRoute ResolveRoute(
+        MappingSet mappingSet,
+        short resourceKeyId
+    ) => RepresentationRestampStoreHelpers.ResolveRoute(mappingSet, resourceKeyId);
 
     private static DataTable CreateDocumentIdTable(IEnumerable<long> documentIds)
     {
@@ -891,41 +821,6 @@ public sealed class MssqlRepresentationRestampStore(
         }
 
         return (T)Convert.ChangeType(result, typeof(T));
-    }
-
-    private static TEnum ParseEnum<TEnum>(string value, string fieldName)
-        where TEnum : struct, Enum =>
-        Enum.TryParse(value, ignoreCase: false, out TEnum parsed) && Enum.IsDefined(parsed)
-            ? parsed
-            : throw new InvalidOperationException(
-                $"Representation restamp manifest contains an invalid {fieldName}."
-            );
-
-    private static RepresentationRestampValidationException ValidationFailure(
-        DocumentCacheAdministrativeCommandClassification classification,
-        DocumentCacheAdministrativeDiagnosticCategory diagnosticCategory,
-        string message
-    ) => new(classification, diagnosticCategory, message);
-
-    private static void ValidatePageSize(int pageSize)
-    {
-        if (pageSize <= 0)
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(pageSize),
-                "Representation restamp page size must be positive."
-            );
-        }
-    }
-
-    private static void RequireExactlyOne(int affected, string operation)
-    {
-        if (affected != 1)
-        {
-            throw new InvalidOperationException(
-                $"Unable to {operation}; expected one affected row but observed {affected}."
-            );
-        }
     }
 
     private sealed record SelectedDocument(long DocumentId, Guid DocumentUuid, short ResourceKeyId);

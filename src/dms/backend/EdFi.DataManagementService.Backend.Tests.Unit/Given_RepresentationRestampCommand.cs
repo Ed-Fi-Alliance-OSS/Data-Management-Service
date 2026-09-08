@@ -922,6 +922,10 @@ public class Given_RepresentationRestampCommand
         result.RepresentationRestampResult.PreviewDocumentCount.Should().Be(previewDocumentCount);
         result.RepresentationRestampResult.CommittedDocumentCount.Should().Be(committedDocumentCount);
         result.RepresentationRestampResult.RemainingEligibleDocumentCount.Should().Be(remaining);
+        result
+            .RepresentationRestampResult.Scope.Should()
+            .Be(new DocumentCacheRepresentationRestampResourceScope("Ed-Fi", "Student"));
+        result.RepresentationRestampResult.Reason.Should().Be("representation correction");
         result.RepresentationRestampResult.Mode.Should().Be(DocumentCacheRepresentationRestampMode.Tracking);
         result.RepresentationRestampResult.PhysicalSourceFingerprint.Should().Be(Fingerprint);
         result

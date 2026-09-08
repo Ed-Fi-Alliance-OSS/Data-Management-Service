@@ -185,9 +185,7 @@ internal sealed record DocumentCacheAdministrativeCommandRunnerRequest
             DocumentCacheAdministrativeCommand.RepresentationRestamp,
             request.TargetKey,
             request.ExpectedPhysicalSourceFingerprint,
-            request.OfflineWriterAdmission?.WithCommandSpecificConfirmation(
-                DocumentCacheOfflineWriterAdmissionConfirmation.RepresentationRestampWritersClosedAndDrained
-            ),
+            request.OfflineWriterAdmission,
             request.Confirmation,
             requiresCommandConfirmation: false
         );
@@ -202,9 +200,7 @@ internal sealed record DocumentCacheAdministrativeCommandRunnerRequest
         return new(
             DocumentCacheAdministrativeCommand.RepresentationRestamp,
             request.TargetKey,
-            offlineWriterAdmission: request.OfflineWriterAdmission?.WithCommandSpecificConfirmation(
-                DocumentCacheOfflineWriterAdmissionConfirmation.RepresentationRestampWritersClosedAndDrained
-            ),
+            offlineWriterAdmission: request.OfflineWriterAdmission,
             confirmation: request.Confirmation
         );
     }
@@ -835,13 +831,7 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
                         LoggingSanitizer.SanitizeForLogging(request.TargetKey.TargetKey.ToString())
                     );
                     classifiedResult = RecordAdministrativeCommandResult(
-                        AugmentResult(
-                            workflow,
-                            commandContext,
-                            commandTimeout.IsTimeoutExpired
-                                ? CreateWorkflowTimeoutResult(commandContext)
-                                : CreateProviderTimeoutResult(commandContext)
-                        ),
+                        AugmentResult(workflow, commandContext, CreateProviderTimeoutResult(commandContext)),
                         commandContext
                     );
                     return classifiedResult;

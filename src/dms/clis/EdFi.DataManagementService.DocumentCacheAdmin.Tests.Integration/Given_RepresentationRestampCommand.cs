@@ -187,6 +187,8 @@ public sealed class Given_RepresentationRestampCommand
                 5,
                 committedDocumentCount,
                 remainingEligibleDocumentCount,
+                new DocumentCacheRepresentationRestampResourceScope("Ed-Fi", "Student"),
+                "representation correction",
                 DocumentCacheRepresentationRestampMode.Tracking,
                 new DocumentCachePhysicalSourceFingerprint($"sha256:{new string('a', 64)}"),
                 state is DocumentCacheRepresentationRestampOperationState.Completed
@@ -257,6 +259,11 @@ public sealed class Given_RepresentationRestampMssqlCommand
                 JsonObject restampResult = commandResult["result"]!.AsObject();
                 commandResult.ToJsonString().ToLowerInvariant().Should().NotContain("kafka");
                 restampResult["state"]!.GetValue<string>().Should().Be("completed");
+                restampResult["scope"]!["scopeType"]!.GetValue<string>().Should().Be("documentUuids");
+                restampResult["reason"]!
+                    .GetValue<string>()
+                    .Should()
+                    .Be("representation restamp integration test");
                 restampResult["claimLevel"]!.GetValue<string>().Should().Be("projectionWorkQueued");
                 restampResult["committedDocumentCount"]!.GetValue<long>().Should().Be(2);
                 restampResult["remainingEligibleDocumentCount"]!.GetValue<long>().Should().Be(0);

@@ -94,7 +94,8 @@ public sealed class Given_DocumentCacheAdminJsonContracts
                   "offlineWriterAdmission": "closedAndDrained",
                   "mode": "tracking",
                   "reason": "representation correction",
-                  "scope": { "scopeType": "resource", "projectName": "Ed-Fi", "resourceName": "Student" }
+                  "scope": { "scopeType": "resource", "projectName": "Ed-Fi", "resourceName": "Student" },
+                  "expectedPhysicalSourceFingerprint": "{{Fingerprint}}"
                 }
                 """,
             out DocumentCacheAdminInvocationTarget? invocationTarget,
@@ -102,9 +103,11 @@ public sealed class Given_DocumentCacheAdminJsonContracts
         );
 
         parsed.Should().BeTrue(failure);
-        invocationTarget!
+        DocumentCacheRepresentationRestampPreviewRequest request = invocationTarget!
             .JsonRequest!.SharedRequest.Should()
-            .BeOfType<DocumentCacheRepresentationRestampPreviewRequest>();
+            .BeOfType<DocumentCacheRepresentationRestampPreviewRequest>()
+            .Subject;
+        request.ExpectedPhysicalSourceFingerprint!.Value.Should().Be(Fingerprint);
     }
 
     [Test]

@@ -149,6 +149,7 @@ public sealed record DocumentCacheRepresentationRestampPreviewRequest
     public DocumentCacheRepresentationRestampScope Scope { get; }
 
     [JsonPropertyName("expectedPhysicalSourceFingerprint")]
+    [JsonConverter(typeof(DocumentCachePhysicalSourceFingerprintJsonConverter))]
     public DocumentCachePhysicalSourceFingerprint? ExpectedPhysicalSourceFingerprint { get; }
 
     [JsonIgnore]
@@ -217,10 +218,12 @@ public sealed record DocumentCacheRepresentationRestampResult(
     [property: JsonPropertyName("committedDocumentCount"), JsonPropertyOrder(5)] long CommittedDocumentCount,
     [property: JsonPropertyName("remainingEligibleDocumentCount"), JsonPropertyOrder(6)]
         long? RemainingEligibleDocumentCount,
-    [property: JsonPropertyName("mode"), JsonPropertyOrder(7)] DocumentCacheRepresentationRestampMode Mode,
-    [property: JsonPropertyName("physicalSourceFingerprint"), JsonPropertyOrder(8)]
+    [property: JsonPropertyName("scope"), JsonPropertyOrder(7)] DocumentCacheRepresentationRestampScope Scope,
+    [property: JsonPropertyName("reason"), JsonPropertyOrder(8)] string Reason,
+    [property: JsonPropertyName("mode"), JsonPropertyOrder(9)] DocumentCacheRepresentationRestampMode Mode,
+    [property: JsonPropertyName("physicalSourceFingerprint"), JsonPropertyOrder(10)]
     [property: JsonConverter(typeof(DocumentCachePhysicalSourceFingerprintJsonConverter))]
         DocumentCachePhysicalSourceFingerprint PhysicalSourceFingerprint,
-    [property: JsonPropertyName("claimLevel"), JsonPropertyOrder(9)]
+    [property: JsonPropertyName("claimLevel"), JsonPropertyOrder(11)]
         DocumentCacheRepresentationRestampClaimLevel ClaimLevel
 );

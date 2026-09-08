@@ -374,6 +374,8 @@ public sealed class Given_DocumentCacheAdminProcessFailures
             .Should()
             .Contain($"restamp operationId={operationId}")
             .And.Contain("state=Completed")
+            .And.Contain("scope=resource:Ed-Fi/Student")
+            .And.Contain("reason=\"representation correction\"")
             .And.Contain("previewDocumentCount=5")
             .And.Contain("committedDocumentCount=5")
             .And.Contain("remainingEligibleDocumentCount=0")
@@ -447,6 +449,8 @@ public sealed class Given_DocumentCacheAdminProcessFailures
             PreviewDocumentCount: 5,
             CommittedDocumentCount: committedDocumentCount,
             RemainingEligibleDocumentCount: remainingEligibleDocumentCount,
+            Scope: new DocumentCacheRepresentationRestampResourceScope("Ed-Fi", "Student"),
+            Reason: "representation correction",
             Mode: DocumentCacheRepresentationRestampMode.Tracking,
             PhysicalSourceFingerprint: new DocumentCachePhysicalSourceFingerprint(
                 "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"

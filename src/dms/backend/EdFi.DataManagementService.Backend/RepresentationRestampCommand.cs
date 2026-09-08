@@ -360,7 +360,6 @@ internal sealed class RepresentationRestampCommand(
 
                 if (pageTransaction.Completed)
                 {
-                    context.CompletePhase(DocumentCacheAdministrativeCommandPhase.StampDocuments);
                     DocumentCacheRepresentationRestampOperation completed = operation with
                     {
                         State = DocumentCacheRepresentationRestampOperationState.Completed,
@@ -498,6 +497,8 @@ internal sealed class RepresentationRestampCommand(
                 operation.PreviewDocumentCount,
                 operation.CommittedDocumentCount,
                 remaining,
+                operation.Scope,
+                operation.Reason,
                 operation.Mode,
                 operation.PhysicalSourceFingerprint,
                 ClaimLevel(operation)
@@ -536,6 +537,8 @@ internal sealed class RepresentationRestampCommand(
                 operation.PreviewDocumentCount,
                 operation.CommittedDocumentCount,
                 remaining,
+                operation.Scope,
+                operation.Reason,
                 operation.Mode,
                 operation.PhysicalSourceFingerprint,
                 ClaimLevel(operation)
