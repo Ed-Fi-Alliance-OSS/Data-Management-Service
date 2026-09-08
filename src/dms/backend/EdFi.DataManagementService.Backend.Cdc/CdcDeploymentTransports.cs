@@ -10,9 +10,10 @@ using CoreCdc = EdFi.DataManagementService.Core.DocumentCache.Cdc;
 namespace EdFi.DataManagementService.Backend.Cdc;
 
 /// <summary>
-/// Broker transport only. The controller authorizes mutations and a shared policy validator owns
-/// policy decisions. Shared offset storage has no binding cleanup operation.
-/// Each method must honor the request call timeout and supplied cancellation token.
+/// Controller facade over broker transport. Setup authorizes and journals eligible effects; observe
+/// never repairs. Both methods return fresh policy evidence, not readiness authorization. Shared
+/// offset preparation precedes worker startup and has no binding cleanup operation. Callers evaluate
+/// both offset and binding policy before registration/readiness. Calls and complete passes are bounded.
 /// </summary>
 public interface ICdcKafkaAdministrationTransport
 {

@@ -209,7 +209,7 @@ public static class CdcDeploymentKafkaPolicy
         };
     }
 
-    private static CoreCdc.CdcKafkaTopicPolicy ObserveTopic(
+    internal static CoreCdc.CdcKafkaTopicPolicy ObserveTopic(
         CdcDeploymentRequest request,
         CdcKafkaTopicIntent intent,
         CdcTransportResult<CdcKafkaTopicEvidence> result
@@ -315,38 +315,7 @@ public static class CdcDeploymentKafkaPolicy
         {
             states.Add(EvidenceState(publicTopic));
         }
-        if (evidence.Brokers is CdcTransportResult<CdcKafkaBrokerEvidence>.Observed brokers)
-        {
-            if (!brokers.Value.InventoryComplete || brokers.Value.Brokers.Count == 0)
-            {
-                states.Add(ItemState.Unknown);
-            }
-            else
-            {
-                int[] ids = brokers.Value.Brokers.Select(broker => broker.BrokerId).ToArray();
-                bool valid =
-                    Array.TrueForAll(ids, id => id >= 0)
-                    && ids.Distinct().Count() == ids.Length
-                    && brokers.Value.Brokers.All(broker =>
-                        broker.SocketRequestMaxBytes >= plan.MaxRecordBytes
-                        && broker.ReplicaFetchMaxBytes >= plan.MaxRecordBytes
-                        && broker.ReplicaFetchResponseMaxBytes >= plan.MaxRecordBytes
-                    );
-                // A claimed complete inventory that omits an assigned broker is contradictory.
-                valid &= plan
-                    .BindingTopics.Append(plan.OffsetStore)
-                    .Select(intent => Lookup(evidence, intent.Name))
-                    .OfType<CdcTransportResult<CdcKafkaTopicEvidence>.Observed>()
-                    .SelectMany(result => result.Value.PartitionReplicas.Values)
-                    .SelectMany(replicas => replicas)
-                    .All(ids.Contains);
-                states.Add(valid ? ItemState.Satisfied : ItemState.Invalid);
-            }
-        }
-        else
-        {
-            states.Add(EvidenceState(evidence.Brokers));
-        }
+        states.Add(ObserveBrokerCapacity(request, evidence));
         if (evidence.Producer is CdcTransportResult<CdcKafkaProducerCapacityEvidence>.Observed producer)
         {
             states.Add(
@@ -367,6 +336,46 @@ public static class CdcDeploymentKafkaPolicy
             plan.MaxRecordBytes,
             messageBytes is > 0 and <= int.MaxValue ? (int)messageBytes : null
         );
+    }
+
+    internal static ItemState ObserveBrokerCapacity(
+        CdcDeploymentRequest request,
+        CdcKafkaDeploymentEvidence evidence
+    )
+    {
+        var plan = Build(request);
+        if (evidence.Brokers is CdcTransportResult<CdcKafkaBrokerEvidence>.Observed brokers)
+        {
+            if (!brokers.Value.InventoryComplete || brokers.Value.Brokers.Count == 0)
+            {
+                return ItemState.Unknown;
+            }
+            else
+            {
+                int[] ids = brokers.Value.Brokers.Select(broker => broker.BrokerId).ToArray();
+                bool valid =
+                    Array.TrueForAll(ids, id => id >= 0)
+                    && ids.Distinct().Count() == ids.Length
+                    && brokers.Value.Brokers.All(broker =>
+                        broker.SocketRequestMaxBytes >= plan.MaxRecordBytes
+                        && broker.ReplicaFetchMaxBytes >= plan.MaxRecordBytes
+                        && broker.ReplicaFetchResponseMaxBytes >= plan.MaxRecordBytes
+                    );
+                // A claimed complete inventory that omits an assigned broker is contradictory.
+                valid &= plan
+                    .BindingTopics.Append(plan.OffsetStore)
+                    .Select(intent => Lookup(evidence, intent.Name))
+                    .OfType<CdcTransportResult<CdcKafkaTopicEvidence>.Observed>()
+                    .SelectMany(result => result.Value.PartitionReplicas.Values)
+                    .SelectMany(replicas => replicas)
+                    .All(ids.Contains);
+                return valid ? ItemState.Satisfied : ItemState.Invalid;
+            }
+        }
+        else
+        {
+            return EvidenceState(evidence.Brokers);
+        }
     }
 
     private static ItemState Text(CdcKafkaTopicEvidence topic, string key, string expected) =>
