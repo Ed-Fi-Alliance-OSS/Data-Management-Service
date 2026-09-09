@@ -21,7 +21,7 @@ public static class CorrelationIdNormalizer
     /// plus LINE SEPARATOR (U+2028) and PARAGRAPH SEPARATOR (U+2029), which are not control
     /// characters but break a line-oriented log consumer the same way. Every other character
     /// is preserved. If truncation would split a surrogate pair, the orphaned high half is
-    /// dropped as well, so the result is always well-formed UTF-16.
+    /// dropped as well, so truncation never introduces a lone surrogate.
     /// </summary>
     /// <remarks>
     /// The order is deliberate and must not be swapped: truncating first means a long hostile
@@ -46,11 +46,15 @@ public static class CorrelationIdNormalizer
     /// misconfigured host still gets a bounded identifier.
     /// </param>
     /// <returns>
-    /// The normalized correlation ID: no control characters, no U+2028 or U+2029, well-formed
-    /// UTF-16, no longer than the effective maximum length, and never null. The result is an
-    /// empty string when the input is null, empty, or made up entirely of removed characters -
-    /// and also when the input's retained prefix is empty, as for a single astral character
-    /// truncated to a maximum length of 1.
+    /// The normalized correlation ID: no control characters, no U+2028 or U+2029, no longer
+    /// than the effective maximum length, and never null. The result is an empty string when
+    /// the input is null, empty, or made up entirely of removed characters - and also when the
+    /// input's retained prefix is empty, as for a single astral character truncated to a
+    /// maximum length of 1. Surrogates are guaranteed only to the extent that truncation never
+    /// splits a pair; a lone surrogate already present in <paramref name="value"/> is preserved
+    /// rather than repaired, because <see cref="char.IsControl(char)"/> is false for surrogates.
+    /// A caller whose correlation IDs can carry lone surrogates - which an HTTP header value
+    /// cannot - must check for that itself.
     /// </returns>
     public static string Normalize(string? value, int maxLength)
     {

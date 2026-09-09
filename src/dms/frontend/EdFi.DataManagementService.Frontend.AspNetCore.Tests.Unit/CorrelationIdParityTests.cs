@@ -75,12 +75,19 @@ public class Given_A_Hostile_Correlation_Id_On_Requests_That_Fail_In_Different_L
     private const int RateLimitedArmLoggedEventCount = 2;
 
     /// <summary>
+    /// One request-completion log event carrying a TraceId per request sent on the main
+    /// factory: the 404, the 401 and the 403.
+    /// </summary>
+    private const int MainFactoryArmLoggedEventCount = 3;
+
+    /// <summary>
     /// Every request sent before the snapshot in Setup: the 404, the 401 and the 403 on the
     /// main factory, plus the two rate-limited ones. Adding a hostile-arm request without
     /// updating this fails here, which is what keeps the snapshot's ordering invariant real
     /// instead of comment-enforced.
     /// </summary>
-    private const int HostileArmLoggedEventCount = 3 + RateLimitedArmLoggedEventCount;
+    private const int HostileArmLoggedEventCount =
+        MainFactoryArmLoggedEventCount + RateLimitedArmLoggedEventCount;
 
     private CorrelationIdRecordingLoggerProvider _loggerProvider = default!;
     private CorrelationIdRecordingLoggerProvider _rateLimitedLoggerProvider = default!;

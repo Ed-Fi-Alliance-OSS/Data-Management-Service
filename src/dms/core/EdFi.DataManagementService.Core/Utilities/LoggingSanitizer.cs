@@ -10,16 +10,23 @@ namespace EdFi.DataManagementService.Core.Utilities;
 /// <summary>
 /// Utility class for sanitizing strings in logging to prevent log injection attacks.
 /// Structured-log sanitization delegates to <see cref="LogSanitizer"/> (the canonical
-/// implementation in Backend.External) so there is a single whitelist definition.
+/// implementation in Backend.External) so there is a single allowlist definition.
 /// </summary>
 public static class LoggingSanitizer
 {
     /// <summary>
-    /// Sanitizes input strings to prevent log injection attacks using a whitelist approach.
-    /// Only allows alphanumeric characters, spaces, and safe punctuation (_-.:/).
+    /// Sanitizes input strings to prevent log injection attacks using an allowlist approach.
+    /// Only allows alphanumeric characters, spaces, and safe punctuation (_-.:/\).
     /// Explicitly excludes all control characters (ASCII &lt; 32, including \r, \n, \t, etc.)
     /// This prevents log forging, template injection, and other log-based attacks.
     /// </summary>
+    /// <remarks>
+    /// Never use this for a correlation ID or a <see cref="Core.External.Model.TraceId"/>: this
+    /// strict <c>Method</c>/<c>Path</c> allowlist strips punctuation an upstream identifier
+    /// scheme legitimately uses, so the logged value would no longer match the
+    /// <c>correlationId</c> in the response body for the same request. Use
+    /// <see cref="SanitizeCorrelationIdForLogging"/> instead.
+    /// </remarks>
     /// <param name="input">The input string to sanitize</param>
     /// <returns>A sanitized string safe for logging</returns>
     public static string SanitizeForLogging(string? input) => LogSanitizer.SanitizeForLog(input);
@@ -45,7 +52,7 @@ public static class LoggingSanitizer
     /// Sanitizes input for console/stderr output by stripping control characters,
     /// except newline (\n) and carriage return (\r) which are preserved for
     /// multi-line output readability (e.g., diff reports from SeedValidator).
-    /// Unlike <see cref="SanitizeForLogging"/> which uses a strict whitelist to prevent
+    /// Unlike <see cref="SanitizeForLogging"/> which uses a strict allowlist to prevent
     /// structured-log template injection, this method preserves all printable characters
     /// (quotes, parentheses, brackets, etc.) so that file paths and exception messages
     /// remain readable in user-facing CLI output.
