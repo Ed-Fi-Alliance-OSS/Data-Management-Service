@@ -343,3 +343,107 @@ public class Given_an_allowlist_whose_later_entry_is_invalid
         run.DiagnosticLines[0].Should().StartWith("plugins:");
     }
 }
+
+/// <summary>
+/// A filesystem answers <c>Directory.Exists</c> and <c>File.Exists</c>, and a case-insensitive one
+/// answers true for a name that is not the name it was asked about. The three names the loader composes
+/// from an allowlist entry therefore have to be read back from the directory and compared ordinally,
+/// like every other identity comparison here.
+/// </summary>
+[TestFixture]
+public class Given_a_staged_name_that_differs_only_in_case
+{
+    private const string WrongCaseDirectory = "acme.good";
+    private const string WrongCaseEntryAssembly = "acme.good.dll";
+    private const string WrongCaseManifest = "acme.good.deps.json";
+
+    private TemporaryPluginRoot _root = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _root = TemporaryPluginRoot.Create();
+
+        // Recorded as evidence rather than asserted, and measured in this tree rather than inferred from
+        // the operating system's name. Where it is false the wrong-cased staging below could never have
+        // been opened at all, and these cases refuse for that reason instead; the refusal being the same
+        // either way is what the correction is for.
+        TestContext.Out.WriteLine($"filesystem folds case: {_root.FilesystemFoldsCase()}");
+    }
+
+    [TearDown]
+    public void TearDown() => _root.Dispose();
+
+    /// <summary>
+    /// Asserts the staging actually produced the spelling the case is about.
+    /// </summary>
+    /// <remarks>
+    /// A case-only rename is a no-op on some filesystems. Without this, such a case would pass for the
+    /// wrong reason: the loader would be refusing a name that is not there at all rather than one that
+    /// is there under another spelling.
+    /// </remarks>
+    private static void RequirePhysicalEntry(string parent, string expected)
+    {
+        Directory.EnumerateFileSystemEntries(parent).Select(Path.GetFileName).Should().Contain(expected);
+    }
+
+    private void ItRefusesWithOneLine(PluginLoadFailure reason, string actualSpelling)
+    {
+        PluginLoaderRun run = PluginLoaderProbe.RunExpectingFailure(_root.RootPath, PluginFixtures.Good);
+
+        run.Failure!.Reason.Should().Be(reason);
+        run.Failure!.Message.Should().Contain(actualSpelling);
+        run.Failure!.Message.Should().Contain(PluginFixtures.Good);
+        run.DiagnosticLines.Should().ContainSingle();
+        run.DiagnosticLines[0].Should().StartWith($"plugin '{PluginFixtures.Good}' failed:");
+    }
+
+    [Test]
+    public void It_refuses_a_plugin_directory_spelled_differently()
+    {
+        // The self-contradiction this removes: the run used to load this directory and then announce, on
+        // the same channel, that it was ignoring a directory not in the allowlist, naming the very one it
+        // had just loaded.
+        _root.AddUnderDirectoryName(PluginFixtures.Good, WrongCaseDirectory);
+        RequirePhysicalEntry(_root.RootPath, WrongCaseDirectory);
+
+        ItRefusesWithOneLine(PluginLoadFailure.PluginDirectoryMissing, WrongCaseDirectory);
+    }
+
+    [Test]
+    public void It_refuses_an_entry_assembly_spelled_differently()
+    {
+        // This one used to load and then report EntryAssemblyFileName as the allowlist spelling, which is
+        // a file name that is not on disk.
+        _root.Add(PluginFixtures.Good);
+        _root.RenameFileInPlugin(PluginFixtures.Good, $"{PluginFixtures.Good}.dll", WrongCaseEntryAssembly);
+        RequirePhysicalEntry(Path.Combine(_root.RootPath, PluginFixtures.Good), WrongCaseEntryAssembly);
+
+        ItRefusesWithOneLine(PluginLoadFailure.EntryAssemblyMissing, WrongCaseEntryAssembly);
+    }
+
+    [Test]
+    public void It_refuses_a_dependency_manifest_spelled_differently()
+    {
+        _root.Add(PluginFixtures.Good);
+        _root.RenameFileInPlugin(PluginFixtures.Good, $"{PluginFixtures.Good}.deps.json", WrongCaseManifest);
+        RequirePhysicalEntry(Path.Combine(_root.RootPath, PluginFixtures.Good), WrongCaseManifest);
+
+        ItRefusesWithOneLine(PluginLoadFailure.DepsJsonMissing, WrongCaseManifest);
+    }
+
+    [Test]
+    public void It_still_loads_when_every_name_is_exact()
+    {
+        // The control, without which the three refusals above would be satisfied by a loader that had
+        // simply stopped accepting plugins.
+        _root.Add(PluginFixtures.Good);
+
+        PluginLoaderRun run = PluginLoaderProbe.Run(_root.RootPath, PluginFixtures.Good);
+
+        run.Failure.Should().BeNull();
+        run.Result!.Plugins.Should().ContainSingle();
+        run.Result!.Plugins[0].EntryAssemblyFileName.Should().Be($"{PluginFixtures.Good}.dll");
+        run.DiagnosticLines.Should().ContainSingle();
+    }
+}

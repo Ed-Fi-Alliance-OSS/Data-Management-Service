@@ -50,6 +50,33 @@ internal sealed class TemporaryPluginRoot : IDisposable
         return path;
     }
 
+    /// <summary>
+    /// Whether this tree's filesystem folds case, measured in the tree itself rather than inferred from
+    /// the operating system's name.
+    /// </summary>
+    internal bool FilesystemFoldsCase()
+    {
+        Directory.CreateDirectory(Path.Combine(_base, "CaseFoldProbe"));
+
+        return Directory.Exists(Path.Combine(_base, "casefoldprobe"));
+    }
+
+    /// <summary>
+    /// Copies a staged fixture under a directory name of the caller's choosing, renaming nothing inside
+    /// it, so that the directory's spelling can differ from the files' on its own.
+    /// </summary>
+    internal string AddUnderDirectoryName(string fixtureName, string directoryName)
+    {
+        string destination = Path.Combine(RootPath, directoryName);
+        CopyDirectory(PluginFixtures.DirectoryOf(fixtureName), destination);
+
+        return destination;
+    }
+
+    /// <summary>Renames one file inside a staged plugin directory.</summary>
+    internal void RenameFileInPlugin(string pluginName, string fromFileName, string toFileName) =>
+        Rename(Path.Combine(RootPath, pluginName), fromFileName, toFileName);
+
     /// <summary>Writes a file wherever the caller asks, creating the directories above it.</summary>
     internal static string WriteFile(string path, string content)
     {

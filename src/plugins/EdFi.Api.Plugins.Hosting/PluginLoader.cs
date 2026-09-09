@@ -138,6 +138,16 @@ public static class PluginLoader
                 );
             }
 
+            // Before resolution, and against the plugin root rather than a link target, so that what is
+            // checked is the allowlisted entry as the root spells it.
+            RequireExactSpelling(
+                resolvedRoot,
+                name,
+                name,
+                PluginLoadFailure.PluginDirectoryMissing,
+                directory: true
+            );
+
             string resolvedPlugin = ResolveDirectory(candidate, name, diagnostics);
 
             // The containment check resolves symbolic links rather than normalizing lexically, because
@@ -170,11 +180,25 @@ public static class PluginLoader
                 PluginLoadFailure.EntryAssemblyMissing,
                 "its entry assembly"
             );
+            RequireExactSpelling(
+                resolvedPlugin,
+                $"{name}.dll",
+                name,
+                PluginLoadFailure.EntryAssemblyMissing,
+                directory: false
+            );
             RequireFile(
                 manifestPath,
                 name,
                 PluginLoadFailure.DepsJsonMissing,
                 "its dependency manifest, without which its private closure would not resolve"
+            );
+            RequireExactSpelling(
+                resolvedPlugin,
+                $"{name}.deps.json",
+                name,
+                PluginLoadFailure.DepsJsonMissing,
+                directory: false
             );
 
             PluginDepsManifest manifest = PluginDepsManifest.Read(name, manifestPath);
@@ -287,6 +311,83 @@ public static class PluginLoader
 
             throw pluginName is null ? Report(diagnostics, null, failure) : failure;
         }
+    }
+
+    /// <summary>
+    /// Requires that <paramref name="expected"/> is present in <paramref name="parent"/> under exactly
+    /// that spelling, reading the name back from the directory rather than asking whether a path exists.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <see cref="Directory.Exists"/> and <see cref="File.Exists"/> are answered by the filesystem, and
+    /// a case-insensitive one answers true for a name that is not the name it was asked about. Every
+    /// identity comparison this loader makes is ordinal so that a plugin's identity does not depend on
+    /// which filesystem the image was built on, and trusting those probes made the plugin directory, the
+    /// entry assembly and the manifest the three places where it did: one plugin root would load here
+    /// and be a missing-path fatal in a Linux image.
+    /// </para>
+    /// <para>
+    /// The expected name is safe to pass as a search pattern. An allowlist entry has already been held
+    /// to a single path segment carrying no wildcard character, and the two file names are composed from
+    /// it. Every returned match is inspected rather than the first, so a match the platform adds cannot
+    /// hide the real one.
+    /// </para>
+    /// </remarks>
+    private static void RequireExactSpelling(
+        string parent,
+        string expected,
+        string pluginName,
+        PluginLoadFailure reason,
+        bool directory
+    )
+    {
+        string[] present;
+
+        try
+        {
+            present =
+            [
+                .. (
+                    directory
+                        ? Directory.EnumerateDirectories(parent, expected)
+                        : Directory.EnumerateFiles(parent, expected)
+                ).Select(path => Path.GetFileName(path) ?? string.Empty),
+            ];
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            throw new PluginLoadException(
+                PluginLoadFailure.PluginPathUnresolvable,
+                pluginName,
+                $"'{PluginDiagnosticText.Quote(parent)}' could not be listed to read how "
+                    + $"'{PluginDiagnosticText.Quote(expected)}' is spelled in it. The name has to come "
+                    + "from the directory to be compared ordinally with the one that was asked for.",
+                exception
+            );
+        }
+
+        if (Array.Exists(present, name => string.Equals(name, expected, StringComparison.Ordinal)))
+        {
+            return;
+        }
+
+        string? actual = present.Length == 0 ? null : present[0];
+
+        throw new PluginLoadException(
+            reason,
+            pluginName,
+            $"plugin '{PluginDiagnosticText.Quote(pluginName)}' needs "
+                + $"'{PluginDiagnosticText.Quote(expected)}' in "
+                + $"'{PluginDiagnosticText.Quote(parent)}', "
+                + (
+                    actual is null
+                        ? "and nothing there is spelled that way."
+                        : $"and what is there is '{PluginDiagnosticText.Quote(actual)}', which differs "
+                            + "only in case."
+                )
+                + " Names are compared ordinally, so a plugin's identity does not depend on which "
+                + "filesystem the image was built on."
+        );
     }
 
     private static void RequireFile(
