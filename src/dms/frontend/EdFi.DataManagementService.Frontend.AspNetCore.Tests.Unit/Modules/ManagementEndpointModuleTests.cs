@@ -11,6 +11,7 @@ using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Security;
+using EdFi.DataManagementService.Frontend.AspNetCore.Content;
 using EdFi.DataManagementService.Frontend.AspNetCore.Modules;
 using FakeItEasy;
 using FluentAssertions;
@@ -40,6 +41,7 @@ public class Given_ManagementEndpointModule
         bool enableClaimsetReload = true,
         IJwtValidationService? jwtValidationService = null,
         string? roleClaimType = RoleClaimType,
+        ITenantValidator? tenantValidator = null,
         RecordingLoggerProvider? loggerProvider = null
     )
     {
@@ -85,6 +87,10 @@ public class Given_ManagementEndpointModule
                     )
                 );
                 services.Replace(ServiceDescriptor.Singleton(apiService));
+                if (tenantValidator is not null)
+                {
+                    services.Replace(ServiceDescriptor.Singleton(tenantValidator));
+                }
             });
         });
     }
@@ -315,10 +321,49 @@ public class Given_ManagementEndpointModule
         new object[] { "GET", "/management/Tenant1/view-claimsets", true },
     ];
 
+    private static readonly object[] TenantScopedRouteCases =
+    [
+        new object[]
+        {
+            "POST",
+            "/management/Tenant1/reload-claimsets",
+            "/management/UnknownTenant/reload-claimsets",
+            "Tenant1",
+        },
+        new object[]
+        {
+            "GET",
+            "/management/Tenant1/view-claimsets",
+            "/management/UnknownTenant/view-claimsets",
+            "Tenant1",
+        },
+    ];
+
     private static void VerifyNoClaimsetWork(IApiService apiService)
     {
         A.CallTo(() => apiService.ReloadClaimsetsAsync(A<string?>._)).MustNotHaveHappened();
         A.CallTo(() => apiService.ViewClaimsetsAsync(A<string?>._)).MustNotHaveHappened();
+    }
+
+    private static ITenantValidator TenantValidatorWithKnownTenants()
+    {
+        ITenantValidator tenantValidator = A.Fake<ITenantValidator>();
+        A.CallTo(() => tenantValidator.ValidateTenantAsync("Tenant1")).Returns(true);
+        A.CallTo(() => tenantValidator.ValidateTenantAsync("UnknownTenant")).Returns(false);
+        return tenantValidator;
+    }
+
+    private static void VerifyExactClaimsetDispatch(IApiService apiService, string method, string tenant)
+    {
+        if (method == "POST")
+        {
+            A.CallTo(() => apiService.ReloadClaimsetsAsync(tenant)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => apiService.ViewClaimsetsAsync(A<string?>._)).MustNotHaveHappened();
+            return;
+        }
+
+        A.CallTo(() => apiService.ReloadClaimsetsAsync(A<string?>._)).MustNotHaveHappened();
+        A.CallTo(() => apiService.ViewClaimsetsAsync(tenant)).MustHaveHappenedOnceExactly();
     }
 
     [TestCaseSource(nameof(ProtectedRouteCases))]
@@ -492,57 +537,47 @@ public class Given_ManagementEndpointModule
         A.CallTo(() => apiService.ViewClaimsetsAsync(null)).MustHaveHappenedOnceExactly();
     }
 
-    [Test]
-    public async Task It_reloads_claimsets_for_a_correctly_authorized_tenant_scoped_request()
+    [TestCaseSource(nameof(TenantScopedRouteCases))]
+    public async Task It_does_not_validate_or_dispatch_tenant_scoped_requests_when_the_caller_is_anonymous(
+        string method,
+        string validTenantPath,
+        string _,
+        string tenant
+    )
     {
         IApiService apiService = FakeApiService();
+        ITenantValidator tenantValidator = TenantValidatorWithKnownTenants();
         await using WebApplicationFactory<Program> factory = CreateFactory(
             apiService,
             ValidRequiredRole,
             multiTenancy: true,
-            jwtValidationService: ValidJwtWithClaims(new Claim(RoleClaimType, ValidRequiredRole))
-        );
-        using HttpClient client = factory.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
-            "Bearer",
-            ValidBearerToken
-        );
-
-        HttpResponseMessage response = await client.PostAsync(
-            "/management/Tenant1/reload-claimsets",
-            content: null
-        );
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        A.CallTo(() => apiService.ReloadClaimsetsAsync("Tenant1")).MustHaveHappenedOnceExactly();
-    }
-
-    [Test]
-    public async Task It_authorizes_before_validating_the_tenant()
-    {
-        IApiService apiService = FakeApiService();
-        await using WebApplicationFactory<Program> factory = CreateFactory(
-            apiService,
-            ValidRequiredRole,
-            multiTenancy: true
+            tenantValidator: tenantValidator
         );
         using HttpClient client = factory.CreateClient();
 
-        HttpResponseMessage response = await client.GetAsync("/management/UnknownTenant/view-claimsets");
+        HttpResponseMessage response = await CallAsync(client, method, validTenantPath);
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        A.CallTo(() => tenantValidator.ValidateTenantAsync(A<string>._)).MustNotHaveHappened();
         VerifyNoClaimsetWork(apiService);
     }
 
-    [Test]
-    public async Task It_reaches_tenant_validation_once_the_caller_is_authorized()
+    [TestCaseSource(nameof(TenantScopedRouteCases))]
+    public async Task It_does_not_validate_or_dispatch_tenant_scoped_requests_when_the_caller_has_the_wrong_role(
+        string method,
+        string validTenantPath,
+        string _,
+        string tenant
+    )
     {
         IApiService apiService = FakeApiService();
+        ITenantValidator tenantValidator = TenantValidatorWithKnownTenants();
         await using WebApplicationFactory<Program> factory = CreateFactory(
             apiService,
             ValidRequiredRole,
             multiTenancy: true,
-            jwtValidationService: ValidJwtWithClaims(new Claim(RoleClaimType, ValidRequiredRole))
+            jwtValidationService: ValidJwtWithClaims(new Claim(RoleClaimType, "some-other-role")),
+            tenantValidator: tenantValidator
         );
         using HttpClient client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
@@ -550,13 +585,71 @@ public class Given_ManagementEndpointModule
             ValidBearerToken
         );
 
-        HttpResponseMessage response = await client.GetAsync("/management/SomeTenant/view-claimsets");
+        HttpResponseMessage response = await CallAsync(client, method, validTenantPath);
 
-        // TestMockHelper fakes ITenantValidator to accept any non-null tenant, so an authorized
-        // request passes validation and dispatches. The point is that authorization no longer
-        // short-circuits ahead of it.
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        A.CallTo(() => tenantValidator.ValidateTenantAsync(A<string>._)).MustNotHaveHappened();
+        VerifyNoClaimsetWork(apiService);
+    }
+
+    [TestCaseSource(nameof(TenantScopedRouteCases))]
+    public async Task It_returns_404_without_dispatching_when_an_authorized_tenant_scoped_request_has_an_unknown_tenant(
+        string method,
+        string _,
+        string unknownTenantPath,
+        string tenant
+    )
+    {
+        IApiService apiService = FakeApiService();
+        ITenantValidator tenantValidator = TenantValidatorWithKnownTenants();
+        await using WebApplicationFactory<Program> factory = CreateFactory(
+            apiService,
+            ValidRequiredRole,
+            multiTenancy: true,
+            jwtValidationService: ValidJwtWithClaims(new Claim(RoleClaimType, ValidRequiredRole)),
+            tenantValidator: tenantValidator
+        );
+        using HttpClient client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer",
+            ValidBearerToken
+        );
+
+        HttpResponseMessage response = await CallAsync(client, method, unknownTenantPath);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        A.CallTo(() => tenantValidator.ValidateTenantAsync("UnknownTenant")).MustHaveHappenedOnceExactly();
+        VerifyNoClaimsetWork(apiService);
+    }
+
+    [TestCaseSource(nameof(TenantScopedRouteCases))]
+    public async Task It_dispatches_tenant_scoped_requests_for_an_authorized_valid_tenant(
+        string method,
+        string validTenantPath,
+        string _,
+        string tenant
+    )
+    {
+        IApiService apiService = FakeApiService();
+        ITenantValidator tenantValidator = TenantValidatorWithKnownTenants();
+        await using WebApplicationFactory<Program> factory = CreateFactory(
+            apiService,
+            ValidRequiredRole,
+            multiTenancy: true,
+            jwtValidationService: ValidJwtWithClaims(new Claim(RoleClaimType, ValidRequiredRole)),
+            tenantValidator: tenantValidator
+        );
+        using HttpClient client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer",
+            ValidBearerToken
+        );
+
+        HttpResponseMessage response = await CallAsync(client, method, validTenantPath);
+
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        A.CallTo(() => apiService.ViewClaimsetsAsync("SomeTenant")).MustHaveHappenedOnceExactly();
+        A.CallTo(() => tenantValidator.ValidateTenantAsync(tenant)).MustHaveHappenedOnceExactly();
+        VerifyExactClaimsetDispatch(apiService, method, tenant);
     }
 
     internal sealed class StubFrontendResponse(int statusCode, JsonNode? body) : IFrontendResponse
