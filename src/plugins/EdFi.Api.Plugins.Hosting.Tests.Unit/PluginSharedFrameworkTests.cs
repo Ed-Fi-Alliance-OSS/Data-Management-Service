@@ -57,10 +57,19 @@ public class Given_a_plugin_taking_the_hook_signature_from_the_shared_framework
         new object[] { ConfigurationAssembly, "ConfigurationType" },
     ];
 
+    /// <summary>
+    /// A name this plugin does not reference, watched alongside the two that matter.
+    /// </summary>
+    /// <remarks>
+    /// The control. An observer that reported every watched name as served would satisfy the two
+    /// assertions below without observing anything, so one watched name has to come back unserved.
+    /// </remarks>
+    private const string UnusedAssembly = "Acme.HostShared";
+
     private TemporaryPluginRoot _root = null!;
     private PluginLoaderRun _run = null!;
     private Type _pluginType = null!;
-    private PluginLoadContext _context = null!;
+    private HostResolutionObserver _observer = null!;
 
     [SetUp]
     public void Setup()
@@ -68,14 +77,15 @@ public class Given_a_plugin_taking_the_hook_signature_from_the_shared_framework
         _root = TemporaryPluginRoot.Create();
         _root.Add(PluginFixtures.FrameworkOnly);
 
-        _run = PluginLoaderProbe.Run(_root.RootPath, PluginFixtures.FrameworkOnly);
+        // Named by this test and nothing wider: the two assemblies the hook signature carries, plus one
+        // the plugin never asks for. The production loader creates its contexts with no observer at
+        // all, so nothing outside this run records anything.
+        _observer = new HostResolutionObserver([.. SignatureAssemblies, UnusedAssembly]);
+
+        _run = PluginLoaderProbe.Run(_root.RootPath, PluginFixtures.FrameworkOnly, observer: _observer);
         _run.Failure.Should().BeNull();
 
         _pluginType = _run.Result!.Plugins.Single().Instance.GetType();
-
-        // The context the production loader built, reached the way anything holding a loaded plugin
-        // assembly would reach it. Nothing here creates a context or chooses its policy.
-        _context = (PluginLoadContext)AssemblyLoadContext.GetLoadContext(_pluginType.Assembly)!;
     }
 
     [TearDown]
@@ -154,31 +164,39 @@ public class Given_a_plugin_taking_the_hook_signature_from_the_shared_framework
     public void It_reaches_the_loaders_own_override(string simpleName, string accessor)
     {
         // The half a comment cannot stand in for. An assembly the plugin does not ship would arrive
-        // from the default context whether this context's override answered for it or declined and let
-        // the runtime fall back, so provenance alone cannot say which happened. Asking the context the
-        // production loader built whether its own override served the name can.
+        // from the default context whether the override answered for it or declined and let the runtime
+        // fall back, and it leaves no substitution row either, because there is no declared version for
+        // the host's to have differed from. Only the override itself can say, so this run asks it.
         //
         // Measured, and not what I first assumed: both names are already served by the time Load
-        // returns, so the assertion is not a false-then-true transition. The immediate cause is that
-        // this plugin overrides ContributeServices, and matching an override to its base virtual slot
-        // resolves the override's parameter types when the type is loaded - which the loader's own
-        // candidate scan does, before the plugin is ever used. The fact required is the same either
-        // way, and it holds across the plugin's own use as well.
-        _context.HasServedFromHost(simpleName).Should().BeTrue();
+        // returns, so this is not a false-then-true transition and no such condition is manufactured.
+        // The cause is that this plugin overrides ContributeServices, and matching an override to its
+        // base virtual slot resolves the override's parameter types when the type is loaded, which the
+        // loader's own candidate scan does before the plugin is constructed. The fact required is the
+        // same either way, and it holds across the plugin's own use as well.
+        _observer.HasServed(simpleName).Should().BeTrue();
 
         ResolvedByThePlugin(accessor);
 
-        _context.HasServedFromHost(simpleName).Should().BeTrue();
+        _observer.HasServed(simpleName).Should().BeTrue();
     }
 
     [Test]
-    public void It_reports_nothing_for_a_name_this_context_was_never_asked_for()
+    public void It_reports_nothing_for_a_watched_name_the_plugin_never_asked_for()
     {
-        // The control that makes the assertions above mean something. A predicate that answered yes to
-        // anything would satisfy them without observing a thing, so a name this plugin does not
-        // reference and one nothing anywhere carries both have to come back no.
-        _context.HasServedFromHost("Acme.HostShared").Should().BeFalse();
-        _context.HasServedFromHost("Acme.NoSuchAssembly.ThisPluginHasNever.HeardOf").Should().BeFalse();
+        // Same observer, same run, a name the plugin does not reference: unserved. Without this an
+        // observer that said yes to everything would pass the cases above.
+        _observer.HasServed(UnusedAssembly).Should().BeFalse();
+    }
+
+    [Test]
+    public void It_refuses_to_answer_about_a_name_it_was_not_watching()
+    {
+        // A quiet false for an unwatched name would let a caller read "never observed" as "never
+        // resolved", which is the one wrong answer this observation must not give.
+        Assert.Throws<InvalidOperationException>(() =>
+            _observer.HasServed("Microsoft.Extensions.Primitives")
+        );
     }
 
     [TestCaseSource(nameof(SignatureAssemblyUses))]

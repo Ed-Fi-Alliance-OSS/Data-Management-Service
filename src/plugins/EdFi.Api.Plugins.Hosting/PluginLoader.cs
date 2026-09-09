@@ -46,10 +46,15 @@ public static class PluginLoader
     /// The overload the public one calls with <see cref="Console.Error"/>, so that a test can read the
     /// channel without redirecting the process's own.
     /// </summary>
+    /// <param name="observer">
+    /// Watches a finite set of assembly names a caller wants to know the override actually served.
+    /// Omitted by the public overload, so an ordinary host run creates contexts that observe nothing.
+    /// </param>
     internal static LoadedPlugins Load(
         IConfiguration configuration,
         IReadOnlyCollection<string> contractAssemblyNames,
-        TextWriter diagnostics
+        TextWriter diagnostics,
+        HostResolutionObserver? observer = null
     )
     {
         ArgumentNullException.ThrowIfNull(configuration);
@@ -89,7 +94,7 @@ public static class PluginLoader
 
         foreach (string name in plugins.AllowedNames)
         {
-            loaded.Add(LoadPlugin(name, resolvedRoot, contractAssemblyNames, diagnostics));
+            loaded.Add(LoadPlugin(name, resolvedRoot, contractAssemblyNames, diagnostics, observer));
         }
 
         ReportDirectoriesNobodyAskedFor(resolvedRoot, plugins.AllowedNames, diagnostics);
@@ -113,7 +118,8 @@ public static class PluginLoader
         string name,
         string resolvedRoot,
         IReadOnlyCollection<string> contractAssemblyNames,
-        TextWriter diagnostics
+        TextWriter diagnostics,
+        HostResolutionObserver? observer
     )
     {
         try
@@ -190,7 +196,7 @@ public static class PluginLoader
             CheckContractReferences(name, entryAssemblyPath, contractAssemblyNames);
             CheckDeclaredDependencies(name, manifest);
 
-            PluginLoadContext context = CreateLoadContext(name, entryAssemblyPath, manifest);
+            PluginLoadContext context = CreateLoadContext(name, entryAssemblyPath, manifest, observer);
             Assembly entryAssembly = LoadEntryAssembly(name, entryAssemblyPath, context);
 
             if (entryAssembly.GetName().Name is not { } entryAssemblyName)
@@ -544,7 +550,8 @@ public static class PluginLoader
     private static PluginLoadContext CreateLoadContext(
         string name,
         string entryAssemblyPath,
-        PluginDepsManifest manifest
+        PluginDepsManifest manifest,
+        HostResolutionObserver? observer
     )
     {
         try
@@ -552,7 +559,7 @@ public static class PluginLoader
             // The declared versions go to the context so that a substitution it records can say what the
             // plugin's manifest declared, rather than only what the reference asked for. The two differ,
             // and the declaration is the one the plugin shipped and its author tested against.
-            return new PluginLoadContext(name, entryAssemblyPath, DeclaredVersionsOf(manifest));
+            return new PluginLoadContext(name, entryAssemblyPath, DeclaredVersionsOf(manifest), observer);
         }
         catch (Exception exception)
             when (exception is ArgumentException or InvalidOperationException or IOException)

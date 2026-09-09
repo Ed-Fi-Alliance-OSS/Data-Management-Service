@@ -460,7 +460,8 @@ internal static class PluginLoaderProbe
     internal static PluginLoaderRun Run(
         string root,
         string allowed,
-        IReadOnlyCollection<string>? contracts = null
+        IReadOnlyCollection<string>? contracts = null,
+        HostResolutionObserver? observer = null
     )
     {
         StringWriter diagnostics = new();
@@ -470,7 +471,8 @@ internal static class PluginLoaderProbe
             LoadedPlugins result = PluginLoader.Load(
                 Configuration(root, allowed),
                 contracts ?? Contracts,
-                diagnostics
+                diagnostics,
+                observer
             );
 
             return new PluginLoaderRun(result, null, diagnostics.ToString());
