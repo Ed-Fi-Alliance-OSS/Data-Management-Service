@@ -357,12 +357,14 @@ public class Given_ManagementEndpointModule
     {
         if (method == "POST")
         {
+            A.CallTo(() => apiService.ReloadClaimsetsAsync(A<string?>._)).MustHaveHappenedOnceExactly();
             A.CallTo(() => apiService.ReloadClaimsetsAsync(tenant)).MustHaveHappenedOnceExactly();
             A.CallTo(() => apiService.ViewClaimsetsAsync(A<string?>._)).MustNotHaveHappened();
             return;
         }
 
         A.CallTo(() => apiService.ReloadClaimsetsAsync(A<string?>._)).MustNotHaveHappened();
+        A.CallTo(() => apiService.ViewClaimsetsAsync(A<string?>._)).MustHaveHappenedOnceExactly();
         A.CallTo(() => apiService.ViewClaimsetsAsync(tenant)).MustHaveHappenedOnceExactly();
     }
 
@@ -618,6 +620,7 @@ public class Given_ManagementEndpointModule
         HttpResponseMessage response = await CallAsync(client, method, unknownTenantPath);
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        A.CallTo(() => tenantValidator.ValidateTenantAsync(A<string>._)).MustHaveHappenedOnceExactly();
         A.CallTo(() => tenantValidator.ValidateTenantAsync("UnknownTenant")).MustHaveHappenedOnceExactly();
         VerifyNoClaimsetWork(apiService);
     }
@@ -648,6 +651,7 @@ public class Given_ManagementEndpointModule
         HttpResponseMessage response = await CallAsync(client, method, validTenantPath);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
+        A.CallTo(() => tenantValidator.ValidateTenantAsync(A<string>._)).MustHaveHappenedOnceExactly();
         A.CallTo(() => tenantValidator.ValidateTenantAsync(tenant)).MustHaveHappenedOnceExactly();
         VerifyExactClaimsetDispatch(apiService, method, tenant);
     }
