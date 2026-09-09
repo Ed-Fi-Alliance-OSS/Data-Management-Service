@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <!--
+        The same suppressed manifest row as Acme.BackstopCtor, touched for the first time in the
+        contribution hook instead of in the constructor. That moves the refusal to after the loader has
+        returned, where there is no loader frame to catch it and nothing to unwrap it: the caller sees
+        the runtime's own FileLoadException wrapper. Characterising that honestly is the point, because
+        claiming a friendly loader-time report for this case would be false.
+    -->
+    <PropertyGroup>
+        <AssemblyName>Acme.BackstopHook</AssemblyName>
+        <RootNamespace>Acme.BackstopHook</RootNamespace>
+    </PropertyGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\..\..\..\EdFi.Api.Plugins\EdFi.Api.Plugins.csproj" />
+        <ProjectReference
+            Include="..\..\Support\AcmeHostShared2\Acme.HostShared.v2.csproj"
+            Private="false"
+        />
+    </ItemGroup>
+</Project>

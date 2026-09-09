@@ -225,6 +225,71 @@ internal sealed class TemporaryPluginRoot : IDisposable
     }
 
     /// <summary>
+    /// Lowers every top-level declared <c>assemblyVersion</c> that is higher than the copy this host
+    /// carries, so a fixture built over a real package can be loaded in this process, and reports what
+    /// it changed.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// This exists because of a measurement, not a convenience. A fixture referencing
+    /// Microsoft.Data.SqlClient declares that package's closure, and the preflight correctly refuses
+    /// it here: measured, the manifest declares <c>System.Configuration.ConfigurationManager</c>
+    /// 9.0.0.0 while this test process carries 4.0.0.0, which arrives with the test platform. That is
+    /// the designed refusal working on a genuine package rather than a defect, and a real host that
+    /// serves SqlClient's closure would not hit it.
+    /// </para>
+    /// <para>
+    /// A fixture whose subject is the <em>shape</em> of a manifest therefore reads the staged manifest
+    /// untouched, and only a case that has to get the plugin loaded applies this. Nothing here invents
+    /// a version: each rewritten value is the version this host actually carries, and the returned list
+    /// names every change so a test can report exactly what it stood on.
+    /// </para>
+    /// </remarks>
+    internal IReadOnlyList<string> LowerDeclarationsAboveHostVersions(string pluginName)
+    {
+        JsonNode manifest = JsonNode.Parse(File.ReadAllText(ManifestPathOf(pluginName)))!;
+        string targetName = manifest["runtimeTarget"]!["name"]!.GetValue<string>();
+        List<string> lowered = [];
+
+        foreach (KeyValuePair<string, JsonNode?> library in manifest["targets"]![targetName]!.AsObject())
+        {
+            if (library.Value?["runtime"] is not JsonObject runtime)
+            {
+                continue;
+            }
+
+            foreach (KeyValuePair<string, JsonNode?> asset in runtime)
+            {
+                if (
+                    asset.Value is not JsonObject declaration
+                    || declaration["assemblyVersion"]?.GetValue<string>() is not { } declaredText
+                    || !Version.TryParse(declaredText, out Version? declared)
+                )
+                {
+                    continue;
+                }
+
+                string simpleName = Path.GetFileNameWithoutExtension(asset.Key);
+
+                if (
+                    !HostAssemblies.TryGetVersion(simpleName, out Version hostVersion)
+                    || hostVersion >= declared
+                )
+                {
+                    continue;
+                }
+
+                declaration["assemblyVersion"] = hostVersion.ToString();
+                lowered.Add($"{simpleName} {declared} -> {hostVersion}");
+            }
+        }
+
+        WriteManifest(pluginName, manifest.ToJsonString());
+
+        return lowered;
+    }
+
+    /// <summary>
     /// Rewrites the declared path of a resource asset, keeping the file where the publish put it.
     /// </summary>
     /// <remarks>

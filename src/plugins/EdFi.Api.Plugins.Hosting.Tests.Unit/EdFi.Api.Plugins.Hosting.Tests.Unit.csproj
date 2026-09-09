@@ -34,6 +34,15 @@
         <PackageReference Include="Microsoft.Extensions.Configuration" />
         <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" />
         <PackageReference Include="Microsoft.Extensions.Configuration.Json" />
+        <!--
+            The host side of the isolation regressions. A plugin's ContributeServices registers into a
+            real ServiceCollection and the options it binds are resolved from a real provider, so this
+            project has to be able to build one and to name IOptions<T>. Both also put the host's own
+            copies of Microsoft.Extensions.Options and Microsoft.Extensions.Primitives in the default
+            context, which is what host-first then serves to the plugin in place of its own.
+        -->
+        <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+        <PackageReference Include="Microsoft.Extensions.Options" />
         <PackageReference Include="Microsoft.NET.Test.Sdk" />
         <PackageReference Include="NUnit" />
         <PackageReference Include="NUnit3TestAdapter" />

@@ -1,0 +1,31 @@
+<Project>
+    <!--
+        Central package versions for the fixture tree only.
+
+        Unlike the Directory.Build.props beside it, this file deliberately DOES import its parent, so
+        fixtures keep every version the repository already manages and this file adds to that set rather
+        than replacing it. A nested Directory.Packages.props is not chained automatically: MSBuild
+        imports the nearest one and stops, so the import below is what keeps Microsoft.Data.SqlClient,
+        SQLitePCLRaw.lib.e_sqlite3 and the rest available to fixtures.
+
+        Why the addition lives here instead of in src/Directory.Packages.props, which is where a new
+        central version would normally go: measured, adding
+        Microsoft.Extensions.Options.ConfigurationExtensions there rewrote thirty-two committed
+        production lock files, turning that package's entry from "Transitive" to "CentralTransitive" in
+        every project that already had it transitively. The resolved version was identical in all of
+        them, so nothing about the build would have changed - but a plugins-only story has no business
+        editing the lock file of every DMS project, and CI restores both solutions in locked mode.
+        Scoping the version to the fixture tree keeps the blast radius to the fixtures that need it,
+        which are the only projects that reference the package.
+    -->
+    <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Packages.props', '$(MSBuildThisFileDirectory)../'))" />
+    <ItemGroup>
+        <!--
+            The package the IChangeToken regression fixture is built on. Its own publish emits the
+            private copies of Options, Configuration, Configuration.Binder and Primitives that make the
+            enumerated-set control fail, which is why the fixture uses the real package rather than
+            hand-rolling an equivalent.
+        -->
+        <PackageVersion Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.1" />
+    </ItemGroup>
+</Project>

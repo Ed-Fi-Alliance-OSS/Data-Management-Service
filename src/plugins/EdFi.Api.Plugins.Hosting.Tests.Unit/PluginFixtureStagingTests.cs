@@ -58,6 +58,24 @@ internal static class PluginFixtures
     /// <summary>Touches an unmanifested higher version while the loader is constructing it.</summary>
     internal const string BackstopCtor = "Acme.BackstopCtor";
 
+    /// <summary>Touches the same unmanifested higher version from inside the contribution hook.</summary>
+    internal const string BackstopHook = "Acme.BackstopHook";
+
+    /// <summary>Ships the first major of a private third-party library the host does not carry.</summary>
+    internal const string LibV1 = "Acme.LibV1";
+
+    /// <summary>Ships the second major of that same library.</summary>
+    internal const string LibV2 = "Acme.LibV2";
+
+    /// <summary>Reads configuration and binds options, which is the IChangeToken regression.</summary>
+    internal const string Options = "Acme.Options";
+
+    /// <summary>Takes the hook signature's assemblies from the shared framework, not from packages.</summary>
+    internal const string FrameworkOnly = "Acme.FrameworkOnly";
+
+    /// <summary>Published portable over a package with runtime-identifier-specific managed assets.</summary>
+    internal const string RuntimeTargets = "Acme.RuntimeTargets";
+
     /// <summary>Ships a dependency the host does not carry, so its own copy is the one served.</summary>
     internal const string PrivateDependency = "Acme.PrivateDependency";
 
@@ -113,6 +131,12 @@ internal static class PluginFixtures
         NativePortable,
         Substitution,
         Localized,
+        BackstopHook,
+        LibV1,
+        LibV2,
+        Options,
+        FrameworkOnly,
+        RuntimeTargets,
     ];
 
     /// <summary>

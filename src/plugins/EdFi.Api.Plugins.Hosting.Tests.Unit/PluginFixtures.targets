@@ -81,6 +81,29 @@
         <PluginFixture Include="$(MSBuildThisFileDirectory)Fixtures/Plugins/Acme.Substitution/Acme.Substitution.csproj">
             <StagedName>Acme.Substitution</StagedName>
         </PluginFixture>
+        <PluginFixture Include="$(MSBuildThisFileDirectory)Fixtures/Plugins/Acme.BackstopHook/Acme.BackstopHook.csproj">
+            <StagedName>Acme.BackstopHook</StagedName>
+        </PluginFixture>
+        <PluginFixture Include="$(MSBuildThisFileDirectory)Fixtures/Plugins/Acme.LibV1/Acme.LibV1.csproj">
+            <StagedName>Acme.LibV1</StagedName>
+        </PluginFixture>
+        <PluginFixture Include="$(MSBuildThisFileDirectory)Fixtures/Plugins/Acme.LibV2/Acme.LibV2.csproj">
+            <StagedName>Acme.LibV2</StagedName>
+        </PluginFixture>
+        <PluginFixture Include="$(MSBuildThisFileDirectory)Fixtures/Plugins/Acme.Options/Acme.Options.csproj">
+            <StagedName>Acme.Options</StagedName>
+        </PluginFixture>
+        <PluginFixture Include="$(MSBuildThisFileDirectory)Fixtures/Plugins/Acme.FrameworkOnly/Acme.FrameworkOnly.csproj">
+            <StagedName>Acme.FrameworkOnly</StagedName>
+        </PluginFixture>
+        <!--
+            Portable on purpose, which is why it takes the default publish arguments rather than a
+            runtime identifier: the managed runtimeTargets rows this fixture exists to measure are only
+            emitted by a publish that resolves no identifier.
+        -->
+        <PluginFixture Include="$(MSBuildThisFileDirectory)Fixtures/Plugins/Acme.RuntimeTargets/Acme.RuntimeTargets.csproj">
+            <StagedName>Acme.RuntimeTargets</StagedName>
+        </PluginFixture>
         <PluginFixture Include="$(MSBuildThisFileDirectory)Fixtures/Plugins/Acme.Native/Acme.Native.csproj">
             <StagedName>Acme.Native</StagedName>
             <PublishArgs>--runtime $(NETCoreSdkRuntimeIdentifier) --no-self-contained</PublishArgs>

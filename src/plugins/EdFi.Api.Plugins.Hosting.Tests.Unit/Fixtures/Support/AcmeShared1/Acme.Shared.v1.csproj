@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <!--
+        A third-party library at its first major version, which the host does not carry at any
+        version. Two plugins shipping different majors of it is the collision host-first resolution
+        deliberately leaves alone: there is no host copy to prefer, so each plugin is served its own.
+
+        Its sibling AcmeShared2 declares the same assembly name and the same type names at 2.0.0, so
+        the two copies are one identity by name and two by version. That is what makes the isolation
+        claim about identity rather than about file paths.
+    -->
+    <PropertyGroup>
+        <AssemblyName>Acme.Shared</AssemblyName>
+        <RootNamespace>Acme.Shared</RootNamespace>
+        <AssemblyVersion>1.0.0</AssemblyVersion>
+        <FileVersion>1.0.0</FileVersion>
+        <Version>1.0.0</Version>
+    </PropertyGroup>
+</Project>

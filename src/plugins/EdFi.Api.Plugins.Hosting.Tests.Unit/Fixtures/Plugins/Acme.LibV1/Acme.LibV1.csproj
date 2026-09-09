@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <!--
+        Ships Acme.Shared 1.0.0. Its sibling Acme.LibV2 ships 2.0.0 of the same assembly name, and the
+        host carries neither, so nothing can be preferred and each plugin has to be served its own
+        copy. Loaded together, the two are the collision that made drop-in loading worth isolating.
+    -->
+    <PropertyGroup>
+        <AssemblyName>Acme.LibV1</AssemblyName>
+        <RootNamespace>Acme.LibV1</RootNamespace>
+    </PropertyGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\..\..\..\EdFi.Api.Plugins\EdFi.Api.Plugins.csproj" />
+        <ProjectReference Include="..\..\Support\AcmeShared1\Acme.Shared.v1.csproj" />
+    </ItemGroup>
+</Project>
