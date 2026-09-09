@@ -7,6 +7,13 @@ BeforeAll {
     $script:composeRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 }
 
+AfterAll {
+    # Nested imports must not survive into another file's sandboxed module mocks.
+    Get-Module -All | Where-Object {
+        $_.Path -and $_.Path.StartsWith($script:composeRoot + [IO.Path]::DirectorySeparatorChar)
+    } | Remove-Module -Force
+}
+
 Describe 'CDC bootstrap wrapper phase contract' {
     BeforeAll {
         $script:sandbox = Join-Path $TestDrive 'wrapper'

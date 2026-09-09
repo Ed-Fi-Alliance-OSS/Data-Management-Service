@@ -32,6 +32,7 @@ internal class Given_CdcRecordSizeIncrease(Ddl.CdcProvider provider) : CdcReadin
     private List<string> _effects = null!;
     private CdcRecordSizeIncreaseConfirmation _confirmation = null!;
     private Func<CdcRecordSizeIncreaseConfirmation, CdcRecordSizeIncreaseConfirmation> _confirmChange = null!;
+    private Func<CdcConnectStatus, CdcConnectStatus> _statusChange = null!;
 
     [SetUp]
     public void SetupIncrease()
@@ -41,6 +42,7 @@ internal class Given_CdcRecordSizeIncrease(Ddl.CdcProvider provider) : CdcReadin
         _confirmations = 0;
         _effects = [];
         _confirmChange = c => c;
+        _statusChange = status => status;
         _scope = new(Guid.NewGuid(), _request.Binding.ToCompleteBindingIdentity(), _topicLimit, Ceiling);
         _sizes = A.Fake<ICdcKafkaRecordSizeAdministration>();
         A.CallTo(() => _sizes.IncreaseBrokerLimitsAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
@@ -121,19 +123,21 @@ internal class Given_CdcRecordSizeIncrease(Ddl.CdcProvider provider) : CdcReadin
                     );
                 }
                 return Observed(
-                    !_stopped
-                        ? status
-                        : new CdcConnectStatus(
-                            status.Runtime with
-                            {
-                                ConnectorState = CdcConnectorRuntimeState.Stopped,
-                                SoleTaskState = CdcConnectorRuntimeState.Stopped,
-                                TaskCount = 0,
-                                RunningTaskCount = 0,
-                            },
-                            status.WorkerId,
-                            []
-                        )
+                    _statusChange(
+                        !_stopped
+                            ? status
+                            : new CdcConnectStatus(
+                                status.Runtime with
+                                {
+                                    ConnectorState = CdcConnectorRuntimeState.Stopped,
+                                    SoleTaskState = CdcConnectorRuntimeState.Stopped,
+                                    TaskCount = 0,
+                                    RunningTaskCount = 0,
+                                },
+                                status.WorkerId,
+                                []
+                            )
+                    )
                 );
             });
         A.CallTo(() =>
@@ -262,6 +266,121 @@ internal class Given_CdcRecordSizeIncrease(Ddl.CdcProvider provider) : CdcReadin
             );
         ReadJournal().HasPendingRecordSizeIncrease.Should().BeFalse();
         _trace.Count(s => s == "metrics").Should().BeGreaterThanOrEqualTo(3);
+    }
+
+    [Test]
+    public async Task It_waits_for_task_free_unassignment_after_each_configuration_update()
+    {
+        HashSet<string> observed = [];
+        _statusChange = status =>
+        {
+            string effect = _effects.LastOrDefault() ?? "";
+            return effect is "buffer-after" or "request-after" && observed.Add(effect)
+                ? new(
+                    status.Runtime with
+                    {
+                        ConnectorState = CdcConnectorRuntimeState.Unassigned,
+                    },
+                    status.WorkerId,
+                    status.Tasks
+                )
+                : status;
+        };
+
+        var result = await Execute();
+
+        result.Succeeded.Should().BeTrue();
+        result.Ready.Should().BeTrue();
+        observed.Should().BeEquivalentTo("buffer-after", "request-after");
+        _effects.Count(effect => effect == "buffer-after").Should().Be(1);
+        _effects.Count(effect => effect == "request-after").Should().Be(1);
+        ReadJournal().HasPendingRecordSizeIncrease.Should().BeFalse();
+    }
+
+    [TestCase("running")]
+    [TestCase("failed")]
+    [TestCase("unknown")]
+    [TestCase("task")]
+    [TestCase("runtime-task")]
+    [TestCase("running-task-count")]
+    [TestCase("worker")]
+    [TestCase("stale")]
+    [TestCase("future")]
+    public async Task It_rejects_unsafe_configuration_transition_evidence_without_advancing(string defect)
+    {
+        int reads = 0;
+        _statusChange = status =>
+        {
+            if (_effects.LastOrDefault() != "buffer-after")
+            {
+                return status;
+            }
+            reads++;
+            return new(
+                status.Runtime with
+                {
+                    TaskCount = defect == "runtime-task" ? 1 : status.Runtime.TaskCount,
+                    RunningTaskCount = defect == "running-task-count" ? 1 : status.Runtime.RunningTaskCount,
+                    ConnectorState = defect switch
+                    {
+                        "running" => CdcConnectorRuntimeState.Running,
+                        "failed" => CdcConnectorRuntimeState.Failed,
+                        "unknown" => CdcConnectorRuntimeState.Unknown,
+                        _ => CdcConnectorRuntimeState.Unassigned,
+                    },
+                    ObservedAt = defect switch
+                    {
+                        "stale" => DateTimeOffset.UtcNow.AddMinutes(-1),
+                        "future" => DateTimeOffset.UtcNow.AddMinutes(1),
+                        _ => status.Runtime.ObservedAt,
+                    },
+                },
+                defect == "worker" ? "different-worker" : status.WorkerId,
+                defect == "task" ? [new(0, CdcConnectorRuntimeState.Running, status.WorkerId)] : []
+            );
+        };
+
+        var result = await Execute();
+
+        result.Succeeded.Should().BeFalse();
+        result.Ready.Should().BeFalse();
+        reads.Should().Be(1);
+        _effects.Should().NotContain("request-before").And.NotContain("resume-before");
+        ReadJournal().HasPendingRecordSizeIncrease.Should().BeTrue();
+    }
+
+    [Test]
+    public async Task It_cancels_an_unassignment_that_never_returns_to_stopped()
+    {
+        using var timeout = new CancellationTokenSource();
+        bool waiting = false;
+        _statusChange = status =>
+        {
+            if (_effects.LastOrDefault() != "buffer-after")
+            {
+                return status;
+            }
+            if (!waiting)
+            {
+                waiting = true;
+                timeout.CancelAfter(TimeSpan.FromMilliseconds(100));
+            }
+            return new(
+                status.Runtime with
+                {
+                    ConnectorState = CdcConnectorRuntimeState.Unassigned,
+                },
+                status.WorkerId,
+                status.Tasks
+            );
+        };
+
+        Func<Task> execute = () => Execute(timeout.Token);
+        await execute.Should().ThrowAsync<OperationCanceledException>();
+
+        waiting.Should().BeTrue();
+        _effects.Should().NotContain("request-before").And.NotContain("resume-before");
+        ReadJournal().HasPendingRecordSizeIncrease.Should().BeTrue();
     }
 
     [TestCase("stop-before")]

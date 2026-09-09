@@ -315,6 +315,7 @@ internal class Given_CdcKafkaProvisioning(Ddl.CdcProvider provider)
     [Test]
     public async Task It_does_not_treat_a_success_acknowledgement_as_live_topic_completion()
     {
+        _request = WithTiming(TimeSpan.FromMilliseconds(30), TimeSpan.FromMilliseconds(100));
         A.CallTo(() =>
                 _kafka.CreateMissingTopicAsync(
                     A<CdcDeploymentRequest>._,
@@ -323,10 +324,106 @@ internal class Given_CdcKafkaProvisioning(Ddl.CdcProvider provider)
                 )
             )
             .Returns(Observed(Topic(_plan.OffsetStore)));
+        var result = await _controller
+            .ProvisionOffsetStoreAsync(_request, CancellationToken.None)
+            .WaitAsync(TimeSpan.FromSeconds(3));
+        result
+            .Diagnostics.Should()
+            .ContainSingle(d =>
+                d.Component == CdcDeploymentComponent.Kafka && d.Failure == CdcDeploymentFailure.Timeout
+            );
+        KafkaJournals().Single().ReconciledTopics.Should().BeEmpty();
+    }
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task It_waits_for_new_topic_metadata_without_repeating_creation(bool lostResponse)
+    {
+        _lostResponse = lostResponse;
+        _request = WithTiming(TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2));
+        int readsAfterCreation = 0;
+        A.CallTo(() =>
+                _kafka.InspectTopicAsync(A<CdcDeploymentRequest>._, A<string>._, A<CancellationToken>._)
+            )
+            .ReturnsLazily(
+                (CdcDeploymentRequest _, string topic, CancellationToken _) =>
+                    _topics.ContainsKey(topic) && ++readsAfterCreation <= 2
+                        ? new CdcTransportResult<CdcKafkaTopicEvidence>.Absent()
+                        : ReadTopic(topic)
+            );
+
+        Value(await _controller.ProvisionOffsetStoreAsync(_request, CancellationToken.None))
+            .PolicyState.Should()
+            .Be(CdcConnectOffsetStorePolicyState.Satisfied);
+        readsAfterCreation.Should().BeGreaterThanOrEqualTo(3);
+        _effects.Count(e => e.StartsWith("create:", StringComparison.Ordinal)).Should().Be(1);
+        KafkaJournals().Single().ReconciledTopics.Should().ContainSingle();
+    }
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task It_rejects_contradictory_or_unknown_new_topic_evidence_without_polling(bool unknown)
+    {
+        int readsAfterCreation = 0;
+        A.CallTo(() =>
+                _kafka.InspectTopicAsync(A<CdcDeploymentRequest>._, A<string>._, A<CancellationToken>._)
+            )
+            .ReturnsLazily(
+                (CdcDeploymentRequest _, string topic, CancellationToken _) =>
+                {
+                    if (!_topics.ContainsKey(topic) || ++readsAfterCreation > 1)
+                    {
+                        return ReadTopic(topic);
+                    }
+                    return unknown
+                        ? Unknown<CdcKafkaTopicEvidence>()
+                        : Observed(
+                            Topic(_plan.OffsetStore) with
+                            {
+                                Configuration = new Dictionary<string, CdcKafkaConfigurationValue>
+                                {
+                                    ["cleanup.policy"] = new("delete", true),
+                                    ["min.insync.replicas"] = new("2", true),
+                                },
+                            }
+                        );
+                }
+            );
+
         (await _controller.ProvisionOffsetStoreAsync(_request, CancellationToken.None))
             .State.Should()
             .Be(CdcTransportEvidenceState.Unavailable);
+        readsAfterCreation.Should().Be(1);
         KafkaJournals().Single().ReconciledTopics.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task It_releases_the_lock_after_cancellation_during_new_topic_metadata_wait()
+    {
+        using var cancellation = new CancellationTokenSource();
+        A.CallTo(() =>
+                _kafka.InspectTopicAsync(A<CdcDeploymentRequest>._, A<string>._, A<CancellationToken>._)
+            )
+            .ReturnsLazily(
+                (CdcDeploymentRequest _, string topic, CancellationToken _) =>
+                {
+                    if (_topics.ContainsKey(topic))
+                    {
+                        cancellation.Cancel();
+                    }
+                    return new CdcTransportResult<CdcKafkaTopicEvidence>.Absent();
+                }
+            );
+
+        Func<Task> setup = async () =>
+            await _controller.ProvisionOffsetStoreAsync(_request, cancellation.Token);
+        await setup.Should().ThrowAsync<OperationCanceledException>();
+        KafkaJournals().Single().ReconciledTopics.Should().BeEmpty();
+        await using var released = await _store.AcquireAsync(
+            TimeSpan.FromSeconds(1),
+            TimeSpan.FromMilliseconds(10),
+            CancellationToken.None
+        );
     }
 
     [TestCase(true)]

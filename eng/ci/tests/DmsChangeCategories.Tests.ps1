@@ -155,16 +155,24 @@ Describe "DMS pull request change classifier" {
                     Expected = @('dms_api_relevant')
                 }
                 @{
+                    Path     = "src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin/Something.cs"
+                    Expected = @('cdc_relevant')
+                }
+                @{
+                    Path     = "src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration/CdcPublicationHistoryTests.cs"
+                    Expected = @('cdc_relevant')
+                }
+                @{
                     Path     = "src/dms/clis/EdFi.DataManagementService.SchemaTools/Something.cs"
-                    Expected = @('schematools_relevant')
+                    Expected = @('cdc_relevant', 'schematools_relevant')
                 }
                 @{
                     Path     = "src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/Something.cs"
-                    Expected = @('schematools_relevant')
+                    Expected = @('cdc_relevant', 'schematools_relevant')
                 }
                 @{
                     Path     = "src/dms/backend/EdFi.DataManagementService.Backend.Postgresql/Something.cs"
-                    Expected = @('dms_api_relevant', 'schematools_relevant')
+                    Expected = @('cdc_relevant', 'dms_api_relevant', 'schematools_relevant')
                 }
                 @{
                     # The plugin contract is compiled by both main solutions but exercised by no
@@ -197,7 +205,6 @@ Describe "DMS pull request change classifier" {
                 # open into every promoted lane.
                 @{ Path = "src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/Something.cs" }
                 @{ Path = "src/dms/clis/EdFi.DataManagementService.OpenApiGenerator/Something.cs" }
-                @{ Path = "src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin/Something.cs" }
                 @{ Path = "src/dms/tests/EdFi.DataManagementService.Tests.E2E/Something.cs" }
                 @{ Path = "src/dms/tests/EdFi.InstanceManagement.Tests.E2E/Something.cs" }
                 @{ Path = "src/dms/tests/EdFi.DataManagementService.Tests.Unit/Something.cs" }
@@ -243,19 +250,15 @@ Describe "DMS pull request change classifier" {
 
             It "treats Postgresql and Postgresql.Tests.Integration as different projects" {
                 Get-SetCategory -Path "src/dms/backend/EdFi.DataManagementService.Backend.Postgresql/x.cs" |
-                    Should -Be @('dms_api_relevant', 'schematools_relevant')
+                    Should -Be @('cdc_relevant', 'dms_api_relevant', 'schematools_relevant')
 
                 Get-SetCategory -Path "src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/x.cs" |
                     Should -BeNullOrEmpty
             }
 
             It "promotes the backend MSSQL lane for a change to CDC source" {
-                # EdFi.DataManagementService.Backend.Mssql.Tests.Integration references
-                # EdFi.DataManagementService.Backend.Cdc and holds the only DB-backed CDC tests in
-                # the suite - MssqlCdcSourcePositionAdapterTests is [Category("DatabaseIntegration")]
-                # and [Category("MssqlIntegration")]. The promoted CDC lane cannot cover them: it
-                # runs with --filter "Category!=DatabaseIntegration". Without this category a CDC
-                # source change ran no DB-backed CDC test at all.
+                # Provider-position adapter tests remain in the backend MSSQL project;
+                # controller qualification supplements rather than replaces that coverage.
                 Get-SetCategory -Path "src/dms/backend/EdFi.DataManagementService.Backend.Cdc/CdcSourcePositionAdapter.cs" |
                     Should -Contain 'backend_mssql_relevant'
             }

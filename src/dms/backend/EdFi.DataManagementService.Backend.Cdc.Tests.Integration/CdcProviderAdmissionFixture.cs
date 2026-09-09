@@ -3,7 +3,10 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.Concurrent;
 using System.Data.Common;
+using System.Diagnostics;
+using System.Runtime.ExceptionServices;
 using System.Text.Json;
 using Confluent.Kafka;
 using EdFi.DataManagementService.Backend.Ddl;
@@ -69,8 +72,78 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
     private readonly CdcProvider _provider;
     private EffectiveSchemaInfo _effectiveSchema = null!;
     public List<string> Preparation { get; } = [];
+    private readonly ConcurrentQueue<ValidationFailure> _validationFailures = new();
+    private readonly ConcurrentQueue<DatabaseFailure> _databaseFailures = new();
+    private readonly EventHandler<FirstChanceExceptionEventArgs> _observeValidationFailure;
 
-    private CdcProviderAdmissionFixture(CdcProvider provider) => _provider = provider;
+    private CdcProviderAdmissionFixture(CdcProvider provider)
+    {
+        _provider = provider;
+        _observeValidationFailure = (sender, args) =>
+        {
+            if (args.Exception is not (CdcWorkflowStateException or DbException))
+            {
+                return;
+            }
+            // Transport results deliberately redact assertion details. Retain bounded source locations
+            // for qualification diagnosis, never exception messages, arguments, paths or locals.
+            string[] locations = new StackTrace(true)
+                .GetFrames()
+                .Where(frame => frame.GetMethod()?.DeclaringType != typeof(CdcProviderAdmissionFixture))
+                .Where(frame =>
+                    frame
+                        .GetMethod()
+                        ?.DeclaringType?.Namespace?.StartsWith(
+                            "EdFi.DataManagementService.",
+                            StringComparison.Ordinal
+                        ) == true
+                )
+                .Take(8)
+                .Select(frame =>
+                    $"{frame.GetMethod()!.DeclaringType!.FullName}.{frame.GetMethod()!.Name}:{frame.GetFileLineNumber()}"
+                )
+                .ToArray();
+            if (args.Exception is CdcWorkflowStateException failure)
+            {
+                _validationFailures.Enqueue(new(DateTimeOffset.UtcNow, failure.Failure, locations));
+                while (_validationFailures.Count > 128)
+                {
+                    _validationFailures.TryDequeue(out _);
+                }
+            }
+            if (args.Exception is DbException database)
+            {
+                _databaseFailures.Enqueue(
+                    new(
+                        DateTimeOffset.UtcNow,
+                        database.SqlState ?? string.Empty,
+                        database is SqlException sql ? sql.Number : database.ErrorCode,
+                        database.IsTransient,
+                        locations
+                    )
+                );
+                while (_databaseFailures.Count > 128)
+                {
+                    _databaseFailures.TryDequeue(out _);
+                }
+            }
+        };
+        AppDomain.CurrentDomain.FirstChanceException += _observeValidationFailure;
+    }
+
+    private sealed record ValidationFailure(
+        DateTimeOffset ObservedAt,
+        CdcWorkflowStateFailure Failure,
+        string[] Locations
+    );
+
+    private sealed record DatabaseFailure(
+        DateTimeOffset ObservedAt,
+        string SqlState,
+        int ErrorCode,
+        bool IsTransient,
+        string[] Locations
+    );
 
     private CoreCdc.CdcProvider CoreProvider =>
         _provider == CdcProvider.Postgresql ? CoreCdc.CdcProvider.Postgresql : CoreCdc.CdcProvider.SqlServer;
@@ -210,7 +283,18 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
             CoreCdc.CdcTargetValidator.KafkaMurmur2V1PartitionerAlgorithm,
             1
         );
-        _providerConnection = CreateConnection(ConnectionString);
+        var providerCallTimeout =
+            _provider == CdcProvider.SqlServer ? TimeSpan.FromMinutes(3) : TimeSpan.FromSeconds(30);
+        // Full emitted-schema permission inspection can exceed SqlClient's 30-second default.
+        // Align the setup command budget with the bounded controller call that owns it.
+        string setupConnection =
+            _provider == CdcProvider.SqlServer
+                ? new SqlConnectionStringBuilder(ConnectionString)
+                {
+                    CommandTimeout = (int)providerCallTimeout.TotalSeconds,
+                }.ConnectionString
+                : ConnectionString;
+        _providerConnection = CreateConnection(setupConnection);
         await _providerConnection.OpenAsync(cancellationToken);
         var connectionProperties = new Dictionary<string, string>(
             Infrastructure.Resources.ProviderConnectionProperties
@@ -242,7 +326,7 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
                 sqlServerPollInterval: _provider == CdcProvider.SqlServer ? TimeSpan.FromSeconds(1) : null
             ),
             Tests.Unit.CdcDeploymentRequestTestData.Worker(
-                heapBytes: 536_870_912,
+                heapBytes: 1_073_741_824,
                 digest: CdcQualifiedWorkerImage.Digest,
                 offsetTopic: Infrastructure.Resources.ControllerProject + ".connect.offsets",
                 workerKey: Infrastructure.Resources.ControllerProject
@@ -250,10 +334,12 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
             new(_provider, connectionProperties),
             CdcKafkaClientSecurityProperties.Empty,
             new(
-                _provider == CdcProvider.SqlServer ? TimeSpan.FromMinutes(2) : TimeSpan.FromSeconds(30),
-                TimeSpan.FromMinutes(3),
+                providerCallTimeout,
+                _provider == CdcProvider.SqlServer ? TimeSpan.FromMinutes(5) : TimeSpan.FromMinutes(3),
                 TimeSpan.FromMilliseconds(250),
-                TimeSpan.FromSeconds(30)
+                // Provider/worker read-back and offline runtime shutdown are part of this window.
+                // Expiry-specific cases override it with their own shorter, asserted deadline.
+                TimeSpan.FromMinutes(1)
             )
         );
         var registrations = new ServiceCollection()
@@ -759,12 +845,22 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
                             Completions = o.Completions.Length,
                         }),
                         Preparation,
+                        ValidationFailures = _validationFailures.ToArray(),
+                        DatabaseFailures = _databaseFailures.ToArray(),
+                        ConnectObservations = Hooks.ConnectObservations,
                         ProviderModes,
                         ProviderResults = ProviderResults.Select(r => new
                         {
                             r.Mode,
                             r.Outcome,
-                            Diagnostics = r.Diagnostics.Select(d => new { d.Code, d.Severity }),
+                            Diagnostics = r.Diagnostics.Select(d => new
+                            {
+                                d.Code,
+                                d.Severity,
+                                d.ProviderErrorClass,
+                                d.ProviderErrorCode,
+                                d.ProviderErrorState,
+                            }),
                         }),
                         PreRegistrationHistoryTopics = PreRegistrationHistoryTopics.Select(t => new
                         {
@@ -839,6 +935,7 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
             return;
         }
         _disposed = true;
+        AppDomain.CurrentDomain.FirstChanceException -= _observeValidationFailure;
         List<Exception> failures = [];
         async Task CleanupAsync(Func<Task> cleanup)
         {

@@ -367,10 +367,28 @@ public sealed class CdcRecordSizeIncrease
                     {
                         Require((await ValidateStage(false)).PreStartEligible);
                     }
-                    async Task RequireStopped(CancellationToken t)
+                    async Task RequireStopped(CancellationToken t, bool afterConfigurationUpdate = false)
                     {
                         var started = _time.GetUtcNow();
                         var live = Observed(await Call(c => _connect.ReadStatusAsync(desired, c)));
+                        // Config updates can briefly unassign the retained stopped connector. Wait
+                        // only for fresh, task-free evidence from that same worker; never advance
+                        // while unassigned or tolerate a running task or changed worker identity.
+                        while (
+                            afterConfigurationUpdate
+                            && live.Runtime.ConnectorState == CdcConnectorRuntimeState.Unassigned
+                            && live.Tasks.Count == 0
+                            && live.Runtime.TaskCount == 0
+                            && live.Runtime.RunningTaskCount == 0
+                            && live.WorkerId == worker.ConnectWorkerId
+                            && live.Runtime.ObservedAt >= started
+                            && live.Runtime.ObservedAt <= _time.GetUtcNow()
+                        )
+                        {
+                            await Task.Delay(desired.Timing.PollInterval, _time, t);
+                            started = _time.GetUtcNow();
+                            live = Observed(await Call(c => _connect.ReadStatusAsync(desired, c)));
+                        }
                         Require(
                             live.IsStopped
                                 && live.Tasks.Count == 0
@@ -452,7 +470,8 @@ public sealed class CdcRecordSizeIncrease
                         );
                         var after = Observed(await Call(t => _connect.ReadConfigurationAsync(desired, t)));
                         Require(Number(after[key]) == value);
-                        await RequireStopped(ct);
+                        component = CdcDeploymentComponent.Connect;
+                        await RequireStopped(ct, afterConfigurationUpdate: true);
                     }
                 },
                 token

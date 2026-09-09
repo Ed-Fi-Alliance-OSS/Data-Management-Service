@@ -1140,7 +1140,8 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
             $"CONNECT_REST_ADVERTISED_HOST_NAME={ConnectContainerName}",
             "-e",
             "OFFSET_FLUSH_INTERVAL_MS=1000",
-            .. (_controllerNativeKafka ? new[] { "-e", "KAFKA_HEAP_OPTS=-Xms512m -Xmx512m" } : []),
+            // Plugin discovery can exhaust 512 MiB before REST starts on qualification hosts.
+            .. (_controllerNativeKafka ? new[] { "-e", "KAFKA_HEAP_OPTS=-Xms512m -Xmx1g" } : []),
             "-e",
             ConnectConfigProvidersEnvironmentVariable,
             "-e",

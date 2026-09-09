@@ -18,6 +18,7 @@ namespace EdFi.DataManagementService.Backend.Cdc.Tests.Integration;
 [TestFixture(CdcProvider.Postgresql, Category = "PostgresqlIntegration")]
 [TestFixture(CdcProvider.SqlServer, Category = "MssqlIntegration")]
 [Category("CdcArtifactCleanup")]
+[Category("DatabaseIntegration")]
 [NonParallelizable]
 [Platform(Exclude = "Win", Reason = "Local CDC ownership state requires Unix permissions.")]
 public class Given_CdcArtifactCleanupProviderDatabase(CdcProvider provider)

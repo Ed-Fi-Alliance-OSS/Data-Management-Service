@@ -207,7 +207,7 @@ internal sealed class CdcKafkaPolicyFixture(bool secured)
             new(WorkerGroup),
             new(OffsetTopic),
             CdcQualifiedWorkerImage.Digest,
-            536_870_912,
+            1_073_741_824,
             "All",
             secured && production
                 ? CdcKafkaDurabilityProfile.Production
@@ -511,7 +511,7 @@ internal sealed class CdcKafkaPolicyFixture(bool secured)
             ["CONNECT_REST_ADVERTISED_HOST_NAME"] = Worker,
             ["CONNECT_REST_ADVERTISED_PORT"] = "8083",
             ["CONNECT_CONNECTOR_CLIENT_CONFIG_OVERRIDE_POLICY"] = "All",
-            ["KAFKA_HEAP_OPTS"] = "-Xms256m -Xmx512m",
+            ["KAFKA_HEAP_OPTS"] = "-Xms512m -Xmx1g",
         };
         if (secured)
         {

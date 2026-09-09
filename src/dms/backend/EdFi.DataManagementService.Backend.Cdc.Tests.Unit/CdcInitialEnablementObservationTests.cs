@@ -177,7 +177,40 @@ public class Given_CdcInitialEnablementProviderObservation(bool sqlServer)
     }
 
     [Test]
-    public async Task It_rejects_source_change_before_entering_the_provider_mutex()
+    public async Task It_uses_a_current_established_row_while_retaining_the_shared_lifecycle_lock()
+    {
+        A.CallTo(() => _lease.BeginTransactionAsync(IsolationLevel.ReadCommitted, A<CancellationToken>._))
+            .Returns(_transaction);
+        var before = DateTimeOffset.UtcNow;
+        var observation = await CdcInitialDatabaseInspector.ObserveAsync(
+            _provider,
+            Target,
+            CancellationToken.None,
+            established: true
+        );
+        observation.ObservedAt.Should().BeOnOrAfter(before);
+        observation.PhysicalSourceFingerprint.Should().Be(Fingerprint.Value);
+        observation
+            .Lifecycle.Should()
+            .Be(new DocumentCacheLifecycleObservation(DocumentCacheLifecycleState.Tracking, true));
+        A.CallTo(() => _lease.BeginTransactionAsync(IsolationLevel.ReadCommitted, A<CancellationToken>._))
+            .MustHaveHappenedOnceExactly();
+        A.CallTo(() => _lease.BeginTransactionAsync(IsolationLevel.Serializable, A<CancellationToken>._))
+            .MustNotHaveHappened();
+        A.CallTo(() =>
+                _primitives.ReadLifecycleAsync(
+                    _transaction,
+                    DocumentCacheAdministrativeStateLockMode.Shared,
+                    A<CancellationToken>._
+                )
+            )
+            .MustHaveHappenedOnceExactly();
+        A.CallTo(() => _transaction.CommitAsync(A<CancellationToken>._)).MustNotHaveHappened();
+    }
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task It_rejects_source_change_before_entering_the_provider_mutex(bool established)
     {
         A.CallTo(() =>
                 _fingerprints.ReadFingerprintAsync(_context.ConnectionInput.Value, A<CancellationToken>._)
@@ -186,19 +219,20 @@ public class Given_CdcInitialEnablementProviderObservation(bool sqlServer)
                 DocumentCachePhysicalSourceFingerprintReadResult.Success(new("sha256:" + new string('b', 64)))
             );
         Func<Task> observe = () =>
-            CdcInitialDatabaseInspector.ObserveAsync(_provider, Target, CancellationToken.None);
+            CdcInitialDatabaseInspector.ObserveAsync(_provider, Target, CancellationToken.None, established);
         await observe.Should().ThrowAsync<CdcWorkflowStateException>();
         A.CallTo(() => _mutex.AcquireAsync(A<DocumentCacheTargetConnectionInput>._, A<CancellationToken>._))
             .MustNotHaveHappened();
     }
 
-    [Test]
-    public async Task It_rejects_lost_runtime_membership_before_provider_reads()
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task It_rejects_lost_runtime_membership_before_provider_reads(bool established)
     {
         A.CallTo(() => _registry.CurrentRuntimeSnapshot)
             .Returns(new DocumentCacheTargetRuntimeSnapshot([], DateTimeOffset.UtcNow));
         Func<Task> observe = () =>
-            CdcInitialDatabaseInspector.ObserveAsync(_provider, Target, CancellationToken.None);
+            CdcInitialDatabaseInspector.ObserveAsync(_provider, Target, CancellationToken.None, established);
         await observe.Should().ThrowAsync<CdcWorkflowStateException>();
         A.CallTo(() => _fingerprints.ReadFingerprintAsync(A<string>._, A<CancellationToken>._))
             .MustNotHaveHappened();

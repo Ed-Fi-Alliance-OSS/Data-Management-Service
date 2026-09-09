@@ -271,17 +271,42 @@ public sealed class CdcKafkaProvisioning : ICdcKafkaAdministrationTransport
         {
             var topic = topics[i];
             var current = evidence.Topics[topic.Name];
+            bool waitForMetadata = false;
             if (current is CdcTransportResult<CdcKafkaTopicEvidence>.Absent)
             {
                 Require(!journal.ReconciledTopics.Contains(i));
                 // Acknowledgement, conflict and lost response all lead to an independent read-back.
-                await CallAsync(request, ct => _kafka.CreateMissingTopicAsync(request, topic, ct), token);
+                var creation = await CallAsync(
+                    request,
+                    ct => _kafka.CreateMissingTopicAsync(request, topic, ct),
+                    token
+                );
+                waitForMetadata =
+                    creation
+                        is not CdcTransportResult<CdcKafkaTopicEvidence>.Unavailable
+                        {
+                            Diagnostic.Failure: CdcDeploymentFailure.AuthenticationFailed
+                                or CdcDeploymentFailure.InvalidInput
+                                or CdcDeploymentFailure.ValidationFailed,
+                        };
             }
             var live = await CallAsync(
                 request,
                 ct => _kafka.InspectTopicAsync(request, topic.Name, ct),
                 token
             );
+            // Kafka can acknowledge creation before metadata exposes the new topic. Wait only for
+            // that absence, under the invocation deadline, without repeating the create. Existing
+            // drift, contradictory metadata and unavailable inspection still reject immediately.
+            while (waitForMetadata && live is CdcTransportResult<CdcKafkaTopicEvidence>.Absent)
+            {
+                await Task.Delay(request.Timing.PollInterval, token);
+                live = await CallAsync(
+                    request,
+                    ct => _kafka.InspectTopicAsync(request, topic.Name, ct),
+                    token
+                );
+            }
             RequirePolicy(CdcDeploymentKafkaPolicy.ObserveTopic(request, topic, live).State);
             if (!journal.ReconciledTopics.Contains(i))
             {

@@ -13,8 +13,8 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Cdc.Tests.Integration;
 
-[TestFixture(CdcProvider.Postgresql)]
-[TestFixture(CdcProvider.SqlServer)]
+[TestFixture(CdcProvider.Postgresql, Category = "PostgresqlIntegration")]
+[TestFixture(CdcProvider.SqlServer, Category = "MssqlIntegration")]
 [Category("CdcConnectorTelemetryQualification")]
 [Category("DatabaseIntegration")]
 public sealed class Given_CdcConnectorTelemetryQualification(CdcProvider provider)

@@ -8,6 +8,13 @@ BeforeAll {
     Import-Module (Join-Path $script:composeRoot 'e2e-cdc.psm1') -Force
 }
 
+AfterAll {
+    # Nested imports must not survive into another file's sandboxed module mocks.
+    Get-Module -All | Where-Object {
+        $_.Path -and $_.Path.StartsWith($script:composeRoot + [IO.Path]::DirectorySeparatorChar)
+    } | Remove-Module -Force
+}
+
 Describe 'Shared CDC E2E setup handoff' {
     BeforeEach {
         $script:arguments = @{

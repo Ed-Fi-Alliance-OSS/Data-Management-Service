@@ -264,7 +264,9 @@ $lock = & (Get-Module cdc-lifecycle) { Enter-CdcDeploymentLock 'dms-local' }
 try { 'acquired' | Set-Content $AcquiredPath } finally { $lock.Dispose() }
 '@ | Set-Content $childPath
         $lock = & (Get-Module cdc-lifecycle) { Enter-CdcDeploymentLock 'dms-local' }
-        $info = [Diagnostics.ProcessStartInfo]::new([Environment]::ProcessPath)
+        # A dotnet-tool installation runs inside dotnet, whose ProcessPath is not a pwsh launcher.
+        $launcher = Get-Command pwsh -CommandType Application | Select-Object -First 1
+        $info = [Diagnostics.ProcessStartInfo]::new($launcher.Source)
         $info.UseShellExecute = $false
         foreach ($arg in @('-NoProfile', '-File', $childPath, $modulePath, $ready, $acquired)) { $info.ArgumentList.Add($arg) }
         $child = [Diagnostics.Process]::Start($info)

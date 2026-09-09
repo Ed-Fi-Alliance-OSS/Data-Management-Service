@@ -176,7 +176,12 @@ internal sealed class CdcProjectionRuntime(
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         cancellationToken.ThrowIfCancellationRequested();
-        return CdcInitialDatabaseInspector.ObserveAsync(provider, targetKey, cancellationToken);
+        return CdcInitialDatabaseInspector.ObserveAsync(
+            provider,
+            targetKey,
+            cancellationToken,
+            established: true
+        );
     }
 
     public async Task StartProcessingAsync(CancellationToken cancellationToken)

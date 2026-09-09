@@ -94,7 +94,8 @@ Describe 'CDC Compose service selection' {
         $worker.environment.OFFSET_STORAGE_TOPIC | Should -Be 'dms-connect-offsets'
         $worker.environment.CONNECT_CONNECTOR_CLIENT_CONFIG_OVERRIDE_POLICY | Should -Be 'All'
         $worker.ports | Where-Object { $_.target -eq 9404 } | ForEach-Object { $_.host_ip | Should -Be '127.0.0.1' }
-        $worker.depends_on | Should -BeNullOrEmpty
+        $worker.PSObject.Properties | Where-Object Name -eq 'depends_on' |
+            ForEach-Object Value | Should -BeNullOrEmpty
     }
 
     It 'selects the shipped qualified image when no override is supplied' {

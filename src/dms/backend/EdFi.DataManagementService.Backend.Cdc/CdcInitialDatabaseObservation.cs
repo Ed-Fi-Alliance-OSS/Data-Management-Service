@@ -26,7 +26,8 @@ internal static class CdcInitialDatabaseInspector
     internal static async Task<CdcInitialDatabaseObservation> ObserveAsync(
         IServiceProvider provider,
         DocumentCacheTargetKey targetKey,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        bool established = false
     )
     {
         var registry = provider.GetRequiredService<IDocumentCacheTargetRegistry>();
@@ -57,11 +58,13 @@ internal static class CdcInitialDatabaseInspector
             .GetRequiredService<IDocumentCacheAdministrativeMutex>()
             .AcquireAsync(context.ConnectionInput, cancellationToken);
         await using var transaction = await mutex.BeginTransactionAsync(
-            IsolationLevel.Serializable,
+            established ? IsolationLevel.ReadCommitted : IsolationLevel.Serializable,
             cancellationToken
         );
-        // The existing primitives issue all lifecycle/latch/table reads on this one transaction.
-        // Serializable preserves a consistent absence observation on both supported providers.
+        // Initial eligibility needs serializable table-absence evidence. Established validation uses
+        // source/lifecycle/latch facts only: retain the shared lifecycle-row lock, but allow a current
+        // row version after concurrent projection writes instead of aborting a serializable snapshot.
+        // Established table counts must never be promoted into an initial empty-database proof.
         var lifecycle = await primitives.ReadLifecycleAsync(
             transaction,
             DocumentCacheAdministrativeStateLockMode.Shared,

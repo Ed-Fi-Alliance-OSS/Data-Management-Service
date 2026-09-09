@@ -260,9 +260,15 @@ public sealed class Given_Cdc_Controller_Native_Recovery(CdcProvider provider)
                 throw new IOException("t33-private-sentinel");
             }
         };
-        // Bound unsuccessful stop verification without waiting the normal three-minute setup budget.
+        // Keep the normal provider call budget: SQL Server continuity inspection can exceed five
+        // seconds before StopAsync is reached. Bound the unsuccessful verification as a whole.
         var request = _fixture.WithTiming(
-            new(TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(8), TimeSpan.FromMilliseconds(250))
+            new(
+                _fixture.Request.Timing.CallTimeout,
+                _fixture.Request.Timing.CallTimeout + TimeSpan.FromMinutes(1),
+                TimeSpan.FromMilliseconds(250),
+                _fixture.Request.Timing.MaximumObservationAge
+            )
         );
         var stopped = await _fixture.Controllers.Lifecycle.ExecuteAsync(
             new(request, _fixture.Runtime, 60_000),

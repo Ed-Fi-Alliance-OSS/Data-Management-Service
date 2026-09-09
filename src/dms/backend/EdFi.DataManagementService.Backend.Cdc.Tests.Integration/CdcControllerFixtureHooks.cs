@@ -6,6 +6,8 @@
 using System.Collections.Concurrent;
 using System.Reflection;
 using System.Runtime.ExceptionServices;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -63,10 +65,12 @@ internal sealed record CdcControllerFixtureEvent(
 internal sealed class CdcControllerFixtureHooks
 {
     private readonly ConcurrentQueue<CdcControllerFixtureEvent> _trace = new();
+    private readonly ConcurrentQueue<object> _connectObservations = new();
     private readonly ConcurrentDictionary<(CdcControllerBoundary, CdcControllerEdge), int> _counts = new();
     private long _sequence;
     public Action<CdcControllerFixtureEvent> OnBoundary { get; set; } = _ => { };
     public IReadOnlyList<CdcControllerFixtureEvent> Trace => _trace.OrderBy(e => e.Sequence).ToArray();
+    public IReadOnlyList<object> ConnectObservations => _connectObservations.ToArray();
 
     public void Hit(CdcControllerBoundary boundary, CdcControllerEdge edge)
     {
@@ -93,6 +97,27 @@ internal sealed class CdcControllerFixtureHooks
         try
         {
             result = await operation(token);
+            if (result is CdcTransportResult<CdcConnectStatus>.Observed status)
+            {
+                _connectObservations.Enqueue(
+                    new
+                    {
+                        At = DateTimeOffset.UtcNow,
+                        status.Value.IsStopped,
+                        status.Value.Runtime.ObservedAt,
+                        status.Value.Runtime.ConnectorState,
+                        status.Value.Runtime.TaskCount,
+                        Tasks = status.Value.Tasks.Select(task => new { task.Id, task.State }).ToArray(),
+                        WorkerIdSha256 = Convert.ToHexStringLower(
+                            SHA256.HashData(Encoding.UTF8.GetBytes(status.Value.WorkerId))
+                        ),
+                    }
+                );
+                while (_connectObservations.Count > 128)
+                {
+                    _connectObservations.TryDequeue(out _);
+                }
+            }
         }
         catch
         {
