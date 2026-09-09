@@ -426,6 +426,15 @@ public static class AspNetCoreFrontend
         return NormalizeTraceId(request.HttpContext.TraceIdentifier, correlationIdMaxLength);
     }
 
+    /// <summary>
+    /// Truncates <paramref name="traceId"/> to <paramref name="correlationIdMaxLength"/> characters
+    /// (falling back to <see cref="AppSettings.DefaultCorrelationIdMaxLength"/> when non-positive),
+    /// then removes control characters. This never rejects input (FR-LOG-5): if every character is a
+    /// control character, or <paramref name="traceId"/> is null or empty, the result is deliberately
+    /// an empty-valued <see cref="TraceId"/> rather than a fallback identifier or an exception. This
+    /// is pinned by test, not incidental — an empty correlation ID is treated as a valid, if unusual,
+    /// normalized value, consistent with FR-LOG-5's "normalize, never reject" contract.
+    /// </summary>
     internal static TraceId NormalizeTraceId(string? traceId, int correlationIdMaxLength)
     {
         string value = traceId ?? string.Empty;

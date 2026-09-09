@@ -29,6 +29,16 @@ public static class LogSanitizer
         return Sanitize(input, static c => !char.IsControl(c));
     }
 
+    /// <summary>
+    /// <paramref name="isAllowedChar"/> is invoked twice per character — once to count safe
+    /// characters for the exact-size allocation, once to select them into the buffer. It must
+    /// be a pure function of only its input character: deterministic, with no side effects and
+    /// no dependency on call count or ordering. A predicate that is not pure (e.g. one with
+    /// internal state, or one whose result depends on how many times it has already been
+    /// called) will silently produce a buffer that is the wrong size or filled incorrectly,
+    /// since the first-pass count and the second-pass writes assume identical results for
+    /// identical input on every call.
+    /// </summary>
     private static string Sanitize(string? input, Func<char, bool> isAllowedChar)
     {
         if (string.IsNullOrEmpty(input))

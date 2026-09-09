@@ -119,6 +119,17 @@ public class Given_Trace_Id_Extraction
     }
 
     [Test]
+    public void It_returns_empty_when_every_character_is_a_control_character()
+    {
+        // Not just a null/empty-input edge case: this pins the deliberate behavior when
+        // non-blank input survives truncation but is stripped down to nothing by the
+        // correlation-ID allowlist. FR-LOG-5 requires normalization to never reject input,
+        // so an all-control-character value normalizes to an empty (not fallback, not
+        // exception) TraceId, the same as a null or empty value.
+        AspNetCoreFrontend.NormalizeTraceId("\r\n\t\u0001\u0002", 8).Value.Should().BeEmpty();
+    }
+
+    [Test]
     public void It_uses_the_trace_identifier_when_the_correlation_header_is_disabled()
     {
         DefaultHttpContext httpContext = CreateHttpContext(

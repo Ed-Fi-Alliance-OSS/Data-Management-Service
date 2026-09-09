@@ -107,4 +107,40 @@ Refers to `FailureResponse.cs:332` (`ForAuthenticationFailure`),
 
 ## Round-by-round declines
 
-*(Team lead: append below, one section per round.)*
+### Round 3 (fixing Critical + High/Medium findings from an external five-specialist review)
+
+All Critical and High findings from that review were fixed, not declined — see
+`tasks/review-round-3-implementation.md`. No findings were declined in round 3.
+
+### Round 4 (independent fresh re-review of round 3)
+
+No new findings were raised; round 4 re-verified round 3's fixes and re-affirmed two
+pre-existing Low findings (imprecise `docs/CONFIGURATION.md` wording; UTF-16
+surrogate-pair truncation boundary) without escalating them — see
+`tasks/review-round-4.md`. Round 4 incorrectly declared these the only remaining
+findings; a follow-up human review
+([PR #1232 comment](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/pull/1232#issuecomment-5594473367))
+found three Medium findings from the round-3 review that were never fixed **or**
+recorded here, which is the gap this round-5 section closes.
+
+### Round 5 (fixing the remaining Mediums identified above)
+
+Two of the three Mediums were fixed (empty-normalization behavior now pinned by test;
+`Sanitize`'s predicate-purity contract now documented). The third is declined below.
+
+### D-9 — "`CorrelationIdMaxLength` has no floor above 0, so a degenerate configuration (e.g. `4`) collapses correlation IDs instance-wide"
+
+- **Reported severity (anticipated):** Medium
+- **Decision:** Declined — choosing a specific minimum is a product decision outside
+  FR-LOG-3..6.
+- **Rationale:** FR-LOG-4 requires only that the max length be host-configurable with a
+  documented default; it does not specify a minimum beyond "positive." The existing
+  `<= 0` validation (`AppSettings.cs`) already rejects the genuinely invalid
+  zero/negative case at startup. A small-but-positive value (e.g. `4`) is a real
+  self-inflicted usability hazard, not a security or correctness defect — truncation
+  remains deterministic and documented (`docs/CONFIGURATION.md`), and the same class of
+  risk exists for any host-configurable numeric setting an operator can misconfigure.
+  Picking a specific floor (8? 16? 32?) requires product input this PR does not have
+  and would be an arbitrary, unreviewed constant if invented here. Not fixing this
+  silently would have been the actual defect (per the follow-up review's real
+  complaint) — recording it here is the fix.
