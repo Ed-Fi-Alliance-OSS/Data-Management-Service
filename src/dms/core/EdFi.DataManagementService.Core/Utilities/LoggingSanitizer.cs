@@ -17,7 +17,8 @@ public static class LoggingSanitizer
     /// <summary>
     /// Sanitizes input strings to prevent log injection attacks using an allowlist approach.
     /// Only allows alphanumeric characters, spaces, and safe punctuation (_-.:/\).
-    /// Explicitly excludes all control characters (ASCII &lt; 32, including \r, \n, \t, etc.)
+    /// Explicitly excludes every character <c>char.IsControl</c> reports, which is the whole of
+    /// Unicode category Cc — U+0000–U+001F (including \r, \n, \t) and U+007F–U+009F.
     /// This prevents log forging, template injection, and other log-based attacks.
     /// </summary>
     /// <remarks>

@@ -19,6 +19,15 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit;
 /// TraceId reachable from an HTTP request is built here, these assertions are what make the
 /// normalization guarantee hold for every downstream log event and error response body.
 /// </summary>
+/// <remarks>
+/// Several fixtures below deliberately re-pin normalizer behavior with the same literals as
+/// CorrelationIdNormalizerTests — control characters, upstream punctuation, and both truncation
+/// bounds — because at this seam they are ingestion-point guarantees, not just normalizer unit
+/// tests. A change to the allowlist or to the cap will therefore surface here too, not only in
+/// CorrelationIdNormalizerTests. The one thing not repeated here is the truncate-then-filter
+/// *order*, which is pinned once in CorrelationIdNormalizerTests, the single definition of that
+/// policy, and again end to end in CorrelationIdParityTests.
+/// </remarks>
 [TestFixture]
 [Parallelizable]
 public class ExtractTraceIdFromTests
@@ -220,11 +229,6 @@ public class ExtractTraceIdFromTests
             _traceId.Value.Should().Be(new string('z', 12));
         }
     }
-
-    // The truncate-then-filter order is pinned once, in CorrelationIdNormalizerTests, which is
-    // the single definition of that policy, and end to end in CorrelationIdParityTests. It is
-    // deliberately not re-pinned here with the same literals: this fixture's own subject is
-    // header selection, the disable path, and the fallback branch.
 
     [TestFixture]
     public class Given_A_Correlation_Header_Present_With_An_Empty_Value : ExtractTraceIdFromTests
