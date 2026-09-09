@@ -222,11 +222,13 @@ public class Given_the_startup_check_the_seam_registered
     }
 
     [Test]
-    public void It_reports_nothing_when_no_plugin_contributed()
+    public async Task It_reports_nothing_when_no_plugin_contributed()
     {
         Func<Task> execution = () => _task.ExecuteAsync(CancellationToken.None);
 
-        execution.Should().NotThrowAsync();
+        // Awaited. The assertion returns a Task, and dropping it leaves an asynchronous failure
+        // unobserved, which NUnit reports as a pass.
+        await execution.Should().NotThrowAsync();
     }
 }
 
@@ -251,13 +253,16 @@ public class Given_a_host_that_has_added_its_own_services
     [Test]
     public void It_registered_the_plugin_startup_check_exactly_once()
     {
+        // Filtered before asserting rather than inside the assertion: FluentAssertions takes an
+        // expression tree there, and a pattern match is not allowed in one.
         _services
-            .Should()
-            .ContainSingle(descriptor =>
+            .Where(descriptor =>
                 descriptor.ServiceType == typeof(IDmsStartupTask)
-                && descriptor.ImplementationType != null
+                && descriptor.ImplementationType is not null
                 && descriptor.ImplementationType.Name == "PluginRegistrationGuard"
-            );
+            )
+            .Should()
+            .ContainSingle();
     }
 
     [Test]

@@ -31,5 +31,16 @@
     <ItemGroup>
         <ProjectReference Include="..\EdFi.DataManagementService.Frontend.AspNetCore\EdFi.DataManagementService.Frontend.AspNetCore.csproj" />
     </ItemGroup>
+    <!--
+        The staging rules' own path, so the staging verification can run them over a temporary tree and
+        assert what they decided rather than reading them and believing it. A compiled test cannot
+        otherwise know where its own sources are.
+    -->
+    <ItemGroup>
+        <AssemblyMetadata
+            Include="PluginFrontendFixtureTargetsFile"
+            Value="$(MSBuildThisFileDirectory)PluginFrontendFixtures.targets"
+        />
+    </ItemGroup>
     <Import Project="PluginFrontendFixtures.targets" />
 </Project>
