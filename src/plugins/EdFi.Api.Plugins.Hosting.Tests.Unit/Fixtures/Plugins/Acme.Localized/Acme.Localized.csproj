@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <!--
+        Ships a satellite resource assembly, which is the one asset kind whose published location a
+        file name alone cannot find: a publish puts it under its culture's directory, and its
+        manifest declares it in a resources section carrying that culture. Without this fixture the
+        locale branch of the path mapping is reasoning rather than behaviour.
+    -->
+    <PropertyGroup>
+        <AssemblyName>Acme.Localized</AssemblyName>
+        <RootNamespace>Acme.Localized</RootNamespace>
+        <NeutralLanguage>en</NeutralLanguage>
+    </PropertyGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\..\..\..\EdFi.Api.Plugins\EdFi.Api.Plugins.csproj" />
+    </ItemGroup>
+    <ItemGroup>
+        <EmbeddedResource Update="Strings.resx">
+            <Generator>ResXFileCodeGenerator</Generator>
+            <LastGenOutput>Strings.Designer.cs</LastGenOutput>
+        </EmbeddedResource>
+    </ItemGroup>
+</Project>

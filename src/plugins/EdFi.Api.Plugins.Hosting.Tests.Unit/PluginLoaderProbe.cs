@@ -224,6 +224,42 @@ internal sealed class TemporaryPluginRoot : IDisposable
         throw new AssertionException($"Fixture '{pluginName}' declares no version for '{simpleName}'.");
     }
 
+    /// <summary>
+    /// Rewrites the declared path of a resource asset, keeping the file where the publish put it.
+    /// </summary>
+    /// <remarks>
+    /// A satellite that comes from a project reference is declared at the same path the publish writes,
+    /// so it is found by the declared path alone. One that comes from a package is declared at its
+    /// package-relative path, <c>lib/&lt;tfm&gt;/&lt;culture&gt;/...</c>, while the publish writes it
+    /// under the culture directory only. This produces that second shape from a real publish, which is
+    /// the only thing that exercises the culture branch of the mapping.
+    /// </remarks>
+    internal void SetResourceDeclaredPath(string pluginName, string fromPath, string toPath)
+    {
+        JsonNode manifest = JsonNode.Parse(File.ReadAllText(ManifestPathOf(pluginName)))!;
+        string targetName = manifest["runtimeTarget"]!["name"]!.GetValue<string>();
+
+        foreach (KeyValuePair<string, JsonNode?> library in manifest["targets"]![targetName]!.AsObject())
+        {
+            if (library.Value is not JsonObject entry || entry["resources"] is not JsonObject resources)
+            {
+                continue;
+            }
+
+            if (resources[fromPath] is not JsonNode declaration)
+            {
+                continue;
+            }
+
+            resources.Remove(fromPath);
+            resources[toPath] = declaration.DeepClone();
+            WriteManifest(pluginName, manifest.ToJsonString());
+            return;
+        }
+
+        throw new AssertionException($"Fixture '{pluginName}' declares no resource asset at '{fromPath}'.");
+    }
+
     /// <summary>Writes bytes that are not a managed assembly where an entry assembly belongs.</summary>
     internal string AddCorruptPlugin(string pluginName)
     {

@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Diagnostics;
-using System.Text;
 using FluentAssertions;
 using NUnit.Framework;
 
@@ -21,9 +20,20 @@ namespace EdFi.Api.Plugins.Hosting.Tests.Unit;
 /// </remarks>
 internal static class NativeProbe
 {
-    internal sealed record Result(int ExitCode, string Output);
+    /// <summary>How long a probe may run before the runner ends it.</summary>
+    /// <remarks>
+    /// Generous, because the work is starting a process and loading a plugin and a build machine can be
+    /// slow at both. It bounds a hang; it is not a performance assertion. A case about the bound itself
+    /// passes a short one.
+    /// </remarks>
+    private static readonly TimeSpan _defaultDeadline = TimeSpan.FromMinutes(2);
 
-    internal static Result Run(string pluginRoot, string pluginName, string mode)
+    internal static ChildProcess.Result Run(
+        string pluginRoot,
+        string pluginName,
+        string mode,
+        TimeSpan? deadline = null
+    )
     {
         ProcessStartInfo start = new()
         {
@@ -48,20 +58,85 @@ internal static class NativeProbe
         start.ArgumentList.Add(pluginName);
         start.ArgumentList.Add(mode);
 
-        using Process process =
-            Process.Start(start) ?? throw new AssertionException("The native probe did not start.");
+        return ChildProcess.Run(start, deadline ?? _defaultDeadline, "The native probe");
+    }
+}
 
-        StringBuilder output = new();
-        output.Append(process.StandardOutput.ReadToEnd());
-        output.Append(process.StandardError.ReadToEnd());
+/// <summary>
+/// The runner's own two failure modes, which every native assertion here depends on not having.
+/// </summary>
+/// <remarks>
+/// Both belong to the runner rather than to the loader, and both are invisible in a passing run: a
+/// probe that hangs and a probe that fills a pipe look exactly like a slow one until the suite itself
+/// stops. They are asserted against a child that really behaves that way, with a short deadline so the
+/// cases cost seconds.
+/// </remarks>
+[TestFixture]
+public class Given_a_probe_process_the_runner_cannot_simply_read_to_the_end
+{
+    [Test]
+    public void It_ends_a_probe_that_never_finishes_at_the_deadline()
+    {
+        Stopwatch elapsed = Stopwatch.StartNew();
 
-        if (!process.WaitForExit(TimeSpan.FromMinutes(2)))
-        {
-            process.Kill(entireProcessTree: true);
-            throw new AssertionException($"The native probe did not finish. Output so far: {output}");
-        }
+        AssertionException failure = Assert.Throws<AssertionException>(() =>
+            NativeProbe.Run(
+                PluginFixtures.Root,
+                PluginFixtures.Good,
+                mode: "stall",
+                deadline: TimeSpan.FromSeconds(5)
+            )
+        )!;
 
-        return new Result(process.ExitCode, output.ToString());
+        elapsed.Stop();
+
+        failure.Message.Should().Contain("did not finish within its deadline");
+
+        // The claim is that the deadline is what ended it. Well below the runner's own default, so a
+        // slow machine cannot make this pass for the wrong reason.
+        elapsed.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(60));
+    }
+
+    [Test]
+    public void It_stops_waiting_for_streams_a_departed_probe_left_open()
+    {
+        // The probe exits immediately, having started a process that inherited its streams. Waiting for
+        // the streams to end rather than for the process to exit is what makes the captured output
+        // complete, and waiting for them without a bound is what makes that wait never return.
+        Stopwatch elapsed = Stopwatch.StartNew();
+
+        AssertionException failure = Assert.Throws<AssertionException>(() =>
+            NativeProbe.Run(
+                PluginFixtures.Root,
+                PluginFixtures.Good,
+                mode: "linger",
+                deadline: TimeSpan.FromSeconds(5)
+            )
+        )!;
+
+        elapsed.Stop();
+
+        failure.Message.Should().Contain("held its streams open past the deadline");
+
+        // What it did manage to read is reported rather than thrown away.
+        failure.Message.Should().Contain("LINGER STARTED");
+        elapsed.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(60));
+    }
+
+    [Test]
+    public void It_finishes_a_probe_that_fills_its_error_stream_before_writing_its_output()
+    {
+        // Two megabytes of error output ahead of a single line of ordinary output, which is far more
+        // than a pipe holds. A runner that reads output to its end first never sees that line.
+        ChildProcess.Result result = NativeProbe.Run(
+            PluginFixtures.Root,
+            PluginFixtures.Good,
+            mode: "spew",
+            deadline: TimeSpan.FromSeconds(60)
+        );
+
+        result.ExitCode.Should().Be(0);
+        result.Output.Should().Contain("SPEW DONE");
     }
 }
 
@@ -88,7 +163,7 @@ public class Given_a_plugin_whose_native_asset_sits_where_its_manifest_declares_
     [Test]
     public void It_resolves_and_calls_the_library_through_the_loader()
     {
-        NativeProbe.Result result = NativeProbe.Run(
+        ChildProcess.Result result = NativeProbe.Run(
             _root.RootPath,
             PluginFixtures.NativePortable,
             mode: "loader"
@@ -106,7 +181,7 @@ public class Given_a_plugin_whose_native_asset_sits_where_its_manifest_declares_
         // layout, and a context that resolves managed assemblies host-first exactly as the real one
         // does while overriding nothing for unmanaged ones: the call fails. That is what shows the
         // override is doing the work rather than the runtime's default probing.
-        NativeProbe.Result result = NativeProbe.Run(
+        ChildProcess.Result result = NativeProbe.Run(
             _root.RootPath,
             PluginFixtures.NativePortable,
             mode: "plain"
@@ -139,7 +214,7 @@ public class Given_a_plugin_whose_native_asset_was_flattened_beside_the_entry_as
         // native asset to the plugin root, where the runtime's own probing finds it, so a passing call
         // against this layout says nothing about whether the override ran. This is the measurement that
         // makes the declared-layout tests above the load-bearing ones.
-        NativeProbe.Result result = NativeProbe.Run(_root.RootPath, PluginFixtures.Native, mode: "plain");
+        ChildProcess.Result result = NativeProbe.Run(_root.RootPath, PluginFixtures.Native, mode: "plain");
 
         result.Output.Should().Contain("LOAD SUCCEEDED");
         result.Output.Should().Contain("NATIVE RESULT 3");
@@ -179,7 +254,7 @@ public class Given_a_plugin_whose_declared_native_asset_is_not_there
         // check, because a manifest describes native assets per runtime identifier and the runtime
         // resolves them lazily. Both halves of that are asserted here, in a process where no module of
         // this name has been loaded, which is the only place the second half means anything.
-        NativeProbe.Result result = NativeProbe.Run(_root.RootPath, PluginFixtures.Native, mode: "loader");
+        ChildProcess.Result result = NativeProbe.Run(_root.RootPath, PluginFixtures.Native, mode: "loader");
 
         result.Output.Should().Contain("LOAD SUCCEEDED");
         result.Output.Should().Contain("NATIVE FAILURE System.DllNotFoundException");

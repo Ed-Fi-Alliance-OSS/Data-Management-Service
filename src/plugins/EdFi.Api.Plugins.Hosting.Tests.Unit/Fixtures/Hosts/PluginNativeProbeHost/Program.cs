@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Diagnostics;
 using System.Reflection;
 using System.Runtime.Loader;
 using EdFi.Api.Plugins;
@@ -16,12 +17,21 @@ namespace PluginNativeProbeHost;
 /// before it starts.
 /// </summary>
 /// <remarks>
+/// <para>
 /// Two modes, and the difference between them is the whole point. <c>loader</c> uses the real
 /// <see cref="PluginLoader"/>, whose context answers for unmanaged dependencies. <c>plain</c> uses a
 /// context that resolves managed assemblies host-first exactly as the real one does and overrides
 /// nothing for unmanaged ones, which is what the runtime's own probing is left to handle. Running one
 /// plugin through both is what shows whether the unmanaged override is doing anything, and a plugin
 /// whose native library sits beside its entry assembly is satisfied by probing either way.
+/// </para>
+/// <para>
+/// Three further modes load no plugin at all. <c>stall</c> never exits, <c>spew</c> fills its error
+/// stream before it writes anything to its output stream, and <c>linger</c> exits immediately after
+/// starting a process of its own that inherits the streams and outlives it. They exist so that the
+/// runner's deadlines and its stream draining are exercised by a child that really behaves that way,
+/// rather than asserted by reading the runner.
+/// </para>
 /// </remarks>
 internal static class Program
 {
@@ -30,7 +40,7 @@ internal static class Program
         if (args.Length != 3)
         {
             Console.Error.WriteLine(
-                "usage: PluginNativeProbeHost <plugin-root> <plugin-name> <loader|plain>"
+                "usage: PluginNativeProbeHost <plugin-root> <plugin-name> <loader|plain|stall|spew>"
             );
             return 2;
         }
@@ -38,6 +48,31 @@ internal static class Program
         string root = args[0];
         string pluginName = args[1];
         string mode = args[2];
+
+        // None of these load a plugin. They are here so that the runner's deadlines and its stream
+        // draining are exercised by a child that really stalls, really fills a pipe, and really leaves
+        // its streams held open by something else.
+        if (mode == "stall")
+        {
+            return Stall();
+        }
+
+        if (mode == "spew")
+        {
+            return Spew();
+        }
+
+        if (mode == "linger")
+        {
+            return Linger();
+        }
+
+        if (mode == "linger-child")
+        {
+            Thread.Sleep(TimeSpan.FromSeconds(30));
+
+            return 0;
+        }
 
         try
         {
@@ -73,6 +108,77 @@ internal static class Program
             Console.WriteLine($"LOAD FAILURE {exception.GetType().FullName}: {exception.Message}");
             return 1;
         }
+    }
+
+    /// <summary>Announces itself and then never finishes, so the runner's deadline is what ends it.</summary>
+    private static int Stall()
+    {
+        Console.WriteLine("STALLING");
+        Console.Out.Flush();
+        Thread.Sleep(Timeout.Infinite);
+
+        return 0;
+    }
+
+    /// <summary>
+    /// Writes far more to the error stream than a pipe buffer holds, and only then writes to the output
+    /// stream.
+    /// </summary>
+    /// <remarks>
+    /// A runner that reads one stream to its end before touching the other never gets here: this
+    /// process blocks writing its error stream, so its output stream never reaches end of file and both
+    /// sides wait forever. The order is the whole point of the case.
+    /// </remarks>
+    private static int Spew()
+    {
+        string line = new('e', 1024);
+
+        for (int written = 0; written < 2048; written++)
+        {
+            Console.Error.WriteLine(line);
+        }
+
+        Console.WriteLine("SPEW DONE");
+
+        return 0;
+    }
+
+    /// <summary>
+    /// Starts a process that inherits this one's streams, then exits at once and leaves it holding
+    /// them.
+    /// </summary>
+    /// <remarks>
+    /// The grandchild redirects nothing, so it keeps the write end of the pipes the runner is reading.
+    /// Those streams therefore never reach their end, and a runner that waits for them without a bound
+    /// waits forever even though the process it started is long gone. The grandchild sleeps for a
+    /// bounded time rather than forever, so nothing survives the test that has to be hunted down.
+    /// </remarks>
+    private static int Linger()
+    {
+        ProcessStartInfo start = new()
+        {
+            FileName = Environment.ProcessPath ?? "dotnet",
+            UseShellExecute = false,
+        };
+
+        if (
+            !Path.GetFileNameWithoutExtension(start.FileName)
+                .Equals("dotnet", StringComparison.OrdinalIgnoreCase)
+        )
+        {
+            start.FileName = "dotnet";
+        }
+
+        start.ArgumentList.Add(Assembly.GetExecutingAssembly().Location);
+        start.ArgumentList.Add(".");
+        start.ArgumentList.Add("none");
+        start.ArgumentList.Add("linger-child");
+
+        Process.Start(start);
+
+        Console.WriteLine("LINGER STARTED");
+
+        return 0;
     }
 
     private static Assembly LoadThroughTheRealLoader(string root, string pluginName)

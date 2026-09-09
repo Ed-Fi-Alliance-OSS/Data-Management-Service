@@ -61,6 +61,9 @@ internal static class PluginFixtures
     /// <summary>Ships a dependency the host does not carry, so its own copy is the one served.</summary>
     internal const string PrivateDependency = "Acme.PrivateDependency";
 
+    /// <summary>Ships a satellite resource assembly under its culture's directory.</summary>
+    internal const string Localized = "Acme.Localized";
+
     /// <summary>Ships an older copy of an assembly the host carries.</summary>
     internal const string Substitution = "Acme.Substitution";
 
@@ -109,6 +112,7 @@ internal static class PluginFixtures
         Native,
         NativePortable,
         Substitution,
+        Localized,
     ];
 
     /// <summary>
@@ -122,13 +126,16 @@ internal static class PluginFixtures
 
     internal static string EntryAssemblyOf(string name) => Path.Combine(DirectoryOf(name), $"{name}.dll");
 
+    /// <summary>The staged name of the fresh-process probe, which is not a plugin.</summary>
+    internal const string NativeProbeHostName = "PluginNativeProbeHost";
+
     /// <summary>The fresh-process probe the native assertions run.</summary>
     internal static string NativeProbeHost { get; } =
         Path.Combine(
             AppContext.BaseDirectory,
             "FixtureHosts",
-            "PluginNativeProbeHost",
-            "PluginNativeProbeHost.dll"
+            NativeProbeHostName,
+            $"{NativeProbeHostName}.dll"
         );
 
     internal static string ManifestOf(string name) => Path.Combine(DirectoryOf(name), $"{name}.deps.json");

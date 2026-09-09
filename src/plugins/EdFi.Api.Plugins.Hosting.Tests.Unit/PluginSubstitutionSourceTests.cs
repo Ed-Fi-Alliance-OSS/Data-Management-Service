@@ -102,3 +102,63 @@ public class Given_a_declaration_the_skew_preflight_does_not_read
             .NotContain(record => record.AssemblyName == "Acme.HostShared");
     }
 }
+
+/// <summary>
+/// A reference that asks for exactly the version the host carries, over a manifest that declares
+/// something else.
+/// </summary>
+/// <remarks>
+/// The case a record keyed on the reference cannot see at all. The plugin was published against one
+/// version of a shared assembly and compiled against another, which is ordinary: a reference records
+/// the version the compiler bound to, and the manifest records what the publish actually shipped. What
+/// the plugin's author tested against is the copy in the package, so a host serving something else has
+/// substituted, whatever the reference happens to say.
+/// </remarks>
+[TestFixture]
+public class Given_a_reference_asking_for_the_version_the_host_carries
+{
+    private TemporaryPluginRoot _root = null!;
+    private HostFirstSubstitution _substitution = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _root = TemporaryPluginRoot.Create();
+        _root.Add(PluginFixtures.Substitution);
+
+        // The contract, which every plugin references at the host's own version and which the publish
+        // declares at that same version. Moving the declaration alone leaves the reference asking for
+        // precisely what the host serves.
+        _root.SetDeclaredVersion(PluginFixtures.Substitution, "EdFi.Api.Plugins", "0.1.0.0");
+
+        PluginLoaderRun run = PluginLoaderProbe.Run(_root.RootPath, PluginFixtures.Substitution);
+        run.Failure.Should().BeNull();
+
+        _substitution = run.Result!.Plugins[0]
+            .MaterializeSubstitutions()
+            .Single(record => record.AssemblyName == "EdFi.Api.Plugins");
+    }
+
+    [TearDown]
+    public void TearDown() => _root.Dispose();
+
+    [Test]
+    public void It_records_the_declaration_the_manifest_makes()
+    {
+        _substitution.DeclaredVersion.Should().Be(new Version(0, 1, 0, 0));
+    }
+
+    [Test]
+    public void It_records_a_request_the_host_satisfied_exactly()
+    {
+        // The half that makes the case: nothing about this resolution differs from what the reference
+        // asked for, so a record derived from the reference would not exist.
+        _substitution.RequestedVersion.Should().Be(_substitution.HostVersion);
+    }
+
+    [Test]
+    public void It_records_the_version_the_host_actually_served()
+    {
+        _substitution.HostVersion.Should().Be(new Version(1, 0, 0, 0));
+    }
+}

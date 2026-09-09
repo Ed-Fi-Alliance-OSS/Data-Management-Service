@@ -17,6 +17,18 @@
         <EmbeddedResource Remove="Fixtures/**" />
         <None Remove="Fixtures/**" />
     </ItemGroup>
+    <!--
+        The staging regressions run PluginFixtures.targets against a temporary output tree of their own,
+        so they need the path of that file. A compiled test cannot otherwise know where its own sources
+        are, and deriving it by walking up from the output directory would encode this project's build
+        layout in a test about something else.
+    -->
+    <ItemGroup>
+        <AssemblyMetadata
+            Include="PluginFixtureTargetsFile"
+            Value="$(MSBuildThisFileDirectory)PluginFixtures.targets"
+        />
+    </ItemGroup>
     <ItemGroup>
         <PackageReference Include="FluentAssertions" />
         <PackageReference Include="Microsoft.Extensions.Configuration" />

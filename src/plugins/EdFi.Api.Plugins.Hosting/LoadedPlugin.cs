@@ -137,9 +137,16 @@ public sealed record LoadedPlugin
         _loadContext.MaterializeSubstitutions();
 
     /// <summary>
-    /// The version the process actually has for a file, which for the entry assembly comes from the
-    /// loaded assembly because a framework-dependent publish declares none for it.
+    /// The version to report for a file: the manifest's declaration where there is one, and for the
+    /// entry assembly, which a framework-dependent publish declares no version for, the version read
+    /// from the assembly the process loaded.
     /// </summary>
+    /// <remarks>
+    /// For a row other than the entry assembly this is the declared version rather than an independent
+    /// reading of the file, and the source on the row says so. Calling it the version the process has
+    /// would overstate it: an assembly the host served instead is a version this row does not describe,
+    /// which is what the substitution record covers.
+    /// </remarks>
     private Version? EffectiveVersionOf(PluginDeclaredFile file) =>
         file.DeclaredAssemblyVersion ?? (IsEntryAssembly(file) ? EntryAssemblyVersion : null);
 

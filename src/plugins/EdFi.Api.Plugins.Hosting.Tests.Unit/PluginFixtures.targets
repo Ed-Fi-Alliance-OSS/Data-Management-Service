@@ -1,5 +1,10 @@
 <Project>
     <!--
+        Every path here is written relative to this file rather than to the importing project, so that
+        the freshness and pruning rules can be driven from a project somewhere else. That is what lets
+        the staging regressions run these targets against a temporary output tree instead of asserting
+        the rules by reading them.
+
         Publishes the fixture plugin projects under Fixtures/ into the test output as real plugin
         directories, because the loader's subject is a published directory and nothing smaller
         exercises it honestly. Each fixture is published on its own, so a deliberately malformed one
@@ -22,62 +27,65 @@
     </ItemDefinitionGroup>
 
     <ItemGroup>
-        <PluginFixture Include="Fixtures/Plugins/Acme.Good/Acme.Good.csproj">
+        <PluginFixture Include="$(MSBuildThisFileDirectory)Fixtures/Plugins/Acme.Good/Acme.Good.csproj">
             <StagedName>Acme.Good</StagedName>
         </PluginFixture>
-        <PluginFixture Include="Fixtures/Plugins/Acme.NoSubclass/Acme.NoSubclass.csproj">
+        <PluginFixture Include="$(MSBuildThisFileDirectory)Fixtures/Plugins/Acme.NoSubclass/Acme.NoSubclass.csproj">
             <StagedName>Acme.NoSubclass</StagedName>
         </PluginFixture>
-        <PluginFixture Include="Fixtures/Plugins/Acme.TwoSubclasses/Acme.TwoSubclasses.csproj">
+        <PluginFixture Include="$(MSBuildThisFileDirectory)Fixtures/Plugins/Acme.TwoSubclasses/Acme.TwoSubclasses.csproj">
             <StagedName>Acme.TwoSubclasses</StagedName>
         </PluginFixture>
-        <PluginFixture Include="Fixtures/Plugins/Acme.NameMismatch/Acme.NameMismatch.csproj">
+        <PluginFixture Include="$(MSBuildThisFileDirectory)Fixtures/Plugins/Acme.NameMismatch/Acme.NameMismatch.csproj">
             <StagedName>Acme.NameMismatch</StagedName>
         </PluginFixture>
-        <PluginFixture Include="Fixtures/Plugins/Acme.CaseName/Acme.CaseName.csproj">
+        <PluginFixture Include="$(MSBuildThisFileDirectory)Fixtures/Plugins/Acme.CaseName/Acme.CaseName.csproj">
             <StagedName>Acme.CaseName</StagedName>
         </PluginFixture>
-        <PluginFixture Include="Fixtures/Plugins/Acme.NonCandidates/Acme.NonCandidates.csproj">
+        <PluginFixture Include="$(MSBuildThisFileDirectory)Fixtures/Plugins/Acme.NonCandidates/Acme.NonCandidates.csproj">
             <StagedName>Acme.NonCandidates</StagedName>
         </PluginFixture>
-        <PluginFixture Include="Fixtures/Plugins/Acme.OnlyNonCandidates/Acme.OnlyNonCandidates.csproj">
+        <PluginFixture Include="$(MSBuildThisFileDirectory)Fixtures/Plugins/Acme.OnlyNonCandidates/Acme.OnlyNonCandidates.csproj">
             <StagedName>Acme.OnlyNonCandidates</StagedName>
         </PluginFixture>
-        <PluginFixture Include="Fixtures/Plugins/Acme.NewerContract/Acme.NewerContract.csproj">
+        <PluginFixture Include="$(MSBuildThisFileDirectory)Fixtures/Plugins/Acme.NewerContract/Acme.NewerContract.csproj">
             <StagedName>Acme.NewerContract</StagedName>
         </PluginFixture>
-        <PluginFixture Include="Fixtures/Plugins/Acme.DeclaredSkew/Acme.DeclaredSkew.csproj">
+        <PluginFixture Include="$(MSBuildThisFileDirectory)Fixtures/Plugins/Acme.DeclaredSkew/Acme.DeclaredSkew.csproj">
             <StagedName>Acme.DeclaredSkew</StagedName>
         </PluginFixture>
-        <PluginFixture Include="Fixtures/Plugins/Acme.BackstopCtor/Acme.BackstopCtor.csproj">
+        <PluginFixture Include="$(MSBuildThisFileDirectory)Fixtures/Plugins/Acme.BackstopCtor/Acme.BackstopCtor.csproj">
             <StagedName>Acme.BackstopCtor</StagedName>
         </PluginFixture>
-        <PluginFixture Include="Fixtures/Plugins/Acme.CtorSignatureSkew/Acme.CtorSignatureSkew.csproj">
+        <PluginFixture Include="$(MSBuildThisFileDirectory)Fixtures/Plugins/Acme.CtorSignatureSkew/Acme.CtorSignatureSkew.csproj">
             <StagedName>Acme.CtorSignatureSkew</StagedName>
         </PluginFixture>
-        <PluginFixture Include="Fixtures/Plugins/Acme.CtorSignatureMissing/Acme.CtorSignatureMissing.csproj">
+        <PluginFixture Include="$(MSBuildThisFileDirectory)Fixtures/Plugins/Acme.CtorSignatureMissing/Acme.CtorSignatureMissing.csproj">
             <StagedName>Acme.CtorSignatureMissing</StagedName>
         </PluginFixture>
-        <PluginFixture Include="Fixtures/Plugins/Acme.NullName/Acme.NullName.csproj">
+        <PluginFixture Include="$(MSBuildThisFileDirectory)Fixtures/Plugins/Acme.NullName/Acme.NullName.csproj">
             <StagedName>Acme.NullName</StagedName>
         </PluginFixture>
-        <PluginFixture Include="Fixtures/Plugins/Acme.ThrowingName/Acme.ThrowingName.csproj">
+        <PluginFixture Include="$(MSBuildThisFileDirectory)Fixtures/Plugins/Acme.ThrowingName/Acme.ThrowingName.csproj">
             <StagedName>Acme.ThrowingName</StagedName>
         </PluginFixture>
-        <PluginFixture Include="Fixtures/Plugins/Acme.ThrowingCtor/Acme.ThrowingCtor.csproj">
+        <PluginFixture Include="$(MSBuildThisFileDirectory)Fixtures/Plugins/Acme.ThrowingCtor/Acme.ThrowingCtor.csproj">
             <StagedName>Acme.ThrowingCtor</StagedName>
         </PluginFixture>
-        <PluginFixture Include="Fixtures/Plugins/Acme.PrivateDependency/Acme.PrivateDependency.csproj">
+        <PluginFixture Include="$(MSBuildThisFileDirectory)Fixtures/Plugins/Acme.PrivateDependency/Acme.PrivateDependency.csproj">
             <StagedName>Acme.PrivateDependency</StagedName>
         </PluginFixture>
-        <PluginFixture Include="Fixtures/Plugins/Acme.Substitution/Acme.Substitution.csproj">
+        <PluginFixture Include="$(MSBuildThisFileDirectory)Fixtures/Plugins/Acme.Localized/Acme.Localized.csproj">
+            <StagedName>Acme.Localized</StagedName>
+        </PluginFixture>
+        <PluginFixture Include="$(MSBuildThisFileDirectory)Fixtures/Plugins/Acme.Substitution/Acme.Substitution.csproj">
             <StagedName>Acme.Substitution</StagedName>
         </PluginFixture>
-        <PluginFixture Include="Fixtures/Plugins/Acme.Native/Acme.Native.csproj">
+        <PluginFixture Include="$(MSBuildThisFileDirectory)Fixtures/Plugins/Acme.Native/Acme.Native.csproj">
             <StagedName>Acme.Native</StagedName>
             <PublishArgs>--runtime $(NETCoreSdkRuntimeIdentifier) --no-self-contained</PublishArgs>
         </PluginFixture>
-        <PluginFixture Include="Fixtures/Plugins/Acme.RidSpecific/Acme.RidSpecific.csproj">
+        <PluginFixture Include="$(MSBuildThisFileDirectory)Fixtures/Plugins/Acme.RidSpecific/Acme.RidSpecific.csproj">
             <StagedName>Acme.RidSpecific</StagedName>
             <PublishArgs>--runtime $(NETCoreSdkRuntimeIdentifier) --no-self-contained</PublishArgs>
         </PluginFixture>
@@ -88,7 +96,7 @@
         root a test configures; it is a program the tests run.
     -->
     <ItemGroup>
-        <PluginProbeHost Include="Fixtures/Hosts/PluginNativeProbeHost/PluginNativeProbeHost.csproj">
+        <PluginProbeHost Include="$(MSBuildThisFileDirectory)Fixtures/Hosts/PluginNativeProbeHost/PluginNativeProbeHost.csproj">
             <StagedName>PluginNativeProbeHost</StagedName>
         </PluginProbeHost>
     </ItemGroup>
@@ -106,13 +114,13 @@
         carry is the eighty megabytes of libraries for identifiers this process could never load.
     -->
     <ItemGroup>
-        <PluginFixturePortable Include="Fixtures/Plugins/Acme.NativePortable/Acme.NativePortable.csproj">
+        <PluginFixturePortable Include="$(MSBuildThisFileDirectory)Fixtures/Plugins/Acme.NativePortable/Acme.NativePortable.csproj">
             <StagedName>Acme.NativePortable</StagedName>
         </PluginFixturePortable>
     </ItemGroup>
 
     <ItemGroup>
-        <PluginFixtureTrimmed Include="Fixtures/Plugins/Acme.SelfContained/Acme.SelfContained.csproj">
+        <PluginFixtureTrimmed Include="$(MSBuildThisFileDirectory)Fixtures/Plugins/Acme.SelfContained/Acme.SelfContained.csproj">
             <StagedName>Acme.SelfContained</StagedName>
             <PublishArgs>--runtime $(NETCoreSdkRuntimeIdentifier) --self-contained</PublishArgs>
         </PluginFixtureTrimmed>
@@ -120,27 +128,35 @@
 
     <!--
         Everything a fixture's published bytes can depend on. The plugin contract is listed because
-        every fixture references it by project, so a change to the contract has to re-publish them;
-        the loader assembly deliberately is not, because no fixture references it and listing it would
-        re-publish the whole tree on every edit to the code under test. It joins this list with the
-        story that adds a fixture host process, which does reference it.
+        every fixture references it by project. The loader assembly is listed too, now that a fixture
+        host references it by project: an edit to the loader changes what that probe does, and a probe
+        staged from older sources would answer a question nobody asked. It costs a re-publish of the
+        fixture tree on every loader edit, which is the price of the probe being trustworthy.
+
+        Every file under Fixtures counts, not a list of the extensions a fixture happens to use today.
+        A fixture's published bytes can come from any of them: a .resx becomes a satellite assembly, and
+        naming .cs and .csproj alone meant a resource edited or removed left the satellite as it was.
+        An enumeration of kinds silently omits the next kind somebody adds; the directory does not.
 
         bin/ and obj/ are excluded so that generated sources, which change on every build, cannot make
         the staging permanently out of date.
     -->
     <ItemGroup>
         <PluginFixtureInput Include="$(MSBuildThisFileFullPath)" />
-        <PluginFixtureInput Include="Fixtures/Directory.Build.props" />
         <PluginFixtureInput
-            Include="Fixtures/**/*.cs;Fixtures/**/*.csproj"
-            Exclude="Fixtures/**/bin/**;Fixtures/**/obj/**"
+            Include="$(MSBuildThisFileDirectory)Fixtures/**/*"
+            Exclude="$(MSBuildThisFileDirectory)Fixtures/**/bin/**;$(MSBuildThisFileDirectory)Fixtures/**/obj/**"
         />
         <PluginFixtureInput
-            Include="../EdFi.Api.Plugins/**/*.cs;../EdFi.Api.Plugins/*.csproj"
-            Exclude="../EdFi.Api.Plugins/bin/**;../EdFi.Api.Plugins/obj/**"
+            Include="$(MSBuildThisFileDirectory)../EdFi.Api.Plugins/**/*.cs;$(MSBuildThisFileDirectory)../EdFi.Api.Plugins/*.csproj"
+            Exclude="$(MSBuildThisFileDirectory)../EdFi.Api.Plugins/bin/**;$(MSBuildThisFileDirectory)../EdFi.Api.Plugins/obj/**"
         />
         <PluginFixtureInput
-            Include="../Directory.Build.props;../../Directory.Packages.props;../../nuget.config"
+            Include="$(MSBuildThisFileDirectory)../EdFi.Api.Plugins.Hosting/**/*.cs;$(MSBuildThisFileDirectory)../EdFi.Api.Plugins.Hosting/*.csproj"
+            Exclude="$(MSBuildThisFileDirectory)../EdFi.Api.Plugins.Hosting/bin/**;$(MSBuildThisFileDirectory)../EdFi.Api.Plugins.Hosting/obj/**"
+        />
+        <PluginFixtureInput
+            Include="$(MSBuildThisFileDirectory)../Directory.Build.props;$(MSBuildThisFileDirectory)../../Directory.Packages.props;$(MSBuildThisFileDirectory)../../nuget.config"
         />
     </ItemGroup>
 
@@ -167,21 +183,24 @@
     >
         <PropertyGroup>
             <PluginFixtureStageRoot
-            >$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', '$(OutDir)', 'Fixtures'))</PluginFixtureStageRoot>
+            >$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)', '$(OutDir)', 'Fixtures'))</PluginFixtureStageRoot>
             <PluginFixtureStampDir
-            >$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', '$(IntermediateOutputPath)', 'fixtures'))</PluginFixtureStampDir>
+            >$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)', '$(IntermediateOutputPath)', 'fixtures'))</PluginFixtureStampDir>
             <PluginFixtureFingerprintFile>$(PluginFixtureStampDir)staging.fingerprint</PluginFixtureFingerprintFile>
             <PluginFixtureInputList>@(PluginFixtureInput->'%(Identity)@%(ModifiedTime)', '|')</PluginFixtureInputList>
             <PluginFixtureRawRoot
             >$([MSBuild]::NormalizeDirectory('$(PluginFixtureStampDir)', 'raw'))</PluginFixtureRawRoot>
             <PluginFixtureProbeRoot
-            >$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', '$(OutDir)', 'FixtureHosts'))</PluginFixtureProbeRoot>
+            >$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)', '$(OutDir)', 'FixtureHosts'))</PluginFixtureProbeRoot>
             <PluginFixtureFingerprintPrefix
             >$(Configuration)+$(NETCoreSdkRuntimeIdentifier)+@(PluginFixture->'%(StagedName)', '&amp;')+@(PluginFixtureTrimmed->'%(StagedName)', '&amp;')+@(PluginProbeHost->'%(StagedName)', '&amp;')+@(PluginFixturePortable->'%(StagedName)', '&amp;')+$([MSBuild]::StableStringHash($(PluginFixtureInputList)))</PluginFixtureFingerprintPrefix>
         </PropertyGroup>
 
         <ItemGroup Condition="Exists('$(PluginFixtureStageRoot)')">
             <PluginFixtureStagedFile Include="$(PluginFixtureStageRoot)**/*" />
+        </ItemGroup>
+        <ItemGroup Condition="Exists('$(PluginFixtureProbeRoot)')">
+            <PluginFixtureStagedFile Include="$(PluginFixtureProbeRoot)**/*" />
         </ItemGroup>
 
         <PropertyGroup>
@@ -215,6 +234,10 @@
             Directories="$(PluginFixtureStageRoot)"
             Condition="'$(PluginFixtureStagingIsStale)' == 'true' AND '$(PluginFixtureStageRoot)' != '' AND Exists('$(PluginFixtureStageRoot)')"
         />
+        <RemoveDir
+            Directories="$(PluginFixtureProbeRoot)"
+            Condition="'$(PluginFixtureStagingIsStale)' == 'true' AND '$(PluginFixtureProbeRoot)' != '' AND Exists('$(PluginFixtureProbeRoot)')"
+        />
         <Delete
             Files="$(PluginFixtureFingerprintFile)"
             Condition="'$(PluginFixtureStagingIsStale)' == 'true'"
@@ -223,12 +246,21 @@
         <!--
             A directory carrying no files is invisible to the staged file set above, because the glob
             matches files. That is the one leftover the fingerprint cannot see, so it is removed by
-            name. Each path is composed from the stage root and a literal fixture name.
+            name, in the helper root as well as the fixture root. Each path is composed from a root this
+            target derived and a literal staged name.
+
+            Every fixture kind has to appear among the expected directories, portable included. A kind
+            left out is classified stale and deleted on every build, which removes the declared outputs
+            of a tree that was up to date and republishes the whole collection each time. Deleting a
+            directory here must mean it is genuinely unaccounted for.
         -->
         <ItemGroup Condition="Exists('$(PluginFixtureStageRoot)')">
             <PluginFixtureExpectedDir Include="@(PluginFixture->'$(PluginFixtureStageRoot)%(StagedName)')" />
             <PluginFixtureExpectedDir
                 Include="@(PluginFixtureTrimmed->'$(PluginFixtureStageRoot)%(StagedName)')"
+            />
+            <PluginFixtureExpectedDir
+                Include="@(PluginFixturePortable->'$(PluginFixtureStageRoot)%(StagedName)')"
             />
             <PluginFixtureExistingDir
                 Include="$([System.IO.Directory]::GetDirectories('$(PluginFixtureStageRoot)'))"
@@ -238,13 +270,40 @@
                 Exclude="@(PluginFixtureExpectedDir)"
             />
         </ItemGroup>
+        <ItemGroup Condition="Exists('$(PluginFixtureProbeRoot)')">
+            <PluginFixtureExpectedProbeDir
+                Include="@(PluginProbeHost->'$(PluginFixtureProbeRoot)%(StagedName)')"
+            />
+            <PluginFixtureExistingProbeDir
+                Include="$([System.IO.Directory]::GetDirectories('$(PluginFixtureProbeRoot)'))"
+            />
+            <PluginFixtureStaleDir
+                Include="@(PluginFixtureExistingProbeDir)"
+                Exclude="@(PluginFixtureExpectedProbeDir)"
+            />
+        </ItemGroup>
         <RemoveDir Directories="@(PluginFixtureStaleDir)" />
     </Target>
 
     <!--
-        Outputs are each fixture's staged entry assembly and manifest. They are not the whole freshness
-        story, which is what the fingerprint above is for; they are what makes the common case cheap and
-        what re-runs this target once the prune has emptied the tree.
+        The single output is the fingerprint file, and the inputs are the same ones the fingerprint is
+        built from.
+
+        Comparing the inputs against the staged files themselves does not work and cannot be made to. A
+        publish copies files, a copy carries the source file's modification time, and a staged file is
+        therefore as old as whatever produced it: routinely older than an input that has just been
+        edited, and older still than one edited since. Measured against the previous form of this
+        target, every build after any edit to any input found the staged tree out of date forever and
+        re-entered a target whose two dozen publishes each turned out to have nothing to do, for fifty
+        seconds in which not one staged byte changed.
+
+        The fingerprint file is written by this target when it finishes and deleted by the prune above
+        when the tree is stale, so its timestamp is genuinely the moment the staged tree was last
+        produced, and its absence is genuinely a tree that has to be produced again. Both halves of the
+        up-to-date check then mean what they say.
+
+        A condition on this target cannot do the same job: a target whose condition is false is skipped
+        along with the targets it depends on, so the prune that decides staleness would never run.
     -->
     <Target
         Name="PublishPluginFixtures"
@@ -252,7 +311,7 @@
         DependsOnTargets="PrunePluginFixtureStaging"
         Condition="'$(BuildingPluginFixtures)' != 'true' AND '$(DesignTimeBuild)' != 'true'"
         Inputs="@(PluginFixtureInput)"
-        Outputs="@(PluginFixture->'$(PluginFixtureStageRoot)%(StagedName)/%(StagedName).dll');@(PluginFixture->'$(PluginFixtureStageRoot)%(StagedName)/%(StagedName).deps.json');@(PluginFixtureTrimmed->'$(PluginFixtureStageRoot)%(StagedName)/%(StagedName).dll');@(PluginFixtureTrimmed->'$(PluginFixtureStageRoot)%(StagedName)/%(StagedName).deps.json');@(PluginProbeHost->'$(PluginFixtureProbeRoot)%(StagedName)/%(StagedName).dll');@(PluginFixturePortable->'$(PluginFixtureStageRoot)%(StagedName)/%(StagedName).deps.json')"
+        Outputs="$(PluginFixtureFingerprintFile)"
     >
         <!--
             Each fixture's directory is emptied before it is published into, so that a file dropped from
@@ -266,7 +325,7 @@
 
         <PropertyGroup>
             <PluginContractAssemblyPath
-            >$([MSBuild]::NormalizePath('$(MSBuildProjectDirectory)', '$(OutDir)', 'EdFi.Api.Plugins.dll'))</PluginContractAssemblyPath>
+            >$([MSBuild]::NormalizePath('$(MSBuildThisFileDirectory)', '$(OutDir)', 'EdFi.Api.Plugins.dll'))</PluginContractAssemblyPath>
         </PropertyGroup>
 
         <!--
@@ -285,25 +344,25 @@
         <Exec
             Command="&quot;$(DOTNET_HOST_PATH)&quot; publish &quot;%(PluginFixture.FullPath)&quot; --configuration $(Configuration) %(PluginFixture.PublishArgs) --output &quot;$(PluginFixtureStageRoot)%(PluginFixture.StagedName)&quot; -p:BuildingPluginFixtures=true -p:PluginContractAssemblyPath=&quot;$(PluginContractAssemblyPath)&quot; --nologo --verbosity quiet"
             EnvironmentVariables="DOTNET_CLI_DO_NOT_USE_MSBUILD_SERVER=1;MSBUILDDISABLENODEREUSE=1"
-            WorkingDirectory="$(MSBuildProjectDirectory)"
+            WorkingDirectory="$(MSBuildThisFileDirectory)"
         />
 
         <Exec
             Command="&quot;$(DOTNET_HOST_PATH)&quot; publish &quot;%(PluginFixtureTrimmed.FullPath)&quot; --configuration $(Configuration) %(PluginFixtureTrimmed.PublishArgs) --output &quot;$(PluginFixtureRawRoot)%(PluginFixtureTrimmed.StagedName)&quot; -p:BuildingPluginFixtures=true -p:PluginContractAssemblyPath=&quot;$(PluginContractAssemblyPath)&quot; --nologo --verbosity quiet"
             EnvironmentVariables="DOTNET_CLI_DO_NOT_USE_MSBUILD_SERVER=1;MSBUILDDISABLENODEREUSE=1"
-            WorkingDirectory="$(MSBuildProjectDirectory)"
+            WorkingDirectory="$(MSBuildThisFileDirectory)"
         />
 
         <Exec
             Command="&quot;$(DOTNET_HOST_PATH)&quot; publish &quot;%(PluginProbeHost.FullPath)&quot; --configuration $(Configuration) --no-self-contained --output &quot;$(PluginFixtureProbeRoot)%(PluginProbeHost.StagedName)&quot; -p:BuildingPluginFixtures=true --nologo --verbosity quiet"
             EnvironmentVariables="DOTNET_CLI_DO_NOT_USE_MSBUILD_SERVER=1;MSBUILDDISABLENODEREUSE=1"
-            WorkingDirectory="$(MSBuildProjectDirectory)"
+            WorkingDirectory="$(MSBuildThisFileDirectory)"
         />
 
         <Exec
             Command="&quot;$(DOTNET_HOST_PATH)&quot; publish &quot;%(PluginFixturePortable.FullPath)&quot; --configuration $(Configuration) --no-self-contained --output &quot;$(PluginFixtureRawRoot)%(PluginFixturePortable.StagedName)&quot; -p:BuildingPluginFixtures=true -p:PluginContractAssemblyPath=&quot;$(PluginContractAssemblyPath)&quot; --nologo --verbosity quiet"
             EnvironmentVariables="DOTNET_CLI_DO_NOT_USE_MSBUILD_SERVER=1;MSBUILDDISABLENODEREUSE=1"
-            WorkingDirectory="$(MSBuildProjectDirectory)"
+            WorkingDirectory="$(MSBuildThisFileDirectory)"
         />
 
         <!--
@@ -344,6 +403,7 @@
         -->
         <ItemGroup>
             <PluginFixtureStagedFileAfterPublish Include="$(PluginFixtureStageRoot)**/*" />
+            <PluginFixtureStagedFileAfterPublish Include="$(PluginFixtureProbeRoot)**/*" />
         </ItemGroup>
 
         <PropertyGroup>
