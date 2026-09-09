@@ -358,17 +358,19 @@ public class Given_a_staged_name_that_differs_only_in_case
     private const string WrongCaseManifest = "acme.good.deps.json";
 
     private TemporaryPluginRoot _root = null!;
+    private bool _foldsCase;
 
     [SetUp]
     public void Setup()
     {
         _root = TemporaryPluginRoot.Create();
+        _foldsCase = _root.FilesystemFoldsCase();
 
         // Recorded as evidence rather than asserted, and measured in this tree rather than inferred from
         // the operating system's name. Where it is false the wrong-cased staging below could never have
         // been opened at all, and these cases refuse for that reason instead; the refusal being the same
         // either way is what the correction is for.
-        TestContext.Out.WriteLine($"filesystem folds case: {_root.FilesystemFoldsCase()}");
+        TestContext.Out.WriteLine($"filesystem folds case: {_foldsCase}");
     }
 
     [TearDown]
@@ -391,11 +393,21 @@ public class Given_a_staged_name_that_differs_only_in_case
     {
         PluginLoaderRun run = PluginLoaderProbe.RunExpectingFailure(_root.RootPath, PluginFixtures.Good);
 
+        // The reason, the named plugin and the single line are the portable assertions: the outcome is
+        // the same on both kinds of filesystem, which is the whole point of the correction.
         run.Failure!.Reason.Should().Be(reason);
-        run.Failure!.Message.Should().Contain(actualSpelling);
         run.Failure!.Message.Should().Contain(PluginFixtures.Good);
         run.DiagnosticLines.Should().ContainSingle();
         run.DiagnosticLines[0].Should().StartWith($"plugin '{PluginFixtures.Good}' failed:");
+
+        if (_foldsCase)
+        {
+            // Only where the filesystem folded case does the wrong-cased entry survive the existence
+            // check and reach the spelling check, which is the refusal that can name what is actually
+            // there. Where it does not fold, the earlier check refuses first with the established
+            // missing-path message, which names only the spelling that was asked for and is left alone.
+            run.Failure!.Message.Should().Contain(actualSpelling);
+        }
     }
 
     [Test]
