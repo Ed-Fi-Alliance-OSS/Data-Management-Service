@@ -219,25 +219,33 @@ public class ExtractTraceIdFromTests
         }
     }
 
+    // The truncate-then-filter order is pinned once, in CorrelationIdNormalizerTests, which is
+    // the single definition of that policy, and end to end in CorrelationIdParityTests. It is
+    // deliberately not re-pinned here with the same literals: this fixture's own subject is
+    // header selection, the disable path, and the fallback branch.
+
     [TestFixture]
-    public class Given_A_Correlation_Id_That_Is_Both_Over_Length_And_Hostile : ExtractTraceIdFromTests
+    public class Given_A_Correlation_Header_Holding_Only_Control_Characters : ExtractTraceIdFromTests
     {
         private TraceId _traceId;
 
         [SetUp]
         public void Setup()
         {
+            // A lone horizontal tab is a legal HTTP field value, so this arrives over a real
+            // socket. It normalizes to an empty string, which must not become the identifier:
+            // a client would otherwise be able to blank the TraceId on its own log line and on
+            // every error response body for the request.
             _traceId = AspNetCoreFrontend.ExtractTraceIdFrom(
-                RequestWith(CorrelationHeader, "ab\ncdefghijklmnopqrstuvwxyz", "host-trace-identifier"),
-                AppSettingsFor(CorrelationHeader, correlationIdMaxLength: 10)
+                RequestWith(CorrelationHeader, "\t", "0HNCTN1IRQMDG:00000003"),
+                AppSettingsFor(CorrelationHeader)
             );
         }
 
         [Test]
-        public void It_truncates_before_filtering_at_the_ingestion_point()
+        public void It_falls_back_to_the_server_generated_trace_identifier()
         {
-            // Filter-then-truncate would yield "abcdefghij".
-            _traceId.Value.Should().Be("abcdefghi");
+            _traceId.Value.Should().Be("0HNCTN1IRQMDG:00000003");
         }
     }
 }

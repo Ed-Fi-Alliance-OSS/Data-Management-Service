@@ -399,25 +399,44 @@ public static class AspNetCoreFrontend
     /// <summary>
     /// Takes an HttpRequest and returns a unique trace identifier, normalized by
     /// <see cref="CorrelationIdNormalizer"/>. This is the single ingestion point for the
-    /// correlation ID: because the value is normalized here, every downstream consumer -
-    /// every log event and every error response body - carries the identical value with no
-    /// further work. Both branches are normalized, since the length cap and the allowlist
-    /// apply to a server-generated identifier as well as a client-supplied one.
+    /// correlation ID: the raw source is selected first and normalized exactly once, so
+    /// every downstream consumer - every log event and every error response body - carries
+    /// the identical value with no further work. The selected value is normalized whichever
+    /// source it came from, since the length cap and the allowlist apply to a
+    /// server-generated identifier as well as a client-supplied one.
     /// </summary>
+    /// <remarks>
+    /// A client-supplied header that normalizes to an empty string - a value made up only of
+    /// control characters, such as a lone horizontal tab - falls through to the
+    /// server-generated identifier. Emptiness is therefore tested after normalization rather
+    /// than before it, so a client cannot blank the operational identifier that every log
+    /// event and error response body carries, and a header holding only control characters
+    /// behaves the same as a header sent empty.
+    /// </remarks>
     public static TraceId ExtractTraceIdFrom(HttpRequest request, IOptions<AppSettings> options)
     {
         AppSettings appSettings = options.Value;
         int maxLength = appSettings.CorrelationIdMaxLength;
         string headerName = appSettings.CorrelationIdHeader;
-        if (
-            !string.IsNullOrEmpty(headerName)
-            && request.Headers.TryGetValue(headerName, out var correlationId)
-            && !string.IsNullOrEmpty(correlationId)
-        )
+        string serverGenerated = request.HttpContext.TraceIdentifier;
+
+        string clientSupplied =
+            !string.IsNullOrEmpty(headerName) && request.Headers.TryGetValue(headerName, out var headerValue)
+                ? headerValue.ToString()
+                : string.Empty;
+
+        bool fromClient = clientSupplied.Length > 0;
+        string normalized = CorrelationIdNormalizer.Normalize(
+            fromClient ? clientSupplied : serverGenerated,
+            maxLength
+        );
+
+        if (fromClient && normalized.Length == 0)
         {
-            return new TraceId(CorrelationIdNormalizer.Normalize(correlationId!, maxLength));
+            normalized = CorrelationIdNormalizer.Normalize(serverGenerated, maxLength);
         }
-        return new TraceId(CorrelationIdNormalizer.Normalize(request.HttpContext.TraceIdentifier, maxLength));
+
+        return new TraceId(normalized);
     }
 
     /// <summary>

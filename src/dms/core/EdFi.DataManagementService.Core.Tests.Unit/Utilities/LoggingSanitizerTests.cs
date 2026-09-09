@@ -68,6 +68,25 @@ public class LoggingSanitizerTests
     }
 
     [TestFixture]
+    public class Given_SanitizeCorrelationIdForLogging_With_Unicode_Line_Separators : LoggingSanitizerTests
+    {
+        [Test]
+        public void It_removes_line_and_paragraph_separators_that_are_not_control_characters()
+        {
+            // U+2028 and U+2029 are Unicode categories Zl and Zp, so char.IsControl is false
+            // for both and the allowlist predicate admits them. They are removed by the
+            // ReplaceLineEndings call that opens LogSanitizer.SanitizeCorrelationIdForLog,
+            // which is therefore load-bearing rather than redundant: deleting it as dead work
+            // would re-admit two characters that break a line-oriented log consumer. This
+            // test is what pins that call in place.
+            LoggingSanitizer
+                .SanitizeCorrelationIdForLogging("trace\u2028id\u2029end")
+                .Should()
+                .Be("traceidend");
+        }
+    }
+
+    [TestFixture]
     public class Given_SanitizeCorrelationIdForLogging_With_Non_Ascii_Characters : LoggingSanitizerTests
     {
         [Test]
