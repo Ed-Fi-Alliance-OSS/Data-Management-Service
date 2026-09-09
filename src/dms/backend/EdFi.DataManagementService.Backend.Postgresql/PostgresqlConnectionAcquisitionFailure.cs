@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Net.Sockets;
 using Npgsql;
 
 namespace EdFi.DataManagementService.Backend.Postgresql;
@@ -24,6 +25,8 @@ internal static class PostgresqlConnectionAcquisitionFailure
     /// open call itself: catalog absence, authentication failure, DNS or network failure, timeout, and
     /// firewall rejection all arrive as one of these, and a connection string that is present but
     /// provider-invalid is rejected during construction or parsing, before the open is even attempted.
+    /// Which type each arrives as is not uniform, so the two that are easy to assume wrongly are spelled
+    /// out in the remarks below.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -38,16 +41,29 @@ internal static class PostgresqlConnectionAcquisitionFailure
     /// 503 instead of Snapshot Not Found.
     /// </para>
     /// <para>
+    /// <c>SocketException</c> is the DNS arm, and it is listed separately because Npgsql does not wrap
+    /// it. Hostname resolution happens before the socket-connect catch that turns a network failure
+    /// into an <c>NpgsqlException</c>, so a host that does not resolve raises a bare
+    /// <c>SocketException</c> while a host that resolves and refuses the connection raises the wrapped
+    /// form. Without this arm the unresolvable case - a decommissioned snapshot host, a DNS outage -
+    /// escapes the acquisition guard and answers a service-configuration 503, or a 500 once the
+    /// fingerprint verdict is cached, instead of Snapshot Not Found.
+    /// </para>
+    /// <para>
     /// <c>ArgumentNullException</c> is deliberately excluded: a null argument is a programming defect,
     /// not an unreachable database. It is the only listed type it derives from, which is why the
     /// exclusion is written against the <c>ArgumentException</c> arm - <c>and</c> binds tighter than
-    /// <c>or</c> in a pattern, so the exclusion applies to that arm alone. That arm is kept last for
-    /// the same reason: a type added after it would bind to the exclusion rather than stand alone.
+    /// <c>or</c> in a pattern, so the exclusion applies to that arm alone. What that precedence
+    /// requires is adjacency, not final position: the exclusion binds to the term on its immediate
+    /// left, so it must stay next to <c>ArgumentException</c>, while a type appended after the whole
+    /// arm is its own top-level alternative and is unaffected. Interposing an unrelated type between
+    /// the two does not compile.
     /// </para>
     /// </remarks>
     public static bool IsExpected(Exception exception) =>
         exception
             is NpgsqlException
+                or SocketException
                 or TimeoutException
                 or FormatException
                 or NotSupportedException
@@ -62,8 +78,9 @@ internal static class PostgresqlConnectionAcquisitionFailure
     /// <remarks>
     /// <c>SqlState</c> is a five-character standard code and nothing else, so it carries no part of the
     /// connection string - which is what makes it the one detail beyond the type that may be logged.
-    /// A parse failure and a socket failure arrive as an <c>NpgsqlException</c> or an
-    /// <c>ArgumentException</c> with no <c>SqlState</c>, and are described by type alone.
+    /// A parse failure and a socket failure carry no <c>SqlState</c> and are described by type alone,
+    /// whether they arrive as an <c>NpgsqlException</c>, an <c>ArgumentException</c>, or - for a
+    /// hostname that does not resolve - a bare <c>SocketException</c>.
     /// </remarks>
     public static string Describe(Exception exception)
     {

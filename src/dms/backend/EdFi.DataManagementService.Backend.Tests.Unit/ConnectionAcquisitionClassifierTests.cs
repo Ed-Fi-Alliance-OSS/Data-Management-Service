@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
+using System.Net.Sockets;
 using EdFi.DataManagementService.Backend.Mssql;
 using EdFi.DataManagementService.Backend.Postgresql;
 using FluentAssertions;
@@ -48,7 +49,7 @@ public class ConnectionAcquisitionClassifierTests
             PostgresqlConnectionAcquisitionFailure
                 .IsExpected(new NpgsqlException("connection refused"))
                 .Should()
-                .BeTrue("catalog absence, authentication, DNS and network failures arrive as this");
+                .BeTrue("catalog absence, authentication, and a refused or reset connection arrive as this");
             PostgresqlConnectionAcquisitionFailure
                 .IsExpected(new TimeoutException("timed out"))
                 .Should()
@@ -92,6 +93,25 @@ public class ConnectionAcquisitionClassifierTests
                 .IsExpected(failure)
                 .Should()
                 .BeTrue("a provider-invalid connection string is an unavailable database, not a defect");
+        }
+
+        /// <summary>
+        /// A hostname that does not resolve - the one failure on the design's list that no other arm
+        /// covers. Npgsql resolves the host before the socket-connect catch that wraps failures in
+        /// NpgsqlException, so a resolution failure is raised unwrapped while a refused connection
+        /// arrives wrapped. Observed against the Npgsql 8.0.4 this solution pins: an unresolvable host
+        /// raises SocketException with SocketErrorCode.HostNotFound and no outer exception. The
+        /// exception is constructed rather than provoked, because a test that performed a real lookup
+        /// would invert its own assertion on any resolver that answers NXDOMAIN with a wildcard
+        /// address.
+        /// </summary>
+        [Test]
+        public void It_accepts_a_hostname_that_does_not_resolve()
+        {
+            PostgresqlConnectionAcquisitionFailure
+                .IsExpected(new SocketException((int)SocketError.HostNotFound))
+                .Should()
+                .BeTrue("a snapshot whose host cannot be resolved is an unreachable database");
         }
 
         /// <summary>
