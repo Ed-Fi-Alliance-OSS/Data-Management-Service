@@ -7,7 +7,9 @@ using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Primitives;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit;
@@ -223,6 +225,51 @@ public class ExtractTraceIdFromTests
     // the single definition of that policy, and end to end in CorrelationIdParityTests. It is
     // deliberately not re-pinned here with the same literals: this fixture's own subject is
     // header selection, the disable path, and the fallback branch.
+
+    [TestFixture]
+    public class Given_A_Correlation_Header_Present_With_An_Empty_Value : ExtractTraceIdFromTests
+    {
+        private TraceId _traceId;
+        private bool _headerWasActuallyPresent;
+
+        [SetUp]
+        public void Setup()
+        {
+            // The header must genuinely be present for this fixture to mean anything.
+            // HeaderDictionary's indexer *removes* the key when assigned a StringValues that
+            // StringValues.IsNullOrEmpty considers empty, so Headers[name] = "" would silently
+            // reproduce the header-absent case above and this test would be vacuous while
+            // appearing green. Seeding the backing store bypasses that setter, and the
+            // presence assertion below is what keeps the distinction honest.
+            HeaderDictionary headers = new(
+                new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+                {
+                    [CorrelationHeader] = new StringValues(string.Empty),
+                }
+            );
+            FeatureCollection features = new();
+            features.Set<IHttpRequestFeature>(new HttpRequestFeature { Headers = headers });
+            DefaultHttpContext httpContext = new(features) { TraceIdentifier = "0HNCTN1IRQMDG:00000004" };
+
+            _headerWasActuallyPresent = httpContext.Request.Headers.ContainsKey(CorrelationHeader);
+            _traceId = AspNetCoreFrontend.ExtractTraceIdFrom(
+                httpContext.Request,
+                AppSettingsFor(CorrelationHeader)
+            );
+        }
+
+        [Test]
+        public void It_really_did_send_the_header()
+        {
+            _headerWasActuallyPresent.Should().BeTrue();
+        }
+
+        [Test]
+        public void It_falls_back_to_the_server_generated_trace_identifier()
+        {
+            _traceId.Value.Should().Be("0HNCTN1IRQMDG:00000004");
+        }
+    }
 
     [TestFixture]
     public class Given_A_Correlation_Header_Holding_Only_Control_Characters : ExtractTraceIdFromTests

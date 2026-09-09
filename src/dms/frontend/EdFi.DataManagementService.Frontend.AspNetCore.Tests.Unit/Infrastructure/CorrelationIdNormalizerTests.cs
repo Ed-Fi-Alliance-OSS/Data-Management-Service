@@ -175,6 +175,33 @@ public class CorrelationIdNormalizerTests
     }
 
     [TestFixture]
+    public class Given_A_Correlation_Id_Ending_Exactly_At_A_Surrogate_Pair_Boundary
+        : CorrelationIdNormalizerTests
+    {
+        private const string WithAstralCharacter = "abcdef\U0001F600ghij";
+
+        private string _result = string.Empty;
+
+        [SetUp]
+        public void Setup()
+        {
+            // Cutting at eight units keeps the pair whole: the last retained unit is the LOW
+            // half. The guard must test only for a HIGH surrogate, so it leaves this alone.
+            _result = CorrelationIdNormalizer.Normalize(WithAstralCharacter, 8);
+        }
+
+        [Test]
+        public void It_preserves_a_complete_pair_that_ends_at_the_boundary()
+        {
+            // Pins the guard's predicate. Widening char.IsHighSurrogate to char.IsSurrogate
+            // would drop the low half here and emit "abcdef\uD83D" - an orphaned high
+            // surrogate, exactly the parity break the guard exists to prevent.
+            _result.Should().Be("abcdef\U0001F600");
+            _result.Should().HaveLength(8);
+        }
+    }
+
+    [TestFixture]
     public class Given_An_Already_Normalized_Correlation_Id : CorrelationIdNormalizerTests
     {
         private const int MaxLength = 10;

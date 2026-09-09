@@ -244,7 +244,7 @@ public class Given_RequestResponseLoggingMiddleware
         record.Level.Should().Be(LogLevel.Error);
         record.Exception.Should().BeSameAs(exception);
         record.Properties.Should().Contain("EventName", "HttpRequestFailed");
-        record.Properties.Should().Contain("TraceId", "traceidwithunsafe");
+        record.Properties.Should().Contain("TraceId", "traceidwith{unsafe}");
         record.Properties.Should().Contain("Method", "GET");
         record.Properties.Should().Contain("Path", "/ed-fi/students/id");
         record.Properties.Should().Contain("StatusCode", 500);
@@ -255,10 +255,38 @@ public class Given_RequestResponseLoggingMiddleware
         var scope = record.ActiveScopes.Single();
         scope.Should().Contain("Application", "EdFi.DataManagementService");
         scope.Should().Contain("RequestLayer", "Core");
-        scope.Should().Contain("TraceId", "traceidwithunsafe");
+        scope.Should().Contain("TraceId", "traceidwith{unsafe}");
         scope.Should().Contain("Method", "GET");
         scope.Should().Contain("Path", "/ed-fi/students/id");
         scope.Should().NotContainKey("PathBase");
+    }
+
+    [Test]
+    public async Task It_preserves_upstream_punctuation_in_the_core_layer_trace_id()
+    {
+        // FR-LOG-3/FR-LOG-6 parity at the Core layer. A client-supplied correlation ID normally
+        // originates in an upstream system's own identifier scheme, and the stricter Method/Path
+        // allowlist strips every one of these characters. If this middleware routed the trace id
+        // through that allowlist, every Core log event for the request would carry a value that
+        // differs from the correlationId in the response body the client received - so this test
+        // is the Core-layer analogue of the frontend parity fixture.
+        const string UpstreamId = "a+b=c{d}e@f|g,h#i(j)k[l]m<n>o";
+        var requestInfo = No.RequestInfo(UpstreamId);
+        requestInfo.FrontendRequest = requestInfo.FrontendRequest with { Path = "/ed-fi/students" };
+        requestInfo.FrontendResponse = new FrontendResponse(200, Body: null, Headers: []);
+
+        await _middleware.Execute(requestInfo, TestHelper.NullNext);
+
+        var record = _logger.Records.Single(log => log.EventId.Name == "HttpRequestCompleted");
+        record.Properties.Should().Contain("TraceId", UpstreamId);
+        var scope = record.ActiveScopes.Single();
+        scope.Should().Contain("TraceId", UpstreamId);
+        _logger
+            .Records.Should()
+            .ContainSingle(log =>
+                log.Level == LogLevel.Debug
+                && log.Message == $"Core pipeline started: GET /ed-fi/students - TraceId: {UpstreamId}"
+            );
     }
 
     [Test]

@@ -117,7 +117,7 @@ internal static class RelationalDeleteExecution
                 "Transient conflict on {ScopeLabel} DELETE for {DocumentUuid} - {TraceId}",
                 scopeLabel,
                 documentUuid.Value,
-                LoggingSanitizer.SanitizeForLogging(traceId.Value)
+                LoggingSanitizer.SanitizeCorrelationIdForLogging(traceId.Value)
             );
 
             return new DeleteResult.DeleteFailureWriteConflict();
@@ -128,7 +128,7 @@ internal static class RelationalDeleteExecution
             "Database error on {ScopeLabel} DELETE for {DocumentUuid} - {TraceId}",
             scopeLabel,
             documentUuid.Value,
-            LoggingSanitizer.SanitizeForLogging(traceId.Value)
+            LoggingSanitizer.SanitizeCorrelationIdForLogging(traceId.Value)
         );
 
         return new DeleteResult.UnknownFailure(
@@ -188,7 +188,7 @@ internal static class RelationalDeleteExecution
         string scopeLabel
     )
     {
-        var sanitizedTraceId = LoggingSanitizer.SanitizeForLogging(traceId.Value);
+        var sanitizedTraceId = LoggingSanitizer.SanitizeCorrelationIdForLogging(traceId.Value);
 
         _ = classifier.TryClassify(exception, out var classification);
 
