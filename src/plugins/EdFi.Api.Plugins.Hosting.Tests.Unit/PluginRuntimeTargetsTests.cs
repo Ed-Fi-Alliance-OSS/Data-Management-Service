@@ -115,15 +115,22 @@ internal sealed record ManagedDeclarations(
 /// </para>
 /// <para>
 /// It is also where the claim's limit is recorded. Measured on Microsoft.Data.SqlClient 6.1.4, the
-/// repetition holds for every managed row whose simple name appears at the top level, and there is at
-/// least one managed row whose simple name appears nowhere at the top level. The preflight is
-/// therefore incomplete rather than equivalent, and that is stated here instead of being hidden by an
-/// assertion written only over the rows that happen to match.
+/// repetition holds for every managed row whose simple name appears at the top level, and one managed
+/// row appears nowhere at the top level at all: <c>System.Diagnostics.EventLog.Messages</c>, from the
+/// transitive <c>System.Diagnostics.EventLog/9.0.11</c>, declared at 9.0.0.0 in a <c>win</c> row and
+/// in no top-level entry, beside a <c>System.Diagnostics.EventLog</c> row that does have one. The
+/// preflight's top-level read is therefore incomplete rather than equivalent. That is a documented
+/// policy about what to refuse, it is asserted below rather than hidden by a sweep written only over
+/// the rows that happen to match, and it is not a reason to widen the production preflight past the
+/// approved design.
 /// </para>
 /// </remarks>
 [TestFixture]
 public class Given_a_plugin_shipping_runtime_identifier_specific_managed_assets
 {
+    /// <summary>The package whose publish shape this fixture exists to measure.</summary>
+    private const string SubjectPackage = "Microsoft.Data.SqlClient";
+
     private ManagedDeclarations _declarations = null!;
 
     [SetUp]
@@ -150,9 +157,30 @@ public class Given_a_plugin_shipping_runtime_identifier_specific_managed_assets
     public void It_really_does_declare_managed_runtime_targets_rows()
     {
         _declarations.RuntimeTargetsRows.Should().NotBeEmpty();
-        _declarations
-            .RuntimeTargetsRows.Should()
-            .Contain(row => row.SimpleName == "Microsoft.Data.SqlClient");
+    }
+
+    [Test]
+    public void It_repeats_the_top_level_version_for_the_package_this_fixture_is_built_on()
+    {
+        // The acceptance case, pinned to the package rather than left to the sweep below. That sweep
+        // skips a row with no top-level counterpart, so on its own it would still pass if this package
+        // lost its counterpart while some other library kept one, and the fixture would then measure
+        // an invariant over somebody else's declarations.
+        ManagedDeclaration[] rows =
+        [
+            .. _declarations.RuntimeTargetsRows.Where(row => row.SimpleName == SubjectPackage),
+        ];
+
+        rows.Should().NotBeEmpty();
+
+        foreach (ManagedDeclaration row in rows)
+        {
+            IReadOnlyDictionary<string, string?> topLevel = _declarations.TopLevelRowsIn(row.Library);
+
+            row.AssemblyVersion.Should().NotBeNull();
+            topLevel.Should().ContainKey(SubjectPackage);
+            row.AssemblyVersion.Should().Be(topLevel[SubjectPackage]);
+        }
     }
 
     [Test]
