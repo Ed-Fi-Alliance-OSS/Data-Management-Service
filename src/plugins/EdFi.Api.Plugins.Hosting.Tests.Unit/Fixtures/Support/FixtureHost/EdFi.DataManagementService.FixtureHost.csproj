@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <!--
+        An assembly whose name carries an Ed-Fi host prefix, so the types it declares are host-owned by
+        the only test the rule applies: the declaring assembly's simple name. Nothing about it is
+        specific to the Data Management Service beyond that name, and it deliberately declares no
+        implementations, so it stands in for a real contract assembly rather than for a host.
+
+        Referenced directly by the test project, because the wrapper cases call the generic
+        RemoveAll<T> and Replace helpers a plugin would call and those need a type known at compile
+        time. That reference puts it inside the solution build graph, so it commits a lock file, which
+        is the same exception Acme.HostShared.v1 takes.
+    -->
+    <PropertyGroup>
+        <AssemblyName>EdFi.DataManagementService.FixtureHost</AssemblyName>
+        <RootNamespace>EdFi.DataManagementService.FixtureHost</RootNamespace>
+        <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    </PropertyGroup>
+</Project>
