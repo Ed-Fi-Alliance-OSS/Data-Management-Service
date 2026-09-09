@@ -216,6 +216,100 @@ public class Given_a_plugin_that_throws_when_its_name_is_read
     }
 }
 
+/// <summary>
+/// Discovery is reflection over a third party's assembly from end to end, and every step of it can
+/// bind another assembly. Asking a type for its parameterless constructor makes the runtime resolve
+/// the parameter types of that type's other constructors, so an overload naming a type the runtime
+/// cannot resolve fails there rather than at enumeration or at activation.
+/// </summary>
+[TestFixture]
+public class Given_a_constructor_overload_naming_a_skewed_assembly
+{
+    private TemporaryPluginRoot _root = null!;
+    private PluginLoaderRun _run = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _root = TemporaryPluginRoot.Create();
+        _root.Add(PluginFixtures.CtorSignatureSkew);
+        _run = PluginLoaderProbe.RunExpectingFailure(_root.RootPath, PluginFixtures.CtorSignatureSkew);
+    }
+
+    [TearDown]
+    public void TearDown() => _root.Dispose();
+
+    [Test]
+    public void It_reports_the_named_skew_rather_than_escaping_unlabelled()
+    {
+        // The plugin shape is ordinary: a parameterless constructor beside an overload that takes a
+        // dependency. Before the whole of discovery sat inside the classified handler, this escaped the
+        // loader as a raw FileLoadException with nothing at all on the diagnostic channel.
+        _run.Failure!.Reason.Should().Be(PluginLoadFailure.DependencyVersionSkew);
+        _run.Failure!.Message.Should().Contain("Acme.HostShared");
+        _run.Failure!.Message.Should().Contain("2.0.0").And.Contain("1.0.0");
+    }
+
+    [Test]
+    public void It_writes_exactly_one_failure_line()
+    {
+        _run.DiagnosticLines.Should().ContainSingle();
+        _run.DiagnosticLines[0].Should().StartWith($"plugin '{PluginFixtures.CtorSignatureSkew}' failed:");
+    }
+
+    [Test]
+    public void It_fails_at_constructor_resolution_rather_than_at_type_enumeration()
+    {
+        // Without this the two assertions above would pass just as well if the fixture happened to fail
+        // at enumeration, which the handler already covered before this case existed. Enumerating this
+        // assembly's exported types succeeds, because no type's own signature names the skewed
+        // assembly; only asking a type for its parameterless constructor makes the runtime resolve the
+        // parameter types of that type's other constructors.
+        string entryAssemblyPath = Path.Combine(
+            _root.RootPath,
+            PluginFixtures.CtorSignatureSkew,
+            $"{PluginFixtures.CtorSignatureSkew}.dll"
+        );
+
+        PluginLoadContext context = new(PluginFixtures.CtorSignatureSkew, entryAssemblyPath);
+        Type[] exported = context.LoadFromAssemblyPath(entryAssemblyPath).GetExportedTypes();
+
+        exported.Should().Contain(type => type.Name == "CtorSignatureSkewPlugin");
+
+        Type pluginType = exported.Single(type => type.Name == "CtorSignatureSkewPlugin");
+
+        Assert.Throws<FileLoadException>(() => pluginType.GetConstructor(Type.EmptyTypes));
+    }
+}
+
+[TestFixture]
+public class Given_a_constructor_overload_naming_an_assembly_nothing_carries
+{
+    private TemporaryPluginRoot _root = null!;
+    private PluginLoaderRun _run = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _root = TemporaryPluginRoot.Create();
+        _root.Add(PluginFixtures.CtorSignatureMissing);
+        _run = PluginLoaderProbe.RunExpectingFailure(_root.RootPath, PluginFixtures.CtorSignatureMissing);
+    }
+
+    [TearDown]
+    public void TearDown() => _root.Dispose();
+
+    [Test]
+    public void It_reports_the_unresolvable_type_rather_than_escaping_unlabelled()
+    {
+        // The general branch beside the skew one: nothing is version-skewed here, the assembly is simply
+        // not there, and the refusal still has to name the plugin and say what could not be resolved.
+        _run.Failure!.Reason.Should().Be(PluginLoadFailure.PluginTypesUnloadable);
+        _run.Failure!.Message.Should().Contain(PluginFixtures.CtorSignatureMissing);
+        _run.Failure!.Message.Should().Contain("Acme.Private");
+    }
+}
+
 [TestFixture]
 public class Given_a_plugin_that_throws_from_its_constructor
 {

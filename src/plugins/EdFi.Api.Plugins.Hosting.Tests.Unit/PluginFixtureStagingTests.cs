@@ -61,6 +61,12 @@ internal static class PluginFixtures
     /// <summary>Ships a dependency the host does not carry, so its own copy is the one served.</summary>
     internal const string PrivateDependency = "Acme.PrivateDependency";
 
+    /// <summary>A constructor overload naming a type from an unmanifested, skewed assembly.</summary>
+    internal const string CtorSignatureSkew = "Acme.CtorSignatureSkew";
+
+    /// <summary>A constructor overload naming a type from an assembly nothing carries.</summary>
+    internal const string CtorSignatureMissing = "Acme.CtorSignatureMissing";
+
     /// <summary>Returns null from a property the contract declares non-nullable.</summary>
     internal const string NullName = "Acme.NullName";
 
@@ -89,6 +95,8 @@ internal static class PluginFixtures
         NullName,
         ThrowingName,
         ThrowingCtor,
+        CtorSignatureSkew,
+        CtorSignatureMissing,
     ];
 
     /// <summary>

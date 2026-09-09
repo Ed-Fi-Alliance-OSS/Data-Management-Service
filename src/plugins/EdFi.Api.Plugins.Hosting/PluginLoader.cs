@@ -422,11 +422,60 @@ public static class PluginLoader
     /// </summary>
     private static Type FindPluginType(string name, Assembly entryAssembly)
     {
-        Type[] exported;
-
         try
         {
-            exported = entryAssembly.GetExportedTypes();
+            // Every step here is reflection over a third party's assembly, and every step of it can
+            // bind another assembly. Enumerating the exported types is the obvious one; resolving a
+            // constructor is the one that is easy to miss, because asking for the parameterless
+            // constructor makes the runtime resolve the parameter types of the type's *other*
+            // constructors, and an overload naming a type from a skewed or absent assembly fails
+            // there. The whole discovery therefore sits inside one classified handler, so the
+            // first-use backstop applies to all of it rather than only to enumeration.
+            Type[] exported = entryAssembly.GetExportedTypes();
+
+            // A candidate has to be something the host can actually construct and call. An abstract
+            // type, an open generic and a type with no public parameterless constructor are each
+            // impossible to construct, so counting them would turn "your plugin type is not
+            // constructible" into "your assembly exposes two plugins".
+            List<Type> candidates = exported
+                .Where(type =>
+                    type.IsClass
+                    && !type.IsAbstract
+                    && !type.ContainsGenericParameters
+                    && typeof(EdFiApiPlugin).IsAssignableFrom(type)
+                    && type.GetConstructor(Type.EmptyTypes) is not null
+                )
+                .ToList();
+
+            if (candidates.Count == 1)
+            {
+                return candidates[0];
+            }
+
+            IEnumerable<Type> nearMisses = exported.Where(type =>
+                typeof(EdFiApiPlugin).IsAssignableFrom(type) && !candidates.Contains(type)
+            );
+
+            string found =
+                candidates.Count == 0 ? "none" : string.Join(", ", candidates.Select(type => type.FullName));
+            string excluded = string.Join(", ", nearMisses.Select(type => type.FullName));
+
+            // Thrown from inside the try deliberately: it is a PluginLoadException, and neither handler
+            // below catches one, so the zero and multiple classifications survive intact.
+            throw new PluginLoadException(
+                candidates.Count == 0
+                    ? PluginLoadFailure.NoPluginType
+                    : PluginLoadFailure.MultiplePluginTypes,
+                name,
+                $"plugin '{PluginDiagnosticText.Quote(name)}' has to expose exactly one public, "
+                    + "non-abstract, non-generic EdFiApiPlugin subclass with a public parameterless "
+                    + $"constructor. Constructible: {PluginDiagnosticText.Quote(found)}."
+                    + (
+                        excluded.Length == 0
+                            ? string.Empty
+                            : $" Exposed but not constructible: {PluginDiagnosticText.Quote(excluded)}."
+                    )
+            );
         }
         catch (ReflectionTypeLoadException exception)
         {
@@ -448,57 +497,22 @@ public static class PluginLoader
                 );
         }
         catch (Exception exception)
-            when (exception is FileNotFoundException or FileLoadException or TypeLoadException)
+            when (exception
+                    is FileNotFoundException
+                        or FileLoadException
+                        or TypeLoadException
+                        or BadImageFormatException
+            )
         {
             throw Unwrap(name, exception)
                 ?? new PluginLoadException(
                     PluginLoadFailure.PluginTypesUnloadable,
                     name,
-                    $"plugin '{PluginDiagnosticText.Quote(name)}' has exported types that could not be "
-                        + $"loaded: {PluginDiagnosticText.Quote(exception.Message)}",
+                    $"plugin '{PluginDiagnosticText.Quote(name)}' exposes types the runtime could not "
+                        + $"resolve: {PluginDiagnosticText.Quote(exception.Message)}",
                     exception
                 );
         }
-
-        // A candidate has to be something the host can actually construct and call. An abstract type,
-        // an open generic and a type with no public parameterless constructor are each impossible to
-        // construct, so counting them would turn "your plugin type is not constructible" into "your
-        // assembly exposes two plugins".
-        List<Type> candidates = exported
-            .Where(type =>
-                type.IsClass
-                && !type.IsAbstract
-                && !type.ContainsGenericParameters
-                && typeof(EdFiApiPlugin).IsAssignableFrom(type)
-                && type.GetConstructor(Type.EmptyTypes) is not null
-            )
-            .ToList();
-
-        if (candidates.Count == 1)
-        {
-            return candidates[0];
-        }
-
-        IEnumerable<Type> nearMisses = exported.Where(type =>
-            typeof(EdFiApiPlugin).IsAssignableFrom(type) && !candidates.Contains(type)
-        );
-
-        string found =
-            candidates.Count == 0 ? "none" : string.Join(", ", candidates.Select(type => type.FullName));
-        string excluded = string.Join(", ", nearMisses.Select(type => type.FullName));
-
-        throw new PluginLoadException(
-            candidates.Count == 0 ? PluginLoadFailure.NoPluginType : PluginLoadFailure.MultiplePluginTypes,
-            name,
-            $"plugin '{PluginDiagnosticText.Quote(name)}' has to expose exactly one public, "
-                + "non-abstract, non-generic EdFiApiPlugin subclass with a public parameterless "
-                + $"constructor. Constructible: {PluginDiagnosticText.Quote(found)}."
-                + (
-                    excluded.Length == 0
-                        ? string.Empty
-                        : $" Exposed but not constructible: {PluginDiagnosticText.Quote(excluded)}."
-                )
-        );
     }
 
     private static EdFiApiPlugin Activate(string name, Type pluginType)

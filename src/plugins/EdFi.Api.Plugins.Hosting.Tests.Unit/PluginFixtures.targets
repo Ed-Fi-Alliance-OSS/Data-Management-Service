@@ -52,6 +52,12 @@
         <PluginFixture Include="Fixtures/Plugins/Acme.BackstopCtor/Acme.BackstopCtor.csproj">
             <StagedName>Acme.BackstopCtor</StagedName>
         </PluginFixture>
+        <PluginFixture Include="Fixtures/Plugins/Acme.CtorSignatureSkew/Acme.CtorSignatureSkew.csproj">
+            <StagedName>Acme.CtorSignatureSkew</StagedName>
+        </PluginFixture>
+        <PluginFixture Include="Fixtures/Plugins/Acme.CtorSignatureMissing/Acme.CtorSignatureMissing.csproj">
+            <StagedName>Acme.CtorSignatureMissing</StagedName>
+        </PluginFixture>
         <PluginFixture Include="Fixtures/Plugins/Acme.NullName/Acme.NullName.csproj">
             <StagedName>Acme.NullName</StagedName>
         </PluginFixture>

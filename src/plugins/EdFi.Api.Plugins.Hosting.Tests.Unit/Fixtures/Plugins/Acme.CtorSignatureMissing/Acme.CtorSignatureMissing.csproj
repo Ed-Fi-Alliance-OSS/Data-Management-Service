@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <!--
+        The same shape, with the overload's parameter type coming from an assembly the plugin did not
+        ship and the host does not carry at all. That is the general missing-dependency branch rather
+        than the version-skew one, and it has to be named just as clearly.
+    -->
+    <PropertyGroup>
+        <AssemblyName>Acme.CtorSignatureMissing</AssemblyName>
+        <RootNamespace>Acme.CtorSignatureMissing</RootNamespace>
+    </PropertyGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\..\..\..\EdFi.Api.Plugins\EdFi.Api.Plugins.csproj" />
+        <ProjectReference
+            Include="..\..\Support\AcmePrivate\Acme.Private.csproj"
+            Private="false"
+        />
+    </ItemGroup>
+</Project>
