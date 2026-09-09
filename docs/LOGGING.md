@@ -197,23 +197,41 @@ those fields.
 ### Correlation ID normalization
 
 A correlation ID is normalized before it is used anywhere — whether it came from
-the configured correlation header or from `HttpContext.TraceIdentifier`:
+the configured correlation header or from `HttpContext.TraceIdentifier`. The
+normalization is two steps, applied in this order:
 
-* Characters outside a logging-safe allowlist are removed. The allowlist exists
-  to prevent log forging and structured-log template injection; a
-  client-supplied value containing a carriage return or line feed cannot
-  introduce additional log lines. This allowlist is scoped to correlation IDs
-  and is deliberately broader than the stricter one applied to
-  internally-controlled logged values such as `Method` and `Path`, because a
-  client-supplied correlation ID normally originates in an upstream system's own
-  identifier scheme.
-* Values longer than `AppSettings:CorrelationIdMaxLength` (default `255`) are
-  truncated. See [Configuration](./CONFIGURATION.md).
+1. **Truncate.** A value longer than `AppSettings:CorrelationIdMaxLength`
+   (default `255`) is cut to that length. See
+   [Configuration](./CONFIGURATION.md).
+2. **Remove characters outside the allowlist.** The correlation ID allowlist is
+   *all printable non-control characters*: every control character is removed —
+   carriage return, line feed, tab and null included — and every other character
+   is preserved, including punctuation such as `+ = { } @ | , # ( ) [ ] < > " '`
+   and non-ASCII letters, digits and symbols. Removing control characters is
+   what prevents log forging: a client-supplied value cannot introduce
+   additional log lines or corrupt structured log output. Bounding the value's
+   size is the length cap's job, not the allowlist's.
+
+This allowlist is scoped to correlation IDs and is deliberately broader than the
+stricter one applied to internally-controlled logged values such as `Method` and
+`Path`, because a client-supplied correlation ID normally originates in an
+upstream system's own identifier scheme — narrowing it to alphanumerics would
+defeat the purpose of accepting a client-supplied value at all.
+
+The order matters, and truncating first is deliberate: a long hostile value
+retains less trailing content than it would if characters were removed first. A
+consequence is that a value which is both over-length *and* contains control
+characters yields a result **shorter** than `CorrelationIdMaxLength`. That is
+intended.
 
 Normalization is applied identically everywhere a correlation ID appears: every
 request log event, and the `correlationId` (or `traceId`) of every error response
-body, whatever the status code and whichever layer produced it. The ID a client
+body, whatever the status code and whichever layer produced it — including the
+catch-all `404` for an unmatched route, the `429` rate-limit rejection, and the
+`500` written when an unhandled exception escapes the pipeline. The ID a client
 reads from a failed request is therefore always the ID to search for in the logs.
+The value is normalized once, where the request first supplies it, so no
+individual response path can drift from the logged value.
 
 A correlation ID that the allowlist or the length cap alters is normalized, not
 rejected — the request still succeeds or fails on its own merits rather than on

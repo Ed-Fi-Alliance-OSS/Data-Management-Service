@@ -10,6 +10,7 @@ using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Response;
 using EdFi.DataManagementService.Core.Startup;
 using EdFi.DataManagementService.Core.Utilities;
+using EdFi.DataManagementService.Frontend.AspNetCore;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 using Microsoft.AspNetCore.Http.Features;
@@ -214,17 +215,16 @@ if (invalidConfigurationException is null)
             context.Response.StatusCode = 404;
             context.Response.ContentType = "application/problem+json";
 
-            var traceId = context.Request.Headers.TryGetValue(
-                app.Configuration.GetValue<string>("AppSettings:CorrelationIdHeader") ?? "correlationid",
-                out var correlationId
-            )
-                ? correlationId.ToString()
-                : context.TraceIdentifier;
-
-            var response = FailureResponse.ForNotFound(
-                "The specified data could not be found.",
-                new TraceId(traceId)
+            // Routed through the same ingestion point as every other path so the correlation ID
+            // is normalized identically. This also drops a hardcoded "correlationid" fallback
+            // header name that used to honor client-supplied values on unmatched routes even
+            // when the host had left AppSettings:CorrelationIdHeader empty to disable them.
+            TraceId traceId = AspNetCoreFrontend.ExtractTraceIdFrom(
+                context.Request,
+                context.RequestServices.GetRequiredService<IOptions<AppSettings>>()
             );
+
+            var response = FailureResponse.ForNotFound("The specified data could not be found.", traceId);
             return context.Response.WriteAsJsonAsync(response);
         });
     }

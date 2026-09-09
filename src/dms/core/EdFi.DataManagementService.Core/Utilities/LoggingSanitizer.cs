@@ -25,6 +25,21 @@ public static class LoggingSanitizer
     public static string SanitizeForLogging(string? input) => LogSanitizer.SanitizeForLog(input);
 
     /// <summary>
+    /// Sanitizes a correlation ID for logging and for inclusion in an error response body,
+    /// using the correlation-ID allowlist: all printable non-control characters. Every control
+    /// character is removed (including \r, \n, \t and \0), which is what prevents log forging;
+    /// every other character is preserved.
+    /// This allowlist is deliberately broader than <see cref="SanitizeForLogging"/> and must not
+    /// be conflated with it: <see cref="SanitizeForLogging"/> is correct for internally-controlled
+    /// values such as the request method and path, whereas a client-supplied correlation ID
+    /// normally originates in an upstream system's own identifier scheme.
+    /// </summary>
+    /// <param name="input">The correlation ID to sanitize</param>
+    /// <returns>A sanitized correlation ID safe for logging and for an error response body</returns>
+    public static string SanitizeCorrelationIdForLogging(string? input) =>
+        LogSanitizer.SanitizeCorrelationIdForLog(input);
+
+    /// <summary>
     /// Sanitizes input for console/stderr output by stripping control characters,
     /// except newline (\n) and carriage return (\r) which are preserved for
     /// multi-line output readability (e.g., diff reports from SeedValidator).

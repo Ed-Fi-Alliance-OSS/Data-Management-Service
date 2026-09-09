@@ -73,9 +73,81 @@ public static class LogSanitizer
 #pragma warning restore S3267
     }
 
+    /// <summary>
+    /// Sanitizes a correlation ID for safe logging and for inclusion in an error response body.
+    /// The allowlist is deliberately broader than <see cref="SanitizeForLog"/>: every printable
+    /// character is preserved and only control characters are removed. A client-supplied
+    /// correlation ID normally originates in an upstream system's own identifier scheme, so
+    /// narrowing it to alphanumerics would defeat the purpose of accepting a client-supplied
+    /// value. Removing control characters is what prevents log forging and corruption of
+    /// structured log output.
+    /// </summary>
+    public static string SanitizeCorrelationIdForLog(string? input)
+    {
+        if (string.IsNullOrEmpty(input))
+        {
+            return string.Empty;
+        }
+
+        // Behaviorally redundant with the allowlist below, which also rejects every
+        // line-ending character. Kept because static log-injection analysis (CodeQL)
+        // models ReplaceLineEndings as a sanitizer but not the custom allowlist loop.
+        input = input.ReplaceLineEndings(string.Empty);
+
+        // First pass: check if sanitization is needed and count safe characters
+        int safeCount = 0;
+        bool needsSanitization = false;
+
+        foreach (char c in input)
+        {
+            if (IsAllowedCorrelationIdChar(c))
+            {
+                safeCount++;
+            }
+            else
+            {
+                needsSanitization = true;
+            }
+        }
+
+        if (!needsSanitization)
+        {
+            return input;
+        }
+
+        if (safeCount == 0)
+        {
+            return string.Empty;
+        }
+
+        // Second pass: build the sanitized string with exact allocation
+#pragma warning disable S3267 // Loop intentionally avoids LINQ for performance - no intermediate allocations
+        return string.Create(
+            safeCount,
+            input,
+            static (span, source) =>
+            {
+                int index = 0;
+                foreach (char c in source)
+                {
+                    if (IsAllowedCorrelationIdChar(c))
+                    {
+                        span[index++] = c;
+                    }
+                }
+            }
+        );
+#pragma warning restore S3267
+    }
+
     // Explicitly reject control characters for defense in depth
     // Includes backslash for Windows file paths
     private static bool IsAllowedChar(char c) =>
         !char.IsControl(c)
         && (char.IsLetterOrDigit(c) || c is ' ' or '_' or '-' or '.' or ':' or '/' or '\\');
+
+    // The correlation ID allowlist is "all printable non-control characters" and is
+    // deliberately a single negative test with no positive character enumeration.
+    // char.IsControl is Unicode-aware, so the full printable Unicode range is preserved.
+    private static bool IsAllowedCorrelationIdChar(char c) => !char.IsControl(c);
 }
