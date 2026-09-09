@@ -161,6 +161,32 @@ public sealed class ContributorPlugin : EdFiApiPlugin
                 services.AddTransient<IFixtureFanInContract, FixtureFanIn>();
                 break;
 
+            case "disposableTransientContract":
+                // A transient the container has to release: a transient resolved from a scope is
+                // tracked by that scope, so this is what shows the probe's scope releasing one.
+                services.AddTransient<IFixtureFanInContract, FixtureDisposableFanIn>();
+                break;
+
+            case "brokenKeyedContract":
+                services.AddKeyedTransient<IFixtureFanInContract, FixtureUnsatisfiableFanIn>("broken-key");
+                break;
+
+            case "healthyFactoryContract":
+                services.Add(
+                    ServiceDescriptor.Transient<IFixtureFanInContract>(_ =>
+                    {
+                        FixtureObservations.Count("healthyFactory");
+                        return new FixtureFanIn();
+                    })
+                );
+                break;
+
+            case "instanceContract":
+                // A descriptor carrying an instance the plugin already built. Nothing activates it, so
+                // the audit's resolution has to hand back that same object.
+                services.AddSingleton<IFixtureFanInContract>(new FixtureFanIn());
+                break;
+
             case "keyedContract":
                 services.AddKeyedTransient<IFixtureFanInContract, FixtureFanIn>("first");
                 break;

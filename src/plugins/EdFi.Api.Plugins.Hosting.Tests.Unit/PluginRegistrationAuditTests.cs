@@ -1166,3 +1166,200 @@ public class Given_an_activation_failure_beside_an_async_only_disposable_that_th
         _run.Result.ScopeCleanupFailure.Should().NotBeSameAs(_run.SingleFinding.ActivationException);
     }
 }
+
+[TestFixture]
+[NonParallelizable]
+public class Given_a_declared_contract_registered_as_a_disposable_transient
+{
+    private TemporaryPluginRoot _root = null!;
+    private AuditRun _run = null!;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        _root = TemporaryPluginRoot.Create();
+        _run = await AuditProbe.RunAsync(
+            _root,
+            "disposableTransientContract",
+            null,
+            PluginFixtures.Contributor
+        );
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        _run.Dispose();
+        _root.Dispose();
+    }
+
+    [Test]
+    public void It_is_accepted()
+    {
+        _run.Result.Findings.Should().BeEmpty();
+        _run.Result.ScopeCleanupFailure.Should().BeNull();
+    }
+
+    /// <summary>
+    /// A transient resolved from a scope is tracked by that scope, so the probe's instance is released
+    /// when the scope is. That is the half of "an activation check and not a disposal boundary" that
+    /// concerns what the probe does clean up, and a non-disposable transient cannot show it.
+    /// </summary>
+    [Test]
+    public void It_constructs_one_instance_and_releases_it_with_the_probes_scope()
+    {
+        FixtureObservations.CountOf("fanIn.constructed").Should().Be(1);
+        FixtureObservations.CountOf("fanIn.disposed").Should().Be(1);
+    }
+
+    /// <summary>
+    /// And production still gets its own, which is what a transient means. The probe's instance is
+    /// already gone, so this is a second construction rather than a reused one.
+    /// </summary>
+    [Test]
+    public void It_constructs_another_for_production()
+    {
+        _run.Provider.GetRequiredService<IFixtureFanInContract>();
+
+        FixtureObservations.CountOf("fanIn.constructed").Should().Be(2);
+        FixtureObservations.CountOf("fanIn.disposed").Should().Be(1);
+    }
+}
+
+[TestFixture]
+[NonParallelizable]
+public class Given_a_declared_contract_under_a_concrete_key_that_cannot_be_activated
+{
+    private TemporaryPluginRoot _root = null!;
+    private AuditRun _run = null!;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        _root = TemporaryPluginRoot.Create();
+        _run = await AuditProbe.RunAsync(_root, "brokenKeyedContract", null, PluginFixtures.Contributor);
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        _run.Dispose();
+        _root.Dispose();
+    }
+
+    /// <summary>
+    /// The keyed group is probed on its own, so a keyed registration that cannot be constructed is
+    /// caught rather than passed over because the unkeyed group for the same contract was empty and
+    /// resolved cleanly.
+    /// </summary>
+    [Test]
+    public void It_is_fatal_naming_the_plugin_the_contract_and_the_key()
+    {
+        PluginAuditFinding finding = _run.SingleFinding;
+
+        finding.Reason.Should().Be(PluginAuditFailure.DeclaredContractRegistrationNotActivatable);
+        finding.Contract.Should().Be(typeof(IFixtureFanInContract));
+        finding.PluginNames.Should().Equal(PluginFixtures.Contributor);
+        finding.Message.Should().Contain("broken-key");
+        finding.Message.Should().Contain("under service key");
+    }
+
+    [Test]
+    public void It_keeps_the_original_activation_exception()
+    {
+        _run.SingleFinding.ActivationException.Should().BeOfType<InvalidOperationException>();
+        _run.SingleFinding.ActivationException!.Message.Should().Contain(nameof(IFixtureMissingDependency));
+    }
+}
+
+[TestFixture]
+[NonParallelizable]
+public class Given_a_declared_contract_registered_by_a_factory_that_succeeds
+{
+    private TemporaryPluginRoot _root = null!;
+    private AuditRun _run = null!;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        _root = TemporaryPluginRoot.Create();
+        _run = await AuditProbe.RunAsync(_root, "healthyFactoryContract", null, PluginFixtures.Contributor);
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        _run.Dispose();
+        _root.Dispose();
+    }
+
+    [Test]
+    public void It_is_accepted()
+    {
+        _run.Result.Findings.Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// A factory descriptor is activated the way the container activates one, by invoking it, and once.
+    /// </summary>
+    [Test]
+    public void It_invokes_the_factory_exactly_once()
+    {
+        FixtureObservations.CountOf("healthyFactory").Should().Be(1);
+        FixtureObservations.CountOf("fanIn.constructed").Should().Be(1);
+    }
+}
+
+[TestFixture]
+[NonParallelizable]
+public class Given_a_declared_contract_registered_as_an_instance
+{
+    private TemporaryPluginRoot _root = null!;
+    private AuditRun _run = null!;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        _root = TemporaryPluginRoot.Create();
+        _run = await AuditProbe.RunAsync(_root, "instanceContract", null, PluginFixtures.Contributor);
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        _run.Dispose();
+        _root.Dispose();
+    }
+
+    [Test]
+    public void It_is_accepted()
+    {
+        _run.Result.Findings.Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// Nothing activates an instance descriptor, so the plugin's own object is what the resolution
+    /// hands back. Asserted by reference against the object the record carries, which is the only
+    /// identity claim available on this side of the plugin boundary.
+    /// </summary>
+    [Test]
+    public void It_resolves_the_object_the_plugin_supplied()
+    {
+        object? supplied = _run
+            .Input.Records[0]
+            .Additions.Single(descriptor => descriptor.ServiceType == typeof(IFixtureFanInContract))
+            .ImplementationInstance;
+
+        supplied.Should().NotBeNull();
+        _run.Provider.GetRequiredService<IFixtureFanInContract>().Should().BeSameAs(supplied);
+    }
+
+    /// <summary>
+    /// One construction, by the plugin, before the audit ran at all. The probe adds none.
+    /// </summary>
+    [Test]
+    public void It_constructs_nothing_of_its_own()
+    {
+        FixtureObservations.CountOf("fanIn.constructed").Should().Be(1);
+    }
+}
