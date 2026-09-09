@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <!--
+        A plugin whose Name differs from its directory only in case. The comparison is ordinal, so a
+        plugin identity does not depend on which filesystem the image happened to be built on.
+    -->
+    <PropertyGroup>
+        <AssemblyName>Acme.CaseName</AssemblyName>
+        <RootNamespace>Acme.CaseName</RootNamespace>
+    </PropertyGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\..\..\..\EdFi.Api.Plugins\EdFi.Api.Plugins.csproj" />
+    </ItemGroup>
+</Project>

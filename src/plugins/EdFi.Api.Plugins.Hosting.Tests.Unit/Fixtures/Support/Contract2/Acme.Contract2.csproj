@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <!--
+        A stand-in for the plugin contract at a version this host does not carry, so that a fixture
+        can be built against a newer contract than the host and refused at load. It carries the
+        contract assembly name because that is what the reference an entry assembly records has to
+        say; the project file is named differently so that no two project files under src/plugins
+        share a name.
+    -->
+    <PropertyGroup>
+        <AssemblyName>EdFi.Api.Plugins</AssemblyName>
+        <RootNamespace>EdFi.Api.Plugins</RootNamespace>
+        <AssemblyVersion>2.0.0</AssemblyVersion>
+        <FileVersion>2.0.0</FileVersion>
+        <Version>2.0.0</Version>
+    </PropertyGroup>
+    <ItemGroup>
+        <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" />
+        <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    </ItemGroup>
+</Project>

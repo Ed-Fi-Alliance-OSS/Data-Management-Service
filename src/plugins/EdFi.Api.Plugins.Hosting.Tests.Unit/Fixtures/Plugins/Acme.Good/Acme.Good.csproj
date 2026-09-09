@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <!--
+        The well-formed plugin: directory name, entry assembly file name, AssemblyName and Name all
+        equal, published framework-dependent exactly as the implementer guide tells a third party to
+        publish. Its output also carries a private copy of EdFi.Api.Plugins, which is what a real
+        plugin's publish produces and what the host-first assertions need on disk.
+    -->
+    <PropertyGroup>
+        <AssemblyName>Acme.Good</AssemblyName>
+        <RootNamespace>Acme.Good</RootNamespace>
+    </PropertyGroup>
+    <ItemGroup>
+        <ProjectReference
+            Include="..\..\..\..\EdFi.Api.Plugins\EdFi.Api.Plugins.csproj"
+        />
+    </ItemGroup>
+</Project>

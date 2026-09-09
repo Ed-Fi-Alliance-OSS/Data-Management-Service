@@ -1,0 +1,26 @@
+<Project>
+    <!--
+        Deliberately imports nothing. A nested Directory.Build.props does not import its parent, which
+        src/plugins/Directory.Build.props records in its own header, so this file is what stops the
+        fixture tree inheriting that one.
+
+        That is the point rather than a side effect. Fixtures are test assets, several of them
+        deliberately malformed: one exposes no plugin type, one exposes two, one declares a name that
+        disagrees with its directory. Under the parent's TreatWarningsAsErrors and analyzer set, assets
+        written to be wrong would have to be written to be wrong in only the approved ways. They also
+        take no committed lock file, because nothing restores them in locked mode and a lock file
+        per fixture would be a maintenance cost with no reader.
+
+        The exception is any fixture project the test project references directly, which is part of the
+        solution's build graph; such a project sets RestorePackagesWithLockFile itself and commits its
+        lock file.
+    -->
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <IsPackable>false</IsPackable>
+        <RestorePackagesWithLockFile>false</RestorePackagesWithLockFile>
+        <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    </PropertyGroup>
+</Project>

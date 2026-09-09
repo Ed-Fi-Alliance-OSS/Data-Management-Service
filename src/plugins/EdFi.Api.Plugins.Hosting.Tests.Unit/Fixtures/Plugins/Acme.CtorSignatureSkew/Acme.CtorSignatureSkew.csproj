@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <!--
+        A perfectly ordinary plugin shape: a public parameterless constructor beside an overload that
+        takes a dependency. The overload's parameter type comes from a higher version of an assembly
+        the host carries, referenced without shipping it, so the manifest declares nothing for it and
+        the preflight cannot see it. Asking for the parameterless constructor makes the runtime bind
+        the other constructor's parameter types, which is where the refusal happens.
+    -->
+    <PropertyGroup>
+        <AssemblyName>Acme.CtorSignatureSkew</AssemblyName>
+        <RootNamespace>Acme.CtorSignatureSkew</RootNamespace>
+    </PropertyGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\..\..\..\EdFi.Api.Plugins\EdFi.Api.Plugins.csproj" />
+        <ProjectReference
+            Include="..\..\Support\AcmeHostShared2\Acme.HostShared.v2.csproj"
+            Private="false"
+        />
+    </ItemGroup>
+</Project>

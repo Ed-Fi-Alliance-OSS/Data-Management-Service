@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <!--
+        Ships a package with runtime-identifier-specific managed assets, which is the shape the skew
+        preflight's sufficiency rests on: the preflight reads top-level runtime entries only, and that
+        is safe only if a managed runtimeTargets row always repeats the same simple name and
+        assemblyVersion at the top level. Microsoft.Data.SqlClient is that package, and it is already
+        centrally versioned because the host itself uses it.
+
+        Published portable, with no runtime identifier, deliberately. A -r publish resolves the assets
+        for the one identifier and emits no managed runtimeTargets rows at all, so a fixture built that
+        way would assert an invariant over an empty set and pass without measuring anything.
+    -->
+    <PropertyGroup>
+        <AssemblyName>Acme.RuntimeTargets</AssemblyName>
+        <RootNamespace>Acme.RuntimeTargets</RootNamespace>
+    </PropertyGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\..\..\..\EdFi.Api.Plugins\EdFi.Api.Plugins.csproj" />
+        <PackageReference Include="Microsoft.Data.SqlClient" />
+    </ItemGroup>
+</Project>

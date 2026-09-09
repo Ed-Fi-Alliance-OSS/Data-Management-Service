@@ -1,0 +1,288 @@
+// SPDX-License-Identifier: Apache-2.0
+// Licensed to the Ed-Fi Alliance under one or more agreements.
+// The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+// See the LICENSE and NOTICES files in the project root for more information.
+
+using System.Text.Json;
+using FluentAssertions;
+using NUnit.Framework;
+
+namespace EdFi.Api.Plugins.Hosting.Tests.Unit;
+
+/// <summary>
+/// Where the fixture plugin directories are staged, and what they are called.
+/// </summary>
+/// <remarks>
+/// The fixture projects under Fixtures/ are published into the test output by
+/// PluginFixtures.targets, one directory each. Tests address them through this type rather than
+/// composing the path themselves, so that the staging layout is stated once.
+/// </remarks>
+internal static class PluginFixtures
+{
+    /// <summary>The staged plugin root, which is a real plugin root as far as the loader is concerned.</summary>
+    internal static string Root { get; } = Path.Combine(AppContext.BaseDirectory, "Fixtures");
+
+    /// <summary>The well-formed plugin.</summary>
+    internal const string Good = "Acme.Good";
+
+    /// <summary>A plugin directory whose entry assembly exposes no plugin type.</summary>
+    internal const string NoSubclass = "Acme.NoSubclass";
+
+    /// <summary>Two constructible plugin types, so choosing between them would be arbitrary.</summary>
+    internal const string TwoSubclasses = "Acme.TwoSubclasses";
+
+    /// <summary>A plugin whose Name disagrees with its directory.</summary>
+    internal const string NameMismatch = "Acme.NameMismatch";
+
+    /// <summary>A plugin whose Name differs from its directory only in case.</summary>
+    internal const string CaseName = "Acme.CaseName";
+
+    /// <summary>One constructible type among several that are subclasses and not constructible.</summary>
+    internal const string NonCandidates = "Acme.NonCandidates";
+
+    /// <summary>Only subclasses the host cannot construct.</summary>
+    internal const string OnlyNonCandidates = "Acme.OnlyNonCandidates";
+
+    /// <summary>Published self-contained, so its manifest declares a runtime pack.</summary>
+    internal const string SelfContained = "Acme.SelfContained";
+
+    /// <summary>Published for a runtime identifier and framework-dependent, which has to load.</summary>
+    internal const string RidSpecific = "Acme.RidSpecific";
+
+    /// <summary>Built against a contract version this host does not carry.</summary>
+    internal const string NewerContract = "Acme.NewerContract";
+
+    /// <summary>Declares a higher version of an assembly the host carries, and never touches it.</summary>
+    internal const string DeclaredSkew = "Acme.DeclaredSkew";
+
+    /// <summary>Touches an unmanifested higher version while the loader is constructing it.</summary>
+    internal const string BackstopCtor = "Acme.BackstopCtor";
+
+    /// <summary>Touches the same unmanifested higher version from inside the contribution hook.</summary>
+    internal const string BackstopHook = "Acme.BackstopHook";
+
+    /// <summary>Ships the first major of a private third-party library the host does not carry.</summary>
+    internal const string LibV1 = "Acme.LibV1";
+
+    /// <summary>Ships the second major of that same library.</summary>
+    internal const string LibV2 = "Acme.LibV2";
+
+    /// <summary>Reads configuration and binds options, which is the IChangeToken regression.</summary>
+    internal const string Options = "Acme.Options";
+
+    /// <summary>Takes the hook signature's assemblies from the shared framework, not from packages.</summary>
+    internal const string FrameworkOnly = "Acme.FrameworkOnly";
+
+    /// <summary>Published portable over a package with runtime-identifier-specific managed assets.</summary>
+    internal const string RuntimeTargets = "Acme.RuntimeTargets";
+
+    /// <summary>Compiled against the real production contract at 1.0.0, for the 1.0-on-1.1 proof.</summary>
+    internal const string OldContract = "Acme.OldContract";
+
+    /// <summary>Ships a dependency the host does not carry, so its own copy is the one served.</summary>
+    internal const string PrivateDependency = "Acme.PrivateDependency";
+
+    /// <summary>Ships a satellite resource assembly under its culture's directory.</summary>
+    internal const string Localized = "Acme.Localized";
+
+    /// <summary>Ships an older copy of an assembly the host carries.</summary>
+    internal const string Substitution = "Acme.Substitution";
+
+    /// <summary>Ships a native library under runtimes/, where only the override finds it.</summary>
+    internal const string NativePortable = "Acme.NativePortable";
+
+    /// <summary>Ships a native library and calls into it.</summary>
+    internal const string Native = "Acme.Native";
+
+    /// <summary>A constructor overload naming a type from an unmanifested, skewed assembly.</summary>
+    internal const string CtorSignatureSkew = "Acme.CtorSignatureSkew";
+
+    /// <summary>A constructor overload naming a type from an assembly nothing carries.</summary>
+    internal const string CtorSignatureMissing = "Acme.CtorSignatureMissing";
+
+    /// <summary>Returns null from a property the contract declares non-nullable.</summary>
+    internal const string NullName = "Acme.NullName";
+
+    /// <summary>Throws when its Name is read.</summary>
+    internal const string ThrowingName = "Acme.ThrowingName";
+
+    /// <summary>Throws from its constructor.</summary>
+    internal const string ThrowingCtor = "Acme.ThrowingCtor";
+
+    /// <summary>Every fixture the staging target is expected to produce.</summary>
+    internal static IReadOnlyList<string> All { get; } =
+    [
+        Good,
+        NoSubclass,
+        TwoSubclasses,
+        NameMismatch,
+        CaseName,
+        NonCandidates,
+        OnlyNonCandidates,
+        SelfContained,
+        RidSpecific,
+        NewerContract,
+        DeclaredSkew,
+        BackstopCtor,
+        PrivateDependency,
+        NullName,
+        ThrowingName,
+        ThrowingCtor,
+        CtorSignatureSkew,
+        CtorSignatureMissing,
+        Native,
+        NativePortable,
+        Substitution,
+        Localized,
+        BackstopHook,
+        LibV1,
+        LibV2,
+        Options,
+        FrameworkOnly,
+        RuntimeTargets,
+        OldContract,
+    ];
+
+    /// <summary>
+    /// The fixtures whose staged directory is a whole published plugin. The self-contained fixture is
+    /// excluded because only its entry assembly and manifest are staged, deliberately.
+    /// </summary>
+    internal static IReadOnlyList<string> FullyStaged { get; } =
+        All.Where(name => name != SelfContained && name != NativePortable).ToArray();
+
+    internal static string DirectoryOf(string name) => Path.Combine(Root, name);
+
+    internal static string EntryAssemblyOf(string name) => Path.Combine(DirectoryOf(name), $"{name}.dll");
+
+    /// <summary>The staged name of the fresh-process probe, which is not a plugin.</summary>
+    internal const string NativeProbeHostName = "PluginNativeProbeHost";
+
+    /// <summary>The staged name of the 1.0-on-1.1 host, which is not a plugin either.</summary>
+    internal const string HostRunnerName = "PluginHostRunner";
+
+    /// <summary>The staged directory of the 1.0-on-1.1 host, which tests copy rather than run in place.</summary>
+    internal static string HostRunnerDirectory { get; } =
+        Path.Combine(AppContext.BaseDirectory, "FixtureHosts", HostRunnerName);
+
+    /// <summary>
+    /// The additive 1.1 contract assembly, staged beside the host runner it is substituted into.
+    /// </summary>
+    internal static string Contract11Assembly { get; } =
+        Path.Combine(HostRunnerDirectory, "contract-1.1", "EdFi.Api.Plugins.dll");
+
+    /// <summary>The fresh-process probe the native assertions run.</summary>
+    internal static string NativeProbeHost { get; } =
+        Path.Combine(
+            AppContext.BaseDirectory,
+            "FixtureHosts",
+            NativeProbeHostName,
+            $"{NativeProbeHostName}.dll"
+        );
+
+    internal static string ManifestOf(string name) => Path.Combine(DirectoryOf(name), $"{name}.deps.json");
+}
+
+/// <summary>
+/// The staging target is infrastructure every later loader test rests on, so its output is asserted
+/// rather than assumed. A fixture that failed to publish would otherwise surface as a loader test
+/// failing for the wrong reason.
+/// </summary>
+[TestFixture]
+public class Given_the_fixture_plugins_have_been_staged
+{
+    [Test]
+    public void It_stages_them_under_a_single_plugin_root()
+    {
+        Directory.Exists(PluginFixtures.Root).Should().BeTrue();
+    }
+
+    [Test]
+    public void It_stages_exactly_the_declared_fixtures_and_nothing_left_over()
+    {
+        // A fixture removed from the target's list leaves its published directory behind, where a
+        // later test enumerating the root would still find it. This is what proves the staging prunes.
+        Directory
+            .GetDirectories(PluginFixtures.Root)
+            .Select(Path.GetFileName)
+            .Should()
+            .BeEquivalentTo(PluginFixtures.All);
+    }
+
+    [TestCaseSource(typeof(PluginFixtures), nameof(PluginFixtures.All))]
+    public void It_names_the_entry_assembly_for_the_directory(string name)
+    {
+        // The directory name, the entry assembly file name and the assembly's own name all have to be
+        // one string; this is the first of those equalities and the one staging is responsible for.
+        File.Exists(PluginFixtures.EntryAssemblyOf(name)).Should().BeTrue();
+    }
+
+    [TestCaseSource(typeof(PluginFixtures), nameof(PluginFixtures.All))]
+    public void It_publishes_a_dependency_manifest_beside_the_entry_assembly(string name)
+    {
+        File.Exists(PluginFixtures.ManifestOf(name)).Should().BeTrue();
+    }
+
+    [TestCaseSource(typeof(PluginFixtures), nameof(PluginFixtures.All))]
+    public void It_publishes_a_manifest_naming_the_target_framework(string name)
+    {
+        using JsonDocument manifest = JsonDocument.Parse(File.ReadAllText(PluginFixtures.ManifestOf(name)));
+
+        // runtimeTarget names the framework the fixture was published for. It is deliberately not
+        // asserted to discriminate a self-contained publish, because it does not: a RID-specific
+        // framework-dependent publish names a runtime identifier here too, and a runtimepack entry
+        // among the libraries is what actually distinguishes the two.
+        manifest
+            .RootElement.GetProperty("runtimeTarget")
+            .GetProperty("name")
+            .GetString()
+            .Should()
+            .StartWith(".NETCoreApp,Version=v10.0");
+    }
+
+    [TestCaseSource(typeof(PluginFixtures), nameof(PluginFixtures.FullyStaged))]
+    public void It_stages_every_managed_file_the_manifest_declares(string name)
+    {
+        // The entry assembly and the manifest are the staging target's declared outputs, so they are
+        // the two files a timestamp check can see. This asserts the rest of the closure, which is what
+        // a test over a half-staged fixture would otherwise fail on for the wrong reason.
+        using JsonDocument manifest = JsonDocument.Parse(File.ReadAllText(PluginFixtures.ManifestOf(name)));
+
+        string targetName = manifest
+            .RootElement.GetProperty("runtimeTarget")
+            .GetProperty("name")
+            .GetString()!;
+        JsonElement target = manifest.RootElement.GetProperty("targets").GetProperty(targetName);
+
+        List<string> declared = [];
+
+        foreach (JsonProperty library in target.EnumerateObject())
+        {
+            if (!library.Value.TryGetProperty("runtime", out JsonElement runtime))
+            {
+                continue;
+            }
+
+            // A portable framework-dependent publish flattens every runtime asset to the plugin
+            // directory root, so the declared path's file name is where the file actually sits. The
+            // fuller mapping, which a RID-specific publish needs, belongs with the loader's inventory.
+            declared.AddRange(runtime.EnumerateObject().Select(asset => Path.GetFileName(asset.Name)));
+        }
+
+        declared.Should().NotBeEmpty();
+        declared
+            .Where(file => !File.Exists(Path.Combine(PluginFixtures.DirectoryOf(name), file)))
+            .Should()
+            .BeEmpty();
+    }
+
+    [Test]
+    public void It_carries_the_plugin_contract_into_the_plugin_directory()
+    {
+        // A published plugin brings its own copy of the contract, which is exactly the copy host-first
+        // resolution has to decline to use. The assertions about which copy is served need that file
+        // to be on disk, so its presence is pinned here rather than assumed there.
+        File.Exists(Path.Combine(PluginFixtures.DirectoryOf(PluginFixtures.Good), "EdFi.Api.Plugins.dll"))
+            .Should()
+            .BeTrue();
+    }
+}

@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <!--
+        Declares a higher version of an assembly the host carries, in a manifest entry, and never runs
+        the code that would touch it. That is the case the Load override alone would miss, because
+        Load is called when a type resolution first needs an assembly and nothing here ever asks.
+    -->
+    <PropertyGroup>
+        <AssemblyName>Acme.DeclaredSkew</AssemblyName>
+        <RootNamespace>Acme.DeclaredSkew</RootNamespace>
+    </PropertyGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\..\..\..\EdFi.Api.Plugins\EdFi.Api.Plugins.csproj" />
+        <ProjectReference Include="..\..\Support\AcmeHostShared2\Acme.HostShared.v2.csproj" />
+    </ItemGroup>
+</Project>

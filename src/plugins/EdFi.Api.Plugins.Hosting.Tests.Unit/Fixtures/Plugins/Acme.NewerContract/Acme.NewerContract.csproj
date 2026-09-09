@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <!--
+        Built against a contract version the host does not carry. It also exposes a type whose load
+        would fail with a different, recognizable error, so a test can tell that the refusal came from
+        reading the entry assembly references rather than from loading a type.
+    -->
+    <PropertyGroup>
+        <AssemblyName>Acme.NewerContract</AssemblyName>
+        <RootNamespace>Acme.NewerContract</RootNamespace>
+    </PropertyGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\..\Support\Contract2\Acme.Contract2.csproj" />
+        <ProjectReference
+            Include="..\..\Support\AcmeHostShared2\Acme.HostShared.v2.csproj"
+            Private="false"
+        />
+    </ItemGroup>
+</Project>

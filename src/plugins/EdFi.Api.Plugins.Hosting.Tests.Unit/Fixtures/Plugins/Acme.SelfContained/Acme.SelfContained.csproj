@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <!--
+        Published self-contained, which is what puts a runtimepack library in its manifest. Only its
+        entry assembly and manifest are staged: the check reads the manifest and refuses before
+        anything is loaded, and staging the whole shared framework would put hundreds of megabytes in
+        the test output for files the loader never opens.
+    -->
+    <PropertyGroup>
+        <AssemblyName>Acme.SelfContained</AssemblyName>
+        <RootNamespace>Acme.SelfContained</RootNamespace>
+    </PropertyGroup>
+    <!--
+        The contract is referenced as a built assembly rather than as a project, and only these
+        runtime-specific fixtures do that. A publish carrying a runtime identifier restores its project
+        references with that identifier and NuGet rewrites their lock files to record it, which would
+        edit the contract's committed lock file. The staging target passes the path.
+    -->
+    <ItemGroup>
+        <Reference Include="EdFi.Api.Plugins">
+            <HintPath>$(PluginContractAssemblyPath)</HintPath>
+            <Private>true</Private>
+        </Reference>
+    </ItemGroup>
+</Project>

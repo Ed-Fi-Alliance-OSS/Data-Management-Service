@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <!--
+        Returns null from Name. The contract declares Name non-nullable, and a third-party assembly
+        is not constrained by that at runtime, so the loader has to treat a null as a name that is
+        not the directory name rather than dereference it. Nullable is off here so the fixture can
+        say what a careless implementer's assembly would say.
+    -->
+    <PropertyGroup>
+        <AssemblyName>Acme.NullName</AssemblyName>
+        <RootNamespace>Acme.NullName</RootNamespace>
+        <Nullable>disable</Nullable>
+    </PropertyGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\..\..\..\EdFi.Api.Plugins\EdFi.Api.Plugins.csproj" />
+    </ItemGroup>
+</Project>

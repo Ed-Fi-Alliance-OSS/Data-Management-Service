@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <!--
+        Takes the assemblies in the hook signature from the shared framework instead of from packages,
+        which is what a FrameworkReference does and what an ASP.NET Core plugin author would write. A
+        framework-dependent publish then declares none of them: they are not in the manifest and not in
+        the plugin directory, so the skew preflight, which reads the manifest, cannot see them at all.
+
+        What this fixture proves is provenance and resolution: those assemblies are absent from the
+        declaration and the host's own copies are the ones the plugin gets when it uses them. It does
+        not prove a refusal, because a genuine shared-framework version skew would need a plugin
+        compiled against a newer shared framework than the host runs and there is one runtime installed
+        here. The refusal half is Acme.BackstopCtor's, over an ordinary assembly whose manifest row is
+        suppressed, and the two claims are asserted separately on purpose.
+
+        No Microsoft.Extensions.* PackageReference here, deliberately: adding one would put the package
+        copy in the plugin directory and destroy the property the fixture exists for.
+    -->
+    <PropertyGroup>
+        <AssemblyName>Acme.FrameworkOnly</AssemblyName>
+        <RootNamespace>Acme.FrameworkOnly</RootNamespace>
+    </PropertyGroup>
+    <ItemGroup>
+        <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    </ItemGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\..\..\..\EdFi.Api.Plugins\EdFi.Api.Plugins.csproj" />
+    </ItemGroup>
+</Project>

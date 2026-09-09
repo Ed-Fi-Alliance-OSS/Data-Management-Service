@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <!--
+        Published for a runtime identifier but framework-dependent, which names the RID in
+        runtimeTarget and carries no runtimepack. That publish is legitimate and is how a plugin ships
+        native assets, so it has to load.
+    -->
+    <PropertyGroup>
+        <AssemblyName>Acme.RidSpecific</AssemblyName>
+        <RootNamespace>Acme.RidSpecific</RootNamespace>
+    </PropertyGroup>
+    <!--
+        The contract is referenced as a built assembly rather than as a project, and only these
+        runtime-specific fixtures do that. A publish carrying a runtime identifier restores its project
+        references with that identifier and NuGet rewrites their lock files to record it, which would
+        edit the contract's committed lock file. The staging target passes the path.
+    -->
+    <ItemGroup>
+        <Reference Include="EdFi.Api.Plugins">
+            <HintPath>$(PluginContractAssemblyPath)</HintPath>
+            <Private>true</Private>
+        </Reference>
+    </ItemGroup>
+</Project>

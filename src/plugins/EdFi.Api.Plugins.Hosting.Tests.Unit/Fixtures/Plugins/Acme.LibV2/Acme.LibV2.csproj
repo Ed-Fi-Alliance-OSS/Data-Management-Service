@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <!--
+        Ships Acme.Shared 2.0.0, the second major of the assembly Acme.LibV1 ships at 1.0.0.
+    -->
+    <PropertyGroup>
+        <AssemblyName>Acme.LibV2</AssemblyName>
+        <RootNamespace>Acme.LibV2</RootNamespace>
+    </PropertyGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\..\..\..\EdFi.Api.Plugins\EdFi.Api.Plugins.csproj" />
+        <ProjectReference Include="..\..\Support\AcmeShared2\Acme.Shared.v2.csproj" />
+    </ItemGroup>
+</Project>

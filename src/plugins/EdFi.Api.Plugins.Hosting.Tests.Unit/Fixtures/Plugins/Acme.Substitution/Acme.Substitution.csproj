@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <!--
+        Ships an older copy of an assembly the host carries, and does not touch it until asked. The
+        host serves its own copy when the plugin first needs one, which is what a substitution record
+        is: a resolution that happened, not a prediction that one might.
+    -->
+    <PropertyGroup>
+        <AssemblyName>Acme.Substitution</AssemblyName>
+        <RootNamespace>Acme.Substitution</RootNamespace>
+    </PropertyGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\..\..\..\EdFi.Api.Plugins\EdFi.Api.Plugins.csproj" />
+        <ProjectReference Include="..\..\Support\AcmeHostShared0\Acme.HostShared.v0.csproj" />
+    </ItemGroup>
+</Project>

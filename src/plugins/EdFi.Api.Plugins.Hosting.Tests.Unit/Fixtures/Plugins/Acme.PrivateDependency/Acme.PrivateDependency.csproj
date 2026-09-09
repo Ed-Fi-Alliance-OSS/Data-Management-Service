@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <!--
+        Ships a dependency the host does not carry, which is the ordinary case host-first resolution
+        leaves alone: the plugin gets its own copy because the host has nothing to prefer. It is also
+        the only fixture that references an assembly a caller could name as a contract and the host
+        could not resolve.
+    -->
+    <PropertyGroup>
+        <AssemblyName>Acme.PrivateDependency</AssemblyName>
+        <RootNamespace>Acme.PrivateDependency</RootNamespace>
+    </PropertyGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\..\..\..\EdFi.Api.Plugins\EdFi.Api.Plugins.csproj" />
+        <ProjectReference Include="..\..\Support\AcmePrivate\Acme.Private.csproj" />
+    </ItemGroup>
+</Project>

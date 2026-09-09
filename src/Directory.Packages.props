@@ -42,6 +42,10 @@
     <PackageVersion Include="OpenIddict.Validation.AspNetCore" Version="7.0.0" />
     <PackageVersion Include="OpenIddict.Validation.SystemNetHttp" Version="7.0.0" />
     <PackageVersion Include="Snapshooter.NUnit" Version="1.0.1" />
+    <!-- Test-only, and referenced only by a plugin loader fixture: it ships a native library for
+         every runtime identifier that suite runs on, which is what lets the fixture resolve and
+         call one through a plugin's own load context. No production project references it. -->
+    <PackageVersion Include="SQLitePCLRaw.lib.e_sqlite3" Version="3.53.3" />
     <PackageVersion Include="System.CommandLine" Version="2.0.0-rc.1.25451.107" />
     <PackageVersion Include="System.IdentityModel.Tokens.Jwt" Version="8.12.0" />
     <PackageVersion Include="Microsoft.CodeAnalysis" Version="4.12.0" />

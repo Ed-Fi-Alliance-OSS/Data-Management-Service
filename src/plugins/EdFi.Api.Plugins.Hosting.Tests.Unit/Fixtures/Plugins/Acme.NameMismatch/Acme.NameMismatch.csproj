@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <!--
+        A plugin whose Name disagrees with its directory. The name an operator writes in the
+        allowlist and the name that appears in diagnostics have to be one string.
+    -->
+    <PropertyGroup>
+        <AssemblyName>Acme.NameMismatch</AssemblyName>
+        <RootNamespace>Acme.NameMismatch</RootNamespace>
+    </PropertyGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\..\..\..\EdFi.Api.Plugins\EdFi.Api.Plugins.csproj" />
+    </ItemGroup>
+</Project>

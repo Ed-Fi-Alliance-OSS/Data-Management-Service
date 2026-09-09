@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <!--
+        The most ordinary plugin there is: it reads configuration and binds options. That is what makes
+        it the regression test for the IChangeToken split, because a framework-dependent publish of a
+        project referencing these two packages emits its own copies of Microsoft.Extensions.Options,
+        Microsoft.Extensions.Configuration, Microsoft.Extensions.Configuration.Binder and
+        Microsoft.Extensions.Primitives, and only the two Abstractions assemblies appear in the hook
+        signature. Primitives holds IChangeToken, so unifying the signature assemblies while isolating
+        the rest splits IChangeToken across an interface the host calls.
+
+        Under host-first every one of those is served from the host, so nothing is split and the options
+        bind. The enumerated-set control that fails on this same fixture lives in the test assembly, not
+        here and not in the loader.
+    -->
+    <PropertyGroup>
+        <AssemblyName>Acme.Options</AssemblyName>
+        <RootNamespace>Acme.Options</RootNamespace>
+    </PropertyGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\..\..\..\EdFi.Api.Plugins\EdFi.Api.Plugins.csproj" />
+        <PackageReference Include="Microsoft.Extensions.Configuration" />
+        <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" />
+    </ItemGroup>
+</Project>

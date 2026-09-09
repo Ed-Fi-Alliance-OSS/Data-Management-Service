@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <!--
+        Ships a native library, which is the case the managed Load override never reaches: nothing in
+        it resolves an unmanaged dependency, so the context has to answer for those separately. The
+        library is SQLite because it is tiny, published for every runtime identifier this suite runs
+        on including Alpine's musl one, and exposes an entry point that takes no arguments and touches
+        no state, so the fixture can genuinely call into it rather than merely resolve it.
+
+        Published for a runtime identifier, so like the other runtime-specific fixtures it references
+        the built contract assembly by path rather than by project: a runtime-specific publish would
+        otherwise rewrite the contract's committed lock file.
+    -->
+    <PropertyGroup>
+        <AssemblyName>Acme.Native</AssemblyName>
+        <RootNamespace>Acme.Native</RootNamespace>
+        <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
+    </PropertyGroup>
+    <ItemGroup>
+        <Reference Include="EdFi.Api.Plugins">
+            <HintPath>$(PluginContractAssemblyPath)</HintPath>
+            <Private>true</Private>
+        </Reference>
+        <PackageReference Include="SQLitePCLRaw.lib.e_sqlite3" />
+    </ItemGroup>
+</Project>
