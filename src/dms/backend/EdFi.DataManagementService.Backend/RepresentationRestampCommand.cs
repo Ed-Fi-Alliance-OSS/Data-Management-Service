@@ -327,10 +327,6 @@ internal sealed class RepresentationRestampCommand(
                             }
                             catch (RepresentationRestampValidationException exception)
                             {
-                                _knownOperation = operation with
-                                {
-                                    State = DocumentCacheRepresentationRestampOperationState.Incomplete,
-                                };
                                 return PageTransaction.Failed(Failure(context, exception));
                             }
                         },

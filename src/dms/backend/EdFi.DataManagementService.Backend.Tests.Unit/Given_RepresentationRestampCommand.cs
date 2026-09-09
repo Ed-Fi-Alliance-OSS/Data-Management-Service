@@ -338,7 +338,7 @@ public class Given_RepresentationRestampCommand
     }
 
     [Test]
-    public async Task It_maps_execute_mirror_validation_failures_to_the_typed_restamp_classification()
+    public async Task It_maps_execute_mirror_validation_failures_to_the_typed_restamp_classification_without_fabricating_progress_state()
     {
         Harness harness = CreateHarness();
         Guid operationId = Guid.NewGuid();
@@ -383,7 +383,13 @@ public class Given_RepresentationRestampCommand
         result
             .Classification.Should()
             .Be(DocumentCacheAdministrativeCommandClassification.InvalidRepresentationRestampMirror);
-        AssertIncompleteRestampResult(result, operationId, committedDocumentCount: 0, remaining: null);
+        AssertIncompleteRestampResult(
+            result,
+            operationId,
+            committedDocumentCount: 0,
+            remaining: null,
+            expectedState: DocumentCacheRepresentationRestampOperationState.Draft
+        );
         A.CallTo(() =>
                 harness.Store.UpdateProgressAsync(
                     A<IRelationalWriteSession>._,
@@ -910,14 +916,14 @@ public class Given_RepresentationRestampCommand
         Guid operationId,
         long committedDocumentCount,
         long? remaining,
-        long previewDocumentCount = 1
+        long previewDocumentCount = 1,
+        DocumentCacheRepresentationRestampOperationState expectedState =
+            DocumentCacheRepresentationRestampOperationState.Incomplete
     )
     {
         result.RepresentationRestampResult.Should().NotBeNull();
         result.RepresentationRestampResult!.OperationId.Should().Be(operationId);
-        result
-            .RepresentationRestampResult.State.Should()
-            .Be(DocumentCacheRepresentationRestampOperationState.Incomplete);
+        result.RepresentationRestampResult.State.Should().Be(expectedState);
         result.RepresentationRestampResult.PreRestampBoundary.Should().Be(41);
         result.RepresentationRestampResult.PreviewDocumentCount.Should().Be(previewDocumentCount);
         result.RepresentationRestampResult.CommittedDocumentCount.Should().Be(committedDocumentCount);
