@@ -115,7 +115,11 @@ public sealed partial class CdcKafkaAdminAdapter
         _ownsClient = ownsClient;
         _brokerSizes = brokerSizes;
         ListOffsets = (specs, options) => client.ListOffsetsAsync(specs, options);
+        DescribeCluster = options => client.DescribeClusterAsync(options);
     }
+
+    // Like ListOffsets, this native API is exposed as an extension, not on IAdminClient.
+    internal Func<DescribeClusterOptions, Task<DescribeClusterResult>> DescribeCluster { get; init; }
 
     public static CdcTransportResult<CdcKafkaAdminAdapter> Create(
         AdminClientConfig configuration,
@@ -319,6 +323,10 @@ public sealed partial class CdcKafkaAdminAdapter
                 List<CdcKafkaAclGrant> grants = [.. authority.InheritedGrants];
                 if (enabled)
                 {
+                    // The pinned native client can surface denied DescribeAcls as an empty
+                    // successful result. Empty inventory is authoritative only with live DESCRIBE
+                    // permission on the cluster. Check both sides of the inventory read.
+                    await RequireAclInspectionPermissionAsync(request, cancellationToken);
                     // No principal/resource/allow-only filter: these hide wildcard/prefix/group/deny grants.
                     DescribeAclsResult acls = await CallAsync(
                         () =>
@@ -341,6 +349,7 @@ public sealed partial class CdcKafkaAdminAdapter
                         request,
                         cancellationToken
                     );
+                    await RequireAclInspectionPermissionAsync(request, cancellationToken);
                     grants.AddRange(acls.AclBindings.Select(MapGrant));
                 }
                 else if (
@@ -499,6 +508,29 @@ public sealed partial class CdcKafkaAdminAdapter
         return after;
     }
 
+    private async Task RequireAclInspectionPermissionAsync(
+        CdcDeploymentRequest request,
+        CancellationToken cancellationToken
+    )
+    {
+        var cluster = await CallAsync(
+            () =>
+                DescribeCluster(
+                    new() { IncludeAuthorizedOperations = true, RequestTimeout = request.Timing.CallTimeout }
+                ),
+            request,
+            cancellationToken
+        );
+        if (cluster.AuthorizedOperations is null)
+        {
+            throw new InvalidDataException();
+        }
+        if (!cluster.AuthorizedOperations.Contains(AclOperation.Describe))
+        {
+            throw new KafkaException(new Error(ErrorCode.ClusterAuthorizationFailed));
+        }
+    }
+
     private async Task<Metadata> ClusterAsync(
         CdcDeploymentRequest request,
         CancellationToken cancellationToken
@@ -528,11 +560,20 @@ public sealed partial class CdcKafkaAdminAdapter
         CancellationToken cancellationToken
     ) =>
         CallAsync(
-            () =>
-                _client.DescribeConfigsAsync(
-                    resources,
-                    new() { RequestTimeout = request.Timing.CallTimeout }
-                ),
+            async () =>
+            {
+                // librdkafka routes broker resources to that broker and accepts at most one
+                // per native request. Keep all lookups inside the same cancellable call budget.
+                var results = await Task.WhenAll(
+                    resources.Select(resource =>
+                        _client.DescribeConfigsAsync(
+                            [resource],
+                            new() { RequestTimeout = request.Timing.CallTimeout }
+                        )
+                    )
+                );
+                return results.SelectMany(result => result).ToList();
+            },
             request,
             cancellationToken
         );
@@ -574,7 +615,14 @@ public sealed partial class CdcKafkaAdminAdapter
     {
         CdcKafkaAclGrant grant = new(
             binding.Entry.Principal,
-            ParseEnum<CdcKafkaAclResourceType>(binding.Pattern.Type.ToString()),
+            binding.Pattern.Type switch
+            {
+                // Confluent 2.6 shares this enum with configuration resources: its Broker
+                // value is the ACL protocol's CLUSTER resource, not an individual broker.
+                ResourceType.Broker => CdcKafkaAclResourceType.Cluster,
+                (ResourceType)5 => CdcKafkaAclResourceType.TransactionalId,
+                _ => ParseEnum<CdcKafkaAclResourceType>(binding.Pattern.Type.ToString()),
+            },
             binding.Pattern.Name,
             ParseEnum<CdcKafkaAclOperation>(binding.Entry.Operation.ToString()),
             ParseEnum<CdcKafkaAclPattern>(binding.Pattern.ResourcePatternType.ToString()),
@@ -605,7 +653,12 @@ public sealed partial class CdcKafkaAdminAdapter
         {
             Pattern = new()
             {
-                Type = ParseEnum<ResourceType>(grant.ResourceType.ToString()),
+                Type = grant.ResourceType switch
+                {
+                    CdcKafkaAclResourceType.Cluster => ResourceType.Broker,
+                    CdcKafkaAclResourceType.TransactionalId => (ResourceType)5,
+                    _ => ParseEnum<ResourceType>(grant.ResourceType.ToString()),
+                },
                 Name = grant.ResourceName,
                 ResourcePatternType = ResourcePatternType.Literal,
             },

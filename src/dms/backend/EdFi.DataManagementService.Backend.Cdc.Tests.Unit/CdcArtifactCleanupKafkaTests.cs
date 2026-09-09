@@ -46,7 +46,11 @@ public class Given_CdcArtifactCleanupKafka(CdcProvider provider)
         _plan = CdcDeploymentKafkaPolicy.Build(_scope.Request);
         _client = A.Fake<IAdminClient>(options => options.Strict());
         _authorization = A.Fake<ICdcKafkaAuthorizationInspection>();
-        _adapter = new(_client, _authorization);
+        _adapter = new(_client, _authorization)
+        {
+            DescribeCluster = _ =>
+                Task.FromResult(new DescribeClusterResult { AuthorizedOperations = [AclOperation.Describe] }),
+        };
         _topics = _plan
             .BindingTopics.Append(_plan.OffsetStore)
             .Select(topic => topic.Name)

@@ -20,7 +20,11 @@ public partial class Given_CdcKafkaAdminAdapter
     {
         var desired = CdcRecordSizeRollout.WithPolicy(_request, 134_217_728, 134_217_728);
         var deployment = A.Fake<ICdcKafkaBrokerSizeDeployment>();
-        _adapter = new(_client, _authorization, brokerSizes: deployment);
+        _adapter = new(_client, _authorization, brokerSizes: deployment)
+        {
+            DescribeCluster = _ =>
+                Task.FromResult(new DescribeClusterResult { AuthorizedOperations = [AclOperation.Describe] }),
+        };
         var preservedMessage = _brokerConfig["message.max.bytes"].Value;
         _brokerConfig["socket.request.max.bytes"].Value = "200000000";
         A.CallTo(() =>

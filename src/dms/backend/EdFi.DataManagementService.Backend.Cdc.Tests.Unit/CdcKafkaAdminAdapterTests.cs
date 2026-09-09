@@ -42,7 +42,11 @@ public partial class Given_CdcKafkaAdminAdapter
         _client = A.Fake<IAdminClient>(options => options.Strict());
         A.CallTo(() => _client.Dispose()).DoesNothing();
         _authorization = A.Fake<ICdcKafkaAuthorizationInspection>();
-        _adapter = new(_client, _authorization);
+        _adapter = new(_client, _authorization)
+        {
+            DescribeCluster = _ =>
+                Task.FromResult(new DescribeClusterResult { AuthorizedOperations = [AclOperation.Describe] }),
+        };
         _metadata = MetadataFor(_plan.BindingTopics[0]);
         _topicConfig = _plan
             .BindingTopics[0]
@@ -246,6 +250,17 @@ public partial class Given_CdcKafkaAdminAdapter
     public async Task It_observes_every_broker_and_all_capacity_limits()
     {
         _metadata.Brokers.Add(new(1, "another-private-broker", 9092));
+        // The native client routes these requests to a specific broker; its contract rejects
+        // a batch containing more than one broker even when the simulated response could supply it.
+        A.CallTo(() =>
+                _client.DescribeConfigsAsync(
+                    A<IEnumerable<ConfigResource>>.That.Matches(resources =>
+                        resources.Count(resource => resource.Type == ResourceType.Broker) > 1
+                    ),
+                    A<DescribeConfigsOptions>._
+                )
+            )
+            .Throws(new KafkaException(new Error(ErrorCode.Local_InvalidArg)));
         CdcKafkaBrokerEvidence evidence = Observed(
             await _adapter.InspectBrokersAsync(_request, CancellationToken.None)
         );
@@ -374,6 +389,90 @@ public partial class Given_CdcKafkaAdminAdapter
             CancellationToken.None
         );
         Observed(evidence).Grants.Should().Contain(grant);
+        CdcDeploymentKafkaPolicy.ValidateAcls(_request, evidence, false).UnsafeGrants.Should().BeTrue();
+    }
+
+    [TestCase("denied")]
+    [TestCase("unsupported")]
+    [TestCase("revoked-during-read")]
+    public async Task It_requires_live_cluster_describe_permission_around_acl_inventory(string scenario)
+    {
+        int inspections = 0;
+        _adapter.Dispose();
+        _adapter = new(_client, _authorization)
+        {
+            DescribeCluster = options =>
+            {
+                options.IncludeAuthorizedOperations.Should().BeTrue();
+                options.RequestTimeout.Should().Be(_request.Timing.CallTimeout);
+                inspections++;
+                return Task.FromResult(
+                    new DescribeClusterResult
+                    {
+                        AuthorizedOperations = scenario switch
+                        {
+                            "unsupported" => null!,
+                            "revoked-during-read" when inspections == 1 => [AclOperation.Describe],
+                            _ => [],
+                        },
+                    }
+                );
+            },
+        };
+        // A successful empty native response must not hide unavailable/denied inspection.
+        _grants.Clear();
+        var result = await _adapter.InspectAclsAsync(_request, CancellationToken.None);
+        result.State.Should().Be(CdcTransportEvidenceState.Unavailable);
+        CdcDeploymentKafkaPolicy.ValidateAcls(_request, result, false).State.Should().Be(ItemState.Unknown);
+        result
+            .Diagnostics.Single()
+            .Failure.Should()
+            .Be(
+                scenario == "unsupported"
+                    ? CdcDeploymentFailure.Unavailable
+                    : CdcDeploymentFailure.AuthenticationFailed
+            );
+    }
+
+    [Test]
+    public async Task It_accepts_empty_acl_inventory_when_live_inspection_permission_is_confirmed()
+    {
+        _grants.Clear();
+        var result = await _adapter.InspectAclsAsync(_request, CancellationToken.None);
+        Observed(result).Grants.Should().BeEmpty();
+        CdcDeploymentKafkaPolicy.ValidateAcls(_request, result, false).CanAddMissingGrants.Should().BeTrue();
+    }
+
+    [TestCase(4, CdcKafkaAclResourceType.Cluster)]
+    [TestCase(5, CdcKafkaAclResourceType.TransactionalId)]
+    public async Task It_maps_acl_wire_resource_types_missing_from_the_client_enum(
+        int wireType,
+        CdcKafkaAclResourceType resourceType
+    )
+    {
+        var principal = _request.WorkerPolicy.Consumers[0].Principal.Value;
+        _grants.Add(
+            new()
+            {
+                Pattern = new()
+                {
+                    Type = (ResourceType)wireType,
+                    Name = resourceType == CdcKafkaAclResourceType.Cluster ? "kafka-cluster" : "transaction",
+                    ResourcePatternType = ResourcePatternType.Literal,
+                },
+                Entry = new()
+                {
+                    Principal = principal,
+                    Host = "*",
+                    Operation = AclOperation.Alter,
+                    PermissionType = AclPermissionType.Allow,
+                },
+            }
+        );
+        var evidence = await _adapter.InspectAclsAsync(_request, CancellationToken.None);
+        Observed(evidence)
+            .Grants.Should()
+            .Contain(grant => grant.Principal == principal && grant.ResourceType == resourceType);
         CdcDeploymentKafkaPolicy.ValidateAcls(_request, evidence, false).UnsafeGrants.Should().BeTrue();
     }
 
