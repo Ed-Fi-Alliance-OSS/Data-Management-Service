@@ -6,13 +6,13 @@
 namespace EdFi.DataManagementService.Backend.External;
 
 /// <summary>
-/// Sanitizes strings for safe logging in backend components. Uses a whitelist approach
+/// Sanitizes strings for safe logging in backend components. Uses an allowlist approach
 /// to prevent log injection and log forging attacks.
 /// </summary>
 public static class LogSanitizer
 {
     /// <summary>
-    /// Sanitizes a string for safe logging by allowing only safe characters.
+    /// Sanitizes a string for safe logging with a strict allowlist of safe characters.
     /// Allows: letters, digits, spaces, and safe punctuation (_-.:/\)
     /// </summary>
     public static string SanitizeForLog(string? input)
@@ -22,9 +22,9 @@ public static class LogSanitizer
             return string.Empty;
         }
 
-        // Behaviorally redundant with the whitelist below, which also rejects every
+        // Behaviorally redundant with the allowlist below, which also rejects every
         // line-ending character. Kept because static log-injection analysis (CodeQL)
-        // models ReplaceLineEndings as a sanitizer but not the custom whitelist loop.
+        // models ReplaceLineEndings as a sanitizer but not the custom allowlist loop.
         input = input.ReplaceLineEndings(string.Empty);
 
         // First pass: check if sanitization is needed and count safe characters

@@ -20,14 +20,18 @@ public static class CorrelationIdNormalizer
     /// Truncates to <paramref name="maxLength"/> and then removes every control character,
     /// plus LINE SEPARATOR (U+2028) and PARAGRAPH SEPARATOR (U+2029), which are not control
     /// characters but break a line-oriented log consumer the same way. Every other character
-    /// is preserved.
+    /// is preserved. If truncation would split a surrogate pair, the orphaned high half is
+    /// dropped as well, so the result is always well-formed UTF-16.
     /// </summary>
     /// <remarks>
     /// The order is deliberate and must not be swapped: truncating first means a long hostile
     /// value retains less trailing content than filtering first would, and it matches the order
     /// the request-logging middleware has always used. A consequence is that a value which is
     /// both over-length and contains control characters yields a result <em>shorter</em> than
-    /// <paramref name="maxLength"/>; that is intended, not a defect to compensate for.
+    /// <paramref name="maxLength"/>; that is intended, not a defect to compensate for. The
+    /// surrogate-pair guard has the same effect for a value with no disallowed characters at
+    /// all: an over-length value cut between the halves of a pair yields
+    /// <paramref name="maxLength"/> - 1 characters.
     ///
     /// A value that violates the allowlist or the length cap is adjusted, never rejected, so a
     /// request still succeeds or fails on its own merits rather than on the shape of an
@@ -42,9 +46,11 @@ public static class CorrelationIdNormalizer
     /// misconfigured host still gets a bounded identifier.
     /// </param>
     /// <returns>
-    /// The normalized correlation ID: no control characters, no longer than the effective
-    /// maximum length, and never null. An input that is null, empty, or made up entirely of
-    /// control characters yields an empty string.
+    /// The normalized correlation ID: no control characters, no U+2028 or U+2029, well-formed
+    /// UTF-16, no longer than the effective maximum length, and never null. The result is an
+    /// empty string when the input is null, empty, or made up entirely of removed characters -
+    /// and also when the input's retained prefix is empty, as for a single astral character
+    /// truncated to a maximum length of 1.
     /// </returns>
     public static string Normalize(string? value, int maxLength)
     {

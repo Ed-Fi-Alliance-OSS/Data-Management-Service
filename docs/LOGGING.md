@@ -238,6 +238,11 @@ reads from a failed request is therefore always the ID to search for in the logs
 The value is normalized once, where the request first supplies it, so no
 individual response path can drift from the logged value.
 
+A client-supplied header whose value normalizes to empty — one made up only of
+control characters, such as a lone horizontal tab — is treated the same as a
+header sent empty or omitted: the server-generated trace identifier is used, so
+a client cannot blank the operational identifier.
+
 A correlation ID that the allowlist or the length cap alters is normalized, not
 rejected — the request still succeeds or fails on its own merits rather than on
 the shape of an operational identifier. A value altered by normalization no

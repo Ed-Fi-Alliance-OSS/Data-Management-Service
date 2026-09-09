@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Security.Claims;
@@ -67,6 +66,21 @@ public class Given_A_Hostile_Correlation_Id_On_Requests_That_Fail_In_Different_L
     /// allowlist would remove, so normalization leaves it alone.
     /// </summary>
     private const string CleanCorrelationId = "clean-correlation-id";
+
+    /// <summary>
+    /// One request-completion log event carrying a TraceId per request sent on the
+    /// rate-limited factory: the permitted /health request and the rejected one. Asserting the
+    /// count, rather than non-emptiness, is what proves the *rejected* request logged.
+    /// </summary>
+    private const int RateLimitedArmLoggedEventCount = 2;
+
+    /// <summary>
+    /// Every request sent before the snapshot in Setup: the 404, the 401 and the 403 on the
+    /// main factory, plus the two rate-limited ones. Adding a hostile-arm request without
+    /// updating this fails here, which is what keeps the snapshot's ordering invariant real
+    /// instead of comment-enforced.
+    /// </summary>
+    private const int HostileArmLoggedEventCount = 3 + RateLimitedArmLoggedEventCount;
 
     private CorrelationIdRecordingLoggerProvider _loggerProvider = default!;
     private CorrelationIdRecordingLoggerProvider _rateLimitedLoggerProvider = default!;
@@ -252,7 +266,13 @@ public class Given_A_Hostile_Correlation_Id_On_Requests_That_Fail_In_Different_L
         // for. Includes the rate-limited pipeline, whose log events are captured by their own
         // recording provider so a regression in the 429 writer cannot hide behind a
         // body-only assertion.
-        _loggedTraceIds.Should().NotBeEmpty();
+        //
+        // The count is asserted, not merely non-emptiness, because the snapshot at the end of
+        // the hostile arm is what keeps this collection homogeneous: a fifth hostile-arm
+        // request added after that snapshot would go entirely unchecked here while the fixture
+        // stayed green. HostileArmLoggedEventCount makes that ordering invariant self-enforcing
+        // rather than comment-enforced.
+        _loggedTraceIds.Should().HaveCount(HostileArmLoggedEventCount);
         _loggedTraceIds.Should().OnlyContain(traceId => traceId == ExpectedCorrelationId);
     }
 
@@ -262,7 +282,9 @@ public class Given_A_Hostile_Correlation_Id_On_Requests_That_Fail_In_Different_L
         // The log arm of 429 parity is only real if the rate-limited pipeline's own events
         // were captured. This pins that wiring so the 429 case cannot quietly regress to a
         // body-only assertion by someone dropping the recording provider from that factory.
-        _rateLimitedLoggedTraceIds.Should().NotBeEmpty();
+        // The count is what makes it prove the *rejected* request logged too: non-emptiness
+        // alone was satisfied by the permitted request on its own.
+        _rateLimitedLoggedTraceIds.Should().HaveCount(RateLimitedArmLoggedEventCount);
     }
 
     [Test]
@@ -460,57 +482,5 @@ public class Given_An_Unmatched_Route_And_No_Configured_Correlation_Header
         // its log line. The framework's identifier format is deliberately not asserted.
         _loggedTraceIds.Should().NotBeEmpty();
         _loggedTraceIds.Should().OnlyContain(traceId => traceId == _body["correlationId"]!.ToString());
-    }
-}
-
-/// <summary>
-/// Captures the TraceId that LoggingMiddleware writes into its request log events, which
-/// is the value an operator would search the logs for.
-/// </summary>
-internal sealed class CorrelationIdRecordingLoggerProvider : ILoggerProvider
-{
-    private readonly ConcurrentQueue<string> _traceIds = new();
-
-    public string[] LoggedTraceIds => [.. _traceIds];
-
-    public ILogger CreateLogger(string categoryName) => new RecordingLogger(_traceIds);
-
-    public void Dispose() { }
-
-    private sealed class RecordingLogger(ConcurrentQueue<string> traceIds) : ILogger
-    {
-        public IDisposable BeginScope<TState>(TState state)
-            where TState : notnull => NullScope.Instance;
-
-        public bool IsEnabled(LogLevel logLevel) => true;
-
-        public void Log<TState>(
-            LogLevel logLevel,
-            EventId eventId,
-            TState state,
-            Exception? exception,
-            Func<TState, Exception?, string> formatter
-        )
-        {
-            if (state is not IReadOnlyList<KeyValuePair<string, object?>> values)
-            {
-                return;
-            }
-
-            foreach (KeyValuePair<string, object?> value in values)
-            {
-                if (value.Key == "TraceId" && value.Value is string traceId)
-                {
-                    traceIds.Enqueue(traceId);
-                }
-            }
-        }
-    }
-
-    private sealed class NullScope : IDisposable
-    {
-        public static readonly NullScope Instance = new();
-
-        public void Dispose() { }
     }
 }

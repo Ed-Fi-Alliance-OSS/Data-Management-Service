@@ -17,7 +17,6 @@ public class LoggingMiddleware
 {
     private readonly RequestDelegate _next;
     private readonly IOptions<AppSettings> _appSettings;
-    private readonly int _correlationIdMaxLength;
     private const string ApplicationName = "EdFi.DataManagementService";
     private const string RequestLayer = "Frontend";
 
@@ -25,17 +24,6 @@ public class LoggingMiddleware
     {
         _next = next ?? throw new ArgumentNullException(nameof(next));
         _appSettings = appSettings ?? throw new ArgumentNullException(nameof(appSettings));
-        try
-        {
-            // Passed straight to CorrelationIdNormalizer.Normalize, which owns the
-            // non-positive-length fallback policy, so it is deliberately not re-applied here.
-            _correlationIdMaxLength = appSettings.Value.CorrelationIdMaxLength;
-        }
-        catch (OptionsValidationException)
-        {
-            // Configuration is unreadable, so there is no configured length to pass along.
-            _correlationIdMaxLength = AppSettings.DefaultCorrelationIdMaxLength;
-        }
     }
 
     public async Task Invoke(HttpContext context, ILogger<LoggingMiddleware> logger)
@@ -216,10 +204,15 @@ public class LoggingMiddleware
         }
         catch (OptionsValidationException)
         {
-            // Configuration is unreadable, so the client-supplied header cannot be honored.
-            // The server-generated identifier still goes through the same normalization, so
-            // this path cannot emit a differently-shaped value than any other.
-            return CorrelationIdNormalizer.Normalize(context.TraceIdentifier, _correlationIdMaxLength);
+            // Configuration is unreadable, so the client-supplied header cannot be honored and
+            // there is no validated CorrelationIdMaxLength to read - AppSettings validation is
+            // what just failed. The documented default stands in, and the server-generated
+            // identifier still goes through the same normalization, so this path cannot emit a
+            // differently-shaped value than any other.
+            return CorrelationIdNormalizer.Normalize(
+                context.TraceIdentifier,
+                AppSettings.DefaultCorrelationIdMaxLength
+            );
         }
     }
 
