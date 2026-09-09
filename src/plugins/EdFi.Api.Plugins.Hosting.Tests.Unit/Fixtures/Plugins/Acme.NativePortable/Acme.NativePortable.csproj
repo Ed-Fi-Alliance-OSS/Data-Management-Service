@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <!--
+        The same native library as Acme.Native, published portable rather than for a runtime
+        identifier. A portable publish leaves native assets under runtimes/, and its manifest
+        declares them as runtimeTargets rows that the resolver matches against the running runtime
+        identifier. That is the layout the unmanaged override exists for: a copy flattened beside the
+        entry assembly is found by the runtime's own probing whether the override is there or not, so
+        only this layout can show that the override is what resolves it.
+
+        The package ships natives for forty-odd identifiers, eighty megabytes in all. The staging
+        target publishes this one to the intermediate output and stages the top level plus the
+        running identifier's runtimes subtree, so the manifest is a real portable manifest declaring
+        every identifier while the staged tree carries only the one this process can use. The rest
+        become absent inventory rows, which is a truthful description of the directory.
+    -->
+    <PropertyGroup>
+        <AssemblyName>Acme.NativePortable</AssemblyName>
+        <RootNamespace>Acme.NativePortable</RootNamespace>
+    </PropertyGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\..\..\..\EdFi.Api.Plugins\EdFi.Api.Plugins.csproj" />
+        <PackageReference Include="SQLitePCLRaw.lib.e_sqlite3" />
+    </ItemGroup>
+</Project>

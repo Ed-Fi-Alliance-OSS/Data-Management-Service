@@ -64,6 +64,9 @@ internal static class PluginFixtures
     /// <summary>Ships an older copy of an assembly the host carries.</summary>
     internal const string Substitution = "Acme.Substitution";
 
+    /// <summary>Ships a native library under runtimes/, where only the override finds it.</summary>
+    internal const string NativePortable = "Acme.NativePortable";
+
     /// <summary>Ships a native library and calls into it.</summary>
     internal const string Native = "Acme.Native";
 
@@ -104,6 +107,7 @@ internal static class PluginFixtures
         CtorSignatureSkew,
         CtorSignatureMissing,
         Native,
+        NativePortable,
         Substitution,
     ];
 
@@ -112,11 +116,20 @@ internal static class PluginFixtures
     /// excluded because only its entry assembly and manifest are staged, deliberately.
     /// </summary>
     internal static IReadOnlyList<string> FullyStaged { get; } =
-        All.Where(name => name != SelfContained).ToArray();
+        All.Where(name => name != SelfContained && name != NativePortable).ToArray();
 
     internal static string DirectoryOf(string name) => Path.Combine(Root, name);
 
     internal static string EntryAssemblyOf(string name) => Path.Combine(DirectoryOf(name), $"{name}.dll");
+
+    /// <summary>The fresh-process probe the native assertions run.</summary>
+    internal static string NativeProbeHost { get; } =
+        Path.Combine(
+            AppContext.BaseDirectory,
+            "FixtureHosts",
+            "PluginNativeProbeHost",
+            "PluginNativeProbeHost.dll"
+        );
 
     internal static string ManifestOf(string name) => Path.Combine(DirectoryOf(name), $"{name}.deps.json");
 }

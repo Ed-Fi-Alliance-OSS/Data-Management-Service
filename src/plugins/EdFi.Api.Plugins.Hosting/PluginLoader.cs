@@ -575,17 +575,34 @@ public static class PluginLoader
     /// The version the manifest declares for each simple assembly name, for the substitution record.
     /// </summary>
     /// <remarks>
-    /// A manifest can declare one simple name more than once, as a top-level runtime entry and again as
-    /// a RID-specific row. Those agree in every publish measured here; where they did not, the first
+    /// <para>
+    /// Read from every managed declaration the manifest makes, and deliberately not from the skew
+    /// preflight's set. The preflight reads top-level <c>runtime</c> entries only, which is a policy
+    /// about what to refuse and is documented as such. The record is a different question: it says what
+    /// the plugin declared for an assembly the host actually served, and an assembly declared only in a
+    /// RID-specific row is declared just as much as one declared at the top level. Narrowing the
+    /// record's source to the preflight's would report no declaration for a version the manifest plainly
+    /// states.
+    /// </para>
+    /// <para>
+    /// A manifest can declare one simple name more than once, as a top-level entry and again as a
+    /// RID-specific row. Those agree in every publish measured here; where they did not, the first
     /// declaration wins and the record still says what a declaration said rather than inventing one.
+    /// </para>
     /// </remarks>
     private static IReadOnlyDictionary<string, Version> DeclaredVersionsOf(PluginDepsManifest manifest)
     {
         Dictionary<string, Version> declared = new(StringComparer.Ordinal);
 
-        foreach (PluginDeclaredAssembly assembly in manifest.DeclaredAssemblies)
+        foreach (PluginDeclaredAsset asset in manifest.DeclaredAssets)
         {
-            declared.TryAdd(assembly.SimpleName, assembly.DeclaredVersion);
+            // A native asset has no version to declare, and nothing resolves one by assembly name.
+            if (asset.Kind == PluginFileKind.Native || asset.DeclaredVersion is not { } version)
+            {
+                continue;
+            }
+
+            declared.TryAdd(Path.GetFileNameWithoutExtension(asset.DeclaredPath), version);
         }
 
         return declared;

@@ -134,6 +134,96 @@ internal sealed class TemporaryPluginRoot : IDisposable
         );
     }
 
+    /// <summary>
+    /// Moves a declared managed dependency out of the top-level <c>runtime</c> section and into a
+    /// <c>runtimeTargets</c> row, with the version given.
+    /// </summary>
+    /// <remarks>
+    /// This is the shape a package with runtime-identifier-specific managed assets produces, and it is
+    /// the one the skew preflight deliberately does not read. The record of what the host served is a
+    /// different question from what to refuse, so a declaration made only here still has to reach it.
+    /// </remarks>
+    internal void MoveDeclarationToRuntimeTargets(string pluginName, string simpleName, string version)
+    {
+        JsonNode manifest = JsonNode.Parse(File.ReadAllText(ManifestPathOf(pluginName)))!;
+        string targetName = manifest["runtimeTarget"]!["name"]!.GetValue<string>();
+
+        foreach (KeyValuePair<string, JsonNode?> library in manifest["targets"]![targetName]!.AsObject())
+        {
+            if (library.Value is not JsonObject entry || entry["runtime"] is not JsonObject runtime)
+            {
+                continue;
+            }
+
+            string? declaredPath = runtime
+                .Select(asset => asset.Key)
+                .FirstOrDefault(path =>
+                    Path.GetFileNameWithoutExtension(path).Equals(simpleName, StringComparison.Ordinal)
+                );
+
+            if (declaredPath is null)
+            {
+                continue;
+            }
+
+            runtime.Remove(declaredPath);
+
+            if (runtime.Count == 0)
+            {
+                entry.Remove("runtime");
+            }
+
+            entry["runtimeTargets"] = new JsonObject
+            {
+                [declaredPath] = new JsonObject
+                {
+                    ["rid"] = "any",
+                    ["assetType"] = "runtime",
+                    ["assemblyVersion"] = version,
+                    ["fileVersion"] = version,
+                },
+            };
+
+            WriteManifest(pluginName, manifest.ToJsonString());
+            return;
+        }
+
+        throw new AssertionException(
+            $"Fixture '{pluginName}' declares no runtime asset named '{simpleName}'."
+        );
+    }
+
+    /// <summary>Sets the declared version of one managed dependency, wherever it is declared.</summary>
+    internal void SetDeclaredVersion(string pluginName, string simpleName, string version)
+    {
+        JsonNode manifest = JsonNode.Parse(File.ReadAllText(ManifestPathOf(pluginName)))!;
+        string targetName = manifest["runtimeTarget"]!["name"]!.GetValue<string>();
+
+        foreach (KeyValuePair<string, JsonNode?> library in manifest["targets"]![targetName]!.AsObject())
+        {
+            if (library.Value?["runtime"] is not JsonObject runtime)
+            {
+                continue;
+            }
+
+            foreach (KeyValuePair<string, JsonNode?> asset in runtime)
+            {
+                if (
+                    Path.GetFileNameWithoutExtension(asset.Key).Equals(simpleName, StringComparison.Ordinal)
+                    && asset.Value is JsonObject declaration
+                    && declaration.ContainsKey("assemblyVersion")
+                )
+                {
+                    declaration["assemblyVersion"] = version;
+                    WriteManifest(pluginName, manifest.ToJsonString());
+                    return;
+                }
+            }
+        }
+
+        throw new AssertionException($"Fixture '{pluginName}' declares no version for '{simpleName}'.");
+    }
+
     /// <summary>Writes bytes that are not a managed assembly where an entry assembly belongs.</summary>
     internal string AddCorruptPlugin(string pluginName)
     {

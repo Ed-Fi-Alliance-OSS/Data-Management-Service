@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <!--
+        A process of its own, because two of the native assertions cannot be made honestly inside the
+        test host. Both platforms resolve a native module by name once it is loaded, so a sibling test
+        that has already loaded a module satisfies a later call whatever the plugin under test ships;
+        an in-process assertion would turn on test order rather than on behaviour. Each run of this
+        program starts clean.
+
+        Published portable and never for a runtime identifier: it references the loader by project, and
+        a runtime-specific publish would restore that project with a runtime identifier and rewrite its
+        committed lock file.
+    -->
+    <PropertyGroup>
+        <OutputType>Exe</OutputType>
+        <AssemblyName>PluginNativeProbeHost</AssemblyName>
+        <RootNamespace>PluginNativeProbeHost</RootNamespace>
+    </PropertyGroup>
+    <ItemGroup>
+        <ProjectReference
+            Include="..\..\..\..\EdFi.Api.Plugins.Hosting\EdFi.Api.Plugins.Hosting.csproj"
+        />
+    </ItemGroup>
+</Project>

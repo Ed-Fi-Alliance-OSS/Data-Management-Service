@@ -84,11 +84,33 @@
     </ItemGroup>
 
     <!--
+        The fresh-process probe, staged whole. It is not a plugin and never appears under the plugin
+        root a test configures; it is a program the tests run.
+    -->
+    <ItemGroup>
+        <PluginProbeHost Include="Fixtures/Hosts/PluginNativeProbeHost/PluginNativeProbeHost.csproj">
+            <StagedName>PluginNativeProbeHost</StagedName>
+        </PluginProbeHost>
+    </ItemGroup>
+
+    <!--
         Fixtures published somewhere else and staged as two files. A self-contained publish produces the
         runtimepack declaration the refusal reads and several hundred megabytes beside it, none of which
         the loader ever opens, so the publish lands in the intermediate output and only the entry
         assembly and its manifest reach the staged tree.
     -->
+    <!--
+        Published to the intermediate output and staged selectively: the top level, plus only the running
+        runtime identifier's runtimes subtree. The manifest that reaches the staged tree is a real
+        portable manifest declaring every identifier the package ships; what the staged tree does not
+        carry is the eighty megabytes of libraries for identifiers this process could never load.
+    -->
+    <ItemGroup>
+        <PluginFixturePortable Include="Fixtures/Plugins/Acme.NativePortable/Acme.NativePortable.csproj">
+            <StagedName>Acme.NativePortable</StagedName>
+        </PluginFixturePortable>
+    </ItemGroup>
+
     <ItemGroup>
         <PluginFixtureTrimmed Include="Fixtures/Plugins/Acme.SelfContained/Acme.SelfContained.csproj">
             <StagedName>Acme.SelfContained</StagedName>
@@ -152,8 +174,10 @@
             <PluginFixtureInputList>@(PluginFixtureInput->'%(Identity)@%(ModifiedTime)', '|')</PluginFixtureInputList>
             <PluginFixtureRawRoot
             >$([MSBuild]::NormalizeDirectory('$(PluginFixtureStampDir)', 'raw'))</PluginFixtureRawRoot>
+            <PluginFixtureProbeRoot
+            >$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', '$(OutDir)', 'FixtureHosts'))</PluginFixtureProbeRoot>
             <PluginFixtureFingerprintPrefix
-            >$(Configuration)+$(NETCoreSdkRuntimeIdentifier)+@(PluginFixture->'%(StagedName)', '&amp;')+@(PluginFixtureTrimmed->'%(StagedName)', '&amp;')+$([MSBuild]::StableStringHash($(PluginFixtureInputList)))</PluginFixtureFingerprintPrefix>
+            >$(Configuration)+$(NETCoreSdkRuntimeIdentifier)+@(PluginFixture->'%(StagedName)', '&amp;')+@(PluginFixtureTrimmed->'%(StagedName)', '&amp;')+@(PluginProbeHost->'%(StagedName)', '&amp;')+@(PluginFixturePortable->'%(StagedName)', '&amp;')+$([MSBuild]::StableStringHash($(PluginFixtureInputList)))</PluginFixtureFingerprintPrefix>
         </PropertyGroup>
 
         <ItemGroup Condition="Exists('$(PluginFixtureStageRoot)')">
@@ -228,7 +252,7 @@
         DependsOnTargets="PrunePluginFixtureStaging"
         Condition="'$(BuildingPluginFixtures)' != 'true' AND '$(DesignTimeBuild)' != 'true'"
         Inputs="@(PluginFixtureInput)"
-        Outputs="@(PluginFixture->'$(PluginFixtureStageRoot)%(StagedName)/%(StagedName).dll');@(PluginFixture->'$(PluginFixtureStageRoot)%(StagedName)/%(StagedName).deps.json');@(PluginFixtureTrimmed->'$(PluginFixtureStageRoot)%(StagedName)/%(StagedName).dll');@(PluginFixtureTrimmed->'$(PluginFixtureStageRoot)%(StagedName)/%(StagedName).deps.json')"
+        Outputs="@(PluginFixture->'$(PluginFixtureStageRoot)%(StagedName)/%(StagedName).dll');@(PluginFixture->'$(PluginFixtureStageRoot)%(StagedName)/%(StagedName).deps.json');@(PluginFixtureTrimmed->'$(PluginFixtureStageRoot)%(StagedName)/%(StagedName).dll');@(PluginFixtureTrimmed->'$(PluginFixtureStageRoot)%(StagedName)/%(StagedName).deps.json');@(PluginProbeHost->'$(PluginFixtureProbeRoot)%(StagedName)/%(StagedName).dll');@(PluginFixturePortable->'$(PluginFixtureStageRoot)%(StagedName)/%(StagedName).deps.json')"
     >
         <!--
             Each fixture's directory is emptied before it is published into, so that a file dropped from
@@ -236,8 +260,8 @@
             overwrites what it produces but removes nothing it no longer produces.
         -->
         <RemoveDir
-            Directories="@(PluginFixture->'$(PluginFixtureStageRoot)%(StagedName)');@(PluginFixtureTrimmed->'$(PluginFixtureStageRoot)%(StagedName)');@(PluginFixtureTrimmed->'$(PluginFixtureRawRoot)%(StagedName)')"
-            Condition="'$(PluginFixtureStageRoot)' != '' AND '$(PluginFixtureRawRoot)' != ''"
+            Directories="@(PluginFixture->'$(PluginFixtureStageRoot)%(StagedName)');@(PluginFixtureTrimmed->'$(PluginFixtureStageRoot)%(StagedName)');@(PluginFixtureTrimmed->'$(PluginFixtureRawRoot)%(StagedName)');@(PluginProbeHost->'$(PluginFixtureProbeRoot)%(StagedName)');@(PluginFixturePortable->'$(PluginFixtureStageRoot)%(StagedName)');@(PluginFixturePortable->'$(PluginFixtureRawRoot)%(StagedName)')"
+            Condition="'$(PluginFixtureStageRoot)' != '' AND '$(PluginFixtureRawRoot)' != '' AND '$(PluginFixtureProbeRoot)' != ''"
         />
 
         <PropertyGroup>
@@ -268,6 +292,40 @@
             Command="&quot;$(DOTNET_HOST_PATH)&quot; publish &quot;%(PluginFixtureTrimmed.FullPath)&quot; --configuration $(Configuration) %(PluginFixtureTrimmed.PublishArgs) --output &quot;$(PluginFixtureRawRoot)%(PluginFixtureTrimmed.StagedName)&quot; -p:BuildingPluginFixtures=true -p:PluginContractAssemblyPath=&quot;$(PluginContractAssemblyPath)&quot; --nologo --verbosity quiet"
             EnvironmentVariables="DOTNET_CLI_DO_NOT_USE_MSBUILD_SERVER=1;MSBUILDDISABLENODEREUSE=1"
             WorkingDirectory="$(MSBuildProjectDirectory)"
+        />
+
+        <Exec
+            Command="&quot;$(DOTNET_HOST_PATH)&quot; publish &quot;%(PluginProbeHost.FullPath)&quot; --configuration $(Configuration) --no-self-contained --output &quot;$(PluginFixtureProbeRoot)%(PluginProbeHost.StagedName)&quot; -p:BuildingPluginFixtures=true --nologo --verbosity quiet"
+            EnvironmentVariables="DOTNET_CLI_DO_NOT_USE_MSBUILD_SERVER=1;MSBUILDDISABLENODEREUSE=1"
+            WorkingDirectory="$(MSBuildProjectDirectory)"
+        />
+
+        <Exec
+            Command="&quot;$(DOTNET_HOST_PATH)&quot; publish &quot;%(PluginFixturePortable.FullPath)&quot; --configuration $(Configuration) --no-self-contained --output &quot;$(PluginFixtureRawRoot)%(PluginFixturePortable.StagedName)&quot; -p:BuildingPluginFixtures=true -p:PluginContractAssemblyPath=&quot;$(PluginContractAssemblyPath)&quot; --nologo --verbosity quiet"
+            EnvironmentVariables="DOTNET_CLI_DO_NOT_USE_MSBUILD_SERVER=1;MSBUILDDISABLENODEREUSE=1"
+            WorkingDirectory="$(MSBuildProjectDirectory)"
+        />
+
+        <!--
+            Literal paths rather than an item transform, because a transform does not glob: the one
+            portable fixture is named here as well as in its item above.
+        -->
+        <ItemGroup>
+            <PluginPortableTopLevelFile
+                Include="$(PluginFixtureRawRoot)Acme.NativePortable/*.*"
+            />
+            <PluginPortableRuntimeFile
+                Include="$(PluginFixtureRawRoot)Acme.NativePortable/runtimes/$(NETCoreSdkRuntimeIdentifier)/**/*.*"
+            />
+        </ItemGroup>
+
+        <Copy
+            SourceFiles="@(PluginPortableTopLevelFile)"
+            DestinationFolder="$(PluginFixtureStageRoot)Acme.NativePortable"
+        />
+        <Copy
+            SourceFiles="@(PluginPortableRuntimeFile)"
+            DestinationFiles="@(PluginPortableRuntimeFile->'$(PluginFixtureStageRoot)Acme.NativePortable/runtimes/$(NETCoreSdkRuntimeIdentifier)/%(RecursiveDir)%(Filename)%(Extension)')"
         />
 
         <Copy
