@@ -31,6 +31,12 @@ public enum PluginCompositionFailure
     /// <summary>The plugin cleared the service collection, which necessarily removes the host's own
     /// registrations.</summary>
     ServiceCollectionCleared,
+
+    /// <summary>
+    /// The plugin's contribution hook threw. The original exception travels as the inner exception,
+    /// because it is the only thing that says what the plugin was doing.
+    /// </summary>
+    ContributeServicesThrew,
 }
 
 /// <summary>

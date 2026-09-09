@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <!--
+        Touches two of its declared assemblies for the first time from inside its contribution hook: a
+        private one the host does not carry, and one the host does, declared here at a lower version so
+        host-first records a substitution when it is served.
+
+        That is what makes it the late-reading case. Both facts are false when the loader finishes and
+        true when the hook returns, so a record that froze either at load time would report the wrong
+        thing.
+    -->
+    <PropertyGroup>
+        <AssemblyName>Acme.HookTouch</AssemblyName>
+        <RootNamespace>Acme.HookTouch</RootNamespace>
+    </PropertyGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\..\..\..\EdFi.Api.Plugins\EdFi.Api.Plugins.csproj" />
+        <ProjectReference Include="..\..\Support\AcmeFixtureContracts\Acme.FixtureContracts.csproj" />
+        <ProjectReference Include="..\..\Support\AcmePrivate\Acme.Private.csproj" />
+        <ProjectReference Include="..\..\Support\AcmeHostShared0\Acme.HostShared.v0.csproj" />
+    </ItemGroup>
+</Project>

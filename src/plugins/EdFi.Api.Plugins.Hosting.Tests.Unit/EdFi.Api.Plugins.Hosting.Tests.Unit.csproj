@@ -83,6 +83,16 @@
         <ProjectReference
             Include="Fixtures\Support\FixtureHost\EdFi.DataManagementService.FixtureHost.csproj"
         />
+        <!--
+            The third, and the reason it is referenced here rather than only by the fixtures: the
+            composition cases assert on the service types a hook registered, so the test and the plugin
+            have to mean the same types. Referencing it puts it in the host, and host-first then serves
+            the plugins this copy instead of their own. It commits a lock file for the same reason as
+            the two above.
+        -->
+        <ProjectReference
+            Include="Fixtures\Support\AcmeFixtureContracts\Acme.FixtureContracts.csproj"
+        />
     </ItemGroup>
     <Import Project="PluginFixtures.targets" />
 </Project>
