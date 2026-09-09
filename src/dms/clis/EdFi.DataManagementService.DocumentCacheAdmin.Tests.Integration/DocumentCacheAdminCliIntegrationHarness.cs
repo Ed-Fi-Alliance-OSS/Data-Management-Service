@@ -171,6 +171,19 @@ internal sealed class DocumentCacheAdminCliTarget : IAsyncDisposable
         );
     }
 
+    // The caller owns creation and disposal; used by packaged managed-provisioning qualification.
+    public static DocumentCacheAdminCliTarget ForManagedSource(bool mssql, string connectionString) =>
+        new(
+            mssql ? RelationalProviderToken.SqlServer : RelationalProviderToken.Postgresql,
+            mssql ? DocumentCacheAdminCommandSurface.MssqlAppSettingsDatastoreValue : "postgresql",
+            connectionString,
+            DocumentCacheAdminCliFixture.Shared.ApiSchemaDirectory,
+            null,
+            null,
+            false,
+            false
+        );
+
     public DocumentCacheAdminCliTarget CreateAlias(
         long dataStoreId,
         string tenantKey,
@@ -1564,6 +1577,30 @@ internal sealed class DocumentCacheAdminCliProcessHarness : IAsyncDisposable
 
     public string SecretFromEnvironment => _secretFromEnvironment;
 
+    public string PublishedAssemblyPath { get; set; } = string.Empty;
+
+    public void RemovePublicationHistoryConfiguration()
+    {
+        JsonObject settings = JsonNode.Parse(File.ReadAllText(_settingsPath))!.AsObject();
+        settings.Remove("Cdc");
+        File.WriteAllText(_settingsPath, settings.ToJsonString(_writeOptions));
+    }
+
+    public void ConfigurePublicationHistory(string statePath, string deploymentKey)
+    {
+        JsonObject settings = JsonNode.Parse(File.ReadAllText(_settingsPath))!.AsObject();
+        settings["Cdc"] = new JsonObject
+        {
+            ["PublicationHistory"] = new JsonObject
+            {
+                ["StatePath"] = statePath,
+                ["DeploymentKey"] = deploymentKey,
+                ["LockTimeout"] = "00:00:30",
+            },
+        };
+        File.WriteAllText(_settingsPath, settings.ToJsonString(_writeOptions));
+    }
+
     public static Task<DocumentCacheAdminCliProcessHarness> CreateAsync(DocumentCacheAdminCliTarget target)
     {
         ArgumentNullException.ThrowIfNull(target);
@@ -1603,13 +1640,30 @@ internal sealed class DocumentCacheAdminCliProcessHarness : IAsyncDisposable
             WorkingDirectory = RepositoryRoot(),
         };
 
-        process.StartInfo.ArgumentList.Add("run");
-        process.StartInfo.ArgumentList.Add("--project");
-        process.StartInfo.ArgumentList.Add(ToolProjectPath());
-        process.StartInfo.ArgumentList.Add("--configuration");
-        process.StartInfo.ArgumentList.Add(CurrentBuildConfiguration());
-        process.StartInfo.ArgumentList.Add("--no-build");
-        process.StartInfo.ArgumentList.Add("--");
+        if (PublishedAssemblyPath.Length > 0)
+        {
+            process.StartInfo.ArgumentList.Add(PublishedAssemblyPath);
+        }
+        else
+        {
+            process.StartInfo.ArgumentList.Add("run");
+            process.StartInfo.ArgumentList.Add("--project");
+            process.StartInfo.ArgumentList.Add(ToolProjectPath());
+            process.StartInfo.ArgumentList.Add("--configuration");
+            process.StartInfo.ArgumentList.Add(CurrentBuildConfiguration());
+            process.StartInfo.ArgumentList.Add("--no-build");
+            process.StartInfo.ArgumentList.Add("--");
+        }
+        foreach (
+            string key in process
+                .StartInfo.Environment.Keys.Where(key =>
+                    key.StartsWith("Cdc__", StringComparison.OrdinalIgnoreCase)
+                )
+                .ToArray()
+        )
+        {
+            process.StartInfo.Environment.Remove(key);
+        }
         foreach (string argument in arguments)
         {
             process.StartInfo.ArgumentList.Add(argument);
