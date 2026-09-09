@@ -204,6 +204,52 @@ public sealed class Given_PinnedImageFixtureStartupFailureCleanup
         AssertCleanupCommandsWereRun(docker);
     }
 
+    [Test]
+    public void It_cleans_up_when_the_pre_worker_controller_phase_rejects_before_launch()
+    {
+        var docker = new RecordingDockerCli(_ => null);
+        var rejected = new AssertionException("controller rejected");
+        var exception = Assert.ThrowsAsync<AssertionException>(async () =>
+            await CdcConnectorTemplatePinnedImageFixture.StartAsync(
+                CdcProvider.Postgresql,
+                BuildSettings(),
+                docker,
+                ResourcePrefix,
+                CancellationToken.None,
+                beforeWorker: (_, _) => Task.FromException(rejected)
+            )
+        );
+        exception.Should().BeSameAs(rejected);
+        docker
+            .Commands.Should()
+            .NotContain(command =>
+                command.StartsWith("run run", StringComparison.Ordinal)
+                && command.Contains(ResourcePrefix + "-connect", StringComparison.Ordinal)
+            );
+        AssertCleanupCommandsWereRun(docker);
+    }
+
+    [Test]
+    public void It_attempts_every_owned_cleanup_after_one_cleanup_command_fails()
+    {
+        var canceled = new OperationCanceledException("startup canceled");
+        var docker = new RecordingDockerCli(
+            arguments => IsPortCommand(arguments) ? canceled : null,
+            failFirstCleanup: true
+        );
+        var exception = Assert.ThrowsAsync<OperationCanceledException>(async () =>
+            await CdcConnectorTemplatePinnedImageFixture.StartAsync(
+                CdcProvider.Postgresql,
+                BuildSettings(),
+                docker,
+                ResourcePrefix,
+                CancellationToken.None
+            )
+        );
+        exception.Should().BeSameAs(canceled);
+        AssertCleanupCommandsWereRun(docker);
+    }
+
     private static void AssertCancellationCleanup<TException>(TException startupException)
         where TException : OperationCanceledException
     {
@@ -240,9 +286,9 @@ public sealed class Given_PinnedImageFixtureStartupFailureCleanup
 
     private static IReadOnlyList<string> ExpectedCleanupCommands() =>
         [
-            $"allow rm -f {ResourcePrefix}-connect",
-            $"allow rm -f {ResourcePrefix}-provider",
-            $"allow rm -f {ResourcePrefix}-broker",
+            $"allow rm -f -v {ResourcePrefix}-connect",
+            $"allow rm -f -v {ResourcePrefix}-provider",
+            $"allow rm -f -v {ResourcePrefix}-broker",
             $"allow network rm {ResourcePrefix}-network",
         ];
 
@@ -259,7 +305,8 @@ public sealed class Given_PinnedImageFixtureStartupFailureCleanup
 
     private sealed class RecordingDockerCli(
         Func<IReadOnlyList<string>, Exception?> failureForCommand,
-        string mappedPortOutput = "127.0.0.1:32768\n"
+        string mappedPortOutput = "127.0.0.1:32768\n",
+        bool failFirstCleanup = false
     ) : IDockerCli
     {
         private readonly List<string> _commands = [];
@@ -291,6 +338,10 @@ public sealed class Given_PinnedImageFixtureStartupFailureCleanup
         )
         {
             _commands.Add($"allow {CommandText(arguments)}");
+            if (failFirstCleanup && arguments.Contains(ResourcePrefix + "-connect") && arguments[0] == "rm")
+            {
+                throw new IOException("sentinel-cleanup-secret");
+            }
             return Task.FromResult(ResultFor(arguments));
         }
 
