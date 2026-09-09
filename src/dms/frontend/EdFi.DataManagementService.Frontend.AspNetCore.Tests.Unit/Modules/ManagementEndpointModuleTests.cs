@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Net;
+using System.Net.Http.Headers;
 using System.Security.Claims;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Frontend;
@@ -30,6 +31,7 @@ public class Given_ManagementEndpointModule
 {
     private const string ValidRequiredRole = "dms-management-operator";
     private const string RoleClaimType = "operator_role";
+    private const string ValidBearerToken = "valid-token";
 
     internal static WebApplicationFactory<Program> CreateFactory(
         IApiService apiService,
@@ -296,6 +298,267 @@ public class Given_ManagementEndpointModule
             );
     }
 
+    private static ClaimsPrincipal Principal(params Claim[] claims) =>
+        new(new ClaimsIdentity(claims, "test"));
+
+    private static ScriptedJwtValidationService ValidJwtWithClaims(params Claim[] claims) =>
+        new(new Dictionary<string, ClaimsPrincipal?> { [ValidBearerToken] = Principal(claims) });
+
+    private static async Task<HttpResponseMessage> CallAsync(HttpClient client, string method, string path) =>
+        method == "POST" ? await client.PostAsync(path, content: null) : await client.GetAsync(path);
+
+    private static readonly object[] ProtectedRouteCases =
+    [
+        new object[] { "POST", "/management/reload-claimsets", false },
+        new object[] { "GET", "/management/view-claimsets", false },
+        new object[] { "POST", "/management/Tenant1/reload-claimsets", true },
+        new object[] { "GET", "/management/Tenant1/view-claimsets", true },
+    ];
+
+    private static void VerifyNoClaimsetWork(IApiService apiService)
+    {
+        A.CallTo(() => apiService.ReloadClaimsetsAsync(A<string?>._)).MustNotHaveHappened();
+        A.CallTo(() => apiService.ViewClaimsetsAsync(A<string?>._)).MustNotHaveHappened();
+    }
+
+    [TestCaseSource(nameof(ProtectedRouteCases))]
+    public async Task It_returns_401_when_the_bearer_token_is_missing(
+        string method,
+        string path,
+        bool multiTenancy
+    )
+    {
+        IApiService apiService = FakeApiService();
+        await using WebApplicationFactory<Program> factory = CreateFactory(
+            apiService,
+            ValidRequiredRole,
+            multiTenancy
+        );
+        using HttpClient client = factory.CreateClient();
+
+        HttpResponseMessage response = await CallAsync(client, method, path);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        response.Headers.WwwAuthenticate.ToString().Should().Contain("invalid_token");
+        response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+        VerifyNoClaimsetWork(apiService);
+    }
+
+    [TestCaseSource(nameof(ProtectedRouteCases))]
+    public async Task It_returns_401_when_the_authorization_scheme_is_not_bearer(
+        string method,
+        string path,
+        bool multiTenancy
+    )
+    {
+        IApiService apiService = FakeApiService();
+        await using WebApplicationFactory<Program> factory = CreateFactory(
+            apiService,
+            ValidRequiredRole,
+            multiTenancy
+        );
+        using HttpClient client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", "token");
+
+        HttpResponseMessage response = await CallAsync(client, method, path);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        VerifyNoClaimsetWork(apiService);
+    }
+
+    [TestCaseSource(nameof(ProtectedRouteCases))]
+    public async Task It_returns_401_when_the_token_is_rejected(string method, string path, bool multiTenancy)
+    {
+        IApiService apiService = FakeApiService();
+        ScriptedJwtValidationService jwtValidationService = new(new Dictionary<string, ClaimsPrincipal?>());
+        await using WebApplicationFactory<Program> factory = CreateFactory(
+            apiService,
+            ValidRequiredRole,
+            multiTenancy,
+            jwtValidationService: jwtValidationService
+        );
+        using HttpClient client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer",
+            "unrecognized-token"
+        );
+
+        HttpResponseMessage response = await CallAsync(client, method, path);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        jwtValidationService.CallCount.Should().Be(1);
+        VerifyNoClaimsetWork(apiService);
+    }
+
+    [TestCaseSource(nameof(ProtectedRouteCases))]
+    public async Task It_returns_403_when_the_role_claim_uses_a_different_claim_type(
+        string method,
+        string path,
+        bool multiTenancy
+    )
+    {
+        IApiService apiService = FakeApiService();
+        ScriptedJwtValidationService jwtValidationService = ValidJwtWithClaims(
+            new Claim(ClaimTypes.Role, ValidRequiredRole),
+            new Claim("roles", ValidRequiredRole)
+        );
+        await using WebApplicationFactory<Program> factory = CreateFactory(
+            apiService,
+            ValidRequiredRole,
+            multiTenancy,
+            jwtValidationService: jwtValidationService
+        );
+        using HttpClient client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer",
+            ValidBearerToken
+        );
+
+        HttpResponseMessage response = await CallAsync(client, method, path);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+        VerifyNoClaimsetWork(apiService);
+    }
+
+    [TestCaseSource(nameof(ProtectedRouteCases))]
+    public async Task It_returns_403_when_the_role_value_does_not_match(
+        string method,
+        string path,
+        bool multiTenancy
+    )
+    {
+        IApiService apiService = FakeApiService();
+        ScriptedJwtValidationService jwtValidationService = ValidJwtWithClaims(
+            new Claim(RoleClaimType, "some-other-role")
+        );
+        await using WebApplicationFactory<Program> factory = CreateFactory(
+            apiService,
+            ValidRequiredRole,
+            multiTenancy,
+            jwtValidationService: jwtValidationService
+        );
+        using HttpClient client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer",
+            ValidBearerToken
+        );
+
+        HttpResponseMessage response = await CallAsync(client, method, path);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        VerifyNoClaimsetWork(apiService);
+    }
+
+    [Test]
+    public async Task It_reloads_claimsets_for_a_correctly_authorized_single_tenant_request()
+    {
+        IApiService apiService = FakeApiService();
+        await using WebApplicationFactory<Program> factory = CreateFactory(
+            apiService,
+            ValidRequiredRole,
+            jwtValidationService: ValidJwtWithClaims(new Claim(RoleClaimType, ValidRequiredRole))
+        );
+        using HttpClient client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer",
+            ValidBearerToken
+        );
+
+        HttpResponseMessage response = await client.PostAsync("/management/reload-claimsets", content: null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        A.CallTo(() => apiService.ReloadClaimsetsAsync(null)).MustHaveHappenedOnceExactly();
+    }
+
+    [Test]
+    public async Task It_views_claimsets_for_a_correctly_authorized_single_tenant_request()
+    {
+        IApiService apiService = FakeApiService();
+        await using WebApplicationFactory<Program> factory = CreateFactory(
+            apiService,
+            ValidRequiredRole,
+            jwtValidationService: ValidJwtWithClaims(new Claim(RoleClaimType, ValidRequiredRole))
+        );
+        using HttpClient client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer",
+            ValidBearerToken
+        );
+
+        HttpResponseMessage response = await client.GetAsync("/management/view-claimsets");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        A.CallTo(() => apiService.ViewClaimsetsAsync(null)).MustHaveHappenedOnceExactly();
+    }
+
+    [Test]
+    public async Task It_reloads_claimsets_for_a_correctly_authorized_tenant_scoped_request()
+    {
+        IApiService apiService = FakeApiService();
+        await using WebApplicationFactory<Program> factory = CreateFactory(
+            apiService,
+            ValidRequiredRole,
+            multiTenancy: true,
+            jwtValidationService: ValidJwtWithClaims(new Claim(RoleClaimType, ValidRequiredRole))
+        );
+        using HttpClient client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer",
+            ValidBearerToken
+        );
+
+        HttpResponseMessage response = await client.PostAsync(
+            "/management/Tenant1/reload-claimsets",
+            content: null
+        );
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        A.CallTo(() => apiService.ReloadClaimsetsAsync("Tenant1")).MustHaveHappenedOnceExactly();
+    }
+
+    [Test]
+    public async Task It_authorizes_before_validating_the_tenant()
+    {
+        IApiService apiService = FakeApiService();
+        await using WebApplicationFactory<Program> factory = CreateFactory(
+            apiService,
+            ValidRequiredRole,
+            multiTenancy: true
+        );
+        using HttpClient client = factory.CreateClient();
+
+        HttpResponseMessage response = await client.GetAsync("/management/UnknownTenant/view-claimsets");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        VerifyNoClaimsetWork(apiService);
+    }
+
+    [Test]
+    public async Task It_reaches_tenant_validation_once_the_caller_is_authorized()
+    {
+        IApiService apiService = FakeApiService();
+        await using WebApplicationFactory<Program> factory = CreateFactory(
+            apiService,
+            ValidRequiredRole,
+            multiTenancy: true,
+            jwtValidationService: ValidJwtWithClaims(new Claim(RoleClaimType, ValidRequiredRole))
+        );
+        using HttpClient client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer",
+            ValidBearerToken
+        );
+
+        HttpResponseMessage response = await client.GetAsync("/management/SomeTenant/view-claimsets");
+
+        // TestMockHelper fakes ITenantValidator to accept any non-null tenant, so an authorized
+        // request passes validation and dispatches. The point is that authorization no longer
+        // short-circuits ahead of it.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        A.CallTo(() => apiService.ViewClaimsetsAsync("SomeTenant")).MustHaveHappenedOnceExactly();
+    }
+
     internal sealed class StubFrontendResponse(int statusCode, JsonNode? body) : IFrontendResponse
     {
         public int StatusCode { get; } = statusCode;
@@ -309,11 +572,16 @@ public class Given_ManagementEndpointModule
         IReadOnlyDictionary<string, ClaimsPrincipal?> principalsByToken
     ) : IJwtValidationService
     {
+        private int _callCount;
+
+        public int CallCount => _callCount;
+
         public Task<(
             ClaimsPrincipal? Principal,
             ClientAuthorizations? ClientAuthorizations
         )> ValidateAndExtractClientAuthorizationsAsync(string token, CancellationToken cancellationToken)
         {
+            Interlocked.Increment(ref _callCount);
             principalsByToken.TryGetValue(token, out ClaimsPrincipal? principal);
             return Task.FromResult<(ClaimsPrincipal?, ClientAuthorizations?)>((principal, null));
         }
