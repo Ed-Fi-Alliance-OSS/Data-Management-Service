@@ -5,6 +5,7 @@
 
 using System.Data.Common;
 using System.Net.Sockets;
+using System.Security.Cryptography;
 using EdFi.DataManagementService.Backend.Mssql;
 using EdFi.DataManagementService.Backend.Postgresql;
 using FluentAssertions;
@@ -112,6 +113,38 @@ public class ConnectionAcquisitionClassifierTests
                 .IsExpected(new SocketException((int)SocketError.HostNotFound))
                 .Should()
                 .BeTrue("a snapshot whose host cannot be resolved is an unreachable database");
+        }
+
+        /// <summary>
+        /// A client certificate that cannot be loaded - the failure of certificate-authenticated
+        /// connection establishment, which no other arm covers. Npgsql loads the certificate named by
+        /// SSL Certificate after the server has agreed to SSL but before the AuthenticateAsClientAsync
+        /// call its handshake catch wraps, so the loader's own exception escapes unwrapped just as a
+        /// resolution failure does. Observed against the Npgsql 8.0.4 this solution pins, driven
+        /// through a loopback listener that answered the eight-byte SSL request: a missing PEM named
+        /// by SSL Certificate or SSL Key raises FileNotFoundException, a path under a directory that
+        /// does not exist raises DirectoryNotFoundException, and a missing PFX or a file whose
+        /// contents are not a certificate raises CryptographicException. All three are asserted,
+        /// because an arm covering only the first would still answer the omitted-mount case with a
+        /// service-configuration 503. The exceptions are constructed rather than provoked, for the
+        /// same reason as the resolution failure above: provoking them needs a listener that speaks
+        /// the SSL request, which is not a unit test's job.
+        /// </summary>
+        [Test]
+        public void It_accepts_a_client_certificate_that_cannot_be_loaded()
+        {
+            PostgresqlConnectionAcquisitionFailure
+                .IsExpected(new FileNotFoundException("Could not find file."))
+                .Should()
+                .BeTrue("a snapshot whose certificate file is absent cannot establish a connection");
+            PostgresqlConnectionAcquisitionFailure
+                .IsExpected(new DirectoryNotFoundException("Could not find a part of the path."))
+                .Should()
+                .BeTrue("an omitted certificate mount is an unreachable database, not a defect");
+            PostgresqlConnectionAcquisitionFailure
+                .IsExpected(new CryptographicException("The system cannot find the file specified."))
+                .Should()
+                .BeTrue("a missing PFX and a malformed certificate both arrive as this");
         }
 
         /// <summary>

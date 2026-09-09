@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Net.Sockets;
+using System.Security.Cryptography;
 using Npgsql;
 
 namespace EdFi.DataManagementService.Backend.Postgresql;
@@ -50,6 +51,21 @@ internal static class PostgresqlConnectionAcquisitionFailure
     /// fingerprint verdict is cached, instead of Snapshot Not Found.
     /// </para>
     /// <para>
+    /// The certificate-load failures are named by all three of their own types, because Npgsql
+    /// raises them unwrapped as well. A configured client certificate is loaded after the server has
+    /// agreed to SSL but before the <c>AuthenticateAsClientAsync</c> call that Npgsql's handshake
+    /// <c>catch</c> turns into an <c>NpgsqlException</c>, so whatever the loader threw escapes as
+    /// itself. Which type that is depends on the file: a missing PEM named by <c>SSL Certificate</c>
+    /// or <c>SSL Key</c> raises <c>FileNotFoundException</c>, a certificate path under a directory
+    /// that does not exist - an omitted deployment mount - raises <c>DirectoryNotFoundException</c>,
+    /// and a missing PFX or a file whose contents are not a certificate raises
+    /// <c>CryptographicException</c>. An arm covering only the first would leave the other two
+    /// answering a service-configuration 503. The broader <c>IOException</c> is deliberately not used
+    /// in their place: the acquisition guard matches a caller's cancellation on the outer type alone,
+    /// so an <c>IOException</c> wrapping an <c>OperationCanceledException</c> would be swallowed into
+    /// Snapshot Not Found.
+    /// </para>
+    /// <para>
     /// <c>ArgumentNullException</c> is deliberately excluded: a null argument is a programming defect,
     /// not an unreachable database. It is the only listed type it derives from, which is why the
     /// exclusion is written against the <c>ArgumentException</c> arm - <c>and</c> binds tighter than
@@ -67,6 +83,9 @@ internal static class PostgresqlConnectionAcquisitionFailure
                 or TimeoutException
                 or FormatException
                 or NotSupportedException
+                or FileNotFoundException
+                or DirectoryNotFoundException
+                or CryptographicException
                 or ArgumentException
                 and not ArgumentNullException;
 
@@ -78,9 +97,11 @@ internal static class PostgresqlConnectionAcquisitionFailure
     /// <remarks>
     /// <c>SqlState</c> is a five-character standard code and nothing else, so it carries no part of the
     /// connection string - which is what makes it the one detail beyond the type that may be logged.
-    /// A parse failure and a socket failure carry no <c>SqlState</c> and are described by type alone,
-    /// whether they arrive as an <c>NpgsqlException</c>, an <c>ArgumentException</c>, or - for a
-    /// hostname that does not resolve - a bare <c>SocketException</c>.
+    /// A failure that never reached the server carries no <c>SqlState</c> and is described by type
+    /// alone: a parse failure arriving as an <c>NpgsqlException</c> or an <c>ArgumentException</c>, a
+    /// hostname that does not resolve arriving as a bare <c>SocketException</c>, and a client
+    /// certificate that cannot be loaded arriving as a bare <c>FileNotFoundException</c>,
+    /// <c>DirectoryNotFoundException</c>, or <c>CryptographicException</c>.
     /// </remarks>
     public static string Describe(Exception exception)
     {
