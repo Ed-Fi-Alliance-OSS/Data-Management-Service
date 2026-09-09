@@ -191,3 +191,52 @@ Raised by the implementation sub-agent as a new ambiguity, not covered by plan �
   whose safe shape nobody has specified — `SanitizeForLogging` would mangle a JSON error
   payload, and `SanitizeForConsole` deliberately preserves `\r`/`\n`, which is the wrong
   control for a log sink. That is a design decision for a human, not a drive-by edit.
+
+### Round 4
+
+#### D-15 — "Entailed assertions remain in several `It_` methods"
+
+`CorrelationIdNormalizerTests.cs:87-90`, `LoggingSanitizerTests.cs:163-167`,
+`CorrelationIdParityTests.cs:297-317`.
+
+- **Reported severity:** Nit. **Re-confirmed as:** Nit.
+- **Decision:** Declined.
+- **Rationale:** The reviewer's own analysis defeats the finding, and it said so: unlike the
+  `HaveLength(8)` assertion removed in round 4, each of these is its own `It_` method with a
+  requirement-named intent (`It_cannot_forge_an_additional_log_line`,
+  `It_leaves_no_line_ending_that_could_forge_a_log_line`,
+  `It_never_lets_a_control_character_reach_a_response_body_or_a_log_event`), so each documents
+  a distinct guarantee even where the assertion is logically entailed. Removing them would
+  trade documentation value for a purity the codebase does not observe — multi-assert `It_`
+  methods are the norm here, roughly 7,100 of 11,600 in `src/dms`.
+
+#### D-16 — "Nothing automated prevents a future log site from passing the `TraceId` struct again"
+
+- **Reported severity:** Low. **Re-confirmed as:** Low.
+- **Decision:** Declined for this ticket — **escalated in the final report as a recommended
+  follow-up.** Not a silent drop.
+- **Rationale:** `TraceId` is `public record struct TraceId(string Value)` with no `ToString()`
+  override, so `logger.LogX("{TraceId}", traceId)` compiles silently and renders
+  `TraceId { Value = … }` — the defect fixed in round 4 at `OAuthManager.cs:71`. The
+  reviewer that raised it recommended a follow-up ticket rather than a change here, and I
+  agree: both plausible fixes are disproportionate. A `ToString()` override modifies
+  `Core.External`, a published contract assembly, which AD-2 keeps out of scope; and a
+  source-scanning architecture test is machinery this repository has no precedent for (the
+  reviewer checked — Task 5's "guard test" turned out to be the parity fixture, not a grep
+  test). The proportionate mitigations already shipped: round 4's `<remarks>` warning on
+  `SanitizeForLogging`, and the structural coverage at
+  `CorrelationIdRecordingLoggerProvider.cs:52`, which records a `TraceId` property only when
+  it is a `string` — so the frontend parity fixture's exact event-count assertion would fail
+  if any of those sites regressed to passing the struct.
+
+#### D-17 — "`GetResult.GetSuccess.LastModifiedTraceId` is a correlation-ID-shaped contract member"
+
+`Core.External/Backend/GetResult.cs:28`.
+
+- **Reported severity:** Nit, raised by the reviewer as explicitly out of scope.
+- **Decision:** Declined.
+- **Rationale:** Inert — all three production producers pass literal `null`, there is no DDL
+  column behind it, and its only reader is a Polly `ResultFormatter` copy. Pre-existing and
+  untouched by this diff. More importantly it is semantically *outside* FR-LOG-6: if it were
+  ever populated it would carry a **prior** request's identifier, which the log/response
+  parity guarantee for the current request neither covers nor should.
