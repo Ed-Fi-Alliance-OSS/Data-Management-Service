@@ -7,8 +7,15 @@ services:
   kafka:
     image: apache/kafka:3.9.0@sha256:fbc7d7c428e3755cf36518d4976596002477e4c052d1f80b5b9eafd06d0fff2f
     container_name: dms-kafka1
+    # Docker creates this new volume mount as root; initialize only its directory,
+    # then run the image's normal startup as the unprivileged Kafka user.
+    user: root
+    command:
+      - /bin/sh
+      - -c
+      - chown appuser:appuser /tmp/kraft-combined-logs && exec su appuser -s /bin/sh -c 'exec /etc/kafka/docker/run'
     volumes:
-      - kafka-data:/kafka/data
+      - kafka-data:/tmp/kraft-combined-logs
       - kafka-logs:/kafka/logs
     restart: unless-stopped
     healthcheck:
@@ -17,6 +24,8 @@ services:
       timeout: 10s
       retries: 3
     environment:
+      # Pin the path: this image's environment-based startup otherwise uses /tmp/kafka-logs.
+      KAFKA_LOG_DIRS: /tmp/kraft-combined-logs
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://dms-kafka1:9092
       KAFKA_LISTENERS: PLAINTEXT://dms-kafka1:9092,CONTROLLER://dms-kafka1:9093
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@dms-kafka1:9093

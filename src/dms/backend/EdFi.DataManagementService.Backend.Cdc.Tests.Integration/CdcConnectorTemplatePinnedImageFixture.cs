@@ -208,7 +208,8 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
         CancellationToken cancellationToken,
         Func<CdcConnectorTemplatePinnedImageFixture, CancellationToken, Task> beforeWorker = null!,
         bool exposeBroker = false,
-        bool nativeKafka = false
+        bool nativeKafka = false,
+        bool composeKafka = false
     )
     {
         CdcConnectorTemplateSmokeSettings settings = CdcConnectorTemplateSmokeSettings.FromEnvironment(
@@ -232,7 +233,8 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
             cancellationToken,
             beforeWorker: beforeWorker,
             exposeBroker: exposeBroker,
-            nativeKafka: nativeKafka
+            nativeKafka: nativeKafka,
+            composeKafka: composeKafka
         );
     }
 
@@ -245,7 +247,8 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
         bool applyPrerequisitePolicy = true,
         Func<CdcConnectorTemplatePinnedImageFixture, CancellationToken, Task> beforeWorker = null!,
         bool exposeBroker = false,
-        bool nativeKafka = false
+        bool nativeKafka = false,
+        bool composeKafka = false
     )
     {
         var fixture = new CdcConnectorTemplatePinnedImageFixture(
@@ -259,6 +262,7 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
         try
         {
             fixture._controllerNativeKafka = nativeKafka;
+            fixture._controllerComposeKafka = composeKafka;
             if (exposeBroker)
             {
                 using var reservation = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
@@ -823,12 +827,20 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
             return;
         }
 
+        if (_controllerComposeKafka && File.Exists(ControllerComposeFile))
+        {
+            using var composeTimeout = new CancellationTokenSource(TimeSpan.FromMinutes(1));
+            await RunControllerComposeAsync(["down", "--volumes", "--remove-orphans"], composeTimeout.Token);
+            Directory.Delete(_controllerComposeDirectory, recursive: true);
+        }
+
         List<IReadOnlyList<string>> cleanup =
         [
             ["rm", "-f", "-v", ConnectContainerName],
             ["rm", "-f", "-v", ProviderContainerName],
             ["rm", "-f", "-v", BrokerContainerName],
             ["network", "rm", NetworkName],
+            .. _controllerComposeVolumes.Select(name => new[] { "volume", "rm", name }),
         ];
         int failures = 0;
         foreach (var arguments in cleanup)
@@ -991,6 +1003,12 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
 
     private async Task StartBrokerAsync(CancellationToken cancellationToken)
     {
+        if (_controllerComposeKafka)
+        {
+            await PrepareControllerComposeAsync(cancellationToken);
+            await RunControllerComposeAsync(["up", "--detach", "--wait", "kafka"], cancellationToken);
+            return;
+        }
         if (_controllerNativeKafka)
         {
             await StartControllerKafkaAsync(cancellationToken);
@@ -1095,6 +1113,14 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
 
     private async Task StartKafkaConnectAsync(CancellationToken cancellationToken)
     {
+        if (_controllerComposeKafka)
+        {
+            await RunControllerComposeAsync(
+                ["up", "--detach", "--wait", "kafka-cdc-worker"],
+                cancellationToken
+            );
+            return;
+        }
         await _docker.RunAsync(BuildKafkaConnectRunArguments(), cancellationToken);
     }
 

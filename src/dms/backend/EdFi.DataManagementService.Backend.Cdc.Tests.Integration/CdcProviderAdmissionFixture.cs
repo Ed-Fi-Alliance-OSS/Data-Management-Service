@@ -152,7 +152,8 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
 
     public static async Task<CdcProviderAdmissionFixture> StartAsync(
         CdcProvider provider,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        bool composeKafka = false
     )
     {
         var suite = new CdcProviderAdmissionFixture(provider);
@@ -179,7 +180,8 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
                         );
                     }
                 },
-                nativeKafka: true
+                nativeKafka: true,
+                composeKafka: composeKafka
             );
             return suite;
         }

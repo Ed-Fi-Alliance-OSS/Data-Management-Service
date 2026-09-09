@@ -104,7 +104,8 @@ internal sealed class CdcControllerFixture : IAsyncDisposable
         CdcProvider provider,
         CancellationToken token,
         Func<CdcControllerFixture, CancellationToken, Task> beforeWorker = null!,
-        bool nativeKafka = false
+        bool nativeKafka = false,
+        bool composeKafka = false
     )
     {
         var settings = CdcConnectorTemplateSmokeSettings.FromEnvironment(provider);
@@ -127,7 +128,8 @@ internal sealed class CdcControllerFixture : IAsyncDisposable
                     }
                 },
                 exposeBroker: true,
-                nativeKafka: nativeKafka
+                nativeKafka: nativeKafka,
+                composeKafka: composeKafka
             );
             await resources.AssertControllerMetricsPrerequisiteAsync(token);
             return fixture;
