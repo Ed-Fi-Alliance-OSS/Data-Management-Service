@@ -204,6 +204,13 @@ public class ValidationEntryCacheTests
     [Parallelizable]
     public class Given_Both_Derivative_Kinds_Failing_Concurrently : ValidationEntryCacheTests
     {
+        /// <summary>
+        /// What an engine would have composed for the wrapped failure: the provider type and its own
+        /// error code. Only the snapshot production wraps, so this is what separates the two
+        /// exceptions the two readers must observe.
+        /// </summary>
+        private const string FailureDescription = "TimeoutException(-2)";
+
         [TestCase(true)]
         [TestCase(false)]
         public async Task It_answers_each_kind_from_its_own_production(bool snapshotFirst)
@@ -223,7 +230,11 @@ public class ValidationEntryCacheTests
                     await gate.Task;
 
                     throw kind == EffectiveTargetKind.Snapshot
-                        ? new DatabaseConnectionUnavailableException(kind, providerFailure)
+                        ? new DatabaseConnectionUnavailableException(
+                            kind,
+                            FailureDescription,
+                            providerFailure
+                        )
                         : providerFailure;
                 };
 

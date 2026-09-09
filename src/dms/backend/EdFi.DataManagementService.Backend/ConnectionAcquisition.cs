@@ -30,6 +30,12 @@ internal static class ConnectionAcquisition
     /// The provider's classification of an expected connection-establishment failure. Consulted only
     /// for a snapshot, because <c>&amp;&amp;</c> short-circuits, so it cannot affect any other kind.
     /// </param>
+    /// <param name="describeFailure">
+    /// The engine's short, log-safe description of what the provider raised - its type plus the
+    /// provider's own error code. Supplied by the engine because the codes worth having are
+    /// provider-specific and this assembly references neither driver. It is the only thing about the
+    /// provider exception that reaches a log or travels on the wrapper.
+    /// </param>
     /// <param name="cancellationToken">
     /// The caller's token, used only to decide whether a cancellation is the caller's own. Seam 1 has
     /// no token and passes <see cref="CancellationToken.None" />: an
@@ -66,12 +72,14 @@ internal static class ConnectionAcquisition
         Func<Task<T>> acquireAsync,
         EffectiveTargetKind targetKind,
         Predicate<Exception> isExpectedFailure,
+        Func<Exception, string> describeFailure,
         ILogger logger,
         CancellationToken cancellationToken
     )
     {
         ArgumentNullException.ThrowIfNull(acquireAsync);
         ArgumentNullException.ThrowIfNull(isExpectedFailure);
+        ArgumentNullException.ThrowIfNull(describeFailure);
         ArgumentNullException.ThrowIfNull(logger);
 
         try
@@ -92,24 +100,29 @@ internal static class ConnectionAcquisition
         catch (Exception exception)
             when (targetKind == EffectiveTargetKind.Snapshot && isExpectedFailure(exception))
         {
-            // Only the exception's type, never the exception itself and never its message, data, or
-            // inner exceptions. Acquisition parses the connection string, and a provider failure there
-            // quotes the offending value back.
+            // The engine's description - the exception's type plus the provider's own error code -
+            // never the exception itself and never its message, data, or inner exceptions.
+            // Acquisition parses the connection string, and a provider failure there quotes the
+            // offending value back. The code does not: it is what lets an operator tell a wrong
+            // password from an absent catalog from an unreachable host, which the type alone cannot.
             // S6667 asks for the caught exception to be passed to the logger. That is the right
             // default and the wrong thing here, for the reason above: the exception carries the
-            // untrusted value. Its type is logged instead, which is the part that helps an operator
-            // without carrying anything the provider put in it.
+            // untrusted value. The description is logged instead, which is the part that helps an
+            // operator without carrying anything the provider put in it.
+            string failureDescription = describeFailure(exception);
+
 #pragma warning disable S6667
             logger.LogWarning(
-                "Connection acquisition failed with {ExceptionType} for the {TargetKind} target",
-                exception.GetType().Name,
+                "Connection acquisition failed with {Failure} for the {TargetKind} target",
+                failureDescription,
                 targetKind
             );
 #pragma warning restore S6667
 
             // The provider exception travels as the inner exception for diagnostics only. It is never
-            // logged and never assigned to the request's caught-exception field.
-            throw new DatabaseConnectionUnavailableException(targetKind, exception);
+            // logged and never assigned to the request's caught-exception field; the description
+            // travels alongside it so the translation sites in Core can log what was logged here.
+            throw new DatabaseConnectionUnavailableException(targetKind, failureDescription, exception);
         }
     }
 }

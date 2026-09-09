@@ -85,7 +85,7 @@ internal class CoreExceptionLoggingMiddleware(ILogger _logger, TimeSpan? _circui
         {
             throw;
         }
-        catch (DatabaseConnectionUnavailableException ex) when (ex.TargetKind == EffectiveTargetKind.Snapshot)
+        catch (DatabaseConnectionUnavailableException ex)
         {
             // The one translation point for every read-path connection seam below the two validation
             // middlewares - the repository query, descriptor reads, document hydration - and so for
@@ -93,41 +93,61 @@ internal class CoreExceptionLoggingMiddleware(ILogger _logger, TimeSpan? _circui
             // /availableChangeVersions alike. Nothing in the backend intercepts this type, which is
             // why one arm here covers all of them instead of an edit at every call site.
             //
-            // Deliberately not recorded as a caught exception, for the same reason as the
-            // circuit-open arm above and one more: RequestResponseLoggingMiddleware passes
-            // requestInfo.CaughtException to LogError with its full message chain, and the provider
-            // exception carried as InnerException quotes the offending connection string in its
-            // message. The type and the target kind are logged here instead.
+            // Caught for every target kind rather than filtered to Snapshot, and the kind is branched
+            // on below instead. Only a snapshot's *response* depends on the failure being a connection
+            // failure, but no kind's wrapper may reach the generic arm: that arm assigns
+            // requestInfo.CaughtException, which RequestResponseLoggingMiddleware passes to LogError
+            // with its full message chain, and the provider exception carried as InnerException quotes
+            // the offending connection string in its message. Today the guard constructs this wrapper
+            // only for a snapshot, so the other branch is unreachable - catching it here is what keeps
+            // it unreachable-and-harmless rather than unreachable-until-someone-widens-the-guard.
+            //
+            // Nothing is recorded as a caught exception on either branch, for the same reason as the
+            // circuit-open arm above and the one just given. The engine's log-safe description - the
+            // provider's type and its own error code - and the target kind are logged instead.
 #pragma warning disable S6667
             _logger.LogWarning(
-                "Snapshot connection unavailable ({ExceptionType}) for {TargetKind} target. "
-                    + "Answering Snapshot Not Found. TraceId: {TraceId}",
-                ex.InnerException?.GetType().Name,
+                "Database connection unavailable ({Failure}) for {TargetKind} target. "
+                    + "Answering {Outcome}. TraceId: {TraceId}",
+                ex.FailureDescription,
                 ex.TargetKind,
+                ex.TargetKind == EffectiveTargetKind.Snapshot ? "Snapshot Not Found" : "a server error",
                 requestInfo.FrontendRequest.TraceId.Value
             );
 #pragma warning restore S6667
 
-            requestInfo.FrontendResponse = SnapshotFailureResponse.NotFound(
-                requestInfo.FrontendRequest.TraceId
-            );
+            requestInfo.FrontendResponse =
+                ex.TargetKind == EffectiveTargetKind.Snapshot
+                    ? SnapshotFailureResponse.NotFound(requestInfo.FrontendRequest.TraceId)
+                    // The generic 500, not CreateSystemErrorResponse: the two carry different bodies
+                    // and content types on purpose, and a Primary or ReadReplica acquisition failure
+                    // has always been answered by the unhandled path's.
+                    : CreateUnexpectedConditionResponse(requestInfo.FrontendRequest.TraceId);
         }
         catch (Exception ex)
         {
-            // A Primary or ReadReplica connection-unavailable wrapper lands here too, deliberately:
-            // only a snapshot's response depends on the failure being a connection failure.
             requestInfo.CaughtException = ex;
             // Replace the frontend response (if any) with a 500 error
-            requestInfo.FrontendResponse = new FrontendResponse(
-                StatusCode: 500,
-                Body: FailureResponse.ForServerErrorMessageBody(
-                    "The server encountered an unexpected condition that prevented it from fulfilling the request.",
-                    requestInfo.FrontendRequest.TraceId
-                ),
-                Headers: []
+            requestInfo.FrontendResponse = CreateUnexpectedConditionResponse(
+                requestInfo.FrontendRequest.TraceId
             );
         }
     }
+
+    /// <summary>
+    /// The 500 for an exception the pipeline did not expect. Distinct from
+    /// <see cref="CreateSystemErrorResponse" /> in body and content type, which is deliberate and is
+    /// why the two are separate rather than one shared helper.
+    /// </summary>
+    private static FrontendResponse CreateUnexpectedConditionResponse(TraceId traceId) =>
+        new(
+            StatusCode: 500,
+            Body: FailureResponse.ForServerErrorMessageBody(
+                "The server encountered an unexpected condition that prevented it from fulfilling the request.",
+                traceId
+            ),
+            Headers: []
+        );
 
     /// <summary>
     /// Formats the configured break duration as whole seconds per RFC 9110 delta-seconds, rounding

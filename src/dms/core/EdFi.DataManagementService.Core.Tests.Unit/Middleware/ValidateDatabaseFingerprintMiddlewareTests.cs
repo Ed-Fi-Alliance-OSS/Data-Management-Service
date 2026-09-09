@@ -390,6 +390,13 @@ public class ValidateDatabaseFingerprintMiddlewareTests
     {
         private const string ConnectionString = "Server=snapshot;Database=edfi;Password=hunter2";
 
+        /// <summary>
+        /// What an engine would have composed: the provider type and its own error code, and nothing
+        /// else. Distinct from anything in the connection string, so a log assertion that the string
+        /// is absent still means something when this is present.
+        /// </summary>
+        private const string FailureDescription = "TimeoutException(-2)";
+
         private sealed class CapturingLogger : ILogger<ValidateDatabaseFingerprintMiddleware>
         {
             public List<(LogLevel Level, string Message, Exception? Exception)> Entries { get; } = [];
@@ -505,7 +512,10 @@ public class ValidateDatabaseFingerprintMiddlewareTests
         }
 
         private static Task<Outcome> ExecuteWith(EffectiveTargetKind kind) =>
-            ExecuteWith(kind, new DatabaseConnectionUnavailableException(kind, ProviderFailure()));
+            ExecuteWith(
+                kind,
+                new DatabaseConnectionUnavailableException(kind, FailureDescription, ProviderFailure())
+            );
 
         [Test]
         public async Task It_answers_snapshot_not_found_for_a_snapshot()

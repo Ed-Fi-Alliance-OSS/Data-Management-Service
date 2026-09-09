@@ -46,6 +46,7 @@ public class MssqlResourceKeyRowReader : IResourceKeyRowReader
             () => MssqlLeasedConnection.OpenAsync(_acquisition, target, cancellationToken),
             target.Kind,
             MssqlConnectionAcquisitionFailure.IsExpected,
+            MssqlConnectionAcquisitionFailure.Describe,
             _logger,
             cancellationToken
         );

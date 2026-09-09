@@ -241,12 +241,7 @@ internal class ApiService : IApiService
         DatabaseAccessIntent accessIntent,
         SnapshotEligibility snapshot,
         ReplicaEligibility replica
-    ) =>
-        new(
-            new DerivativeRoutingPolicy(accessIntent, snapshot, replica),
-            _serviceProvider.GetRequiredService<IEffectiveTargetSelectionResponseFactory>(),
-            _selectEffectiveTargetLogger
-        );
+    ) => new(new DerivativeRoutingPolicy(accessIntent, snapshot, replica), _selectEffectiveTargetLogger);
 
     /// <summary>
     /// The database-validation phase, in dependency order. Resource-key validation reads the fingerprint

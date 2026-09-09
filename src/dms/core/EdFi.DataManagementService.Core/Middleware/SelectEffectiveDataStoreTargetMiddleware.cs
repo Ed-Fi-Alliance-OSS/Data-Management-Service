@@ -5,6 +5,7 @@
 
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.Pipeline;
+using EdFi.DataManagementService.Core.Response;
 using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -24,7 +25,6 @@ namespace EdFi.DataManagementService.Core.Middleware;
 /// </remarks>
 internal class SelectEffectiveDataStoreTargetMiddleware(
     DerivativeRoutingPolicy policy,
-    IEffectiveTargetSelectionResponseFactory responseFactory,
     ILogger<SelectEffectiveDataStoreTargetMiddleware> logger
 ) : IPipelineStep
 {
@@ -67,7 +67,9 @@ internal class SelectEffectiveDataStoreTargetMiddleware(
                     requestInfo.FrontendRequest.TraceId.Value
                 );
 
-                requestInfo.FrontendResponse = responseFactory.ForMissingSnapshot(requestInfo);
+                requestInfo.FrontendResponse = SnapshotFailureResponse.NotFound(
+                    requestInfo.FrontendRequest.TraceId
+                );
                 return;
 
             case EffectiveTargetSelectionResult.RejectedAsMutation:
@@ -78,7 +80,15 @@ internal class SelectEffectiveDataStoreTargetMiddleware(
                     requestInfo.FrontendRequest.TraceId.Value
                 );
 
-                requestInfo.FrontendResponse = responseFactory.ForRejectedAsMutation(requestInfo);
+                // This deliberately displaces the route-semantics 405. Selection runs ahead of
+                // ValidateRouteSemanticsMiddleware, so an invalid mutation route - a collection DELETE
+                // or PUT, or an item POST - that asks for a snapshot is answered here, with the
+                // read-only body, rather than with the route-construction one. The same route without
+                // the header, or with a parsed false, never reaches this case and keeps the
+                // route-semantics response unchanged, including that route's own Allow set.
+                requestInfo.FrontendResponse = SnapshotFailureResponse.MethodNotAllowed(
+                    requestInfo.FrontendRequest.TraceId
+                );
                 return;
 
             default:

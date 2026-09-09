@@ -105,15 +105,17 @@ internal class ValidateResourceKeySeedMiddleware(
             // ResourceKeyValidator rethrew rather than reporting it as a seed mismatch. To a client
             // this is Snapshot Not Found, identical to a snapshot that was never configured.
             //
-            // The inner exception's type and the target kind only, for the reason the generic catch
-            // below spells out - and here the provider exception is carried as InnerException, whose
-            // message is exactly where a connection string appears.
+            // The engine's log-safe description and the target kind only, for the reason the generic
+            // catch below spells out - and here the provider exception is carried as InnerException,
+            // whose message is exactly where a connection string appears. The description is the
+            // provider's type and its own error code, which is what separates a wrong password from an
+            // absent catalog from an unreachable host.
 #pragma warning disable S6667
             logger.LogWarning(
-                "Snapshot connection unavailable ({ExceptionType}) for {TargetKind} target of data store "
+                "Snapshot connection unavailable ({Failure}) for {TargetKind} target of data store "
                     + "{DataStoreId} ({Name}) during resource key seed validation. Answering Snapshot Not "
                     + "Found. TraceId: {TraceId}",
-                ex.InnerException?.GetType().Name,
+                ex.FailureDescription,
                 ex.TargetKind,
                 selectedInstance.Id,
                 LoggingSanitizer.SanitizeForLogging(selectedInstance.Name),
@@ -135,8 +137,10 @@ internal class ValidateResourceKeySeedMiddleware(
             // inner exceptions. This catch can see a selected target fail inside connection
             // acquisition, and a provider exception from parsing or opening a connection string can
             // quote its values back.
-            // A Primary or ReadReplica connection-unavailable wrapper lands here too, deliberately:
-            // only a snapshot's response depends on the failure being a connection failure.
+            // A Primary or ReadReplica connection-unavailable wrapper would land here, deliberately:
+            // only a snapshot's response depends on the failure being a connection failure, and this
+            // arm logs nothing of it but its type and assigns no caught exception, so the wrapper's
+            // inner provider message never reaches a sink.
             // S6667 asks for the caught exception to be passed to the logger. That is the right
             // default and the wrong thing here, for the reason above: the exception carries the
             // untrusted value. Its type is logged instead, which is the part that helps an operator

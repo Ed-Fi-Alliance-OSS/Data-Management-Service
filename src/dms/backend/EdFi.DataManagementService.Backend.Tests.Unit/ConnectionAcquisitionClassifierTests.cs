@@ -107,6 +107,50 @@ public class ConnectionAcquisitionClassifierTests
                 .Should()
                 .BeFalse();
         }
+
+        /// <summary>
+        /// A failure the server answered carries its SQLSTATE, which is what separates an absent
+        /// catalog from a failed authentication from a broken connection in a log that may carry
+        /// nothing else about the failure.
+        /// </summary>
+        [Test]
+        public void It_describes_a_server_failure_with_its_sqlstate()
+        {
+            PostgresqlConnectionAcquisitionFailure
+                .Describe(new PostgresException("db missing", "FATAL", "FATAL", "3D000"))
+                .Should()
+                .Be("PostgresException(3D000)");
+        }
+
+        /// <summary>
+        /// A parse failure and a socket failure never reached a server, so there is no SQLSTATE to
+        /// name and the type stands alone rather than being padded with an empty code.
+        /// </summary>
+        [Test]
+        public void It_describes_a_failure_that_never_reached_a_server_by_type_alone()
+        {
+            PostgresqlConnectionAcquisitionFailure
+                .Describe(new ArgumentException("Keyword not supported"))
+                .Should()
+                .Be("ArgumentException");
+            PostgresqlConnectionAcquisitionFailure
+                .Describe(new NpgsqlException("connection refused"))
+                .Should()
+                .Be("NpgsqlException");
+        }
+
+        /// <summary>
+        /// The description is the whole of what may accompany the target kind into a log, so it must
+        /// carry nothing the provider put in its own message.
+        /// </summary>
+        [Test]
+        public void It_describes_without_quoting_the_provider_message()
+        {
+            PostgresqlConnectionAcquisitionFailure
+                .Describe(new NpgsqlException("failed for host=secret;password=hunter2"))
+                .Should()
+                .NotContain("hunter2");
+        }
     }
 
     [TestFixture]
@@ -149,6 +193,36 @@ public class ConnectionAcquisitionClassifierTests
                 .BeFalse();
             MssqlConnectionAcquisitionFailure.IsExpected(new NullReferenceException()).Should().BeFalse();
             MssqlConnectionAcquisitionFailure.IsExpected(new Exception("something else")).Should().BeFalse();
+        }
+
+        /// <summary>
+        /// A parsing ArgumentException and a wrapping provider's plain DbException have no SQL Server
+        /// error number, so the type stands alone rather than being padded with a meaningless code.
+        /// </summary>
+        [Test]
+        public void It_describes_a_failure_without_a_server_number_by_type_alone()
+        {
+            MssqlConnectionAcquisitionFailure
+                .Describe(new ArgumentException("Keyword not supported"))
+                .Should()
+                .Be("ArgumentException");
+            MssqlConnectionAcquisitionFailure
+                .Describe(new StubDbException("some other provider"))
+                .Should()
+                .Be("StubDbException");
+        }
+
+        /// <summary>
+        /// The description is the whole of what may accompany the target kind into a log, so it must
+        /// carry nothing the provider put in its own message.
+        /// </summary>
+        [Test]
+        public void It_describes_without_quoting_the_provider_message()
+        {
+            MssqlConnectionAcquisitionFailure
+                .Describe(new StubDbException("login failed for Server=x;Password=hunter2"))
+                .Should()
+                .NotContain("hunter2");
         }
     }
 }

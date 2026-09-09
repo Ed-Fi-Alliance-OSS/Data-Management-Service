@@ -53,6 +53,7 @@ internal static class MssqlSeamConnection
             () => MssqlLeasedConnection.OpenAsync(acquisition, target, cancellationToken),
             target.Kind,
             MssqlConnectionAcquisitionFailure.IsExpected,
+            MssqlConnectionAcquisitionFailure.Describe,
             logger,
             cancellationToken
         );

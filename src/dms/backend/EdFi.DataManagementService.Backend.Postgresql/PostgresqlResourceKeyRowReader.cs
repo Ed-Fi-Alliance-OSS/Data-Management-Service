@@ -44,6 +44,7 @@ public class PostgresqlResourceKeyRowReader(
             () => dataSourceCache.OpenLeasedConnectionAsync(target.ConnectionString, cancellationToken),
             target.Kind,
             PostgresqlConnectionAcquisitionFailure.IsExpected,
+            PostgresqlConnectionAcquisitionFailure.Describe,
             logger,
             cancellationToken
         );

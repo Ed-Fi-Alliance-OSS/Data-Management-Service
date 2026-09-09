@@ -35,10 +35,19 @@ public class ConnectionAcquisitionGuardTests
     /// </summary>
     private static readonly Predicate<Exception> _acceptAnything = static _ => true;
 
+    /// <summary>
+    /// Stands in for an engine's own description. Type-only, because the engine-specific codes are the
+    /// engines' own tests to make; what this fixture pins is that whatever the engine returns is what
+    /// reaches the log and the wrapper.
+    /// </summary>
+    private static readonly Func<Exception, string> _describeByType = static exception =>
+        exception.GetType().Name;
+
     private static Task<T> GuardAsync<T>(
         Func<Task<T>> acquireAsync,
         EffectiveTargetKind targetKind,
         Predicate<Exception>? isExpectedFailure = null,
+        Func<Exception, string>? describeFailure = null,
         ILogger? logger = null,
         CancellationToken cancellationToken = default
     ) =>
@@ -46,6 +55,7 @@ public class ConnectionAcquisitionGuardTests
             acquireAsync,
             targetKind,
             isExpectedFailure ?? _acceptAnything,
+            describeFailure ?? _describeByType,
             logger ?? NullLogger.Instance,
             cancellationToken
         );
@@ -174,6 +184,79 @@ public class ConnectionAcquisitionGuardTests
         // A wrapped cancellation would fail this outright: the wrapper is not an
         // OperationCanceledException, so there is nothing further to assert about what it is not.
         await acquire.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    /// <summary>
+    /// The engine composes the description; the guard neither invents one nor falls back to the type.
+    /// It travels on the wrapper so the translation sites in Core - which cannot see provider types -
+    /// log the same thing the acquisition boundary did.
+    /// </summary>
+    [Test]
+    public async Task It_carries_the_engine_description_on_the_wrapper()
+    {
+        Func<Task> acquire = () =>
+            GuardAsync<object>(
+                () => Throw<object>(new StubDbException("login failed")),
+                EffectiveTargetKind.Snapshot,
+                describeFailure: static _ => "SqlException(4060)"
+            );
+
+        (await acquire.Should().ThrowAsync<DatabaseConnectionUnavailableException>())
+            .Which.FailureDescription.Should()
+            .Be("SqlException(4060)");
+    }
+
+    [Test]
+    public async Task It_logs_the_engine_description_rather_than_the_type()
+    {
+        CapturingLogger logger = new();
+
+        try
+        {
+            await GuardAsync<object>(
+                () => Throw<object>(new StubDbException($"login failed for '{SecretConnectionString}'")),
+                EffectiveTargetKind.Snapshot,
+                describeFailure: static _ => "SqlException(4060)",
+                logger: logger
+            );
+        }
+        catch (DatabaseConnectionUnavailableException)
+        {
+            // Expected. What was logged on the way is the behavior under test.
+        }
+
+        logger.Entries.Should().ContainSingle();
+        logger.Entries[0].Message.Should().Contain("SqlException(4060)");
+    }
+
+    /// <summary>
+    /// The description is asked for only where it is used. A failure the guard does not classify must
+    /// not call into the engine at all, which is what keeps a describe implementation from having to
+    /// cope with exceptions its classifier already rejected.
+    /// </summary>
+    [Test]
+    public async Task It_asks_for_no_description_on_a_kind_it_does_not_wrap()
+    {
+        bool described = false;
+
+        try
+        {
+            await GuardAsync<object>(
+                () => Throw<object>(new StubDbException("connection refused")),
+                EffectiveTargetKind.ReadReplica,
+                describeFailure: _ =>
+                {
+                    described = true;
+                    return "unused";
+                }
+            );
+        }
+        catch (DbException)
+        {
+            // Expected: it propagates.
+        }
+
+        described.Should().BeFalse();
     }
 
     /// <summary>

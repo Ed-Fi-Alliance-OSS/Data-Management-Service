@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
+using Microsoft.Data.SqlClient;
 
 namespace EdFi.DataManagementService.Backend.Mssql;
 
@@ -40,4 +41,26 @@ internal static class MssqlConnectionAcquisitionFailure
                 or FormatException
                 or ArgumentException
                 and not ArgumentNullException;
+
+    /// <summary>
+    /// The log-safe description of a classified failure: its type, plus the server's own error number
+    /// when SQL Server raised one - <c>SqlException(4060)</c> for a catalog the login cannot open,
+    /// <c>(18456)</c> for a failed login, <c>(-2)</c> for a connection timeout.
+    /// </summary>
+    /// <remarks>
+    /// <c>SqlException.Number</c> rather than <c>DbException.SqlState</c>: SqlClient does not populate
+    /// the engine-agnostic property, so reading it here would silently describe every SQL Server
+    /// failure by type alone. The number is an integer and carries no part of the connection string,
+    /// which is what makes it the one detail beyond the type that may be logged. A parsing
+    /// <c>ArgumentException</c> and a wrapping provider's plain <c>DbException</c> have no number and
+    /// are described by type alone.
+    /// </remarks>
+    public static string Describe(Exception exception)
+    {
+        ArgumentNullException.ThrowIfNull(exception);
+
+        string typeName = exception.GetType().Name;
+
+        return exception is SqlException sqlException ? $"{typeName}({sqlException.Number})" : typeName;
+    }
 }

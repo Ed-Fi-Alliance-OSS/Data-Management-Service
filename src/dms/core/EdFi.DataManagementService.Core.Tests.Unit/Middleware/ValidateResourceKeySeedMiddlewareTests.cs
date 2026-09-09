@@ -739,6 +739,13 @@ public class ValidateResourceKeySeedMiddlewareTests
         private const string ConnectionString = "Server=snapshot;Database=edfi;Password=hunter2";
 
         /// <summary>
+        /// What an engine would have composed: the provider type and its own error code, and nothing
+        /// else. Distinct from anything in the connection string, so a log assertion that the string
+        /// is absent still means something when this is present.
+        /// </summary>
+        private const string FailureDescription = "TimeoutException(-2)";
+
+        /// <summary>
         /// A provider exception of the shape the seam guard classifies. Its message quotes the
         /// connection string back, which is exactly what must never reach a log.
         /// </summary>
@@ -788,7 +795,9 @@ public class ValidateResourceKeySeedMiddlewareTests
                         A<CancellationToken>._
                     )
                 )
-                .ThrowsAsync(() => new DatabaseConnectionUnavailableException(kind, ProviderFailure()));
+                .ThrowsAsync(() =>
+                    new DatabaseConnectionUnavailableException(kind, FailureDescription, ProviderFailure())
+                );
 
             var fingerprint = new DatabaseFingerprint("1.0", "abc123", 2, new byte[32].ToImmutableArray());
             RequestInfo requestInfo = CreateRequestInfoWithFingerprint(serviceProvider, fingerprint);

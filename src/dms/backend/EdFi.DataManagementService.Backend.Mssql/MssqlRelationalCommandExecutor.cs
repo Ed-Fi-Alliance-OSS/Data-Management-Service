@@ -57,6 +57,7 @@ internal sealed class MssqlRelationalCommandExecutor : IRelationalCommandExecuto
                     ),
                 targetKind,
                 MssqlConnectionAcquisitionFailure.IsExpected,
+                MssqlConnectionAcquisitionFailure.Describe,
                 logger,
                 cancellationToken
             );

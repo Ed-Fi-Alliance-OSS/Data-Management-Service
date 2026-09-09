@@ -43,6 +43,7 @@ public class PostgresqlDatabaseFingerprintReader(
             () => dataSourceCache.OpenLeasedConnectionAsync(target.ConnectionString, CancellationToken.None),
             target.Kind,
             PostgresqlConnectionAcquisitionFailure.IsExpected,
+            PostgresqlConnectionAcquisitionFailure.Describe,
             logger,
             CancellationToken.None
         );

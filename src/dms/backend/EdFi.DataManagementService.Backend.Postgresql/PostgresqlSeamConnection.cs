@@ -46,6 +46,7 @@ internal static class PostgresqlSeamConnection
                     .ConfigureAwait(false),
             dataSourceProvider.TargetKind,
             PostgresqlConnectionAcquisitionFailure.IsExpected,
+            PostgresqlConnectionAcquisitionFailure.Describe,
             logger,
             cancellationToken
         );

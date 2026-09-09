@@ -28,6 +28,13 @@ public class ResourceKeyValidatorSnapshotTests
 {
     private const string ConnectionString = "Server=snapshot;Database=edfi";
 
+    /// <summary>
+    /// What an engine would have composed: the provider type and its own error code, and nothing else.
+    /// Distinct from anything in the connection string, so a log assertion that the string is absent
+    /// still means something when this is present.
+    /// </summary>
+    private const string FailureDescription = "TimeoutException(-2)";
+
     private static readonly IReadOnlyList<ResourceKeyRow> _expectedKeys =
     [
         new(1, "Ed-Fi", "Student", "5.0.0"),
@@ -74,6 +81,7 @@ public class ResourceKeyValidatorSnapshotTests
     {
         DatabaseConnectionUnavailableException wrapper = new(
             EffectiveTargetKind.Snapshot,
+            FailureDescription,
             new TimeoutException("connection timed out")
         );
 
@@ -95,7 +103,11 @@ public class ResourceKeyValidatorSnapshotTests
     {
         var (result, thrown) = await ValidateWith(
             kind,
-            new DatabaseConnectionUnavailableException(kind, new TimeoutException("connection timed out"))
+            new DatabaseConnectionUnavailableException(
+                kind,
+                FailureDescription,
+                new TimeoutException("connection timed out")
+            )
         );
 
         thrown.Should().BeNull();

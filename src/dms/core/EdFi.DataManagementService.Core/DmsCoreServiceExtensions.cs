@@ -126,12 +126,8 @@ public static class DmsCoreServiceExtensions
             // registration, the order of the two calls does not matter.
             .AddSingleton<DatabaseFingerprintProvider>()
             .AddSingleton<ResolveDataStoreMiddleware>()
-            // The pipeline steps construct SelectEffectiveDataStoreTargetMiddleware themselves,
-            // because its routing policy differs per pipeline; only its response seam is registered.
-            .AddSingleton<
-                IEffectiveTargetSelectionResponseFactory,
-                DefaultEffectiveTargetSelectionResponseFactory
-            >()
+            // SelectEffectiveDataStoreTargetMiddleware is not registered: the pipeline steps construct
+            // it themselves, because its routing policy differs per pipeline.
             .AddSingleton<ValidateDatabaseFingerprintMiddleware>()
             // Resource key validation
             .AddSingleton<IResourceKeyRowReader, MissingResourceKeyRowReader>()

@@ -45,15 +45,23 @@ namespace EdFi.DataManagementService.Core.External.Backend;
 /// The provider exception is retained as <see cref="Exception.InnerException" /> for diagnostics, but a
 /// provider quotes the offending connection string in its message. It must therefore never be handed to
 /// a logger, and never assigned to the request's caught-exception field, whose message chain is logged.
-/// Log this exception's type and <see cref="TargetKind" />.
+/// Log <see cref="FailureDescription" /> and <see cref="TargetKind" /> instead - together they are the
+/// whole of what is safe to record, and enough to tell the causes apart.
 /// </para>
 /// </remarks>
 public sealed class DatabaseConnectionUnavailableException : Exception
 {
-    public DatabaseConnectionUnavailableException(EffectiveTargetKind targetKind, Exception innerException)
+    public DatabaseConnectionUnavailableException(
+        EffectiveTargetKind targetKind,
+        string failureDescription,
+        Exception innerException
+    )
         : base(BuildMessage(targetKind), innerException)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(failureDescription);
+
         TargetKind = targetKind;
+        FailureDescription = failureDescription;
     }
 
     /// <summary>
@@ -61,6 +69,26 @@ public sealed class DatabaseConnectionUnavailableException : Exception
     /// is carried on the exception rather than re-read from request state at the translation site.
     /// </summary>
     public EffectiveTargetKind TargetKind { get; }
+
+    /// <summary>
+    /// The engine's short, log-safe description of what the provider raised - its exception type and,
+    /// where the provider exposes one, its own error code, as in <c>SqlException(4060)</c> or
+    /// <c>PostgresException(3D000)</c>.
+    /// </summary>
+    /// <remarks>
+    /// Composed by the engine rather than read off the exception here, because the codes worth having
+    /// are provider-specific: SQL Server carries <c>SqlException.Number</c> and PostgreSQL carries
+    /// <c>PostgresException.SqlState</c>, and the engine-agnostic <c>DbException.SqlState</c> is null
+    /// for SqlClient. It is carried on the exception so the translation sites in Core - which cannot see
+    /// provider types - log the same description the acquisition boundary did.
+    /// <para>
+    /// It is a code and a type name and nothing else. That is what makes it the one diagnostic that may
+    /// accompany <see cref="TargetKind" /> into a log: a wrong password, an absent catalog, and an
+    /// unreachable host are three different codes and three different remediations, and none of them
+    /// quotes the connection string the way a provider message does.
+    /// </para>
+    /// </remarks>
+    public string FailureDescription { get; }
 
     /// <summary>
     /// Names the target kind and nothing else. The connection string is deliberately absent: this

@@ -213,7 +213,10 @@ public class SeamConnectionGuardTests
 
     // ---- The seam sets ----------------------------------------------------------------------
 
-    /// <summary>All seven baseline seams, each failing where its connection string is parsed.</summary>
+    /// <summary>
+    /// All seven baseline seams, as eight cases - the fingerprint reader has one per engine. Each
+    /// fails where its connection string is parsed.
+    /// </summary>
     private static IEnumerable<Seam> AllSeams()
     {
         yield return PostgresqlFingerprintReader(new NpgsqlException("unknown keyword"));

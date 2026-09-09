@@ -52,6 +52,7 @@ internal sealed class PostgresqlRelationalCommandExecutor : IRelationalCommandEx
                 () => openConnectionAsync(cancellationToken),
                 targetKind,
                 PostgresqlConnectionAcquisitionFailure.IsExpected,
+                PostgresqlConnectionAcquisitionFailure.Describe,
                 logger,
                 cancellationToken
             );

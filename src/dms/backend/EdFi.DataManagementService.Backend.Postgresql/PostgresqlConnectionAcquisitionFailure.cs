@@ -38,4 +38,26 @@ internal static class PostgresqlConnectionAcquisitionFailure
                 or FormatException
                 or ArgumentException
                 and not ArgumentNullException;
+
+    /// <summary>
+    /// The log-safe description of a classified failure: its type, plus the server's own
+    /// <c>SQLSTATE</c> when PostgreSQL raised one - <c>PostgresException(3D000)</c> for an absent
+    /// catalog, <c>(28P01)</c> for a failed authentication, <c>(08006)</c> for a broken connection.
+    /// </summary>
+    /// <remarks>
+    /// <c>SqlState</c> is a five-character standard code and nothing else, so it carries no part of the
+    /// connection string - which is what makes it the one detail beyond the type that may be logged.
+    /// A parse failure and a socket failure arrive as an <c>NpgsqlException</c> or an
+    /// <c>ArgumentException</c> with no <c>SqlState</c>, and are described by type alone.
+    /// </remarks>
+    public static string Describe(Exception exception)
+    {
+        ArgumentNullException.ThrowIfNull(exception);
+
+        string typeName = exception.GetType().Name;
+
+        return exception is PostgresException { SqlState: { Length: > 0 } sqlState }
+            ? $"{typeName}({sqlState})"
+            : typeName;
+    }
 }

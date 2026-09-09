@@ -44,6 +44,7 @@ public class MssqlDatabaseFingerprintReader : IDatabaseFingerprintReader
             () => MssqlLeasedConnection.OpenAsync(_acquisition, target, CancellationToken.None),
             target.Kind,
             MssqlConnectionAcquisitionFailure.IsExpected,
+            MssqlConnectionAcquisitionFailure.Describe,
             _logger,
             CancellationToken.None
         );

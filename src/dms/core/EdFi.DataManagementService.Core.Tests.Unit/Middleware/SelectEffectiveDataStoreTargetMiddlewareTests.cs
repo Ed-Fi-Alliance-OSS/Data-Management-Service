@@ -80,12 +80,7 @@ public class SelectEffectiveDataStoreTargetMiddlewareTests
 
     private static SelectEffectiveDataStoreTargetMiddleware CreateMiddleware(
         DerivativeRoutingPolicy policy
-    ) =>
-        new(
-            policy,
-            new DefaultEffectiveTargetSelectionResponseFactory(),
-            NullLogger<SelectEffectiveDataStoreTargetMiddleware>.Instance
-        );
+    ) => new(policy, NullLogger<SelectEffectiveDataStoreTargetMiddleware>.Instance);
 
     /// <summary>
     /// Runs the step over the real production selection, so what the assertions observe is the
