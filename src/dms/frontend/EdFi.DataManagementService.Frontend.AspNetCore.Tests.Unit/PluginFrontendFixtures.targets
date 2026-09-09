@@ -21,6 +21,11 @@
         >
             <StagedName>Acme.DmsContributor</StagedName>
         </PluginFrontendFixture>
+        <PluginFrontendFixture
+            Include="$(MSBuildThisFileDirectory)../../../plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Plugins/Acme.RealHelpers/Acme.RealHelpers.csproj"
+        >
+            <StagedName>Acme.RealHelpers</StagedName>
+        </PluginFrontendFixture>
     </ItemGroup>
 
     <!--
@@ -43,19 +48,28 @@
     <PropertyGroup>
         <PluginFrontendFixtureRepositoryRoot
         >$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)', '..', '..', '..'))</PluginFrontendFixtureRepositoryRoot>
-        <PluginFrontendFixtureProjectDirectory
-        >$([MSBuild]::NormalizeDirectory('$(PluginFrontendFixtureRepositoryRoot)', 'plugins', 'EdFi.Api.Plugins.Hosting.Tests.Unit', 'Fixtures', 'Plugins', 'Acme.DmsContributor'))</PluginFrontendFixtureProjectDirectory>
     </PropertyGroup>
 
     <ItemGroup>
         <!-- The staging rules themselves. -->
         <PluginFrontendFixtureInput Include="$(MSBuildThisFileFullPath)" />
 
-        <!-- The fixture project, and the props it inherits from the fixture tree it sits in. -->
+        <!--
+            Every staged fixture's own directory. Written out rather than derived from the item list
+            above, because an item transform does not glob: '%(Directory)**/*' arrives as one item whose
+            identity is that literal string, so a transform here watches nothing at all. It was written
+            that way first and the closure cases below caught it.
+
+            A fixture added to the list above therefore needs its directory added here too, and
+            forgetting is not silent: the closure cases assert each fixture's project file and sources
+            are watched, and they fail when one is not.
+        -->
         <PluginFrontendFixtureInput
-            Include="$(PluginFrontendFixtureProjectDirectory)**/*"
-            Exclude="$(PluginFrontendFixtureProjectDirectory)bin/**;$(PluginFrontendFixtureProjectDirectory)obj/**"
+            Include="$(PluginFrontendFixtureRepositoryRoot)plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Plugins/Acme.DmsContributor/**/*;$(PluginFrontendFixtureRepositoryRoot)plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Plugins/Acme.RealHelpers/**/*"
+            Exclude="$(PluginFrontendFixtureRepositoryRoot)plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Plugins/Acme.DmsContributor/bin/**;$(PluginFrontendFixtureRepositoryRoot)plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Plugins/Acme.DmsContributor/obj/**;$(PluginFrontendFixtureRepositoryRoot)plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Plugins/Acme.RealHelpers/bin/**;$(PluginFrontendFixtureRepositoryRoot)plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Plugins/Acme.RealHelpers/obj/**"
         />
+
+        <!-- The props those fixtures inherit from the fixture tree they sit in. -->
         <PluginFrontendFixtureInput
             Include="$(PluginFrontendFixtureRepositoryRoot)plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Directory.Build.props;$(PluginFrontendFixtureRepositoryRoot)plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Directory.Packages.props"
         />

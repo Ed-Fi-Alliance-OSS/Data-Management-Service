@@ -251,6 +251,9 @@ public class Given_the_frontend_fixture_staging_rules
         "plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Directory.Build.props",
         "plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Directory.Packages.props",
         "plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Plugins/Acme.DmsContributor/Acme.DmsContributor.csproj",
+        "plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Plugins/Acme.DmsContributor/DmsContributorPlugin.cs",
+        "plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Plugins/Acme.RealHelpers/Acme.RealHelpers.csproj",
+        "plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Plugins/Acme.RealHelpers/RealHelpersPlugin.cs",
         "plugins/EdFi.Api.Plugins/EdFi.Api.Plugins.csproj",
         "plugins/EdFi.Api.Plugins.Hosting/EdFi.Api.Plugins.Hosting.csproj",
         "plugins/Directory.Build.props",
@@ -330,6 +333,52 @@ public class Given_the_frontend_fixture_staging_rules
 
         afterTouch.Fingerprint.Should().NotBe(sealed_.Fingerprint);
         afterTouch.Stale.Should().BeTrue();
+    }
+
+    /// <summary>
+    /// The second staged fixture's sources are watched too, and by derivation rather than by being
+    /// named again: the input set is built from the fixture item list, so a fixture added without its
+    /// sources being watched is not a state this file can be left in.
+    /// </summary>
+    [Test]
+    public void It_calls_the_tree_stale_when_the_real_helper_fixture_changes()
+    {
+        using FrontendStagingProbe probe = FrontendStagingProbe.Create();
+        FrontendStagingProbe.Report sealed_ = probe.Seal();
+
+        string fixtureSource = Path.Combine(
+            FrontendStagingProbe.RepositoryRoot,
+            "plugins",
+            "EdFi.Api.Plugins.Hosting.Tests.Unit",
+            "Fixtures",
+            "Plugins",
+            "Acme.RealHelpers",
+            "RealHelpersPlugin.cs"
+        );
+
+        FrontendStagingProbe.Report afterTouch;
+        using (TouchedFile.Touch(fixtureSource))
+        {
+            afterTouch = probe.Run();
+        }
+
+        afterTouch.Fingerprint.Should().NotBe(sealed_.Fingerprint);
+        afterTouch.Stale.Should().BeTrue();
+    }
+
+    /// <summary>
+    /// Both fixtures are staged, so a rule that watched only the first would leave the second's
+    /// directory unaccounted for.
+    /// </summary>
+    [Test]
+    public void It_stages_both_fixtures()
+    {
+        using FrontendStagingProbe probe = FrontendStagingProbe.Create();
+
+        FrontendStagingProbe.Report report = probe.Run();
+
+        report.Fingerprint.Should().Contain("Acme.DmsContributor");
+        report.Fingerprint.Should().Contain("Acme.RealHelpers");
     }
 
     [Test]

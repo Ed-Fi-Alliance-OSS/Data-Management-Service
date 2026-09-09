@@ -71,10 +71,10 @@ internal static class PluginCompositionProbe
     /// <summary>
     /// Loads the staged fixture plugin from a plugin root of the test's own, through the real loader.
     /// </summary>
-    internal static LoadedPlugins Load(string pluginRoot)
+    internal static LoadedPlugins Load(string pluginRoot, string fixtureName = DmsContributor)
     {
-        string source = Path.Combine(AppContext.BaseDirectory, "PluginFixtures", DmsContributor);
-        string destination = Path.Combine(pluginRoot, DmsContributor);
+        string source = Path.Combine(AppContext.BaseDirectory, "PluginFixtures", fixtureName);
+        string destination = Path.Combine(pluginRoot, fixtureName);
 
         Directory.CreateDirectory(destination);
 
@@ -90,7 +90,7 @@ internal static class PluginCompositionProbe
                         "{\"Plugins\": {\"Directory\": "
                             + JsonSerializer.Serialize(pluginRoot)
                             + ", \"Allowed\": "
-                            + JsonSerializer.Serialize(DmsContributor)
+                            + JsonSerializer.Serialize(fixtureName)
                             + "}}"
                     )
                 )

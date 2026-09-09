@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <!--
+        Calls the registration helpers a real plugin actually calls, from the packages that ship them.
+        The point is that the wrapper is proven against the libraries as published rather than against
+        a fixture imitating them, so every reference here is deliberate and none is a stand-in.
+
+        Microsoft.Extensions.Azure is the vendor helper. AddAzureClients is the ordinary cloud
+        registration a plugin is most likely to make, and Azure.Extensions.AspNetCore.Configuration.-
+        Secrets, the other obvious candidate, is a configuration provider that registers nothing.
+        The version is managed centrally like every other, and the entry there says what this comment
+        says: no production project references it and its closure reaches no shipped assembly.
+
+        Published into the frontend test project's output, because the criterion is about a collection
+        the Data Management Service's own AddServices has populated.
+    -->
+    <PropertyGroup>
+        <AssemblyName>Acme.RealHelpers</AssemblyName>
+        <RootNamespace>Acme.RealHelpers</RootNamespace>
+    </PropertyGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\..\..\..\EdFi.Api.Plugins\EdFi.Api.Plugins.csproj" />
+        <!-- A declared contract, so the audit has something to admit and the boot is not refused. -->
+        <ProjectReference
+            Include="..\..\..\..\..\dms\core\EdFi.DataManagementService.CustomValidation\EdFi.DataManagementService.CustomValidation.csproj"
+        />
+    </ItemGroup>
+    <ItemGroup>
+        <PackageReference Include="Microsoft.Extensions.Azure" />
+        <PackageReference Include="Microsoft.Extensions.Http" />
+        <PackageReference Include="Microsoft.Extensions.Logging" />
+        <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" />
+    </ItemGroup>
+</Project>
