@@ -190,7 +190,7 @@ public static class PluginLoader
             CheckContractReferences(name, entryAssemblyPath, contractAssemblyNames);
             CheckDeclaredDependencies(name, manifest);
 
-            PluginLoadContext context = CreateLoadContext(name, entryAssemblyPath);
+            PluginLoadContext context = CreateLoadContext(name, entryAssemblyPath, manifest);
             Assembly entryAssembly = LoadEntryAssembly(name, entryAssemblyPath, context);
 
             if (entryAssembly.GetName().Name is not { } entryAssemblyName)
@@ -240,6 +240,8 @@ public static class PluginLoader
                 instance,
                 resolvedPlugin,
                 entryAssembly.GetName().Version ?? new Version(0, 0, 0, 0),
+                $"{name}.dll",
+                PluginFileInventory.Build(name, resolvedPlugin, manifest),
                 context
             );
 
@@ -539,11 +541,18 @@ public static class PluginLoader
         }
     }
 
-    private static PluginLoadContext CreateLoadContext(string name, string entryAssemblyPath)
+    private static PluginLoadContext CreateLoadContext(
+        string name,
+        string entryAssemblyPath,
+        PluginDepsManifest manifest
+    )
     {
         try
         {
-            return new PluginLoadContext(name, entryAssemblyPath);
+            // The declared versions go to the context so that a substitution it records can say what the
+            // plugin's manifest declared, rather than only what the reference asked for. The two differ,
+            // and the declaration is the one the plugin shipped and its author tested against.
+            return new PluginLoadContext(name, entryAssemblyPath, DeclaredVersionsOf(manifest));
         }
         catch (Exception exception)
             when (exception is ArgumentException or InvalidOperationException or IOException)
@@ -560,6 +569,26 @@ public static class PluginLoader
                 exception
             );
         }
+    }
+
+    /// <summary>
+    /// The version the manifest declares for each simple assembly name, for the substitution record.
+    /// </summary>
+    /// <remarks>
+    /// A manifest can declare one simple name more than once, as a top-level runtime entry and again as
+    /// a RID-specific row. Those agree in every publish measured here; where they did not, the first
+    /// declaration wins and the record still says what a declaration said rather than inventing one.
+    /// </remarks>
+    private static IReadOnlyDictionary<string, Version> DeclaredVersionsOf(PluginDepsManifest manifest)
+    {
+        Dictionary<string, Version> declared = new(StringComparer.Ordinal);
+
+        foreach (PluginDeclaredAssembly assembly in manifest.DeclaredAssemblies)
+        {
+            declared.TryAdd(assembly.SimpleName, assembly.DeclaredVersion);
+        }
+
+        return declared;
     }
 
     private static string? ReadName(string name, EdFiApiPlugin instance)

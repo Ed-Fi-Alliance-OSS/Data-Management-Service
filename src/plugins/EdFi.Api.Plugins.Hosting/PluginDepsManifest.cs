@@ -16,6 +16,23 @@ namespace EdFi.Api.Plugins.Hosting;
 internal sealed record PluginDeclaredAssembly(string SimpleName, Version DeclaredVersion, string Library);
 
 /// <summary>
+/// One asset a plugin's dependency manifest declares, before anything has looked for it on disk.
+/// </summary>
+/// <param name="DeclaredPath">The path the manifest wrote, which is package-relative.</param>
+/// <param name="Kind">Which section of the manifest declared it.</param>
+/// <param name="DeclaredVersion">The declared assembly version, when the section carries one.</param>
+/// <param name="Locale">
+/// The culture a resource assembly belongs to, which is where a publish puts it and is therefore part
+/// of finding it.
+/// </param>
+internal sealed record PluginDeclaredAsset(
+    string DeclaredPath,
+    PluginFileKind Kind,
+    Version? DeclaredVersion,
+    string? Locale
+);
+
+/// <summary>
 /// The parts of a plugin's <c>.deps.json</c> the loader reads before it constructs the plugin.
 /// </summary>
 /// <remarks>
@@ -37,11 +54,13 @@ internal sealed class PluginDepsManifest
 {
     private PluginDepsManifest(
         bool declaresRuntimePack,
-        IReadOnlyList<PluginDeclaredAssembly> declaredAssemblies
+        IReadOnlyList<PluginDeclaredAssembly> declaredAssemblies,
+        IReadOnlyList<PluginDeclaredAsset> declaredAssets
     )
     {
         DeclaresRuntimePack = declaresRuntimePack;
         DeclaredAssemblies = declaredAssemblies;
+        DeclaredAssets = declaredAssets;
     }
 
     /// <summary>
@@ -59,6 +78,17 @@ internal sealed class PluginDepsManifest
     /// compares against the host.
     /// </summary>
     internal IReadOnlyList<PluginDeclaredAssembly> DeclaredAssemblies { get; }
+
+    /// <summary>
+    /// Every asset the manifest declares, managed, native and resource alike, which is the set the
+    /// inventory is built from.
+    /// </summary>
+    /// <remarks>
+    /// A native asset carries no version and is still a file the plugin shipped, so it is listed rather
+    /// than dropped for want of one. Dropping it would leave the inventory silent about exactly the
+    /// files an incident responder is most likely to ask about.
+    /// </remarks>
+    internal IReadOnlyList<PluginDeclaredAsset> DeclaredAssets { get; }
 
     /// <summary>Reads the manifest at <paramref name="manifestPath"/>.</summary>
     /// <exception cref="PluginLoadException">
@@ -112,13 +142,18 @@ internal sealed class PluginDepsManifest
                 );
             }
 
+            JsonElement selectedTarget = Require(
+                target,
+                JsonValueKind.Object,
+                pluginName,
+                manifestPath,
+                "the selected target"
+            );
+
             return new PluginDepsManifest(
                 ReadDeclaresRuntimePack(root, pluginName, manifestPath),
-                ReadDeclaredAssemblies(
-                    Require(target, JsonValueKind.Object, pluginName, manifestPath, "the selected target"),
-                    pluginName,
-                    manifestPath
-                )
+                ReadDeclaredAssemblies(selectedTarget, pluginName, manifestPath),
+                ReadDeclaredAssets(selectedTarget, pluginName, manifestPath)
             );
         }
         catch (Exception exception)
@@ -284,6 +319,138 @@ internal sealed class PluginDepsManifest
         }
 
         return element;
+    }
+
+    /// <summary>
+    /// Reads every asset the selected target declares: the managed assemblies under <c>runtime</c>, the
+    /// satellite assemblies under <c>resources</c>, the native libraries under <c>native</c>, and the
+    /// RID-specific assets under <c>runtimeTargets</c>, whose kind comes from their own asset type.
+    /// </summary>
+    private static IReadOnlyList<PluginDeclaredAsset> ReadDeclaredAssets(
+        JsonElement target,
+        string pluginName,
+        string manifestPath
+    )
+    {
+        List<PluginDeclaredAsset> assets = [];
+
+        foreach (JsonElement library in target.EnumerateObject().Select(entry => entry.Value))
+        {
+            ReadSection(library, "runtime", PluginFileKind.Managed);
+            ReadSection(library, "native", PluginFileKind.Native);
+            ReadSection(library, "resources", PluginFileKind.Resource);
+            ReadRuntimeTargets(library);
+        }
+
+        return assets;
+
+        void ReadSection(JsonElement libraryValue, string sectionName, PluginFileKind kind)
+        {
+            if (!libraryValue.TryGetProperty(sectionName, out JsonElement section))
+            {
+                return;
+            }
+
+            Require(section, JsonValueKind.Object, pluginName, manifestPath, sectionName);
+
+            foreach (JsonProperty asset in section.EnumerateObject())
+            {
+                string location = $"{sectionName}.{asset.Name}";
+
+                Require(asset.Value, JsonValueKind.Object, pluginName, manifestPath, location);
+
+                assets.Add(
+                    new PluginDeclaredAsset(
+                        asset.Name,
+                        kind,
+                        ReadVersion(asset.Value, location),
+                        ReadLocale(asset.Value, location)
+                    )
+                );
+            }
+        }
+
+        void ReadRuntimeTargets(JsonElement libraryValue)
+        {
+            if (!libraryValue.TryGetProperty("runtimeTargets", out JsonElement runtimeTargets))
+            {
+                return;
+            }
+
+            Require(runtimeTargets, JsonValueKind.Object, pluginName, manifestPath, "runtimeTargets");
+
+            foreach (JsonProperty asset in runtimeTargets.EnumerateObject())
+            {
+                string location = $"runtimeTargets.{asset.Name}";
+
+                Require(asset.Value, JsonValueKind.Object, pluginName, manifestPath, location);
+
+                // The asset type is what says whether a RID-specific asset is managed or native. A
+                // native one carries no assemblyVersion, which is the known gap rather than a fault.
+                PluginFileKind kind =
+                    asset.Value.TryGetProperty("assetType", out JsonElement assetType)
+                    && Require(
+                            assetType,
+                            JsonValueKind.String,
+                            pluginName,
+                            manifestPath,
+                            $"{location}.assetType"
+                        )
+                        .ValueEquals("native")
+                        ? PluginFileKind.Native
+                        : PluginFileKind.Managed;
+
+                assets.Add(
+                    new PluginDeclaredAsset(
+                        asset.Name,
+                        kind,
+                        ReadVersion(asset.Value, location),
+                        ReadLocale(asset.Value, location)
+                    )
+                );
+            }
+        }
+
+        Version? ReadVersion(JsonElement declaration, string location)
+        {
+            if (!declaration.TryGetProperty("assemblyVersion", out JsonElement declaredVersion))
+            {
+                return null;
+            }
+
+            Require(
+                declaredVersion,
+                JsonValueKind.String,
+                pluginName,
+                manifestPath,
+                $"{location}.assemblyVersion"
+            );
+
+            if (!Version.TryParse(declaredVersion.GetString(), out Version? version))
+            {
+                throw Unreadable(
+                    pluginName,
+                    manifestPath,
+                    $"'{PluginDiagnosticText.Quote(location)}.assemblyVersion' is "
+                        + $"'{PluginDiagnosticText.Quote(declaredVersion.GetString())}', which is not an "
+                        + "assembly version",
+                    innerException: null
+                );
+            }
+
+            return version;
+        }
+
+        string? ReadLocale(JsonElement declaration, string location)
+        {
+            if (!declaration.TryGetProperty("locale", out JsonElement locale))
+            {
+                return null;
+            }
+
+            return Require(locale, JsonValueKind.String, pluginName, manifestPath, $"{location}.locale")
+                .GetString();
+        }
     }
 
     private static PluginLoadException Unreadable(

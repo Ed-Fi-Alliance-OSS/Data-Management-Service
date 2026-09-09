@@ -61,6 +61,12 @@ internal static class PluginFixtures
     /// <summary>Ships a dependency the host does not carry, so its own copy is the one served.</summary>
     internal const string PrivateDependency = "Acme.PrivateDependency";
 
+    /// <summary>Ships an older copy of an assembly the host carries.</summary>
+    internal const string Substitution = "Acme.Substitution";
+
+    /// <summary>Ships a native library and calls into it.</summary>
+    internal const string Native = "Acme.Native";
+
     /// <summary>A constructor overload naming a type from an unmanifested, skewed assembly.</summary>
     internal const string CtorSignatureSkew = "Acme.CtorSignatureSkew";
 
@@ -97,6 +103,8 @@ internal static class PluginFixtures
         ThrowingCtor,
         CtorSignatureSkew,
         CtorSignatureMissing,
+        Native,
+        Substitution,
     ];
 
     /// <summary>
