@@ -46,7 +46,12 @@ public class Given_CdcWorkflowJournal
         _session = await AcquireAsync(_store);
         _workflow = Guid.NewGuid();
         _target = CdcWorkflowJournalTestData.Target;
-        await _session.CreateAsync(_workflow, _target, CancellationToken.None);
+        await _session.CreateAsync(
+            _workflow,
+            _target,
+            CancellationToken.None,
+            CdcWorkflowPurpose.InitialCdcProvisioning
+        );
     }
 
     [TearDown]
@@ -196,7 +201,13 @@ public class Given_CdcWorkflowJournal
             _session.ReadAsync(_target with { DataStoreId = "2" }, CancellationToken.None);
         await wrongWorkflow.Should().ThrowAsync<CdcWorkflowStateException>();
         await wrongTarget.Should().ThrowAsync<CdcWorkflowStateException>();
-        Func<Task> overwrite = () => _session.CreateAsync(Guid.NewGuid(), _target, CancellationToken.None);
+        Func<Task> overwrite = () =>
+            _session.CreateAsync(
+                Guid.NewGuid(),
+                _target,
+                CancellationToken.None,
+                CdcWorkflowPurpose.InitialCdcProvisioning
+            );
         await overwrite.Should().ThrowAsync<CdcWorkflowStateException>();
     }
 
@@ -339,6 +350,9 @@ public class Given_CdcWorkflowJournal
 
     [TestCase("missing", CdcWorkflowStateFailure.Missing)]
     [TestCase("malformed", CdcWorkflowStateFailure.Invalid)]
+    [TestCase("missing-purpose", CdcWorkflowStateFailure.Invalid)]
+    [TestCase("unknown-purpose", CdcWorkflowStateFailure.Invalid)]
+    [TestCase("legacy-version", CdcWorkflowStateFailure.UnsupportedVersion)]
     [TestCase("version", CdcWorkflowStateFailure.UnsupportedVersion)]
     [TestCase("duplicate", CdcWorkflowStateFailure.Invalid)]
     [TestCase("unknown", CdcWorkflowStateFailure.Invalid)]
@@ -360,6 +374,15 @@ public class Given_CdcWorkflowJournal
                 break;
             case "malformed":
                 await File.WriteAllTextAsync(JournalPath, "{partial");
+                break;
+            case "missing-purpose":
+                json.AsObject().Remove("purpose");
+                break;
+            case "unknown-purpose":
+                json["purpose"] = "Unknown";
+                break;
+            case "legacy-version":
+                json["version"] = 1;
                 break;
             case "version":
                 json["version"] = 999;
@@ -385,7 +408,7 @@ public class Given_CdcWorkflowJournal
             await File.WriteAllTextAsync(
                 JournalPath,
                 json.ToJsonString()
-                    .Replace("\"version\":1", "\"version\":1,\"version\":1", StringComparison.Ordinal)
+                    .Replace("\"version\":2", "\"version\":2,\"version\":2", StringComparison.Ordinal)
             );
         }
         else if (mutation is not ("missing" or "malformed"))
@@ -683,7 +706,12 @@ public class Given_CdcWorkflowJournal
         File.Delete(JournalPath);
         _session = await AcquireAsync(_store);
         _target = _target with { Provider = CdcProvider.SqlServer };
-        await _session.CreateAsync(_workflow, _target, CancellationToken.None);
+        await _session.CreateAsync(
+            _workflow,
+            _target,
+            CancellationToken.None,
+            CdcWorkflowPurpose.InitialCdcProvisioning
+        );
         await SourceAsync();
         CdcArtifactInventory inventory = CdcArtifactNameGenerator
             .Render(
@@ -818,7 +846,12 @@ public class Given_CdcWorkflowJournal
         string nested = Path.Combine(parent, "state");
         await using (var session = await AcquireAsync(new(nested)))
         {
-            await session.CreateAsync(Guid.NewGuid(), _target, CancellationToken.None);
+            await session.CreateAsync(
+                Guid.NewGuid(),
+                _target,
+                CancellationToken.None,
+                CdcWorkflowPurpose.InitialCdcProvisioning
+            );
         }
         if (!OperatingSystem.IsWindows())
         {

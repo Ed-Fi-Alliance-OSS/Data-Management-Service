@@ -125,7 +125,13 @@ public sealed class Given_CdcControllerFixtureHooks
                     )
             )
             {
-                Func<Task> act = () => session.CreateAsync(workflow, target, CancellationToken.None);
+                Func<Task> act = () =>
+                    session.CreateAsync(
+                        workflow,
+                        target,
+                        CancellationToken.None,
+                        CdcWorkflowPurpose.InitialCdcProvisioning
+                    );
                 await act.Should().ThrowAsync<CdcWorkflowStateException>();
             }
             await using var reopened = await new LocalCdcWorkflowJournalStore(root).AcquireAsync(
@@ -416,7 +422,12 @@ public sealed class Given_CdcControllerFixtureLive(CdcProvider provider)
                 .AcquireAsync(TimeSpan.FromSeconds(3), TimeSpan.FromMilliseconds(10), token)
         )
         {
-            await session.CreateAsync(Guid.NewGuid(), request.TargetIdentity, token);
+            await session.CreateAsync(
+                Guid.NewGuid(),
+                request.TargetIdentity,
+                token,
+                CdcWorkflowPurpose.InitialCdcProvisioning
+            );
         }
 
         // Exercise a real successful external stop with a lost reply; independently reconcile REST.

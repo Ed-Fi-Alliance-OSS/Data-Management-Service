@@ -56,7 +56,11 @@ public class Given_CdcInitialEnablement(Ddl.CdcProvider provider)
         A.CallTo(() => provisioner.CreateDatabase()).Returns(true);
         A.CallTo(() => provisioner.ReadSourceFingerprintAsync(A<CancellationToken>._))
             .Returns(_request.Binding.PhysicalSourceFingerprint);
-        _created = await new CdcManagedDatabaseProvisioning(_store).ProvisionAsync(Target, provisioner);
+        _created = await new CdcManagedDatabaseProvisioning(_store).ProvisionAsync(
+            Target,
+            provisioner,
+            purpose: CdcWorkflowPurpose.InitialCdcProvisioning
+        );
         var services = new ServiceCollection();
         services.AddDmsCdcControlPlane();
         services.Configure<CdcBindingStateStoreOptions>(o => o.RootPath = _root);
@@ -527,6 +531,60 @@ public class Given_CdcInitialEnablement(Ddl.CdcProvider provider)
             .MustHaveHappenedOnceExactly();
     }
 
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task It_rejects_source_history_only_creation_before_observations_or_mutations(
+        bool previouslyWritten
+    )
+    {
+        Directory.Delete(_root, true);
+        var provisioner = A.Fake<ICdcManagedDatabaseProvisioner>();
+        A.CallTo(() => provisioner.CreateDatabase()).Returns(true);
+        A.CallTo(() => provisioner.ReadSourceFingerprintAsync(A<CancellationToken>._))
+            .Returns(_request.Binding.PhysicalSourceFingerprint);
+        await new CdcManagedDatabaseProvisioning(_store).ProvisionAsync(Target, provisioner);
+        // Current table contents cannot upgrade creation purpose, with or without prior writer use.
+        _tables = new(!previouslyWritten, true, true);
+        await AssertNoMutationAsync();
+        _tables = new(true, true, true);
+        await AssertNoMutationAsync();
+        _trace.Should().BeEmpty();
+        ReadJournalWithoutLock().Purpose.Should().Be(CdcWorkflowPurpose.SourceHistoryOnly);
+        (await ReadHistoryWithoutLockAsync())
+            .Transitions[^1]
+            .Status.Should()
+            .Be(DocumentCacheDownstreamPublicationStatus.InternalOnly);
+    }
+
+    [TestCase("missing")]
+    [TestCase("unknown")]
+    [TestCase("contradictory")]
+    public async Task It_rejects_missing_or_contradictory_creation_purpose(string mutation)
+    {
+        if (mutation == "contradictory")
+        {
+            (await RunAsync()).State.Should().Be(CdcTransportEvidenceState.Observed);
+            _trace.Clear();
+            Fake.ClearRecordedCalls(_runtime);
+            Fake.ClearRecordedCalls(_bindings);
+        }
+        string path = Directory
+            .GetFiles(Path.Combine(_root, "workflows"), "*.json", SearchOption.AllDirectories)
+            .Single();
+        var json = System.Text.Json.Nodes.JsonNode.Parse(await File.ReadAllTextAsync(path))!.AsObject();
+        if (mutation == "missing")
+        {
+            json.Remove("purpose");
+        }
+        else
+        {
+            json["purpose"] = mutation == "unknown" ? "Unknown" : "SourceHistoryOnly";
+        }
+        await File.WriteAllTextAsync(path, json.ToJsonString());
+        await AssertNoMutationAsync();
+        _trace.Should().BeEmpty();
+    }
+
     [Test]
     public async Task It_rejects_reused_database_receipts_even_when_empty()
     {
@@ -535,7 +593,11 @@ public class Given_CdcInitialEnablement(Ddl.CdcProvider provider)
         A.CallTo(() => provisioner.CreateDatabase()).Returns(false);
         A.CallTo(() => provisioner.ReadSourceFingerprintAsync(A<CancellationToken>._))
             .Returns(_request.Binding.PhysicalSourceFingerprint);
-        await new CdcManagedDatabaseProvisioning(_store).ProvisionAsync(Target, provisioner);
+        await new CdcManagedDatabaseProvisioning(_store).ProvisionAsync(
+            Target,
+            provisioner,
+            purpose: CdcWorkflowPurpose.InitialCdcProvisioning
+        );
         await AssertNoMutationAsync();
         _trace.Should().BeEmpty();
     }

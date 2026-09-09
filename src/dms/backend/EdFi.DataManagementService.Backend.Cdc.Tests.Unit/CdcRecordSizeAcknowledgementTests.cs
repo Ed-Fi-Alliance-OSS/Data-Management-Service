@@ -53,7 +53,12 @@ public class Given_CdcRecordSizeAcknowledgement(Provider provider)
         var binding = CdcConnectorTemplateTestData.BuildRequest(provider).Binding;
         _scope = new(Guid.NewGuid(), binding.ToCompleteBindingIdentity(), 1000, 2000);
         _session = await AcquireAsync();
-        await _session.CreateAsync(_workflow, Target, CancellationToken.None);
+        await _session.CreateAsync(
+            _workflow,
+            Target,
+            CancellationToken.None,
+            CdcWorkflowPurpose.InitialCdcProvisioning
+        );
         await SeedAsync(
             CdcWorkflowEffect.CreateDatabase,
             new CdcWorkflowCompletion.Database(new(Guid.NewGuid(), CdcDatabaseCreationOutcome.Created))

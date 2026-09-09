@@ -301,10 +301,11 @@ exit $ExitCode
             $params | Should -Not -Contain "DataStoreDatabaseName"
             $params | Should -Contain "CdcBindingStatePath"
             $params | Should -Contain "PrepareCdcProjectionPrerequisites"
+            $params | Should -Contain "InitialCdcProvisioning"
             $params | Should -Contain "DeploymentKey"
             $params | Should -Contain "InstanceKey"
             $params | Should -Contain "Generation"
-            $params.Count | Should -Be 10
+            $params.Count | Should -Be 11
         }
 
         It "provision-dms-schema.ps1 forwards the topology declaration from its parameter surface into the phase function" {

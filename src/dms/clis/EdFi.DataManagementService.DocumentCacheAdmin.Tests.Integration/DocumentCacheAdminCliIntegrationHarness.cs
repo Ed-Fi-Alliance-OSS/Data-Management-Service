@@ -1579,6 +1579,8 @@ internal sealed class DocumentCacheAdminCliProcessHarness : IAsyncDisposable
 
     public string PublishedAssemblyPath { get; set; } = string.Empty;
 
+    public string SettingsPath => _settingsPath;
+
     public void RemovePublicationHistoryConfiguration()
     {
         JsonObject settings = JsonNode.Parse(File.ReadAllText(_settingsPath))!.AsObject();

@@ -40,7 +40,11 @@ public class Given_CdcDownstreamPublicationHistoryProvider(CdcProvider provider)
         A.CallTo(() => provisioner.CreateDatabase()).Returns(true);
         A.CallTo(() => provisioner.ReadSourceFingerprintAsync(A<CancellationToken>._))
             .Returns(Fingerprint.Value);
-        _created = await new CdcManagedDatabaseProvisioning(_store).ProvisionAsync(Target, provisioner);
+        _created = await new CdcManagedDatabaseProvisioning(_store).ProvisionAsync(
+            Target,
+            provisioner,
+            purpose: CdcWorkflowPurpose.InitialCdcProvisioning
+        );
         _history = new(_store, "local", provider, TimeProvider.System, TimeSpan.FromSeconds(2));
     }
 

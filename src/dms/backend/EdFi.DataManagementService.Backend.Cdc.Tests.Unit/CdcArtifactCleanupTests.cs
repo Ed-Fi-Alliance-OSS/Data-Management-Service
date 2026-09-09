@@ -614,7 +614,8 @@ public class Given_CdcArtifactCleanupDatabaseJobs
         _workflow = (
             await new CdcManagedDatabaseProvisioning(_store).ProvisionAsync(
                 _scope.Request.TargetIdentity,
-                provisioner
+                provisioner,
+                purpose: CdcWorkflowPurpose.InitialCdcProvisioning
             )
         ).WorkflowId;
         _database = A.Fake<ICdcProviderDatabaseExecutor>(options => options.Strict());

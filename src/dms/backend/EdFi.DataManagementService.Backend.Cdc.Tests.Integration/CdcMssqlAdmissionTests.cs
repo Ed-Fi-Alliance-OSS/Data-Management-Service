@@ -595,7 +595,8 @@ public sealed class Given_SqlServer_Controller_Admission
             new CdcManagedDatabaseProvisioning(_fixture.Infrastructure.CreateJournalStore()).ProvisionAsync(
                 target,
                 wrapper,
-                Token
+                Token,
+                purpose: CdcWorkflowPurpose.InitialCdcProvisioning
             );
         await provision.Should().ThrowAsync<Exception>();
         interrupted.Should().BeTrue();
@@ -612,7 +613,7 @@ public sealed class Given_SqlServer_Controller_Admission
         Func<Task> retry = () =>
             new CdcManagedDatabaseProvisioning(
                 new LocalCdcWorkflowJournalStore(_fixture.Infrastructure.StateRoot)
-            ).ProvisionAsync(target, source, Token);
+            ).ProvisionAsync(target, source, Token, purpose: CdcWorkflowPurpose.InitialCdcProvisioning);
         await retry.Should().ThrowAsync<CdcManagedProvisioningRecoveryException>();
         await using var session = await new LocalCdcWorkflowJournalStore(
             _fixture.Infrastructure.StateRoot
@@ -629,7 +630,12 @@ public sealed class Given_SqlServer_Controller_Admission
         var target = _fixture.Request.TargetIdentity with { InstanceKey = "reused" };
         var provisioned = await new CdcManagedDatabaseProvisioning(
             _fixture.Infrastructure.CreateJournalStore()
-        ).ProvisionAsync(target, _fixture.CreateManagedSource(_fixture.Database), Token);
+        ).ProvisionAsync(
+            target,
+            _fixture.CreateManagedSource(_fixture.Database),
+            Token,
+            purpose: CdcWorkflowPurpose.InitialCdcProvisioning
+        );
         provisioned.CreationReceipt.Outcome.Should().Be(CdcDatabaseCreationOutcome.Reused);
         var artifacts = CoreCdc
             .CdcArtifactNameGenerator.Render(
@@ -722,7 +728,8 @@ public sealed class Given_SqlServer_Controller_Admission
                         : CdcProjectionPrerequisiteMode.OwnedLocalSqlServer,
                     setupUser
                 ),
-                Token
+                Token,
+                purpose: CdcWorkflowPurpose.InitialCdcProvisioning
             );
         await provision.Should().ThrowAsync<Exception>();
         (

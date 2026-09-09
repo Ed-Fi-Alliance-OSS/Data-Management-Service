@@ -56,6 +56,59 @@ public class Given_Managed_Database_Provisioning
     private string ReadDurableJson() =>
         File.ReadAllText(Directory.GetFiles(_root, "*.json", SearchOption.AllDirectories).Single());
 
+    [TestCase(CdcWorkflowPurpose.SourceHistoryOnly)]
+    [TestCase(CdcWorkflowPurpose.InitialCdcProvisioning)]
+    public async Task It_persists_creation_purpose_before_CREATE_and_preserves_it_on_retry(
+        CdcWorkflowPurpose purpose
+    )
+    {
+        A.CallTo(() => _provider.CreateDatabase())
+            .Invokes(() =>
+            {
+                using var json = JsonDocument.Parse(ReadDurableJson());
+                json.RootElement.GetProperty("purpose").GetString().Should().Be(purpose.ToString());
+            })
+            .Returns(true);
+        var first = await _controller.ProvisionAsync(Target, _provider, purpose: purpose);
+        (await _controller.ProvisionAsync(Target, _provider, purpose: purpose)).Should().Be(first);
+        (await ReadAsync()).Purpose.Should().Be(purpose);
+        A.CallTo(() => _provider.CreateDatabase()).MustHaveHappenedOnceExactly();
+        A.CallTo(() => _provider.ProvisionSchema(true)).MustHaveHappenedOnceExactly();
+    }
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task It_never_promotes_source_history_only_creation_even_after_interruption(bool interrupted)
+    {
+        if (interrupted)
+        {
+            A.CallTo(() => _provider.ProvisionSchema(true)).Throws(new IOException("interrupted"));
+            await FluentActions
+                .Awaiting(() => _controller.ProvisionAsync(Target, _provider))
+                .Should()
+                .ThrowAsync<IOException>();
+        }
+        else
+        {
+            await _controller.ProvisionAsync(Target, _provider);
+        }
+        (await ReadAsync()).Purpose.Should().Be(CdcWorkflowPurpose.SourceHistoryOnly);
+        Fake.ClearRecordedCalls(_provider);
+        await FluentActions
+            .Awaiting(() =>
+                _controller.ProvisionAsync(
+                    Target,
+                    _provider,
+                    purpose: CdcWorkflowPurpose.InitialCdcProvisioning
+                )
+            )
+            .Should()
+            .ThrowAsync<CdcWorkflowStateException>()
+            .Where(e => e.Failure == CdcWorkflowStateFailure.Contradictory);
+        Fake.GetCalls(_provider).Should().BeEmpty();
+        (await ReadAsync()).Purpose.Should().Be(CdcWorkflowPurpose.SourceHistoryOnly);
+    }
+
     [TestCase(true, CdcDatabaseCreationOutcome.Created)]
     [TestCase(false, CdcDatabaseCreationOutcome.Reused)]
     public async Task It_records_the_actual_provider_outcome_before_schema_effects(
@@ -220,7 +273,11 @@ public class Given_Managed_Database_Provisioning
     [Test]
     public async Task It_rejects_reprovisioning_after_binding_intent()
     {
-        var result = await _controller.ProvisionAsync(Target, _provider);
+        var result = await _controller.ProvisionAsync(
+            Target,
+            _provider,
+            purpose: CdcWorkflowPurpose.InitialCdcProvisioning
+        );
         await using (
             var session = await _store.AcquireAsync(
                 TimeSpan.FromSeconds(1),
@@ -240,7 +297,13 @@ public class Given_Managed_Database_Provisioning
         }
         Fake.ClearRecordedCalls(_provider);
         await FluentActions
-            .Awaiting(() => _controller.ProvisionAsync(Target, _provider))
+            .Awaiting(() =>
+                _controller.ProvisionAsync(
+                    Target,
+                    _provider,
+                    purpose: CdcWorkflowPurpose.InitialCdcProvisioning
+                )
+            )
             .Should()
             .ThrowAsync<CdcWorkflowStateException>();
         A.CallTo(() => _provider.ReadSourceFingerprintAsync(A<CancellationToken>._)).MustNotHaveHappened();

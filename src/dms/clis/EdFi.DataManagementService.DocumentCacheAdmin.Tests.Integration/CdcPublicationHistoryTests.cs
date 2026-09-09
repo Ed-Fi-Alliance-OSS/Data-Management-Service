@@ -35,7 +35,15 @@ public sealed class Given_CdcPublicationHistory_packaged_administration(bool mss
     {
         _evidence.Clear();
         _fixture = new(mssql);
-        await _fixture.InitializeAsync();
+        await _fixture.InitializeAsync(
+            TestContext.CurrentContext.Test.MethodName
+                is nameof(It_allows_all_three_commands_from_managed_non_CDC_creation)
+                    or nameof(
+                        It_rejects_initial_enablement_of_a_managed_non_CDC_source_published_to_the_runtime
+                    )
+                ? CdcWorkflowPurpose.SourceHistoryOnly
+                : CdcWorkflowPurpose.InitialCdcProvisioning
+        );
     }
 
     [TearDown]
@@ -84,6 +92,9 @@ public sealed class Given_CdcPublicationHistory_packaged_administration(bool mss
                 .Should()
                 .Be(command == "deactivate-offline" ? "[[\"Disabled\",false]]" : "[[\"Tracking\",false]]");
             await using var session = await _fixture.AcquireAsync();
+            (await session.ReadAsync(_fixture.Receipt.Target, CancellationToken.None))
+                .Purpose.Should()
+                .Be(CdcWorkflowPurpose.SourceHistoryOnly);
             (
                 await session.ReadSourcePublicationHistoryAsync(
                     _fixture.Receipt.Target,
@@ -96,6 +107,53 @@ public sealed class Given_CdcPublicationHistory_packaged_administration(bool mss
                 .Which.Status.Should()
                 .Be(DocumentCacheDownstreamPublicationStatus.InternalOnly);
         }
+    }
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task It_rejects_initial_enablement_of_a_managed_non_CDC_source_published_to_the_runtime(
+        bool previouslyWritten
+    )
+    {
+        // Published SchemaTools created the source with the ordinary default purpose. Its target is
+        // now visible through CMS to production runtime initialization, as at the writer handoff.
+        if (previouslyWritten)
+        {
+            await _fixture.PrepareAsync("activate-offline");
+            await _fixture.ExecuteAsync(
+                """
+                DELETE FROM dms."DocumentProjectionWork";
+                DELETE FROM dms."DocumentCache";
+                DELETE FROM dms."Document";
+                """
+            );
+        }
+        string before = await _fixture.SnapshotAsync();
+        string journal = await File.ReadAllTextAsync(_fixture.JournalPath);
+        string files = _fixture.StateFilesSnapshot();
+        var result = await _fixture.RunCdcEnableAsync();
+        result.ExitCode.Should().Be(1, "initial CDC must reject source-history-only creation");
+        var json = JsonNode.Parse(result.StandardOutput)!.AsObject();
+        json["succeeded"]!.GetValue<bool>().Should().BeFalse();
+        json["diagnostics"]!.AsArray().Should().ContainSingle();
+        json["diagnostics"]![0]!["component"]!.GetValue<string>().Should().Be("WorkflowState");
+        json["diagnostics"]![0]!["failure"]!.GetValue<string>().Should().Be("ValidationFailed");
+        (await _fixture.SnapshotAsync()).Should().Be(before);
+        (await File.ReadAllTextAsync(_fixture.JournalPath)).Should().Be(journal);
+        _fixture.StateFilesSnapshot().Should().Be(files);
+        await using var session = await _fixture.AcquireAsync();
+        (await session.ReadAsync(_fixture.Receipt.Target, CancellationToken.None))
+            .Purpose.Should()
+            .Be(CdcWorkflowPurpose.SourceHistoryOnly);
+        _evidence.Enqueue(
+            new
+            {
+                Operation = "enable",
+                RejectedSourceHistoryOnly = true,
+                PreviouslyWritten = previouslyWritten,
+                UnchangedDatabaseAndJournal = true,
+            }
+        );
     }
 
     [TestCase("possible")]

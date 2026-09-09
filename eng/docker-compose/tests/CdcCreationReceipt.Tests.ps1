@@ -48,9 +48,20 @@ exit 0
         $arguments = Get-Content (Join-Path $TestDrive 'arguments.json') -Raw | ConvertFrom-Json
         $arguments | Should -Contain '--create-database'
         $arguments | Should -Contain '--managed-state-path'
+        $arguments | Should -Contain '--managed-workflow-purpose'
+        $arguments | Should -Contain 'source-history-only'
+        $arguments | Should -Not -Contain 'initial-cdc-provisioning'
         $arguments | Should -Contain $script:invoke.CdcBindingStatePath
         $arguments | Should -Contain 'datastore-42'
         $arguments | Should -Not -Contain '--enable-kafka-cdc'
+    }
+
+    It 'passes initial purpose only for the explicitly selected offline CDC path' {
+        Invoke-DmsSchemaProvision @script:invoke -InitialCdcProvisioning | Out-Null
+        $arguments = Get-Content (Join-Path $TestDrive 'arguments.json') -Raw | ConvertFrom-Json
+        $arguments | Should -Contain '--managed-workflow-purpose'
+        $arguments | Should -Contain 'initial-cdc-provisioning'
+        $arguments | Should -Not -Contain 'source-history-only'
     }
 
     It 'returns reused evidence explicitly' {

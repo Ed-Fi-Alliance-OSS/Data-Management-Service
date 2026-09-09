@@ -73,8 +73,8 @@ return [pscustomobject]@{ SelectedDataStoreIds = @($id); HasRouteQualifiedDataSt
 '@ | Set-Content (Join-Path $script:sandbox 'configure-local-data-store.ps1')
         @'
 param($EnvironmentFile, $DataStoreId, $DatabaseEngine, [switch]$SeparateConfigDatabase, $CdcBindingStatePath,
-    [switch]$PrepareCdcProjectionPrerequisites, $DeploymentKey, $InstanceKey, $Generation)
-Add-Content (Join-Path $PSScriptRoot 'calls') "provision:$DatabaseEngine`:$PrepareCdcProjectionPrerequisites`:$CdcBindingStatePath`:$InstanceKey"
+    [switch]$PrepareCdcProjectionPrerequisites, [switch]$InitialCdcProvisioning, $DeploymentKey, $InstanceKey, $Generation)
+Add-Content (Join-Path $PSScriptRoot 'calls') "provision:$DatabaseEngine`:$PrepareCdcProjectionPrerequisites`:$CdcBindingStatePath`:$InstanceKey`:$InitialCdcProvisioning"
 $outcome = if (Test-Path (Join-Path $PSScriptRoot 'reuse')) { 'Reused' } else { 'Created' }
 if ($CdcBindingStatePath) { return @{ CreationReceipt = @{ Outcome = $outcome } } }
 '@ | Set-Content (Join-Path $script:sandbox 'provision-dms-schema.ps1')
@@ -105,7 +105,7 @@ Add-Content (Join-Path $PSScriptRoot 'calls') "seed:$($DataStoreId -join ',')"
         $calls.Count | Should -Be 6
         $calls[0] | Should -Be "infra:$provider`:True:True:True:"
         $calls[1] | Should -Be "configure:$provider`:dedicated_cdc"
-        $calls[2] | Should -Be "provision:$provider`:True:$($script:arguments.CdcBindingStatePath):datastore-42"
+        $calls[2] | Should -Be "provision:$provider`:True:$($script:arguments.CdcBindingStatePath):datastore-42:True"
         $calls[3] | Should -Be "cdc:42:Created:$($script:arguments.CdcBindingStatePath)"
         $calls[4] | Should -Be "dms:$provider`:False:False:False:$($script:arguments.CdcBindingStatePath)/dms.json"
         $calls[5] | Should -Be 'seed:42'
@@ -177,6 +177,16 @@ Add-Content (Join-Path $PSScriptRoot 'calls') "seed:$($DataStoreId -join ',')"
     It 'does not route explicit CDC teardown through ungoverned volume removal' {
         { & (Join-Path $script:sandbox 'bootstrap-local-dms.ps1') -d -v -EnableKafkaCdc } | Should -Throw '*original retained deployment inventory*'
         Test-Path (Join-Path $script:sandbox 'calls') | Should -BeFalse
+    }
+
+    It 'keeps non-CDC managed provisioning source-history-only before writer handoff for <wrapper>' -ForEach @(
+        @{ wrapper = 'local' }, @{ wrapper = 'published' }
+    ) {
+        & (Join-Path $script:sandbox "bootstrap-$wrapper-dms.ps1") -CdcBindingStatePath $script:arguments.CdcBindingStatePath
+        $calls = @(Get-Content (Join-Path $script:sandbox 'calls'))
+        $calls.Count | Should -Be 4
+        $calls[2] | Should -Be "provision:postgresql:False:$($script:arguments.CdcBindingStatePath)::False"
+        $calls[3] | Should -Match '^dms:'
     }
 
     It 'retains ordinary UI-only phase behavior' {

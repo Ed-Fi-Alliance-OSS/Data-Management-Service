@@ -46,7 +46,7 @@ internal sealed class CdcPublicationHistoryFixture(bool mssql) : IAsyncDisposabl
     public string JournalPath =>
         Directory.GetFiles(Path.Combine(Root, "workflows"), "*.json", SearchOption.AllDirectories).Single();
 
-    public async Task InitializeAsync()
+    public async Task InitializeAsync(CdcWorkflowPurpose purpose = CdcWorkflowPurpose.SourceHistoryOnly)
     {
         string variable = mssql ? "ConnectionStrings__MssqlAdmin" : "ConnectionStrings__DatabaseConnection";
         _admin = Environment.GetEnvironmentVariable(variable) ?? string.Empty;
@@ -124,6 +124,10 @@ internal sealed class CdcPublicationHistoryFixture(bool mssql) : IAsyncDisposabl
             "--schema",
         };
         args.AddRange(schemas);
+        if (purpose == CdcWorkflowPurpose.InitialCdcProvisioning)
+        {
+            args.AddRange(["--managed-workflow-purpose", "initial-cdc-provisioning"]);
+        }
         var result = await RunDotnetAsync(args, TimeSpan.FromMinutes(3));
         if (result.ExitCode != 0)
         {
@@ -134,9 +138,7 @@ internal sealed class CdcPublicationHistoryFixture(bool mssql) : IAsyncDisposabl
                     .Replace(_database, "[database]", StringComparison.Ordinal)
             );
         }
-        result
-            .ExitCode.Should()
-            .Be(0, "published managed non-CDC provisioning must succeed (raw output withheld)");
+        result.ExitCode.Should().Be(0, "published managed provisioning must succeed (raw output withheld)");
         Receipt = JsonSerializer.Deserialize<CdcManagedProvisioningResult>(
             result.StandardOutput,
             new JsonSerializerOptions(JsonSerializerDefaults.Web)
@@ -168,6 +170,83 @@ internal sealed class CdcPublicationHistoryFixture(bool mssql) : IAsyncDisposabl
             "dms-document-cache.dll"
         );
         _harness.ConfigurePublicationHistory(Root, "history");
+    }
+
+    public async Task<DocumentCacheAdminCliProcessResult> RunCdcEnableAsync()
+    {
+        string original = await File.ReadAllTextAsync(_harness.SettingsPath);
+        string originalAssembly = _harness.PublishedAssemblyPath;
+        var settings = JsonNode.Parse(original)!.AsObject();
+        settings["ConfigurationServiceSettings"]!["ClientSecret"] = _harness.SecretFromEnvironment;
+        settings["DataManagement"]!["DocumentCache"]!["Targets"] = new JsonArray(
+            new JsonObject { ["TenantKey"] = "", ["DataStoreId"] = 1 }
+        );
+        settings["Cdc"] = new JsonObject
+        {
+            ["Provider"] = mssql ? "sqlserver" : "postgresql",
+            ["DeploymentKey"] = "history",
+            ["DataStoreId"] = "1",
+            ["InstanceKey"] = "primary",
+            ["Generation"] = 1,
+            ["TopicPrefix"] = "edfi",
+            ["PartitionCount"] = 1,
+            ["LagThresholdMilliseconds"] = 5000,
+            ["MaxRecordBytes"] = 10000000,
+            ["KafkaBootstrapServers"] = "localhost:19092",
+            ["KafkaAdminBootstrapServers"] = "localhost:19092",
+            ["SetupConnectionString"] = _connection,
+            ["SetupPrincipal"] = "setup",
+            ["DatabaseConnectorPrincipal"] = "connector",
+            ["ConnectEndpoint"] = "http://localhost:18083",
+            ["WorkerMetricsEndpoint"] = "http://localhost:19404/metrics",
+            ["DurabilityProfile"] = "LocalSingleBroker",
+            ["AuthorizationProfile"] = "AuthorizationDisabledLocal",
+            ["Compose"] = new JsonObject
+            {
+                ["Project"] = "t39",
+                ["File"] = "/unused",
+                ["EnvironmentFile"] = "/unused",
+                ["BrokerSizeOverrideFile"] = "/unused",
+            },
+            ["Worker"] = new JsonObject
+            {
+                ["Key"] = "worker",
+                ["OffsetStorageTopic"] = "connect-offsets",
+                ["HeapBytes"] = 536870912,
+                ["Principal"] = "worker",
+                ["ConnectorPrincipal"] = "connector",
+                ["AdministratorPrincipal"] = "administrator",
+            },
+            ["Schemas"] = new JsonArray(
+                Directory
+                    .GetFiles(_target.ApiSchemaDirectory, "ApiSchema.json", SearchOption.AllDirectories)
+                    .Select(path => (JsonNode)JsonValue.Create(path)!)
+                    .ToArray()
+            ),
+            ["ProviderConnectionProperties"] = new JsonObject
+            {
+                ["database.hostname"] = "database",
+                ["database.port"] = mssql ? "1433" : "5432",
+                ["database.user"] = "connector",
+                ["database.password"] = "${env:CDC_DATABASE_PASSWORD}",
+                [mssql ? "database.names" : "database.dbname"] = _database,
+            },
+        };
+        try
+        {
+            await File.WriteAllTextAsync(_harness.SettingsPath, settings.ToJsonString());
+            _harness.PublishedAssemblyPath = Path.Combine(
+                await _packages.Value,
+                "SchemaTools",
+                "api-schema-tools.dll"
+            );
+            return await _harness.RunAsync("cdc", "enable", "--state-path", Root, "--json");
+        }
+        finally
+        {
+            _harness.PublishedAssemblyPath = originalAssembly;
+            await File.WriteAllTextAsync(_harness.SettingsPath, original);
+        }
     }
 
     public async Task RefreshFingerprintAsync()

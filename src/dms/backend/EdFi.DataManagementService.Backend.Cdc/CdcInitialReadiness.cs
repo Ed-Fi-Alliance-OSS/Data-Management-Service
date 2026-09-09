@@ -110,6 +110,7 @@ public sealed class CdcInitialReadiness
                 try
                 {
                     var journal = await session.ReadAsync(request.TargetIdentity, token);
+                    Require(journal.Purpose == CdcWorkflowPurpose.InitialCdcProvisioning);
                     Require(_positions.Provider == request.Binding.Provider && lagThresholdMilliseconds >= 0);
                     Require(!journal.WriterPublicationAuthorized && !journal.HasPendingRecordSizeIncrease);
                     Require(

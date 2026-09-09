@@ -27,6 +27,13 @@ public enum CdcWorkflowEffect
     Retire,
 }
 
+/// <summary>Immutable creation-time purpose, independent of downstream publication history.</summary>
+public enum CdcWorkflowPurpose
+{
+    SourceHistoryOnly,
+    InitialCdcProvisioning,
+}
+
 public enum CdcDatabaseCreationOutcome
 {
     Created,
@@ -124,10 +131,11 @@ public sealed record CdcWorkflowJournal(
     Guid WorkflowId,
     CdcTargetIdentity Target,
     DateTimeOffset CreatedAt,
-    ImmutableArray<CdcWorkflowOperation> Operations
+    ImmutableArray<CdcWorkflowOperation> Operations,
+    CdcWorkflowPurpose Purpose
 )
 {
-    public const int CurrentVersion = 1;
+    public const int CurrentVersion = 2;
 
     [JsonIgnore]
     public bool WriterPublicationAuthorized =>

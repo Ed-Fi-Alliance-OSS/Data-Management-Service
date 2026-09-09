@@ -73,6 +73,7 @@ public sealed class CdcInitialEnablement
             CdcBinding binding = request.Binding;
             CdcTargetIdentity target = binding.ToTargetIdentity();
             var journal = await session.ReadAsync(target, token);
+            Require(journal.Purpose == CdcWorkflowPurpose.InitialCdcProvisioning);
             Require(
                 journal.Operations.All(o =>
                     o.Effect

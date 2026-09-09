@@ -131,7 +131,8 @@ public sealed partial class LocalCdcWorkflowJournalStore
         public Task<CdcWorkflowJournal> CreateAsync(
             Guid workflowId,
             CdcTargetIdentity target,
-            CancellationToken cancellationToken
+            CancellationToken cancellationToken,
+            CdcWorkflowPurpose purpose = CdcWorkflowPurpose.SourceHistoryOnly
         ) =>
             RunAsync(
                 async () =>
@@ -141,7 +142,8 @@ public sealed partial class LocalCdcWorkflowJournalStore
                         workflowId,
                         target,
                         _store.Now(),
-                        []
+                        [],
+                        purpose
                     );
                     await _store.WriteAsync(journal, create: true, cancellationToken);
                     return journal;

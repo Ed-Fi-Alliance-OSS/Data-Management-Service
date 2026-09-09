@@ -239,7 +239,8 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
         ).ProvisionAsync(
             new("dms", "default", "1", "admission", 1, CoreProvider),
             provisioner,
-            cancellationToken
+            cancellationToken,
+            purpose: CdcWorkflowPurpose.InitialCdcProvisioning
         );
         provisioned.CreationReceipt.Outcome.Should().Be(CdcDatabaseCreationOutcome.Created);
         await ExecuteAsync(

@@ -82,7 +82,8 @@ public class Given_CdcArtifactCleanupProviderDatabase(CdcProvider provider)
         );
         var receipt = await new CdcManagedDatabaseProvisioning(_store).ProvisionAsync(
             request.TargetIdentity,
-            new Provisioner(this)
+            new Provisioner(this),
+            purpose: CdcWorkflowPurpose.InitialCdcProvisioning
         );
         await using var session = await _store.AcquireAsync(
             TimeSpan.FromSeconds(5),

@@ -37,7 +37,11 @@ public class Given_CdcSourcePublicationHistory(CdcProvider provider)
         _provisioner = A.Fake<ICdcManagedDatabaseProvisioner>();
         A.CallTo(() => _provisioner.CreateDatabase()).Returns(true);
         A.CallTo(() => _provisioner.ReadSourceFingerprintAsync(A<CancellationToken>._)).Returns(Fingerprint);
-        _created = await new CdcManagedDatabaseProvisioning(_store).ProvisionAsync(Target, _provisioner);
+        _created = await new CdcManagedDatabaseProvisioning(_store).ProvisionAsync(
+            Target,
+            _provisioner,
+            purpose: CdcWorkflowPurpose.InitialCdcProvisioning
+        );
     }
 
     [TearDown]
@@ -196,7 +200,8 @@ public class Given_CdcSourcePublicationHistory(CdcProvider provider)
                     {
                         Generation = 2,
                     },
-                    _provisioner
+                    _provisioner,
+                    purpose: CdcWorkflowPurpose.InitialCdcProvisioning
                 )
             )
             .Should()
@@ -244,7 +249,11 @@ public class Given_CdcSourcePublicationHistory(CdcProvider provider)
             .Transitions.Select(t => t.Status)
             .Should()
             .Equal(DocumentCacheDownstreamPublicationStatus.InternalOnly);
-        var retry = await new CdcManagedDatabaseProvisioning(_store).ProvisionAsync(Target, _provisioner);
+        var retry = await new CdcManagedDatabaseProvisioning(_store).ProvisionAsync(
+            Target,
+            _provisioner,
+            purpose: CdcWorkflowPurpose.InitialCdcProvisioning
+        );
         retry.Should().Be(_created);
         (await File.ReadAllTextAsync(HistoryPath))
             .Should()
@@ -258,7 +267,11 @@ public class Given_CdcSourcePublicationHistory(CdcProvider provider)
     {
         Directory.Delete(_root, true);
         A.CallTo(() => _provisioner.CreateDatabase()).Returns(false);
-        var reused = await new CdcManagedDatabaseProvisioning(_store).ProvisionAsync(Target, _provisioner);
+        var reused = await new CdcManagedDatabaseProvisioning(_store).ProvisionAsync(
+            Target,
+            _provisioner,
+            purpose: CdcWorkflowPurpose.InitialCdcProvisioning
+        );
         reused.CreationReceipt.Outcome.Should().Be(CdcDatabaseCreationOutcome.Reused);
         File.Exists(HistoryPath).Should().BeFalse();
         await FluentActions.Awaiting(ReadAsync).Should().ThrowAsync<CdcWorkflowStateException>();
@@ -302,7 +315,11 @@ public class Given_CdcSourcePublicationHistory(CdcProvider provider)
                 CancellationToken.None
             );
         }
-        await new CdcManagedDatabaseProvisioning(_store).ProvisionAsync(Target, _provisioner);
+        await new CdcManagedDatabaseProvisioning(_store).ProvisionAsync(
+            Target,
+            _provisioner,
+            purpose: CdcWorkflowPurpose.InitialCdcProvisioning
+        );
         (await ReadAsync())
             .Transitions.Select(t => t.Status)
             .Should()
@@ -381,7 +398,11 @@ public class Given_CdcSourcePublicationHistory(CdcProvider provider)
         {
             await FluentActions
                 .Awaiting(() =>
-                    new CdcManagedDatabaseProvisioning(_store).ProvisionAsync(Target, _provisioner)
+                    new CdcManagedDatabaseProvisioning(_store).ProvisionAsync(
+                        Target,
+                        _provisioner,
+                        purpose: CdcWorkflowPurpose.InitialCdcProvisioning
+                    )
                 )
                 .Should()
                 .ThrowAsync<CdcWorkflowStateException>();
@@ -566,13 +587,25 @@ public class Given_CdcSourcePublicationHistory(CdcProvider provider)
             }
         );
         await FluentActions
-            .Awaiting(() => new CdcManagedDatabaseProvisioning(_store).ProvisionAsync(Target, _provisioner))
+            .Awaiting(() =>
+                new CdcManagedDatabaseProvisioning(_store).ProvisionAsync(
+                    Target,
+                    _provisioner,
+                    purpose: CdcWorkflowPurpose.InitialCdcProvisioning
+                )
+            )
             .Should()
             .ThrowAsync<CdcWorkflowStateException>();
         _store = new(_root);
         await FluentActions.Awaiting(ReadAsync).Should().ThrowAsync<CdcWorkflowStateException>();
         await FluentActions
-            .Awaiting(() => new CdcManagedDatabaseProvisioning(_store).ProvisionAsync(Target, _provisioner))
+            .Awaiting(() =>
+                new CdcManagedDatabaseProvisioning(_store).ProvisionAsync(
+                    Target,
+                    _provisioner,
+                    purpose: CdcWorkflowPurpose.InitialCdcProvisioning
+                )
+            )
             .Should()
             .ThrowAsync<CdcManagedProvisioningRecoveryException>();
     }

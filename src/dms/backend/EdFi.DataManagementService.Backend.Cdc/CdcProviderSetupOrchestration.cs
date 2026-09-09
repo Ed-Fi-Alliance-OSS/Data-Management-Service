@@ -140,6 +140,7 @@ public sealed class CdcProviderSetupOrchestration
         var binding = request.Binding;
         var target = binding.ToTargetIdentity();
         var journal = await session.ReadAsync(target, token);
+        Require(journal.Purpose == CdcWorkflowPurpose.InitialCdcProvisioning);
         var history = await session.ReadSourcePublicationHistoryAsync(
             target,
             binding.PhysicalSourceFingerprint,

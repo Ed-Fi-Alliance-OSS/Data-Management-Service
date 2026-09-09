@@ -32,7 +32,8 @@ public sealed class CdcManagedDatabaseProvisioning(LocalCdcWorkflowJournalStore 
     public async Task<CdcManagedProvisioningResult> ProvisionAsync(
         CdcTargetIdentity target,
         ICdcManagedDatabaseProvisioner provisioner,
-        CancellationToken cancellationToken = default
+        CancellationToken cancellationToken = default,
+        CdcWorkflowPurpose purpose = CdcWorkflowPurpose.SourceHistoryOnly
     )
     {
         await using var session = await store.AcquireAsync(
@@ -48,8 +49,14 @@ public sealed class CdcManagedDatabaseProvisioning(LocalCdcWorkflowJournalStore 
         catch (CdcWorkflowStateException exception)
             when (exception.Failure == CdcWorkflowStateFailure.Missing)
         {
-            journal = await session.CreateAsync(Guid.NewGuid(), target, cancellationToken);
+            journal = await session.CreateAsync(Guid.NewGuid(), target, cancellationToken, purpose);
         }
+
+        // Purpose is retained before CREATE and cannot be promoted, even before source association.
+        CdcWorkflowJournalValidation.Require(
+            journal.Purpose == purpose,
+            CdcWorkflowStateFailure.Contradictory
+        );
 
         // An already associated source may be inspected again, but provisioning cannot repair or
         // mutate a workflow that has moved beyond the original schema phase.

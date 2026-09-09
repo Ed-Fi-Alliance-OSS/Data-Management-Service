@@ -27,6 +27,7 @@ internal static partial class CdcWorkflowJournalValidation
             journal.Version == CdcWorkflowJournal.CurrentVersion,
             CdcWorkflowStateFailure.UnsupportedVersion
         );
+        Require(Enum.IsDefined(journal.Purpose));
         Require(journal.WorkflowId != Guid.Empty && journal.Target is not null);
         Require(
             CdcTargetValidator
@@ -110,6 +111,10 @@ internal static partial class CdcWorkflowJournalValidation
                 is not (CdcWorkflowEffect.CreateDatabase or CdcWorkflowEffect.AssociateSource)
             )
             {
+                Require(
+                    journal.Purpose == CdcWorkflowPurpose.InitialCdcProvisioning,
+                    CdcWorkflowStateFailure.Contradictory
+                );
                 Require(
                     completed.OfType<CdcWorkflowCompletion.Source>().Any(),
                     CdcWorkflowStateFailure.Contradictory

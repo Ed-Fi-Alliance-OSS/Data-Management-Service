@@ -101,7 +101,8 @@ public class Given_Cdc_command_configuration(string providerToken, CoreProvider 
         A.CallTo(() => managed.ReadSourceFingerprintAsync(A<CancellationToken>._)).Returns(Fingerprint);
         await new CdcManagedDatabaseProvisioning(new LocalCdcWorkflowJournalStore(_root)).ProvisionAsync(
             _target,
-            managed
+            managed,
+            purpose: CdcWorkflowPurpose.InitialCdcProvisioning
         );
     }
 

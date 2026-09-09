@@ -78,7 +78,11 @@ internal abstract class CdcRegistrationTestBase(Ddl.CdcProvider provider)
         A.CallTo(() => provisioner.CreateDatabase()).Returns(true);
         A.CallTo(() => provisioner.ReadSourceFingerprintAsync(A<CancellationToken>._))
             .Returns(_request.Binding.PhysicalSourceFingerprint);
-        await new CdcManagedDatabaseProvisioning(_store).ProvisionAsync(Target, provisioner);
+        await new CdcManagedDatabaseProvisioning(_store).ProvisionAsync(
+            Target,
+            provisioner,
+            purpose: CdcWorkflowPurpose.InitialCdcProvisioning
+        );
         var services = new ServiceCollection().AddCdcConnectorTemplates().AddDmsCdcControlPlane();
         services.Configure<CdcBindingStateStoreOptions>(o => o.RootPath = _root);
         _services = services.BuildServiceProvider();

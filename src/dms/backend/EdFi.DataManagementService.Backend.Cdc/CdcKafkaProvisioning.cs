@@ -377,6 +377,7 @@ public sealed class CdcKafkaProvisioning : ICdcKafkaAdministrationTransport
         var binding = request.Binding;
         var target = request.TargetIdentity;
         var journal = await session.ReadAsync(target, token);
+        Require(journal.Purpose == CdcWorkflowPurpose.InitialCdcProvisioning);
         var history = await session.ReadSourcePublicationHistoryAsync(
             target,
             binding.PhysicalSourceFingerprint,

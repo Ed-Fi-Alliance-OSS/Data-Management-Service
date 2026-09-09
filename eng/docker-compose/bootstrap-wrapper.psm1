@@ -998,6 +998,7 @@ function Invoke-BootstrapWrapper {
         if ($CdcBindingStatePath) { $provisionArgs.CdcBindingStatePath = $CdcBindingStatePath }
         if ($EnableKafkaCdc) {
             Assert-BootstrapCdcOfflineOwnership @cdcOwnership -InfrastructureReady
+            $provisionArgs.InitialCdcProvisioning = $true
             $provisionArgs.PrepareCdcProjectionPrerequisites = $true
             $provisionArgs.DeploymentKey = $cdcSettings.Cdc.DeploymentKey
             $provisionArgs.InstanceKey = $cdcSettings.Cdc.InstanceKey

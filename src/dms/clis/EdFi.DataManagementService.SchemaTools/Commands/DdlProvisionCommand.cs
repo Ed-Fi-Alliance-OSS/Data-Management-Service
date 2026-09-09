@@ -70,6 +70,13 @@ public static class DdlProvisionCommand
                 "Controller state root for exclusively managed provisioning; emits one JSON receipt result.",
             DefaultValueFactory = _ => string.Empty,
         };
+        var purposeOption = new Option<string>("--managed-workflow-purpose")
+        {
+            Description =
+                "Creation-time purpose: source-history-only (default), or initial-cdc-provisioning for a trusted offline CDC host.",
+            DefaultValueFactory = _ => "source-history-only",
+        };
+        purposeOption.AcceptOnlyFromAmong("source-history-only", "initial-cdc-provisioning");
         var prerequisitesOption = new Option<string>("--cdc-projection-prerequisites")
         {
             Description =
@@ -94,6 +101,7 @@ public static class DdlProvisionCommand
         command.Options.Add(timeoutOption);
         command.Options.Add(statePathOption);
         command.Options.Add(prerequisitesOption);
+        command.Options.Add(purposeOption);
         command.Options.Add(deploymentOption);
         command.Options.Add(tenantOption);
         command.Options.Add(dataStoreOption);
@@ -117,6 +125,9 @@ public static class DdlProvisionCommand
                 createDatabase,
                 timeout,
                 parseResult.GetValue(statePathOption)!,
+                parseResult.GetValue(purposeOption) == "initial-cdc-provisioning"
+                    ? CdcWorkflowPurpose.InitialCdcProvisioning
+                    : CdcWorkflowPurpose.SourceHistoryOnly,
                 parseResult.GetValue(prerequisitesOption) switch
                 {
                     "inspect" => CdcProjectionPrerequisiteMode.Inspect,
@@ -149,6 +160,7 @@ public static class DdlProvisionCommand
         bool createDatabase,
         int commandTimeoutSeconds,
         string managedStatePath,
+        CdcWorkflowPurpose workflowPurpose,
         CdcProjectionPrerequisiteMode projectionPrerequisites,
         CdcTargetIdentity managedTarget
     )
@@ -161,7 +173,8 @@ public static class DdlProvisionCommand
 
         bool managed = managedStatePath.Length > 0;
         if (
-            projectionPrerequisites != CdcProjectionPrerequisiteMode.None && !managed
+            workflowPurpose == CdcWorkflowPurpose.InitialCdcProvisioning && !managed
+            || projectionPrerequisites != CdcProjectionPrerequisiteMode.None && !managed
             || projectionPrerequisites == CdcProjectionPrerequisiteMode.OwnedLocalSqlServer
                 && dialectName != "mssql"
         )
@@ -252,7 +265,7 @@ public static class DdlProvisionCommand
                             projectionPrerequisites
                         );
                         var receipt = controller
-                            .ProvisionAsync(managedTarget, adapter)
+                            .ProvisionAsync(managedTarget, adapter, purpose: workflowPurpose)
                             .GetAwaiter()
                             .GetResult();
                         Console.WriteLine(

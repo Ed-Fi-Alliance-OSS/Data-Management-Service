@@ -77,7 +77,11 @@ internal class Given_CdcKafkaProvisioning(Ddl.CdcProvider provider)
         A.CallTo(() => provisioner.CreateDatabase()).Returns(true);
         A.CallTo(() => provisioner.ReadSourceFingerprintAsync(A<CancellationToken>._))
             .Returns(_request.Binding.PhysicalSourceFingerprint);
-        await new CdcManagedDatabaseProvisioning(_store).ProvisionAsync(_request.TargetIdentity, provisioner);
+        await new CdcManagedDatabaseProvisioning(_store).ProvisionAsync(
+            _request.TargetIdentity,
+            provisioner,
+            purpose: CdcWorkflowPurpose.InitialCdcProvisioning
+        );
         await CompleteAsync(CdcWorkflowEffect.ReserveBinding);
         (await _bindings.CreateBindingIfAbsentAsync(_request.Binding, CancellationToken.None))
             .Status.Should()

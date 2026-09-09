@@ -58,7 +58,8 @@ internal class Given_CdcBindingRetirement(Ddl.CdcProvider provider)
         _workflow = (
             await new CdcManagedDatabaseProvisioning(_store).ProvisionAsync(
                 _request.TargetIdentity,
-                provisioner
+                provisioner,
+                purpose: CdcWorkflowPurpose.InitialCdcProvisioning
             )
         ).WorkflowId;
         var services = new ServiceCollection().AddDmsCdcControlPlane();

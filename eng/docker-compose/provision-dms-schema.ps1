@@ -54,6 +54,7 @@ param(
     # Opt into controller-owned provenance for local managed provisioning, with or without CDC.
     [string]$CdcBindingStatePath = "",
     [switch]$PrepareCdcProjectionPrerequisites,
+    [switch]$InitialCdcProvisioning,
     [string]$DeploymentKey = "local",
     [string]$InstanceKey = "",
     [long]$Generation = 1
@@ -1535,10 +1536,11 @@ function Invoke-DmsSchemaProvision {
         [string]$InstanceKey = "",
         [long]$Generation = 1,
         [ValidateSet('none', 'inspect', 'owned-local-sql-server')]
-        [string]$CdcProjectionPrerequisites = 'none'
+        [string]$CdcProjectionPrerequisites = 'none',
+        [switch]$InitialCdcProvisioning
     )
 
-    if ($CdcProjectionPrerequisites -ne 'none' -and [string]::IsNullOrWhiteSpace($CdcBindingStatePath)) {
+    if (($InitialCdcProvisioning -or $CdcProjectionPrerequisites -ne 'none') -and [string]::IsNullOrWhiteSpace($CdcBindingStatePath)) {
         throw 'CDC prerequisite preparation requires managed provisioning.'
     }
     $arguments = @("ddl", "provision")
@@ -1558,6 +1560,7 @@ function Invoke-DmsSchemaProvision {
         if ([string]::IsNullOrWhiteSpace($InstanceKey)) { $InstanceKey = "datastore-$DataStoreId" }
         $arguments += @(
             "--managed-state-path", [System.IO.Path]::GetFullPath($CdcBindingStatePath),
+            "--managed-workflow-purpose", $(if ($InitialCdcProvisioning) { "initial-cdc-provisioning" } else { "source-history-only" }),
             "--deployment-key", $DeploymentKey,
             "--tenant-key", $TenantKey,
             "--data-store-id", [string]$DataStoreId,
@@ -1796,6 +1799,7 @@ function Invoke-ProvisionDmsSchema {
         $SeparateConfigDatabase,
         [string]$CdcBindingStatePath = "",
         [switch]$PrepareCdcProjectionPrerequisites,
+        [switch]$InitialCdcProvisioning,
         [string]$DeploymentKey = "local",
         [string]$InstanceKey = "",
         [long]$Generation = 1
@@ -1898,7 +1902,7 @@ function Invoke-ProvisionDmsSchema {
     $groups = $targets | Group-Object -Property TargetKey
 
     $managed = -not [string]::IsNullOrWhiteSpace($CdcBindingStatePath)
-    if ($PrepareCdcProjectionPrerequisites -and -not $managed) {
+    if (($InitialCdcProvisioning -or $PrepareCdcProjectionPrerequisites) -and -not $managed) {
         throw 'CDC prerequisite preparation requires managed provisioning.'
     }
     if ($managed) {
@@ -1936,6 +1940,7 @@ function Invoke-ProvisionDmsSchema {
         }
         if ($managed) {
             $invokeArgs.CdcBindingStatePath = $CdcBindingStatePath
+            $invokeArgs.InitialCdcProvisioning = $InitialCdcProvisioning
             $invokeArgs.DeploymentKey = $DeploymentKey
             $invokeArgs.TenantKey = $tenant
             $invokeArgs.DataStoreId = $dataStoreIds[0]
@@ -1983,6 +1988,7 @@ Invoke-ProvisionDmsSchema `
     -SeparateConfigDatabase:$SeparateConfigDatabase `
     -CdcBindingStatePath $CdcBindingStatePath `
     -PrepareCdcProjectionPrerequisites:$PrepareCdcProjectionPrerequisites `
+    -InitialCdcProvisioning:$InitialCdcProvisioning `
     -DeploymentKey $DeploymentKey `
     -InstanceKey $InstanceKey `
     -Generation $Generation
