@@ -211,6 +211,12 @@ internal static class DerivativeWholeRequestScenario
     /// configured connection string succeeds once it is reachable again. Nothing about the first
     /// failure is retained: no cached validation verdict, no poisoned pool, no configuration change.
     /// </summary>
+    /// <remarks>
+    /// The failure half asserts the exact answer rather than merely "not a success". An unreachable
+    /// selected snapshot is Snapshot Not Found, which is the contract this epic introduces and the
+    /// reason a weaker assertion here is not enough: the response this scenario used to allow was the
+    /// database-availability 503, and the two are no longer interchangeable.
+    /// </remarks>
     public static async Task It_recovers_at_an_unchanged_derivative_connection_string(
         ApiIntegrationHarness harness,
         IDerivativeTargetReachability reachability,
@@ -228,15 +234,11 @@ internal static class DerivativeWholeRequestScenario
                 useSnapshotHeaderValue: "true"
             );
 
-            string unavailableBody = await unavailable.Content.ReadAsStringAsync();
-
-            unavailable
-                .StatusCode.Should()
-                .Be(
-                    HttpStatusCode.ServiceUnavailable,
-                    "a configured derivative whose database cannot be opened fails at connection "
-                        + $"acquisition, which is a transient fault rather than a missing snapshot: {unavailableBody}"
-                );
+            await DerivativeRoutingSupport.AssertSnapshotNotFoundAsync(
+                unavailable,
+                "an unreachable selected snapshot is answered as a missing snapshot, not as the "
+                    + "database-availability 503 a derivative acquisition failure produced before"
+            );
         }
         finally
         {
