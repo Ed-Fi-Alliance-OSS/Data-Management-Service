@@ -27,12 +27,13 @@ public class LoggingMiddleware
         _appSettings = appSettings ?? throw new ArgumentNullException(nameof(appSettings));
         try
         {
-            var configuredMaxLength = appSettings.Value.CorrelationIdMaxLength;
-            _correlationIdMaxLength =
-                configuredMaxLength > 0 ? configuredMaxLength : AppSettings.DefaultCorrelationIdMaxLength;
+            // Passed straight to CorrelationIdNormalizer.Normalize, which owns the
+            // non-positive-length fallback policy, so it is deliberately not re-applied here.
+            _correlationIdMaxLength = appSettings.Value.CorrelationIdMaxLength;
         }
         catch (OptionsValidationException)
         {
+            // Configuration is unreadable, so there is no configured length to pass along.
             _correlationIdMaxLength = AppSettings.DefaultCorrelationIdMaxLength;
         }
     }

@@ -28,7 +28,9 @@ public static class LoggingSanitizer
     /// Sanitizes a correlation ID for logging and for inclusion in an error response body,
     /// using the correlation-ID allowlist: all printable non-control characters. Every control
     /// character is removed (including \r, \n, \t and \0), which is what prevents log forging;
-    /// every other character is preserved.
+    /// every other character is preserved, except LINE SEPARATOR (U+2028) and PARAGRAPH
+    /// SEPARATOR (U+2029), which are removed as well because they too break a line-oriented
+    /// log consumer even though they are not control characters.
     /// This allowlist is deliberately broader than <see cref="SanitizeForLogging"/> and must not
     /// be conflated with it: <see cref="SanitizeForLogging"/> is correct for internally-controlled
     /// values such as the request method and path, whereas a client-supplied correlation ID

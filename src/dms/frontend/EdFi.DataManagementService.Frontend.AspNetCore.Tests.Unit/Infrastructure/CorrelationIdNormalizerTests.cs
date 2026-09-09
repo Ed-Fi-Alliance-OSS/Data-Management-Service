@@ -140,20 +140,37 @@ public class CorrelationIdNormalizerTests
         [Test]
         public void It_truncates_before_it_filters()
         {
+            // This single equality is the whole order assertion: it rules out the
+            // filter-then-truncate result "abcdefghij" and pins the length at MaxLength - 1.
+            // A result shorter than the maximum length is the intended consequence of
+            // truncating first, not a defect to compensate for.
             _result.Should().Be("abcdefghi");
         }
+    }
 
-        [Test]
-        public void It_does_not_produce_the_filter_then_truncate_result()
+    [TestFixture]
+    public class Given_A_Correlation_Id_Truncated_Inside_A_Surrogate_Pair : CorrelationIdNormalizerTests
+    {
+        // U+1F600 is a non-BMP code point, so it occupies two UTF-16 code units. Cutting at
+        // seven units lands between them.
+        private const string WithAstralCharacter = "abcdef\U0001F600ghij";
+
+        private string _result = string.Empty;
+
+        [SetUp]
+        public void Setup()
         {
-            _result.Should().NotBe("abcdefghij");
+            _result = CorrelationIdNormalizer.Normalize(WithAstralCharacter, 7);
         }
 
         [Test]
-        public void It_may_be_shorter_than_the_maximum_length()
+        public void It_drops_the_orphaned_high_surrogate_rather_than_emitting_it()
         {
-            // Intended consequence of truncating first, not a defect to compensate for.
-            _result.Length.Should().Be(MaxLength - 1);
+            // char.IsControl is false for a surrogate, so the allowlist would keep an orphaned
+            // high half. System.Text.Json would then write U+FFFD into the response body while
+            // a log sink received the raw unpaired unit, and the two would no longer be
+            // byte-identical - the parity FR-LOG-6 guarantees.
+            _result.Should().Be("abcdef");
         }
     }
 

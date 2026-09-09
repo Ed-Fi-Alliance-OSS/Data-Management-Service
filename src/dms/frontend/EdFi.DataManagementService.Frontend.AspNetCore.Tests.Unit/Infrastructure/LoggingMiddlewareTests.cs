@@ -286,10 +286,10 @@ public class Given_LoggingMiddleware
         await middleware.Invoke(httpContext, logger);
 
         var entry = logger.Entries.Single(e => e.EventId.Name == "HttpRequestCompleted");
-        entry.State.ContainStructuredProperty("TraceId", "traceidwithunsafe");
+        entry.State.ContainStructuredProperty("TraceId", "traceidwith{unsafe}");
         entry
             .ActiveScopes.Should()
-            .Contain(scope => scope.HasStructuredProperty("TraceId", "traceidwithunsafe"));
+            .Contain(scope => scope.HasStructuredProperty("TraceId", "traceidwith{unsafe}"));
     }
 
     [Test]
@@ -449,13 +449,13 @@ public class Given_LoggingMiddleware
         // Response must reflect the sanitized (not raw) value so it matches what is searchable in logs
         (body?["traceId"]?.GetValue<string>())
             .Should()
-            .Be("operatorcorrelationid");
+            .Be("operator{correlation}id");
 
         var entry = logger.Entries.Single(e => e.EventId.Name == "HttpRequestFailed");
-        entry.State.ContainStructuredProperty("TraceId", "operatorcorrelationid");
+        entry.State.ContainStructuredProperty("TraceId", "operator{correlation}id");
         entry
             .ActiveScopes.Should()
-            .Contain(scope => scope.HasStructuredProperty("TraceId", "operatorcorrelationid"));
+            .Contain(scope => scope.HasStructuredProperty("TraceId", "operator{correlation}id"));
     }
 
     [Test]

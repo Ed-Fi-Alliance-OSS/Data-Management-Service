@@ -17,7 +17,10 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 public static class CorrelationIdNormalizer
 {
     /// <summary>
-    /// Truncates to <paramref name="maxLength"/> and then removes every control character.
+    /// Truncates to <paramref name="maxLength"/> and then removes every control character,
+    /// plus LINE SEPARATOR (U+2028) and PARAGRAPH SEPARATOR (U+2029), which are not control
+    /// characters but break a line-oriented log consumer the same way. Every other character
+    /// is preserved.
     /// </summary>
     /// <remarks>
     /// The order is deliberate and must not be swapped: truncating first means a long hostile
@@ -38,6 +41,11 @@ public static class CorrelationIdNormalizer
     /// <see cref="AppSettings.DefaultCorrelationIdMaxLength"/> rather than throwing, so a
     /// misconfigured host still gets a bounded identifier.
     /// </param>
+    /// <returns>
+    /// The normalized correlation ID: no control characters, no longer than the effective
+    /// maximum length, and never null. An input that is null, empty, or made up entirely of
+    /// control characters yields an empty string.
+    /// </returns>
     public static string Normalize(string? value, int maxLength)
     {
         if (string.IsNullOrEmpty(value))
@@ -47,7 +55,24 @@ public static class CorrelationIdNormalizer
 
         int effectiveMaxLength = maxLength > 0 ? maxLength : AppSettings.DefaultCorrelationIdMaxLength;
 
-        string truncated = value.Length > effectiveMaxLength ? value[..effectiveMaxLength] : value;
+        string truncated = value;
+        if (value.Length > effectiveMaxLength)
+        {
+            int retained = effectiveMaxLength;
+
+            // The cut is on a UTF-16 code unit, so it can land between the halves of a
+            // surrogate pair. char.IsControl is false for surrogates, so the allowlist below
+            // would keep the orphaned high half; System.Text.Json then writes U+FFFD into the
+            // response body while a log sink receives the raw unpaired unit, and the two
+            // values are no longer byte-identical - the one thing FR-LOG-6 guarantees. Drop
+            // the orphan instead.
+            if (char.IsHighSurrogate(value[retained - 1]))
+            {
+                retained--;
+            }
+
+            truncated = value[..retained];
+        }
 
         return LoggingSanitizer.SanitizeCorrelationIdForLogging(truncated);
     }

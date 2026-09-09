@@ -207,10 +207,15 @@ normalization is two steps, applied in this order:
    *all printable non-control characters*: every control character is removed —
    carriage return, line feed, tab and null included — and every other character
    is preserved, including punctuation such as `+ = { } @ | , # ( ) [ ] < > " '`
-   and non-ASCII letters, digits and symbols. Removing control characters is
-   what prevents log forging: a client-supplied value cannot introduce
-   additional log lines or corrupt structured log output. Bounding the value's
-   size is the length cap's job, not the allowlist's.
+   and non-ASCII letters, digits and symbols. There is one exception to
+   "every other character is preserved": LINE SEPARATOR (`U+2028`) and
+   PARAGRAPH SEPARATOR (`U+2029`) are removed as well. They are not control
+   characters, but they break a line-oriented log consumer the same way a line
+   feed does, so the effective allowlist is the printable range minus those two.
+   Removing line-breaking characters is what prevents log forging: a
+   client-supplied value cannot introduce additional log lines or corrupt
+   structured log output. Bounding the value's size is the length cap's job, not
+   the allowlist's.
 
 This allowlist is scoped to correlation IDs and is deliberately broader than the
 stricter one applied to internally-controlled logged values such as `Method` and
