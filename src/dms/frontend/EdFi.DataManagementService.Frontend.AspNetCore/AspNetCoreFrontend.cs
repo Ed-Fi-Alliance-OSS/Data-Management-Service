@@ -14,6 +14,7 @@ using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Utilities;
+using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure.Extensions;
 using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.Extensions.DependencyInjection;
@@ -396,20 +397,27 @@ public static class AspNetCoreFrontend
     }
 
     /// <summary>
-    /// Takes an HttpRequest and returns a unique trace identifier
+    /// Takes an HttpRequest and returns a unique trace identifier, normalized by
+    /// <see cref="CorrelationIdNormalizer"/>. This is the single ingestion point for the
+    /// correlation ID: because the value is normalized here, every downstream consumer -
+    /// every log event and every error response body - carries the identical value with no
+    /// further work. Both branches are normalized, since the length cap and the allowlist
+    /// apply to a server-generated identifier as well as a client-supplied one.
     /// </summary>
     public static TraceId ExtractTraceIdFrom(HttpRequest request, IOptions<AppSettings> options)
     {
-        string headerName = options.Value.CorrelationIdHeader;
+        AppSettings appSettings = options.Value;
+        int maxLength = appSettings.CorrelationIdMaxLength;
+        string headerName = appSettings.CorrelationIdHeader;
         if (
             !string.IsNullOrEmpty(headerName)
             && request.Headers.TryGetValue(headerName, out var correlationId)
             && !string.IsNullOrEmpty(correlationId)
         )
         {
-            return new TraceId(correlationId!);
+            return new TraceId(CorrelationIdNormalizer.Normalize(correlationId!, maxLength));
         }
-        return new TraceId(request.HttpContext.TraceIdentifier);
+        return new TraceId(CorrelationIdNormalizer.Normalize(request.HttpContext.TraceIdentifier, maxLength));
     }
 
     /// <summary>

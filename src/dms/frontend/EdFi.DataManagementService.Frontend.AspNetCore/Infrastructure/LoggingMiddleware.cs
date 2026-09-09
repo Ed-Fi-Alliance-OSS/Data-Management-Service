@@ -43,10 +43,10 @@ public class LoggingMiddleware
         var sanitizedMethod = LoggingSanitizer.SanitizeForLogging(context.Request.Method);
         var sanitizedPath = LoggingSanitizer.SanitizeForLogging(context.Request.Path.Value);
         var pathBase = LoggingSanitizer.SanitizeForLogging(context.Request.PathBase.Value);
-        var rawTraceId = ExtractTraceId(context) ?? string.Empty;
-        var truncatedTraceId =
-            rawTraceId.Length > _correlationIdMaxLength ? rawTraceId[.._correlationIdMaxLength] : rawTraceId;
-        var traceId = LoggingSanitizer.SanitizeForLogging(truncatedTraceId);
+        // Already normalized at the ingestion boundary by AspNetCoreFrontend.ExtractTraceIdFrom,
+        // so this middleware deliberately applies no second, differently-shaped normalization of
+        // its own. Method and Path keep the stricter SanitizeForLogging allowlist above.
+        var traceId = ExtractTraceId(context);
 
         var scopeValues = new Dictionary<string, object>
         {
@@ -177,10 +177,11 @@ public class LoggingMiddleware
                                 new
                                 {
                                     message = "The server encountered an unexpected condition that prevented it from fulfilling the request.",
-                                    // The error response body echoes the sanitized and truncated
-                                    // correlation value so it always matches the TraceId searchable
-                                    // in the logs. Applying the same logging whitelist and length cap
-                                    // to the response ensures log/response parity.
+                                    // The error response body echoes the normalized correlation
+                                    // value so it always matches the TraceId searchable in the
+                                    // logs. Because normalization happens once, at the ingestion
+                                    // boundary, this body carries the same value as every other
+                                    // DMS error response for the same request.
                                     traceId = traceId,
                                 }
                             )
@@ -206,7 +207,7 @@ public class LoggingMiddleware
         }
     }
 
-    private string? ExtractTraceId(HttpContext context)
+    private string ExtractTraceId(HttpContext context)
     {
         try
         {
@@ -214,7 +215,10 @@ public class LoggingMiddleware
         }
         catch (OptionsValidationException)
         {
-            return context.TraceIdentifier;
+            // Configuration is unreadable, so the client-supplied header cannot be honored.
+            // The server-generated identifier still goes through the same normalization, so
+            // this path cannot emit a differently-shaped value than any other.
+            return CorrelationIdNormalizer.Normalize(context.TraceIdentifier, _correlationIdMaxLength);
         }
     }
 

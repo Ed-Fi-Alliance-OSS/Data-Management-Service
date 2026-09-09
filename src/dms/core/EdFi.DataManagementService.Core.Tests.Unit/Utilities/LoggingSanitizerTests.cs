@@ -23,6 +23,105 @@ public class LoggingSanitizerTests
     }
 
     [TestFixture]
+    public class Given_SanitizeCorrelationIdForLogging_With_Control_Characters : LoggingSanitizerTests
+    {
+        private string _result = string.Empty;
+
+        [SetUp]
+        public void Setup()
+        {
+            _result = LoggingSanitizer.SanitizeCorrelationIdForLogging("tr\race\nid\twith\0nulls");
+        }
+
+        [Test]
+        public void It_removes_every_control_character()
+        {
+            _result.Should().Be("traceidwithnulls");
+        }
+
+        [Test]
+        public void It_leaves_no_line_ending_that_could_forge_a_log_line()
+        {
+            _result.Should().NotContain("\r").And.NotContain("\n");
+        }
+    }
+
+    [TestFixture]
+    public class Given_SanitizeCorrelationIdForLogging_With_Upstream_Punctuation : LoggingSanitizerTests
+    {
+        // The single most important assertion for FR-LOG-3: these characters are common in
+        // upstream identifier schemes (base64, W3C traceparent, JSON-ish keys, RFC 5322
+        // addresses) and the stricter Method/Path allowlist would strip all of them.
+        private const string UpstreamId = "a+b=c{d}e@f|g,h#i(j)k[l]m<n>o\"p'q";
+
+        [Test]
+        public void It_preserves_printable_punctuation()
+        {
+            LoggingSanitizer.SanitizeCorrelationIdForLogging(UpstreamId).Should().Be(UpstreamId);
+        }
+
+        [Test]
+        public void It_is_broader_than_the_strict_method_and_path_allowlist()
+        {
+            LoggingSanitizer.SanitizeForLogging(UpstreamId).Should().NotBe(UpstreamId);
+        }
+    }
+
+    [TestFixture]
+    public class Given_SanitizeCorrelationIdForLogging_With_Non_Ascii_Characters : LoggingSanitizerTests
+    {
+        [Test]
+        public void It_preserves_non_ascii_printable_characters()
+        {
+            LoggingSanitizer
+                .SanitizeCorrelationIdForLogging("trace-Ωμέγα-日本語-ñ")
+                .Should()
+                .Be("trace-Ωμέγα-日本語-ñ");
+        }
+    }
+
+    [TestFixture]
+    public class Given_SanitizeCorrelationIdForLogging_With_A_Clean_Value : LoggingSanitizerTests
+    {
+        [Test]
+        public void It_returns_the_value_unchanged()
+        {
+            LoggingSanitizer
+                .SanitizeCorrelationIdForLogging("test-correlationId")
+                .Should()
+                .Be("test-correlationId");
+        }
+    }
+
+    [TestFixture]
+    public class Given_SanitizeCorrelationIdForLogging_With_Null_Or_Empty_Input : LoggingSanitizerTests
+    {
+        [Test]
+        public void It_returns_empty_string_for_null()
+        {
+            LoggingSanitizer.SanitizeCorrelationIdForLogging(null).Should().Be(string.Empty);
+        }
+
+        [Test]
+        public void It_returns_empty_string_for_empty()
+        {
+            LoggingSanitizer.SanitizeCorrelationIdForLogging(string.Empty).Should().Be(string.Empty);
+        }
+
+        [Test]
+        public void It_returns_empty_string_when_every_character_is_a_control_character()
+        {
+            LoggingSanitizer.SanitizeCorrelationIdForLogging("\r\n\t\0").Should().Be(string.Empty);
+        }
+
+        [Test]
+        public void It_preserves_whitespace_that_is_not_a_control_character()
+        {
+            LoggingSanitizer.SanitizeCorrelationIdForLogging("   ").Should().Be("   ");
+        }
+    }
+
+    [TestFixture]
     public class Given_SanitizeForConsole_With_Newlines : LoggingSanitizerTests
     {
         private string _result = string.Empty;
