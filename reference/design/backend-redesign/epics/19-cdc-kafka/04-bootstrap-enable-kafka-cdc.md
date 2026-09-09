@@ -484,6 +484,16 @@ require `healthy`. The cache-rejection fixture also seeds the cache row with its
 document's UUID so the test reaches admission instead of failing the UUID consistency
 trigger during setup.
 
+## Implementation Note: Consistent nightly Slack summaries
+
+- Simplified both the nightly CDC qualification and existing nightly Keycloak DMS E2E
+  Slack notifications to one-line success/failure summaries, matching the GHCR image
+  cleanup notification style. Removed the Keycloak message's multiline workflow, ref,
+  commit, and run-link blocks; failures retain a compact result summary. This keeps
+  scheduled-build reporting consistent and reduces channel noise without changing
+  Keycloak's schedule, test coverage, aggregate result handling, or suppression of
+  notifications for manual runs.
+
 ## Not Assigned to This Story
 
 - Documentation testing, including help-text assertions, documentation drift checks,

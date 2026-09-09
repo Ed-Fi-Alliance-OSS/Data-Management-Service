@@ -1,0 +1,148 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+name: Nightly CDC Qualification
+
+on:
+  schedule:
+    - cron: "17 8 * * *" # Every day, including Saturday; staggered from the 08:00 builds.
+  workflow_dispatch:
+    inputs:
+      lane:
+        description: "Live qualification lane (All runs the complete nightly matrix)"
+        type: choice
+        default: All
+        options: [All, Kafka, Postgresql, Mssql]
+      suite:
+        description: "Suite (select Postgresql or Mssql for a specific suite)"
+        type: choice
+        default: All
+        options: [All, Admission, Lifecycle, Recovery, RecordSize, Telemetry, History]
+
+permissions:
+  contents: read
+
+jobs:
+  select-suites:
+    name: Select CDC qualification suites
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.select.outputs.matrix }}
+    steps:
+      - name: Checkout the Repo
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Select suites
+        id: select
+        shell: pwsh
+        env:
+          SELECTED_LANE: ${{ inputs.lane || 'All' }}
+          SELECTED_SUITE: ${{ inputs.suite || 'All' }}
+        run: |
+          $matrix = ./eng/ci/Get-CdcQualificationMatrix.ps1 -Lane $env:SELECTED_LANE -Suite $env:SELECTED_SUITE
+          "matrix=$matrix" >> $env:GITHUB_OUTPUT
+
+  run-cdc-qualification:
+    name: CDC Qualification (${{ matrix.lane }} / ${{ matrix.suite }})
+    needs: select-suites
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.select-suites.outputs.matrix) }}
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE: ${{ vars.CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE }}
+      CDC_CONNECTOR_TEMPLATE_REDPANDA_IMAGE: ${{ vars.CDC_CONNECTOR_TEMPLATE_REDPANDA_IMAGE }}
+      CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE: ${{ vars.CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE }}
+      CDC_CONNECTOR_TEMPLATE_SQLSERVER_2025_IMAGE: ${{ vars.CDC_CONNECTOR_TEMPLATE_SQLSERVER_2025_IMAGE }}
+    steps:
+      - name: Checkout the Repo
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
+        with:
+          dotnet-version: "10.0.x"
+
+      # History suites use packaged CLIs and isolated admin servers. Other suites
+      # provision and clean up their own per-test containers through the runner.
+      - name: Start packaged-history PostgreSQL
+        if: matrix.lane == 'Postgresql' && matrix.suite == 'History'
+        uses: ./.github/actions/start-postgresql-test-container
+        with:
+          container-name: cdc-history-postgresql
+          container-memory: 1g
+          tmpfs-size: 512m
+          image: ${{ env.CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE }}
+          host-port: "54329"
+
+      - name: Configure packaged-history PostgreSQL
+        if: matrix.lane == 'Postgresql' && matrix.suite == 'History'
+        run: '"ConnectionStrings__DatabaseConnection=Host=localhost;Port=54329;Username=postgres;Database=postgres" >> $env:GITHUB_ENV'
+
+      - name: Start packaged-history SQL Server 2025
+        if: matrix.lane == 'Mssql' && matrix.suite == 'History'
+        uses: ./.github/actions/start-mssql-test-container
+        with:
+          container-name: cdc-history-mssql
+          container-memory: 2g
+          sql-memory-limit-mb: "1024"
+          tmpfs-size: 1g
+          image: ${{ env.CDC_CONNECTOR_TEMPLATE_SQLSERVER_2025_IMAGE }}
+          host-port: "14339"
+
+      - name: Run story-owned CDC qualification
+        run: ./eng/ci/Invoke-CdcQualification.ps1 -Lane '${{ matrix.lane }}' -Suite '${{ matrix.suite }}' -ResultsDirectory TestResults/cdc-qualification -PullImages
+
+      - name: Record unavailable qualification environment
+        if: failure()
+        run: |
+          if (-not (Test-Path TestResults/cdc-qualification/qualification.json)) {
+            New-Item -ItemType Directory -Force TestResults/cdc-qualification | Out-Null
+            @(@{ Name = 'environment-setup'; Status = 'EnvironmentUnavailable'; Total = 0; Passed = 0; Failed = 0; Skipped = 0 }) |
+              ConvertTo-Json -AsArray | Set-Content TestResults/cdc-qualification/qualification.json
+          }
+
+      - name: Upload structured CDC qualification evidence
+        if: always()
+        uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5
+        with:
+          name: cdc-qualification-${{ matrix.lane }}-${{ matrix.suite }}-${{ github.run_attempt }}
+          path: TestResults/cdc-qualification/**
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Remove packaged-history servers
+        if: always() && matrix.suite == 'History'
+        run: |
+          $container = if ('${{ matrix.lane }}' -eq 'Mssql') { 'cdc-history-mssql' } else { 'cdc-history-postgresql' }
+          docker rm --force --volumes $container
+
+  notify-results:
+    name: Notify Results
+    runs-on: ubuntu-latest
+    needs: [select-suites, run-cdc-qualification]
+    if: always() && github.event_name == 'schedule'
+    steps:
+      - name: Notify Slack on success
+        if: needs.select-suites.result == 'success' && needs.run-cdc-qualification.result == 'success'
+        uses: slackapi/slack-github-action@485a9d42d3a73031f12ec201c457e2162c45d02d # v2.0.0
+        with:
+          payload: |
+            {"text":":heavy_check_mark: DMS CI nightly CDC qualification passed, all 13 live suites verified"}
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+
+      - name: Notify Slack on failure
+        if: needs.select-suites.result != 'success' || needs.run-cdc-qualification.result != 'success'
+        uses: slackapi/slack-github-action@485a9d42d3a73031f12ec201c457e2162c45d02d # v2.0.0
+        with:
+          payload: |
+            {"text":":x: DMS CI nightly CDC qualification failed (selection: ${{ needs.select-suites.result }}, qualification: ${{ needs.run-cdc-qualification.result }})"}
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook

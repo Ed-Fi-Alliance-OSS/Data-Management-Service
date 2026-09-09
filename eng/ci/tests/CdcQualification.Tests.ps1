@@ -125,18 +125,103 @@ Describe 'CDC qualification CI scheduling' {
         $workflow = Get-Content (Join-Path $PSScriptRoot '../../../.github/workflows/on-dms-pullrequest.yml') -Raw
         $script:job = [regex]::Match($workflow, '(?ms)^  run-cdc-qualification:.*?(?=^  [a-z][a-z0-9-]+:|\z)').Value
         $script:gate = [regex]::Match($workflow, '(?ms)^  dms-ci-gate:.*\z').Value
+        $script:scheduledWorkflow = Get-Content (Join-Path $PSScriptRoot '../../../.github/workflows/nightly-cdc-qualification.yml') -Raw
+        $script:scheduledJob = [regex]::Match($script:scheduledWorkflow, '(?ms)^  run-cdc-qualification:.*?(?=^  [a-z][a-z0-9-]+:|\z)').Value
+        $script:scheduledNotification = [regex]::Match($script:scheduledWorkflow, '(?ms)^  notify-results:.*\z').Value
+        $script:matrixScript = Join-Path $PSScriptRoot '../Get-CdcQualificationMatrix.ps1'
     }
-    It 'requires every provider suite and does not cancel peers on failure' {
-        $pairs = @([regex]::Matches($script:job, 'lane: (\w+)\s+suite: (\w+)') | ForEach-Object { $_.Groups[1].Value + '/' + $_.Groups[2].Value })
-        $expected = @('Contract/All', 'Kafka/All')
+    It 'requires only Contract without live Docker prerequisites in PR and merge-queue qualification' {
+        $script:job | Should -Match 'Invoke-CdcQualification.ps1 -Lane Contract -ResultsDirectory'
+        $script:job | Should -Not -Match 'matrix:|matrix\.|-PullImages|CDC_CONNECTOR_TEMPLATE_|Start packaged-history'
+        $script:gate | Should -Match '(?m)^      - run-cdc-qualification$'
+        $script:gate | Should -Not -Match 'nightly-cdc|run-cdc-heavy-qualification'
+    }
+    It 'selects all thirteen live jobs by default without Contract or duplicates' {
+        $matrix = & $script:matrixScript | ConvertFrom-Json
+        $pairs = @($matrix.include | ForEach-Object { $_.lane + '/' + $_.suite })
+        $expected = @('Kafka/All')
         foreach ($provider in @('Postgresql', 'Mssql')) {
             foreach ($suite in @('Admission', 'Lifecycle', 'Recovery', 'RecordSize', 'Telemetry', 'History')) {
                 $expected += "$provider/$suite"
             }
         }
         @($pairs | Sort-Object) | Should -Be @($expected | Sort-Object)
-        $script:job | Should -Match 'fail-fast: false'
-        $script:gate | Should -Match '(?m)^      - run-cdc-qualification$'
+    }
+    It 'selects <Lane>/<Suite> for a targeted manual run' -ForEach @(
+        @{ Lane = 'Kafka'; Suite = 'All'; Count = 1 }
+        @{ Lane = 'Postgresql'; Suite = 'All'; Count = 6 }
+        @{ Lane = 'Mssql'; Suite = 'All'; Count = 6 }
+        @{ Lane = 'Postgresql'; Suite = 'RecordSize'; Count = 1 }
+        @{ Lane = 'Mssql'; Suite = 'Admission'; Count = 1 }
+        @{ Lane = 'Mssql'; Suite = 'History'; Count = 1 }
+    ) {
+        $matrix = & $script:matrixScript -Lane $Lane -Suite $Suite | ConvertFrom-Json
+        $matrix.include.GetType().IsArray | Should -BeTrue
+        $matrix.include.Count | Should -Be $Count
+        @($matrix.include | Where-Object lane -ne $Lane).Count | Should -Be 0
+        if ($Suite -ne 'All') { @($matrix.include | Where-Object suite -ne $Suite).Count | Should -Be 0 }
+    }
+    It 'rejects ambiguous <Lane> suite selection instead of silently selecting different tests' -ForEach @(
+        @{ Lane = 'All' }
+        @{ Lane = 'Kafka' }
+    ) {
+        { & $script:matrixScript -Lane $Lane -Suite Admission } | Should -Throw '*requires one provider lane*'
+    }
+    It 'runs nightly including Saturday and supports manual lane and suite selection' {
+        $script:scheduledWorkflow | Should -Match '(?m)^  workflow_dispatch:'
+        $script:scheduledWorkflow | Should -Match 'cron: "17 8 \* \* \*"'
+        $script:scheduledWorkflow | Should -Not -Match '(?m)^  (pull_request|merge_group):'
+        $script:scheduledWorkflow | Should -Match 'Get-CdcQualificationMatrix.ps1 -Lane \$env:SELECTED_LANE -Suite \$env:SELECTED_SUITE'
+        $script:scheduledWorkflow | Should -Match "inputs.lane \|\| 'All'"
+        $script:scheduledWorkflow | Should -Match "inputs.suite \|\| 'All'"
+        $script:scheduledJob | Should -Match 'matrix: \$\{\{ fromJSON\(needs.select-suites.outputs.matrix\) \}\}'
+        $script:scheduledJob | Should -Not -Match '(?m)^    if:'
+        $weekend = Get-Content (Join-Path $PSScriptRoot '../../../.github/workflows/scheduled-build.yml') -Raw
+        $weekend | Should -Not -Match 'Invoke-CdcQualification|run-cdc-heavy-qualification|nightly-cdc-qualification'
+    }
+    It 'retains fail-closed prerequisites and sanitized artifacts in the nightly jobs' {
+        $script:scheduledJob | Should -Match 'runs-on: ubuntu-latest'
+        $script:scheduledJob | Should -Match 'timeout-minutes: 120'
+        $script:scheduledJob | Should -Match 'fail-fast: false'
+        $script:scheduledJob | Should -Not -Match 'continue-on-error:'
+        foreach ($image in @('CONNECT', 'REDPANDA', 'POSTGRES', 'SQLSERVER_2025')) {
+            $script:scheduledJob | Should -Match "CDC_CONNECTOR_TEMPLATE_$($image)_IMAGE:"
+        }
+        $script:scheduledJob | Should -Match 'Invoke-CdcQualification.ps1 -Lane.*-Suite.*-PullImages'
+        $script:scheduledJob | Should -Match "Status = 'EnvironmentUnavailable'"
+        $script:scheduledJob | Should -Match 'if: always\(\)'
+        $script:scheduledJob | Should -Match 'path: TestResults/cdc-qualification/\*\*'
+        $script:scheduledJob | Should -Match 'name: cdc-qualification-.*github.run_attempt'
+        $script:scheduledJob | Should -Match 'if-no-files-found: error'
+    }
+    It 'provisions and cleans up both packaged-history admin servers in their nightly jobs' {
+        foreach ($provider in @('Postgresql', 'Mssql')) {
+            $script:scheduledJob | Should -Match "if: matrix.lane == '$provider' && matrix.suite == 'History'"
+        }
+        $script:scheduledJob | Should -Match 'uses: ./.github/actions/start-postgresql-test-container'
+        $script:scheduledJob | Should -Match 'uses: ./.github/actions/start-mssql-test-container'
+        $script:scheduledJob | Should -Match 'ConnectionStrings__DatabaseConnection='
+        $script:scheduledJob | Should -Match "if: always\(\) && matrix.suite == 'History'"
+        $script:scheduledJob | Should -Match 'docker rm --force --volumes \$container'
+    }
+    It 'reports nightly selection and qualification failures without notifying for manual runs' {
+        $script:scheduledNotification | Should -Match 'needs: \[select-suites, run-cdc-qualification\]'
+        $script:scheduledNotification | Should -Match "if: always\(\) && github.event_name == 'schedule'"
+        foreach ($job in @('select-suites', 'run-cdc-qualification')) {
+            $script:scheduledNotification | Should -Match "needs.$job.result == 'success'"
+            $script:scheduledNotification | Should -Match "needs.$job.result != 'success'"
+        }
+    }
+    It 'keeps both nightly Slack messages to a single-line summary' {
+        $messages = @([regex]::Matches($script:scheduledNotification, '(?m)^\s+(\{"text":.*\})$') | ForEach-Object {
+            ($_.Groups[1].Value | ConvertFrom-Json).text
+        })
+        $messages.Count | Should -Be 2
+        $messages[0] | Should -Be ':heavy_check_mark: DMS CI nightly CDC qualification passed, all 13 live suites verified'
+        $messages[1] | Should -Be ':x: DMS CI nightly CDC qualification failed (selection: ${{ needs.select-suites.result }}, qualification: ${{ needs.run-cdc-qualification.result }})'
+        foreach ($message in $messages) {
+            $message | Should -Not -Match '[\r\n]'
+        }
     }
     It 'uses the same local runner for relevant ready PRs and merge groups' {
         $script:job | Should -Match "github.event_name != 'pull_request'"

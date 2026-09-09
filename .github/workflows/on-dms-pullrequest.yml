@@ -1429,57 +1429,21 @@ jobs:
           use-actions-summary: "true"
 
   run-cdc-qualification:
-    name: CDC Qualification (${{ matrix.lane }} / ${{ matrix.suite }})
+    name: CDC Qualification (Contract)
     needs: detect-fresh-build-changes
     if: >-
       github.event_name != 'pull_request' ||
       (needs.detect-fresh-build-changes.outputs.cdc_relevant == 'true' &&
       needs.detect-fresh-build-changes.outputs.draft != 'true')
     runs-on: ubuntu-latest
-    # Independent provider suites bound job duration and the scope of explicit CI reruns.
+    # Fast controller/CLI/offline/wrapper checks remain required before merge.
+    # All live provider and Kafka qualification runs in nightly-cdc-qualification.yml.
     timeout-minutes: 120
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - lane: Contract
-            suite: All
-          - lane: Kafka
-            suite: All
-          - lane: Postgresql
-            suite: Admission
-          - lane: Postgresql
-            suite: Lifecycle
-          - lane: Postgresql
-            suite: Recovery
-          - lane: Postgresql
-            suite: RecordSize
-          - lane: Postgresql
-            suite: Telemetry
-          - lane: Postgresql
-            suite: History
-          - lane: Mssql
-            suite: Admission
-          - lane: Mssql
-            suite: Lifecycle
-          - lane: Mssql
-            suite: Recovery
-          - lane: Mssql
-            suite: RecordSize
-          - lane: Mssql
-            suite: Telemetry
-          - lane: Mssql
-            suite: History
     permissions:
       contents: read
     defaults:
       run:
         shell: pwsh
-    env:
-      CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE: ${{ vars.CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE }}
-      CDC_CONNECTOR_TEMPLATE_REDPANDA_IMAGE: ${{ vars.CDC_CONNECTOR_TEMPLATE_REDPANDA_IMAGE }}
-      CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE: ${{ vars.CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE }}
-      CDC_CONNECTOR_TEMPLATE_SQLSERVER_2025_IMAGE: ${{ vars.CDC_CONNECTOR_TEMPLATE_SQLSERVER_2025_IMAGE }}
     steps:
       - name: Checkout the Repo
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -1490,38 +1454,10 @@ jobs:
           dotnet-version: "10.0.x"
 
       - name: Install Pester
-        if: matrix.lane == 'Contract'
         run: Install-Module Pester -RequiredVersion 5.7.1 -Scope CurrentUser -Force
 
-      # History tests publish both CLIs and lease fresh databases from these isolated servers.
-      # Controller suites own separate per-test provider/broker/worker resources.
-      - name: Start packaged-history PostgreSQL
-        if: matrix.lane == 'Postgresql' && matrix.suite == 'History'
-        uses: ./.github/actions/start-postgresql-test-container
-        with:
-          container-name: cdc-history-postgresql
-          container-memory: 1g
-          tmpfs-size: 512m
-          image: ${{ env.CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE }}
-          host-port: "54329"
-
-      - name: Configure packaged-history PostgreSQL
-        if: matrix.lane == 'Postgresql' && matrix.suite == 'History'
-        run: '"ConnectionStrings__DatabaseConnection=Host=localhost;Port=54329;Username=postgres;Database=postgres" >> $env:GITHUB_ENV'
-
-      - name: Start packaged-history SQL Server 2025
-        if: matrix.lane == 'Mssql' && matrix.suite == 'History'
-        uses: ./.github/actions/start-mssql-test-container
-        with:
-          container-name: cdc-history-mssql
-          container-memory: 2g
-          sql-memory-limit-mb: "1024"
-          tmpfs-size: 1g
-          image: ${{ env.CDC_CONNECTOR_TEMPLATE_SQLSERVER_2025_IMAGE }}
-          host-port: "14339"
-
       - name: Run story-owned CDC qualification
-        run: ./eng/ci/Invoke-CdcQualification.ps1 -Lane '${{ matrix.lane }}' -Suite '${{ matrix.suite }}' -ResultsDirectory TestResults/cdc-qualification -PullImages
+        run: ./eng/ci/Invoke-CdcQualification.ps1 -Lane Contract -ResultsDirectory TestResults/cdc-qualification
 
       - name: Record unavailable qualification environment
         if: failure()
@@ -1536,16 +1472,10 @@ jobs:
         if: always()
         uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5
         with:
-          name: cdc-qualification-${{ matrix.lane }}-${{ matrix.suite }}-${{ github.run_attempt }}
+          name: cdc-qualification-Contract-All-${{ github.run_attempt }}
           path: TestResults/cdc-qualification/**
           if-no-files-found: error
           retention-days: 14
-
-      - name: Remove packaged-history servers
-        if: always() && matrix.suite == 'History'
-        run: |
-          $container = if ('${{ matrix.lane }}' -eq 'Mssql') { 'cdc-history-mssql' } else { 'cdc-history-postgresql' }
-          docker rm --force --volumes $container
 
   run-backend-cdc-connector-template-smoke-tests:
     name: Run Backend CDC Connector Template Smoke Tests
