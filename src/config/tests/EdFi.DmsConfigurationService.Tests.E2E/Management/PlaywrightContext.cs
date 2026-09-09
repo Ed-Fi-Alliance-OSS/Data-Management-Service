@@ -11,14 +11,7 @@ public class PlaywrightContext
 {
     private Task<IAPIRequestContext>? _requestContext;
 
-    /// <summary>
-    /// Base URL of the Configuration Service under test. Defaults to the standard local stack and
-    /// is overridable so a suite can run against an isolated stack published on another port.
-    /// </summary>
-    public string ApiUrl { get; set; } =
-        Environment.GetEnvironmentVariable("DMS_CONFIG_E2E_API_URL") is { Length: > 0 } apiUrl
-            ? apiUrl
-            : "http://localhost:8081";
+    public string ApiUrl { get; set; } = "http://localhost:8081";
 
     public IAPIRequestContext? ApiRequestContext => _requestContext?.GetAwaiter().GetResult();
 

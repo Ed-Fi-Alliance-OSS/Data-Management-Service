@@ -100,43 +100,6 @@ The DMS Configuration Management Service E2E tests directory is `src/config/test
 
 The DMS Configuration Management Service E2E tests have a similar setup and environment to the Data Management Service E2E tests. They have their own `setup-local-cms.ps1` for setup and `teardown-local-cms.ps1` for teardown.
 
-### Pointing the suite at a Configuration Service on another port
-
-The suite targets `http://localhost:8081` by default. Set `DMS_CONFIG_E2E_API_URL` to run it
-against a Configuration Service published elsewhere, which is what makes it possible to test an
-isolated stack while another stack already occupies 8081:
-
-```powershell
-$env:DMS_CONFIG_E2E_API_URL = "http://localhost:18081"
-dotnet test src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/EdFi.DmsConfigurationService.Tests.E2E.csproj -c Release --filter "FullyQualifiedName~ApiClients"
-```
-
-Unset or empty leaves the default in place, so `build-config.ps1 E2ETest` and CI are unaffected.
-An isolated stack needs more than this variable: `local-config.yml` hardcodes
-`container_name: ed-fi-api-config-service`, and container names are global in Docker, so a second
-CMS stack also needs a compose override supplying its own container names, its own network in place
-of the shared external `dms` network, and its own image tag. `DMS_CONFIG_ASPNETCORE_HTTP_PORTS`
-drives both the container's listening port and the published host port, and the self-contained
-issuer settings (`SELF_CONTAINED_*`, `DMS_CONFIG_IDENTITY_AUTHORITY`) must name the same port.
-
-Set the variables the harness itself reads when running `dotnet test` directly instead of through
-`build-config.ps1`, which normally exports them: `DMS_CONFIG_DATASTORE`, `DMS_CONFIG_MULTI_TENANCY`
-(the `@MultitenantOnly` scenarios are skipped unless this is `true`), `DMS_CONFIG_IDENTITY_PROVIDER`
-(the `@SelfContainedOnly` scenarios are skipped unless this is `self-contained`), and the
-`POSTGRES_*`/`MSSQL_*` values the between-feature test-data cleanup connects with. A stale value
-here points that cleanup at the wrong database, where it silently truncates nothing useful.
-
-Two behaviors to expect when running these tests repeatedly:
-
-- The suite cleans test data between features, not between scenarios, and cleanup is best-effort.
-  Re-running a feature against a database that still holds a previous run's rows can fail on unique
-  constraints such as `UX_Application_VendorId_ApplicationName`. Recreate the stack's database
-  volume between runs when results look inconsistent.
-- A client-credentials token request must name a scope. The token endpoint always forwards a
-  `scope` parameter, so an omitted scope arrives as an empty string: the self-contained provider
-  falls back to the client's default permissions, while Keycloak rejects it with `invalid_scope`.
-  Use the application's claim set name, which both providers register as the client's scope.
-
 ## Working with MSSQL Backend Integration Tests
 
 Before running MSSQL backend integration tests, verify that a SQL Server instance is listening locally on the expected test port, commonly `localhost,1434`. If no suitable instance is running, start a temporary SQL Server container and pass its admin connection string to the test command with `ConnectionStrings__MssqlAdmin`.
