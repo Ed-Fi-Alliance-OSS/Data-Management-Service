@@ -198,12 +198,18 @@ those fields.
 
 A correlation ID is normalized before it is used anywhere — whether it came from
 the configured correlation header or from `HttpContext.TraceIdentifier`. The
-normalization is two steps, applied in this order:
+normalization is three adjustments, applied in this order:
 
 1. **Truncate.** A value longer than `AppSettings:CorrelationIdMaxLength`
    (default `255`) is cut to that length. See
    [Configuration](./CONFIGURATION.md).
-2. **Remove characters outside the allowlist.** The correlation ID allowlist is
+2. **Back the cut off a split surrogate pair.** The cut in step 1 is made on a
+   UTF-16 code unit, so it can land between the two halves of a non-BMP
+   character. When it does, the orphaned leading half is dropped as well, one
+   character short of the cap. Without this, JSON serialization would write
+   `U+FFFD` into the response body while a log sink received the raw unpaired
+   unit, and the two values would no longer be identical.
+3. **Remove characters outside the allowlist.** The correlation ID allowlist is
    *all printable non-control characters*: every control character is removed —
    carriage return, line feed, tab and null included — and every other character
    is preserved, including punctuation such as `+ = { } @ | , # ( ) [ ] < > " '`
@@ -225,9 +231,11 @@ defeat the purpose of accepting a client-supplied value at all.
 
 The order matters, and truncating first is deliberate: a long hostile value
 retains less trailing content than it would if characters were removed first. A
-consequence is that a value which is both over-length *and* contains control
-characters yields a result **shorter** than `CorrelationIdMaxLength`. That is
-intended.
+consequence is that an over-length value can yield a result **shorter** than
+`CorrelationIdMaxLength` — either because it also contained characters outside
+the allowlist, which are removed after the cut, or because the cut landed inside
+a surrogate pair, which costs one further character even for a value containing
+nothing the allowlist would remove. Both are intended.
 
 Normalization is applied identically everywhere a correlation ID appears: every
 request log event, and the `correlationId` (or `traceId`) of every error response

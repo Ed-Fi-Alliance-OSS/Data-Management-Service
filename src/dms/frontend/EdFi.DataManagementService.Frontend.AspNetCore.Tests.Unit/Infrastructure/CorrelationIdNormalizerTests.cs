@@ -197,7 +197,6 @@ public class CorrelationIdNormalizerTests
             // would drop the low half here and emit "abcdef\uD83D" - an orphaned high
             // surrogate, exactly the parity break the guard exists to prevent.
             _result.Should().Be("abcdef\U0001F600");
-            _result.Should().HaveLength(8);
         }
     }
 
