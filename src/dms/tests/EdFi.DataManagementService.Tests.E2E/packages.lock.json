@@ -312,8 +312,8 @@
       },
       "Json.More.Net": {
         "type": "Transitive",
-        "resolved": "2.0.1.2",
-        "contentHash": "uF3QeiaXEfH92emz0/BWUiNtMSfxIIvgynuB0Bf1vF4s8eWTcZitBx9l+g/FDaJk5XxqBv9buQXizXKQcXFG1w=="
+        "resolved": "2.0.2",
+        "contentHash": "izscdjjk8EAHDBCjyz7V7n77SzkrSjh/hUGV6cyR6PlVdjYDh5ohc8yqvwSqJ9+6Uof8W6B24dIHlDKD+I1F8A=="
       },
       "JsonPointer.Net": {
         "type": "Transitive",
@@ -423,6 +423,25 @@
         "type": "Transitive",
         "resolved": "8.0.1",
         "contentHash": "5Ou6varcxLBzQ+Agfm0k0pnH7vrEITYlXMDuE6s7ZHlZHz6/G8XJ3iISZDr5rfwfge6RnXJ1+Wc479mMn52vjA=="
+      },
+      "Microsoft.Extensions.Diagnostics": {
+        "type": "Transitive",
+        "resolved": "10.0.1",
+        "contentHash": "YaocqxscJLxLit0F5yq2XyB+9C7rSRfeTL7MJIl7XwaOoUO3i0EqfO2kmtjiRduYWw7yjcSINEApYZbzjau2gQ==",
+        "dependencies": {
+          "Microsoft.Extensions.Configuration": "10.0.1",
+          "Microsoft.Extensions.Diagnostics.Abstractions": "10.0.1",
+          "Microsoft.Extensions.Options.ConfigurationExtensions": "10.0.1"
+        }
+      },
+      "Microsoft.Extensions.Diagnostics.Abstractions": {
+        "type": "Transitive",
+        "resolved": "10.0.1",
+        "contentHash": "QMoMrkNpnQym5mpfdxfxpRDuqLpsOuztguFvzH9p+Ex+do+uLFoi7UkAsBO4e9/tNR3eMFraFf2fOAi2cp3jjA==",
+        "dependencies": {
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.1",
+          "Microsoft.Extensions.Options": "10.0.1"
+        }
       },
       "Microsoft.Extensions.FileProviders.Abstractions": {
         "type": "Transitive",
@@ -655,6 +674,109 @@
         "resolved": "9.0.11",
         "contentHash": "s8yUYuYYu+PAwvBdhLG1KyrGrk9gkYeuPxfAsXsTqqWyepwSyEw8hAaflW4nO98NG52YpYI1am2+9o+79h2RtQ=="
       },
+      "EdFi.Api.CustomValidation": {
+        "type": "Project"
+      },
+      "EdFi.Api.DocumentCacheAdmin": {
+        "type": "Project",
+        "dependencies": {
+          "EdFi.DataManagementService.Backend": "[1.0.0, )",
+          "EdFi.DataManagementService.Backend.Mssql": "[1.0.0, )",
+          "EdFi.DataManagementService.Backend.Postgresql": "[1.0.0, )",
+          "EdFi.DataManagementService.Core": "[1.0.0, )",
+          "EdFi.DataStandard52.ApiSchema": "[1.0.335, )",
+          "EdFi.DataStandard52.TPDM.ApiSchema": "[1.0.335, )",
+          "Microsoft.Extensions.Configuration": "[10.0.1, )",
+          "Microsoft.Extensions.Configuration.EnvironmentVariables": "[10.0.1, )",
+          "Microsoft.Extensions.Configuration.Json": "[10.0.1, )",
+          "Microsoft.Extensions.DependencyInjection": "[10.0.1, )",
+          "Microsoft.Extensions.Logging": "[10.0.1, )",
+          "Microsoft.Extensions.Logging.Abstractions": "[10.0.1, )",
+          "Serilog": "[4.2.0, )",
+          "Serilog.Extensions.Logging": "[8.0.0, )",
+          "Serilog.Sinks.Console": "[6.0.0, )",
+          "Serilog.Sinks.File": "[6.0.0, )",
+          "System.CommandLine": "[2.0.0-rc.1.25451.107, )"
+        }
+      },
+      "edfi.datamanagementservice.backend": {
+        "type": "Project",
+        "dependencies": {
+          "EdFi.DataManagementService.Backend.External": "[1.0.0, )",
+          "EdFi.DataManagementService.Backend.Plans": "[1.0.0, )",
+          "EdFi.DataManagementService.Core": "[1.0.0, )",
+          "EdFi.DataManagementService.Core.External": "[1.0.0, )",
+          "Microsoft.CodeAnalysis": "[4.12.0, )",
+          "Microsoft.Extensions.Configuration.Abstractions": "[10.0.1, )",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.1, )",
+          "Microsoft.Extensions.Hosting.Abstractions": "[10.0.1, )",
+          "Microsoft.Extensions.Options": "[10.0.1, )"
+        }
+      },
+      "edfi.datamanagementservice.backend.ddl": {
+        "type": "Project",
+        "dependencies": {
+          "EdFi.DataManagementService.Backend.External": "[1.0.0, )",
+          "EdFi.DataManagementService.Backend.RelationalModel": "[1.0.0, )"
+        }
+      },
+      "edfi.datamanagementservice.backend.external": {
+        "type": "Project",
+        "dependencies": {
+          "EdFi.DataManagementService.Core.External": "[1.0.0, )"
+        }
+      },
+      "edfi.datamanagementservice.backend.mssql": {
+        "type": "Project",
+        "dependencies": {
+          "EdFi.DataManagementService.Backend": "[1.0.0, )",
+          "EdFi.DataManagementService.Backend.Plans": "[1.0.0, )",
+          "EdFi.DataManagementService.Core": "[1.0.0, )",
+          "Microsoft.CodeAnalysis": "[4.12.0, )",
+          "Microsoft.Data.SqlClient": "[6.1.4, )"
+        }
+      },
+      "edfi.datamanagementservice.backend.plans": {
+        "type": "Project",
+        "dependencies": {
+          "EdFi.DataManagementService.Backend.Ddl": "[1.0.0, )",
+          "EdFi.DataManagementService.Backend.RelationalModel": "[1.0.0, )",
+          "EdFi.DataManagementService.Core.External": "[1.0.0, )",
+          "Microsoft.Data.SqlClient": "[6.1.4, )",
+          "Microsoft.Extensions.Logging.Abstractions": "[10.0.1, )",
+          "Microsoft.Extensions.Options": "[10.0.1, )"
+        }
+      },
+      "edfi.datamanagementservice.backend.postgresql": {
+        "type": "Project",
+        "dependencies": {
+          "EdFi.DataManagementService.Backend": "[1.0.0, )",
+          "EdFi.DataManagementService.Backend.Plans": "[1.0.0, )",
+          "EdFi.DataManagementService.Core.External": "[1.0.0, )",
+          "Microsoft.CodeAnalysis": "[4.12.0, )",
+          "Microsoft.Extensions.Logging.Abstractions": "[10.0.1, )",
+          "Npgsql": "[8.0.4, )"
+        }
+      },
+      "edfi.datamanagementservice.backend.relationalmodel": {
+        "type": "Project",
+        "dependencies": {
+          "EdFi.DataManagementService.Backend.External": "[1.0.0, )"
+        }
+      },
+      "edfi.datamanagementservice.backend.tests.common": {
+        "type": "Project",
+        "dependencies": {
+          "EdFi.DataManagementService.Backend": "[1.0.0, )",
+          "EdFi.DataManagementService.Backend.Ddl": "[1.0.0, )",
+          "EdFi.DataManagementService.Backend.External": "[1.0.0, )",
+          "EdFi.DataManagementService.Backend.Plans": "[1.0.0, )",
+          "EdFi.DataManagementService.Core": "[1.0.0, )",
+          "FluentAssertions": "[6.12.1, )",
+          "Microsoft.Extensions.Logging.Abstractions": "[10.0.1, )",
+          "NUnit": "[4.2.2, )"
+        }
+      },
       "edfi.datamanagementservice.backend.tests.integration.common": {
         "type": "Project",
         "dependencies": {
@@ -662,6 +784,37 @@
           "Microsoft.Extensions.Configuration": "[10.0.1, )",
           "Microsoft.Extensions.Configuration.Json": "[10.0.1, )",
           "Npgsql": "[8.0.4, )"
+        }
+      },
+      "edfi.datamanagementservice.core": {
+        "type": "Project",
+        "dependencies": {
+          "Be.Vlaanderen.Basisregisters.Generators.Guid.Deterministic": "[4.0.0, )",
+          "EdFi.Api.CustomValidation": "[1.0.0, )",
+          "EdFi.DataManagementService.Backend.External": "[1.0.0, )",
+          "EdFi.DataManagementService.Core.External": "[1.0.0, )",
+          "FastGuid": "[1.4.1, )",
+          "JsonPath.Net": "[1.1.6, )",
+          "JsonSchema.Net": "[7.2.2, )",
+          "Microsoft.CodeAnalysis": "[4.12.0, )",
+          "Microsoft.Extensions.Caching.Abstractions": "[10.0.1, )",
+          "Microsoft.Extensions.Caching.Hybrid": "[9.5.0, )",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.1, )",
+          "Microsoft.Extensions.Http": "[10.0.1, )",
+          "Microsoft.Extensions.Logging": "[10.0.1, )",
+          "Microsoft.Extensions.Logging.Abstractions": "[10.0.1, )",
+          "Microsoft.Extensions.Options": "[10.0.1, )",
+          "Microsoft.IdentityModel.Protocols.OpenIdConnect": "[8.12.0, )",
+          "Microsoft.IdentityModel.Tokens": "[8.12.0, )",
+          "Npgsql": "[8.0.4, )",
+          "Polly.Core": "[8.5.2, )",
+          "Polly.Extensions": "[8.5.2, )",
+          "Serilog": "[4.2.0, )",
+          "Serilog.Extensions.Logging": "[8.0.0, )",
+          "Serilog.Settings.Configuration": "[8.0.2, )",
+          "Serilog.Sinks.Console": "[6.0.0, )",
+          "Serilog.Sinks.File": "[6.0.0, )",
+          "System.IdentityModel.Tokens.Jwt": "[8.12.0, )"
         }
       },
       "edfi.datamanagementservice.core.external": {
@@ -674,19 +827,72 @@
           "Sandwych.QuickGraph.Core": "[1.0.0, )"
         }
       },
+      "edfi.datamanagementservice.documentcacheadmin.tests.integration": {
+        "type": "Project",
+        "dependencies": {
+          "EdFi.Api.DocumentCacheAdmin": "[1.0.0, )",
+          "EdFi.DataManagementService.Backend.Ddl": "[1.0.0, )",
+          "EdFi.DataManagementService.Backend.Tests.Common": "[1.0.0, )",
+          "EdFi.DataManagementService.Backend.Tests.Integration.Common": "[1.0.0, )",
+          "FluentAssertions": "[6.12.1, )",
+          "Microsoft.CodeAnalysis": "[4.12.0, )",
+          "Microsoft.NET.Test.Sdk": "[17.11.1, )",
+          "NUnit": "[4.2.2, )",
+          "NUnit3TestAdapter": "[4.6.0, )"
+        }
+      },
       "Be.Vlaanderen.Basisregisters.Generators.Guid.Deterministic": {
         "type": "CentralTransitive",
         "requested": "[4.0.0, )",
         "resolved": "4.0.0",
         "contentHash": "ssdML8g+JqdP2BbDxg/bqzUBz81RD3SCGAbop6qs+o1xCGPXnlCSNAOp22TDKTtFmHfp+sKSPuWL0JONf3fYYA=="
       },
+      "EdFi.DataStandard52.ApiSchema": {
+        "type": "CentralTransitive",
+        "requested": "[1.0.335, )",
+        "resolved": "1.0.335",
+        "contentHash": "cEJOD63KUG7BrIVN8Eq44hsougfJErhb9/fd5NIuJG2TZid0vAK5gNLgC/U040GexpGTVF5N3JxohFdXBMmkxQ=="
+      },
+      "EdFi.DataStandard52.TPDM.ApiSchema": {
+        "type": "CentralTransitive",
+        "requested": "[1.0.335, )",
+        "resolved": "1.0.335",
+        "contentHash": "A1L+MdsqchGXd0PnWcjeM7mQeqaa1T32kDRkhKPxHh/wiN5b4rd+xyxiie6L0lpnB0hSTOwIvGlnWcvmX/MirA=="
+      },
+      "FastGuid": {
+        "type": "CentralTransitive",
+        "requested": "[1.4.1, )",
+        "resolved": "1.4.1",
+        "contentHash": "aYodIyihe8YqrPVmqW8chz/BukxSlSnDIMqIrYfbsmyg4HH4Eg5mhxyQUcu9IW5bXVX6OwRHLGGlLKESxh+acA=="
+      },
+      "JsonPath.Net": {
+        "type": "CentralTransitive",
+        "requested": "[1.1.6, )",
+        "resolved": "1.1.6",
+        "contentHash": "FQLbFJdjIa70GdYGR3RpdGkLTMZwQCqcd8gC35yx6aGofVEP3QxMvSuXHn75N30jj9SS6yvsPPTDzJmPMt/Mdw==",
+        "dependencies": {
+          "Json.More.Net": "2.0.2"
+        }
+      },
       "Microsoft.Extensions.Caching.Abstractions": {
         "type": "CentralTransitive",
         "requested": "[10.0.1, )",
-        "resolved": "9.0.11",
-        "contentHash": "PRv1SPyrgl/ullMF6eKDuEULRkTc10fVcnWvzFhqIMDA3m5f91znKH9ZNsKZBgu4xVc4ulNt7TEXyyt0rdlB3g==",
+        "resolved": "10.0.1",
+        "contentHash": "Vb1vVAQDxHpXVdL9fpOX2BzeV7bbhzG4pAcIKRauRl0/VfkE8mq0f+fYC+gWICh3dlzTZInJ/cTeBS2MgU/XvQ==",
         "dependencies": {
-          "Microsoft.Extensions.Primitives": "9.0.11"
+          "Microsoft.Extensions.Primitives": "10.0.1"
+        }
+      },
+      "Microsoft.Extensions.Caching.Hybrid": {
+        "type": "CentralTransitive",
+        "requested": "[9.5.0, )",
+        "resolved": "9.5.0",
+        "contentHash": "M4B0z8sdOFEntf0KbvmL7nv0LfQgGHiBDH2cfSAscJ3FTGxnq7uOpFo7sVaPuYZmpPK/KIJdWDAzu/Bc2Otrxg==",
+        "dependencies": {
+          "Microsoft.Extensions.Caching.Abstractions": "9.0.5",
+          "Microsoft.Extensions.Caching.Memory": "9.0.5",
+          "Microsoft.Extensions.Logging.Abstractions": "9.0.5",
+          "Microsoft.Extensions.Options": "9.0.5"
         }
       },
       "Microsoft.Extensions.Caching.Memory": {
@@ -727,6 +933,33 @@
         "resolved": "10.0.1",
         "contentHash": "oIy8fQxxbUsSrrOvgBqlVgOeCtDmrcynnTG+FQufcUWBrwyPfwlUkCDB2vaiBeYPyT+20u9/HeuHeBf+H4F/8g=="
       },
+      "Microsoft.Extensions.Hosting.Abstractions": {
+        "type": "CentralTransitive",
+        "requested": "[10.0.1, )",
+        "resolved": "10.0.1",
+        "contentHash": "qmoQkVZcbm4/gFpted3W3Y+1kTATZTcUhV3mRkbtpfBXlxWCHwh/2oMffVcCruaGOfJuEnyAsGyaSUouSdECOw==",
+        "dependencies": {
+          "Microsoft.Extensions.Configuration.Abstractions": "10.0.1",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.1",
+          "Microsoft.Extensions.Diagnostics.Abstractions": "10.0.1",
+          "Microsoft.Extensions.FileProviders.Abstractions": "10.0.1",
+          "Microsoft.Extensions.Logging.Abstractions": "10.0.1"
+        }
+      },
+      "Microsoft.Extensions.Http": {
+        "type": "CentralTransitive",
+        "requested": "[10.0.1, )",
+        "resolved": "10.0.1",
+        "contentHash": "ZXJup9ReE1Ot3M8jqcw1b/lnc8USxyYS3cyLsssU39u04TES9JNGviWUGIvP3K7mMU3TF7kQl2aS0SmVwegflw==",
+        "dependencies": {
+          "Microsoft.Extensions.Configuration.Abstractions": "10.0.1",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.1",
+          "Microsoft.Extensions.Diagnostics": "10.0.1",
+          "Microsoft.Extensions.Logging": "10.0.1",
+          "Microsoft.Extensions.Logging.Abstractions": "10.0.1",
+          "Microsoft.Extensions.Options": "10.0.1"
+        }
+      },
       "Microsoft.Extensions.Logging.Abstractions": {
         "type": "CentralTransitive",
         "requested": "[10.0.1, )",
@@ -758,20 +991,37 @@
       "Microsoft.IdentityModel.Protocols": {
         "type": "CentralTransitive",
         "requested": "[8.12.0, )",
-        "resolved": "7.7.1",
-        "contentHash": "h+fHHBGokepmCX+QZXJk4Ij8OApCb2n2ktoDkNX5CXteXsOxTHMNgjPGpAwdJMFvAL7TtGarUnk3o97NmBq2QQ==",
+        "resolved": "8.12.0",
+        "contentHash": "WwCV1H3lmo6qLjVjFlzi8jBbYLWKzKM3KldD1te1vD3QZbcZ+aN7MBGnbbJAE8FYqv/zLPtsRliRNOs9YHrtxg==",
         "dependencies": {
-          "Microsoft.IdentityModel.Tokens": "7.7.1"
+          "Microsoft.IdentityModel.Tokens": "8.12.0"
         }
       },
       "Microsoft.IdentityModel.Protocols.OpenIdConnect": {
         "type": "CentralTransitive",
         "requested": "[8.12.0, )",
-        "resolved": "7.7.1",
-        "contentHash": "yT2Hdj8LpPbcT9C9KlLVxXl09C8zjFaVSaApdOwuecMuoV4s6Sof/mnTDz/+F/lILPIBvrWugR9CC7iRVZgbfQ==",
+        "resolved": "8.12.0",
+        "contentHash": "KubWl8TJ3a53zWkFdm16KQagA4C/WXH7U8mIGk2cuDLeYAEW3beOGsA6QtDDaGwHTYmy96C1zW4U8DjQA+/t0Q==",
         "dependencies": {
-          "Microsoft.IdentityModel.Protocols": "7.7.1",
-          "System.IdentityModel.Tokens.Jwt": "7.7.1"
+          "Microsoft.IdentityModel.Protocols": "8.12.0",
+          "System.IdentityModel.Tokens.Jwt": "8.12.0"
+        }
+      },
+      "Polly.Core": {
+        "type": "CentralTransitive",
+        "requested": "[8.5.2, )",
+        "resolved": "8.5.2",
+        "contentHash": "1MJKdxv4zwDmiWvYvVN24DsrWUfgQ4F83voH8bhbtLMdPuGy8CfTUzsgQhvyrl1a7hrM6f/ydwLVdVUI0xooUw=="
+      },
+      "Polly.Extensions": {
+        "type": "CentralTransitive",
+        "requested": "[8.5.2, )",
+        "resolved": "8.5.2",
+        "contentHash": "NcUEkeMB7LMsLBXzY9PuuKP7ylXngUEuhmaWxCrlXqYLbVQQzG1ulAnaEQ2LM1zlSoxRftAjCuhPIH40qeWAlg==",
+        "dependencies": {
+          "Microsoft.Extensions.Logging.Abstractions": "8.0.0",
+          "Microsoft.Extensions.Options": "8.0.0",
+          "Polly.Core": "8.5.2"
         }
       },
       "Sandwych.QuickGraph.Core": {
@@ -779,6 +1029,22 @@
         "requested": "[1.0.0, )",
         "resolved": "1.0.0",
         "contentHash": "OJEAm5kik+51yBaDfDuSD9+bx3dI23IvcfFcSL+H6v/YfAYtHbiMkAn5aOljNlkHSig3uakMRGhCTYr3lDKrEA=="
+      },
+      "Serilog.Extensions.Logging": {
+        "type": "CentralTransitive",
+        "requested": "[8.0.0, )",
+        "resolved": "8.0.0",
+        "contentHash": "YEAMWu1UnWgf1c1KP85l1SgXGfiVo0Rz6x08pCiPOIBt2Qe18tcZLvdBUuV5o1QHvrs8FAry9wTIhgBRtjIlEg==",
+        "dependencies": {
+          "Microsoft.Extensions.Logging": "8.0.0",
+          "Serilog": "3.1.1"
+        }
+      },
+      "System.CommandLine": {
+        "type": "CentralTransitive",
+        "requested": "[2.0.0-rc.1.25451.107, )",
+        "resolved": "2.0.0-rc.1.25451.107",
+        "contentHash": "j+0Yg2TZ5rwbGTRArdF9w993dGWCPRbD+lg3S0D6MLckrKQ3J70s52TlbxKlISsoXUP/X+e6uPocbkKjP3wSag=="
       }
     }
   }

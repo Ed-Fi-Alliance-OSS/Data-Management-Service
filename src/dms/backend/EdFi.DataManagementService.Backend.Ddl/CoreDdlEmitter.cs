@@ -118,6 +118,8 @@ public sealed class CoreDdlEmitter
         EffectiveSchemaTableDefinition.ResourceKeySeedHash;
     private static readonly DbColumnName _appliedAtColumn = EffectiveSchemaTableDefinition.AppliedAt;
     private static readonly DbTableName _referentialIdentityTable = DmsTableNames.ReferentialIdentity;
+    private static readonly DbTableName _representationRestampOperationTable =
+        DmsTableNames.RepresentationRestampOperation;
     private static readonly DbTableName _resourceKeyTable = DmsTableNames.ResourceKey;
     private static readonly DbTableName _schemaComponentTable = DmsTableNames.SchemaComponent;
 
@@ -372,6 +374,7 @@ public sealed class CoreDdlEmitter
         EmitDocumentProjectionWorkTable(writer);
         EmitEffectiveSchemaTable(writer);
         EmitReferentialIdentityTable(writer);
+        EmitRepresentationRestampOperationTable(writer);
         EmitResourceKeyTable(writer);
         EmitSchemaComponentTable(writer);
     }
@@ -578,6 +581,72 @@ public sealed class CoreDdlEmitter
             DmsCoreTableDefinitions.DocumentProjectionWork(_dialect),
             DocumentCacheInventoryDefinition.DocumentProjectionWorkConstraints.PrimaryKey
         );
+    }
+
+    /// <summary>
+    /// Emits the durable manifest table for representation restamp operations.
+    /// </summary>
+    private void EmitRepresentationRestampOperationTable(SqlWriter writer)
+    {
+        EmitCoreTableDefinition(
+            writer,
+            DmsCoreTableDefinitions.RepresentationRestampOperation(_dialect),
+            "PK_RepresentationRestampOperation"
+        );
+
+        writer.AppendLine(
+            _dialect.AddCheckConstraint(
+                _representationRestampOperationTable,
+                "CK_RepresentationRestampOperation_ContractVersion",
+                $"{Quote("ContractVersion")} = 1"
+            )
+        );
+        writer.AppendLine();
+
+        var modeCheck =
+            _dialect.Rules.Dialect == SqlDialect.Pgsql
+                ? $"{Quote("Mode")} IN ('Tracking', 'Disabled')"
+                : $"({Quote("Mode")} COLLATE Latin1_General_100_BIN2 = 'Tracking' AND DATALENGTH({Quote("Mode")}) = 16) OR ({Quote("Mode")} COLLATE Latin1_General_100_BIN2 = 'Disabled' AND DATALENGTH({Quote("Mode")}) = 16)";
+        writer.AppendLine(
+            _dialect.AddCheckConstraint(
+                _representationRestampOperationTable,
+                "CK_RepresentationRestampOperation_Mode",
+                modeCheck
+            )
+        );
+        writer.AppendLine();
+
+        var stateCheck =
+            _dialect.Rules.Dialect == SqlDialect.Pgsql
+                ? $"{Quote("State")} IN ('Draft', 'Incomplete', 'Completed')"
+                : $"({Quote("State")} COLLATE Latin1_General_100_BIN2 = 'Draft' AND DATALENGTH({Quote("State")}) = 10) OR ({Quote("State")} COLLATE Latin1_General_100_BIN2 = 'Incomplete' AND DATALENGTH({Quote("State")}) = 20) OR ({Quote("State")} COLLATE Latin1_General_100_BIN2 = 'Completed' AND DATALENGTH({Quote("State")}) = 18)";
+        writer.AppendLine(
+            _dialect.AddCheckConstraint(
+                _representationRestampOperationTable,
+                "CK_RepresentationRestampOperation_State",
+                stateCheck
+            )
+        );
+        writer.AppendLine();
+
+        writer.AppendLine(
+            _dialect.AddCheckConstraint(
+                _representationRestampOperationTable,
+                "CK_RepresentationRestampOperation_NonNegativeCounts",
+                $"{Quote("PreRestampBoundary")} >= 0 AND {Quote("PreviewDocumentCount")} >= 0 AND {Quote("CommittedDocumentCount")} >= 0"
+            )
+        );
+        writer.AppendLine();
+
+        var committedCountCheck = $"{Quote("CommittedDocumentCount")} <= {Quote("PreviewDocumentCount")}";
+        writer.AppendLine(
+            _dialect.AddCheckConstraint(
+                _representationRestampOperationTable,
+                "CK_RepresentationRestampOperation_CommittedCount",
+                committedCountCheck
+            )
+        );
+        writer.AppendLine();
     }
 
     private void EmitCoreTableDefinition(

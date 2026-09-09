@@ -232,6 +232,69 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
     }
 
     [Test]
+    public async Task It_should_create_the_representation_restamp_operation_manifest_with_a_primary_key_and_required_columns()
+    {
+        var columns = await _database.QueryRowsAsync(
+            """
+            SELECT column_name, is_nullable
+            FROM information_schema.columns
+            WHERE table_schema = 'dms'
+              AND table_name = 'RepresentationRestampOperation'
+            """
+        );
+        var primaryKeyColumns = await _database.QueryRowsAsync(
+            """
+            SELECT attributes.attname
+            FROM pg_constraint constraints
+            INNER JOIN pg_class tables ON tables.oid = constraints.conrelid
+            INNER JOIN pg_namespace schemas ON schemas.oid = tables.relnamespace
+            INNER JOIN unnest(constraints.conkey) WITH ORDINALITY AS key_columns(attribute_number, ordinal)
+                ON TRUE
+            INNER JOIN pg_attribute attributes
+                ON attributes.attrelid = tables.oid
+                AND attributes.attnum = key_columns.attribute_number
+            WHERE constraints.contype = 'p'
+              AND schemas.nspname = 'dms'
+              AND tables.relname = 'RepresentationRestampOperation'
+            ORDER BY key_columns.ordinal
+            """
+        );
+
+        string[] expectedColumns =
+        [
+            "OperationId",
+            "ContractVersion",
+            "TenantKey",
+            "DataStoreId",
+            "PhysicalSourceFingerprint",
+            "ScopeJson",
+            "Reason",
+            "Mode",
+            "PreRestampBoundary",
+            "PreviewDocumentCount",
+            "CommittedDocumentCount",
+            "State",
+            "CreatedAt",
+            "UpdatedAt",
+        ];
+
+        columns
+            .Select(column => Convert.ToString(column["column_name"], CultureInfo.InvariantCulture))
+            .Should()
+            .BeEquivalentTo(expectedColumns);
+        columns
+            .Select(column => Convert.ToString(column["is_nullable"], CultureInfo.InvariantCulture))
+            .Should()
+            .OnlyContain(isNullable => isNullable == "NO");
+        primaryKeyColumns
+            .Select(column => Convert.ToString(column["attname"], CultureInfo.InvariantCulture))
+            .Should()
+            .ContainSingle()
+            .Which.Should()
+            .Be("OperationId");
+    }
+
+    [Test]
     public async Task It_should_allocate_collection_item_ids_via_defaults_for_representative_real_ds_sample_collection_tables()
     {
         (await _database.SequenceExistsAsync("dms", "CollectionItemIdSequence")).Should().BeTrue();

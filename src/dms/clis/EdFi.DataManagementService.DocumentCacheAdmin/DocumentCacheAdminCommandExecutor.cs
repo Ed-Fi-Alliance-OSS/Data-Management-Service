@@ -8,6 +8,8 @@ using System.CommandLine;
 using System.CommandLine.Parsing;
 using System.Diagnostics;
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
@@ -569,7 +571,8 @@ internal static class DocumentCacheAdminCommandExecutor
             result.CacheAheadRecoveryRequired,
             timeoutDiagnostics,
             result.OfflineWriterAdmission,
-            result.ElapsedCommandTime
+            result.ElapsedCommandTime,
+            result.RepresentationRestampResult
         );
     }
 
@@ -662,6 +665,18 @@ internal static class DocumentCacheAdminCommandExecutor
             )
             .ConfigureAwait(false);
 
+        if (result.RepresentationRestampResult is { } restampResult)
+        {
+            await standardOutput
+                .WriteLineAsync(
+                    string.Create(
+                        CultureInfo.InvariantCulture,
+                        $"  restamp operationId={restampResult.OperationId} state={restampResult.State} mode={restampResult.Mode} scope={FormatRestampScope(restampResult.Scope)} reason=\"{DocumentCacheAdminOutput.SanitizeDiagnostic(restampResult.Reason)}\" preRestampBoundary={restampResult.PreRestampBoundary} previewDocumentCount={restampResult.PreviewDocumentCount} committedDocumentCount={restampResult.CommittedDocumentCount} remainingEligibleDocumentCount={FormatNullableLong(restampResult.RemainingEligibleDocumentCount)} physicalSourceFingerprint={DocumentCacheAdminOutput.FingerprintPresence(restampResult.PhysicalSourceFingerprint)} claimLevel={restampResult.ClaimLevel}"
+                    )
+                )
+                .ConfigureAwait(false);
+        }
+
         foreach (DocumentCacheAdministrativePhaseDiagnostic diagnostic in result.PhaseDiagnostics)
         {
             await standardOutput
@@ -692,6 +707,24 @@ internal static class DocumentCacheAdminCommandExecutor
 
     private static string FormatNullableDurationSeconds(TimeSpan? duration) =>
         duration is null ? "null" : duration.Value.TotalSeconds.ToString("G17", CultureInfo.InvariantCulture);
+
+    private static string FormatRestampScope(DocumentCacheRepresentationRestampScope scope) =>
+        scope switch
+        {
+            DocumentCacheRepresentationRestampResourceScope resourceScope =>
+                $"resource:{DocumentCacheAdminOutput.BoundedLabel(resourceScope.ProjectName)}/{DocumentCacheAdminOutput.BoundedLabel(resourceScope.ResourceName)}",
+            DocumentCacheRepresentationRestampDocumentUuidsScope uuidScope =>
+                $"documentUuids:count={uuidScope.DocumentUuids.Length},sha256={HashDocumentUuids(uuidScope.DocumentUuids)}",
+            _ => "unknown",
+        };
+
+    private static string HashDocumentUuids(ImmutableArray<Guid> documentUuids)
+    {
+        byte[] bytes = Encoding.UTF8.GetBytes(
+            string.Join(",", documentUuids.Select(uuid => uuid.ToString("D")))
+        );
+        return Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+    }
 
     private static Task WriteErrorAsync(TextWriter? standardError, string? message)
     {

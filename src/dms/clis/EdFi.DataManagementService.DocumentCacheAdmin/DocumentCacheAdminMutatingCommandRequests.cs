@@ -52,6 +52,64 @@ internal static class DocumentCacheAdminMutatingCommandRequestBuilder
             );
         }
 
+        if (
+            string.Equals(
+                commandName,
+                DocumentCacheAdminCommandSurface.RestampPreviewCommandName,
+                StringComparison.Ordinal
+            )
+        )
+        {
+            if (
+                !TryReadRestampPreview(
+                    parseResult,
+                    invocationTarget.TargetKey,
+                    out commandRequest,
+                    out failure
+                )
+            )
+            {
+                return false;
+            }
+            return true;
+        }
+        if (
+            string.Equals(
+                commandName,
+                DocumentCacheAdminCommandSurface.RestampExecuteCommandName,
+                StringComparison.Ordinal
+            )
+        )
+        {
+            if (
+                !Guid.TryParse(
+                    parseResult.GetValue<string?>(DocumentCacheAdminCommandSurface.OperationIdOptionName),
+                    out Guid operationId
+                )
+                || operationId == Guid.Empty
+            )
+            {
+                failure =
+                    $"{DocumentCacheAdminCommandSurface.OperationIdOptionName} must be a non-empty GUID.";
+                return false;
+            }
+            DocumentCacheOfflineWriterAdmission admission = new(
+                true,
+                DocumentCacheOfflineWriterAdmissionConfirmation.RepresentationRestampWritersClosedAndDrained
+            );
+            commandRequest = new(
+                commandName,
+                new DocumentCacheRepresentationRestampExecuteRequest(
+                    DocumentCacheAdministrativeTargetKey.FromTargetKey(invocationTarget.TargetKey),
+                    operationId,
+                    admission,
+                    DocumentCacheAdministrativeCommandConfirmation.RepresentationRestamp
+                ),
+                invocationTarget.TargetKey
+            );
+            return true;
+        }
+
         if (!TryReadExpectedConfirmation(parseResult, contract, out failure))
         {
             return false;
@@ -84,6 +142,86 @@ internal static class DocumentCacheAdminMutatingCommandRequestBuilder
             invocationTarget.TargetKey,
             expectedPhysicalSourceFingerprint,
             offlineWriterAdmission
+        );
+        return true;
+    }
+
+    private static bool TryReadRestampPreview(
+        ParseResult parseResult,
+        DocumentCacheTargetKey targetKey,
+        out DocumentCacheAdminMutatingCommandRequest? commandRequest,
+        out string? failure
+    )
+    {
+        commandRequest = null;
+        failure = null;
+        string? modeText = parseResult.GetValue<string?>(DocumentCacheAdminCommandSurface.ModeOptionName);
+        if (
+            !Enum.TryParse<DocumentCacheRepresentationRestampMode>(modeText, ignoreCase: true, out var mode)
+            || !string.Equals(modeText, mode.ToString().ToLowerInvariant(), StringComparison.Ordinal)
+        )
+        {
+            failure = "--mode must be 'tracking' or 'disabled'.";
+            return false;
+        }
+        string? reason = parseResult.GetValue<string?>(DocumentCacheAdminCommandSurface.ReasonOptionName);
+        if (string.IsNullOrWhiteSpace(reason) || reason.Length > 1024)
+        {
+            failure = "--reason must be nonblank and at most 1024 characters.";
+            return false;
+        }
+        string? project = parseResult.GetValue<string?>(
+            DocumentCacheAdminCommandSurface.ProjectNameOptionName
+        );
+        string? resource = parseResult.GetValue<string?>(
+            DocumentCacheAdminCommandSurface.ResourceNameOptionName
+        );
+        string[] uuids =
+            parseResult.GetValue<string[]>(DocumentCacheAdminCommandSurface.DocumentUuidOptionName) ?? [];
+        DocumentCacheRepresentationRestampScope scope;
+        if (!string.IsNullOrWhiteSpace(project) && !string.IsNullOrWhiteSpace(resource) && uuids.Length == 0)
+        {
+            scope = new DocumentCacheRepresentationRestampResourceScope(project, resource);
+        }
+        else if (
+            string.IsNullOrWhiteSpace(project)
+            && string.IsNullOrWhiteSpace(resource)
+            && uuids.Length > 0
+            && uuids.ToList().TrueForAll(value => Guid.TryParse(value, out _))
+        )
+        {
+            scope = new DocumentCacheRepresentationRestampDocumentUuidsScope([.. uuids.Select(Guid.Parse)]);
+        }
+        else
+        {
+            failure = "Exactly one valid restamp scope must be supplied.";
+            return false;
+        }
+        DocumentCacheOfflineWriterAdmission admission = new(
+            true,
+            DocumentCacheOfflineWriterAdmissionConfirmation.RepresentationRestampWritersClosedAndDrained
+        );
+        if (
+            !TryReadExpectedPhysicalSourceFingerprint(
+                parseResult,
+                out DocumentCachePhysicalSourceFingerprint? fingerprint,
+                out failure
+            )
+        )
+        {
+            return false;
+        }
+        commandRequest = new(
+            DocumentCacheAdminCommandSurface.RestampPreviewCommandName,
+            new DocumentCacheRepresentationRestampPreviewRequest(
+                DocumentCacheAdministrativeTargetKey.FromTargetKey(targetKey),
+                admission,
+                mode,
+                reason,
+                scope,
+                fingerprint
+            ),
+            targetKey
         );
         return true;
     }

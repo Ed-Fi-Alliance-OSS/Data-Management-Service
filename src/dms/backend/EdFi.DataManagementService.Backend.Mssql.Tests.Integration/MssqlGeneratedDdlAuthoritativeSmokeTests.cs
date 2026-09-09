@@ -163,6 +163,72 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
     }
 
     [Test]
+    public async Task It_should_create_the_representation_restamp_operation_manifest_with_a_primary_key_and_required_columns()
+    {
+        var columns = await _database.QueryRowsAsync(
+            """
+            SELECT columns.name AS ColumnName, columns.is_nullable AS IsNullable
+            FROM sys.columns columns
+            INNER JOIN sys.tables tables ON tables.object_id = columns.object_id
+            INNER JOIN sys.schemas schemas ON schemas.schema_id = tables.schema_id
+            WHERE schemas.name = 'dms'
+              AND tables.name = 'RepresentationRestampOperation'
+            """
+        );
+        var primaryKeyColumns = await _database.QueryRowsAsync(
+            """
+            SELECT columns.name AS ColumnName
+            FROM sys.key_constraints constraints
+            INNER JOIN sys.tables tables ON tables.object_id = constraints.parent_object_id
+            INNER JOIN sys.schemas schemas ON schemas.schema_id = tables.schema_id
+            INNER JOIN sys.index_columns index_columns
+                ON index_columns.object_id = constraints.parent_object_id
+                AND index_columns.index_id = constraints.unique_index_id
+            INNER JOIN sys.columns columns
+                ON columns.object_id = index_columns.object_id
+                AND columns.column_id = index_columns.column_id
+            WHERE constraints.type = 'PK'
+              AND schemas.name = 'dms'
+              AND tables.name = 'RepresentationRestampOperation'
+            ORDER BY index_columns.key_ordinal
+            """
+        );
+
+        string[] expectedColumns =
+        [
+            "OperationId",
+            "ContractVersion",
+            "TenantKey",
+            "DataStoreId",
+            "PhysicalSourceFingerprint",
+            "ScopeJson",
+            "Reason",
+            "Mode",
+            "PreRestampBoundary",
+            "PreviewDocumentCount",
+            "CommittedDocumentCount",
+            "State",
+            "CreatedAt",
+            "UpdatedAt",
+        ];
+
+        columns
+            .Select(column => Convert.ToString(column["ColumnName"], CultureInfo.InvariantCulture))
+            .Should()
+            .BeEquivalentTo(expectedColumns);
+        columns
+            .Select(column => Convert.ToBoolean(column["IsNullable"], CultureInfo.InvariantCulture))
+            .Should()
+            .OnlyContain(isNullable => !isNullable);
+        primaryKeyColumns
+            .Select(column => Convert.ToString(column["ColumnName"], CultureInfo.InvariantCulture))
+            .Should()
+            .ContainSingle()
+            .Which.Should()
+            .Be("OperationId");
+    }
+
+    [Test]
     public async Task It_should_allocate_collection_item_ids_via_defaults_for_representative_real_ds_sample_collection_tables()
     {
         (await _database.SequenceExistsAsync("dms", "CollectionItemIdSequence")).Should().BeTrue();

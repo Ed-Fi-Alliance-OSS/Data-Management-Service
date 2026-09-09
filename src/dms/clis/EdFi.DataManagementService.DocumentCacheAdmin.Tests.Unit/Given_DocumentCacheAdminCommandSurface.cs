@@ -31,6 +31,8 @@ public sealed class Given_DocumentCacheAdminCommandSurface
                     DocumentCacheAdminCommandSurface.RebuildOnlineCommandName,
                     DocumentCacheAdminCommandSurface.ScrubCommandName,
                     DocumentCacheAdminCommandSurface.RecoverCacheAheadCommandName,
+                    DocumentCacheAdminCommandSurface.RestampPreviewCommandName,
+                    DocumentCacheAdminCommandSurface.RestampExecuteCommandName,
                 ],
                 options => options.WithStrictOrdering()
             );
@@ -92,6 +94,14 @@ public sealed class Given_DocumentCacheAdminCommandSurface
     {
         foreach (Command command in MutatingCommands())
         {
+            if (
+                command.Name
+                is DocumentCacheAdminCommandSurface.RestampPreviewCommandName
+                    or DocumentCacheAdminCommandSurface.RestampExecuteCommandName
+            )
+            {
+                continue;
+            }
             command
                 .Options.Select(option => option.Name)
                 .Should()

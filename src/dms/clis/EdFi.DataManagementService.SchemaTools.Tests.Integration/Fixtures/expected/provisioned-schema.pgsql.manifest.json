@@ -60,6 +60,10 @@
     },
     {
       "schema_name": "dms",
+      "table_name": "RepresentationRestampOperation"
+    },
+    {
+      "schema_name": "dms",
       "table_name": "ResourceKey"
     },
     {
@@ -3384,6 +3388,146 @@
       "data_type": "smallint",
       "is_nullable": false,
       "default_expression": null,
+      "is_computed": false
+    },
+    {
+      "schema_name": "dms",
+      "table_name": "RepresentationRestampOperation",
+      "column_name": "CommittedDocumentCount",
+      "ordinal_position": 11,
+      "data_type": "bigint",
+      "is_nullable": false,
+      "default_expression": null,
+      "is_computed": false
+    },
+    {
+      "schema_name": "dms",
+      "table_name": "RepresentationRestampOperation",
+      "column_name": "ContractVersion",
+      "ordinal_position": 2,
+      "data_type": "integer",
+      "is_nullable": false,
+      "default_expression": null,
+      "is_computed": false
+    },
+    {
+      "schema_name": "dms",
+      "table_name": "RepresentationRestampOperation",
+      "column_name": "CreatedAt",
+      "ordinal_position": 13,
+      "data_type": "timestamp with time zone",
+      "is_nullable": false,
+      "default_expression": "now()",
+      "is_computed": false
+    },
+    {
+      "schema_name": "dms",
+      "table_name": "RepresentationRestampOperation",
+      "column_name": "DataStoreId",
+      "ordinal_position": 4,
+      "data_type": "bigint",
+      "is_nullable": false,
+      "default_expression": null,
+      "is_computed": false
+    },
+    {
+      "schema_name": "dms",
+      "table_name": "RepresentationRestampOperation",
+      "column_name": "Mode",
+      "ordinal_position": 8,
+      "data_type": "character varying(8)",
+      "is_nullable": false,
+      "default_expression": null,
+      "is_computed": false
+    },
+    {
+      "schema_name": "dms",
+      "table_name": "RepresentationRestampOperation",
+      "column_name": "OperationId",
+      "ordinal_position": 1,
+      "data_type": "uuid",
+      "is_nullable": false,
+      "default_expression": null,
+      "is_computed": false
+    },
+    {
+      "schema_name": "dms",
+      "table_name": "RepresentationRestampOperation",
+      "column_name": "PhysicalSourceFingerprint",
+      "ordinal_position": 5,
+      "data_type": "character varying(71)",
+      "is_nullable": false,
+      "default_expression": null,
+      "is_computed": false
+    },
+    {
+      "schema_name": "dms",
+      "table_name": "RepresentationRestampOperation",
+      "column_name": "PreRestampBoundary",
+      "ordinal_position": 9,
+      "data_type": "bigint",
+      "is_nullable": false,
+      "default_expression": null,
+      "is_computed": false
+    },
+    {
+      "schema_name": "dms",
+      "table_name": "RepresentationRestampOperation",
+      "column_name": "PreviewDocumentCount",
+      "ordinal_position": 10,
+      "data_type": "bigint",
+      "is_nullable": false,
+      "default_expression": null,
+      "is_computed": false
+    },
+    {
+      "schema_name": "dms",
+      "table_name": "RepresentationRestampOperation",
+      "column_name": "Reason",
+      "ordinal_position": 7,
+      "data_type": "character varying(1024)",
+      "is_nullable": false,
+      "default_expression": null,
+      "is_computed": false
+    },
+    {
+      "schema_name": "dms",
+      "table_name": "RepresentationRestampOperation",
+      "column_name": "ScopeJson",
+      "ordinal_position": 6,
+      "data_type": "jsonb",
+      "is_nullable": false,
+      "default_expression": null,
+      "is_computed": false
+    },
+    {
+      "schema_name": "dms",
+      "table_name": "RepresentationRestampOperation",
+      "column_name": "State",
+      "ordinal_position": 12,
+      "data_type": "character varying(10)",
+      "is_nullable": false,
+      "default_expression": null,
+      "is_computed": false
+    },
+    {
+      "schema_name": "dms",
+      "table_name": "RepresentationRestampOperation",
+      "column_name": "TenantKey",
+      "ordinal_position": 3,
+      "data_type": "character varying(256)",
+      "is_nullable": false,
+      "default_expression": null,
+      "is_computed": false
+    },
+    {
+      "schema_name": "dms",
+      "table_name": "RepresentationRestampOperation",
+      "column_name": "UpdatedAt",
+      "ordinal_position": 14,
+      "data_type": "timestamp with time zone",
+      "is_nullable": false,
+      "default_expression": "now()",
       "is_computed": false
     },
     {
@@ -66524,6 +66668,81 @@
       "columns": [
         "DocumentId",
         "ResourceKeyId"
+      ],
+      "referenced_schema": null,
+      "referenced_table": null,
+      "referenced_columns": null
+    },
+    {
+      "schema_name": "dms",
+      "table_name": "RepresentationRestampOperation",
+      "constraint_name": "CK_RepresentationRestampOperation_CommittedCount",
+      "constraint_type": "CHECK",
+      "columns": [
+        "CommittedDocumentCount",
+        "PreviewDocumentCount"
+      ],
+      "referenced_schema": null,
+      "referenced_table": null,
+      "referenced_columns": null
+    },
+    {
+      "schema_name": "dms",
+      "table_name": "RepresentationRestampOperation",
+      "constraint_name": "CK_RepresentationRestampOperation_ContractVersion",
+      "constraint_type": "CHECK",
+      "columns": [
+        "ContractVersion"
+      ],
+      "referenced_schema": null,
+      "referenced_table": null,
+      "referenced_columns": null
+    },
+    {
+      "schema_name": "dms",
+      "table_name": "RepresentationRestampOperation",
+      "constraint_name": "CK_RepresentationRestampOperation_Mode",
+      "constraint_type": "CHECK",
+      "columns": [
+        "Mode"
+      ],
+      "referenced_schema": null,
+      "referenced_table": null,
+      "referenced_columns": null
+    },
+    {
+      "schema_name": "dms",
+      "table_name": "RepresentationRestampOperation",
+      "constraint_name": "CK_RepresentationRestampOperation_NonNegativeCounts",
+      "constraint_type": "CHECK",
+      "columns": [
+        "PreRestampBoundary",
+        "PreviewDocumentCount",
+        "CommittedDocumentCount"
+      ],
+      "referenced_schema": null,
+      "referenced_table": null,
+      "referenced_columns": null
+    },
+    {
+      "schema_name": "dms",
+      "table_name": "RepresentationRestampOperation",
+      "constraint_name": "CK_RepresentationRestampOperation_State",
+      "constraint_type": "CHECK",
+      "columns": [
+        "State"
+      ],
+      "referenced_schema": null,
+      "referenced_table": null,
+      "referenced_columns": null
+    },
+    {
+      "schema_name": "dms",
+      "table_name": "RepresentationRestampOperation",
+      "constraint_name": "PK_RepresentationRestampOperation",
+      "constraint_type": "PRIMARY KEY",
+      "columns": [
+        "OperationId"
       ],
       "referenced_schema": null,
       "referenced_table": null,

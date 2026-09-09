@@ -438,6 +438,90 @@ CREATE TABLE IF NOT EXISTS "dms"."ReferentialIdentity"
     CONSTRAINT "UX_ReferentialIdentity_DocumentId_ResourceKeyId" UNIQUE ("DocumentId", "ResourceKeyId")
 );
 
+CREATE TABLE IF NOT EXISTS "dms"."RepresentationRestampOperation"
+(
+    "OperationId" uuid NOT NULL,
+    "ContractVersion" integer NOT NULL,
+    "TenantKey" varchar(256) NOT NULL,
+    "DataStoreId" bigint NOT NULL,
+    "PhysicalSourceFingerprint" varchar(71) NOT NULL,
+    "ScopeJson" jsonb NOT NULL,
+    "Reason" varchar(1024) NOT NULL,
+    "Mode" varchar(8) NOT NULL,
+    "PreRestampBoundary" bigint NOT NULL,
+    "PreviewDocumentCount" bigint NOT NULL,
+    "CommittedDocumentCount" bigint NOT NULL,
+    "State" varchar(10) NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "UpdatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_RepresentationRestampOperation" PRIMARY KEY ("OperationId")
+);
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'CK_RepresentationRestampOperation_ContractVersion'
+        AND conrelid = to_regclass('"dms"."RepresentationRestampOperation"')
+    )
+    THEN
+        ALTER TABLE "dms"."RepresentationRestampOperation"
+        ADD CONSTRAINT "CK_RepresentationRestampOperation_ContractVersion" CHECK ("ContractVersion" = 1);
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'CK_RepresentationRestampOperation_Mode'
+        AND conrelid = to_regclass('"dms"."RepresentationRestampOperation"')
+    )
+    THEN
+        ALTER TABLE "dms"."RepresentationRestampOperation"
+        ADD CONSTRAINT "CK_RepresentationRestampOperation_Mode" CHECK ("Mode" IN ('Tracking', 'Disabled'));
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'CK_RepresentationRestampOperation_State'
+        AND conrelid = to_regclass('"dms"."RepresentationRestampOperation"')
+    )
+    THEN
+        ALTER TABLE "dms"."RepresentationRestampOperation"
+        ADD CONSTRAINT "CK_RepresentationRestampOperation_State" CHECK ("State" IN ('Draft', 'Incomplete', 'Completed'));
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'CK_RepresentationRestampOperation_NonNegativeCounts'
+        AND conrelid = to_regclass('"dms"."RepresentationRestampOperation"')
+    )
+    THEN
+        ALTER TABLE "dms"."RepresentationRestampOperation"
+        ADD CONSTRAINT "CK_RepresentationRestampOperation_NonNegativeCounts" CHECK ("PreRestampBoundary" >= 0 AND "PreviewDocumentCount" >= 0 AND "CommittedDocumentCount" >= 0);
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'CK_RepresentationRestampOperation_CommittedCount'
+        AND conrelid = to_regclass('"dms"."RepresentationRestampOperation"')
+    )
+    THEN
+        ALTER TABLE "dms"."RepresentationRestampOperation"
+        ADD CONSTRAINT "CK_RepresentationRestampOperation_CommittedCount" CHECK ("CommittedDocumentCount" <= "PreviewDocumentCount");
+    END IF;
+END $$;
+
 CREATE TABLE IF NOT EXISTS "dms"."ResourceKey"
 (
     "ResourceKeyId" smallint NOT NULL,

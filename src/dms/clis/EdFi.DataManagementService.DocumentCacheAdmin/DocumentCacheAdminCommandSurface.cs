@@ -20,6 +20,8 @@ internal static class DocumentCacheAdminCommandSurface
     public const string RebuildOnlineCommandName = "rebuild-online";
     public const string ScrubCommandName = "scrub";
     public const string RecoverCacheAheadCommandName = "recover-cache-ahead";
+    public const string RestampPreviewCommandName = "restamp-preview";
+    public const string RestampExecuteCommandName = "restamp-execute";
 
     public const string JsonOptionName = "--json";
     public const string VerboseOptionName = "--verbose";
@@ -36,6 +38,12 @@ internal static class DocumentCacheAdminCommandSurface
     public const string CommandTimeoutSecondsOptionName = "--command-timeout-seconds";
     public const string StatusObservationTimeoutSecondsOptionName = "--status-observation-timeout-seconds";
     public const string StatusTimeoutSecondsOptionName = "--status-timeout-seconds";
+    public const string ModeOptionName = "--mode";
+    public const string ReasonOptionName = "--reason";
+    public const string ProjectNameOptionName = "--project-name";
+    public const string ResourceNameOptionName = "--resource-name";
+    public const string DocumentUuidOptionName = "--document-uuid";
+    public const string OperationIdOptionName = "--operation-id";
 
     public const string PostgresqlDatastoreOptionValue = "postgresql";
     public const string SqlServerDatastoreOptionValue = "sqlserver";
@@ -81,6 +89,8 @@ internal static class DocumentCacheAdminCommandSurface
         rootCommand.Subcommands.Add(
             CreateMutatingCommand(RecoverCacheAheadCommandName, "Recover from a required cache-ahead state")
         );
+        rootCommand.Subcommands.Add(CreateRestampPreviewCommand());
+        rootCommand.Subcommands.Add(CreateRestampExecuteCommand());
 
         return rootCommand;
     }
@@ -277,6 +287,103 @@ internal static class DocumentCacheAdminCommandSurface
         command.Validators.Add(result => ValidateMutatingCommandOptions(result, name));
         command.SetAction(ExecuteCommandSurfaceOnly);
         return command;
+    }
+
+    private static Command CreateRestampPreviewCommand()
+    {
+        var command = new Command(
+            RestampPreviewCommandName,
+            "Preview a DocumentCache representation restamp"
+        );
+        AddTargetOptions(command);
+        command.Options.Add(CreateRequestJsonOption());
+        command.Options.Add(
+            new Option<string?>(ModeOptionName) { Description = "Restamp mode: tracking or disabled" }
+        );
+        command.Options.Add(
+            new Option<string?>(ReasonOptionName) { Description = "Bounded operator rationale" }
+        );
+        command.Options.Add(new Option<string?>(ProjectNameOptionName));
+        command.Options.Add(new Option<string?>(ResourceNameOptionName));
+        command.Options.Add(
+            new Option<string[]>(DocumentUuidOptionName) { AllowMultipleArgumentsPerToken = true }
+        );
+        command.Options.Add(new Option<string?>(OfflineWriterAdmissionOptionName));
+        command.Options.Add(new Option<string?>(ExpectedPhysicalSourceFingerprintOptionName));
+        command.Options.Add(
+            CreatePositiveSecondsOption(
+                CommandTimeoutSecondsOptionName,
+                "Total administrative command timeout in seconds",
+                DefaultCommandTimeoutSeconds
+            )
+        );
+        command.Validators.Add(result => ValidateRestampPreviewOptions(result));
+        command.SetAction(ExecuteCommandSurfaceOnly);
+        return command;
+    }
+
+    private static Command CreateRestampExecuteCommand()
+    {
+        var command = new Command(
+            RestampExecuteCommandName,
+            "Execute or resume a DocumentCache representation restamp"
+        );
+        AddTargetOptions(command);
+        command.Options.Add(CreateRequestJsonOption());
+        command.Options.Add(new Option<string?>(OperationIdOptionName));
+        command.Options.Add(new Option<string?>(ConfirmOptionName));
+        command.Options.Add(new Option<string?>(OfflineWriterAdmissionOptionName));
+        command.Options.Add(
+            CreatePositiveSecondsOption(
+                CommandTimeoutSecondsOptionName,
+                "Total administrative command timeout in seconds",
+                DefaultCommandTimeoutSeconds
+            )
+        );
+        command.Validators.Add(result => ValidateRestampExecuteOptions(result));
+        command.SetAction(ExecuteCommandSurfaceOnly);
+        return command;
+    }
+
+    private static void ValidateRestampPreviewOptions(CommandResult result)
+    {
+        if (GetSpecifiedOption(result, RequestJsonOptionName) is not null)
+        {
+            return;
+        }
+        ValidateRequiredExactOption(
+            result,
+            OfflineWriterAdmissionOptionName,
+            OfflineWriterAdmissionClosedAndDrainedOptionValue,
+            "offline writer admission acknowledgement"
+        );
+        if (GetSpecifiedOption(result, ModeOptionName) is null)
+        {
+            result.AddError($"{ModeOptionName} is required.");
+        }
+        if (GetSpecifiedOption(result, ReasonOptionName) is null)
+        {
+            result.AddError($"{ReasonOptionName} is required.");
+        }
+    }
+
+    private static void ValidateRestampExecuteOptions(CommandResult result)
+    {
+        if (GetSpecifiedOption(result, RequestJsonOptionName) is not null)
+        {
+            return;
+        }
+        ValidateRequiredExactOption(result, ConfirmOptionName, "representationRestamp", "confirmation token");
+        ValidateRequiredExactOption(
+            result,
+            OfflineWriterAdmissionOptionName,
+            OfflineWriterAdmissionClosedAndDrainedOptionValue,
+            "offline writer admission acknowledgement"
+        );
+        if (GetSpecifiedOption(result, OperationIdOptionName) is null)
+        {
+            result.AddError($"{OperationIdOptionName} is required.");
+        }
     }
 
     private static void AddTargetOptions(Command command)

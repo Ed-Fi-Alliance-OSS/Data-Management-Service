@@ -157,7 +157,17 @@ internal static class DocumentCacheAdminJsonRequestParser
             return false;
         }
 
-        if (!TryValidateRawConfirmationToken(rootElement, contract, out failure))
+        bool isPreview = string.Equals(
+            commandName,
+            DocumentCacheAdminCommandSurface.RestampPreviewCommandName,
+            StringComparison.Ordinal
+        );
+        if (isPreview && !TryValidateRestampPreviewRawMode(rootElement, out failure))
+        {
+            return false;
+        }
+
+        if (!isPreview && !TryValidateRawConfirmationToken(rootElement, contract, out failure))
         {
             return false;
         }
@@ -187,7 +197,7 @@ internal static class DocumentCacheAdminJsonRequestParser
             return false;
         }
 
-        if (!TryValidateMutatingRequest(contract, sharedRequest, out failure))
+        if (!TryValidateMutatingRequest(contract, sharedRequest, isPreview, out failure))
         {
             return false;
         }
@@ -200,10 +210,39 @@ internal static class DocumentCacheAdminJsonRequestParser
     private static bool TryValidateMutatingRequest(
         DocumentCacheAdminMutatingCommandContract contract,
         object sharedRequest,
+        bool isPreview,
         out string? failure
     )
     {
         failure = null;
+
+        if (isPreview)
+        {
+            if (
+                sharedRequest is not DocumentCacheRepresentationRestampPreviewRequest preview
+                || preview.OfflineWriterAdmission is null
+                || !preview.OfflineWriterAdmission.Confirmed
+                || preview.OfflineWriterAdmission.HasUnrecognizedConfirmation
+                || preview.OfflineWriterAdmission.Confirmation
+                    != DocumentCacheOfflineWriterAdmissionConfirmation.RepresentationRestampWritersClosedAndDrained
+                || !preview.Scope.TryCanonicalize(int.MaxValue, out _)
+            )
+            {
+                failure =
+                    "Request JSON preview requires a valid scope and closedAndDrained offline writer admission.";
+                return false;
+            }
+            return true;
+        }
+
+        if (
+            sharedRequest is DocumentCacheRepresentationRestampExecuteRequest execute
+            && execute.OperationId == Guid.Empty
+        )
+        {
+            failure = "Request JSON property 'operationId' must be a non-empty GUID.";
+            return false;
+        }
 
         DocumentCacheAdministrativeCommandConfirmation? confirmation = contract.ReadConfirmation(
             sharedRequest
@@ -245,6 +284,32 @@ internal static class DocumentCacheAdminJsonRequestParser
         {
             failure =
                 $"Request JSON property 'offlineWriterAdmission' must be '{DocumentCacheOfflineWriterAdmission.ClosedAndDrainedJsonValue}'.";
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool TryValidateRestampPreviewRawMode(JsonElement rootElement, out string? failure)
+    {
+        failure = null;
+
+        if (!rootElement.TryGetProperty("mode", out JsonElement modeElement))
+        {
+            failure = "Request JSON property 'mode' is required in request.";
+            return false;
+        }
+
+        if (modeElement.ValueKind != JsonValueKind.String)
+        {
+            failure = "Request JSON property 'mode' must be the string value 'tracking' or 'disabled'.";
+            return false;
+        }
+
+        string? mode = modeElement.GetString();
+        if (mode is not "tracking" and not "disabled")
+        {
+            failure = $"Request JSON property 'mode' value '{mode}' must be 'tracking' or 'disabled'.";
             return false;
         }
 

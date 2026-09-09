@@ -74,6 +74,7 @@ public class Given_CoreDdlEmitter_Ordinary_Tables_And_Cdc_Managed_Core_Table_Inv
 {
     private IReadOnlyList<DbTableName> _ordinaryCoreTables = default!;
     private IReadOnlyList<DbTableName> _cdcManagedCoreTables = default!;
+    private IReadOnlyList<DbTableName> _cdcSourceTables = default!;
 
     [SetUp]
     public void Setup()
@@ -82,6 +83,7 @@ public class Given_CoreDdlEmitter_Ordinary_Tables_And_Cdc_Managed_Core_Table_Inv
         var coreEmission = new CoreDdlEmitter(sqlDialect).EmitWithMetadata();
 
         _ordinaryCoreTables = ExtractOrdinaryCoreTables(coreEmission.Sql, dialect);
+        _cdcSourceTables = coreEmission.CdcSourceInventory.Select(table => table.TableName).ToArray();
         _cdcManagedCoreTables = CdcDmsManagedTableInventoryBuilder
             .Build(sqlDialect, BuildEmptyModelSet(dialect), coreEmission.CdcSourceInventory)
             .Select(table => table.TableName)
@@ -112,6 +114,14 @@ public class Given_CoreDdlEmitter_Ordinary_Tables_And_Cdc_Managed_Core_Table_Inv
                 expectedTables,
                 "CDC over-grant validation must cover ordinary core DDL plus its heartbeat table"
             );
+    }
+
+    [Test]
+    public void It_should_manage_the_representation_restamp_operation_table_without_making_it_a_CDC_source()
+    {
+        _ordinaryCoreTables.Should().Contain(DmsTableNames.RepresentationRestampOperation);
+        _cdcManagedCoreTables.Should().Contain(DmsTableNames.RepresentationRestampOperation);
+        _cdcSourceTables.Should().NotContain(DmsTableNames.RepresentationRestampOperation);
     }
 
     private static IReadOnlyList<DbTableName> ExtractOrdinaryCoreTables(string ddl, SqlDialect dialect)
@@ -393,6 +403,23 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
         _ddl.Should().Contain("\"RequiredContentVersion\" bigint NOT NULL");
         _ddl.Should().Contain("\"FirstEnqueuedAt\" timestamp with time zone NOT NULL");
         _ddl.Should().Contain("\"LastEnqueuedAt\" timestamp with time zone NOT NULL");
+    }
+
+    [Test]
+    public void It_should_create_the_representation_restamp_operation_manifest_table()
+    {
+        _ddl.Should().Contain("CREATE TABLE IF NOT EXISTS \"dms\".\"RepresentationRestampOperation\"");
+        _ddl.Should().Contain("\"OperationId\" uuid NOT NULL");
+        _ddl.Should().Contain("\"DataStoreId\" bigint NOT NULL");
+        _ddl.Should().Contain("\"ScopeJson\" jsonb NOT NULL");
+        _ddl.Should().Contain("\"Reason\" varchar(1024) NOT NULL");
+        _ddl.Should()
+            .Contain("CONSTRAINT \"PK_RepresentationRestampOperation\" PRIMARY KEY (\"OperationId\")");
+        _ddl.Should().Contain("\"ContractVersion\" = 1");
+        _ddl.Should().Contain("\"Mode\" IN ('Tracking', 'Disabled')");
+        _ddl.Should().Contain("\"State\" IN ('Draft', 'Incomplete', 'Completed')");
+        _ddl.Should().Contain("\"PreRestampBoundary\" >= 0");
+        _ddl.Should().Contain("\"CommittedDocumentCount\" <= \"PreviewDocumentCount\"");
     }
 
     [Test]
@@ -1504,6 +1531,23 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
         _ddl.Should().Contain("[RequiredContentVersion] bigint NOT NULL");
         _ddl.Should().Contain("[FirstEnqueuedAt] datetime2(7) NOT NULL");
         _ddl.Should().Contain("[LastEnqueuedAt] datetime2(7) NOT NULL");
+    }
+
+    [Test]
+    public void It_should_create_the_representation_restamp_operation_manifest_table()
+    {
+        _ddl.Should().Contain("CREATE TABLE [dms].[RepresentationRestampOperation]");
+        _ddl.Should().Contain("[OperationId] uniqueidentifier NOT NULL");
+        _ddl.Should().Contain("[DataStoreId] bigint NOT NULL");
+        _ddl.Should().Contain("[ScopeJson] nvarchar(max) NOT NULL");
+        _ddl.Should().Contain("[Reason] nvarchar(1024) NOT NULL");
+        _ddl.Should()
+            .Contain("CONSTRAINT [PK_RepresentationRestampOperation] PRIMARY KEY CLUSTERED ([OperationId])");
+        _ddl.Should().Contain("[ContractVersion] = 1");
+        _ddl.Should().Contain("[Mode] COLLATE Latin1_General_100_BIN2 = 'Tracking'");
+        _ddl.Should().Contain("[State] COLLATE Latin1_General_100_BIN2 = 'Incomplete'");
+        _ddl.Should().Contain("[PreRestampBoundary] >= 0");
+        _ddl.Should().Contain("[CommittedDocumentCount] <= [PreviewDocumentCount]");
     }
 
     [Test]

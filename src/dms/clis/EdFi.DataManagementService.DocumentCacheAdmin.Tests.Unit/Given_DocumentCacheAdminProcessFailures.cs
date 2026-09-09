@@ -275,6 +275,114 @@ public sealed class Given_DocumentCacheAdminProcessFailures
         stderr.ToString().Should().BeEmpty();
     }
 
+    [Test]
+    public async Task It_preserves_the_restamp_result_when_cli_timeout_conversion_reclassifies_cancellation()
+    {
+        Guid operationId = Guid.NewGuid();
+        DelayedReturningMutatingCommandDispatcher dispatcher = new(
+            TimeSpan.FromMilliseconds(50),
+            Result(
+                DocumentCacheAdministrativeCommandStatus.IncompleteRetryable,
+                DocumentCacheAdministrativeCommandClassification.CancellationAfterMutation,
+                mutated: true,
+                DocumentCacheAdministrativeCommand.RepresentationRestamp,
+                RestampResult(operationId)
+            )
+        );
+        await using ServiceProvider serviceProvider = new ServiceCollection()
+            .AddSingleton<IDocumentCacheAdminMutatingCommandDispatcher>(dispatcher)
+            .BuildServiceProvider();
+        using var stdout = new StringWriter();
+        using var stderr = new StringWriter();
+
+        int exitCode = await DocumentCacheAdminCommandExecutor.ExecuteAsync(
+            ParseCommand(
+                DocumentCacheAdminCommandSurface.RestampExecuteCommandName,
+                DocumentCacheAdminCommandSurface.DataStoreIdOptionName,
+                "1",
+                DocumentCacheAdminCommandSurface.OperationIdOptionName,
+                operationId.ToString(),
+                DocumentCacheAdminCommandSurface.ConfirmOptionName,
+                "representationRestamp",
+                DocumentCacheAdminCommandSurface.OfflineWriterAdmissionOptionName,
+                "closedAndDrained",
+                DocumentCacheAdminCommandSurface.CommandTimeoutSecondsOptionName,
+                "0.001",
+                DocumentCacheAdminCommandSurface.JsonOptionName
+            ),
+            InvocationTarget(),
+            serviceProvider,
+            stdout,
+            stderr
+        );
+
+        exitCode.Should().Be(DocumentCacheAdminExitCodes.IncompleteRetryable);
+        JsonObject result = ParseSingleJsonResult(stdout);
+        result["classification"]!.GetValue<string>().Should().Be("workflowTimeout");
+        result["result"]!["operationId"]!.GetValue<Guid>().Should().Be(operationId);
+        result["result"]!["committedDocumentCount"]!.GetValue<long>().Should().Be(2);
+        result["result"]!["claimLevel"]!.GetValue<string>().Should().Be("incomplete");
+        stderr.ToString().Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task It_renders_restamp_result_details_in_human_mode()
+    {
+        Guid operationId = Guid.NewGuid();
+        ReturningMutatingCommandDispatcher dispatcher = new(
+            Result(
+                DocumentCacheAdministrativeCommandStatus.Completed,
+                DocumentCacheAdministrativeCommandClassification.Succeeded,
+                mutated: true,
+                DocumentCacheAdministrativeCommand.RepresentationRestamp,
+                RestampResult(
+                    operationId,
+                    DocumentCacheRepresentationRestampOperationState.Completed,
+                    committedDocumentCount: 5,
+                    remainingEligibleDocumentCount: 0,
+                    DocumentCacheRepresentationRestampClaimLevel.ProjectionWorkQueued
+                )
+            )
+        );
+        await using ServiceProvider serviceProvider = new ServiceCollection()
+            .AddSingleton<IDocumentCacheAdminMutatingCommandDispatcher>(dispatcher)
+            .BuildServiceProvider();
+        using var stdout = new StringWriter();
+        using var stderr = new StringWriter();
+
+        int exitCode = await DocumentCacheAdminCommandExecutor.ExecuteAsync(
+            ParseCommand(
+                DocumentCacheAdminCommandSurface.RestampExecuteCommandName,
+                DocumentCacheAdminCommandSurface.DataStoreIdOptionName,
+                "1",
+                DocumentCacheAdminCommandSurface.OperationIdOptionName,
+                operationId.ToString(),
+                DocumentCacheAdminCommandSurface.ConfirmOptionName,
+                "representationRestamp",
+                DocumentCacheAdminCommandSurface.OfflineWriterAdmissionOptionName,
+                "closedAndDrained"
+            ),
+            InvocationTarget(),
+            serviceProvider,
+            stdout,
+            stderr
+        );
+
+        exitCode.Should().Be(DocumentCacheAdminExitCodes.Success);
+        stdout
+            .ToString()
+            .Should()
+            .Contain($"restamp operationId={operationId}")
+            .And.Contain("state=Completed")
+            .And.Contain("scope=resource:Ed-Fi/Student")
+            .And.Contain("reason=\"representation correction\"")
+            .And.Contain("previewDocumentCount=5")
+            .And.Contain("committedDocumentCount=5")
+            .And.Contain("remainingEligibleDocumentCount=0")
+            .And.Contain("claimLevel=ProjectionWorkQueued");
+        stderr.ToString().Should().BeEmpty();
+    }
+
     private static ParseResult ParseCommand(string commandName, params string[] args) =>
         DocumentCacheAdminCommandSurface.CreateRootCommand().Parse([commandName, .. args]);
 
@@ -291,10 +399,12 @@ public sealed class Given_DocumentCacheAdminProcessFailures
     private static DocumentCacheAdministrativeCommandResult Result(
         DocumentCacheAdministrativeCommandStatus status,
         DocumentCacheAdministrativeCommandClassification classification,
-        bool mutated
+        bool mutated,
+        DocumentCacheAdministrativeCommand command = DocumentCacheAdministrativeCommand.OnlineCacheRebuild,
+        DocumentCacheRepresentationRestampResult? representationRestampResult = null
     ) =>
         new(
-            DocumentCacheAdministrativeCommand.OnlineCacheRebuild,
+            command,
             new DocumentCacheAdministrativeTargetKey("", 1),
             status,
             classification,
@@ -319,7 +429,33 @@ public sealed class Given_DocumentCacheAdminProcessFailures
                     ImmutableArray<long>.Empty,
                     "typed diagnostic"
                 ),
-            ]
+            ],
+            representationRestampResult: representationRestampResult
+        );
+
+    private static DocumentCacheRepresentationRestampResult RestampResult(
+        Guid operationId,
+        DocumentCacheRepresentationRestampOperationState state =
+            DocumentCacheRepresentationRestampOperationState.Incomplete,
+        long committedDocumentCount = 2,
+        long? remainingEligibleDocumentCount = null,
+        DocumentCacheRepresentationRestampClaimLevel claimLevel =
+            DocumentCacheRepresentationRestampClaimLevel.Incomplete
+    ) =>
+        new(
+            OperationId: operationId,
+            State: state,
+            PreRestampBoundary: 41,
+            PreviewDocumentCount: 5,
+            CommittedDocumentCount: committedDocumentCount,
+            RemainingEligibleDocumentCount: remainingEligibleDocumentCount,
+            Scope: new DocumentCacheRepresentationRestampResourceScope("Ed-Fi", "Student"),
+            Reason: "representation correction",
+            Mode: DocumentCacheRepresentationRestampMode.Tracking,
+            PhysicalSourceFingerprint: new DocumentCachePhysicalSourceFingerprint(
+                "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+            ),
+            ClaimLevel: claimLevel
         );
 
     private sealed class ReturningMutatingCommandDispatcher(DocumentCacheAdministrativeCommandResult result)
@@ -332,6 +468,21 @@ public sealed class Given_DocumentCacheAdminProcessFailures
         {
             cancellationToken.ThrowIfCancellationRequested();
             return Task.FromResult(result);
+        }
+    }
+
+    private sealed class DelayedReturningMutatingCommandDispatcher(
+        TimeSpan delay,
+        DocumentCacheAdministrativeCommandResult result
+    ) : IDocumentCacheAdminMutatingCommandDispatcher
+    {
+        public async Task<DocumentCacheAdministrativeCommandResult> ExecuteAsync(
+            DocumentCacheAdminMutatingCommandRequest commandRequest,
+            CancellationToken cancellationToken = default
+        )
+        {
+            await Task.Delay(delay).ConfigureAwait(false);
+            return result;
         }
     }
 

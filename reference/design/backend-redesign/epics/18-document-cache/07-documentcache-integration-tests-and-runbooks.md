@@ -141,6 +141,75 @@ The durable low-scope fix hardens only the config MSSQL E2E compose path:
 - `eng/docker-compose/tests/ConfigMssqlComposeStartup.Tests.ps1` guards this
   contract and is registered in both relevant PR Pester lanes.
 
+## Representation Restamp Operations Runbook
+
+The supported procedure and request examples are in the
+[`dms-document-cache` README](../../../../../src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin/README.md#representation-restamp).
+The [representation-restamp story](08-representation-restamp-utility.md) and
+[offline byte-changing representation correction](../../design-docs/cdc/cdc-streaming.md#offline-byte-changing-representation-correction)
+own the behavior and safety constraints.
+
+Use this operation only after corrected composition code is ready and an affected scope is
+known. Before preview, take the target data store offline by stopping every DMS API reader
+and writer, projector, direct-fill or bulk/seed loader, administrative peer, and external
+writer. Keep that fence in place through execute and every resume attempt. The exact
+`closedAndDrained` acknowledgement records the operator assertion; the utility does not
+create or certify the fence.
+
+1. Run `dms-document-cache status` and record the target, physical-source fingerprint,
+   lifecycle, and `CacheAheadRecoveryRequired` value.
+2. Select `tracking` only for lifecycle `Tracking` with a clear latch. Select `disabled`
+   only for lifecycle `Disabled` with a clear latch. Do not change lifecycle to force
+   admission.
+3. Run `restamp-preview` for exactly one resource scope or one bounded UUID scope. Record
+   the JSON `result.operationId`, `preRestampBoundary`, `previewDocumentCount`, mode,
+   fingerprint, and state. Preview writes only the durable audit manifest; it does not
+   restamp documents or change mirrors, work, cache, or Kafka state.
+4. Inspect and approve the preview, then run `restamp-execute` with that operation ID,
+   exact confirmation `representationRestamp`, and admission `closedAndDrained`. Execute
+   does not accept a replacement scope, mode, reason, or boundary.
+5. Preserve the manifest and offline fence until `result.state` is `completed`. For exit
+   code `12`, `status: incompleteRetryable`, or `result.state: incomplete`, invoke
+   `restamp-execute` again with the same target and operation ID. A new process reacquires
+   the existing database mutex and revalidates the immutable mode and source identity;
+   it does not reconnect while presuming ownership of a lost mutex session.
+
+`Resetting`, `Rebuilding`, a set cache-ahead latch, unavailable lifecycle, target or
+fingerprint drift, and lifecycle/mode mismatch reject before the next page. Preserve the
+evidence and use the owning E18 procedure: resume an interrupted reset/rebuild according to
+[Baseline, Rebuild, Deactivation, and Scrub](../../design-docs/cdc/0001-relational-cdc-projector-and-sources.md#baseline-rebuild-deactivation-and-scrub),
+or investigate a set latch through
+[Cache-Ahead Invariant Recovery](../../design-docs/cdc/0001-relational-cdc-projector-and-sources.md#cache-ahead-invariant-recovery).
+Do not clear a latch, edit the manifest, or mutate canonical stamp columns manually.
+
+### Tracking follow-up
+
+A completed Tracking operation reports `claimLevel: projectionWorkQueued`. Start only
+corrected DMS/projector instances and let ordinary projection work catch up. Relational
+fallback remains available while affected cache rows are behind. Then verify:
+
+- the affected resource domain fields and keys are unchanged;
+- `contentVersion` is higher, the strong ETag differs, and `_lastModifiedDate` is later;
+- the current resource appears in a later live-resource Change Query window; and
+- no synthetic `/deletes` or `/keyChanges` record exists for the restamp.
+
+Use normal DocumentCache status and queue observations to assess projection recovery.
+`projectionWorkQueued` does not mean work was drained or Kafka delivery was observed. The
+utility does not drain, publish, purge, or certify a Kafka baseline.
+
+### Disabled follow-up
+
+A completed Disabled operation reports `claimLevel: canonicalOnlyComplete`. Start only
+corrected DMS API instances and verify relational API ETags, `_lastModifiedDate`, and
+Change Query visibility. Disabled restamp deliberately creates no projection work and
+makes no cache or Kafka publication claim. When projection is later required, use the
+ordinary guarded activation or rebuild procedure to establish current cache state through
+its normal baseline.
+
+If old Kafka values contain sensitive information that must be destroyed, a restamp is
+not containment or purge evidence. Keep CDC access fenced and route the incident to the
+[E19 sensitive-data containment procedure](../19-cdc-kafka/07-ops-docs-runbooks.md#representation-restamp-and-sensitive-data-containment).
+
 ## Not Assigned to This Story
 
 - Kafka infrastructure, connector, and consumer operation are assigned to E19.

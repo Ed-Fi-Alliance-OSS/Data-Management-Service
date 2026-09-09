@@ -109,6 +109,8 @@ public static class PostgresqlServiceExtensions
         services.Replace(
             ServiceDescriptor.Singleton<IResourceKeyRowReader, PostgresqlResourceKeyRowReader>()
         );
+        services.TryAddSingleton<IRepresentationRestampStore, PostgresqlRepresentationRestampStore>();
+        services.TryAddSingleton<IDocumentCacheRepresentationRestampCommand, RepresentationRestampCommand>();
 
         return services;
     }
