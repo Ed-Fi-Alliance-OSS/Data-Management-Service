@@ -1,10 +1,65 @@
-# T37 blocked by local Docker Desktop environment
+# T37 qualification complete — environment blockers resolved
+
+## Current status — 2026-09-09
+
+The Docker Desktop environment blocker below is resolved. Docker Desktop was
+removed and replaced with native Docker Engine 29.8.0 on Ubuntu. The host test
+processes and provider containers now share the host kernel clock. At the user's
+request, the old Desktop containers, images, volumes, and recovery archive were
+deleted; no old Docker resources remain to clean up. Portainer is unrelated to
+the qualification fixtures and must be preserved.
+
+The partial implementation is committed in `433dc7b92`. T37 is now complete.
+All three previously outstanding full suites passed against Engine in new
+evidence directories:
+
+- PostgreSQL RecordSize: `/tmp/dms-t37-engine-pg-recordsize`, passed 16/16,
+  zero skips. The historical future-observation failure did not recur.
+- SQL Server Admission: `/tmp/dms-t37-engine-sql-admission`, passed 36/36,
+  zero skips.
+- SQL Server RecordSize: `/tmp/dms-t37-engine-sql-recordsize`, passed 16/16,
+  zero skips.
+
+The evidence audit exposed a reporting defect: generic source-identifier
+redaction also redacted generated history attachment filenames in TRX files.
+The exporter now preserves only the generated numeric NUnit ID/GUID history
+basename format in `ResultFile` paths, after stripping directories. A regression
+test proves correlation is preserved while sensitive paths remain redacted.
+Retained passing history/cleanup raw reports were re-exported, not rerun, into
+`/tmp/dms-t37-engine-pg-history-reexport` and
+`/tmp/dms-t37-engine-sql-history-reexport`; original reports remain untouched.
+
+Fresh Contract validation passed 3,295 cases with zero skips at
+`/tmp/dms-t37-engine-contract`; CI guard tests passed 443/443. The missing-image
+probe at `/tmp/dms-t37-engine-missing-prerequisite` failed closed with
+`EnvironmentUnavailable`, not skipped or passing evidence. CSharpier, actionlint,
+and the repository's race-safe PSScriptAnalyzer wrapper passed.
+
+The final selected qualification matrix contains 3,535 passing cases, zero
+failures, and zero skips across 20 suite reports (the 14 CI jobs). Audit:
+`/tmp/dms-t37-qualification.json`. All 435 audited JSON/TRX files passed the
+sanitization and attachment-correlation audit; 3,353 TRX cases plus 182 wrapper
+cases reconcile to the selected total. The local audit selects only complete
+passing suites and retains superseded invocation outcomes separately.
+
+All task-owned containers, networks, and volumes were cleaned up by the
+fixtures. The final Docker inventory contains only Portainer and its resources,
+plus Docker's built-in networks. No remaining task blocker was found.
+
+Unaffected earlier passing provider and Kafka reports remain selected. The
+sections below retain historical results; the audit identifies the final
+selections. Failed and interrupted reports are retained, not promoted to passing
+evidence. No production timing or future-observation contracts were weakened
+for this rerun.
+
+## Historical blocker — resolved
 
 Story: `reference/design/backend-redesign/epics/19-cdc-kafka/04-bootstrap-enable-kafka-cdc.md`.
 Task: T37, repository CDC qualification and test-to-design evidence index.
 Recorded: 2026-09-09, approximately 14:30 UTC.
 
-T37 remains incomplete. Implementation is staged, but no task commit was made.
+At the time of this historical report, implementation was staged and no task
+commit had been made.
 The implementation-loop prompt requires stopping when an integration/E2E blocker
 is determined to be outside this story's scope. Repairing Docker Desktop's VM
 filesystem service and host/VM clock synchronization is outside that scope.
@@ -37,13 +92,15 @@ Authoritative input fixtures were not modified.
    followed by `all processes have shutdown`. Subsequent proxy calls waited for
    `/run/guest-services/docker.proxy.sock`, which no longer existed. A bounded
    `docker info` probe timed out with exit 124. This is an engine/VM failure,
-   not an assertion failure in the CDC implementation. Its underlying filesystem
-   fault has not been diagnosed; it is not claimed to be an out-of-memory event.
+   not an assertion failure in the CDC implementation. Subsequent host-kernel
+   evidence identified `virtiofsd` being killed by seccomp with SIGSYS on the
+   disallowed `tkill` syscall, before the filesystem event timeout. It was not
+   attributed to an out-of-memory event.
 4. This shutdown also interrupted the final SQL Server admission and record-size
    suites. Neither had a completed qualification manifest at interruption. Their
    partial fixture output is not accepted as passing qualification.
 
-## Implementation and completed validation
+## Historical implementation and completed validation
 
 Staged changes include the 14-job CI matrix and aggregate gate, fail-closed
 qualification runner and sanitized reports, provider cleanup coverage, wrapper
@@ -76,7 +133,7 @@ CI guard tests passed 246 cases; actionlint, PSScriptAnalyzer, CSharpier, and
 staged diff checks passed. Retained failed/interrupted runs remain separate
 from selected evidence. No documentation/help/evidence-index tests were added.
 
-## Retained diagnostics and continuation
+## Historical retained diagnostics and continuation
 
 - Environment excerpt: `/tmp/dms-t37-environment-blocker/docker-desktop-excerpt.log`.
 - Failed PostgreSQL run: `/tmp/dms-t37-pg-recordsize-transition`;

@@ -83,6 +83,21 @@ Describe 'CDC qualification result boundary' {
         Test-Path (Join-Path $safe 'appsettings.json') | Should -BeFalse
     }
 
+    It 'preserves generated history attachment links without allowing arbitrary sensitive paths' {
+        $raw = New-Item -ItemType Directory (Join-Path $TestDrive 'history-raw')
+        $safe = Join-Path $TestDrive 'history-published'
+        $name = 'cdc-history-0-1021-44df405b5d374f578a65db5fbc38995a.json'
+        "<TestRun><Results><UnitTestResult outcome='Passed'><ResultFiles><ResultFile path='host/$name' /><ResultFile path='host/cdc-history-secret-sentinel.json' /></ResultFiles></UnitTestResult></Results></TestRun>" |
+            Set-Content (Join-Path $raw 'history.trx')
+        '{"Outcome":"Passed"}' | Set-Content (Join-Path $raw $name)
+        Export-CdcQualificationEvidence $raw $safe
+        [xml] $trx = Get-Content (Join-Path $safe 'history.trx') -Raw
+        $paths = @($trx.TestRun.Results.UnitTestResult.ResultFiles.ResultFile | ForEach-Object path)
+        $paths | Should -Contain $name
+        Test-Path (Join-Path $safe $name) | Should -BeTrue
+        (Get-Content (Join-Path $safe 'history.trx') -Raw) | Should -Not -Match 'secret-sentinel|host/'
+    }
+
     It 'preserves attachment correlation and removes sensitive TestCase arguments' {
         $raw = New-Item -ItemType Directory (Join-Path $TestDrive 'raw')
         $safe = Join-Path $TestDrive 'published'

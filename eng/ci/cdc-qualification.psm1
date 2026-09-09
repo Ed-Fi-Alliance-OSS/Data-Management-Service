@@ -103,6 +103,13 @@ function Export-CdcQualificationEvidence {
         foreach ($attribute in $trx.SelectNodes('//@*')) {
             # TestCase arguments can themselves contain a sentinel or a credential-bearing URL.
             # Namespace declarations are structural XML, not diagnostic values.
+            # History attachment basenames contain only a generated NUnit ID and GUID.
+            # Their directory was removed above; do not mistake this safe filename for
+            # a private history source identifier and break its published JSON link.
+            $generatedHistoryAttachment = $attribute.Name -eq 'path' -and
+                $attribute.OwnerElement.LocalName -eq 'ResultFile' -and
+                $attribute.Value -cmatch '^cdc-history-\d+(?:-\d+)*-[a-f0-9]{32}\.json$'
+            if ($generatedHistoryAttachment) { continue }
             if ($attribute.Name -ne 'xmlns' -and $attribute.Prefix -ne 'xmlns') {
                 $attribute.Value = ConvertTo-CdcSafeEvidence $attribute.Value
             }
