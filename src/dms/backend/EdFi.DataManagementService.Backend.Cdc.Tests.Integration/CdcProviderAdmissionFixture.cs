@@ -42,6 +42,11 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
     public List<CdcProviderSetupMode> ProviderModes { get; } = [];
     public List<CdcProviderSetupResult> ProviderResults { get; } = [];
     public List<CoreCdc.CdcConnectorLagObservation> Lag { get; } = [];
+    public Action BeforeMetricsCall { get; set; } = () => { };
+    public delegate CdcTransportResult<CdcConnectorTelemetryObservation> MetricsTransform(
+        CdcTransportResult<CdcConnectorTelemetryObservation> result
+    );
+    public MetricsTransform TransformMetrics { get; set; } = result => result;
     public DateTimeOffset RuntimeStoppedAt { get; private set; }
     public List<CdcKafkaTopicEvidence> PreRegistrationHistoryTopics { get; } = [];
     public List<CdcDeploymentDiagnostic> RegistrationRetries { get; } = [];
@@ -294,7 +299,7 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
                     .Single(p => p.Provider == binding.Provider),
                 this
             ),
-            new RecordingMetrics(Infrastructure.Metrics, Lag)
+            new RecordingMetrics(Infrastructure.Metrics, this)
         );
         await ReopenRuntimeAsync(cancellationToken);
         // This is the same controller operation used by worker startup, before Docker launches it.
@@ -973,10 +978,8 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
         }
     }
 
-    private sealed class RecordingMetrics(
-        ICdcWorkerMetricsTransport inner,
-        List<CoreCdc.CdcConnectorLagObservation> observations
-    ) : ICdcWorkerMetricsTransport
+    private sealed class RecordingMetrics(ICdcWorkerMetricsTransport inner, CdcProviderAdmissionFixture owner)
+        : ICdcWorkerMetricsTransport
     {
         public async Task<CdcTransportResult<CdcConnectorTelemetryObservation>> CollectAsync(
             CdcDeploymentRequest request,
@@ -984,10 +987,11 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
             CancellationToken cancellationToken
         )
         {
-            var result = await inner.CollectAsync(request, pass, cancellationToken);
+            owner.BeforeMetricsCall();
+            var result = owner.TransformMetrics(await inner.CollectAsync(request, pass, cancellationToken));
             if (result is CdcTransportResult<CdcConnectorTelemetryObservation>.Observed observed)
             {
-                observations.Add(observed.Value.ReadForEvaluation(pass));
+                owner.Lag.Add(observed.Value.ReadForEvaluation(pass));
             }
             return result;
         }

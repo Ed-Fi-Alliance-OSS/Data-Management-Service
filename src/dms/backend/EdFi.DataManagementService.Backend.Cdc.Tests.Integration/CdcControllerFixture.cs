@@ -69,7 +69,14 @@ internal sealed class CdcControllerFixture : IAsyncDisposable
                 };
             }
         );
-        Worker = new CdcWorkerDeployment(resources.ControllerProject, "kafka-cdc-worker");
+        Worker = Hooks.Decorate<ICdcWorkerInspectionTransport>(
+            new CdcWorkerDeployment(resources.ControllerProject, "kafka-cdc-worker"),
+            _ =>
+            {
+                BeforeWorkerCall();
+                return CdcControllerBoundary.Observation;
+            }
+        );
         Metrics = new CdcConnectorTelemetryAdapter(_metricsClient, Connect, Worker);
     }
 
@@ -80,6 +87,7 @@ internal sealed class CdcControllerFixture : IAsyncDisposable
     public ConcurrentQueue<string> ConnectCalls { get; } = new();
     public Action<string> BeforeConnectCall { get; set; } = _ => { };
     public ICdcBindingLifecycleService Bindings { get; }
+    public Action BeforeWorkerCall { get; set; } = () => { };
     public ICdcWorkerInspectionTransport Worker { get; }
     public ICdcWorkerMetricsTransport Metrics { get; }
     public Uri ConnectEndpoint => Resources.ControllerConnectEndpoint;
