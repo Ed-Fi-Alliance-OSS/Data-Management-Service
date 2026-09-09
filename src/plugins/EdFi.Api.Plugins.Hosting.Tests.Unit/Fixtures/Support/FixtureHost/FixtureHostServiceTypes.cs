@@ -32,3 +32,12 @@ public interface IFixtureReplaceContract
 {
     string Describe();
 }
+
+/// <summary>
+/// A fixture plugin contract with fan-in cardinality, so the activation cases have a contract more
+/// than one implementation may legitimately claim.
+/// </summary>
+public interface IFixtureFanInContract
+{
+    string Describe();
+}

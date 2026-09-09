@@ -11,5 +11,8 @@
     <ItemGroup>
         <ProjectReference Include="..\..\..\..\EdFi.Api.Plugins\EdFi.Api.Plugins.csproj" />
         <ProjectReference Include="..\..\Support\AcmeFixtureContracts\Acme.FixtureContracts.csproj" />
+        <ProjectReference
+            Include="..\..\Support\FixtureHost\EdFi.DataManagementService.FixtureHost.csproj"
+        />
     </ItemGroup>
 </Project>

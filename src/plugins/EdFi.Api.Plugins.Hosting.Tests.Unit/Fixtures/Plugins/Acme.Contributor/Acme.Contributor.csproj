@@ -16,6 +16,7 @@
         <ProjectReference
             Include="..\..\Support\FixtureHost\EdFi.DataManagementService.FixtureHost.csproj"
         />
+        <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
         <PackageReference Include="Microsoft.Extensions.Logging" />
         <PackageReference Include="Microsoft.Extensions.Options" />
     </ItemGroup>

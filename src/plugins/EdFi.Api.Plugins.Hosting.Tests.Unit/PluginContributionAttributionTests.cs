@@ -149,20 +149,53 @@ public class Given_two_plugins_contributing_to_one_collection
     }
 }
 
+/// <summary>
+/// A diagnostic channel that takes a number from the sequence the fixtures also draw on, the first
+/// time it is written to.
+/// </summary>
+/// <remarks>
+/// Written text alone cannot distinguish an announcement made on entry to a hook from one made on the
+/// way out of a catch block: both leave the same line behind. Ordering the two channels against a
+/// shared counter can, because the plugin takes its own number at hook entry.
+/// </remarks>
+internal sealed class SequencedDiagnostics : StringWriter
+{
+    private bool _taken;
+
+    internal int? AnnouncedAt { get; private set; }
+
+    public override void WriteLine(string? value)
+    {
+        if (
+            !_taken
+            && value is not null
+            && value.Contains("invoking ContributeServices", StringComparison.Ordinal)
+        )
+        {
+            _taken = true;
+            AnnouncedAt = FixtureObservations.Next();
+        }
+
+        base.WriteLine(value);
+    }
+}
+
 [TestFixture]
+[NonParallelizable]
 public class Given_a_hook_that_throws
 {
     private TemporaryPluginRoot _root = null!;
-    private StringWriter _diagnostics = null!;
+    private SequencedDiagnostics _diagnostics = null!;
     private PluginCompositionException _failure = null!;
 
     [SetUp]
     public void Setup()
     {
+        FixtureObservations.Clear();
         _root = TemporaryPluginRoot.Create();
         LoadedPlugins plugins = ContributionProbe.Load(_root, PluginFixtures.HookThrows);
 
-        _diagnostics = new StringWriter();
+        _diagnostics = new SequencedDiagnostics();
         _failure = Assert.Throws<PluginCompositionException>(() =>
             plugins.ContributeServices(
                 ContributionProbe.HostCollection(),
@@ -180,17 +213,30 @@ public class Given_a_hook_that_throws
         _root.Dispose();
     }
 
-    /// <summary>
-    /// The announcement is written before the hook is entered, so a hook that never returns still
-    /// leaves the plugin named on the channel. A hook that throws is how that ordering is provable.
-    /// </summary>
     [Test]
-    public void It_announced_the_plugin_before_calling_it()
+    public void It_announced_the_plugin()
     {
         _diagnostics
             .ToString()
             .Should()
             .Contain($"invoking ContributeServices on {PluginFixtures.HookThrows}");
+    }
+
+    /// <summary>
+    /// The announcement is on the channel before the hook is entered, so a hook that never returns
+    /// still leaves the plugin named. Asserted by ordering rather than by presence: the fixture takes a
+    /// number from a shared counter as the first thing it does, and an announcement written on the way
+    /// out of a catch block would order after that number rather than before it.
+    /// </summary>
+    [Test]
+    public void It_announced_the_plugin_before_the_hook_was_entered()
+    {
+        int? announcedAt = _diagnostics.AnnouncedAt;
+        string? enteredAt = FixtureObservations.Read("enteredAt");
+
+        announcedAt.Should().NotBeNull("the channel should have carried the announcement");
+        enteredAt.Should().NotBeNull("the hook should have run");
+        announcedAt!.Value.Should().BeLessThan(int.Parse(enteredAt!));
     }
 
     [Test]
@@ -427,6 +473,69 @@ public class Given_a_hook_that_replaces_a_descriptor_it_added_itself
             .Be(typeof(SecondAcmeService));
         _record.Removals.Should().BeEmpty();
         _record.ReplacedServiceTypes.Should().BeEmpty();
+    }
+}
+
+[TestFixture]
+public class Given_a_hook_that_replaces_a_pre_existing_descriptor_it_is_allowed_to_replace
+{
+    private TemporaryPluginRoot _root = null!;
+    private ServiceDescriptor _hostDescriptor = null!;
+    private PluginContributionRecord _record = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _root = TemporaryPluginRoot.Create();
+        LoadedPlugins plugins = ContributionProbe.Load(_root, PluginFixtures.Contributor);
+
+        ServiceCollection services = ContributionProbe.HostCollection();
+        _hostDescriptor = services.Single(descriptor => descriptor.ServiceType == typeof(IAcmeSecondService));
+
+        _record = plugins
+            .ContributeServices(
+                services,
+                ContributionProbe.HookConfiguration("replacePreExistingOwnKind"),
+                ContributionProbe.Registry,
+                new StringWriter()
+            )
+            .Records[0];
+    }
+
+    [TearDown]
+    public void TearDown() => _root.Dispose();
+
+    /// <summary>
+    /// The positive case for the replacement list, which the own-new-descriptor case cannot reach: the
+    /// descriptor displaced here was on the collection before the hook, so both ends of the comparison
+    /// see it and the service type lands in all three lists at once.
+    /// </summary>
+    [Test]
+    public void It_appears_in_the_removals_the_additions_and_the_replaced_service_types()
+    {
+        _record
+            .Removals.Should()
+            .ContainSingle(displacement => displacement.ServiceType == typeof(IAcmeSecondService))
+            .Which.Descriptor.Should()
+            .BeSameAs(_hostDescriptor);
+
+        _record
+            .Additions.Should()
+            .Contain(descriptor =>
+                descriptor.ServiceType == typeof(IAcmeSecondService)
+                && descriptor.ImplementationType == typeof(SecondAcmeService)
+            );
+
+        _record.ReplacedServiceTypes.Should().Contain(typeof(IAcmeSecondService));
+    }
+
+    [Test]
+    public void It_records_the_implementation_the_replacement_displaced()
+    {
+        _record
+            .Removals.Single(displacement => displacement.ServiceType == typeof(IAcmeSecondService))
+            .DisplacedImplementationType.Should()
+            .Be(typeof(AcmeService));
     }
 }
 

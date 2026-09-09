@@ -10,5 +10,6 @@
     </PropertyGroup>
     <ItemGroup>
         <ProjectReference Include="..\..\..\..\EdFi.Api.Plugins\EdFi.Api.Plugins.csproj" />
+        <ProjectReference Include="..\..\Support\AcmeFixtureContracts\Acme.FixtureContracts.csproj" />
     </ItemGroup>
 </Project>

@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using Acme.FixtureContracts;
 using EdFi.Api.Plugins;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -17,6 +18,13 @@ public sealed class HookThrowsPlugin : EdFiApiPlugin
 
     public override string Name => "Acme.HookThrows";
 
-    public override void ContributeServices(IServiceCollection services, IConfiguration configuration) =>
+    public override void ContributeServices(IServiceCollection services, IConfiguration configuration)
+    {
+        // Taken on entry, before anything else. A test compares it against the number the host's
+        // diagnostic channel took when it announced this plugin, so an announcement written on the way
+        // out of a catch block would order after this rather than before it.
+        FixtureObservations.Record("enteredAt", FixtureObservations.Next().ToString());
+
         throw new InvalidOperationException(FailureMessage);
+    }
 }

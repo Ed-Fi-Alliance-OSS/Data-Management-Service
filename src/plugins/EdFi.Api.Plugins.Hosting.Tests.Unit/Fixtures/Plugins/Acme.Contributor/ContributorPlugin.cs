@@ -9,6 +9,7 @@ using EdFi.DataManagementService.FixtureHost;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -76,6 +77,119 @@ public sealed class ContributorPlugin : EdFiApiPlugin
                 );
                 break;
 
+            case "replacePreExistingOwnKind":
+                // A pre-existing descriptor for a service type nobody's host owns, replaced rather than
+                // merely removed. Permitted, and the only shape that lands in all three of the record's
+                // lists at once.
+                services.Replace(ServiceDescriptor.Singleton<IAcmeSecondService, SecondAcmeService>());
+                services.AddSingleton<IAcmeFirstService, AcmeService>();
+                break;
+
+            case "replaceClaim":
+                // A single claim on the replace-cardinality contract, over the host default the host
+                // registered before the hooks ran. Add rather than TryAdd, which is the rule for that
+                // cardinality.
+                services.Add(ServiceDescriptor.Singleton<IFixtureReplaceContract, FixtureReplaceClaim>());
+                break;
+
+            case "replaceClaimTwice":
+                services.Add(ServiceDescriptor.Singleton<IFixtureReplaceContract, FixtureReplaceClaim>());
+                services.Add(
+                    ServiceDescriptor.Singleton<IFixtureReplaceContract, SecondFixtureReplaceClaim>()
+                );
+                break;
+
+            case "hostTypeClaim":
+                // A host-owned service type that is no declared contract, beside a declared contract, so
+                // the refusal is unambiguously about the displacement rather than about contributing
+                // nothing.
+                services.AddSingleton<IFixtureHostUnclaimedService, FixtureHostServiceStandIn>();
+                services.TryAddEnumerable(ServiceDescriptor.Transient<IFixtureFanInContract, FixtureFanIn>());
+                break;
+
+            case "declaredValidatorOnly":
+                services.TryAddEnumerable(ServiceDescriptor.Transient<IFixtureFanInContract, FixtureFanIn>());
+                break;
+
+            case "ownTypesOnly":
+                services.AddSingleton<IAcmeFirstService, AcmeService>();
+                services.AddSingleton<IAcmeSecondService, SecondAcmeService>();
+                break;
+
+            case "contractPlusExtras":
+                services.TryAddEnumerable(ServiceDescriptor.Transient<IFixtureFanInContract, FixtureFanIn>());
+                services.AddSingleton<IAcmeFirstService, AcmeService>();
+                services.Configure<FixtureContributorOptions>(options => options.Enabled = true);
+                services.AddSingleton<IHostedService, FixtureHostedService>();
+                break;
+
+            case "unsatisfiable":
+                services.TryAddEnumerable(
+                    ServiceDescriptor.Transient<IFixtureFanInContract, FixtureUnsatisfiableFanIn>()
+                );
+                break;
+
+            case "throwingFactory":
+                // Add rather than TryAddEnumerable: a descriptor built from an untyped factory names no
+                // implementation type, and TryAddEnumerable refuses one it cannot compare. A factory
+                // descriptor is what this case is about, so it is registered the way one can be.
+                services.Add(
+                    ServiceDescriptor.Transient<IFixtureFanInContract>(_ =>
+                    {
+                        FixtureObservations.Count("throwingFactory");
+                        throw new InvalidOperationException("the plugin's factory failed");
+                    })
+                );
+                break;
+
+            case "singletonContract":
+                services.AddSingleton<IFixtureFanInContract, FixtureFanIn>();
+                break;
+
+            case "scopedContract":
+                services.AddScoped<IFixtureFanInContract, FixtureDisposableFanIn>();
+                break;
+
+            case "transientContract":
+                services.AddTransient<IFixtureFanInContract, FixtureFanIn>();
+                break;
+
+            case "keyedContract":
+                services.AddKeyedTransient<IFixtureFanInContract, FixtureFanIn>("first");
+                break;
+
+            case "twoKeyedContracts":
+                services.AddKeyedTransient<IFixtureFanInContract, FixtureFanIn>("first");
+                services.AddKeyedTransient<IFixtureFanInContract, FixtureFanIn>("second");
+                break;
+
+            case "anyKeyContract":
+                services.AddKeyedTransient<IFixtureFanInContract, FixtureFanIn>(KeyedService.AnyKey);
+                break;
+
+            case "anyKeyAndConcreteContract":
+                services.AddKeyedTransient<IFixtureFanInContract, FixtureFanIn>(KeyedService.AnyKey);
+                services.AddKeyedTransient<IFixtureFanInContract, FixtureFanIn>("first");
+                break;
+
+            case "anyKeyOwnService":
+                // A wildcard-keyed registration of a service type no host declares a contract for,
+                // which stays ordinary permitted work.
+                services.AddKeyedTransient<IAcmeFirstService, AcmeService>(KeyedService.AnyKey);
+                services.TryAddEnumerable(ServiceDescriptor.Transient<IFixtureFanInContract, FixtureFanIn>());
+                break;
+
+            case "decliningTryAdd":
+                // Declines, because the host default already holds the contract, and contributes
+                // nothing else. The decline itself is invisible at the seam.
+                services.TryAdd(ServiceDescriptor.Singleton<IFixtureReplaceContract, FixtureReplaceClaim>());
+                break;
+
+            case "decliningTryAddPlusFanIn":
+                services.TryAdd(ServiceDescriptor.Singleton<IFixtureReplaceContract, FixtureReplaceClaim>());
+                services.TryAddEnumerable(ServiceDescriptor.Transient<IFixtureFanInContract, FixtureFanIn>());
+                break;
+
             default:
                 services.AddSingleton<IAcmeFirstService, AcmeService>();
                 services.AddSingleton<IAcmeSecondService, SecondAcmeService>();
@@ -119,9 +233,68 @@ public sealed class ContributorPlugin : EdFiApiPlugin
 }
 
 /// <summary>A stand-in the plugin would install over the host's, which the wrapper refuses.</summary>
-public sealed class FixtureHostServiceStandIn : IFixtureHostService
+public sealed class FixtureHostServiceStandIn : IFixtureHostService, IFixtureHostUnclaimedService
 {
     public string Describe() => nameof(FixtureHostServiceStandIn);
+}
+
+/// <summary>The plugin's claim on the replace-cardinality contract.</summary>
+public sealed class FixtureReplaceClaim : IFixtureReplaceContract
+{
+    public string Describe() => nameof(FixtureReplaceClaim);
+}
+
+/// <summary>A second claim, for the case where one plugin registers two.</summary>
+public sealed class SecondFixtureReplaceClaim : IFixtureReplaceContract
+{
+    public string Describe() => nameof(SecondFixtureReplaceClaim);
+}
+
+/// <summary>
+/// A constructible implementation of the fan-in contract, which counts its own constructions so a
+/// test can assert how many times the host activated it.
+/// </summary>
+public sealed class FixtureFanIn : IFixtureFanInContract
+{
+    public FixtureFanIn() => FixtureObservations.Count("fanIn.constructed");
+
+    public string Describe() => nameof(FixtureFanIn);
+}
+
+/// <summary>The same, and disposable, so the scoped case can assert what the probe's scope released.</summary>
+public sealed class FixtureDisposableFanIn : IFixtureFanInContract, IDisposable
+{
+    public FixtureDisposableFanIn() => FixtureObservations.Count("fanIn.constructed");
+
+    public string Describe() => nameof(FixtureDisposableFanIn);
+
+    public void Dispose() => FixtureObservations.Count("fanIn.disposed");
+}
+
+/// <summary>
+/// An implementation of the fan-in contract taking a service nobody registered, which is the shape the
+/// activation probe exists to catch.
+/// </summary>
+public sealed class FixtureUnsatisfiableFanIn(IFixtureMissingDependency missing) : IFixtureFanInContract
+{
+    public string Describe() => missing.Describe();
+}
+
+/// <summary>Options of the plugin's own, which the exemption permits.</summary>
+public sealed class FixtureContributorOptions
+{
+    public bool Enabled { get; set; }
+}
+
+/// <summary>
+/// A background task of the plugin's own. Permitted, and listed in the plugin's record, which is the
+/// only visibility the design offers into it.
+/// </summary>
+public sealed class FixtureHostedService : IHostedService
+{
+    public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 }
 
 /// <summary>A sink of the plugin's own, which the logging carve-out permits.</summary>

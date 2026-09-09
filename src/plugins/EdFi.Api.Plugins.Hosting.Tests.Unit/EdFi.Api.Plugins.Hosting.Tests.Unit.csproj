@@ -48,6 +48,13 @@
             these two packages rather than in the abstractions the loader names its four service types
             from, and imitating either would prove nothing about the helper a plugin actually calls.
         -->
+        <!--
+            Only to name IHostedService, which one fixture registers beside a declared contract and the
+            audit cases assert appears in that plugin's record. The design permits such a registration
+            and the record is the only visibility it offers into one, so the test has to be able to say
+            what it is looking for.
+        -->
+        <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
         <PackageReference Include="Microsoft.Extensions.Logging" />
         <PackageReference Include="Microsoft.Extensions.Logging.Console" />
         <PackageReference Include="Microsoft.Extensions.Options" />

@@ -29,6 +29,13 @@
             Console.Error, deliberately, because it runs before any logging pipeline exists.
         -->
         <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+        <!--
+            The contract's own reference brings this in transitively, and the audit now depends on it
+            directly: it resolves service and keyed-service collections from a scope over the container
+            the host built, and it names the wildcard service key. A direct dependency is declared
+            directly.
+        -->
+        <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
     </ItemGroup>
     <!--
         The loader's collaborators are the filesystem, the dependency manifest, and the runtime's own
