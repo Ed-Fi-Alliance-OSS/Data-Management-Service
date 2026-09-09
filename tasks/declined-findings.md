@@ -108,3 +108,59 @@ Refers to `FailureResponse.cs:332` (`ForAuthenticationFailure`),
 ## Round-by-round declines
 
 *(Team lead: append below, one section per round.)*
+
+### Round 1
+
+#### D-9 — "`SanitizeForLog`'s 55-line body is copied into `SanitizeCorrelationIdForLog`"
+
+`LogSanitizer.cs:85-141` vs `:18-74`, differing only in which predicate is called.
+
+- **Reported severity:** Medium (clean-code reviewer). **Re-confirmed as:** Low.
+- **Decision:** Declined for this ticket — genuine smell, wrong ticket.
+- **Rationale:** `tasks/todo.md` Task 1 explicitly directed mirroring the reference
+  implementation's shape ("Match that shape … so the new function is consistent with its
+  neighbour"), and AD-3 directs leaving the strict `SanitizeForLogging` path untouched. A
+  delegate-based extraction rewrites allocation-sensitive code on the hot path shared by
+  *every* `Method`/`Path` log call, for zero behavior change, which is scope creep under
+  §9.6. The concrete harm cited — the algorithm changing in one copy and not the other —
+  already manifested once as comment drift, and that instance is fixed directly by R1-03.
+  **Recommended as a follow-up ticket**, noted in the final report. Distinct from D-5,
+  which covers three pre-existing cross-assembly copies of the *strict* allowlist.
+
+#### D-10 — "`ExtractTraceIdFromTests.cs` is named after a method, not a code area"
+
+- **Reported severity:** Nit. **Re-confirmed as:** Nit.
+- **Decision:** Declined.
+- **Rationale:** `tasks/todo.md` Task 3 names this exact file explicitly: "**New test
+  file:** `src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/ExtractTraceIdFromTests.cs`".
+  Renaming it would diverge from the plan for a naming preference. The sibling-file
+  convention the reviewer cites is real but does not outrank an explicit instruction.
+
+#### D-11 — "The `/health/document-cache` 401/403 bodies now honor the configured correlation header"
+
+Raised by the implementation sub-agent as a new ambiguity, not covered by plan §8.
+
+- **Severity:** Medium (a decision, not a defect).
+- **Decision:** **Accepted as intended.** Keep the new behavior.
+- **Rationale:** Plan §3's current-state table lists this site's bypass of
+  `ExtractTraceIdFrom` as the defect ("Bypasses `ExtractTraceIdFrom`; no cap applied ❌"),
+  and `todo.md` Task 5 assigns exactly that fix. Task 4 pushes the same direction for
+  `MapFallback`. Routing through `ExtractTraceIdFrom` makes the endpoint consistent with
+  every other path, which is FR-LOG-6's intent, and the value is now normalized so it
+  carries no injection risk. It *is* a behavior change beyond pure normalization — that
+  endpoint previously always used `HttpContext.TraceIdentifier` and ignored the client
+  header — so it is called out explicitly in the final report and the PR description
+  rather than left for a reviewer to discover.
+
+#### D-12 — "No E2E negative scenarios were added to `CorrelationId.feature`"
+
+- **Severity:** Low.
+- **Decision:** Declined/deferred with rationale.
+- **Rationale:** Task 6 phrased this as "**Consider** adding negative scenarios here rather
+  than editing the existing one" — a consideration, not an acceptance criterion, and every
+  Task 6 acceptance criterion is met in-process. `StepDefinitions.cs:1309-1310` strips
+  `correlationId` from both actual and expected bodies before comparing, so a meaningful
+  negative scenario would require a new step definition, and no E2E environment is runnable
+  in this sandbox to verify it. Adding an unverifiable E2E scenario is worse than adding
+  none. The in-process parity fixture covers the same ground with stronger assertions.
+  The existing `@API-061` scenario was not touched and still passes.
