@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <!--
+        An assembly the host does not carry, which is what makes it plugin-private: host-first
+        resolution serves the plugin its own copy, because there is no host copy to prefer.
+    -->
+    <PropertyGroup>
+        <AssemblyName>Acme.Private</AssemblyName>
+        <RootNamespace>Acme.Private</RootNamespace>
+        <AssemblyVersion>1.0.0</AssemblyVersion>
+        <FileVersion>1.0.0</FileVersion>
+        <Version>1.0.0</Version>
+    </PropertyGroup>
+</Project>

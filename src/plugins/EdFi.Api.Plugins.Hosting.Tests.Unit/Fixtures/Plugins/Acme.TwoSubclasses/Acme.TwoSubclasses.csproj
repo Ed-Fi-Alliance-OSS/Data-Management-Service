@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <!--
+        Two constructible plugin types. Choosing between them would be arbitrary, so it is fatal.
+    -->
+    <PropertyGroup>
+        <AssemblyName>Acme.TwoSubclasses</AssemblyName>
+        <RootNamespace>Acme.TwoSubclasses</RootNamespace>
+    </PropertyGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\..\..\..\EdFi.Api.Plugins\EdFi.Api.Plugins.csproj" />
+    </ItemGroup>
+</Project>

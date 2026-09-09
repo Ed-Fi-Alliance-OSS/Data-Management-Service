@@ -36,6 +36,15 @@
         <ProjectReference
             Include="..\EdFi.Api.Plugins.Hosting\EdFi.Api.Plugins.Hosting.csproj"
         />
+        <!--
+            The one fixture project this project references, and therefore the one inside the solution
+            build graph. The skew checks compare a plugin's declaration against what the host carries, so
+            the host has to carry something: this puts Acme.HostShared 1.0.0 in the test process, against
+            which the fixtures that declare 2.0.0 are refused. It commits a lock file for that reason.
+        -->
+        <ProjectReference
+            Include="Fixtures\Support\AcmeHostShared1\Acme.HostShared.v1.csproj"
+        />
     </ItemGroup>
     <Import Project="PluginFixtures.targets" />
 </Project>

@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <!--
+        The same shapes with no constructible type among them, so the loader has to report that none
+        was found rather than that too many were.
+    -->
+    <PropertyGroup>
+        <AssemblyName>Acme.OnlyNonCandidates</AssemblyName>
+        <RootNamespace>Acme.OnlyNonCandidates</RootNamespace>
+    </PropertyGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\..\..\..\EdFi.Api.Plugins\EdFi.Api.Plugins.csproj" />
+    </ItemGroup>
+</Project>

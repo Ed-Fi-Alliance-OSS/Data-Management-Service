@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <!--
+        References a higher version of an assembly the host carries without shipping it, so the
+        manifest declares nothing for it and the preflight cannot see it. Its constructor touches it,
+        which puts the refusal inside the loader own call and is what the unwrapping has to turn into
+        a message naming both versions.
+    -->
+    <PropertyGroup>
+        <AssemblyName>Acme.BackstopCtor</AssemblyName>
+        <RootNamespace>Acme.BackstopCtor</RootNamespace>
+    </PropertyGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\..\..\..\EdFi.Api.Plugins\EdFi.Api.Plugins.csproj" />
+        <ProjectReference
+            Include="..\..\Support\AcmeHostShared2\Acme.HostShared.v2.csproj"
+            Private="false"
+        />
+    </ItemGroup>
+</Project>

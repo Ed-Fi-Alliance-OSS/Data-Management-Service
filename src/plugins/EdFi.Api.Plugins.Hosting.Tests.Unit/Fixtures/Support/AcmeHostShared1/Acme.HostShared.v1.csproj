@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <!--
+        An assembly the host itself carries, so that a plugin declaring a higher version of it is
+        refused rather than quietly served its own copy. This is the copy the test project
+        references, which is what puts it in the host, and it is therefore the one fixture project
+        inside the solution build graph, so it commits a lock file.
+    -->
+    <PropertyGroup>
+        <AssemblyName>Acme.HostShared</AssemblyName>
+        <RootNamespace>Acme.HostShared</RootNamespace>
+        <AssemblyVersion>1.0.0</AssemblyVersion>
+        <FileVersion>1.0.0</FileVersion>
+        <Version>1.0.0</Version>
+        <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    </PropertyGroup>
+</Project>

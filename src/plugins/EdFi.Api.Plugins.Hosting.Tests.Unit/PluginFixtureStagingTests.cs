@@ -28,8 +28,63 @@ internal static class PluginFixtures
     /// <summary>A plugin directory whose entry assembly exposes no plugin type.</summary>
     internal const string NoSubclass = "Acme.NoSubclass";
 
+    /// <summary>Two constructible plugin types, so choosing between them would be arbitrary.</summary>
+    internal const string TwoSubclasses = "Acme.TwoSubclasses";
+
+    /// <summary>A plugin whose Name disagrees with its directory.</summary>
+    internal const string NameMismatch = "Acme.NameMismatch";
+
+    /// <summary>A plugin whose Name differs from its directory only in case.</summary>
+    internal const string CaseName = "Acme.CaseName";
+
+    /// <summary>One constructible type among several that are subclasses and not constructible.</summary>
+    internal const string NonCandidates = "Acme.NonCandidates";
+
+    /// <summary>Only subclasses the host cannot construct.</summary>
+    internal const string OnlyNonCandidates = "Acme.OnlyNonCandidates";
+
+    /// <summary>Published self-contained, so its manifest declares a runtime pack.</summary>
+    internal const string SelfContained = "Acme.SelfContained";
+
+    /// <summary>Published for a runtime identifier and framework-dependent, which has to load.</summary>
+    internal const string RidSpecific = "Acme.RidSpecific";
+
+    /// <summary>Built against a contract version this host does not carry.</summary>
+    internal const string NewerContract = "Acme.NewerContract";
+
+    /// <summary>Declares a higher version of an assembly the host carries, and never touches it.</summary>
+    internal const string DeclaredSkew = "Acme.DeclaredSkew";
+
+    /// <summary>Touches an unmanifested higher version while the loader is constructing it.</summary>
+    internal const string BackstopCtor = "Acme.BackstopCtor";
+
+    /// <summary>Ships a dependency the host does not carry, so its own copy is the one served.</summary>
+    internal const string PrivateDependency = "Acme.PrivateDependency";
+
     /// <summary>Every fixture the staging target is expected to produce.</summary>
-    internal static IReadOnlyList<string> All { get; } = [Good, NoSubclass];
+    internal static IReadOnlyList<string> All { get; } =
+    [
+        Good,
+        NoSubclass,
+        TwoSubclasses,
+        NameMismatch,
+        CaseName,
+        NonCandidates,
+        OnlyNonCandidates,
+        SelfContained,
+        RidSpecific,
+        NewerContract,
+        DeclaredSkew,
+        BackstopCtor,
+        PrivateDependency,
+    ];
+
+    /// <summary>
+    /// The fixtures whose staged directory is a whole published plugin. The self-contained fixture is
+    /// excluded because only its entry assembly and manifest are staged, deliberately.
+    /// </summary>
+    internal static IReadOnlyList<string> FullyStaged { get; } =
+        All.Where(name => name != SelfContained).ToArray();
 
     internal static string DirectoryOf(string name) => Path.Combine(Root, name);
 
@@ -95,7 +150,7 @@ public class Given_the_fixture_plugins_have_been_staged
             .StartWith(".NETCoreApp,Version=v10.0");
     }
 
-    [TestCaseSource(typeof(PluginFixtures), nameof(PluginFixtures.All))]
+    [TestCaseSource(typeof(PluginFixtures), nameof(PluginFixtures.FullyStaged))]
     public void It_stages_every_managed_file_the_manifest_declares(string name)
     {
         // The entry assembly and the manifest are the staging target's declared outputs, so they are

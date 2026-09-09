@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <!--
+        One constructible plugin type beside every shape that is a subclass and still not something
+        the host can construct. Counting any of those would turn a plugin type that cannot be
+        constructed into an assembly that exposes two plugins.
+    -->
+    <PropertyGroup>
+        <AssemblyName>Acme.NonCandidates</AssemblyName>
+        <RootNamespace>Acme.NonCandidates</RootNamespace>
+    </PropertyGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\..\..\..\EdFi.Api.Plugins\EdFi.Api.Plugins.csproj" />
+    </ItemGroup>
+</Project>

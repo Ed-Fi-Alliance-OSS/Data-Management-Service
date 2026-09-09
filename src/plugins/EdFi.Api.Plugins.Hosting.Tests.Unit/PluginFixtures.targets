@@ -8,6 +8,19 @@
         The fixture tree is excluded from this project's compile, embedded-resource and None globs in
         the csproj; this file is the only thing that builds it.
     -->
+    <ItemDefinitionGroup>
+        <PluginFixture>
+            <!--
+                What the implementer guide tells a third party to publish. A fixture overrides this only
+                when the publish shape is itself the thing under test.
+            -->
+            <PublishArgs>--no-self-contained</PublishArgs>
+        </PluginFixture>
+        <PluginFixtureTrimmed>
+            <PublishArgs>--no-self-contained</PublishArgs>
+        </PluginFixtureTrimmed>
+    </ItemDefinitionGroup>
+
     <ItemGroup>
         <PluginFixture Include="Fixtures/Plugins/Acme.Good/Acme.Good.csproj">
             <StagedName>Acme.Good</StagedName>
@@ -15,6 +28,50 @@
         <PluginFixture Include="Fixtures/Plugins/Acme.NoSubclass/Acme.NoSubclass.csproj">
             <StagedName>Acme.NoSubclass</StagedName>
         </PluginFixture>
+        <PluginFixture Include="Fixtures/Plugins/Acme.TwoSubclasses/Acme.TwoSubclasses.csproj">
+            <StagedName>Acme.TwoSubclasses</StagedName>
+        </PluginFixture>
+        <PluginFixture Include="Fixtures/Plugins/Acme.NameMismatch/Acme.NameMismatch.csproj">
+            <StagedName>Acme.NameMismatch</StagedName>
+        </PluginFixture>
+        <PluginFixture Include="Fixtures/Plugins/Acme.CaseName/Acme.CaseName.csproj">
+            <StagedName>Acme.CaseName</StagedName>
+        </PluginFixture>
+        <PluginFixture Include="Fixtures/Plugins/Acme.NonCandidates/Acme.NonCandidates.csproj">
+            <StagedName>Acme.NonCandidates</StagedName>
+        </PluginFixture>
+        <PluginFixture Include="Fixtures/Plugins/Acme.OnlyNonCandidates/Acme.OnlyNonCandidates.csproj">
+            <StagedName>Acme.OnlyNonCandidates</StagedName>
+        </PluginFixture>
+        <PluginFixture Include="Fixtures/Plugins/Acme.NewerContract/Acme.NewerContract.csproj">
+            <StagedName>Acme.NewerContract</StagedName>
+        </PluginFixture>
+        <PluginFixture Include="Fixtures/Plugins/Acme.DeclaredSkew/Acme.DeclaredSkew.csproj">
+            <StagedName>Acme.DeclaredSkew</StagedName>
+        </PluginFixture>
+        <PluginFixture Include="Fixtures/Plugins/Acme.BackstopCtor/Acme.BackstopCtor.csproj">
+            <StagedName>Acme.BackstopCtor</StagedName>
+        </PluginFixture>
+        <PluginFixture Include="Fixtures/Plugins/Acme.PrivateDependency/Acme.PrivateDependency.csproj">
+            <StagedName>Acme.PrivateDependency</StagedName>
+        </PluginFixture>
+        <PluginFixture Include="Fixtures/Plugins/Acme.RidSpecific/Acme.RidSpecific.csproj">
+            <StagedName>Acme.RidSpecific</StagedName>
+            <PublishArgs>--runtime $(NETCoreSdkRuntimeIdentifier) --no-self-contained</PublishArgs>
+        </PluginFixture>
+    </ItemGroup>
+
+    <!--
+        Fixtures published somewhere else and staged as two files. A self-contained publish produces the
+        runtimepack declaration the refusal reads and several hundred megabytes beside it, none of which
+        the loader ever opens, so the publish lands in the intermediate output and only the entry
+        assembly and its manifest reach the staged tree.
+    -->
+    <ItemGroup>
+        <PluginFixtureTrimmed Include="Fixtures/Plugins/Acme.SelfContained/Acme.SelfContained.csproj">
+            <StagedName>Acme.SelfContained</StagedName>
+            <PublishArgs>--runtime $(NETCoreSdkRuntimeIdentifier) --self-contained</PublishArgs>
+        </PluginFixtureTrimmed>
     </ItemGroup>
 
     <!--
@@ -71,8 +128,10 @@
             >$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', '$(IntermediateOutputPath)', 'fixtures'))</PluginFixtureStampDir>
             <PluginFixtureFingerprintFile>$(PluginFixtureStampDir)staging.fingerprint</PluginFixtureFingerprintFile>
             <PluginFixtureInputList>@(PluginFixtureInput->'%(Identity)@%(ModifiedTime)', '|')</PluginFixtureInputList>
+            <PluginFixtureRawRoot
+            >$([MSBuild]::NormalizeDirectory('$(PluginFixtureStampDir)', 'raw'))</PluginFixtureRawRoot>
             <PluginFixtureFingerprintPrefix
-            >$(Configuration)+$(NETCoreSdkRuntimeIdentifier)+@(PluginFixture->'%(StagedName)', '&amp;')+$([MSBuild]::StableStringHash($(PluginFixtureInputList)))</PluginFixtureFingerprintPrefix>
+            >$(Configuration)+$(NETCoreSdkRuntimeIdentifier)+@(PluginFixture->'%(StagedName)', '&amp;')+@(PluginFixtureTrimmed->'%(StagedName)', '&amp;')+$([MSBuild]::StableStringHash($(PluginFixtureInputList)))</PluginFixtureFingerprintPrefix>
         </PropertyGroup>
 
         <ItemGroup Condition="Exists('$(PluginFixtureStageRoot)')">
@@ -122,6 +181,9 @@
         -->
         <ItemGroup Condition="Exists('$(PluginFixtureStageRoot)')">
             <PluginFixtureExpectedDir Include="@(PluginFixture->'$(PluginFixtureStageRoot)%(StagedName)')" />
+            <PluginFixtureExpectedDir
+                Include="@(PluginFixtureTrimmed->'$(PluginFixtureStageRoot)%(StagedName)')"
+            />
             <PluginFixtureExistingDir
                 Include="$([System.IO.Directory]::GetDirectories('$(PluginFixtureStageRoot)'))"
             />
@@ -144,7 +206,7 @@
         DependsOnTargets="PrunePluginFixtureStaging"
         Condition="'$(BuildingPluginFixtures)' != 'true' AND '$(DesignTimeBuild)' != 'true'"
         Inputs="@(PluginFixtureInput)"
-        Outputs="@(PluginFixture->'$(PluginFixtureStageRoot)%(StagedName)/%(StagedName).dll');@(PluginFixture->'$(PluginFixtureStageRoot)%(StagedName)/%(StagedName).deps.json')"
+        Outputs="@(PluginFixture->'$(PluginFixtureStageRoot)%(StagedName)/%(StagedName).dll');@(PluginFixture->'$(PluginFixtureStageRoot)%(StagedName)/%(StagedName).deps.json');@(PluginFixtureTrimmed->'$(PluginFixtureStageRoot)%(StagedName)/%(StagedName).dll');@(PluginFixtureTrimmed->'$(PluginFixtureStageRoot)%(StagedName)/%(StagedName).deps.json')"
     >
         <!--
             Each fixture's directory is emptied before it is published into, so that a file dropped from
@@ -152,18 +214,45 @@
             overwrites what it produces but removes nothing it no longer produces.
         -->
         <RemoveDir
-            Directories="@(PluginFixture->'$(PluginFixtureStageRoot)%(StagedName)')"
-            Condition="'$(PluginFixtureStageRoot)' != ''"
+            Directories="@(PluginFixture->'$(PluginFixtureStageRoot)%(StagedName)');@(PluginFixtureTrimmed->'$(PluginFixtureStageRoot)%(StagedName)');@(PluginFixtureTrimmed->'$(PluginFixtureRawRoot)%(StagedName)')"
+            Condition="'$(PluginFixtureStageRoot)' != '' AND '$(PluginFixtureRawRoot)' != ''"
         />
+
+        <PropertyGroup>
+            <PluginContractAssemblyPath
+            >$([MSBuild]::NormalizePath('$(MSBuildProjectDirectory)', '$(OutDir)', 'EdFi.Api.Plugins.dll'))</PluginContractAssemblyPath>
+        </PropertyGroup>
 
         <!--
             BuildingPluginFixtures is passed down so that an inner publish can never re-enter this
             target, and each fixture project is named explicitly so that nothing walks back up to this
             test project.
+
+            PluginContractAssemblyPath is passed down for the fixtures that are published for a runtime
+            identifier. Those cannot reference the contract by project: a runtime-specific publish
+            restores its project references with that identifier too, and NuGet then rewrites their lock
+            files to record it. Measured, one such publish added a win-x64 runtime-identifier section to
+            the plugin contract's committed lock file and broke the locked-mode restore of both
+            solutions. Fixture staging must not be able to edit a tracked production file, so those
+            fixtures reference the built contract assembly by path and their publishes never restore it.
         -->
         <Exec
-            Command="&quot;$(DOTNET_HOST_PATH)&quot; publish &quot;%(PluginFixture.FullPath)&quot; --configuration $(Configuration) --no-self-contained --output &quot;$(PluginFixtureStageRoot)%(PluginFixture.StagedName)&quot; -p:BuildingPluginFixtures=true --nologo --verbosity quiet"
+            Command="&quot;$(DOTNET_HOST_PATH)&quot; publish &quot;%(PluginFixture.FullPath)&quot; --configuration $(Configuration) %(PluginFixture.PublishArgs) --output &quot;$(PluginFixtureStageRoot)%(PluginFixture.StagedName)&quot; -p:BuildingPluginFixtures=true -p:PluginContractAssemblyPath=&quot;$(PluginContractAssemblyPath)&quot; --nologo --verbosity quiet"
             WorkingDirectory="$(MSBuildProjectDirectory)"
+        />
+
+        <Exec
+            Command="&quot;$(DOTNET_HOST_PATH)&quot; publish &quot;%(PluginFixtureTrimmed.FullPath)&quot; --configuration $(Configuration) %(PluginFixtureTrimmed.PublishArgs) --output &quot;$(PluginFixtureRawRoot)%(PluginFixtureTrimmed.StagedName)&quot; -p:BuildingPluginFixtures=true -p:PluginContractAssemblyPath=&quot;$(PluginContractAssemblyPath)&quot; --nologo --verbosity quiet"
+            WorkingDirectory="$(MSBuildProjectDirectory)"
+        />
+
+        <Copy
+            SourceFiles="@(PluginFixtureTrimmed->'$(PluginFixtureRawRoot)%(StagedName)/%(StagedName).dll')"
+            DestinationFiles="@(PluginFixtureTrimmed->'$(PluginFixtureStageRoot)%(StagedName)/%(StagedName).dll')"
+        />
+        <Copy
+            SourceFiles="@(PluginFixtureTrimmed->'$(PluginFixtureRawRoot)%(StagedName)/%(StagedName).deps.json')"
+            DestinationFiles="@(PluginFixtureTrimmed->'$(PluginFixtureStageRoot)%(StagedName)/%(StagedName).deps.json')"
         />
 
         <!--
