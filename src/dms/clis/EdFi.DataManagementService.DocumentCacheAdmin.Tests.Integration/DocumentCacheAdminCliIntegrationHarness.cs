@@ -1606,6 +1606,8 @@ internal sealed class DocumentCacheAdminCliProcessHarness : IAsyncDisposable
         process.StartInfo.ArgumentList.Add("run");
         process.StartInfo.ArgumentList.Add("--project");
         process.StartInfo.ArgumentList.Add(ToolProjectPath());
+        process.StartInfo.ArgumentList.Add("--configuration");
+        process.StartInfo.ArgumentList.Add(CurrentBuildConfiguration());
         process.StartInfo.ArgumentList.Add("--no-build");
         process.StartInfo.ArgumentList.Add("--");
         foreach (string argument in arguments)
@@ -1718,6 +1720,26 @@ internal sealed class DocumentCacheAdminCliProcessHarness : IAsyncDisposable
             "EdFi.DataManagementService.DocumentCacheAdmin",
             "EdFi.DataManagementService.DocumentCacheAdmin.csproj"
         );
+
+    // `dotnet run` defaults to Debug, so a Release test run would otherwise start the CLI out of
+    // an unbuilt bin/Debug. The test assembly's own output directory names the configuration the
+    // CLI was built into alongside it.
+    private static string CurrentBuildConfiguration()
+    {
+        DirectoryInfo? currentDirectory = new(AppContext.BaseDirectory);
+
+        while (currentDirectory is not null)
+        {
+            if (currentDirectory.Name is "Debug" or "Release")
+            {
+                return currentDirectory.Name;
+            }
+
+            currentDirectory = currentDirectory.Parent;
+        }
+
+        return "Debug";
+    }
 
     private static string RepositoryRoot() =>
         FixturePathResolver.FindRepositoryRoot(AppContext.BaseDirectory);
