@@ -273,31 +273,37 @@ public sealed partial class CdcEstablishedValidation
             false
         );
         var provider = await CallAsync(request, ct => _provider.SetupAsync(setup, ct), token);
-        var mapped = CdcProviderSetupResultMapper.MapValidateOnlyResult(
-            operation,
-            _time.GetUtcNow(),
-            request.Binding,
-            provider
-        );
-        // Keep authoritative loss available to the classifier even when setup is not successful.
-        // Same-name artifact recreation cannot hide behind currently healthy retained ranges.
-        if (
-            provider.Outcome == Ddl.CdcProviderSetupOutcome.ExactMatch
-            && mapped.ProviderSetup.PhysicalSourceFingerprint == request.Binding.PhysicalSourceFingerprint
-        )
+        CdcProviderSetupObservationMapping MapProvider(CdcProviderSetupResult provider)
         {
-            var identities = CdcProviderSetupOrchestration.Identities(request, provider);
-            if (!identities.SequenceEqual(retained.Artifacts))
+            var mapped = CdcProviderSetupResultMapper.MapValidateOnlyResult(
+                operation,
+                _time.GetUtcNow(),
+                request.Binding,
+                provider
+            );
+            // Keep authoritative loss available to the classifier even when setup is not successful.
+            // Same-name artifact recreation cannot hide behind currently healthy retained ranges.
+            if (
+                provider.Outcome == Ddl.CdcProviderSetupOutcome.ExactMatch
+                && mapped.ProviderSetup.PhysicalSourceFingerprint == request.Binding.PhysicalSourceFingerprint
+            )
             {
-                mapped = mapped with
+                var identities = CdcProviderSetupOrchestration.Identities(request, provider);
+                if (!identities.SequenceEqual(retained.Artifacts))
                 {
-                    ProviderHistory = mapped.ProviderHistory with
+                    mapped = mapped with
                     {
-                        ProviderArtifactState = CdcProviderArtifactContinuityState.Recreated,
-                    },
-                };
+                        ProviderHistory = mapped.ProviderHistory with
+                        {
+                            ProviderArtifactState = CdcProviderArtifactContinuityState.Recreated,
+                        },
+                    };
+                }
             }
+
+            return mapped;
         }
+        var mapped = MapProvider(provider);
 
         partialInput = partialInput with { ProviderSetup = mapped.ProviderSetup };
         if (progress is not null)
@@ -339,28 +345,41 @@ public sealed partial class CdcEstablishedValidation
         {
             diagnostics.Add(unavailable.Diagnostic);
         }
+        var offsetHistory = await CallAsync(
+            request,
+            ct =>
+                _positions.ObserveSourceHistoryAsync(
+                    new(operation, request.Binding, mapped.ProviderSetup, offset, mapped.ProviderHistory)
+                    {
+                        ExpectedConnectSourcePartitionHash = establishment.SourcePartitionHash,
+                        LatchedIncident = exact.State!.Incident,
+                    },
+                    ct
+                ),
+            token
+        );
+        partialInput = partialInput with
+        {
+            ObservedAt = _time.GetUtcNow(),
+            SourceHistory = offsetHistory.Observation,
+        };
         if (progress is not null)
         {
-            var offsetHistory = await CallAsync(
-                request,
-                ct =>
-                    _positions.ObserveSourceHistoryAsync(
-                        new(operation, request.Binding, mapped.ProviderSetup, offset, mapped.ProviderHistory)
-                        {
-                            ExpectedConnectSourcePartitionHash = establishment.SourcePartitionHash,
-                            LatchedIncident = exact.State!.Incident,
-                        },
-                        ct
-                    ),
-                token
-            );
-            partialInput = partialInput with
-            {
-                ObservedAt = _time.GetUtcNow(),
-                SourceHistory = offsetHistory.Observation,
-            };
             progress.Capture(partialInput, journal.HasPendingRecordSizeIncrease, offsetHistory);
             await progress.ContainTerminal();
+        }
+        if (
+            request.Binding.Provider == Core.DocumentCache.Cdc.CdcProvider.Postgresql
+            && offset is not null
+            && offsetHistory.Observation.Continuity == CdcSourceHistoryContinuity.Unknown
+        )
+        {
+            // The first source read preceded Connect. Refresh its upper WAL observation,
+            // retaining the same validate-only provenance checks and any established loss.
+            setComponent(CdcDeploymentComponent.ProviderSetup);
+            provider = await CallAsync(request, ct => _provider.SetupAsync(setup, ct), token);
+            mapped = MapProvider(provider);
+            partialInput = partialInput with { ProviderSetup = mapped.ProviderSetup };
         }
         setComponent(CdcDeploymentComponent.Kafka);
         var schemaHistory = CdcSqlServerSchemaHistoryState.NotApplicable;

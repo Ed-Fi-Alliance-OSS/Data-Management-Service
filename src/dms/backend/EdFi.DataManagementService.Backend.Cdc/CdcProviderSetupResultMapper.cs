@@ -480,7 +480,10 @@ public static class CdcProviderSetupResultMapper
         }
 
         string? retainedStart = PostgresqlWalFromSafe(ObservedValue(slotHistory, "restart_lsn"));
-        string? retainedEnd = PostgresqlWalFromSafe(ObservedValue(slotHistory, "confirmed_flush_lsn"));
+        string? retainedEnd = PostgresqlWalFromSafe(ObservedValue(slotHistory, "current_wal_lsn"));
+        string confirmedFlush =
+            PostgresqlWalFromSafe(ObservedValue(slotHistory, "confirmed_flush_lsn")) ?? "";
+        string walStatus = ObservedValue(slotHistory, "wal_status") ?? "";
         bool retainedWalLost =
             string.Equals(
                 ObservedValue(slotHistory, "wal_status"),
@@ -499,6 +502,8 @@ public static class CdcProviderSetupResultMapper
             artifactState,
             retainedStart,
             retainedEnd,
+            confirmedFlush,
+            walStatus,
             retainedWalLost
         );
 
@@ -512,6 +517,7 @@ public static class CdcProviderSetupResultMapper
         )
         {
             Diagnostics = CoreCdc.CdcDiagnostic.NormalizeDiagnostics(historyDiagnostics),
+            PostgresqlSlot = new(confirmedFlush, walStatus, observedAt),
         };
     }
 
@@ -566,6 +572,8 @@ public static class CdcProviderSetupResultMapper
         CoreCdc.CdcProviderArtifactContinuityState artifactState,
         string? retainedStart,
         string? retainedEnd,
+        string confirmedFlush,
+        string walStatus,
         bool retainedWalLost
     )
     {
@@ -587,12 +595,23 @@ public static class CdcProviderSetupResultMapper
             retainedEnd,
             PostgresqlReplicationSlotPath
         );
-        if (start.Position is null || end.Position is null)
+        var acknowledged = CoreCdc.CdcPostgresqlProviderPosition.ParseWalLsn(
+            confirmedFlush,
+            PostgresqlReplicationSlotPath
+        );
+        if (
+            start.Position is null
+            || end.Position is null
+            || acknowledged.Position is null
+            || walStatus is not ("reserved" or "extended")
+        )
         {
             return CoreCdc.CdcProviderRetainedRangeState.Unknown;
         }
 
-        return start.Position.Value.CompareTo(end.Position.Value) <= 0
+        return
+            start.Position.Value.CompareTo(acknowledged.Position.Value) <= 0
+            && acknowledged.Position.Value.CompareTo(end.Position.Value) <= 0
             ? CoreCdc.CdcProviderRetainedRangeState.CoversCommittedOffset
             : CoreCdc.CdcProviderRetainedRangeState.Unknown;
     }

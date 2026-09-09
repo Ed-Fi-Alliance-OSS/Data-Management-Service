@@ -117,6 +117,7 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
     private readonly IDockerCli _docker;
     private readonly ServiceProvider _serviceProvider;
     private readonly string _resourcePrefix;
+    private bool _controllerNativeKafka;
     private int _controllerBrokerPort;
     private int _controllerConnectPort;
     private int _controllerMetricsPort;
@@ -206,7 +207,8 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
         CdcProvider provider,
         CancellationToken cancellationToken,
         Func<CdcConnectorTemplatePinnedImageFixture, CancellationToken, Task> beforeWorker = null!,
-        bool exposeBroker = false
+        bool exposeBroker = false,
+        bool nativeKafka = false
     )
     {
         CdcConnectorTemplateSmokeSettings settings = CdcConnectorTemplateSmokeSettings.FromEnvironment(
@@ -229,7 +231,8 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
             resourcePrefix,
             cancellationToken,
             beforeWorker: beforeWorker,
-            exposeBroker: exposeBroker
+            exposeBroker: exposeBroker,
+            nativeKafka: nativeKafka
         );
     }
 
@@ -241,7 +244,8 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
         CancellationToken cancellationToken,
         bool applyPrerequisitePolicy = true,
         Func<CdcConnectorTemplatePinnedImageFixture, CancellationToken, Task> beforeWorker = null!,
-        bool exposeBroker = false
+        bool exposeBroker = false,
+        bool nativeKafka = false
     )
     {
         var fixture = new CdcConnectorTemplatePinnedImageFixture(
@@ -254,6 +258,7 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
 
         try
         {
+            fixture._controllerNativeKafka = nativeKafka;
             if (exposeBroker)
             {
                 using var reservation = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
@@ -986,6 +991,11 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
 
     private async Task StartBrokerAsync(CancellationToken cancellationToken)
     {
+        if (_controllerNativeKafka)
+        {
+            await StartControllerKafkaAsync(cancellationToken);
+            return;
+        }
         await _docker.RunAsync(
             [
                 "run",
@@ -1130,6 +1140,7 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
             $"CONNECT_REST_ADVERTISED_HOST_NAME={ConnectContainerName}",
             "-e",
             "OFFSET_FLUSH_INTERVAL_MS=1000",
+            .. (_controllerNativeKafka ? new[] { "-e", "KAFKA_HEAP_OPTS=-Xms512m -Xmx512m" } : []),
             "-e",
             ConnectConfigProvidersEnvironmentVariable,
             "-e",

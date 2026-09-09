@@ -140,6 +140,7 @@ internal abstract class CdcReadinessTestBase(Ddl.CdcProvider provider) : CdcRegi
                         {
                             ["restart_lsn"] = "0_1",
                             ["confirmed_flush_lsn"] = "0_10",
+                            ["current_wal_lsn"] = "0_20",
                             ["wal_status"] = "reserved",
                             ["invalidation_reason"] = "",
                             ["retained_min_lsn"] = "0x00000001000000020001",

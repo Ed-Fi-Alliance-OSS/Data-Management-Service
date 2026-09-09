@@ -305,28 +305,72 @@ public sealed class CdcInitialReadiness
                             };
                         }
                         boundary.Component = CdcDeploymentComponent.ProviderSetup;
-                        var continuity = await CallAsync(
-                            request,
-                            ct =>
-                                _positions.ObserveSourceHistoryAsync(
-                                    new(
-                                        operation,
-                                        request.Binding,
-                                        mapped.ProviderSetup,
-                                        offset,
-                                        mapped.ProviderHistory
-                                    )
-                                    {
-                                        ExpectedConnectSourcePartitionHash = established.SourcePartitionHash,
-                                        SqlServerSchemaHistory =
-                                            request.Binding.Provider == CoreProvider.SqlServer
-                                                ? schemaHistory
-                                                : null,
-                                    },
-                                    ct
-                                ),
-                            token
-                        );
+                        Task<CdcSourceHistoryClassificationResult> ObserveContinuityAsync() =>
+                            CallAsync(
+                                request,
+                                ct =>
+                                    _positions.ObserveSourceHistoryAsync(
+                                        new(
+                                            operation,
+                                            request.Binding,
+                                            mapped.ProviderSetup,
+                                            offset,
+                                            mapped.ProviderHistory
+                                        )
+                                        {
+                                            ExpectedConnectSourcePartitionHash =
+                                                established.SourcePartitionHash,
+                                            SqlServerSchemaHistory =
+                                                request.Binding.Provider == CoreProvider.SqlServer
+                                                    ? schemaHistory
+                                                    : null,
+                                        },
+                                        ct
+                                    ),
+                                token
+                            );
+                        var continuity = await ObserveContinuityAsync();
+                        if (
+                            request.Binding.Provider == CoreProvider.Postgresql
+                            && continuity.Observation.Continuity == CdcSourceHistoryContinuity.Unknown
+                        )
+                        {
+                            // The slot may have advanced after the first Connect offset read. Read
+                            // Connect again against that same slot sample before declaring a gap.
+                            boundary.Component = CdcDeploymentComponent.Connect;
+                            rawOffset = Observed(
+                                await CallAsync(
+                                    request,
+                                    ct => _connect.ReadOffsetEvidenceAsync(request, ct),
+                                    token
+                                )
+                            );
+                            Require(
+                                rawOffset.State == CdcConnectOffsetState.Streaming
+                                    && rawOffset.SourcePartitionHash == established.SourcePartitionHash
+                            );
+                            offset = Offset(request, operation, rawOffset);
+                            boundary.Component = CdcDeploymentComponent.ProviderSetup;
+                            continuity = await ObserveContinuityAsync();
+                            if (continuity.Observation.Continuity == CdcSourceHistoryContinuity.Unknown)
+                            {
+                                // The refreshed offset may now exceed the earlier source WAL sample.
+                                // The next bounded admission pass collects both again.
+                                await DelayAsync(request, token);
+                                continue;
+                            }
+                            var refreshedBarrier = _positions.ObserveProviderBarrier(
+                                new(
+                                    operation,
+                                    request.Binding,
+                                    first.ProjectionObservedAt,
+                                    captured,
+                                    offset,
+                                    established.SourcePartitionHash
+                                )
+                            );
+                            Require(refreshedBarrier.BarrierState == CdcProviderBarrierState.Reached);
+                        }
                         Require(continuity.Observation.Continuity == CdcSourceHistoryContinuity.Healthy);
                         boundary.Component = CdcDeploymentComponent.Projection;
                         var second = await ProjectionAsync(request, runtime, operation, boundary, token);

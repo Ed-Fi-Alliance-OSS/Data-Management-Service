@@ -31,7 +31,8 @@ internal sealed class CdcControllerFixtureControllers
         ICdcProviderSetupService provider,
         ICdcConnectorTemplateService templates,
         ICdcKafkaAdminAdapter kafka,
-        ICdcProviderSourcePositionAdapter positions
+        ICdcProviderSourcePositionAdapter positions,
+        ICdcWorkerMetricsTransport metrics = null!
     )
     {
         _fixture = fixture;
@@ -49,7 +50,7 @@ internal sealed class CdcControllerFixtureControllers
             _kafka,
             fixture.Connect,
             fixture.Worker,
-            fixture.Metrics,
+            metrics ?? fixture.Metrics,
             positions,
             TimeProvider.System
         );
@@ -61,7 +62,7 @@ internal sealed class CdcControllerFixtureControllers
             _kafka,
             fixture.Connect,
             fixture.Worker,
-            fixture.Metrics,
+            metrics ?? fixture.Metrics,
             positions,
             TimeProvider.System
         );

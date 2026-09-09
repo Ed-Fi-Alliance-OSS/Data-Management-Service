@@ -9,6 +9,7 @@
     </PropertyGroup>
     <ItemGroup>
         <PackageReference Include="FluentAssertions" />
+        <PackageReference Include="FakeItEasy" />
         <PackageReference Include="Microsoft.Data.SqlClient" />
         <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
         <PackageReference Include="Microsoft.NET.Test.Sdk" />
@@ -37,7 +38,20 @@
         <Compile Include="..\..\clis\EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration\DocumentCacheAdminCliIntegrationHarness.cs" Link="DocumentCacheAdminCliIntegrationHarness.cs" />
     </ItemGroup>
     <ItemGroup>
-        <Compile Include="..\EdFi.DataManagementService.Backend.Cdc.Tests.Unit\CdcDeploymentRequestTestData.cs" Link="Shared\CdcDeploymentRequestTestData.cs" />
-        <Compile Include="..\EdFi.DataManagementService.Backend.Cdc.Tests.Unit\CdcConnectorTemplateTestData.cs" Link="Shared\CdcConnectorTemplateTestData.cs" />
+        <Compile
+            Include="..\EdFi.DataManagementService.Backend.Cdc.Tests.Unit\CdcDeploymentRequestTestData.cs"
+            Link="Shared\CdcDeploymentRequestTestData.cs"
+        />
+        <Compile
+            Include="..\EdFi.DataManagementService.Backend.Cdc.Tests.Unit\CdcConnectorTemplateTestData.cs"
+            Link="Shared\CdcConnectorTemplateTestData.cs"
+        />
+    </ItemGroup>
+    <ItemGroup>
+        <None
+            Include="../../clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/Fixtures/minimal-api-schema.json"
+            Link="Fixtures/minimal-api-schema.json"
+            CopyToOutputDirectory="PreserveNewest"
+        />
     </ItemGroup>
 </Project>

@@ -1555,6 +1555,7 @@ internal sealed class RecordingPostgresqlCdcExecutor : ICdcProviderDatabaseExecu
                         ("two_phase", _slotTwoPhase),
                         ("restart_lsn", _slotRestartLsn),
                         ("confirmed_flush_lsn", _slotConfirmedFlushLsn),
+                        ("current_wal_lsn", _slotConfirmedFlushLsn),
                         ("wal_status", _slotWalStatus),
                         ("invalidation_reason", _slotInvalidationReason)
                     ),

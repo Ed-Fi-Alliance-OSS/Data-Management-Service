@@ -372,6 +372,7 @@ public sealed class Given_CdcConnectorTemplateProviderSetupHandoff
                         ("two_phase", false.ToString()),
                         ("restart_lsn", "0/16B6C50"),
                         ("confirmed_flush_lsn", "0/16B6C50"),
+                        ("current_wal_lsn", "0/16B6C70"),
                         ("wal_status", "reserved"),
                         ("invalidation_reason", "")
                     ),

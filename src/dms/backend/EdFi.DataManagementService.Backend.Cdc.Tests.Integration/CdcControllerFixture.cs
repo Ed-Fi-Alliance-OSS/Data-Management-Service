@@ -46,7 +46,10 @@ internal sealed class CdcControllerFixture : IAsyncDisposable
             .BuildServiceProvider();
         Bindings = Hooks.Decorate(
             _bindingServices.GetRequiredService<ICdcBindingLifecycleService>(),
-            _ => CdcControllerBoundary.Binding
+            name =>
+                name == nameof(ICdcBindingLifecycleService.CreateBindingIfAbsentAsync)
+                    ? CdcControllerBoundary.Binding
+                    : CdcControllerBoundary.Observation
         );
         Connect = Hooks.Decorate<ICdcConnectTransport>(
             new CdcConnectRestAdapter(_connectClient),
@@ -85,7 +88,8 @@ internal sealed class CdcControllerFixture : IAsyncDisposable
     public static async Task<CdcControllerFixture> StartAsync(
         CdcProvider provider,
         CancellationToken token,
-        Func<CdcControllerFixture, CancellationToken, Task> beforeWorker = null!
+        Func<CdcControllerFixture, CancellationToken, Task> beforeWorker = null!,
+        bool nativeKafka = false
     )
     {
         var settings = CdcConnectorTemplateSmokeSettings.FromEnvironment(provider);
@@ -107,7 +111,8 @@ internal sealed class CdcControllerFixture : IAsyncDisposable
                         await beforeWorker(fixture, ct);
                     }
                 },
-                exposeBroker: true
+                exposeBroker: true,
+                nativeKafka: nativeKafka
             );
             await resources.AssertControllerMetricsPrerequisiteAsync(token);
             return fixture;

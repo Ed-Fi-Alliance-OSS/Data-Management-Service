@@ -1388,6 +1388,7 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
             ["two_phase"] = SafeText(twoPhase),
             ["restart_lsn"] = SafeText(restartLsn),
             ["confirmed_flush_lsn"] = SafeText(confirmedFlushLsn),
+            ["current_wal_lsn"] = SafeText(ReadRequired(row, "current_wal_lsn")),
             ["wal_status"] = SafeText(walStatus),
             ["invalidation_reason"] = SafeText(invalidationReason),
             ["retained_position_gap_evaluation"] = "not_evaluated_without_committed_offset",
@@ -1437,6 +1438,7 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
                 COALESCE(to_jsonb(slot)->>'two_phase', 'unsupported') AS two_phase,
                 COALESCE(slot.restart_lsn::text, '') AS restart_lsn,
                 COALESCE(slot.confirmed_flush_lsn::text, '') AS confirmed_flush_lsn,
+                pg_catalog.pg_current_wal_lsn()::text AS current_wal_lsn,
                 COALESCE(to_jsonb(slot)->>'wal_status', 'unavailable') AS wal_status,
                 COALESCE(to_jsonb(slot)->>'invalidation_reason', '') AS invalidation_reason
             FROM pg_catalog.pg_replication_slots slot

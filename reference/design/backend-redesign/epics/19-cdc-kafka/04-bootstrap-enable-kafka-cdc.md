@@ -408,6 +408,82 @@ controller composes those contracts rather than introducing another set of rules
   historical, possible, unknown, missing, or mismatched evidence without mutation.
 - Diagnostics tests cover each implementation boundary without exposing secrets.
 
+## Implementation Note: T30 PostgreSQL admission qualification
+
+`CdcPostgresqlAdmissionTests` supplies 30 real PostgreSQL admission and interruption
+cases. The fixture creates an owned database, executes the emitted DDL, and composes the
+production projection runtime, provider setup, Kafka administration, Connect REST, and
+worker metrics adapters. It reuses the pinned-image fixture with the local Kafka broker;
+only schema-file and CMS delivery are substituted. Each case retains sanitized controller
+traces, journal summaries, and live admission observations as test attachments.
+
+Coverage includes binding durability at the E18 activation boundary, exact Disabled and
+Tracking retries, ineligible databases, creation-receipt and slot-proof loss, registration
+response reconciliation, interrupted readiness waits, and atomic writer handoff. Admission
+requires a live PostgreSQL barrier, a second caught-up observation, and independent fresh
+lag. Consumed slots use validate-only setup; unavailable, timed-out, expired, or cancelled
+lag observations cannot authorize publication. Healthy streaming and stop/resume cases
+also exercise the continuity correction described below.
+
+Qualification on 2026-09-08 used PostgreSQL 18.4 and the exporter-enabled Connect digest
+`sha256:4bb2d798bf63a43db36842ba7670db4c7b4c304c621db967c9771cc0059ff0b7`
+with `CDC_CONNECTOR_TEMPLATE_FAIL_FAST=true` and the filter
+`Category=CdcControllerAdmission&Category=PostgresqlIntegration`. All 30 selected cases
+passed across the complete matrix and focused reruns, with no skipped cases. The reruns
+qualified the corrected cache seed and continuity probe, plus an unavailable-lag case
+whose first stack failed during prerequisite setup. This is the authorization-disabled
+local broker lane; Kafka ACL qualification belongs to the separate policy suite.
+The prerequisite correction also passed 3,345 unit tests and 14 PostgreSQL adapter
+integration cases, with formatting and Release analyzers passing.
+
+## Implementation Note: PostgreSQL continuity evidence
+
+T30's real PostgreSQL admission tests exposed an inherited prerequisite defect: the
+provider mapper used `confirmed_flush_lsn` as the upper bound of retained WAL. A healthy
+Connect commit can be ahead of that acknowledgement, causing a false terminal
+`SourceHistoryContinuityLost` result. This story includes the prerequisite correction
+needed to qualify admission.
+
+The provider now observes `pg_current_wal_lsn()` with the replication-slot metadata and
+maps it to `RetainedRangeEnd`. `restart_lsn` remains the physical retention floor;
+`confirmed_flush_lsn`, `wal_status`, and the source observation time are preserved as
+separate PostgreSQL evidence. Healthy continuity requires the committed `lsn_proc` to be
+at or after both the restart and acknowledgement positions, at or before observed current
+WAL, and backed by `reserved` or `extended` WAL. Existing source, slot, publication,
+provenance, offset-integrity, and terminal-incident checks still apply. SQL Server's
+retained CDC range semantics are unchanged.
+
+Acknowledgement is also a logical resume floor: PostgreSQL's `START_REPLICATION ...
+LOGICAL` starts at the greater of the requested position and `confirmed_flush_lsn`.
+Merely substituting current WAL for the old upper bound would therefore leave an unsafe
+resume case. See the [PostgreSQL replication protocol](https://www.postgresql.org/docs/18/protocol-replication.html)
+and [replication-slot metadata](https://www.postgresql.org/docs/18/view-pg-replication-slots.html).
+
+Connect and source reads are independent. A committed position above an earlier current
+WAL sample yields `unknown`, not a retained-history gap. A position below the slot's
+resume floor yields `lost` only when the source observation precedes the offset
+observation; otherwise it yields `unknown` pending a fresh offset. Missing or inconsistent
+position evidence and unreserved WAL also block readiness as `unknown`. Explicit lost,
+invalidated, missing, or recreated artifacts retain their terminal behavior.
+
+Initial admission re-reads Connect after an unknown PostgreSQL continuity result and,
+if evidence remains inconclusive, repeats its existing bounded observation pass.
+Established validation refreshes validate-only provider evidence after Connect when its
+first continuity result is unknown, repeating the same artifact-provenance checks.
+Neither path advances offsets, recreates a slot, clears a terminal incident, or grants
+writer authorization from unknown evidence.
+
+Regression coverage exercises acknowledgement lag, the logical resume floor, position
+boundaries, observation ordering, unavailable retention evidence, and recovery after a
+fresh source observation. Qualification includes the live healthy-slot probe, PostgreSQL
+admission matrix, and stop/resume behavior with the pinned connector.
+The live probe retains every raw sample, refreshes only `unknown` results within three
+observation passes, and returns `lost` immediately; it does not wait for acknowledgement
+to catch up or supply default success. Its final assertion and the admission gate still
+require `healthy`. The cache-rejection fixture also seeds the cache row with its owning
+document's UUID so the test reaches admission instead of failing the UUID consistency
+trigger during setup.
+
 ## Not Assigned to This Story
 
 - Documentation testing, including help-text assertions, documentation drift checks,
