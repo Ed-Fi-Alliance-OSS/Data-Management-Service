@@ -271,8 +271,10 @@ public static class PluginRegistrationAudit
     /// <remarks>
     /// <para>
     /// The unit is a group: the unkeyed registrations for a contract, resolved with one
-    /// <c>GetServices</c>, and the registrations under each distinct concrete key a plugin used,
-    /// resolved with one <c>GetKeyedServices</c> each. Measured on net10.0, those groups are disjoint
+    /// <c>GetServices</c>, and the registrations under each distinct concrete key the contract is
+    /// registered under by anyone, host included, resolved with one <c>GetKeyedServices</c> each. A
+    /// group holding both a host descriptor and a plugin's under the same key is one group and one
+    /// resolve. Measured on net10.0, those groups are disjoint
     /// and each resolve activates every descriptor in its own group exactly once, so nothing is
     /// activated twice. The wildcard key is never resolved, for the reason
     /// <see cref="AuditWildcardKeyedContracts"/> records.
@@ -325,37 +327,68 @@ public static class PluginRegistrationAudit
     }
 
     /// <summary>
-    /// The distinct concrete service keys plugins used for a contract, in the order they were
-    /// registered.
+    /// The distinct concrete service keys a contract is registered under, from every source, in the
+    /// order they were registered.
     /// </summary>
     /// <remarks>
+    /// <para>
+    /// Read from the collection as it stood when composition finished <em>and</em> from what the
+    /// per-hook comparisons attributed to plugins, because neither alone is the whole set. The snapshot
+    /// is what carries a keyed registration the <em>host</em> made: it belongs to no plugin's record,
+    /// and a set derived from the records alone would form no group for its key and never resolve it,
+    /// so an unconstructible host keyed registration would pass a check that refuses the equivalent
+    /// unkeyed one. The records then add a key whose descriptor a later plugin removed, which is
+    /// permitted for a descriptor that is neither host-owned nor logging, and which is therefore absent
+    /// from the snapshot.
+    /// </para>
+    /// <para>
     /// Ordinary key equality, which is what the container itself compares keys with. A key is an object
-    /// a plugin chose, so a key whose equality throws surfaces as a failure of this audit, which the
-    /// caller reports the way it reports any other startup failure.
+    /// a plugin or the host chose, so a key whose equality throws surfaces as a failure of this audit,
+    /// which the caller reports the way it reports any other startup failure. An unkeyed descriptor
+    /// contributes no key: the unkeyed group is resolved once on its own. The wildcard key is excluded
+    /// for the reason <see cref="AuditWildcardKeyedContracts"/> records - nothing reaches such a
+    /// registration by resolving a key, so forming a group for it would activate other keys twice and
+    /// the wildcard not at all.
+    /// </para>
     /// </remarks>
     private static List<object> ConcreteKeysFor(PluginAuditInput input, Type contract)
     {
         List<object> keys = [];
         HashSet<object> seen = [];
 
+        foreach (ServiceDescriptor descriptor in input.DescriptorsAfterContribution)
+        {
+            AddKeyOf(descriptor, contract, keys, seen);
+        }
+
         foreach (PluginContributionRecord record in input.Records)
         {
             foreach (ServiceDescriptor descriptor in record.Additions)
             {
-                if (
-                    descriptor.ServiceType == contract
-                    && descriptor.IsKeyedService
-                    && descriptor.ServiceKey is { } serviceKey
-                    && !ReferenceEquals(serviceKey, KeyedService.AnyKey)
-                    && seen.Add(serviceKey)
-                )
-                {
-                    keys.Add(serviceKey);
-                }
+                AddKeyOf(descriptor, contract, keys, seen);
             }
         }
 
         return keys;
+    }
+
+    private static void AddKeyOf(
+        ServiceDescriptor descriptor,
+        Type contract,
+        List<object> keys,
+        HashSet<object> seen
+    )
+    {
+        if (
+            descriptor.ServiceType == contract
+            && descriptor.IsKeyedService
+            && descriptor.ServiceKey is { } serviceKey
+            && !ReferenceEquals(serviceKey, KeyedService.AnyKey)
+            && seen.Add(serviceKey)
+        )
+        {
+            keys.Add(serviceKey);
+        }
     }
 
     private static void Resolve(

@@ -336,9 +336,12 @@ public class Given_the_frontend_fixture_staging_rules
     }
 
     /// <summary>
-    /// The second staged fixture's sources are watched too, and by derivation rather than by being
-    /// named again: the input set is built from the fixture item list, so a fixture added without its
-    /// sources being watched is not a state this file can be left in.
+    /// The second staged fixture's sources are watched too, because its directory is named in the
+    /// targets file. Deriving those directories from the fixture item list was tried and does not work,
+    /// since an item transform does not glob, so adding a fixture without adding its directory is a
+    /// state that file can be left in. What stops it going unnoticed is the closure cases above, which
+    /// assert each fixture's project file and sources are watched, and this case, which asserts a
+    /// change to them is seen.
     /// </summary>
     [Test]
     public void It_calls_the_tree_stale_when_the_real_helper_fixture_changes()

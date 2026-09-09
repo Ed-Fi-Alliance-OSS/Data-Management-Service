@@ -1363,3 +1363,101 @@ public class Given_a_declared_contract_registered_as_an_instance
         FixtureObservations.CountOf("fanIn.constructed").Should().Be(1);
     }
 }
+
+/// <summary>
+/// A host implementation of the declared contract that can be constructed, and counts how often it is.
+/// </summary>
+/// <remarks>
+/// Declared here rather than in a fixture plugin because a host-side registration has to come from
+/// this side of the boundary: the whole point of the cases below is a keyed registration that belongs
+/// to no plugin's record.
+/// </remarks>
+internal sealed class CountingHostFanIn : IFixtureFanInContract
+{
+    public CountingHostFanIn() => FixtureObservations.Count("hostFanIn.constructed");
+
+    public string Describe() => nameof(CountingHostFanIn);
+}
+
+[TestFixture]
+[NonParallelizable]
+public class Given_a_declared_contract_the_host_registered_under_a_concrete_key
+{
+    private const string HostKey = "host-key";
+
+    private TemporaryPluginRoot _root = null!;
+
+    [TearDown]
+    public void TearDown() => _root.Dispose();
+
+    /// <summary>
+    /// A keyed registration the host made belongs to no plugin's record, so a key set derived from the
+    /// records alone forms no group for it and never resolves it. That would let an unconstructible
+    /// host keyed registration pass a check that refuses the equivalent unkeyed one.
+    /// </summary>
+    [Test]
+    public async Task It_is_fatal_when_it_cannot_be_constructed_and_no_plugin_uses_that_key()
+    {
+        _root = TemporaryPluginRoot.Create();
+        using AuditRun run = await AuditProbe.RunWithHostCollectionAsync(
+            _root,
+            // An unkeyed contribution, so the plugin uses no key at all and the key under test can only
+            // have come from the host.
+            "declaredValidatorOnly",
+            services => services.AddKeyedTransient<IFixtureFanInContract, BrokenHostFanIn>(HostKey),
+            PluginFixtures.Contributor
+        );
+
+        PluginAuditFinding finding = run.SingleFinding;
+
+        finding.Reason.Should().Be(PluginAuditFailure.DeclaredContractRegistrationNotActivatable);
+        finding.Contract.Should().Be(typeof(IFixtureFanInContract));
+        finding.Message.Should().Contain(HostKey);
+        finding.Message.Should().Contain("under service key");
+        finding.ActivationException.Should().BeOfType<InvalidOperationException>();
+        finding.ActivationException!.Message.Should().Contain(nameof(IFixtureMissingDependency));
+
+        // And it blames nobody. The group is the host's alone, so naming the plugin that happened to be
+        // loaded would be wrong.
+        finding.PluginNames.Should().BeEmpty();
+        finding.Message.Should().Contain("No plugin contributed a descriptor to that group");
+        finding.Message.Should().NotContain("rather than the cause");
+    }
+
+    [Test]
+    public async Task It_is_activated_exactly_once_when_it_can_be_constructed()
+    {
+        _root = TemporaryPluginRoot.Create();
+        using AuditRun run = await AuditProbe.RunWithHostCollectionAsync(
+            _root,
+            "declaredValidatorOnly",
+            services => services.AddKeyedTransient<IFixtureFanInContract, CountingHostFanIn>(HostKey),
+            PluginFixtures.Contributor
+        );
+
+        run.Result.Findings.Should().BeEmpty();
+        FixtureObservations.CountOf("hostFanIn.constructed").Should().Be(1);
+    }
+
+    /// <summary>
+    /// One key, one group, whoever registered under it. Deriving keys from two sources must not resolve
+    /// the same group twice, and a construction counter on each side is what can tell one resolve from
+    /// two.
+    /// </summary>
+    [Test]
+    public async Task It_resolves_as_one_group_with_a_plugin_registration_under_the_same_key()
+    {
+        _root = TemporaryPluginRoot.Create();
+        using AuditRun run = await AuditProbe.RunWithHostCollectionAsync(
+            _root,
+            // The plugin registers its own keyed contribution under "first".
+            "keyedContract",
+            services => services.AddKeyedTransient<IFixtureFanInContract, CountingHostFanIn>("first"),
+            PluginFixtures.Contributor
+        );
+
+        run.Result.Findings.Should().BeEmpty();
+        FixtureObservations.CountOf("hostFanIn.constructed").Should().Be(1);
+        FixtureObservations.CountOf("fanIn.constructed").Should().Be(1);
+    }
+}
