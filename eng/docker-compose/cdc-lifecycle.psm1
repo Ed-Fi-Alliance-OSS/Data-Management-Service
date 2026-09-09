@@ -181,7 +181,7 @@ function Register-CdcDeploymentHandoff {
     .SYNOPSIS
     Retains each target handoff before connector effects so later stop and cleanup include it.
     #>
-    param($Handoff, [string]$StatePath)
+    param($Handoff, [string]$StatePath, $Receipt)
     $Handoff = $Handoff | ConvertTo-Json -Depth 64 | ConvertFrom-Json -AsHashtable
     $settings = $Handoff.Settings
     $compose = $settings.Cdc.Compose
@@ -220,8 +220,46 @@ function Register-CdcDeploymentHandoff {
             StatePath = [IO.Path]::GetFullPath($StatePath); Generation = $settings.Cdc.Generation
             DeploymentKey = $settings.Cdc.DeploymentKey; InstanceKey = $settings.Cdc.InstanceKey
             DataStoreId = $settings.Cdc.DataStoreId; ConnectorName = ''
+            Bootstrap = if ($null -ne $Receipt) { @{
+                Receipt = $Receipt
+                InputSettingsHash = $Handoff.InputSettingsHash
+                DatabaseNameHash = $Handoff.DatabaseNameHash
+            } } else { $null }
         })
         Write-CdcDeployment $project $deployment
+    }
+    finally { $lock.Dispose() }
+}
+
+function Get-CdcBootstrapRetryHandoff {
+    <#
+    .SYNOPSIS
+    Recovers original bootstrap configuration; only the controller can authorize initial retry.
+    #>
+    param([string]$Project, [string]$StatePath, [string]$InputSettingsPath, [string]$DatabaseName)
+    if (-not (Test-CdcDeployment $Project)) { return $null }
+    $lock = Enter-CdcDeploymentLock $Project
+    try {
+        $deployment = Read-CdcDeployment $Project
+        if ($deployment.Phase -cne 'Active' -or $deployment.Entries.Count -ne 1) {
+            throw 'Initial CDC retry requires the original single-target offline deployment.'
+        }
+        $entry = $deployment.Entries[0]
+        $hash = (Get-FileHash -LiteralPath $InputSettingsPath -ErrorAction Stop).Hash
+        $databaseHash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($DatabaseName)))
+        if (-not $entry.Contains('Bootstrap') -or $null -eq $entry.Bootstrap -or
+            $entry.StatePath -cne $StatePath -or $entry.Bootstrap.InputSettingsHash -cne $hash -or
+            $entry.Bootstrap.DatabaseNameHash -cne $databaseHash) {
+            throw 'Initial CDC retry requires the original settings, database, state root and provisioning handoff.'
+        }
+        return @{
+            Settings = Get-Content -LiteralPath $entry.SettingsPath -Raw | ConvertFrom-Json -AsHashtable
+            SettingsPath = $entry.SettingsPath; DmsComposePath = $entry.DmsComposePath
+            OriginalEnvironmentFile = $deployment.OriginalEnvironmentFile
+            EnvironmentFile = $deployment.EnvironmentFile
+            InputSettingsHash = $entry.Bootstrap.InputSettingsHash; DatabaseNameHash = $entry.Bootstrap.DatabaseNameHash
+            Receipt = $entry.Bootstrap.Receipt
+        }
     }
     finally { $lock.Dispose() }
 }
@@ -440,4 +478,4 @@ function Invoke-CdcDeploymentLifecycle {
     finally { $lock.Dispose() }
 }
 
-Export-ModuleMember -Function Test-CdcDeployment, Test-CdcInfrastructureInvocation, Register-CdcDeploymentHandoff, Invoke-CdcDeploymentLifecycle, Invoke-CdcInfrastructure, Assert-CdcUnregisteredInfrastructure, Invoke-CdcAdmittedHost
+Export-ModuleMember -Function Get-CdcBootstrapRetryHandoff, Test-CdcDeployment, Test-CdcInfrastructureInvocation, Register-CdcDeploymentHandoff, Invoke-CdcDeploymentLifecycle, Invoke-CdcInfrastructure, Assert-CdcUnregisteredInfrastructure, Invoke-CdcAdmittedHost

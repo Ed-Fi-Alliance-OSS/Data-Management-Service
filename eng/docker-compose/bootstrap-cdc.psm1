@@ -154,7 +154,7 @@ function New-BootstrapCdcHandoff {
     Snapshots supplied settings with staged schemas and the selected local deployment context.
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Creates unique private configuration snapshots within the already authorized bootstrap workflow; no interactive approval surface.')]
-    param([hashtable]$Settings, [string]$StatePath, [string]$EnvironmentFile, [string]$Project, [string]$DatabaseName)
+    param([hashtable]$Settings, [string]$InputSettingsPath, [string]$StatePath, [string]$EnvironmentFile, [string]$Project, [string]$DatabaseName)
     Import-Module (Join-Path $PSScriptRoot 'bootstrap-schema-workspace.psm1') -Force
     Import-Module (Join-Path $PSScriptRoot 'env-utility.psm1') -Force
     Import-Module (Join-Path $PSScriptRoot 'database-safety.psm1') -Force
@@ -217,7 +217,11 @@ function New-BootstrapCdcHandoff {
     $environment.AppSettings__ApiSchemaPath = '/app/ApiSchema'
     $composePath = Join-Path $configurationRoot "bootstrap-$id.dms.json"
     Write-BootstrapCdcPrivateJson -Path $composePath -Value @{ services = @{ dms = @{ environment = $environment } } }
-    return [pscustomobject]@{ Settings = $settingsCopy; SettingsPath = $settingsPath; DmsComposePath = $composePath }
+    return [pscustomobject]@{
+        Settings = $settingsCopy; SettingsPath = $settingsPath; DmsComposePath = $composePath
+        InputSettingsHash = (Get-FileHash -LiteralPath $InputSettingsPath).Hash
+        DatabaseNameHash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($DatabaseName)))
+    }
 }
 
 function Invoke-BootstrapCdcEnable {
@@ -236,7 +240,7 @@ function Invoke-BootstrapCdcEnable {
     }
     catch { throw 'CDC selected target and authoritative creation receipt must match the supplied settings; reused databases require cleanup/reprovisioning.' }
     Import-Module (Join-Path $PSScriptRoot 'cdc-lifecycle.psm1')
-    Register-CdcDeploymentHandoff -Handoff $Handoff -StatePath $StatePath
+    Register-CdcDeploymentHandoff -Handoff $Handoff -StatePath $StatePath -Receipt $Receipt
     Import-Module (Join-Path $PSScriptRoot 'bootstrap-schema-tool.psm1') -Force
     $tool = Resolve-DmsSchemaTool -RequestedPath $ToolPath
     $arguments = @('cdc', 'enable', '--settings', $Handoff.SettingsPath, '--state-path', $StatePath, '--json')

@@ -697,6 +697,14 @@ function Invoke-BootstrapWrapper {
         $EnvironmentFile = [System.IO.Path]::GetFullPath((Join-Path (Get-Location).Path $EnvironmentFile))
     }
 
+    # Recover the original handoff before materializing environment overlays or staging schemas.
+    # The controller alone decides whether its journal still permits initial enablement.
+    $cdcRetry = $null
+    if ($EnableKafkaCdc) {
+        Import-Module (Join-Path $PSScriptRoot 'cdc-lifecycle.psm1')
+        $cdcRetry = Get-CdcBootstrapRetryHandoff -Project $cdcProject -StatePath $CdcBindingStatePath -InputSettingsPath $CdcSettingsPath -DatabaseName $DataStoreDatabaseName
+    }
+
     Push-Location $PSScriptRoot
     try {
         $baseEnvFile = Resolve-WrapperEnvironmentFilePath -BaseEnvironmentFile $EnvironmentFile
@@ -706,318 +714,339 @@ function Invoke-BootstrapWrapper {
         # would stack a second generation of them on top.
         $callerEnvFile = $baseEnvFile
 
-        # Data-standard selection: compose the LOCAL-BOOTSTRAP overlay (.env.bootstrap.<token>,
-        # default DS 5.2) onto the base env before anything reads it, so identity resolution,
-        # prepare, configure, provision, and the start phases all see the composed
-        # SCHEMA_PACKAGES / data-standard settings from one canonical path. These bootstrap-scoped
-        # overlays carry the minimal local surfaces (DS 5.2: core + TPDM; DS 6.1: core only) and
-        # are deliberately distinct from the shared .env.ds<NN> overlays, whose E2E/SDK surfaces
-        # include the Sample/Homograph test extensions required by CI. For the same reason
-        # -DataStandardVersion is NOT forwarded to the start scripts below: they would re-compose
-        # the shared overlay over this derived file and silently restore the E2E-shaped
-        # SCHEMA_PACKAGES. The start phases receive the derived file through -EnvironmentFile
-        # instead.
-        #
-        # start-local-dms.ps1 ALWAYS composes: local bootstraps are the canonical DS 5.2/6.1 entry
-        # point and have no other source of a package surface. start-published-dms.ps1 composes
-        # ONLY when the caller explicitly supplies -DataStandardVersion: published bootstraps
-        # predate overlay composition and existing custom-base-env workflows rely on their own
-        # SCHEMA_PACKAGES / DATABASE_TEMPLATE_PACKAGE values reaching every phase untouched.
-        # Custom or extension schema sets remain expert -ApiSchemaPath territory either way.
-        $composeDataStandardOverlay = ($StartScriptName -eq "start-local-dms.ps1") -or
-            $PSBoundParameters.ContainsKey('DataStandardVersion')
-        if ($composeDataStandardOverlay -and -not $UseEnvironmentFileSchemaSettings) {
-            # env-utility is imported here because the wrapper's other imports live inside helper
-            # functions that run after this block.
-            Import-Module (Join-Path $PSScriptRoot "env-utility.psm1") -Force
-            $baseEnvFile = Resolve-DataStandardEnvironmentFile `
-                -DataStandardVersion $DataStandardVersion `
+        if ($null -ne $cdcRetry) {
+            $original = if ($OriginalEnvironmentFile) { $OriginalEnvironmentFile } else { $callerEnvFile }
+            if ($original -cne $cdcRetry.OriginalEnvironmentFile) {
+                throw 'Initial CDC retry requires the original bootstrap environment file.'
+            }
+            $effectiveEnvFile = $cdcRetry.EnvironmentFile
+            $resolvedIdentityProvider = Resolve-WrapperIdentityProvider -ExplicitProvider $IdentityProvider -ExplicitProviderSupplied:($PSBoundParameters.ContainsKey('IdentityProvider')) -EffectiveEnvironmentFile $effectiveEnvFile
+            Assert-WrapperStagedSchemaWorkspace
+        }
+        else {
+            # Data-standard selection: compose the LOCAL-BOOTSTRAP overlay (.env.bootstrap.<token>,
+            # default DS 5.2) onto the base env before anything reads it, so identity resolution,
+            # prepare, configure, provision, and the start phases all see the composed
+            # SCHEMA_PACKAGES / data-standard settings from one canonical path. These bootstrap-scoped
+            # overlays carry the minimal local surfaces (DS 5.2: core + TPDM; DS 6.1: core only) and
+            # are deliberately distinct from the shared .env.ds<NN> overlays, whose E2E/SDK surfaces
+            # include the Sample/Homograph test extensions required by CI. For the same reason
+            # -DataStandardVersion is NOT forwarded to the start scripts below: they would re-compose
+            # the shared overlay over this derived file and silently restore the E2E-shaped
+            # SCHEMA_PACKAGES. The start phases receive the derived file through -EnvironmentFile
+            # instead.
+            #
+            # start-local-dms.ps1 ALWAYS composes: local bootstraps are the canonical DS 5.2/6.1 entry
+            # point and have no other source of a package surface. start-published-dms.ps1 composes
+            # ONLY when the caller explicitly supplies -DataStandardVersion: published bootstraps
+            # predate overlay composition and existing custom-base-env workflows rely on their own
+            # SCHEMA_PACKAGES / DATABASE_TEMPLATE_PACKAGE values reaching every phase untouched.
+            # Custom or extension schema sets remain expert -ApiSchemaPath territory either way.
+            $composeDataStandardOverlay = ($StartScriptName -eq "start-local-dms.ps1") -or
+                $PSBoundParameters.ContainsKey('DataStandardVersion')
+            if ($composeDataStandardOverlay -and -not $UseEnvironmentFileSchemaSettings) {
+                # env-utility is imported here because the wrapper's other imports live inside helper
+                # functions that run after this block.
+                Import-Module (Join-Path $PSScriptRoot "env-utility.psm1") -Force
+                $baseEnvFile = Resolve-DataStandardEnvironmentFile `
+                    -DataStandardVersion $DataStandardVersion `
+                    -BaseEnvironmentFile $baseEnvFile `
+                    -DockerComposeRoot $PSScriptRoot `
+                    -OverlayPrefix ".env.bootstrap"
+            }
+
+            # Database engine selection: compose the MSSQL engine overlay (.env.mssql) onto the base
+            # env whenever -DatabaseEngine mssql is requested, so identity resolution, the configure
+            # phase (which always receives -DatabaseEngine), and the start phases all see
+            # DMS_DATASTORE=mssql and the SQL Server connection strings from one canonical path.
+            # Without this, the CMS data store could be provisioned for MSSQL while the DMS container
+            # itself still starts on its postgresql default (local-dms.yml AppSettings__Datastore
+            # comes only from the env file). Applied AFTER the data-standard overlay above so
+            # composition order is deterministic; the two overlays touch disjoint keys. Guarded for
+            # the isolated wrapper-argument Pester fixtures, which sandbox the wrapper without the
+            # env-utility sibling module.
+            $envUtilityPathForEngineOverlay = Join-Path $PSScriptRoot "env-utility.psm1"
+            if (Test-Path -LiteralPath $envUtilityPathForEngineOverlay) {
+                Import-Module $envUtilityPathForEngineOverlay -Force
+
+                # Composing the engine overlay is a SQL Server concern only, but the function returns the
+                # base file unchanged for postgresql, so calling it either way keeps this to one path.
+                # -SkipMssqlCmsDatabaseValidation is retained here for compatibility and is a documented
+                # no-op: composition renders no database-NAME verdict on either engine.
+                $baseEnvFile = Resolve-DatabaseEngineEnvironmentFile `
+                    -DatabaseEngine $DatabaseEngine `
+                    -BaseEnvironmentFile $baseEnvFile `
+                    -DockerComposeRoot $PSScriptRoot `
+                    -SkipMssqlCmsDatabaseValidation:$true
+            }
+
+            # Resolve identity provider once and forward the same value to both phases. This runs before
+            # derived-env materialization so an unsupported env-file value fails without writing .env.derived.
+            # The start
+            # scripts default to "self-contained" and would otherwise diverge from the seed phase,
+            # which resolves DMS_CONFIG_IDENTITY_PROVIDER from the env file. Without this, a single
+            # wrapper invocation could start infra under one provider and authenticate seeds under
+            # another.
+            $resolvedIdentityProvider = Resolve-WrapperIdentityProvider `
+                -ExplicitProvider $IdentityProvider `
+                -ExplicitProviderSupplied:($PSBoundParameters.ContainsKey('IdentityProvider')) `
+                -EffectiveEnvironmentFile $baseEnvFile
+
+            # The wrapper's own pre-resolution chain always represents a CMS-participating context (its
+            # initial infra-start invocation below always includes CMS), so this story's own
+            # topology-write sequence and validator run unconditionally here, for both engines. On SQL
+            # Server they establish the topology the start script then verifies physically against the
+            # running instance after readiness. Deliberately sequenced after identity resolution: that
+            # check is the wrapper's documented earliest failure, and a topology error raised ahead of
+            # it would mask an unsupported identity provider behind a database-name complaint.
+            if (Test-Path -LiteralPath $envUtilityPathForEngineOverlay) {
+                $baseEnvFile = Resolve-CmsDatabaseTopologyEnvironmentFile `
+                    -BaseEnvironmentFile $baseEnvFile `
+                    -DatabaseEngine $DatabaseEngine `
+                    -SeparateConfigDatabase:$SeparateConfigDatabase `
+                    -DockerComposeRoot $PSScriptRoot
+                Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $baseEnvFile -DatabaseEngine $DatabaseEngine
+            }
+
+            # Resolve the effective env file. When seed loading is requested, materialize a derived env
+            # with the bootstrap profile so the circuit breaker tolerates the bulk-load failure ratio.
+            $effectiveEnvFile = Get-EffectiveBootstrapEnvFile `
                 -BaseEnvironmentFile $baseEnvFile `
-                -DockerComposeRoot $PSScriptRoot `
-                -OverlayPrefix ".env.bootstrap"
-        }
+                -LoadSeedDataRequested:$LoadSeedData
 
-        # Database engine selection: compose the MSSQL engine overlay (.env.mssql) onto the base
-        # env whenever -DatabaseEngine mssql is requested, so identity resolution, the configure
-        # phase (which always receives -DatabaseEngine), and the start phases all see
-        # DMS_DATASTORE=mssql and the SQL Server connection strings from one canonical path.
-        # Without this, the CMS data store could be provisioned for MSSQL while the DMS container
-        # itself still starts on its postgresql default (local-dms.yml AppSettings__Datastore
-        # comes only from the env file). Applied AFTER the data-standard overlay above so
-        # composition order is deterministic; the two overlays touch disjoint keys. Guarded for
-        # the isolated wrapper-argument Pester fixtures, which sandbox the wrapper without the
-        # env-utility sibling module.
-        $envUtilityPathForEngineOverlay = Join-Path $PSScriptRoot "env-utility.psm1"
-        if (Test-Path -LiteralPath $envUtilityPathForEngineOverlay) {
-            Import-Module $envUtilityPathForEngineOverlay -Force
+            # Schema/claims staging phase. The standard happy path needs no manual pre-staging
+            # (bootstrap-design.md Section 9.4.1): when no workspace is staged yet, stage standard mode from
+            # the effective env's SCHEMA_PACKAGES value (core plus any listed extensions; catalog core-only
+            # only when the env carries none) so a clean checkout runs `bootstrap-local-dms.ps1` with no
+            # preceding prepare step. When a schema workspace is already staged (a manual/expert prepare
+            # flow, or a prior run), it is reused as-is ONLY when it is still current for the effective
+            # env's SCHEMA_PACKAGES (see Test-WrapperManifestSchemaPackagesCurrent below) rather than
+            # unconditionally trusting a workspace that may still be bind-mounted into a running stack.
+            # There is no -Extensions parameter; custom/unpublished schema sets are staged via expert
+            # -ApiSchemaPath before invoking the wrapper (published extensions come from SCHEMA_PACKAGES).
+            # prepare-dms-schema.ps1 owns fresh-workspace validation and staging. A package mismatch is
+            # terminal in DMS-1255; the wrapper never overwrites a possibly bind-mounted workspace.
+            #
+            # Claims completion is staged whenever the manifest lacks the claims/seed sections: both after a
+            # fresh schema stage above, and when a pre-existing manifest carries schema but not claims/seed
+            # (prepare-dms-schema.ps1 was run without prepare-dms-claims.ps1). That schema-only state is
+            # incomplete: it passes Assert-WrapperStagedSchemaWorkspace (schema-only validation) but
+            # start-local-dms.ps1 then activates staged claims and runs the claims-ready gate, both of which
+            # require claims/seed and would throw only after Docker/CMS startup. Completing it here keeps the
+            # failure (if any) ahead of all infrastructure side effects. prepare-dms-claims.ps1 requires the
+            # schema section + staged ApiSchema manifest (guaranteed by the schema stage) and is a guarded
+            # rerun when the claims workspace already matches.
+            $prepareSchemaScript = "$PSScriptRoot/prepare-dms-schema.ps1"
+            $prepareClaimsScript = "$PSScriptRoot/prepare-dms-claims.ps1"
+            $stagedManifestPath = Join-Path $PSScriptRoot ".bootstrap/bootstrap-manifest.json"
+            $stagedManifestPresent = Test-Path -LiteralPath $stagedManifestPath -PathType Leaf
 
-            # Composing the engine overlay is a SQL Server concern only, but the function returns the
-            # base file unchanged for postgresql, so calling it either way keeps this to one path.
-            # -SkipMssqlCmsDatabaseValidation is retained here for compatibility and is a documented
-            # no-op: composition renders no database-NAME verdict on either engine.
-            $baseEnvFile = Resolve-DatabaseEngineEnvironmentFile `
-                -DatabaseEngine $DatabaseEngine `
-                -BaseEnvironmentFile $baseEnvFile `
-                -DockerComposeRoot $PSScriptRoot `
-                -SkipMssqlCmsDatabaseValidation:$true
-        }
+            # A present Standard-mode manifest is reused only when its recorded full
+            # "<packageId>@<version>" set still matches the effective env's SCHEMA_PACKAGES value
+            # (Test-WrapperManifestSchemaPackagesCurrent).
+            # Without this, a workspace staged for one Data Standard / package set could be reused
+            # under a later invocation whose effective env selects a different one, with no error at
+            # this decision point; the drift only surfaces after full stack startup, far from the
+            # cause (e.g. database fingerprint validation rejecting every request against a database
+            # provisioned from the stale workspace).
+            $stagedManifestCurrent = $stagedManifestPresent -and
+                (Test-WrapperManifestSchemaPackagesCurrent -ManifestPath $stagedManifestPath -EnvironmentFile $effectiveEnvFile)
 
-        # Resolve identity provider once and forward the same value to both phases. This runs before
-        # derived-env materialization so an unsupported env-file value fails without writing .env.derived.
-        # The start
-        # scripts default to "self-contained" and would otherwise diverge from the seed phase,
-        # which resolves DMS_CONFIG_IDENTITY_PROVIDER from the env file. Without this, a single
-        # wrapper invocation could start infra under one provider and authenticate seeds under
-        # another.
-        $resolvedIdentityProvider = Resolve-WrapperIdentityProvider `
-            -ExplicitProvider $IdentityProvider `
-            -ExplicitProviderSupplied:($PSBoundParameters.ContainsKey('IdentityProvider')) `
-            -EffectiveEnvironmentFile $baseEnvFile
+            if ($stagedManifestPresent -and -not $stagedManifestCurrent) {
+                $staleSchemaIdentity = Get-WrapperManifestSchemaIdentity -ManifestPath $stagedManifestPath
+                $stalePackages = @()
+                if ($null -ne $staleSchemaIdentity -and $null -ne $staleSchemaIdentity.SelectedPackages) {
+                    $stalePackages = @($staleSchemaIdentity.SelectedPackages)
+                }
+                $effectivePackages = @(Get-WrapperEffectiveSchemaPackage -EnvironmentFile $effectiveEnvFile)
+                $stagedDescription = if ($stalePackages.Count -gt 0) {
+                    "staged packages [$($stalePackages -join ', ')]"
+                }
+                else {
+                    "a staged Standard manifest without a complete selectedPackages identity"
+                }
+                $effectiveDescription = "effective packages [$($effectivePackages -join ', ')]"
 
-        # The wrapper's own pre-resolution chain always represents a CMS-participating context (its
-        # initial infra-start invocation below always includes CMS), so this story's own
-        # topology-write sequence and validator run unconditionally here, for both engines. On SQL
-        # Server they establish the topology the start script then verifies physically against the
-        # running instance after readiness. Deliberately sequenced after identity resolution: that
-        # check is the wrapper's documented earliest failure, and a topology error raised ahead of
-        # it would mask an unsupported identity provider behind a database-name complaint.
-        if (Test-Path -LiteralPath $envUtilityPathForEngineOverlay) {
-            $baseEnvFile = Resolve-CmsDatabaseTopologyEnvironmentFile `
-                -BaseEnvironmentFile $baseEnvFile `
-                -DatabaseEngine $DatabaseEngine `
-                -SeparateConfigDatabase:$SeparateConfigDatabase `
-                -DockerComposeRoot $PSScriptRoot
-            Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $baseEnvFile -DatabaseEngine $DatabaseEngine
-        }
-
-        # Resolve the effective env file. When seed loading is requested, materialize a derived env
-        # with the bootstrap profile so the circuit breaker tolerates the bulk-load failure ratio.
-        $effectiveEnvFile = Get-EffectiveBootstrapEnvFile `
-            -BaseEnvironmentFile $baseEnvFile `
-            -LoadSeedDataRequested:$LoadSeedData
-
-        # Schema/claims staging phase. The standard happy path needs no manual pre-staging
-        # (bootstrap-design.md Section 9.4.1): when no workspace is staged yet, stage standard mode from
-        # the effective env's SCHEMA_PACKAGES value (core plus any listed extensions; catalog core-only
-        # only when the env carries none) so a clean checkout runs `bootstrap-local-dms.ps1` with no
-        # preceding prepare step. When a schema workspace is already staged (a manual/expert prepare
-        # flow, or a prior run), it is reused as-is ONLY when it is still current for the effective
-        # env's SCHEMA_PACKAGES (see Test-WrapperManifestSchemaPackagesCurrent below) rather than
-        # unconditionally trusting a workspace that may still be bind-mounted into a running stack.
-        # There is no -Extensions parameter; custom/unpublished schema sets are staged via expert
-        # -ApiSchemaPath before invoking the wrapper (published extensions come from SCHEMA_PACKAGES).
-        # prepare-dms-schema.ps1 owns fresh-workspace validation and staging. A package mismatch is
-        # terminal in DMS-1255; the wrapper never overwrites a possibly bind-mounted workspace.
-        #
-        # Claims completion is staged whenever the manifest lacks the claims/seed sections: both after a
-        # fresh schema stage above, and when a pre-existing manifest carries schema but not claims/seed
-        # (prepare-dms-schema.ps1 was run without prepare-dms-claims.ps1). That schema-only state is
-        # incomplete: it passes Assert-WrapperStagedSchemaWorkspace (schema-only validation) but
-        # start-local-dms.ps1 then activates staged claims and runs the claims-ready gate, both of which
-        # require claims/seed and would throw only after Docker/CMS startup. Completing it here keeps the
-        # failure (if any) ahead of all infrastructure side effects. prepare-dms-claims.ps1 requires the
-        # schema section + staged ApiSchema manifest (guaranteed by the schema stage) and is a guarded
-        # rerun when the claims workspace already matches.
-        $prepareSchemaScript = "$PSScriptRoot/prepare-dms-schema.ps1"
-        $prepareClaimsScript = "$PSScriptRoot/prepare-dms-claims.ps1"
-        $stagedManifestPath = Join-Path $PSScriptRoot ".bootstrap/bootstrap-manifest.json"
-        $stagedManifestPresent = Test-Path -LiteralPath $stagedManifestPath -PathType Leaf
-
-        # A present Standard-mode manifest is reused only when its recorded full
-        # "<packageId>@<version>" set still matches the effective env's SCHEMA_PACKAGES value
-        # (Test-WrapperManifestSchemaPackagesCurrent).
-        # Without this, a workspace staged for one Data Standard / package set could be reused
-        # under a later invocation whose effective env selects a different one, with no error at
-        # this decision point; the drift only surfaces after full stack startup, far from the
-        # cause (e.g. database fingerprint validation rejecting every request against a database
-        # provisioned from the stale workspace).
-        $stagedManifestCurrent = $stagedManifestPresent -and
-            (Test-WrapperManifestSchemaPackagesCurrent -ManifestPath $stagedManifestPath -EnvironmentFile $effectiveEnvFile)
-
-        if ($stagedManifestPresent -and -not $stagedManifestCurrent) {
-            $staleSchemaIdentity = Get-WrapperManifestSchemaIdentity -ManifestPath $stagedManifestPath
-            $stalePackages = @()
-            if ($null -ne $staleSchemaIdentity -and $null -ne $staleSchemaIdentity.SelectedPackages) {
-                $stalePackages = @($staleSchemaIdentity.SelectedPackages)
+                # DMS-1255 intentionally never deletes a workspace that may still be bind-mounted into
+                # a running stack. DMS-1271 owns any future guarded replacement path; it must first prove
+                # the stack is stopped, remove the ENTIRE .bootstrap tree, and regenerate schema, claims,
+                # and seed state together so a Data Standard / extension switch cannot retain stale
+                # authorization metadata.
+                throw "Staged bootstrap schema workspace does not match the effective environment: $stagedDescription vs $effectiveDescription. Automatic replacement is intentionally not performed by DMS-1255. Stop the stack and remove eng/docker-compose/.bootstrap before retrying. For local Docker, run: pwsh eng/docker-compose/bootstrap-local-dms.ps1 -d -v. Guarded replacement is tracked by DMS-1271 and must regenerate schema, claims, and seed state together."
             }
-            $effectivePackages = @(Get-WrapperEffectiveSchemaPackage -EnvironmentFile $effectiveEnvFile)
-            $stagedDescription = if ($stalePackages.Count -gt 0) {
-                "staged packages [$($stalePackages -join ', ')]"
+
+            # Reset the native exit-code sentinel before each prepare invocation (same pattern as the
+            # start/configure/provision phases below). prepare-dms-*.ps1 signal failure by throwing and may
+            # run no native command, so a stale nonzero $LASTEXITCODE left by an earlier command in the
+            # session would otherwise make a successful staging step throw a false "failed with exit code"
+            # before infrastructure starts.
+            if ((Test-Path -LiteralPath $prepareSchemaScript) -and -not $stagedManifestPresent) {
+                $global:LASTEXITCODE = 0
+                # Forward the same effective env file used by the other phases so standard-mode staging
+                # can drive itself from its SCHEMA_PACKAGES value (core plus any extensions) instead of
+                # the catalog-pinned core-only default. This keeps the staged workspace's effective schema
+                # hash in sync with what the DMS container entrypoint resolves from the same env file.
+                & $prepareSchemaScript -EnvironmentFile $effectiveEnvFile
+                if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
+                    throw "prepare-dms-schema.ps1 failed with exit code $LASTEXITCODE."
+                }
             }
-            else {
-                "a staged Standard manifest without a complete selectedPackages identity"
+
+            if ((Test-Path -LiteralPath $prepareClaimsScript) -and
+                (-not $stagedManifestPresent -or -not (Test-WrapperManifestClaimsStaged -ManifestPath $stagedManifestPath))) {
+                $global:LASTEXITCODE = 0
+                & $prepareClaimsScript
+                if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
+                    throw "prepare-dms-claims.ps1 failed with exit code $LASTEXITCODE."
+                }
             }
-            $effectiveDescription = "effective packages [$($effectivePackages -join ', ')]"
 
-            # DMS-1255 intentionally never deletes a workspace that may still be bind-mounted into
-            # a running stack. DMS-1271 owns any future guarded replacement path; it must first prove
-            # the stack is stopped, remove the ENTIRE .bootstrap tree, and regenerate schema, claims,
-            # and seed state together so a Data Standard / extension switch cannot retain stale
-            # authorization metadata.
-            throw "Staged bootstrap schema workspace does not match the effective environment: $stagedDescription vs $effectiveDescription. Automatic replacement is intentionally not performed by DMS-1255. Stop the stack and remove eng/docker-compose/.bootstrap before retrying. For local Docker, run: pwsh eng/docker-compose/bootstrap-local-dms.ps1 -d -v. Guarded replacement is tracked by DMS-1271 and must regenerate schema, claims, and seed state together."
+            Assert-WrapperStagedSchemaWorkspace
         }
 
-        # Reset the native exit-code sentinel before each prepare invocation (same pattern as the
-        # start/configure/provision phases below). prepare-dms-*.ps1 signal failure by throwing and may
-        # run no native command, so a stale nonzero $LASTEXITCODE left by an earlier command in the
-        # session would otherwise make a successful staging step throw a false "failed with exit code"
-        # before infrastructure starts.
-        if ((Test-Path -LiteralPath $prepareSchemaScript) -and -not $stagedManifestPresent) {
-            $global:LASTEXITCODE = 0
-            # Forward the same effective env file used by the other phases so standard-mode staging
-            # can drive itself from its SCHEMA_PACKAGES value (core plus any extensions) instead of
-            # the catalog-pinned core-only default. This keeps the staged workspace's effective schema
-            # hash in sync with what the DMS container entrypoint resolves from the same env file.
-            & $prepareSchemaScript -EnvironmentFile $effectiveEnvFile
-            if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
-                throw "prepare-dms-schema.ps1 failed with exit code $LASTEXITCODE."
-            }
-        }
-
-        if ((Test-Path -LiteralPath $prepareClaimsScript) -and
-            (-not $stagedManifestPresent -or -not (Test-WrapperManifestClaimsStaged -ManifestPath $stagedManifestPath))) {
-            $global:LASTEXITCODE = 0
-            & $prepareClaimsScript
-            if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
-                throw "prepare-dms-claims.ps1 failed with exit code $LASTEXITCODE."
-            }
-        }
-
-        Assert-WrapperStagedSchemaWorkspace
-
-        if ($EnableKafkaCdc) {
-            $cdcHandoff = New-BootstrapCdcHandoff -Settings $cdcSettings -StatePath $CdcBindingStatePath -EnvironmentFile $effectiveEnvFile -Project $cdcProject -DatabaseName $DataStoreDatabaseName
-            $cdcHandoff | Add-Member -NotePropertyName OriginalEnvironmentFile -NotePropertyValue $callerEnvFile -Force
-            if ($OriginalEnvironmentFile) {
-                $cdcHandoff.OriginalEnvironmentFile = $OriginalEnvironmentFile
-            }
-        }
-
-        # Infrastructure phase
-        $startArgs = @{
-            IdentityProvider = $resolvedIdentityProvider
-            InfraOnly = $true
-            EnableConfig = $true
-        }
-        if ($EnableKafkaUI) { $startArgs.EnableKafkaUI = $true }
-        if ($EnableKafkaCdc) { $startArgs.CdcKafkaInfrastructure = $true; $startArgs.SuppressWriterGuidance = $true }
-        if ($EnableSwaggerUI) { $startArgs.EnableSwaggerUI = $true }
-        if ($AddExtensionSecurityMetadata) { $startArgs.AddExtensionSecurityMetadata = $true }
-        $startArgs.DatabaseEngine = $DatabaseEngine
-        if ($SeparateConfigDatabase) { $startArgs.SeparateConfigDatabase = $true }
-        $startArgs.EnvironmentFile = $effectiveEnvFile
-        # This invocation is -InfraOnly without -DmsBaseUrl, so the start script reaches its terminal
-        # guidance and would print its own "run a fresh bootstrap-local-dms.ps1" hint. It cannot build a
-        # correct one here: the -EnvironmentFile above is already derived, and -DataStandardVersion is
-        # deliberately not forwarded (it would recompose the shared data-standard overlay over this run's
-        # bootstrap-scoped one). This run owns that hint and prints it from $callerEnvFile and its own
-        # $DataStandardVersion, so the start script's copy is suppressed rather than left to contradict
-        # it. Guarded on the start script that has the parameter: only start-local-dms.ps1 emits the
-        # hint, and start-published-dms.ps1 does not declare the switch.
-        if ($StartScriptName -eq "start-local-dms.ps1") {
-            $startArgs.SuppressWrapperContinuationGuidance = $true
-            if ($RebuildLocalImages) { $startArgs.r = $true }
-        }
-
-        # Reset the native exit-code sentinel so the check below reflects only this start invocation and
-        # not a stale value left by an earlier command. The start scripts signal failure by throwing;
-        # docker-compose paths set a real exit code that overwrites this reset.
-        $global:LASTEXITCODE = 0
-        & "$PSScriptRoot/$StartScriptName" @startArgs
-        if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
-            throw "$StartScriptName failed with exit code $LASTEXITCODE."
-        }
-
-        $configureScriptPath = "$PSScriptRoot/configure-local-data-store.ps1"
-        $provisionScriptPath = "$PSScriptRoot/provision-dms-schema.ps1"
-        if (-not (Test-Path -LiteralPath $configureScriptPath) -or -not (Test-Path -LiteralPath $provisionScriptPath)) {
-            if ($EnableKafkaCdc) { throw 'CDC requires the configure and provision phase commands.' }
-            # Isolated wrapper Pester fixtures copy only the wrapper and stub phase scripts. The
-            # production checkout always has these siblings, so the real wrapper path continues
-            # below through configure -> provision -> DMS-only -> seed.
-            # The -InfraOnly branch bypasses configure/provision/DMS-only the same way it would in
-            # production: if the siblings are absent this is a test sandbox, so just return early.
-            if (-not $LoadSeedData) { return }
-
-            $seedArgs = @{ IdentityProvider = $resolvedIdentityProvider }
-            $seedArgs.EnvironmentFile = $effectiveEnvFile
-            if ($PSBoundParameters.ContainsKey('SeedTemplate')) { $seedArgs.SeedTemplate = $SeedTemplate }
-            if ($PSBoundParameters.ContainsKey('SeedDataPath')) { $seedArgs.SeedDataPath = $SeedDataPath }
-            if ($AdditionalNamespacePrefix.Count -gt 0) { $seedArgs.AdditionalNamespacePrefix = $AdditionalNamespacePrefix }
-            if (-not [string]::IsNullOrWhiteSpace($SchoolYearRange)) {
-                $seedArgs.SchoolYear = @($rangeStartYear..$rangeEndYear)
-            }
-            if ($dmsBaseUrlSupplied) { $seedArgs.DmsBaseUrl = $DmsBaseUrl }
-
-            & "$PSScriptRoot/load-dms-seed-data.ps1" @seedArgs
-            if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
-                throw "load-dms-seed-data.ps1 failed with exit code $LASTEXITCODE."
-            }
-            return
-        }
-
-        $configureArgs = @{ EnvironmentFile = $effectiveEnvFile }
-        if ($DataStoreDatabaseName) { $configureArgs.DataStoreDatabaseName = $DataStoreDatabaseName }
-        if ($EnableKafkaCdc) { Assert-BootstrapCdcOfflineOwnership @cdcOwnership -InfrastructureReady }
-        if ($NoDataStore) { $configureArgs.NoDataStore = $true }
-        if ($AddSmokeTestCredentials) { $configureArgs.AddSmokeTestCredentials = $true }
-        if (-not [string]::IsNullOrWhiteSpace($SchoolYearRange)) { $configureArgs.SchoolYearRange = $SchoolYearRange }
-        $configureArgs.DatabaseEngine = $DatabaseEngine
-        # The configure phase registers the DMS datastore, so it needs the same topology
-        # declaration the start phase got: in separate mode the datastore must not land in the
-        # dedicated Configuration Service database. Forwarded exactly as the start args are.
-        if ($SeparateConfigDatabase) { $configureArgs.SeparateConfigDatabase = $true }
-
-        # configure-local-data-store.ps1 throws on failure (no exit code); clear any stale native exit code first.
-        $global:LASTEXITCODE = 0
-        $configurationResult = & "$PSScriptRoot/configure-local-data-store.ps1" @configureArgs
-        if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
-            throw "configure-local-data-store.ps1 failed with exit code $LASTEXITCODE."
-        }
-
-        $configurationResults = @($configurationResult)
-        if ($configurationResults.Count -ne 1) {
-            throw "configure-local-data-store.ps1 must return exactly one structured result object. Returned $($configurationResults.Count)."
-        }
-        $configured = $configurationResults[0]
-        $configuredDataStoreIds = [long[]]@(Resolve-WrapperSelectedDataStoreIds -ConfigureResult $configured)
-        if ($EnableKafkaCdc -and ($configuredDataStoreIds.Count -ne 1 -or
-            [string]$configuredDataStoreIds[0] -cne $cdcSettings.Cdc.DataStoreId)) {
-            throw 'The configure phase selected a different target from the explicit CDC settings. No schema or CDC effects were authorized.'
-        }
-
-        $provisionArgs = @{
-            EnvironmentFile = $effectiveEnvFile
-            DataStoreId = $configuredDataStoreIds
-            DatabaseEngine = $DatabaseEngine
-        }
-        # The provision phase is the boundary where a REUSED data store's stored connection string
-        # becomes the real target database, so it needs the same topology declaration the configure
-        # and start phases got. Forwarded exactly as the configure args are.
-        if ($SeparateConfigDatabase) { $provisionArgs.SeparateConfigDatabase = $true }
-        if ($CdcBindingStatePath) { $provisionArgs.CdcBindingStatePath = $CdcBindingStatePath }
-        if ($EnableKafkaCdc) {
+        if ($null -ne $cdcRetry) {
+            $cdcHandoff = $cdcRetry
+            $effectiveEnvFile = $cdcRetry.EnvironmentFile
+            $configuredDataStoreIds = [long[]]@([long]$cdcRetry.Settings.Cdc.DataStoreId)
+            $configured = @{ HasRouteQualifiedDataStores = $false }
+            $provisionReceipts = @($cdcRetry.Receipt)
             Assert-BootstrapCdcOfflineOwnership @cdcOwnership -InfrastructureReady
-            $provisionArgs.InitialCdcProvisioning = $true
-            $provisionArgs.PrepareCdcProjectionPrerequisites = $true
-            $provisionArgs.DeploymentKey = $cdcSettings.Cdc.DeploymentKey
-            $provisionArgs.InstanceKey = $cdcSettings.Cdc.InstanceKey
-            $provisionArgs.Generation = $cdcSettings.Cdc.Generation
         }
+        else {
+            if ($EnableKafkaCdc) {
+                $cdcHandoff = New-BootstrapCdcHandoff -Settings $cdcSettings -InputSettingsPath $CdcSettingsPath -StatePath $CdcBindingStatePath -EnvironmentFile $effectiveEnvFile -Project $cdcProject -DatabaseName $DataStoreDatabaseName
+                $cdcHandoff | Add-Member -NotePropertyName OriginalEnvironmentFile -NotePropertyValue $callerEnvFile -Force
+                if ($OriginalEnvironmentFile) {
+                    $cdcHandoff.OriginalEnvironmentFile = $OriginalEnvironmentFile
+                }
+            }
 
-        # provision-dms-schema.ps1 throws on failure (no exit code); clear any stale native exit code first.
-        $global:LASTEXITCODE = 0
-        if ($CdcBindingStatePath) {
-            $provisionReceipts = @(& "$PSScriptRoot/provision-dms-schema.ps1" @provisionArgs)
-        }
-        else { & "$PSScriptRoot/provision-dms-schema.ps1" @provisionArgs }
-        if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
-            throw "provision-dms-schema.ps1 failed with exit code $LASTEXITCODE."
+            # Infrastructure phase
+            $startArgs = @{
+                IdentityProvider = $resolvedIdentityProvider
+                InfraOnly = $true
+                EnableConfig = $true
+            }
+            if ($EnableKafkaUI) { $startArgs.EnableKafkaUI = $true }
+            if ($EnableKafkaCdc) { $startArgs.CdcKafkaInfrastructure = $true; $startArgs.SuppressWriterGuidance = $true }
+            if ($EnableSwaggerUI) { $startArgs.EnableSwaggerUI = $true }
+            if ($AddExtensionSecurityMetadata) { $startArgs.AddExtensionSecurityMetadata = $true }
+            $startArgs.DatabaseEngine = $DatabaseEngine
+            if ($SeparateConfigDatabase) { $startArgs.SeparateConfigDatabase = $true }
+            $startArgs.EnvironmentFile = $effectiveEnvFile
+            # This invocation is -InfraOnly without -DmsBaseUrl, so the start script reaches its terminal
+            # guidance and would print its own "run a fresh bootstrap-local-dms.ps1" hint. It cannot build a
+            # correct one here: the -EnvironmentFile above is already derived, and -DataStandardVersion is
+            # deliberately not forwarded (it would recompose the shared data-standard overlay over this run's
+            # bootstrap-scoped one). This run owns that hint and prints it from $callerEnvFile and its own
+            # $DataStandardVersion, so the start script's copy is suppressed rather than left to contradict
+            # it. Guarded on the start script that has the parameter: only start-local-dms.ps1 emits the
+            # hint, and start-published-dms.ps1 does not declare the switch.
+            if ($StartScriptName -eq "start-local-dms.ps1") {
+                $startArgs.SuppressWrapperContinuationGuidance = $true
+                if ($RebuildLocalImages) { $startArgs.r = $true }
+            }
+
+            # Reset the native exit-code sentinel so the check below reflects only this start invocation and
+            # not a stale value left by an earlier command. The start scripts signal failure by throwing;
+            # docker-compose paths set a real exit code that overwrites this reset.
+            $global:LASTEXITCODE = 0
+            & "$PSScriptRoot/$StartScriptName" @startArgs
+            if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
+                throw "$StartScriptName failed with exit code $LASTEXITCODE."
+            }
+
+            $configureScriptPath = "$PSScriptRoot/configure-local-data-store.ps1"
+            $provisionScriptPath = "$PSScriptRoot/provision-dms-schema.ps1"
+            if (-not (Test-Path -LiteralPath $configureScriptPath) -or -not (Test-Path -LiteralPath $provisionScriptPath)) {
+                if ($EnableKafkaCdc) { throw 'CDC requires the configure and provision phase commands.' }
+                # Isolated wrapper Pester fixtures copy only the wrapper and stub phase scripts. The
+                # production checkout always has these siblings, so the real wrapper path continues
+                # below through configure -> provision -> DMS-only -> seed.
+                # The -InfraOnly branch bypasses configure/provision/DMS-only the same way it would in
+                # production: if the siblings are absent this is a test sandbox, so just return early.
+                if (-not $LoadSeedData) { return }
+
+                $seedArgs = @{ IdentityProvider = $resolvedIdentityProvider }
+                $seedArgs.EnvironmentFile = $effectiveEnvFile
+                if ($PSBoundParameters.ContainsKey('SeedTemplate')) { $seedArgs.SeedTemplate = $SeedTemplate }
+                if ($PSBoundParameters.ContainsKey('SeedDataPath')) { $seedArgs.SeedDataPath = $SeedDataPath }
+                if ($AdditionalNamespacePrefix.Count -gt 0) { $seedArgs.AdditionalNamespacePrefix = $AdditionalNamespacePrefix }
+                if (-not [string]::IsNullOrWhiteSpace($SchoolYearRange)) {
+                    $seedArgs.SchoolYear = @($rangeStartYear..$rangeEndYear)
+                }
+                if ($dmsBaseUrlSupplied) { $seedArgs.DmsBaseUrl = $DmsBaseUrl }
+
+                & "$PSScriptRoot/load-dms-seed-data.ps1" @seedArgs
+                if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
+                    throw "load-dms-seed-data.ps1 failed with exit code $LASTEXITCODE."
+                }
+                return
+            }
+
+            $configureArgs = @{ EnvironmentFile = $effectiveEnvFile }
+            if ($DataStoreDatabaseName) { $configureArgs.DataStoreDatabaseName = $DataStoreDatabaseName }
+            if ($EnableKafkaCdc) { Assert-BootstrapCdcOfflineOwnership @cdcOwnership -InfrastructureReady }
+            if ($NoDataStore) { $configureArgs.NoDataStore = $true }
+            if ($AddSmokeTestCredentials) { $configureArgs.AddSmokeTestCredentials = $true }
+            if (-not [string]::IsNullOrWhiteSpace($SchoolYearRange)) { $configureArgs.SchoolYearRange = $SchoolYearRange }
+            $configureArgs.DatabaseEngine = $DatabaseEngine
+            # The configure phase registers the DMS datastore, so it needs the same topology
+            # declaration the start phase got: in separate mode the datastore must not land in the
+            # dedicated Configuration Service database. Forwarded exactly as the start args are.
+            if ($SeparateConfigDatabase) { $configureArgs.SeparateConfigDatabase = $true }
+
+            # configure-local-data-store.ps1 throws on failure (no exit code); clear any stale native exit code first.
+            $global:LASTEXITCODE = 0
+            $configurationResult = & "$PSScriptRoot/configure-local-data-store.ps1" @configureArgs
+            if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
+                throw "configure-local-data-store.ps1 failed with exit code $LASTEXITCODE."
+            }
+
+            $configurationResults = @($configurationResult)
+            if ($configurationResults.Count -ne 1) {
+                throw "configure-local-data-store.ps1 must return exactly one structured result object. Returned $($configurationResults.Count)."
+            }
+            $configured = $configurationResults[0]
+            $configuredDataStoreIds = [long[]]@(Resolve-WrapperSelectedDataStoreIds -ConfigureResult $configured)
+            if ($EnableKafkaCdc -and ($configuredDataStoreIds.Count -ne 1 -or
+                [string]$configuredDataStoreIds[0] -cne $cdcSettings.Cdc.DataStoreId)) {
+                throw 'The configure phase selected a different target from the explicit CDC settings. No schema or CDC effects were authorized.'
+            }
+
+            $provisionArgs = @{
+                EnvironmentFile = $effectiveEnvFile
+                DataStoreId = $configuredDataStoreIds
+                DatabaseEngine = $DatabaseEngine
+            }
+            # The provision phase is the boundary where a REUSED data store's stored connection string
+            # becomes the real target database, so it needs the same topology declaration the configure
+            # and start phases got. Forwarded exactly as the configure args are.
+            if ($SeparateConfigDatabase) { $provisionArgs.SeparateConfigDatabase = $true }
+            if ($CdcBindingStatePath) { $provisionArgs.CdcBindingStatePath = $CdcBindingStatePath }
+            if ($EnableKafkaCdc) {
+                Assert-BootstrapCdcOfflineOwnership @cdcOwnership -InfrastructureReady
+                $provisionArgs.InitialCdcProvisioning = $true
+                $provisionArgs.PrepareCdcProjectionPrerequisites = $true
+                $provisionArgs.DeploymentKey = $cdcSettings.Cdc.DeploymentKey
+                $provisionArgs.InstanceKey = $cdcSettings.Cdc.InstanceKey
+                $provisionArgs.Generation = $cdcSettings.Cdc.Generation
+            }
+
+            # provision-dms-schema.ps1 throws on failure (no exit code); clear any stale native exit code first.
+            $global:LASTEXITCODE = 0
+            if ($CdcBindingStatePath) {
+                $provisionReceipts = @(& "$PSScriptRoot/provision-dms-schema.ps1" @provisionArgs)
+            }
+            else { & "$PSScriptRoot/provision-dms-schema.ps1" @provisionArgs }
+            if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
+                throw "provision-dms-schema.ps1 failed with exit code $LASTEXITCODE."
+            }
         }
 
         if ($EnableKafkaCdc) {
             if ($provisionReceipts.Count -ne 1) { throw 'CDC requires exactly one authoritative provisioning receipt.' }
-            if ($null -ne $BeforeCdcAdmission) {
+            if ($null -eq $cdcRetry -and $null -ne $BeforeCdcAdmission) {
                 & $BeforeCdcAdmission $effectiveEnvFile
             }
             Assert-BootstrapCdcOfflineOwnership @cdcOwnership -InfrastructureReady

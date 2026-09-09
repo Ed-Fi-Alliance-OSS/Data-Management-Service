@@ -22,8 +22,12 @@ Describe 'CDC bootstrap wrapper phase contract' {
             Copy-Item (Join-Path $script:composeRoot $name) $script:sandbox
         }
         @'
+function Get-CdcBootstrapRetryHandoff { param($Project, $StatePath, $Settings, $DatabaseName)
+    $path = Join-Path $PSScriptRoot 'retained.json'
+    if (Test-Path $path) { return Get-Content $path -Raw | ConvertFrom-Json -AsHashtable }
+}
 function Invoke-CdcAdmittedHost { param($Project, $StartScript, $Parameters) & $StartScript @Parameters }
-Export-ModuleMember -Function Invoke-CdcAdmittedHost
+Export-ModuleMember -Function Invoke-CdcAdmittedHost, Get-CdcBootstrapRetryHandoff
 '@ | Set-Content (Join-Path $script:sandbox 'cdc-lifecycle.psm1')
         'local=test' | Set-Content (Join-Path $script:sandbox '.env')
         @'
@@ -45,10 +49,18 @@ function Assert-BootstrapCdcOfflineOwnership { param($Project, [switch]$Infrastr
     if (Test-Path (Join-Path $PSScriptRoot 'writer')) { throw 'Running writer' }
 }
 function New-BootstrapCdcHandoff { param($Settings, $StatePath, $EnvironmentFile, $Project)
-    return @{ Settings = $Settings; DmsComposePath = (Join-Path $StatePath 'dms.json'); SettingsPath = 'settings.json' }
+    if (Test-Path (Join-Path $PSScriptRoot 'retained.json')) { throw 'Replacement handoff' }
+    return [pscustomobject]@{ Settings = $Settings; DmsComposePath = (Join-Path $StatePath 'dms.json'); SettingsPath = 'settings.json'; EnvironmentFile = $EnvironmentFile }
 }
 function Invoke-BootstrapCdcEnable { param($Handoff, $Receipt, $SelectedDataStoreIds, $StatePath)
     Add-Content (Join-Path $PSScriptRoot 'calls') "cdc:$($SelectedDataStoreIds -join ','):$($Receipt.CreationReceipt.Outcome):$StatePath"
+    $retained = $Handoff | ConvertTo-Json -Depth 64 | ConvertFrom-Json -AsHashtable
+    $retained.Receipt = $Receipt
+    if (-not (Test-Path (Join-Path $PSScriptRoot 'retained.json'))) {
+        $retained | ConvertTo-Json -Depth 64 | Set-Content (Join-Path $PSScriptRoot 'retained.json')
+        New-Item -ItemType Directory (Join-Path $PSScriptRoot '.cdc-deployments') -Force | Out-Null
+        foreach ($project in @('dms-local', 'dms-published')) { '{}' | Set-Content (Join-Path $PSScriptRoot ".cdc-deployments/$project.json") }
+    }
     if (Test-Path (Join-Path $PSScriptRoot 'cancel')) { throw [OperationCanceledException]::new() }
     if (Test-Path (Join-Path $PSScriptRoot 'fail')) { throw 'CDC unavailable' }
     if ($Receipt.CreationReceipt.Outcome -ne 'Created') { throw 'Reused database' }
@@ -84,8 +96,8 @@ Add-Content (Join-Path $PSScriptRoot 'calls') "seed:$($DataStoreId -join ',')"
 '@ | Set-Content (Join-Path $script:sandbox 'load-dms-seed-data.ps1')
     }
     BeforeEach {
-        foreach ($name in @('calls', 'fail', 'cancel', 'writer', 'reuse', 'mismatch')) {
-            Remove-Item (Join-Path $script:sandbox $name) -ErrorAction SilentlyContinue
+        foreach ($name in @('calls', 'fail', 'cancel', 'writer', 'reuse', 'mismatch', 'retained.json', '.cdc-deployments')) {
+            Remove-Item (Join-Path $script:sandbox $name) -Recurse -Force -ErrorAction SilentlyContinue
         }
         $script:arguments = @{
             EnableKafkaCdc = $true; CdcSettingsPath = 'explicit.json'; CdcBindingStatePath = (Join-Path $TestDrive 'custom-state')
@@ -109,6 +121,25 @@ Add-Content (Join-Path $PSScriptRoot 'calls') "seed:$($DataStoreId -join ',')"
         $calls[3] | Should -Be "cdc:42:Created:$($script:arguments.CdcBindingStatePath)"
         $calls[4] | Should -Be "dms:$provider`:False:False:False:$($script:arguments.CdcBindingStatePath)/dms.json"
         $calls[5] | Should -Be 'seed:42'
+    }
+
+    It 'resumes <wrapper>/<provider> using the retained handoff without provisioning again' -ForEach @(
+        @{ wrapper = 'local'; provider = 'postgresql' }, @{ wrapper = 'local'; provider = 'mssql' },
+        @{ wrapper = 'published'; provider = 'postgresql' }, @{ wrapper = 'published'; provider = 'mssql' }
+    ) {
+        '' | Set-Content (Join-Path $script:sandbox 'fail')
+        { & (Join-Path $script:sandbox "bootstrap-$wrapper-dms.ps1") @script:arguments -DatabaseEngine $provider } | Should -Throw '*CDC unavailable*'
+        $retained = Get-Content (Join-Path $script:sandbox 'retained.json') -Raw
+        Remove-Item (Join-Path $script:sandbox 'fail')
+        & (Join-Path $script:sandbox "bootstrap-$wrapper-dms.ps1") @script:arguments -DatabaseEngine $provider
+        $calls = @(Get-Content (Join-Path $script:sandbox 'calls'))
+        @($calls | Where-Object { $_ -match '^configure:' }).Count | Should -Be 1
+        @($calls | Where-Object { $_ -match '^provision:' }).Count | Should -Be 1
+        @($calls | Where-Object { $_ -match '^infra:' }).Count | Should -Be 1
+        @($calls | Where-Object { $_ -match '^cdc:' }).Count | Should -Be 2
+        @($calls | Where-Object { $_ -match '^dms:' }).Count | Should -Be 1
+        $calls[-1] | Should -Be 'seed:42'
+        (Get-Content (Join-Path $script:sandbox 'retained.json') -Raw) | Should -Be $retained
     }
 
     It 'suppresses DMS, seed and guidance on <failure>' -ForEach @(@{ failure = 'fail' }, @{ failure = 'cancel' }, @{ failure = 'reuse' }) {
@@ -364,14 +395,14 @@ Export-ModuleMember -Function Get-ComposeResolvedEnvValue
         { Read-BootstrapCdcSettings -Path $script:settingsFile -DatabaseEngine postgresql } | Should -Throw '*worker/metrics endpoints*'
     }
     It 'rejects the infrastructure-created database before producing a handoff' {
-        { New-BootstrapCdcHandoff -Settings $script:settings -StatePath '/unused' -EnvironmentFile '/selected/env' -Project 'dms-local' -DatabaseName 'edfi_datamanagementservice' } | Should -Throw '*distinct from infrastructure-created*'
+        { New-BootstrapCdcHandoff -Settings $script:settings -InputSettingsPath $script:settingsFile -StatePath '/unused' -EnvironmentFile '/selected/env' -Project 'dms-local' -DatabaseName 'edfi_datamanagementservice' } | Should -Throw '*distinct from infrastructure-created*'
     }
     It 'carries identical projection and CMS settings, ordinary schemas and custom state for <provider>' -ForEach @(
         @{ provider = 'postgresql'; port = 15432 }, @{ provider = 'mssql'; port = 11433 }
     ) {
         $script:settings.AppSettings.Datastore = $provider
         $state = Join-Path $TestDrive 'custom-state'
-        $handoff = New-BootstrapCdcHandoff -Settings $script:settings -StatePath $state -EnvironmentFile '/selected/env' -Project 'dms-published' -DatabaseName 'dedicated_cdc'
+        $handoff = New-BootstrapCdcHandoff -Settings $script:settings -InputSettingsPath $script:settingsFile -StatePath $state -EnvironmentFile '/selected/env' -Project 'dms-published' -DatabaseName 'dedicated_cdc'
         $snapshot = Get-Content $handoff.SettingsPath -Raw | ConvertFrom-Json
         $compose = Get-Content $handoff.DmsComposePath -Raw | ConvertFrom-Json
         $snapshot.Cdc.Compose.Project | Should -Be 'dms-published'

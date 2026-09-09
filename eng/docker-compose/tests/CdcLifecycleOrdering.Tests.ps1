@@ -75,6 +75,47 @@ Describe 'Managed CDC deployment lifecycle ordering' {
     }
     AfterAll { Remove-Module cdc-lifecycle -Force }
 
+    It 'recovers only the original initial handoff (<change>)' -ForEach @(
+        @{ change = 'none' }, @{ change = 'settings' }, @{ change = 'state' },
+        @{ change = 'database' }, @{ change = 'phase' }, @{ change = 'receipt' },
+        @{ change = 'snapshot' }, @{ change = 'environment' }
+    ) {
+        Remove-Item (Join-Path $script:root '.cdc-deployments') -Recurse -Force
+        $handoff = New-TestHandoff 42
+        $inputPath = Join-Path $script:root "original-input.json"
+        Copy-Item $handoff.SettingsPath $inputPath -Force
+        $handoff.InputSettingsHash = (Get-FileHash $inputPath).Hash
+        $handoff.DatabaseNameHash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes('dedicated')))
+        $state = Join-Path $script:root 'original-state'
+        $receipt = @{ WorkflowId = [guid]::NewGuid().ToString(); CreationReceipt = @{ Outcome = 'Created' } }
+        if ($change -eq 'receipt') { $receipt = $null }
+        Register-CdcDeploymentHandoff -Handoff $handoff -StatePath $state -Receipt $receipt
+        $original = Get-Content (Join-Path $script:root '.cdc-deployments/dms-local.json') -Raw
+        $database = 'dedicated'
+        switch ($change) {
+            'settings' { Add-Content $inputPath 'changed' }
+            'state' { $state = Join-Path $script:root 'other-state' }
+            'database' { $database = 'other' }
+            'phase' {
+                $deployment = Read-TestDeployment
+                $deployment.Phase = 'Stopped'
+                $deployment | ConvertTo-Json -Depth 64 | Set-Content (Join-Path $script:root '.cdc-deployments/dms-local.json')
+            }
+            'snapshot' { Add-Content $handoff.DmsComposePath 'changed' }
+            'environment' { Add-Content (Join-Path $script:root '.env.custom') 'CHANGED=yes' }
+        }
+        $arguments = @{ Project = 'dms-local'; StatePath = $state; InputSettingsPath = $inputPath; DatabaseName = $database }
+        if ($change -ne 'none') { { Get-CdcBootstrapRetryHandoff @arguments } | Should -Throw }
+        else {
+            $retained = Get-CdcBootstrapRetryHandoff @arguments
+            $retained.SettingsPath | Should -Be $handoff.SettingsPath
+            $retained.DmsComposePath | Should -Be $handoff.DmsComposePath
+            $retained.Receipt.WorkflowId | Should -Be $receipt.WorkflowId
+            $retained.EnvironmentFile | Should -Be $handoff.Settings.Cdc.Compose.EnvironmentFile
+            (Get-Content (Join-Path $script:root '.cdc-deployments/dms-local.json') -Raw) | Should -Be $original
+        }
+    }
+
     It 'stops and verifies both connectors before worker shutdown while retaining custom roots' {
         Invoke-TestLifecycle @{ d = $true }
         $script:trace | Should -Be @('stop:42', 'stop:43', 'rest:connectors', 'rest:connectors/connector-42/status', 'rest:connectors/connector-43/status', 'stop-worker')

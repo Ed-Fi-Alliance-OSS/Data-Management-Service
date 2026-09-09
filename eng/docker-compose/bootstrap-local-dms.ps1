@@ -302,7 +302,7 @@ $ErrorActionPreference = "Stop"
 if ($v -and -not $d) {
     throw "-v requires -d. Use bootstrap-local-dms.ps1 -d -v to stop services, delete volumes, and remove the .bootstrap workspace."
 }
-if (Test-Path -LiteralPath (Join-Path $PSScriptRoot '.cdc-deployments/dms-local.json')) {
+if ((-not $EnableKafkaCdc -or $d) -and (Test-Path -LiteralPath (Join-Path $PSScriptRoot '.cdc-deployments/dms-local.json'))) {
     Import-Module (Join-Path $PSScriptRoot 'cdc-lifecycle.psm1')
     $lifecycleArgs = @{} + $PSBoundParameters
     if ($d -and $v) { $lifecycleArgs.RemoveBootstrap = $true }

@@ -5912,7 +5912,7 @@ if (Test-Path -LiteralPath $ChildCapturePath) {
 [pscustomobject]$outcome | ConvertTo-Json -Compress
 '@ | Set-Content -LiteralPath $childScript -Encoding utf8
 
-                $json = & ([Environment]::ProcessPath) -NoProfile -File $childScript `
+                $json = & ((Get-Command pwsh -CommandType Application | Select-Object -First 1).Source) -NoProfile -File $childScript `
                     -ChildProvisionScript $script:repo.ProvisionScript `
                     -ChildEnvironmentFile $EnvironmentFile `
                     -ChildConnectionString $ConnectionString `
@@ -6711,7 +6711,7 @@ Describe "whole-file module-table ownership (post-Invoke-Pester, isolated childr
     # Both halves of the exact-ownership invariant, proven AFTER Invoke-Pester returns: owned
     # staged instances are gone, and a caller-owned module beneath a LOOKALIKE-named directory
     # survives untouched. The children exclude this tag, so there is no recursion; launches go
-    # through [Environment]::ProcessPath, never a literal executable name.
+    # through the resolved PowerShell launcher, including dotnet-tool installations.
 
     BeforeAll {
         $script:ownershipChildWork = Join-Path ([System.IO.Path]::GetTempPath()) "dms-1151-ownership-child-$([Guid]::NewGuid().ToString('N'))"
@@ -6750,7 +6750,7 @@ Describe "whole-file module-table ownership (post-Invoke-Pester, isolated childr
             "finally { Remove-Item -LiteralPath `$callerRoot -Recurse -Force -ErrorAction SilentlyContinue }"
         ) -join "`n" | Set-Content -LiteralPath $childScript
 
-        $childState = (& ([Environment]::ProcessPath) -NoProfile -File $childScript | Select-Object -Last 1) | ConvertFrom-Json
+        $childState = (& ((Get-Command pwsh -CommandType Application | Select-Object -First 1).Source) -NoProfile -File $childScript | Select-Object -Last 1) | ConvertFrom-Json
         # Execution proof first: the probe must have RUN and PASSED - discovery counts prove
         # nothing, and a probe that never reached its staged import would make survival vacuous.
         $childState.Failed | Should -Be 0 -Because "the staged-import probe must complete cleanly around the caller's module"
@@ -6790,7 +6790,7 @@ Describe "whole-file module-table ownership (post-Invoke-Pester, isolated childr
             "} | ConvertTo-Json -Compress"
         ) -join "`n" | Set-Content -LiteralPath $childScript
 
-        $childState = (& ([Environment]::ProcessPath) -NoProfile -File $childScript | Select-Object -Last 1) | ConvertFrom-Json
+        $childState = (& ((Get-Command pwsh -CommandType Application | Select-Object -First 1).Source) -NoProfile -File $childScript | Select-Object -Last 1) | ConvertFrom-Json
         # Execution proof first: the residue check is meaningful only if the staged-import probe
         # really ran and passed - a run that never imported a staged module has nothing to clean.
         $childState.Failed | Should -Be 0 -Because "the staged-import probe must complete cleanly"

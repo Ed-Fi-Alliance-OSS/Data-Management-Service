@@ -188,7 +188,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 if ($v -and -not $d) { throw '-v requires -d.' }
-if (Test-Path -LiteralPath (Join-Path $PSScriptRoot '.cdc-deployments/dms-published.json')) {
+if ((-not $EnableKafkaCdc -or $d) -and (Test-Path -LiteralPath (Join-Path $PSScriptRoot '.cdc-deployments/dms-published.json'))) {
     Import-Module (Join-Path $PSScriptRoot 'cdc-lifecycle.psm1')
     $lifecycleArgs = @{} + $PSBoundParameters
     if ($d -and $v) { $lifecycleArgs.RemoveBootstrap = $true }

@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Collections.Immutable;
+using System.Data.Common;
 using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -37,6 +38,21 @@ public sealed class CdcCommandRunner(IApiSchemaFileLoader loader, EffectiveSchem
     );
     internal ProjectionRuntimeFactory CreateProjectionRuntime { get; init; } =
         CdcProjectionRuntimeFactory.CreateAsync;
+
+    internal delegate Task<CdcDeploymentRequest> DeploymentRequestFactory(
+        CdcCommandConfiguration config,
+        string statePath,
+        DbConnection connection,
+        IApiSchemaFileLoader loader,
+        EffectiveSchemaSetBuilder schemaBuilder,
+        CancellationToken token,
+        bool deferProjection
+    );
+    internal DeploymentRequestFactory CreateRequest { get; init; } =
+        (config, state, connection, loader, builder, token, defer) =>
+            config.CreateRequestAsync(state, connection, loader, builder, token, defer);
+    internal Func<CdcInitialEnableWorkflow, CdcInitialEnableWorkflow> ConfigureEnableWorkflow { get; init; } =
+        workflow => workflow;
 
     [System.Diagnostics.CodeAnalysis.SuppressMessage(
         "Sonar",
@@ -76,7 +92,8 @@ public sealed class CdcCommandRunner(IApiSchemaFileLoader loader, EffectiveSchem
             }
             await using var connection = config.CreateConnection();
             component = CdcDeploymentComponent.WorkflowState;
-            var request = await config.CreateRequestAsync(
+            var request = await CreateRequest(
+                config,
                 invocation.StatePath,
                 connection,
                 loader,
@@ -198,59 +215,26 @@ public sealed class CdcCommandRunner(IApiSchemaFileLoader loader, EffectiveSchem
                     );
                     return Result(true, retained, []);
                 case CdcCommandOperation.Enable:
-                    Require(
-                        await new CdcInitialEnablement(invocation.StatePath).ActivateAsync(
-                            request,
-                            runtime,
-                            ct
-                        )
-                    );
-                    Require(
-                        await new CdcProviderSetupOrchestration(
-                            invocation.StatePath,
-                            setup,
-                            templates
-                        ).SetupAsync(request, runtime, ct)
-                    );
-                    var provisioning = new CdcKafkaProvisioning(
-                        invocation.StatePath,
-                        kafka,
-                        runtime,
-                        new CdcKafkaProducerInspection(connect, worker)
-                    );
-                    Require(
-                        await new CdcWorkerStartup(
-                            provisioning,
-                            new CdcComposeWorkerStartupTransport(
-                                config.ComposeFile,
-                                config.EnvironmentFile,
-                                config.Project,
-                                config.BrokerSizeOverride
-                            )
-                        ).StartAsync(request, ct)
-                    );
-                    Require(await provisioning.ProvisionBindingAsync(request, ct));
-                    Require(
-                        await new CdcConnectorRegistration(
-                            invocation.StatePath,
-                            setup,
-                            templates,
-                            kafka,
-                            connect,
-                            worker
-                        ).RegisterAsync(request, runtime, ct)
-                    );
                     var publication = Require(
-                        await new CdcInitialReadiness(
-                            invocation.StatePath,
-                            setup,
-                            templates,
-                            kafka,
-                            connect,
-                            worker,
-                            metrics,
-                            positions
-                        ).PreparePublicationAsync(request, runtime, config.LagThreshold, ct)
+                        await ConfigureEnableWorkflow(
+                                new CdcInitialEnableWorkflow(
+                                    invocation.StatePath,
+                                    setup,
+                                    templates,
+                                    kafka,
+                                    connect,
+                                    worker,
+                                    new CdcComposeWorkerStartupTransport(
+                                        config.ComposeFile,
+                                        config.EnvironmentFile,
+                                        config.Project,
+                                        config.BrokerSizeOverride
+                                    ),
+                                    metrics,
+                                    positions
+                                )
+                            )
+                            .EnableAsync(request, runtime, config.LagThreshold, ct)
                     );
                     return Result(true, publication, []);
                 case CdcCommandOperation.Validate:

@@ -63,6 +63,16 @@ Describe "DMS-1153 bootstrap entry-point and IDE workflow" {
                 [string]$Destination
             )
             Copy-Item -LiteralPath (Join-Path $script:sourceDockerComposeRoot $FileName) -Destination $Destination
+            if ($FileName -in @('start-local-dms.ps1', 'start-published-dms.ps1')) {
+                # These fixtures exercise ordinary startup/teardown with no retained CDC deployment.
+                # CDC deployment discovery and governance have their own production-module suite.
+                @'
+function Test-CdcInfrastructureInvocation { return $false }
+function Test-CdcDeployment { param($Project) return $false }
+function Assert-CdcUnregisteredInfrastructure { param($Project) }
+Export-ModuleMember -Function Test-CdcInfrastructureInvocation, Test-CdcDeployment, Assert-CdcUnregisteredInfrastructure
+'@ | Set-Content -LiteralPath (Join-Path $Destination 'cdc-lifecycle.psm1')
+            }
         }
 
         function script:New-IsolatedBootstrapRepo {
@@ -1637,7 +1647,7 @@ param(
             ) -Raw
 
             $wrapperSource | Should -Match '\$composeDataStandardOverlay\s*=\s*\(\$StartScriptName\s+-eq\s+"start-local-dms\.ps1"\)\s*-or\s*\r?\n\s*\$PSBoundParameters\.ContainsKey\(''DataStandardVersion''\)'
-            $wrapperSource | Should -Match '(?s)if \(\$composeDataStandardOverlay\)\s*\{.*?Resolve-DataStandardEnvironmentFile'
+            $wrapperSource | Should -Match '(?s)if \(\$composeDataStandardOverlay -and -not \$UseEnvironmentFileSchemaSettings\)\s*\{.*?Resolve-DataStandardEnvironmentFile'
         }
 
         It "the wrapper never forwards -DataStandardVersion to a start script" {
@@ -2763,7 +2773,7 @@ Describe "whole-file module-table ownership (post-Invoke-Pester, isolated childr
     # Both halves of the exact-ownership invariant, proven AFTER Invoke-Pester returns: owned
     # staged instances are gone, and a caller-owned module beneath a LOOKALIKE-named directory
     # survives untouched. The children exclude this tag, so there is no recursion; launches go
-    # through [Environment]::ProcessPath, never a literal executable name.
+    # through the resolved PowerShell launcher, including dotnet-tool installations.
 
     BeforeAll {
         $script:ownershipChildWork = Join-Path ([System.IO.Path]::GetTempPath()) "dms-1153-ownership-child-$([Guid]::NewGuid().ToString('N'))"
@@ -2802,7 +2812,7 @@ Describe "whole-file module-table ownership (post-Invoke-Pester, isolated childr
             "finally { Remove-Item -LiteralPath `$callerRoot -Recurse -Force -ErrorAction SilentlyContinue }"
         ) -join "`n" | Set-Content -LiteralPath $childScript
 
-        $childState = (& ([Environment]::ProcessPath) -NoProfile -File $childScript | Select-Object -Last 1) | ConvertFrom-Json
+        $childState = (& ((Get-Command pwsh -CommandType Application | Select-Object -First 1).Source) -NoProfile -File $childScript | Select-Object -Last 1) | ConvertFrom-Json
         # Execution proof first: the probe must have RUN and PASSED - discovery counts prove
         # nothing, and a probe that never reached its staged import would make survival vacuous.
         $childState.Failed | Should -Be 0 -Because "the staged-import probe must complete cleanly around the caller's module"
@@ -2842,7 +2852,7 @@ Describe "whole-file module-table ownership (post-Invoke-Pester, isolated childr
             "} | ConvertTo-Json -Compress"
         ) -join "`n" | Set-Content -LiteralPath $childScript
 
-        $childState = (& ([Environment]::ProcessPath) -NoProfile -File $childScript | Select-Object -Last 1) | ConvertFrom-Json
+        $childState = (& ((Get-Command pwsh -CommandType Application | Select-Object -First 1).Source) -NoProfile -File $childScript | Select-Object -Last 1) | ConvertFrom-Json
         # Execution proof first: the residue check is meaningful only if the staged-import probe
         # really ran and passed - a run that never imported a staged module has nothing to clean.
         $childState.Failed | Should -Be 0 -Because "the staged-import probe must complete cleanly"
