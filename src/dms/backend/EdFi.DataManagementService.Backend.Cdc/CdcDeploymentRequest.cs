@@ -33,6 +33,35 @@ public sealed class CdcDeploymentRequest
         CdcKafkaClientSecurityProperties kafkaClientSecurityProperties,
         CdcDeploymentTiming timing
     )
+        : this(
+            binding,
+            dmsSettings,
+            () => providerSetup,
+            connectEndpoint,
+            workerMetricsEndpoint,
+            connectorPolicy,
+            workerPolicy,
+            providerConnectionProperties,
+            kafkaClientSecurityProperties,
+            timing
+        )
+    {
+        ArgumentNullException.ThrowIfNull(providerSetup);
+        _ = ProviderSetup;
+    }
+
+    private CdcDeploymentRequest(
+        CoreCdc.CdcBinding binding,
+        IConfiguration dmsSettings,
+        Func<CdcProviderSetupRequest> providerSetup,
+        Uri connectEndpoint,
+        Uri workerMetricsEndpoint,
+        CdcConnectorTemplateDeploymentPolicy connectorPolicy,
+        CdcWorkerDeploymentPolicy workerPolicy,
+        CdcProviderConnectionProperties providerConnectionProperties,
+        CdcKafkaClientSecurityProperties kafkaClientSecurityProperties,
+        CdcDeploymentTiming timing
+    )
     {
         ArgumentNullException.ThrowIfNull(binding);
         ArgumentNullException.ThrowIfNull(dmsSettings);
@@ -53,26 +82,19 @@ public sealed class CdcDeploymentRequest
             binding,
             nameof(binding)
         );
-        if (
-            providerSetup.Provider != artifacts.Provider
-            || providerConnectionProperties.Provider != artifacts.Provider
-            || providerSetup.BoundPhysicalSourceFingerprint != artifacts.BoundPhysicalSourceFingerprint
-            || !Enum.IsDefined(providerSetup.Mode)
-        )
+        if (providerConnectionProperties.Provider != artifacts.Provider)
         {
             throw new ArgumentException(
-                "CDC deployment provider or source identity does not match the binding.",
-                nameof(providerSetup)
+                "CDC deployment provider does not match the binding.",
+                nameof(providerConnectionProperties)
             );
         }
-
-        if (!ArtifactNamesMatch(providerSetup.ArtifactNames, artifacts.ProviderArtifactNames))
+        _providerSetup = new Lazy<CdcProviderSetupRequest>(() =>
         {
-            throw new ArgumentException(
-                "CDC provider artifact names do not match the binding.",
-                nameof(providerSetup)
-            );
-        }
+            var prepared = providerSetup();
+            ValidateProviderSetup(prepared, artifacts);
+            return prepared;
+        });
 
         if (
             providerConnectionProperties
@@ -111,7 +133,6 @@ public sealed class CdcDeploymentRequest
 
         Binding = binding;
         DmsSettings = dmsSettings;
-        ProviderSetup = providerSetup;
         ConnectEndpoint = ValidateEndpoint(connectEndpoint, nameof(connectEndpoint));
         WorkerMetricsEndpoint = ValidateEndpoint(workerMetricsEndpoint, nameof(workerMetricsEndpoint));
         ConnectorPolicy = connectorPolicy;
@@ -121,6 +142,67 @@ public sealed class CdcDeploymentRequest
         Timing = timing;
     }
 
+    private readonly Lazy<CdcProviderSetupRequest> _providerSetup;
+
+    /// <summary>
+    /// Defer fallible schema inventory preparation for observation and shutdown hosts. The same provider
+    /// identity checks run before the setup request can be consumed; this supplies no live evidence.
+    /// </summary>
+    public static CdcDeploymentRequest CreateDeferred(
+        CoreCdc.CdcBinding binding,
+        IConfiguration dmsSettings,
+        Func<CdcProviderSetupRequest> providerSetup,
+        Uri connectEndpoint,
+        Uri workerMetricsEndpoint,
+        CdcConnectorTemplateDeploymentPolicy connectorPolicy,
+        CdcWorkerDeploymentPolicy workerPolicy,
+        CdcProviderConnectionProperties providerConnectionProperties,
+        CdcKafkaClientSecurityProperties kafkaClientSecurityProperties,
+        CdcDeploymentTiming timing
+    )
+    {
+        ArgumentNullException.ThrowIfNull(providerSetup);
+        return new(
+            binding,
+            dmsSettings,
+            providerSetup,
+            connectEndpoint,
+            workerMetricsEndpoint,
+            connectorPolicy,
+            workerPolicy,
+            providerConnectionProperties,
+            kafkaClientSecurityProperties,
+            timing
+        );
+    }
+
+    private static void ValidateProviderSetup(
+        CdcProviderSetupRequest providerSetup,
+        CdcConnectorTemplateBindingArtifacts artifacts
+    )
+    {
+        ArgumentNullException.ThrowIfNull(providerSetup);
+        if (
+            providerSetup.Provider != artifacts.Provider
+            || providerSetup.BoundPhysicalSourceFingerprint != artifacts.BoundPhysicalSourceFingerprint
+            || !Enum.IsDefined(providerSetup.Mode)
+        )
+        {
+            throw new ArgumentException(
+                "CDC deployment provider or source identity does not match the binding.",
+                nameof(providerSetup)
+            );
+        }
+
+        if (!ArtifactNamesMatch(providerSetup.ArtifactNames, artifacts.ProviderArtifactNames))
+        {
+            throw new ArgumentException(
+                "CDC provider artifact names do not match the binding.",
+                nameof(providerSetup)
+            );
+        }
+    }
+
     public CoreCdc.CdcBinding Binding { get; }
     public CoreCdc.CdcTargetIdentity TargetIdentity => Binding.ToTargetIdentity();
 
@@ -128,7 +210,7 @@ public sealed class CdcDeploymentRequest
     public IConfiguration DmsSettings { get; }
 
     [JsonIgnore]
-    public CdcProviderSetupRequest ProviderSetup { get; }
+    public CdcProviderSetupRequest ProviderSetup => _providerSetup.Value;
 
     [JsonIgnore]
     public Uri ConnectEndpoint { get; }

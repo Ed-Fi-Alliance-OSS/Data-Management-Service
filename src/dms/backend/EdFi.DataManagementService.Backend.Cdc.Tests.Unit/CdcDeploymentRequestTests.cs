@@ -20,6 +20,67 @@ public class Given_CdcDeploymentRequest
     [SetUp]
     public void Setup() => _request = CdcDeploymentRequestTestData.Request();
 
+    [Test]
+    public void It_keeps_deferred_inventory_out_of_construction_and_serialization()
+    {
+        var calls = 0;
+        var request = Deferred(() =>
+        {
+            calls++;
+            return _request.ProviderSetup;
+        });
+        JsonSerializer.Serialize(request).Should().NotContain("ProviderSetup");
+        calls.Should().Be(0);
+        request.ProviderSetup.Should().BeSameAs(_request.ProviderSetup);
+        request.ProviderSetup.Should().BeSameAs(_request.ProviderSetup);
+        calls.Should().Be(1);
+    }
+
+    [Test]
+    public void It_rejects_mismatched_deferred_provider_identity_before_consumption()
+    {
+        var request = Deferred(() =>
+            CdcDeploymentRequestTestData.Request(CdcProvider.SqlServer).ProviderSetup
+        );
+        Action consume = () => _ = request.ProviderSetup;
+        consume.Should().Throw<ArgumentException>();
+    }
+
+    [Test]
+    public void It_rejects_mismatched_deferred_source_identity_before_consumption()
+    {
+        var setup = _request.ProviderSetup;
+        var request = Deferred(() =>
+            new(
+                setup.Provider,
+                setup.Mode,
+                OtherPostgresqlSourceFingerprint,
+                setup.SetupPrincipal,
+                setup.ConnectorPrincipal,
+                setup.ArtifactNames,
+                setup.ArtifactOutput,
+                setup.ExpectedSourceInventory,
+                setup.DmsManagedTableInventory
+            )
+        );
+        Action consume = () => _ = request.ProviderSetup;
+        consume.Should().Throw<ArgumentException>();
+    }
+
+    private CdcDeploymentRequest Deferred(Func<CdcProviderSetupRequest> setup) =>
+        CdcDeploymentRequest.CreateDeferred(
+            _request.Binding,
+            _request.DmsSettings,
+            setup,
+            _request.ConnectEndpoint,
+            _request.WorkerMetricsEndpoint,
+            _request.ConnectorPolicy,
+            _request.WorkerPolicy,
+            _request.ProviderConnectionProperties,
+            _request.KafkaClientSecurityProperties,
+            _request.Timing
+        );
+
     [TestCase(CdcProvider.Postgresql)]
     [TestCase(CdcProvider.SqlServer)]
     public void It_composes_the_existing_binding_and_template_contracts(CdcProvider provider)

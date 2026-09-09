@@ -21,6 +21,9 @@ namespace EdFi.DataManagementService.Backend.Cdc;
 /// </summary>
 public interface ICdcProjectionRuntime : IAsyncDisposable
 {
+    /// <summary>Prepare observation resources only after retained-incident containment. Never starts processing.</summary>
+    Task InitializeAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
     Task<DocumentCacheAdministrativeCommandResult> ActivateAsync(
         DocumentCacheGuardedNewEmptyActivationRequest request,
         CancellationToken cancellationToken

@@ -76,6 +76,12 @@ public sealed class CdcCommandConfiguration(IConfigurationRoot settings)
 
     public void Validate()
     {
+        ValidateControllerSettings();
+        ValidateProjectionTarget();
+    }
+
+    public void ValidateControllerSettings()
+    {
         if (
             !CdcTargetValidator
                 .ValidateBindingIdentity(CdcBindingIdentity.FromTargetIdentity(Target))
@@ -100,6 +106,10 @@ public sealed class CdcCommandConfiguration(IConfigurationRoot settings)
         {
             throw new ArgumentException("CDC command input is invalid.");
         }
+    }
+
+    private void ValidateProjectionTarget()
+    {
         var options = new DocumentCacheOptions();
         Settings.GetSection(DocumentCacheOptions.SectionName).Bind(options);
         var key = DocumentCacheTargetKey.Create(
@@ -125,10 +135,11 @@ public sealed class CdcCommandConfiguration(IConfigurationRoot settings)
         DbConnection connection,
         IApiSchemaFileLoader loader,
         EffectiveSchemaSetBuilder builder,
-        CancellationToken token
+        CancellationToken token,
+        bool deferProjectionPreparation = false
     )
     {
-        Validate();
+        ValidateControllerSettings();
         var target = Target;
         var timing = Timing;
         string fingerprint;
@@ -179,37 +190,41 @@ public sealed class CdcCommandConfiguration(IConfigurationRoot settings)
             CdcTargetValidator.KafkaMurmur2V1PartitionerAlgorithm,
             CdcJsonContract.CurrentContractVersion
         );
-        var schemaPaths = Settings.GetSection("Cdc:Schemas").Get<string[]>() ?? [];
-        if (schemaPaths.Length == 0)
-        {
-            throw new ArgumentException("CDC command input is invalid.");
-        }
-        token.ThrowIfCancellationRequested();
-        var loaded = loader.Load(schemaPaths[0], schemaPaths.Skip(1).ToList());
-        if (loaded is not ApiSchemaFileLoadResult.SuccessResult success)
-        {
-            throw new ArgumentException("CDC command input is invalid.");
-        }
-        var schema = builder.Build(success.NormalizedNodes);
-        var emission = DdlPipelineHelpers.BuildDdlEmissionForDialect(
-            schema,
-            GetProvider() == CoreProvider.Postgresql ? SqlDialect.Pgsql : SqlDialect.Mssql
-        );
-        token.ThrowIfCancellationRequested();
         var ddlProvider =
             GetProvider() == CoreProvider.Postgresql ? DdlProvider.Postgresql : DdlProvider.SqlServer;
-        var setup = new CdcProviderSetupRequest(
-            ddlProvider,
-            EdFi.DataManagementService.Backend.Ddl.CdcProviderSetupMode.ValidateOnly,
-            new(CdcSourceFingerprintMetadata.Version, fingerprint),
-            new(new(Required("Cdc:SetupPrincipal"))),
-            new(new(Required("Cdc:DatabaseConnectorPrincipal"))),
-            CdcDeploymentRequest.GetProviderArtifactNames(binding),
-            new(false),
-            emission.CdcSourceInventory,
-            emission.CdcDmsManagedTableInventory,
-            databaseExecutor: new DbConnectionCdcProviderDatabaseExecutor(connection)
-        );
+        CdcProviderSetupRequest PrepareProviderSetup()
+        {
+            ValidateProjectionTarget();
+            var schemaPaths = Settings.GetSection("Cdc:Schemas").Get<string[]>() ?? [];
+            if (schemaPaths.Length == 0)
+            {
+                throw new ArgumentException("CDC command input is invalid.");
+            }
+            token.ThrowIfCancellationRequested();
+            var loaded = loader.Load(schemaPaths[0], schemaPaths.Skip(1).ToList());
+            if (loaded is not ApiSchemaFileLoadResult.SuccessResult success)
+            {
+                throw new ArgumentException("CDC command input is invalid.");
+            }
+            var schema = builder.Build(success.NormalizedNodes);
+            var emission = DdlPipelineHelpers.BuildDdlEmissionForDialect(
+                schema,
+                GetProvider() == CoreProvider.Postgresql ? SqlDialect.Pgsql : SqlDialect.Mssql
+            );
+            token.ThrowIfCancellationRequested();
+            return new CdcProviderSetupRequest(
+                ddlProvider,
+                EdFi.DataManagementService.Backend.Ddl.CdcProviderSetupMode.ValidateOnly,
+                new(CdcSourceFingerprintMetadata.Version, fingerprint),
+                new(new(Required("Cdc:SetupPrincipal"))),
+                new(new(Required("Cdc:DatabaseConnectorPrincipal"))),
+                CdcDeploymentRequest.GetProviderArtifactNames(binding),
+                new(false),
+                emission.CdcSourceInventory,
+                emission.CdcDmsManagedTableInventory,
+                databaseExecutor: new DbConnectionCdcProviderDatabaseExecutor(connection)
+            );
+        }
         var worker = new CdcWorkerDeploymentPolicy(
             new(Required("Cdc:Worker:Key")),
             new(Required("Cdc:Worker:OffsetStorageTopic")),
@@ -227,10 +242,10 @@ public sealed class CdcCommandConfiguration(IConfigurationRoot settings)
                 .Select(c => new CdcConsumerAccess(new(c["Principal"]!), new(c["Group"]!)))
                 .ToArray()
         );
-        return new(
+        var request = CdcDeploymentRequest.CreateDeferred(
             binding,
             Settings,
-            setup,
+            PrepareProviderSetup,
             new(Required("Cdc:ConnectEndpoint")),
             new(Required("Cdc:WorkerMetricsEndpoint")),
             new(
@@ -245,6 +260,11 @@ public sealed class CdcCommandConfiguration(IConfigurationRoot settings)
             new(Properties("Cdc:KafkaClientSecurityProperties")),
             timing
         );
+        if (!deferProjectionPreparation)
+        {
+            _ = request.ProviderSetup;
+        }
+        return request;
     }
 
     public Dictionary<string, string> Properties(string key) =>

@@ -14,6 +14,7 @@ using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache.Cdc;
 using EdFi.DataManagementService.Core.Startup;
 using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 using Serilog;
@@ -24,6 +25,19 @@ namespace EdFi.DataManagementService.SchemaTools.Cdc;
 public sealed class CdcCommandRunner(IApiSchemaFileLoader loader, EffectiveSchemaSetBuilder schemaBuilder)
     : ICdcCommandRunner
 {
+    // Narrow host seams retain the production command/controllers in transport and initialization tests.
+    internal Func<HttpClient> CreateConnectClient { get; init; } = CdcConnectRestAdapter.CreateHttpClient;
+    internal Func<CdcCommandConfiguration, ICdcWorkerInspectionTransport> CreateWorker { get; init; } =
+        config => new CdcWorkerDeployment(config.Project, "kafka-cdc-worker");
+    internal delegate Task<CdcTransportResult<ICdcProjectionRuntime>> ProjectionRuntimeFactory(
+        IConfiguration settings,
+        ILogger logger,
+        DocumentCacheTargetKey target,
+        CancellationToken token
+    );
+    internal ProjectionRuntimeFactory CreateProjectionRuntime { get; init; } =
+        CdcProjectionRuntimeFactory.CreateAsync;
+
     [System.Diagnostics.CodeAnalysis.SuppressMessage(
         "Sonar",
         "S1854",
@@ -43,7 +57,12 @@ public sealed class CdcCommandRunner(IApiSchemaFileLoader loader, EffectiveSchem
             var config = CdcCommandConfiguration.Load(invocation.SettingsPath);
             var settings = config.Settings;
             using var settingsLifetime = (IDisposable)settings;
-            config.Validate();
+            bool deferProjection =
+                invocation.Operation
+                is CdcCommandOperation.Status
+                    or CdcCommandOperation.Watch
+                    or CdcCommandOperation.Stop;
+            config.ValidateControllerSettings();
             settings["Cdc:PublicationHistory:StatePath"] = invocation.StatePath;
             settings["Cdc:PublicationHistory:DeploymentKey"] = config.Target.DeploymentKey;
             timeout.CancelAfter(config.Timing.WaitTimeout);
@@ -62,7 +81,8 @@ public sealed class CdcCommandRunner(IApiSchemaFileLoader loader, EffectiveSchem
                 connection,
                 loader,
                 schemaBuilder,
-                ct
+                ct,
+                deferProjection
             );
             var targetKey = DocumentCacheTargetKey.Create(
                 settings["Cdc:TenantKey"] ?? "",
@@ -72,12 +92,12 @@ public sealed class CdcCommandRunner(IApiSchemaFileLoader loader, EffectiveSchem
             // emits only the controllers' allow-listed diagnostics, even with --verbose.
             using var logger = new LoggerConfiguration().CreateLogger();
             var services = new ServiceCollection();
-            services.AddCdcCommandRuntime(settings, logger, targetKey);
+            services.AddCdcCommandControlPlane(settings, logger);
             await using var provider = services.BuildServiceProvider();
-            using var connectClient = CdcConnectRestAdapter.CreateHttpClient();
+            using var connectClient = CreateConnectClient();
             using var metricsClient = CdcConnectorTelemetryAdapter.CreateHttpClient();
             var connect = new CdcConnectRestAdapter(connectClient);
-            var worker = new CdcWorkerDeployment(config.Project, "kafka-cdc-worker");
+            var worker = CreateWorker(config);
             var metrics = new CdcConnectorTelemetryAdapter(metricsClient, connect, worker);
             var sizes = new CdcComposeBrokerSizeDeployment(
                 config.ComposeFile,
@@ -122,9 +142,17 @@ public sealed class CdcCommandRunner(IApiSchemaFileLoader loader, EffectiveSchem
                 return Result(result.Succeeded, result, result.Diagnostics);
             }
             component = CdcDeploymentComponent.Projection;
-            await using var runtime = Require(
-                await CdcProjectionRuntimeFactory.CreateAsync(settings, logger, targetKey, ct)
-            );
+            await using var runtime = new CdcDeferredProjectionRuntime(async cancellation =>
+            {
+                // Includes schema loading and emitted inventory validation. These are observation inputs,
+                // and must not precede retained-incident containment or be required for explicit stop.
+                _ = request.ProviderSetup;
+                return await CreateProjectionRuntime(settings, logger, targetKey, cancellation);
+            });
+            if (!deferProjection)
+            {
+                await runtime.InitializeAsync(ct);
+            }
             var target = new CdcControllerStatusTarget(request, runtime, config.LagThreshold);
             var validation = new CdcEstablishedValidation(
                 invocation.StatePath,

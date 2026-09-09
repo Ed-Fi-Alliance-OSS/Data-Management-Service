@@ -34,6 +34,18 @@ public static class CdcCommandServices
         );
         services.AddCdcDownstreamPublicationHistory(settings);
         CdcComposeDataStoreProvider.Register(services, settings, targetKey);
+        return services.AddCdcCommandControlPlane(settings, logger);
+    }
+
+    /// <summary>Provider controllers without CMS, schema initialization or projection composition.</summary>
+    public static IServiceCollection AddCdcCommandControlPlane(
+        this IServiceCollection services,
+        IConfiguration settings,
+        Serilog.ILogger logger
+    )
+    {
+        services.AddLogging(b => b.ClearProviders());
+        services.AddSingleton(logger);
         if (settings["AppSettings:Datastore"] == "postgresql")
         {
             services.AddPostgresqlDmsCdcControlPlane();

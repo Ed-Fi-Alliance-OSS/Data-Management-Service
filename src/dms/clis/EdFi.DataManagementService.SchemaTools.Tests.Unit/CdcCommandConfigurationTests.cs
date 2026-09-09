@@ -23,7 +23,7 @@ namespace EdFi.DataManagementService.SchemaTools.Tests.Unit;
 
 [TestFixture("postgresql", CoreProvider.Postgresql)]
 [TestFixture("sqlserver", CoreProvider.SqlServer)]
-public class Given_Cdc_command_configuration(string providerToken, CoreProvider provider)
+public partial class Given_Cdc_command_configuration(string providerToken, CoreProvider provider)
 {
     private string _root = null!;
     private IConfigurationRoot _settings = null!;
