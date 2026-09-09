@@ -70,3 +70,25 @@ Feature: Metadata endpoints
              Then each metadata URL should be valid
                   | URL Field       |
                   | openApiMetadata |
+
+        Scenario: 07 Verify the api client dataStoreIds contract is documented
+             When a GET request is made to "/metadata/specifications"
+             Then it should respond with 200
+              And the OpenAPI specification field "components.schemas.ApiClientInsertCommand.properties.dataStoreIds.description" contains
+                  | Text                     |
+                  | Optional                 |
+                  | empty array              |
+                  | no Data Store assignment |
+                  | null is rejected         |
+                  | caller's tenant          |
+              And the OpenAPI specification field "components.schemas.ApiClientUpdateCommand.properties.dataStoreIds.description" contains
+                  | Text                              |
+                  | full replacement                  |
+                  | omitting the property             |
+                  | removes every existing assignment |
+                  | null is rejected                  |
+                  | caller's tenant                   |
+              And the response body contains OpenAPI specification
+                  | Field                                                                                  | Value |
+                  | paths./v3/apiClients.post.requestBody.content.application/json.example.dataStoreIds     | []    |
+                  | paths./v3/apiClients/{id}.put.requestBody.content.application/json.example.dataStoreIds | []    |

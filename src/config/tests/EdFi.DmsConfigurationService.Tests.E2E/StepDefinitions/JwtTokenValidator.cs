@@ -61,6 +61,29 @@ public static class JwtTokenValidator
         }
     }
 
+    /// <summary>
+    /// Reads the dataStoreIds claim, distinguishing a claim that is present and empty from a claim
+    /// the identity provider never emitted.
+    /// </summary>
+    public static bool TryGetDataStoreIdsClaim(string token, out string dataStoreIds)
+    {
+        dataStoreIds = string.Empty;
+        var tokenHandler = new JwtSecurityTokenHandler();
+        if (!tokenHandler.CanReadToken(token))
+        {
+            return false;
+        }
+
+        var claim = tokenHandler.ReadJwtToken(token).Claims.FirstOrDefault(c => c.Type == "dataStoreIds");
+        if (claim is null)
+        {
+            return false;
+        }
+
+        dataStoreIds = claim.Value;
+        return true;
+    }
+
     public static bool ValidateEdOrgIds(string token, string edOrgIds)
     {
         try

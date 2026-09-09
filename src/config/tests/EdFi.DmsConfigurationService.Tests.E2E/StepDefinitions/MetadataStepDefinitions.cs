@@ -237,6 +237,29 @@ public class MetadataStepDefinitions(PlaywrightContext playwrightContext, Scenar
         }
     }
 
+    [Then("the OpenAPI specification field {string} contains")]
+    public async Task ThenTheOpenApiSpecificationFieldContains(string field, Table table)
+    {
+        var apiResponse = GetLastApiResponse();
+        string responseJsonString = await apiResponse.TextAsync();
+        JsonNode responseJson = JsonNode.Parse(responseJsonString)!;
+
+        JsonNode? currentNode = responseJson;
+        foreach (var part in field.Split('.'))
+        {
+            currentNode.Should().NotBeNull($"Field path '{field}' should exist");
+            currentNode = currentNode![part];
+        }
+
+        currentNode.Should().NotBeNull($"Field '{field}' should have a value");
+        string fieldValue = currentNode!.ToString();
+
+        foreach (var row in table.Rows)
+        {
+            fieldValue.Should().Contain(row["Text"], $"Field '{field}' should describe '{row["Text"]}'");
+        }
+    }
+
     [Then(@"the response body field {string} is non-empty and matches pattern {string}")]
     public async Task ThenTheResponseBodyFieldIsNonEmptyAndMatchesPattern(string fieldName, string pattern)
     {

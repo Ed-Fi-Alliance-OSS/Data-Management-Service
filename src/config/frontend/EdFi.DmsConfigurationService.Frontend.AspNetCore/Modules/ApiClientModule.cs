@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Net;
+using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel;
@@ -16,6 +17,7 @@ using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Models;
 using Microsoft.Extensions.Options;
+using Microsoft.OpenApi;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
 
@@ -25,8 +27,44 @@ public class ApiClientModule : IEndpointModule
     {
         endpoints
             .MapSecuredPost("/v3/apiClients/", InsertApiClient)
-            .Produces<ApiClientCredentialsResponse>(201);
-        endpoints.MapSecuredPut($"/v3/apiClients/{{id}}", UpdateApiClient);
+            .Produces<ApiClientCredentialsResponse>(201)
+            .AddOpenApiOperationTransformer(
+                (operation, context, ct) =>
+                {
+                    SetEmptyDataStoreAssignmentExample(
+                        operation,
+                        """
+                        {
+                          "applicationId": 1,
+                          "name": "Identity Only Client",
+                          "isApproved": true,
+                          "dataStoreIds": []
+                        }
+                        """
+                    );
+                    return Task.CompletedTask;
+                }
+            );
+        endpoints
+            .MapSecuredPut($"/v3/apiClients/{{id}}", UpdateApiClient)
+            .AddOpenApiOperationTransformer(
+                (operation, context, ct) =>
+                {
+                    SetEmptyDataStoreAssignmentExample(
+                        operation,
+                        """
+                        {
+                          "id": 1,
+                          "applicationId": 1,
+                          "name": "Identity Only Client",
+                          "isApproved": true,
+                          "dataStoreIds": []
+                        }
+                        """
+                    );
+                    return Task.CompletedTask;
+                }
+            );
         endpoints.MapSecuredDelete($"/v3/apiClients/{{id}}", DeleteApiClient);
         endpoints
             .MapSecuredPut($"/v3/apiClients/{{id}}/reset-credential", ResetCredential)
@@ -36,6 +74,22 @@ public class ApiClientModule : IEndpointModule
         endpoints
             .MapLimitedAccess("/v3/apiClients/{clientId}", GetByClientId)
             .Produces<ApiClientResponse>(200);
+    }
+
+    /// <summary>
+    /// Publishes a request example whose dataStoreIds is empty, so the documented default for an
+    /// API client is the identity-only shape rather than an assignment callers must invent.
+    /// </summary>
+    private static void SetEmptyDataStoreAssignmentExample(OpenApiOperation operation, string example)
+    {
+        if (
+            operation.RequestBody is OpenApiRequestBody requestBody
+            && requestBody.Content is not null
+            && requestBody.Content.TryGetValue("application/json", out var mediaType)
+        )
+        {
+            mediaType.Example = JsonNode.Parse(example);
+        }
     }
 
     private async Task<IResult> InsertApiClient(

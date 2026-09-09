@@ -25,6 +25,12 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
     private string _applicationKey = string.Empty;
     private string _applicationSecret = string.Empty;
 
+    /// <summary>
+    /// Credential pairs captured under caller-chosen names, so a scenario can hold more than one
+    /// client's current key and secret at the same time and refresh one of them after a reset.
+    /// </summary>
+    private readonly Dictionary<string, (string Key, string Secret)> _credentialSlots = new();
+
     private IDictionary<string, string> _authHeaders =>
         new Dictionary<string, string>
         {
@@ -611,6 +617,74 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
         _applicationKey = responseJson["key"]!.GetValue<string>();
         responseJson["secret"].Should().NotBeNull();
         _applicationSecret = responseJson["secret"]!.GetValue<string>();
+    }
+
+    [Then("the response body id is captured as {string}")]
+    [Given("the response body id is captured as {string}")]
+    public async Task ThenTheResponseBodyIdIsCapturedAs(string identifier)
+    {
+        JsonNode responseJson = JsonNode.Parse(await _apiResponse.TextAsync())!;
+        responseJson["id"].Should().NotBeNull("the previous response should include an id");
+        _ids[identifier] = responseJson["id"]!.ToString();
+    }
+
+    [Then("the response body credentials are captured as {string}")]
+    [Given("the response body credentials are captured as {string}")]
+    public async Task ThenTheResponseBodyCredentialsAreCapturedAs(string slot)
+    {
+        JsonNode responseJson = JsonNode.Parse(await _apiResponse.TextAsync())!;
+        responseJson["key"].Should().NotBeNull("the previous response should include a key");
+        responseJson["secret"].Should().NotBeNull("the previous response should include a secret");
+        string key = responseJson["key"]!.GetValue<string>();
+        _credentialSlots[slot] = (key, responseJson["secret"]!.GetValue<string>());
+
+        // The key is also the client's addressable clientId, so record it for URL substitution.
+        // A later capture into the same slot keeps this in step with the slot's current pair.
+        _ids[$"{slot}Key"] = key;
+    }
+
+    // The scope must be the client's own claim set name, which is the scope both identity
+    // providers register for an application's client. Omitting it is not portable: the token
+    // endpoint forwards an empty scope parameter, which Keycloak rejects as invalid_scope while
+    // the self-contained provider falls back to the client's default permissions.
+    [When("a token is requested with the credentials captured as {string} and scope {string}")]
+    public async Task WhenATokenIsRequestedWithTheCredentialsCapturedAs(string slot, string scope)
+    {
+        _credentialSlots.Should().ContainKey(slot, $"credentials should have been captured as '{slot}'");
+        (string key, string secret) = _credentialSlots[slot];
+
+        var content = new FormUrlEncodedContent(
+            new Dictionary<string, string>
+            {
+                { "client_id", key },
+                { "client_secret", secret },
+                { "grant_type", "client_credentials" },
+                { "scope", scope },
+            }
+        );
+        APIRequestContextOptions options = new()
+        {
+            Headers = new Dictionary<string, string>
+            {
+                { "Content-Type", "application/x-www-form-urlencoded" },
+            },
+            Data = await content.ReadAsStringAsync(),
+        };
+        _apiResponse = await playwrightContext.ApiRequestContext!.PostAsync("/connect/token", options);
+    }
+
+    [Then("the token has an empty dataStoreIds claim")]
+    public async Task ThenTheTokenHasAnEmptyDataStoreIdsClaim()
+    {
+        JsonNode responseJson = JsonNode.Parse(await _apiResponse.TextAsync())!;
+        responseJson["access_token"].Should().NotBeNull("response should include an access_token");
+        string accessToken = responseJson["access_token"]!.GetValue<string>();
+
+        JwtTokenValidator
+            .TryGetDataStoreIdsClaim(accessToken, out string dataStoreIds)
+            .Should()
+            .BeTrue("the token should carry a dataStoreIds claim");
+        dataStoreIds.Should().BeEmpty("a client with no datastore assignment has no datastore ids");
     }
 
     [When("a token request is attempted with the captured application credentials")]

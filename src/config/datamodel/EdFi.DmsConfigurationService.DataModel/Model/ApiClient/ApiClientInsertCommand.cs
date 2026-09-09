@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.ComponentModel;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using FluentValidation;
@@ -15,6 +16,13 @@ public class ApiClientInsertCommand
     public required int ApplicationId { get; set; }
     public required string Name { get; set; } = "";
     public required bool IsApproved { get; set; }
+
+    [Description(
+        "Data Store ids to assign to the API client. Optional. An empty array, or omitting the "
+            + "property, creates a client with no Data Store assignment: it authenticates and "
+            + "receives a token, but reaches no Data Store data. An explicit null is rejected. "
+            + "Supplied ids must already exist in the caller's tenant."
+    )]
     public int[] DataStoreIds { get; set; } = [];
 
     [JsonExtensionData]
@@ -27,8 +35,10 @@ public class ApiClientInsertCommand
             RuleFor(a => a.ApplicationId).NotEmpty().GreaterThan(0);
             RuleFor(a => a.Name).NotEmpty().MaximumLength(50);
             RuleFor(a => a.DataStoreIds)
-                .NotEmpty()
-                .WithMessage("DataStoreIds cannot be empty. At least one Data Store is required.");
+                .NotNull()
+                .WithMessage(
+                    "DataStoreIds cannot be null. Supply an array of Data Store ids, or an empty array for a client with no Data Store assignment."
+                );
             RuleFor(a => a.AdditionalProperties).Custom(RejectOwnershipFields);
         }
 
