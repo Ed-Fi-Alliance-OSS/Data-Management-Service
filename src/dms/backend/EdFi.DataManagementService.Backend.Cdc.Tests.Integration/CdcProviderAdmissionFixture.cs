@@ -3,17 +3,21 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data.Common;
 using Confluent.Kafka;
 using EdFi.DataManagementService.Backend.Ddl;
 using EdFi.DataManagementService.Backend.DocumentCacheRuntime;
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.Mssql;
 using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.Startup;
+using EdFi.DataManagementService.SchemaTools.Provisioning;
 using FakeItEasy;
 using FluentAssertions;
+using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -25,7 +29,7 @@ using CoreCdc = EdFi.DataManagementService.Core.DocumentCache.Cdc;
 namespace EdFi.DataManagementService.Backend.Cdc.Tests.Integration;
 
 /// <summary>Owns an actual new database; only schema-file and CMS delivery are fixture substitutes.</summary>
-internal sealed class CdcPostgresqlAdmissionFixture : IAsyncDisposable
+internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
 {
     public CdcControllerFixture Infrastructure { get; private set; } = null!;
     public CdcControllerFixtureHooks Hooks => Infrastructure.Hooks;
@@ -36,8 +40,10 @@ internal sealed class CdcPostgresqlAdmissionFixture : IAsyncDisposable
     public ICdcProviderSetupService Provider { get; private set; } = null!;
     public ICdcConnectorTemplateService Templates { get; private set; } = null!;
     public List<CdcProviderSetupMode> ProviderModes { get; } = [];
+    public List<CdcProviderSetupResult> ProviderResults { get; } = [];
     public List<CoreCdc.CdcConnectorLagObservation> Lag { get; } = [];
     public DateTimeOffset RuntimeStoppedAt { get; private set; }
+    public List<CdcKafkaTopicEvidence> PreRegistrationHistoryTopics { get; } = [];
     public List<CdcDeploymentDiagnostic> RegistrationRetries { get; } = [];
     public List<CoreCdc.CdcProviderBarrierCaptureResult> Barriers { get; } = [];
     public List<CoreCdc.CdcProviderBarrierObservation> BarrierObservations { get; } = [];
@@ -50,19 +56,31 @@ internal sealed class CdcPostgresqlAdmissionFixture : IAsyncDisposable
     public string Database { get; } = "admission_" + Guid.NewGuid().ToString("N");
     private ServiceProvider _services = null!;
     private bool _disposed;
-    private NpgsqlConnection _providerConnection = null!;
+    private DbConnection _providerConnection = null!;
     private IConfigurationRoot _configuration = null!;
     private ApiSchemaFileLoadResult.SuccessResult _schema = null!;
     private DdlPipelineEmission _emission = null!;
+    private readonly CdcProvider _provider;
+    private EffectiveSchemaInfo _effectiveSchema = null!;
+    public List<string> Preparation { get; } = [];
+
+    private CdcProviderAdmissionFixture(CdcProvider provider) => _provider = provider;
+
+    private CoreCdc.CdcProvider CoreProvider =>
+        _provider == CdcProvider.Postgresql ? CoreCdc.CdcProvider.Postgresql : CoreCdc.CdcProvider.SqlServer;
+    private string ProviderToken => _provider == CdcProvider.Postgresql ? "postgresql" : "mssql";
     private static readonly DocumentCacheTargetKey Target = DocumentCacheTargetKey.Create("", 1);
 
-    public static async Task<CdcPostgresqlAdmissionFixture> StartAsync(CancellationToken cancellationToken)
+    public static async Task<CdcProviderAdmissionFixture> StartAsync(
+        CdcProvider provider,
+        CancellationToken cancellationToken
+    )
     {
-        var suite = new CdcPostgresqlAdmissionFixture();
+        var suite = new CdcProviderAdmissionFixture(provider);
         try
         {
             suite.Infrastructure = await CdcControllerFixture.StartAsync(
-                CdcProvider.Postgresql,
+                provider,
                 cancellationToken,
                 async (infrastructure, ct) =>
                 {
@@ -96,12 +114,27 @@ internal sealed class CdcPostgresqlAdmissionFixture : IAsyncDisposable
     private async Task PrepareAsync(CancellationToken cancellationToken)
     {
         await using var admin = await Infrastructure.OpenAdminConnectionAsync(cancellationToken);
-        ConnectionString = new NpgsqlConnectionStringBuilder(admin.ConnectionString)
+        ConnectionString =
+            _provider == CdcProvider.Postgresql
+                ? new NpgsqlConnectionStringBuilder(admin.ConnectionString)
+                {
+                    Database = Database,
+                    Pooling = false,
+                    Password = CdcConnectorTemplatePinnedImageFixture.ConnectorDatabasePassword,
+                }.ConnectionString
+                : new SqlConnectionStringBuilder(admin.ConnectionString)
+                {
+                    InitialCatalog = Database,
+                    Pooling = false,
+                    Password = CdcConnectorTemplatePinnedImageFixture.ConnectorDatabasePassword,
+                }.ConnectionString;
+        if (_provider == CdcProvider.SqlServer)
         {
-            Database = Database,
-            Pooling = false,
-            Password = CdcConnectorTemplatePinnedImageFixture.ConnectorDatabasePassword,
-        }.ConnectionString;
+            await using var command = admin.CreateCommand();
+            command.CommandText = "EXEC sys.sp_configure N'nested triggers', 0; RECONFIGURE;";
+            await command.ExecuteNonQueryAsync(cancellationToken);
+            Preparation.Add("nested-triggers-disabled");
+        }
         var loader = new ApiSchemaFileLoader(
             new ApiSchemaInputNormalizer(NullLogger<ApiSchemaInputNormalizer>.Instance),
             NullLogger<ApiSchemaFileLoader>.Instance
@@ -115,31 +148,32 @@ internal sealed class CdcPostgresqlAdmissionFixture : IAsyncDisposable
             new EffectiveSchemaHashProvider(NullLogger<EffectiveSchemaHashProvider>.Instance),
             new ResourceKeySeedProvider(NullLogger<ResourceKeySeedProvider>.Instance)
         ).Build(_schema.NormalizedNodes);
-        var emission = DdlPipelineHelpers.BuildDdlEmissionForDialect(schemaSet, SqlDialect.Pgsql);
-        _emission = emission;
-        var provisioner = new ManagedSource(
-            new NpgsqlConnectionStringBuilder(ConnectionString) { Database = "postgres" }.ConnectionString,
-            ConnectionString,
-            Database,
-            emission
+        var emission = DdlPipelineHelpers.BuildDdlEmissionForDialect(
+            schemaSet,
+            _provider == CdcProvider.Postgresql ? SqlDialect.Pgsql : SqlDialect.Mssql
         );
+        _emission = emission;
+        _effectiveSchema = schemaSet.EffectiveSchema;
+        var provisioner = CreateManagedSource(Database);
         var provisioned = await new CdcManagedDatabaseProvisioning(
             Infrastructure.CreateJournalStore()
         ).ProvisionAsync(
-            new("dms", "default", "1", "admission", 1, CoreCdc.CdcProvider.Postgresql),
+            new("dms", "default", "1", "admission", 1, CoreProvider),
             provisioner,
             cancellationToken
         );
         provisioned.CreationReceipt.Outcome.Should().Be(CdcDatabaseCreationOutcome.Created);
         await ExecuteAsync(
-            "CREATE ROLE dms_connector LOGIN REPLICATION PASSWORD 'EdFi_Dms1!'",
+            _provider == CdcProvider.Postgresql
+                ? "CREATE ROLE dms_connector LOGIN REPLICATION PASSWORD 'EdFi_Dms1!'"
+                : "CREATE LOGIN dms_connector WITH PASSWORD = 'EdFi_Dms1!', CHECK_POLICY = OFF; CREATE USER dms_connector FOR LOGIN dms_connector;",
             cancellationToken
         );
         _configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(
                 new Dictionary<string, string?>
                 {
-                    ["AppSettings:Datastore"] = "postgresql",
+                    ["AppSettings:Datastore"] = ProviderToken,
                     ["AppSettings:DefaultPartitionCount"] = "10",
                     ["ConfigurationServiceSettings:BaseUrl"] = "https://cms.example.org",
                     ["ConfigurationServiceSettings:ClientId"] = "test",
@@ -153,9 +187,7 @@ internal sealed class CdcPostgresqlAdmissionFixture : IAsyncDisposable
             )
             .Build();
         var artifacts = CoreCdc
-            .CdcArtifactNameGenerator.Render(
-                new("dms", "edfi.documents", "admission", 1, CoreCdc.CdcProvider.Postgresql)
-            )
+            .CdcArtifactNameGenerator.Render(new("dms", "edfi.documents", "admission", 1, CoreProvider))
             .Inventory!;
         var binding = new CoreCdc.CdcBinding(
             1,
@@ -164,7 +196,7 @@ internal sealed class CdcPostgresqlAdmissionFixture : IAsyncDisposable
             "1",
             "admission",
             1,
-            CoreCdc.CdcProvider.Postgresql,
+            CoreProvider,
             provisioned.PhysicalSourceFingerprint,
             artifacts.ConnectorName,
             artifacts.TopicName,
@@ -172,22 +204,22 @@ internal sealed class CdcPostgresqlAdmissionFixture : IAsyncDisposable
             CoreCdc.CdcTargetValidator.KafkaMurmur2V1PartitionerAlgorithm,
             1
         );
-        _providerConnection = new NpgsqlConnection(ConnectionString);
+        _providerConnection = CreateConnection(ConnectionString);
         await _providerConnection.OpenAsync(cancellationToken);
         var connectionProperties = new Dictionary<string, string>(
             Infrastructure.Resources.ProviderConnectionProperties
         )
         {
-            ["database.dbname"] = Database,
+            [_provider == CdcProvider.Postgresql ? "database.dbname" : "database.names"] = Database,
         };
         Request = new(
             binding,
             _configuration,
             new(
-                CdcProvider.Postgresql,
+                _provider,
                 CdcProviderSetupMode.InitialCreateOrExactMatch,
                 new(CdcSourceFingerprintMetadata.Version, provisioned.PhysicalSourceFingerprint),
-                new(new("postgres")),
+                new(new(_provider == CdcProvider.Postgresql ? "postgres" : "sa")),
                 new(new("dms_connector")),
                 CdcDeploymentRequest.GetProviderArtifactNames(binding),
                 new(false),
@@ -200,7 +232,8 @@ internal sealed class CdcPostgresqlAdmissionFixture : IAsyncDisposable
             new(
                 Infrastructure.Resources.KafkaBootstrapServers,
                 1_000_000,
-                heartbeatInterval: TimeSpan.FromSeconds(1)
+                heartbeatInterval: TimeSpan.FromSeconds(1),
+                sqlServerPollInterval: _provider == CdcProvider.SqlServer ? TimeSpan.FromSeconds(1) : null
             ),
             Tests.Unit.CdcDeploymentRequestTestData.Worker(
                 heapBytes: 536_870_912,
@@ -208,10 +241,10 @@ internal sealed class CdcPostgresqlAdmissionFixture : IAsyncDisposable
                 offsetTopic: Infrastructure.Resources.ControllerProject + ".connect.offsets",
                 workerKey: Infrastructure.Resources.ControllerProject
             ),
-            new(CdcProvider.Postgresql, connectionProperties),
+            new(_provider, connectionProperties),
             CdcKafkaClientSecurityProperties.Empty,
             new(
-                TimeSpan.FromSeconds(30),
+                _provider == CdcProvider.SqlServer ? TimeSpan.FromMinutes(2) : TimeSpan.FromSeconds(30),
                 TimeSpan.FromMinutes(3),
                 TimeSpan.FromMilliseconds(250),
                 TimeSpan.FromSeconds(30)
@@ -221,12 +254,20 @@ internal sealed class CdcPostgresqlAdmissionFixture : IAsyncDisposable
             .AddLogging()
             .AddSingleton<Serilog.ILogger>(_ => new Serilog.LoggerConfiguration().CreateLogger())
             .AddCdcProviderSetup()
-            .AddCdcConnectorTemplates()
-            .AddPostgresqlDmsCdcControlPlane();
+            .AddCdcConnectorTemplates();
+        if (_provider == CdcProvider.Postgresql)
+        {
+            registrations.AddPostgresqlDmsCdcControlPlane();
+        }
+        else
+        {
+            registrations.AddMssqlDmsCdcControlPlane();
+        }
         _services = registrations.BuildServiceProvider();
         Provider = new RecordingProvider(
             _services.GetRequiredService<ICdcProviderSetupService>(),
-            ProviderModes
+            ProviderModes,
+            ProviderResults
         );
         Templates = _services.GetRequiredService<ICdcConnectorTemplateService>();
         var kafkaConfig = new AdminClientConfig
@@ -263,13 +304,75 @@ internal sealed class CdcPostgresqlAdmissionFixture : IAsyncDisposable
         offset.PolicyState.Should().Be(CoreCdc.CdcConnectOffsetStorePolicyState.Satisfied);
     }
 
-    public ICdcManagedDatabaseProvisioner CreateManagedSource(string database) =>
-        new ManagedSource(
-            new NpgsqlConnectionStringBuilder(ConnectionString) { Database = "postgres" }.ConnectionString,
-            new NpgsqlConnectionStringBuilder(ConnectionString) { Database = database }.ConnectionString,
-            database,
-            _emission
+    public ICdcManagedDatabaseProvisioner CreateManagedSource(
+        string database,
+        CdcProjectionPrerequisiteMode mode = CdcProjectionPrerequisiteMode.OwnedLocalSqlServer,
+        string setupUser = "sa"
+    )
+    {
+        if (_provider == CdcProvider.Postgresql)
+        {
+            return new ManagedSource(
+                new NpgsqlConnectionStringBuilder(ConnectionString)
+                {
+                    Database = "postgres",
+                }.ConnectionString,
+                new NpgsqlConnectionStringBuilder(ConnectionString) { Database = database }.ConnectionString,
+                database,
+                _emission
+            );
+        }
+        string connection = new SqlConnectionStringBuilder(ConnectionString)
+        {
+            UserID = setupUser,
+            InitialCatalog = database,
+        }.ConnectionString;
+        return new ManagedDatabaseProvisioner(
+            new RecordingMssqlProvisioner(Preparation),
+            new MssqlDocumentCachePhysicalSourceFingerprintReader(
+                NullLogger<MssqlDocumentCachePhysicalSourceFingerprintReader>.Instance
+            ),
+            connection,
+            _effectiveSchema,
+            _emission.CombinedSql,
+            60,
+            mode
         );
+    }
+
+    private sealed class RecordingMssqlProvisioner(List<string> preparation)
+        : MssqlDatabaseProvisioner(NullLogger.Instance)
+    {
+        public override void CheckOrConfigureMvcc(string connectionString, bool databaseWasCreated)
+        {
+            using var connection = new SqlConnection(connectionString);
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText =
+                "SELECT is_read_committed_snapshot_on FROM sys.databases WHERE database_id = DB_ID()";
+            if (databaseWasCreated)
+            {
+                Convert.ToBoolean(command.ExecuteScalar()).Should().BeFalse();
+            }
+            connection.Close();
+            base.CheckOrConfigureMvcc(connectionString, databaseWasCreated);
+            preparation.Add("mvcc-prepared");
+        }
+
+        public override void CheckCdcProjectionPrerequisites(
+            string connectionString,
+            bool configureOwnedLocalServer
+        )
+        {
+            base.CheckCdcProjectionPrerequisites(connectionString, configureOwnedLocalServer);
+            preparation.Add("projection-prerequisites-validated");
+        }
+    }
+
+    private DbConnection CreateConnection(string connectionString) =>
+        _provider == CdcProvider.Postgresql
+            ? new NpgsqlConnection(connectionString)
+            : new SqlConnection(connectionString);
 
     public CdcKafkaProvisioning KafkaProvisioning() =>
         new(
@@ -313,11 +416,13 @@ internal sealed class CdcPostgresqlAdmissionFixture : IAsyncDisposable
         var stores = A.Fake<IDataStoreProvider>();
         var store = new DataStore(
             1,
-            "postgresql",
+            ProviderToken,
             "test",
             ConnectionString,
             [],
-            RelationalProviderToken.Postgresql,
+            _provider == CdcProvider.Postgresql
+                ? RelationalProviderToken.Postgresql
+                : RelationalProviderToken.SqlServer,
             RelationalProviderMetadataStatus.Supported
         );
         A.CallTo(() => stores.GetById(1, A<string>._)).Returns(store);
@@ -333,14 +438,33 @@ internal sealed class CdcPostgresqlAdmissionFixture : IAsyncDisposable
                 cancellationToken
             )
         );
+        Preparation.Add("runtime-initialized");
         Runtime = Controllers.HookRuntime(new RecordingRuntime(runtime, this));
     }
 
-    public async Task RegisterAsync(CancellationToken cancellationToken)
+    public async Task RegisterAsync(CancellationToken cancellationToken, bool resumeProvider = false)
     {
-        Observed(await Controllers.Activation.ActivateAsync(Request, Runtime, cancellationToken));
+        if (!resumeProvider)
+        {
+            Observed(await Controllers.Activation.ActivateAsync(Request, Runtime, cancellationToken));
+        }
         Observed(await Controllers.ProviderSetup.SetupAsync(Request, Runtime, cancellationToken));
         Observed(await KafkaProvisioning().ProvisionBindingAsync(Request, cancellationToken));
+        if (_provider == CdcProvider.SqlServer)
+        {
+            var artifacts = CdcConnectorTemplateBindingArtifacts
+                .From(Request.Binding, nameof(Request))
+                .ArtifactInventory;
+            PreRegistrationHistoryTopics.Add(
+                Observed(
+                    await Kafka.InspectTopicAsync(
+                        Request,
+                        artifacts.SchemaHistoryTopicName!,
+                        cancellationToken
+                    )
+                )
+            );
+        }
         await CdcControllerFixture.WaitAsync(
             async ct =>
             {
@@ -439,6 +563,40 @@ internal sealed class CdcPostgresqlAdmissionFixture : IAsyncDisposable
         return result;
     }
 
+    public Task<CdcProviderSetupResult> InspectProviderAsync(CancellationToken token)
+    {
+        var source = Request.ProviderSetup;
+        return Provider.SetupAsync(
+            new(
+                source.Provider,
+                CdcProviderSetupMode.ValidateOnly,
+                source.BoundPhysicalSourceFingerprint,
+                source.SetupPrincipal,
+                source.ConnectorPrincipal,
+                source.ArtifactNames,
+                source.ArtifactOutput,
+                source.ExpectedSourceInventory,
+                source.DmsManagedTableInventory,
+                databaseExecutor: source.DatabaseExecutor
+            ),
+            token
+        );
+    }
+
+    public CdcInitialReadiness AdmissionWithKafka(ICdcKafkaAdminAdapter kafka) =>
+        new(
+            Infrastructure.StateRoot,
+            Provider,
+            Templates,
+            kafka,
+            Infrastructure.Connect,
+            Infrastructure.Worker,
+            Infrastructure.Metrics,
+            _services
+                .GetServices<CoreCdc.ICdcProviderSourcePositionAdapter>()
+                .Single(p => p.Provider == Request.Binding.Provider)
+        );
+
     public CdcDeploymentRequest WithTiming(CdcDeploymentTiming timing) =>
         new(
             Request.Binding,
@@ -503,18 +661,20 @@ internal sealed class CdcPostgresqlAdmissionFixture : IAsyncDisposable
 
     public async Task ExecuteAsync(string sql, CancellationToken cancellationToken)
     {
-        await using var connection = new NpgsqlConnection(ConnectionString);
+        await using var connection = CreateConnection(ConnectionString);
         await connection.OpenAsync(cancellationToken);
-        await using var command = new NpgsqlCommand(sql, connection);
+        await using var command = connection.CreateCommand();
+        command.CommandText = sql;
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     public async Task<T> ScalarAsync<T>(string sql, CancellationToken cancellationToken)
     {
-        await using var connection = new NpgsqlConnection(ConnectionString);
+        await using var connection = CreateConnection(ConnectionString);
         await connection.OpenAsync(cancellationToken);
-        await using var command = new NpgsqlCommand(sql, connection);
-        return (T)(await command.ExecuteScalarAsync(cancellationToken))!;
+        await using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        return (T)Convert.ChangeType((await command.ExecuteScalarAsync(cancellationToken))!, typeof(T));
     }
 
     public static T Observed<T>(CdcTransportResult<T> result)
@@ -548,13 +708,26 @@ internal sealed class CdcPostgresqlAdmissionFixture : IAsyncDisposable
                             o.IntendedAt,
                             Completions = o.Completions.Length,
                         }),
+                        Preparation,
                         ProviderModes,
+                        ProviderResults = ProviderResults.Select(r => new
+                        {
+                            r.Mode,
+                            r.Outcome,
+                            Diagnostics = r.Diagnostics.Select(d => new { d.Code, d.Severity }),
+                        }),
+                        PreRegistrationHistoryTopics = PreRegistrationHistoryTopics.Select(t => new
+                        {
+                            PartitionCount = t.PartitionReplicas.Count,
+                            t.Configuration,
+                        }),
                         RegistrationRetries,
                         ContinuitySamples,
                         SourceHistory = SourceHistory.Select(h => new
                         {
                             h.ObservedAt,
                             h.Continuity,
+                            h.SqlServerJobs,
                             Diagnostics = h.Diagnostics.Select(d => new { d.Category, d.Path }),
                         }),
                         BarrierObservations = BarrierObservations.Select(b => new
@@ -585,6 +758,9 @@ internal sealed class CdcPostgresqlAdmissionFixture : IAsyncDisposable
                             b.Provider,
                             b.Succeeded,
                             b.BarrierCapturedAt,
+                            b.SqlServerCommitLsn,
+                            b.SqlServerChangeLsn,
+                            b.SqlServerEventSerialNo,
                         }),
                         Projection = ProjectionObservations.SelectMany(o =>
                             o.Targets.Select(t => new
@@ -727,7 +903,7 @@ internal sealed class CdcPostgresqlAdmissionFixture : IAsyncDisposable
 
     private sealed class RecordingPositions(
         CoreCdc.ICdcProviderSourcePositionAdapter inner,
-        CdcPostgresqlAdmissionFixture owner
+        CdcProviderAdmissionFixture owner
     ) : CoreCdc.ICdcProviderSourcePositionAdapter
     {
         public CoreCdc.CdcProvider Provider => inner.Provider;
@@ -800,20 +976,25 @@ internal sealed class CdcPostgresqlAdmissionFixture : IAsyncDisposable
         }
     }
 
-    private sealed class RecordingProvider(ICdcProviderSetupService inner, List<CdcProviderSetupMode> modes)
-        : ICdcProviderSetupService
+    private sealed class RecordingProvider(
+        ICdcProviderSetupService inner,
+        List<CdcProviderSetupMode> modes,
+        List<CdcProviderSetupResult> results
+    ) : ICdcProviderSetupService
     {
-        public Task<CdcProviderSetupResult> SetupAsync(
+        public async Task<CdcProviderSetupResult> SetupAsync(
             CdcProviderSetupRequest request,
             CancellationToken cancellationToken = default
         )
         {
             modes.Add(request.Mode);
-            return inner.SetupAsync(request, cancellationToken);
+            var result = await inner.SetupAsync(request, cancellationToken);
+            results.Add(result);
+            return result;
         }
     }
 
-    private sealed class RecordingRuntime(ICdcProjectionRuntime inner, CdcPostgresqlAdmissionFixture owner)
+    private sealed class RecordingRuntime(ICdcProjectionRuntime inner, CdcProviderAdmissionFixture owner)
         : ICdcProjectionRuntime
     {
         public async Task<DocumentCacheAdministrativeCommandResult> ActivateAsync(
@@ -831,6 +1012,7 @@ internal sealed class CdcPostgresqlAdmissionFixture : IAsyncDisposable
             )
                 .Status.Should()
                 .Be(CoreCdc.CdcControlPlaneOperationStatus.Succeeded);
+            owner.Preparation.Add("guarded-activation");
             var result = await inner.ActivateAsync(request, cancellationToken);
             owner.AfterRuntimeCall(nameof(ActivateAsync));
             return result;

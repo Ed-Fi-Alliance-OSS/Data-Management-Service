@@ -47,6 +47,29 @@
             Link="Shared\CdcConnectorTemplateTestData.cs"
         />
     </ItemGroup>
+    <!-- Compile the production provisioning owners into this test assembly; no CLI executable dependency. -->
+    <ItemGroup>
+        <Compile
+            Include="../../clis/EdFi.DataManagementService.SchemaTools/Provisioning/IDatabaseProvisioner.cs"
+            Link="Shared/IDatabaseProvisioner.cs"
+        />
+        <Compile
+            Include="../../clis/EdFi.DataManagementService.SchemaTools/Provisioning/DatabaseProvisionerBase.cs"
+            Link="Shared/DatabaseProvisionerBase.cs"
+        />
+        <Compile
+            Include="../../clis/EdFi.DataManagementService.SchemaTools/Provisioning/MssqlDatabaseProvisioner.cs"
+            Link="Shared/MssqlDatabaseProvisioner.cs"
+        />
+        <Compile
+            Include="../../clis/EdFi.DataManagementService.SchemaTools/Provisioning/ManagedDatabaseProvisioner.cs"
+            Link="Shared/ManagedDatabaseProvisioner.cs"
+        />
+        <Compile
+            Include="../../clis/EdFi.DataManagementService.SchemaTools/Provisioning/SeedValidator.cs"
+            Link="Shared/SeedValidator.cs"
+        />
+    </ItemGroup>
     <ItemGroup>
         <None
             Include="../../clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/Fixtures/minimal-api-schema.json"

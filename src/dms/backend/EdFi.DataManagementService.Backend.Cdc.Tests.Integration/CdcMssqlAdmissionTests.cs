@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Backend.Ddl;
+using EdFi.DataManagementService.SchemaTools.Provisioning;
 using FluentAssertions;
 using NUnit.Framework;
 using static EdFi.DataManagementService.Backend.Cdc.Tests.Integration.CdcProviderAdmissionFixture;
@@ -13,11 +14,11 @@ namespace EdFi.DataManagementService.Backend.Cdc.Tests.Integration;
 
 [TestFixture]
 [Category(CdcControllerCategories.Admission)]
-[Category("PostgresqlIntegration")]
+[Category("MssqlIntegration")]
 [Category("DatabaseIntegration")]
 [Category("CdcAuthorizationDisabledLocal")]
 [NonParallelizable]
-public sealed class Given_Postgresql_Controller_Admission
+public sealed class Given_SqlServer_Controller_Admission
 {
     private CdcProviderAdmissionFixture _fixture = null!;
     private CancellationTokenSource _timeout = null!;
@@ -27,7 +28,7 @@ public sealed class Given_Postgresql_Controller_Admission
     public async Task Setup()
     {
         _timeout = new(TimeSpan.FromMinutes(8));
-        _fixture = await CdcProviderAdmissionFixture.StartAsync(CdcProvider.Postgresql, Token);
+        _fixture = await CdcProviderAdmissionFixture.StartAsync(CdcProvider.SqlServer, Token);
     }
 
     [TearDown]
@@ -87,20 +88,69 @@ public sealed class Given_Postgresql_Controller_Admission
             await _fixture.Infrastructure.Connect.ReadOffsetEvidenceAsync(_fixture.Request, Token)
         );
         CoreCdc
-            .CdcPostgresqlProviderPosition.CompareCommittedOffsetToBarrier(
-                CoreCdc
-                    .CdcPostgresqlProviderPosition.ParseWalLsn(barrier.PostgresqlBarrierLsn)
-                    .Position!.Value,
-                offset.Postgresql
+            .CdcSqlServerProviderPositionParser.CompareCommittedOffsetToBarrier(
+                CoreCdc.CdcSqlServerProviderPosition.HeartbeatAfterImage(
+                    CoreCdc
+                        .CdcSqlServerProviderPositionParser.ParseLsn(barrier.SqlServerCommitLsn, "$.commit")
+                        .Lsn!.Value,
+                    CoreCdc
+                        .CdcSqlServerProviderPositionParser.ParseLsn(barrier.SqlServerChangeLsn, "$.change")
+                        .Lsn!.Value
+                ),
+                offset.SqlServer
             )
             .AtOrBeyondBarrier.Should()
             .BeTrue();
-        var retained = journal
-            .Operations.Single(o => o.Effect == CdcWorkflowEffect.CreateProvider)
-            .Completions.Single()
-            .Evidence;
-        ((CdcWorkflowCompletion.Provider)retained).InitialSlotProofs.Should().ContainSingle();
-        (await _fixture.ScalarAsync<long>("SELECT COUNT(*) FROM dms.\"Document\"", Token)).Should().Be(0);
+        barrier.SqlServerEventSerialNo.Should().Be(2);
+        var artifacts = CdcConnectorTemplateBindingArtifacts
+            .From(_fixture.Request.Binding, nameof(_fixture))
+            .ArtifactInventory;
+        string commit = barrier.SqlServerCommitLsn!.Replace(":", "");
+        string change = barrier.SqlServerChangeLsn!.Replace(":", "");
+        (
+            await _fixture.ScalarAsync<int>(
+                $"SELECT COUNT(*) FROM cdc.[{artifacts.SqlServerCaptureInstanceCdcHeartbeatName}_CT] WHERE [__$operation] = 4 AND [__$start_lsn] = 0x{commit} AND [__$seqval] = 0x{change}",
+                Token
+            )
+        )
+            .Should()
+            .Be(1);
+        var historyTopic = _fixture.PreRegistrationHistoryTopics.Should().ContainSingle().Subject;
+        historyTopic.PartitionReplicas.Should().ContainSingle();
+        historyTopic.Configuration["cleanup.policy"].Value.Should().Be("delete");
+        historyTopic.Configuration["retention.ms"].Value.Should().Be("-1");
+        historyTopic.Configuration["retention.bytes"].Value.Should().Be("-1");
+        _fixture
+            .Preparation.Should()
+            .ContainInOrder(
+                "nested-triggers-disabled",
+                "mvcc-prepared",
+                "projection-prerequisites-validated",
+                "runtime-initialized",
+                "guarded-activation"
+            );
+        (await _fixture.ScalarAsync<long>("SELECT COUNT_BIG(*) FROM dms.Document", Token)).Should().Be(0);
+        var expected = _fixture
+            .Request.ProviderSetup.ExpectedSourceInventory.Select(t => t.TableName.Name)
+            .Order()
+            .ToArray();
+        var captured = await _fixture.ScalarAsync<string>(
+            "SELECT STRING_AGG(OBJECT_NAME(source_object_id), ',') WITHIN GROUP (ORDER BY OBJECT_NAME(source_object_id)) FROM cdc.change_tables",
+            Token
+        );
+        expected.Should().Equal("CdcHeartbeat", "Document", "DocumentCache");
+        captured.Split(',').Should().Equal(expected);
+        (
+            await _fixture.ScalarAsync<long>(
+                "SELECT COUNT_BIG(*) FROM msdb.dbo.cdc_jobs WHERE database_id = DB_ID()",
+                Token
+            )
+        )
+            .Should()
+            .Be(2);
+        Observed(await _fixture.Kafka.InspectSchemaHistoryAsync(_fixture.Request, Token))
+            .Should()
+            .Be(CoreCdc.CdcSqlServerSchemaHistoryState.Valid);
     }
 
     [TestCase(CdcControllerBoundary.Binding, CdcControllerEdge.Before, "Disabled")]
@@ -161,7 +211,7 @@ public sealed class Given_Postgresql_Controller_Admission
         if (mutation is "cache" or "work")
         {
             await _fixture.ExecuteAsync(
-                "INSERT INTO dms.\"Document\" (\"DocumentId\", \"DocumentUuid\", \"ResourceKeyId\") OVERRIDING SYSTEM VALUE SELECT 42, gen_random_uuid(), \"ResourceKeyId\" FROM dms.\"ResourceKey\" LIMIT 1; DELETE FROM dms.\"DocumentProjectionWork\";",
+                "SET IDENTITY_INSERT dms.Document ON; INSERT INTO dms.Document (DocumentId, DocumentUuid, ResourceKeyId) SELECT TOP (1) 42, NEWID(), ResourceKeyId FROM dms.ResourceKey; SET IDENTITY_INSERT dms.Document OFF; DELETE FROM dms.DocumentProjectionWork;",
                 Token
             );
         }
@@ -171,14 +221,14 @@ public sealed class Given_Postgresql_Controller_Admission
                 "UPDATE dms.\"DocumentCacheState\" SET \"ProjectionLifecycleState\" = 'Tracking'",
             "rebuilding" =>
                 "UPDATE dms.\"DocumentCacheState\" SET \"ProjectionLifecycleState\" = 'Rebuilding'",
-            "latch" => "UPDATE dms.\"DocumentCacheState\" SET \"CacheAheadRecoveryRequired\" = true",
-            "source-mismatch" =>
-                "UPDATE dms.\"DataStoreIdentity\" SET \"SourceIdentity\" = gen_random_uuid()",
+            "latch" => "UPDATE dms.\"DocumentCacheState\" SET \"CacheAheadRecoveryRequired\" = 1",
+            "source-mismatch" => "UPDATE dms.\"DataStoreIdentity\" SET \"SourceIdentity\" = NEWID()",
             "canonical" =>
-                "INSERT INTO dms.\"Document\" (\"DocumentUuid\", \"ResourceKeyId\") SELECT gen_random_uuid(), \"ResourceKeyId\" FROM dms.\"ResourceKey\" LIMIT 1",
+                "INSERT INTO dms.\"Document\" (\"DocumentUuid\", \"ResourceKeyId\") SELECT TOP (1) NEWID(), \"ResourceKeyId\" FROM dms.\"ResourceKey\"",
             "cache" =>
-                "INSERT INTO dms.\"DocumentCache\" (\"DocumentId\", \"DocumentUuid\", \"ProjectName\", \"ResourceName\", \"ResourceVersion\", \"ContentVersion\", \"StreamEtag\", \"LastModifiedAt\", \"DocumentJson\") SELECT 42, \"DocumentUuid\", 'Test', 'School', '1', 1, 'test', now(), '{}' FROM dms.\"Document\" WHERE \"DocumentId\" = 42",
-            "work" => "INSERT INTO dms.\"DocumentProjectionWork\" VALUES (42, 1, now(), now())",
+                "INSERT INTO dms.\"DocumentCache\" (\"DocumentId\", \"DocumentUuid\", \"ProjectName\", \"ResourceName\", \"ResourceVersion\", \"ContentVersion\", \"StreamEtag\", \"LastModifiedAt\", \"DocumentJson\") SELECT 42, \"DocumentUuid\", 'Test', 'School', '1', 1, 'test', SYSUTCDATETIME(), '{}' FROM dms.\"Document\" WHERE \"DocumentId\" = 42",
+            "work" =>
+                "INSERT INTO dms.\"DocumentProjectionWork\" VALUES (42, 1, SYSUTCDATETIME(), SYSUTCDATETIME())",
             _ => throw new ArgumentOutOfRangeException(nameof(mutation)),
         };
         await _fixture.ExecuteAsync(sql, Token);
@@ -194,7 +244,14 @@ public sealed class Given_Postgresql_Controller_Admission
                     ? CoreCdc.CdcControlPlaneOperationStatus.Succeeded
                     : CoreCdc.CdcControlPlaneOperationStatus.BindingMissing
             );
-        (await _fixture.ScalarAsync<long>("SELECT COUNT(*) FROM pg_replication_slots", Token)).Should().Be(0);
+        (
+            await _fixture.ScalarAsync<long>(
+                "SELECT COUNT_BIG(*) FROM sys.tables WHERE is_tracked_by_cdc = 1",
+                Token
+            )
+        )
+            .Should()
+            .Be(0);
         (await _fixture.JournalAsync(Token)).WriterPublicationAuthorized.Should().BeFalse();
     }
 
@@ -225,12 +282,19 @@ public sealed class Given_Postgresql_Controller_Admission
             .Status.Should()
             .Be(CoreCdc.CdcControlPlaneOperationStatus.Succeeded);
         (await _fixture.ScalarAsync<string>(LifecycleSql, Token)).Should().Be("Tracking");
-        (await _fixture.ScalarAsync<long>("SELECT COUNT(*) FROM pg_replication_slots", Token)).Should().Be(0);
+        (
+            await _fixture.ScalarAsync<long>(
+                "SELECT COUNT_BIG(*) FROM sys.tables WHERE is_tracked_by_cdc = 1",
+                Token
+            )
+        )
+            .Should()
+            .Be(0);
         (await _fixture.JournalAsync(Token)).WriterPublicationAuthorized.Should().BeFalse();
     }
 
     [Test]
-    public async Task It_rejects_an_existing_slot_when_its_creation_reply_was_lost()
+    public async Task It_reconciles_exact_capture_after_lost_provider_evidence_without_repair()
     {
         Observed(
             await _fixture.Controllers.Activation.ActivateAsync(_fixture.Request, _fixture.Runtime, Token)
@@ -245,21 +309,27 @@ public sealed class Given_Postgresql_Controller_Admission
             )
             {
                 interrupted = true;
-                throw new IOException("lost provider creation result");
+                throw new IOException("lost provider evidence reply");
             }
         };
         (await _fixture.Controllers.ProviderSetup.SetupAsync(_fixture.Request, _fixture.Runtime, Token))
             .State.Should()
             .Be(CdcTransportEvidenceState.Unavailable);
         interrupted.Should().BeTrue();
-        (await _fixture.ScalarAsync<long>("SELECT COUNT(*) FROM pg_replication_slots", Token)).Should().Be(1);
+        string before = await _fixture.ScalarAsync<string>(CaptureIdentitySql, Token);
         _fixture.Hooks.OnBoundary = _ => { };
         await _fixture.ReopenRuntimeAsync(Token);
-        (await _fixture.Controllers.ProviderSetup.SetupAsync(_fixture.Request, _fixture.Runtime, Token))
-            .State.Should()
-            .Be(CdcTransportEvidenceState.Unavailable);
-        (await _fixture.ScalarAsync<long>("SELECT COUNT(*) FROM pg_replication_slots", Token)).Should().Be(1);
-        (await _fixture.JournalAsync(Token)).WriterPublicationAuthorized.Should().BeFalse();
+        await _fixture.RegisterAsync(Token, resumeProvider: true);
+        (await _fixture.ScalarAsync<string>(CaptureIdentitySql, Token)).Should().Be(before);
+        Observed(
+            await _fixture.Controllers.Admission.PreparePublicationAsync(
+                _fixture.Request,
+                _fixture.Runtime,
+                60_000,
+                Token
+            )
+        );
+        (await _fixture.ScalarAsync<string>(CaptureIdentitySql, Token)).Should().Be(before);
     }
 
     [Test]
@@ -297,6 +367,7 @@ public sealed class Given_Postgresql_Controller_Admission
         );
     }
 
+    [TestCase("heartbeat-capture")]
     [TestCase("queue")]
     [TestCase("barrier")]
     [TestCase("second-observation")]
@@ -305,6 +376,18 @@ public sealed class Given_Postgresql_Controller_Admission
     {
         await _fixture.RegisterAsync(Token);
         bool interrupted = false;
+        _fixture.BeforeRuntimeCall = name =>
+        {
+            if (
+                !interrupted
+                && boundary == "heartbeat-capture"
+                && name == nameof(ICdcProjectionRuntime.CaptureBarrierAsync)
+            )
+            {
+                interrupted = true;
+                throw new IOException("interrupted heartbeat capture entry");
+            }
+        };
         _fixture.AfterRuntimeCall = name =>
         {
             bool selected = boundary switch
@@ -335,6 +418,7 @@ public sealed class Given_Postgresql_Controller_Admission
         interrupted.Should().BeTrue();
         (await _fixture.JournalAsync(Token)).WriterPublicationAuthorized.Should().BeFalse();
         int barriers = _fixture.Barriers.Count;
+        _fixture.BeforeRuntimeCall = _ => { };
         _fixture.AfterRuntimeCall = _ => { };
         await _fixture.ReopenRuntimeAsync(Token);
         int providerCalls = _fixture.ProviderModes.Count;
@@ -518,7 +602,7 @@ public sealed class Given_Postgresql_Controller_Admission
         _fixture.Hooks.OnBoundary = _ => { };
         (
             await _fixture.ScalarAsync<long>(
-                $"SELECT COUNT(*) FROM pg_database WHERE datname = '{database}'",
+                $"SELECT COUNT_BIG(*) FROM sys.databases WHERE name = '{database}'",
                 Token
             )
         )
@@ -549,7 +633,7 @@ public sealed class Given_Postgresql_Controller_Admission
         provisioned.CreationReceipt.Outcome.Should().Be(CdcDatabaseCreationOutcome.Reused);
         var artifacts = CoreCdc
             .CdcArtifactNameGenerator.Render(
-                new("dms", "edfi.documents", "reused", 1, CoreCdc.CdcProvider.Postgresql)
+                new("dms", "edfi.documents", "reused", 1, CoreCdc.CdcProvider.SqlServer)
             )
             .Inventory!;
         var binding = _fixture.Request.Binding with
@@ -611,71 +695,319 @@ public sealed class Given_Postgresql_Controller_Admission
             inner.ReadSourceFingerprintAsync(cancellationToken);
     }
 
-    [Test]
-    public async Task It_does_not_report_history_loss_for_a_healthy_streaming_slot()
+    [TestCase("inspect-only")]
+    [TestCase("denied-server-authority")]
+    public async Task It_rejects_unavailable_projection_prerequisites_before_runtime_or_capture(string fault)
     {
-        await _fixture.RegisterAsync(Token);
-        for (int sample = 0; sample < 30; sample++)
+        await _fixture.ExecuteAsync("EXEC sys.sp_configure N'nested triggers', 0; RECONFIGURE;", Token);
+        string setupUser = "sa";
+        if (fault == "denied-server-authority")
         {
-            var result = await _fixture.ProbeContinuityAsync(Token);
-            result
-                .Observation.Continuity.Should()
-                .Be(
-                    CoreCdc.CdcSourceHistoryContinuity.Healthy,
-                    "live range evidence: {0}",
-                    _fixture.ContinuitySamples.LastOrDefault()
-                );
-            await Task.Delay(TimeSpan.FromMilliseconds(250), Token);
+            await _fixture.ExecuteAsync(
+                "USE master; CREATE LOGIN cdc_setup WITH PASSWORD = 'EdFi_Dms1!', CHECK_POLICY = OFF; GRANT CREATE ANY DATABASE TO cdc_setup;",
+                Token
+            );
+            setupUser = "cdc_setup";
         }
+        string database = "prerequisite_" + Guid.NewGuid().ToString("N");
+        var target = _fixture.Request.TargetIdentity with { InstanceKey = "prerequisite" };
+        int initializations = _fixture.Preparation.Count(p => p == "runtime-initialized");
+        Func<Task> provision = () =>
+            new CdcManagedDatabaseProvisioning(_fixture.Infrastructure.CreateJournalStore()).ProvisionAsync(
+                target,
+                _fixture.CreateManagedSource(
+                    database,
+                    fault == "inspect-only"
+                        ? CdcProjectionPrerequisiteMode.Inspect
+                        : CdcProjectionPrerequisiteMode.OwnedLocalSqlServer,
+                    setupUser
+                ),
+                Token
+            );
+        await provision.Should().ThrowAsync<Exception>();
+        (
+            await _fixture.ScalarAsync<long>(
+                $"SELECT COUNT_BIG(*) FROM sys.databases WHERE name = '{database}' AND is_cdc_enabled = 0 AND is_read_committed_snapshot_on = 1",
+                Token
+            )
+        )
+            .Should()
+            .Be(1);
+        (
+            await _fixture.ScalarAsync<long>(
+                $"SELECT COUNT_BIG(*) FROM [{database}].sys.tables WHERE schema_id = SCHEMA_ID('dms')",
+                Token
+            )
+        )
+            .Should()
+            .Be(0);
+        (
+            await _fixture.ScalarAsync<int>(
+                "SELECT CONVERT(int, value_in_use) FROM sys.configurations WHERE name = 'nested triggers'",
+                Token
+            )
+        )
+            .Should()
+            .Be(0);
+        _fixture.Preparation.Count(p => p == "runtime-initialized").Should().Be(initializations);
+        _fixture
+            .Hooks.Trace.Should()
+            .NotContain(e =>
+                e.Boundary == CdcControllerBoundary.Activation
+                || e.Boundary == CdcControllerBoundary.ProviderProof
+                || e.Boundary == CdcControllerBoundary.Registration
+            );
+        await using var session = await _fixture
+            .Infrastructure.CreateJournalStore()
+            .AcquireAsync(TimeSpan.FromSeconds(5), TimeSpan.FromMilliseconds(50), Token);
+        var journal = await session.ReadAsync(target, Token);
+        journal.WriterPublicationAuthorized.Should().BeFalse();
+        journal.Operations.Should().ContainSingle(o => o.Effect == CdcWorkflowEffect.CreateDatabase);
+    }
+
+    [TestCase("capture")]
+    [TestCase("cleanup")]
+    [TestCase("failed-capture")]
+    public async Task It_blocks_publication_with_a_stopped_job_without_repairing_capture(string job)
+    {
+        await _fixture.RegisterAsync(Token);
+        string before = await _fixture.ScalarAsync<string>(CaptureIdentitySql, Token);
+        bool fail = job == "failed-capture";
+        job = fail ? "capture" : job;
+        // Disabling the actual Agent job makes stopped state durable even for the scheduled cleanup job.
+        await _fixture.ExecuteAsync(
+            $"DECLARE @id uniqueidentifier = (SELECT job_id FROM msdb.dbo.cdc_jobs WHERE database_id = DB_ID() AND job_type = '{job}'); EXEC msdb.dbo.sp_update_job @job_id = @id, @enabled = 0;",
+            Token
+        );
+        if (job == "capture")
+        {
+            await _fixture.ExecuteAsync("EXEC sys.sp_cdc_stop_job @job_type = N'capture';", Token);
+        }
+        if (fail)
+        {
+            await CdcControllerFixture.WaitAsync(
+                async ct =>
+                    await _fixture.ScalarAsync<int>(
+                        "SELECT COUNT(*) FROM msdb.dbo.sysjobactivity WHERE job_id = (SELECT job_id FROM msdb.dbo.cdc_jobs WHERE database_id = DB_ID() AND job_type = 'capture') AND session_id = (SELECT MAX(session_id) FROM msdb.dbo.syssessions) AND start_execution_date IS NOT NULL AND stop_execution_date IS NULL",
+                        ct
+                    ) == 0,
+                TimeSpan.FromSeconds(30),
+                TimeSpan.FromMilliseconds(250),
+                Token
+            );
+            await _fixture.ExecuteAsync(
+                "DECLARE @id uniqueidentifier = (SELECT job_id FROM msdb.dbo.cdc_jobs WHERE database_id = DB_ID() AND job_type = 'capture'); EXEC msdb.dbo.sp_update_jobstep @job_id = @id, @step_id = 1, @command = N'THROW 50000, ''injected capture job failure'', 1;', @retry_attempts = 0, @on_fail_action = 2; EXEC msdb.dbo.sp_update_job @job_id = @id, @enabled = 1; EXEC msdb.dbo.sp_start_job @job_id = @id;",
+                Token
+            );
+            await CdcControllerFixture.WaitAsync(
+                async ct =>
+                    await _fixture.ScalarAsync<int>(
+                        "SELECT COUNT(*) FROM msdb.dbo.sysjobhistory WHERE job_id = (SELECT job_id FROM msdb.dbo.cdc_jobs WHERE database_id = DB_ID() AND job_type = 'capture') AND step_id = 0 AND run_status = 0",
+                        ct
+                    ) > 0,
+                TimeSpan.FromSeconds(30),
+                TimeSpan.FromMilliseconds(250),
+                Token
+            );
+        }
+        var observedProvider = await _fixture.InspectProviderAsync(Token);
+        var mapped = CdcProviderSetupResultMapper.MapValidateOnlyResult(
+            Guid.NewGuid().ToString("D"),
+            DateTimeOffset.UtcNow,
+            _fixture.Request.Binding,
+            observedProvider
+        );
+        var jobs = mapped.ProviderHistory!.SqlServerJobs!;
+        jobs.HasStoppedOrFailedJob.Should().BeTrue();
+        jobs.HasMissingJob.Should().BeFalse();
+        // The existing mapper gives a non-running capture job Stopped precedence over its failed last run.
+        (job == "capture" ? jobs.CaptureJobState : jobs.CleanupJobState)
+            .Should()
+            .Be(CoreCdc.CdcSqlServerCdcJobState.Stopped);
+        if (fail)
+        {
+            observedProvider
+                .Diagnostics.Should()
+                .Contain(d => d.Code == "CDC_SQLSERVER_CDC_JOB_LAST_RUN_FAILED");
+        }
+        var request = _fixture.WithTiming(
+            new(
+                TimeSpan.FromSeconds(15),
+                TimeSpan.FromSeconds(35),
+                TimeSpan.FromMilliseconds(250),
+                TimeSpan.FromSeconds(20)
+            )
+        );
+        (
+            await _fixture.Controllers.Admission.PreparePublicationAsync(
+                request,
+                _fixture.Runtime,
+                60_000,
+                Token
+            )
+        )
+            .State.Should()
+            .Be(CdcTransportEvidenceState.Unavailable);
+        (await _fixture.JournalAsync(Token)).WriterPublicationAuthorized.Should().BeFalse();
+        (await _fixture.ScalarAsync<string>(CaptureIdentitySql, Token)).Should().Be(before);
+        (
+            await _fixture.ScalarAsync<int>(
+                $"SELECT CONVERT(int, enabled) FROM msdb.dbo.sysjobs WHERE job_id = (SELECT job_id FROM msdb.dbo.cdc_jobs WHERE database_id = DB_ID() AND job_type = '{job}')",
+                Token
+            )
+        )
+            .Should()
+            .Be(fail ? 1 : 0);
+    }
+
+    [Test]
+    public async Task It_retains_terminal_schema_history_loss_after_the_topic_is_healthy_again()
+    {
+        await _fixture.RegisterAsync(Token);
+        var artifacts = CdcConnectorTemplateBindingArtifacts
+            .From(_fixture.Request.Binding, nameof(_fixture))
+            .ArtifactInventory;
+        using var admin = new Confluent.Kafka.AdminClientBuilder(
+            new Confluent.Kafka.AdminClientConfig
+            {
+                BootstrapServers = _fixture.Infrastructure.Resources.ControllerKafkaBootstrapServers,
+            }
+        ).Build();
+        var partition = new Confluent.Kafka.TopicPartition(artifacts.SchemaHistoryTopicName!, 0);
+        // Keep genuine records so restoring a nonempty topic below does not fabricate provider/schema evidence.
+        using var consumer = new Confluent.Kafka.ConsumerBuilder<byte[], byte[]>(
+            new Confluent.Kafka.ConsumerConfig
+            {
+                BootstrapServers = _fixture.Infrastructure.Resources.ControllerKafkaBootstrapServers,
+                GroupId = "history-probe-" + Guid.NewGuid().ToString("N"),
+                EnableAutoCommit = false,
+                EnableAutoOffsetStore = false,
+            }
+        ).Build();
+        var watermark = consumer.QueryWatermarkOffsets(partition, TimeSpan.FromSeconds(10));
+        watermark.High.Value.Should().BeGreaterThan(0);
+        consumer.Assign(new Confluent.Kafka.TopicPartitionOffset(partition, watermark.Low));
+        List<Confluent.Kafka.Message<byte[], byte[]>> retained = [];
+        for (long index = watermark.Low.Value; index < watermark.High.Value; index++)
+        {
+            var record = consumer.Consume(TimeSpan.FromSeconds(10));
+            record.Should().NotBeNull();
+            retained.Add(record!.Message);
+        }
+        consumer.Unassign();
+        await admin.DeleteRecordsAsync(
+            [new(partition, watermark.High)],
+            new() { OperationTimeout = TimeSpan.FromSeconds(15) }
+        );
+        Observed(await _fixture.Kafka.InspectSchemaHistoryAsync(_fixture.Request, Token))
+            .Should()
+            .Be(CoreCdc.CdcSqlServerSchemaHistoryState.RequiredRecordLost);
+        (
+            await _fixture.Controllers.Admission.PreparePublicationAsync(
+                _fixture.Request,
+                _fixture.Runtime,
+                60_000,
+                Token
+            )
+        )
+            .State.Should()
+            .Be(CdcTransportEvidenceState.Unavailable);
+        (await _fixture.JournalAsync(Token)).WriterPublicationAuthorized.Should().BeFalse();
+        await _fixture.ReopenRuntimeAsync(Token);
+        var target = new CdcControllerStatusTarget(_fixture.Request, _fixture.Runtime, 60_000);
+        var lost = (await _fixture.Controllers.Status.StatusAsync([target], Token)).Targets.Single();
+        lost.IncidentPersistence.Should().Be(CdcIncidentPersistenceState.Persisted);
+        lost.Containment.Should().Be(CdcConnectorContainmentState.Stopped);
+        // Deliberate test-only repair cannot erase the already latched incident.
+        await admin.DeleteTopicsAsync(
+            [partition.Topic],
+            new() { OperationTimeout = TimeSpan.FromSeconds(15) }
+        );
+        await CdcControllerFixture.WaitAsync(
+            async ct =>
+                (await _fixture.Kafka.InspectTopicAsync(_fixture.Request, partition.Topic, ct)).State
+                == CdcTransportEvidenceState.Absent,
+            TimeSpan.FromSeconds(30),
+            TimeSpan.FromMilliseconds(250),
+            Token
+        );
+        await admin.CreateTopicsAsync([
+            new Confluent.Kafka.Admin.TopicSpecification
+            {
+                Name = partition.Topic,
+                NumPartitions = 1,
+                ReplicationFactor = 1,
+                Configs = new()
+                {
+                    ["cleanup.policy"] = "delete",
+                    ["retention.ms"] = "-1",
+                    ["retention.bytes"] = "-1",
+                    ["max.message.bytes"] = "1000000",
+                    ["min.insync.replicas"] = "1",
+                },
+            },
+        ]);
+        using var producer = new Confluent.Kafka.ProducerBuilder<byte[], byte[]>(
+            new Confluent.Kafka.ProducerConfig
+            {
+                BootstrapServers = _fixture.Infrastructure.Resources.ControllerKafkaBootstrapServers,
+            }
+        ).Build();
+        foreach (var message in retained)
+        {
+            await producer.ProduceAsync(partition, message, Token);
+        }
+        Observed(await _fixture.Kafka.InspectSchemaHistoryAsync(_fixture.Request, Token))
+            .Should()
+            .Be(CoreCdc.CdcSqlServerSchemaHistoryState.Valid);
+        var later = (await _fixture.Controllers.Status.StatusAsync([target], Token)).Targets.Single();
+        later
+            .Details.IncidentFailureCategory.Should()
+            .Be(lost.Details.IncidentFailureCategory)
+            .And.NotBeNull();
+        (
+            await _fixture.Controllers.Admission.PreparePublicationAsync(
+                _fixture.Request,
+                _fixture.Runtime,
+                60_000,
+                Token
+            )
+        )
+            .State.Should()
+            .Be(CdcTransportEvidenceState.Unavailable);
         (await _fixture.JournalAsync(Token)).WriterPublicationAuthorized.Should().BeFalse();
     }
 
     [Test]
-    public async Task It_resumes_the_same_slot_and_processes_wal_written_while_stopped()
+    public async Task It_cannot_publish_when_schema_history_inspection_is_unavailable()
     {
         await _fixture.RegisterAsync(Token);
-        var connect = _fixture.Infrastructure.Connect;
-        var request = _fixture.Request;
-        Observed(await connect.StopAsync(request, Token));
-        await CdcControllerFixture.WaitAsync(
-            async ct =>
+        int unavailable = 0;
+        var kafka = _fixture.Hooks.Decorate<ICdcKafkaAdminAdapter>(
+            _fixture.Kafka,
+            name =>
             {
-                var status = Observed(await connect.ReadStatusAsync(request, ct));
-                return status.Runtime.ConnectorState == CoreCdc.CdcConnectorRuntimeState.Stopped
-                    && status.Tasks.Count == 0;
-            },
-            request.Timing.WaitTimeout,
-            TimeSpan.FromMilliseconds(250),
-            Token
+                if (name == nameof(ICdcKafkaAdminAdapter.InspectSchemaHistoryAsync))
+                {
+                    unavailable++;
+                    throw new IOException("injected unavailable schema history observation");
+                }
+                return CdcControllerBoundary.Observation;
+            }
         );
-
-        var before = await _fixture.ProbeContinuityAsync(Token);
-        before.Observation.Continuity.Should().Be(CoreCdc.CdcSourceHistoryContinuity.Healthy);
-        var position = Observed(await connect.ReadOffsetEvidenceAsync(request, Token)).Postgresql.LsnProc;
-        position.Should().NotBeNull();
-        await _fixture.ExecuteAsync(
-            "UPDATE dms.\"CdcHeartbeat\" SET \"HeartbeatSequence\" = \"HeartbeatSequence\" + 1, \"HeartbeatAt\" = now() WHERE \"HeartbeatId\" = 1",
-            Token
-        );
-        string wal = await _fixture.ScalarAsync<string>("SELECT pg_current_wal_lsn()::text", Token);
-        var target = CoreCdc.CdcPostgresqlProviderPosition.ParseWalLsn(wal).Position!.Value;
-        target.Value.Should().BeGreaterThan(unchecked((ulong)position!.Value));
-        Observed(await connect.ResumeAsync(request, Token));
-        await CdcControllerFixture.WaitAsync(
-            async ct =>
-            {
-                var offset = Observed(await connect.ReadOffsetEvidenceAsync(request, ct));
-                return offset.Postgresql.LsnProc is { } lsn && unchecked((ulong)lsn) >= target.Value;
-            },
-            request.Timing.WaitTimeout,
-            TimeSpan.FromMilliseconds(250),
-            Token
-        );
-        (await _fixture.ProbeContinuityAsync(Token))
-            .Observation.Continuity.Should()
-            .Be(CoreCdc.CdcSourceHistoryContinuity.Healthy);
+        (
+            await _fixture
+                .AdmissionWithKafka(kafka)
+                .PreparePublicationAsync(_fixture.Request, _fixture.Runtime, 60_000, Token)
+        )
+            .State.Should()
+            .Be(CdcTransportEvidenceState.Unavailable);
+        unavailable.Should().BeGreaterThan(0);
+        _fixture.Barriers.Should().NotBeEmpty();
         (await _fixture.JournalAsync(Token)).WriterPublicationAuthorized.Should().BeFalse();
     }
 
-    private const string LifecycleSql = "SELECT \"ProjectionLifecycleState\" FROM dms.\"DocumentCacheState\"";
+    private const string LifecycleSql = "SELECT ProjectionLifecycleState FROM dms.DocumentCacheState";
+    private const string CaptureIdentitySql =
+        "SELECT STRING_AGG(CONCAT(capture_instance, ':', object_id, ':', CONVERT(varchar(40), create_date, 126)), ',') WITHIN GROUP (ORDER BY capture_instance) FROM cdc.change_tables";
 }
