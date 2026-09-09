@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <!--
+        A host process of its own, because the proof it exists for cannot be made inside the test host:
+        this test assembly's default context already holds the production contract at 1.0.0 through its
+        project reference, and a host that carries 1.1.0 has to be a different process.
+
+        It references the real loader by project and calls the real public PluginLoader.Load. It is
+        compiled against the production contract at 1.0.0, like any host, and discovers the 1.1 addition
+        by reflection rather than by naming it - so this program cannot be the thing that proves 1.1 is
+        loaded by having been built against it.
+
+        Published portable and never for a runtime identifier: a runtime-specific publish would restore
+        its project references with that identifier and rewrite their committed lock files.
+    -->
+    <PropertyGroup>
+        <OutputType>Exe</OutputType>
+        <AssemblyName>PluginHostRunner</AssemblyName>
+        <RootNamespace>PluginHostRunner</RootNamespace>
+    </PropertyGroup>
+    <ItemGroup>
+        <ProjectReference
+            Include="..\..\..\..\EdFi.Api.Plugins.Hosting\EdFi.Api.Plugins.Hosting.csproj"
+        />
+    </ItemGroup>
+    <!--
+        A real container, because "the hook ran" is only worth asserting if what the hook registered can
+        actually be resolved from a built provider.
+    -->
+    <ItemGroup>
+        <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+    </ItemGroup>
+</Project>

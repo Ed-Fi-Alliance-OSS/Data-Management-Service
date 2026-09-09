@@ -104,6 +104,9 @@
         <PluginFixture Include="$(MSBuildThisFileDirectory)Fixtures/Plugins/Acme.RuntimeTargets/Acme.RuntimeTargets.csproj">
             <StagedName>Acme.RuntimeTargets</StagedName>
         </PluginFixture>
+        <PluginFixture Include="$(MSBuildThisFileDirectory)Fixtures/Plugins/Acme.OldContract/Acme.OldContract.csproj">
+            <StagedName>Acme.OldContract</StagedName>
+        </PluginFixture>
         <PluginFixture Include="$(MSBuildThisFileDirectory)Fixtures/Plugins/Acme.Native/Acme.Native.csproj">
             <StagedName>Acme.Native</StagedName>
             <PublishArgs>--runtime $(NETCoreSdkRuntimeIdentifier) --no-self-contained</PublishArgs>
@@ -122,6 +125,25 @@
         <PluginProbeHost Include="$(MSBuildThisFileDirectory)Fixtures/Hosts/PluginNativeProbeHost/PluginNativeProbeHost.csproj">
             <StagedName>PluginNativeProbeHost</StagedName>
         </PluginProbeHost>
+        <!--
+            The 1.0-on-1.1 host, staged whole and read-only. Each test copies it into a temporary
+            directory of its own before replacing that copy's contract assembly, so the staged tree is
+            never the thing whose identity is rewritten.
+        -->
+        <PluginProbeHost Include="$(MSBuildThisFileDirectory)Fixtures/Hosts/PluginHostRunner/PluginHostRunner.csproj">
+            <StagedName>PluginHostRunner</StagedName>
+        </PluginProbeHost>
+    </ItemGroup>
+
+    <!--
+        The additive 1.1 contract, built rather than published: what a test needs from it is the single
+        assembly it substitutes into a copy of the runner's output, and a publish would bring a manifest
+        and a runtimeconfig that nothing reads.
+    -->
+    <ItemGroup>
+        <PluginContractBuild Include="$(MSBuildThisFileDirectory)Fixtures/Contracts/Contract_1_1/EdFi.Api.Plugins.v1_1.csproj">
+            <StagedName>Contract_1_1</StagedName>
+        </PluginContractBuild>
     </ItemGroup>
 
     <!--
@@ -216,7 +238,7 @@
             <PluginFixtureProbeRoot
             >$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)', '$(OutDir)', 'FixtureHosts'))</PluginFixtureProbeRoot>
             <PluginFixtureFingerprintPrefix
-            >$(Configuration)+$(NETCoreSdkRuntimeIdentifier)+@(PluginFixture->'%(StagedName)', '&amp;')+@(PluginFixtureTrimmed->'%(StagedName)', '&amp;')+@(PluginProbeHost->'%(StagedName)', '&amp;')+@(PluginFixturePortable->'%(StagedName)', '&amp;')+$([MSBuild]::StableStringHash($(PluginFixtureInputList)))</PluginFixtureFingerprintPrefix>
+            >$(Configuration)+$(NETCoreSdkRuntimeIdentifier)+@(PluginFixture->'%(StagedName)', '&amp;')+@(PluginFixtureTrimmed->'%(StagedName)', '&amp;')+@(PluginProbeHost->'%(StagedName)', '&amp;')+@(PluginFixturePortable->'%(StagedName)', '&amp;')+@(PluginContractBuild->'%(StagedName)', '&amp;')+$([MSBuild]::StableStringHash($(PluginFixtureInputList)))</PluginFixtureFingerprintPrefix>
         </PropertyGroup>
 
         <ItemGroup Condition="Exists('$(PluginFixtureStageRoot)')">
@@ -342,7 +364,7 @@
             overwrites what it produces but removes nothing it no longer produces.
         -->
         <RemoveDir
-            Directories="@(PluginFixture->'$(PluginFixtureStageRoot)%(StagedName)');@(PluginFixtureTrimmed->'$(PluginFixtureStageRoot)%(StagedName)');@(PluginFixtureTrimmed->'$(PluginFixtureRawRoot)%(StagedName)');@(PluginProbeHost->'$(PluginFixtureProbeRoot)%(StagedName)');@(PluginFixturePortable->'$(PluginFixtureStageRoot)%(StagedName)');@(PluginFixturePortable->'$(PluginFixtureRawRoot)%(StagedName)')"
+            Directories="@(PluginFixture->'$(PluginFixtureStageRoot)%(StagedName)');@(PluginFixtureTrimmed->'$(PluginFixtureStageRoot)%(StagedName)');@(PluginFixtureTrimmed->'$(PluginFixtureRawRoot)%(StagedName)');@(PluginProbeHost->'$(PluginFixtureProbeRoot)%(StagedName)');@(PluginFixturePortable->'$(PluginFixtureStageRoot)%(StagedName)');@(PluginFixturePortable->'$(PluginFixtureRawRoot)%(StagedName)');@(PluginContractBuild->'$(PluginFixtureRawRoot)%(StagedName)')"
             Condition="'$(PluginFixtureStageRoot)' != '' AND '$(PluginFixtureRawRoot)' != '' AND '$(PluginFixtureProbeRoot)' != ''"
         />
 
@@ -380,6 +402,27 @@
             Command="&quot;$(DOTNET_HOST_PATH)&quot; publish &quot;%(PluginProbeHost.FullPath)&quot; --configuration $(Configuration) --no-self-contained --output &quot;$(PluginFixtureProbeRoot)%(PluginProbeHost.StagedName)&quot; -p:BuildingPluginFixtures=true --nologo --verbosity quiet"
             EnvironmentVariables="DOTNET_CLI_DO_NOT_USE_MSBUILD_SERVER=1;MSBUILDDISABLENODEREUSE=1"
             WorkingDirectory="$(MSBuildThisFileDirectory)"
+        />
+
+        <!--
+            The additive 1.1 contract, to the intermediate output. Only one file of it is wanted, so it
+            is not staged where a test could mistake it for a plugin or a host.
+        -->
+        <Exec
+            Command="&quot;$(DOTNET_HOST_PATH)&quot; publish &quot;%(PluginContractBuild.FullPath)&quot; --configuration $(Configuration) --output &quot;$(PluginFixtureRawRoot)%(PluginContractBuild.StagedName)&quot; -p:BuildingPluginFixtures=true --nologo --verbosity quiet"
+            EnvironmentVariables="DOTNET_CLI_DO_NOT_USE_MSBUILD_SERVER=1;MSBUILDDISABLENODEREUSE=1"
+            WorkingDirectory="$(MSBuildThisFileDirectory)"
+        />
+
+        <!--
+            Placed inside the runner's own staged directory, in a subdirectory named for what it is. The
+            runner never loads it: a test copies the whole staged directory to a temporary tree and then
+            overwrites that copy's own contract assembly with this one. Living here means the staged
+            file set already covers it, so deleting it makes the tree stale like any other staged file.
+        -->
+        <Copy
+            SourceFiles="@(PluginContractBuild->'$(PluginFixtureRawRoot)%(StagedName)/EdFi.Api.Plugins.dll')"
+            DestinationFiles="@(PluginContractBuild->'$(PluginFixtureProbeRoot)PluginHostRunner/contract-1.1/EdFi.Api.Plugins.dll')"
         />
 
         <Exec
