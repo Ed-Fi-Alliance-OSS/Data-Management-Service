@@ -64,6 +64,7 @@ x-dms-common-env: &dms-common-env
   # Opt-in for troubleshooting / claim-set iteration (default off).
   AppSettings__EnableManagementEndpoints: "${DMS_ENABLE_MANAGEMENT_ENDPOINTS:-false}"
   AppSettings__EnableClaimsetReload: "${DMS_ENABLE_CLAIMSET_RELOAD:-false}"
+  AppSettings__ManagementEndpoints__RequiredRole: "${DMS_MANAGEMENT_REQUIRED_ROLE:-}"
   ConfigurationServiceSettings__ClientId: "${CONFIG_SERVICE_CLIENT_ID:-CMSReadOnlyAccess}"
   ConfigurationServiceSettings__Scope: "${CONFIG_SERVICE_CLIENT_SCOPE:-edfi_admin_api/readonly_access}"
   ConfigurationServiceSettings__ClientSecret: "${CONFIG_SERVICE_CLIENT_SECRET:?set CONFIG_SERVICE_CLIENT_SECRET in .env}"

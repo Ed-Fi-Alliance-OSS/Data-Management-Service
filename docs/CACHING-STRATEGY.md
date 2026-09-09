@@ -156,6 +156,9 @@ built-in stampede protection
 - TTL-based expiration after the configured duration
 - Manual invalidation via `/claimsets/reload` management endpoint
 - Requires `AppSettings:EnableClaimsetReload: true` to enable manual reload
+- Requires a valid `AppSettings:ManagementEndpoints:RequiredRole`; the endpoints are not mapped
+  without one, and callers must present a bearer token carrying that role under
+  `JwtAuthentication:RoleClaimType`. See [Configuration](./CONFIGURATION.md#appsettings).
 
 ---
 
@@ -584,7 +587,10 @@ Re-prime cache with new schemas
 Used by: ClaimSets (via `/claimsets/reload` endpoint)
 
 Administrators can trigger cache invalidation through management endpoints.
-Requires `EnableClaimsetReload: true` in configuration.
+Requires `EnableClaimsetReload: true` in configuration. The endpoints are additionally mapped only
+when `AppSettings:ManagementEndpoints:RequiredRole` holds a valid role token, and every request must
+present a bearer token carrying that role under `JwtAuthentication:RoleClaimType`; requests without
+one receive `401`, and tokens lacking the role receive `403`.
 
 ### 4. Lifetime-Based (Application Shutdown)
 
@@ -645,7 +651,10 @@ schemas on-demand only when first requested.
     "AutomaticRefreshIntervalHours": 24
   },
   "AppSettings": {
-    "EnableClaimsetReload": false
+    "EnableClaimsetReload": false,
+    "ManagementEndpoints": {
+      "RequiredRole": ""
+    }
   }
 }
 ```
