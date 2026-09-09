@@ -164,3 +164,30 @@ Raised by the implementation sub-agent as a new ambiguity, not covered by plan �
   in this sandbox to verify it. Adding an unverifiable E2E scenario is worse than adding
   none. The in-process parity fixture covers the same ground with stronger assertions.
   The existing `@API-061` scenario was not touched and still passes.
+
+### Round 3
+
+#### D-13 — "`LoggingMiddleware`'s constructor should be a primary constructor"
+
+- **Reported severity:** Nit. **Re-confirmed as:** Nit.
+- **Decision:** Declined.
+- **Rationale:** After round 3 removed the vacuous `_correlationIdMaxLength` field, the
+  constructor does nothing but two `?? throw` null guards, which is a fair observation. But
+  the change is pure taste with no failure or maintenance scenario attached, on a file in
+  every request's path. `AGENTS.md` lists primary constructors among the .NET 10 idioms to
+  *use*, not a rule to retrofit into existing types. Declining keeps the diff proportionate.
+
+#### D-14 — "`OAuthManager.cs:70` logs the upstream identity provider's raw response body through no sanitizer"
+
+- **Reported severity:** raised by the round-3 functionality reviewer as an explicit
+  out-of-scope observation, not as a finding against FR-LOG-3..6.
+- **Decision:** Declined as out of scope for DMS-1457 — **but escalated in the final report
+  as a recommended follow-up ticket.** This is not a silent drop.
+- **Rationale:** `{Content}` is an external service's raw response body logged at Warning
+  level with no sanitizer, one argument away from the R3-01 fix, so it is a genuine
+  log-forging vector and worth its own ticket. It is not, however, a correlation ID: it is
+  outside FR-LOG-3..6, the line is pre-existing and untouched by this diff, and plan §9.6
+  forbids scope creep. Fixing it here would also require choosing a sanitizer for a value
+  whose safe shape nobody has specified — `SanitizeForLogging` would mangle a JSON error
+  payload, and `SanitizeForConsole` deliberately preserves `\r`/`\n`, which is the wrong
+  control for a log sink. That is a design decision for a human, not a drive-by edit.
