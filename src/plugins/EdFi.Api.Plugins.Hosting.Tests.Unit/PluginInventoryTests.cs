@@ -427,3 +427,175 @@ public class Given_a_well_formed_plugin_whose_declarations_all_agree_with_the_ho
             );
     }
 }
+
+/// <summary>
+/// A declared path is a string a third party wrote, and <c>Path.Combine</c> discards its first argument
+/// for a rooted second, so a declared path could select a file outside the plugin directory and have
+/// those bytes hashed and reported as one the plugin shipped.
+/// </summary>
+/// <remarks>
+/// The boundary is lexical on purpose. It decides only whether a declared string may select a file, not
+/// whether an assembly may load, so it does not touch the symlinked-file case the loader documents as a
+/// deferred limit.
+/// </remarks>
+[TestFixture]
+public class Given_a_declared_path_that_points_outside_the_plugin_directory
+{
+    private const string SentinelContent = "sentinel bytes that no plugin ever shipped";
+    private const string SentinelFileName = "Sentinel.dll";
+
+    private TemporaryPluginRoot _root = null!;
+    private string _sentinel = null!;
+    private string _sentinelDigest = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _root = TemporaryPluginRoot.Create();
+        _root.Add(PluginFixtures.Good);
+        _sentinel = TemporaryPluginRoot.WriteFile(
+            Path.Combine(_root.CreateDirectoryOutsideRoot("outside"), SentinelFileName),
+            SentinelContent
+        );
+        _sentinelDigest = IndependentDigest.Of(_sentinel);
+    }
+
+    [TearDown]
+    public void TearDown() => _root.Dispose();
+
+    private IReadOnlyList<PluginInventoryRow> Load()
+    {
+        PluginLoaderRun run = PluginLoaderProbe.Run(_root.RootPath, PluginFixtures.Good);
+
+        run.Failure.Should().BeNull();
+        return run.Result!.Plugins[0].MaterializeInventory();
+    }
+
+    private void ItIsAbsentAndNothingCarriesTheSentinelsBytes(string fileName)
+    {
+        IReadOnlyList<PluginInventoryRow> inventory = Load();
+        PluginInventoryRow row = inventory.Single(candidate => candidate.FileName == fileName);
+
+        row.Availability.Should().Be(PluginFileAvailability.Absent);
+        row.ResolvedRelativePath.Should().BeNull();
+        row.Sha256.Should().BeNull();
+
+        // The digest is the part that matters. An inventory that never carries these bytes is one an
+        // incident responder cannot be misled by, whatever the row says about itself.
+        inventory.Should().NotContain(candidate => candidate.Sha256 == _sentinelDigest);
+    }
+
+    [Test]
+    public void It_does_not_inventory_a_file_named_by_a_rooted_declared_path()
+    {
+        // A manifest writes forward slashes whatever the platform, so the rooted path is presented the
+        // way a manifest would present it.
+        _root.AddDeclaredRuntimeAsset(
+            PluginFixtures.Good,
+            _sentinel.Replace(Path.DirectorySeparatorChar, '/')
+        );
+
+        ItIsAbsentAndNothingCarriesTheSentinelsBytes(SentinelFileName);
+    }
+
+    [Test]
+    public void It_does_not_inventory_a_file_a_declared_path_traverses_to()
+    {
+        _root.AddDeclaredRuntimeAsset(PluginFixtures.Good, $"../../outside/{SentinelFileName}");
+
+        ItIsAbsentAndNothingCarriesTheSentinelsBytes(SentinelFileName);
+    }
+
+    [Test]
+    public void It_does_not_treat_a_sibling_directory_sharing_the_prefix_as_inside()
+    {
+        // "<root>/Acme.GoodEvil" starts with "<root>/Acme.Good" as a string, so only the separator that
+        // terminates the boundary keeps the two apart.
+        TemporaryPluginRoot.WriteFile(
+            Path.Combine(_root.RootPath, $"{PluginFixtures.Good}Evil", SentinelFileName),
+            SentinelContent
+        );
+
+        _root.AddDeclaredRuntimeAsset(
+            PluginFixtures.Good,
+            $"../{PluginFixtures.Good}Evil/{SentinelFileName}"
+        );
+
+        ItIsAbsentAndNothingCarriesTheSentinelsBytes(SentinelFileName);
+    }
+
+    [Test]
+    public void It_reports_a_path_the_platform_cannot_normalize_as_absent_rather_than_failing()
+    {
+        // Path.GetFullPath throws for a path carrying a NUL where File.Exists simply answered false, so
+        // normalizing before probing must not turn a candidate that selects nothing into a new fatal.
+        _root.AddDeclaredRuntimeAsset(PluginFixtures.Good, "lib/net10.0/a\u0000b.dll");
+
+        IReadOnlyList<PluginInventoryRow> inventory = Load();
+
+        inventory
+            .Single(row => row.DeclaredPath.Contains('\u0000'))
+            .Availability.Should()
+            .Be(PluginFileAvailability.Absent);
+    }
+
+    [Test]
+    public void It_still_resolves_a_declared_path_nested_inside_the_plugin_directory()
+    {
+        // The guard rail for all of the above: the boundary must reject what leaves the directory
+        // without rejecting the nested shapes a real publish writes.
+        TemporaryPluginRoot.WriteFile(
+            Path.Combine(_root.RootPath, PluginFixtures.Good, "lib", "net10.0", "Nested.dll"),
+            "nested bytes"
+        );
+
+        _root.AddDeclaredRuntimeAsset(PluginFixtures.Good, "lib/net10.0/Nested.dll");
+
+        PluginInventoryRow row = Load().Single(candidate => candidate.FileName == "Nested.dll");
+
+        row.Availability.Should().Be(PluginFileAvailability.Present);
+        row.ResolvedRelativePath.Should().Be(Path.Combine("lib", "net10.0", "Nested.dll"));
+        row.Sha256.Should().NotBeNull();
+    }
+}
+
+/// <summary>
+/// The locale a resource declaration carries composes a candidate path of its own, so it is a third
+/// input to the same resolution and is bounded by the same rule.
+/// </summary>
+[TestFixture]
+public class Given_a_resource_declaration_whose_locale_leaves_the_plugin_directory
+{
+    private const string SatelliteFileName = "Acme.Localized.resources.dll";
+    private const string PublishedPath = "fr/" + SatelliteFileName;
+
+    [Test]
+    public void It_does_not_inventory_a_file_the_locale_traverses_to()
+    {
+        using TemporaryPluginRoot root = TemporaryPluginRoot.Create();
+        root.Add(PluginFixtures.Localized);
+
+        // The declared path is moved to one the publish did not write, so the declared-path candidate
+        // misses and the locale-derived candidate is the one under test. The satellite's file name
+        // alone is not at the plugin root either, which the satellite fixture already establishes.
+        string declaredPath = $"lib/net10.0/{SatelliteFileName}";
+        root.SetResourceDeclaredPath(PluginFixtures.Localized, PublishedPath, declaredPath);
+        root.SetResourceLocale(PluginFixtures.Localized, declaredPath, "../outside");
+
+        string sentinel = TemporaryPluginRoot.WriteFile(
+            Path.Combine(root.RootPath, "outside", SatelliteFileName),
+            "sentinel bytes that no plugin ever shipped"
+        );
+
+        PluginLoaderRun run = PluginLoaderProbe.Run(root.RootPath, PluginFixtures.Localized);
+        run.Failure.Should().BeNull();
+
+        IReadOnlyList<PluginInventoryRow> inventory = run.Result!.Plugins[0].MaterializeInventory();
+
+        inventory
+            .Single(row => row.Kind == PluginFileKind.Resource)
+            .Availability.Should()
+            .Be(PluginFileAvailability.Absent);
+        inventory.Should().NotContain(row => row.Sha256 == IndependentDigest.Of(sentinel));
+    }
+}

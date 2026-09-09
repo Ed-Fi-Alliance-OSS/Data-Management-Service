@@ -96,17 +96,63 @@ internal static class PluginFileInventory
     /// </summary>
     private static string? TryResolve(string pluginDirectory, PluginDeclaredAsset asset, string fileName)
     {
+        string root = Path.GetFullPath(pluginDirectory);
+        string prefix = root.EndsWith(Path.DirectorySeparatorChar)
+            ? root
+            : root + Path.DirectorySeparatorChar;
+
         foreach (string candidate in Candidates(asset, fileName))
         {
             string normalized = candidate.Replace('/', Path.DirectorySeparatorChar);
 
-            if (File.Exists(Path.Combine(pluginDirectory, normalized)))
+            if (IsInside(root, prefix, normalized) && File.Exists(Path.Combine(root, normalized)))
             {
                 return normalized;
             }
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Whether a candidate stays inside the plugin directory, judged lexically.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Every part a candidate is composed from is text a third party wrote: the declared path, the file
+    /// name taken from it, and the locale a resource declaration carries. <c>Path.Combine</c> discards
+    /// its first argument for a rooted second, and a traversing one climbs out, so without this a
+    /// declared path could select a file outside the plugin directory and those bytes would be hashed
+    /// and reported as a file the plugin shipped. The boundary carries its trailing separator so that a
+    /// sibling directory whose name merely begins with the plugin's is outside it.
+    /// </para>
+    /// <para>
+    /// Lexical on purpose, and deliberately unlike the loader's containment check, which resolves
+    /// symbolic links because it decides whether an assembly may load. This one decides only whether a
+    /// declared string may select a file, so it leaves the symlinked-file boundary where the design
+    /// puts it.
+    /// </para>
+    /// </remarks>
+    private static bool IsInside(string root, string prefix, string relativePath)
+    {
+        try
+        {
+            return Path.GetFullPath(Path.Combine(root, relativePath))
+                .StartsWith(prefix, StringComparison.Ordinal);
+        }
+        catch (Exception exception)
+            when (exception
+                    is ArgumentException
+                        or NotSupportedException
+                        or PathTooLongException
+                        or IOException
+            )
+        {
+            // A path string the platform cannot normalize is a candidate that selects nothing, which is
+            // exactly what File.Exists answered for it before anything normalized it. Normalizing first
+            // must not turn that quiet miss into a fatal an operator cannot act on.
+            return false;
+        }
     }
 
     private static IEnumerable<string> Candidates(PluginDeclaredAsset asset, string fileName)

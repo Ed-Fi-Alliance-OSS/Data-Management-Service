@@ -29,7 +29,15 @@ internal static class HostAssemblies
     {
         try
         {
-            assembly = AssemblyLoadContext.Default.LoadFromAssemblyName(new AssemblyName(simpleName));
+            // Built by property rather than by parsing. The AssemblyName(string) constructor is the
+            // display-name parser: a name carrying ", Version=" is read as a different assembly plus a
+            // version constraint, and the host's copy of that other assembly comes back in its place,
+            // while a name carrying a comma, an equals sign or a quotation mark is rejected outright
+            // with an exception that is not the FileNotFoundException below. Both are reachable,
+            // because this name is derived from a path a third party wrote. A simple name is a name.
+            assembly = AssemblyLoadContext.Default.LoadFromAssemblyName(
+                new AssemblyName { Name = simpleName }
+            );
             return true;
         }
         catch (FileNotFoundException)

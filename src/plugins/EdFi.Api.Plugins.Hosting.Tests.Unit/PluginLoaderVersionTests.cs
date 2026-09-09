@@ -461,3 +461,65 @@ public class Given_the_default_context_is_asked_for_an_assembly_it_cannot_serve
             .Be(new Version(1, 0, 0, 0));
     }
 }
+
+/// <summary>
+/// A declared asset's file name is a string a third party wrote, and the skew preflight presents it to
+/// the host as a simple assembly name. It has to be asked for as a name and never parsed as a display
+/// name.
+/// </summary>
+[TestFixture]
+public class Given_a_declared_asset_whose_file_name_is_not_a_plain_assembly_name
+{
+    private TemporaryPluginRoot _root = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _root = TemporaryPluginRoot.Create();
+        _root.Add(PluginFixtures.Good);
+    }
+
+    [TearDown]
+    public void TearDown() => _root.Dispose();
+
+    [TestCase("lib/net10.0/a,b.dll", TestName = "It_loads_the_plugin_when_the_name_carries_a_comma")]
+    [TestCase("lib/net10.0/a=1.dll", TestName = "It_loads_the_plugin_when_the_name_carries_an_equals")]
+    [TestCase("lib/net10.0/a\"b.dll", TestName = "It_loads_the_plugin_when_the_name_carries_a_quote")]
+    public void It_loads_the_plugin(string declaredPath)
+    {
+        // Each of these makes the display-name parser throw FileLoadException. That is neither a
+        // PluginLoadException nor the FileNotFoundException a missing assembly produces, so it escaped
+        // the loader entirely and left the diagnostic channel empty. Asked for as a name, the host
+        // simply carries nothing called that, which is true, and the plugin's own copy is used.
+        _root.AddDeclaredRuntimeAsset(PluginFixtures.Good, declaredPath, "1.0.0.0");
+
+        PluginLoaderRun run = PluginLoaderProbe.Run(_root.RootPath, PluginFixtures.Good);
+
+        run.Failure.Should().BeNull();
+        run.Result!.Plugins.Should().ContainSingle();
+        run.DiagnosticLines.Should().ContainSingle();
+        run.DiagnosticLines[0].Should().StartWith($"plugin '{PluginFixtures.Good}' loaded from");
+    }
+
+    [Test]
+    public void It_does_not_let_a_declared_path_impersonate_another_assembly()
+    {
+        // The case that decides the shape of the fix, because it is not a throw. The display-name
+        // parser reads this file name as System.Text.Json carrying a version constraint, so the host's
+        // real System.Text.Json was bound and its version compared against a declaration that was never
+        // about it: measured, host 10.0.0.0 against a declared 99.0.0.0, a skew fatal naming an
+        // assembly this plugin does not ship. Nothing the plugin declared is called System.Text.Json,
+        // so the truthful answer is that the host carries no such assembly and there is nothing to
+        // compare.
+        _root.AddDeclaredRuntimeAsset(
+            PluginFixtures.Good,
+            "lib/net10.0/System.Text.Json, Version=1.0.0.0.dll",
+            "99.0.0.0"
+        );
+
+        PluginLoaderRun run = PluginLoaderProbe.Run(_root.RootPath, PluginFixtures.Good);
+
+        run.Failure.Should().BeNull();
+        run.Result!.Plugins.Should().ContainSingle();
+    }
+}

@@ -50,6 +50,14 @@ internal sealed class TemporaryPluginRoot : IDisposable
         return path;
     }
 
+    /// <summary>Writes a file wherever the caller asks, creating the directories above it.</summary>
+    internal static string WriteFile(string path, string content)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(path, content);
+        return path;
+    }
+
     /// <summary>Copies a staged fixture into the root, optionally under another name.</summary>
     internal string Add(string fixtureName, string? asName = null) => AddTo(RootPath, fixtureName, asName);
 
@@ -190,6 +198,70 @@ internal sealed class TemporaryPluginRoot : IDisposable
 
         throw new AssertionException(
             $"Fixture '{pluginName}' declares no runtime asset named '{simpleName}'."
+        );
+    }
+
+    /// <summary>
+    /// Declares one more runtime asset at a path of the caller's choosing, in the first library that
+    /// already declares runtime assets.
+    /// </summary>
+    /// <remarks>
+    /// The declared path is the whole point, so it is written verbatim rather than composed from a file
+    /// name: what these cases are about is which file a declared string may select, and which name that
+    /// string presents to the host lookup.
+    /// </remarks>
+    internal void AddDeclaredRuntimeAsset(
+        string pluginName,
+        string declaredPath,
+        string? assemblyVersion = null
+    )
+    {
+        JsonNode manifest = JsonNode.Parse(File.ReadAllText(ManifestPathOf(pluginName)))!;
+        string targetName = manifest["runtimeTarget"]!["name"]!.GetValue<string>();
+
+        foreach (KeyValuePair<string, JsonNode?> library in manifest["targets"]![targetName]!.AsObject())
+        {
+            if (library.Value?["runtime"] is not JsonObject runtime)
+            {
+                continue;
+            }
+
+            JsonObject declaration = [];
+
+            if (assemblyVersion is not null)
+            {
+                declaration["assemblyVersion"] = assemblyVersion;
+            }
+
+            runtime[declaredPath] = declaration;
+            WriteManifest(pluginName, manifest.ToJsonString());
+            return;
+        }
+
+        throw new AssertionException($"Fixture '{pluginName}' declares no runtime assets.");
+    }
+
+    /// <summary>Rewrites the locale a resource declaration carries, leaving its file where it is.</summary>
+    internal void SetResourceLocale(string pluginName, string declaredPath, string locale)
+    {
+        JsonNode manifest = JsonNode.Parse(File.ReadAllText(ManifestPathOf(pluginName)))!;
+        string targetName = manifest["runtimeTarget"]!["name"]!.GetValue<string>();
+
+        foreach (KeyValuePair<string, JsonNode?> library in manifest["targets"]![targetName]!.AsObject())
+        {
+            if (
+                library.Value?["resources"] is JsonObject resources
+                && resources[declaredPath] is JsonObject declaration
+            )
+            {
+                declaration["locale"] = locale;
+                WriteManifest(pluginName, manifest.ToJsonString());
+                return;
+            }
+        }
+
+        throw new AssertionException(
+            $"Fixture '{pluginName}' declares no resource asset at '{declaredPath}'."
         );
     }
 
