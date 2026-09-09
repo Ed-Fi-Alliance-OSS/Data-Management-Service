@@ -34,6 +34,11 @@ public sealed class SecondContributorPlugin : EdFiApiPlugin
                 break;
 
             case "declaredValidatorOnly":
+            // The healthy half of the two-plugin fan-in pair, and the case where a host descriptor is
+            // the broken one. Both need this plugin's contribution to be constructible.
+            case "fanInPair":
+            case "fanInPairFactory":
+            case "healthyFanInBesideBrokenHostDefault":
                 services.TryAddEnumerable(
                     ServiceDescriptor.Transient<IFixtureFanInContract, SecondPluginFanIn>()
                 );

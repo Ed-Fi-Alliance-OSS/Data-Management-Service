@@ -7,6 +7,7 @@ using Acme.FixtureContracts;
 using EdFi.DataManagementService.FixtureHost;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -52,6 +53,41 @@ internal static class AuditProbe
     }
 
     /// <summary>
+    /// Loads the fixtures, runs their hooks over a host collection the caller has adjusted, builds the
+    /// container, and audits.
+    /// </summary>
+    /// <remarks>
+    /// The overload exists for the cases whose subject is a descriptor the <em>host</em> registered:
+    /// one that cannot be constructed, and one whose asynchronous release throws. Neither can come from
+    /// a plugin, because a plugin's descriptors are exactly what the records attribute.
+    /// </remarks>
+    internal static async Task<AuditRun> RunWithHostCollectionAsync(
+        TemporaryPluginRoot root,
+        string? behavior,
+        Action<ServiceCollection> adjustHostCollection,
+        params string[] fixtureNames
+    )
+    {
+        FixtureObservations.Clear();
+
+        LoadedPlugins plugins = ContributionProbe.Load(root, fixtureNames);
+        ServiceCollection services = HostCollection();
+        adjustHostCollection(services);
+
+        PluginAuditInput input = plugins.ContributeServices(
+            services,
+            ContributionProbe.HookConfiguration(behavior),
+            Registry,
+            new StringWriter()
+        );
+
+        ServiceProvider provider = services.BuildServiceProvider();
+        PluginAuditResult result = await PluginRegistrationAudit.AuditAsync(input, provider);
+
+        return new AuditRun(input, result, services, provider);
+    }
+
+    /// <summary>
     /// Loads the fixtures, runs their hooks over a host collection, builds the container, and audits.
     /// </summary>
     internal static async Task<AuditRun> RunAsync(
@@ -77,6 +113,43 @@ internal static class AuditProbe
         PluginAuditResult result = await PluginRegistrationAudit.AuditAsync(input, provider);
 
         return new AuditRun(input, result, services, provider);
+    }
+}
+
+/// <summary>
+/// A host descriptor for the declared contract that cannot be constructed, because it asks for a
+/// service nothing registers.
+/// </summary>
+/// <remarks>
+/// The host's rather than a plugin's, on purpose: a group holding one of these beside a healthy plugin
+/// descriptor is the case where naming the plugin as the cause would be wrong.
+/// </remarks>
+internal sealed class BrokenHostFanIn(IFixtureMissingDependency missing) : IFixtureFanInContract
+{
+    public string Describe() => missing.Describe();
+}
+
+/// <summary>
+/// A host implementation of the declared contract that implements only <see cref="IAsyncDisposable"/>
+/// and throws when released.
+/// </summary>
+/// <remarks>
+/// Only asynchronously disposable, which a synchronous scope release cannot handle at all, and
+/// throwing, which is what separates a cleanup failure from whatever the checks concluded.
+/// </remarks>
+internal sealed class AsyncOnlyThrowingHostFanIn : IFixtureFanInContract, IAsyncDisposable
+{
+    internal const string CleanupFailureMessage = "releasing the host's async-only service failed";
+
+    public AsyncOnlyThrowingHostFanIn() => FixtureObservations.Count("asyncOnlyHost.constructed");
+
+    public string Describe() => nameof(AsyncOnlyThrowingHostFanIn);
+
+    public ValueTask DisposeAsync()
+    {
+        FixtureObservations.Count("asyncOnlyHost.disposeAsync");
+
+        throw new InvalidOperationException(CleanupFailureMessage);
     }
 }
 
@@ -824,5 +897,272 @@ public class Given_a_plugin_whose_replace_claim_declined_beside_a_fan_in_registr
             .Describe()
             .Should()
             .Be(nameof(FixtureHostReplaceDefault));
+    }
+}
+
+[TestFixture]
+[NonParallelizable]
+public class Given_two_plugins_contributing_to_one_fan_in_contract_and_one_of_them_broken
+{
+    private TemporaryPluginRoot? _brokenFirstRoot;
+    private TemporaryPluginRoot? _healthyFirstRoot;
+    private TemporaryPluginRoot? _brokenFactoryFirstRoot;
+    private TemporaryPluginRoot? _healthyBeforeFactoryRoot;
+
+    [TearDown]
+    public void TearDown()
+    {
+        _brokenFirstRoot?.Dispose();
+        _healthyFirstRoot?.Dispose();
+        _brokenFactoryFirstRoot?.Dispose();
+        _healthyBeforeFactoryRoot?.Dispose();
+    }
+
+    /// <summary>
+    /// Fan-in rather than replace, so no static conflict can fire first and stop the activation pass
+    /// this case is about. Two real plugin identities contribute to the same unkeyed group, one of them
+    /// unconstructible.
+    /// </summary>
+    [Test]
+    public async Task It_is_fatal_with_the_broken_contribution_first()
+    {
+        _brokenFirstRoot = TemporaryPluginRoot.Create();
+        using AuditRun run = await AuditProbe.RunAsync(
+            _brokenFirstRoot,
+            "fanInPair",
+            null,
+            PluginFixtures.Contributor,
+            PluginFixtures.SecondContributor
+        );
+
+        AssertBothCandidatesReported(run);
+        run.SingleFinding.ActivationException!.Message.Should().Contain(nameof(IFixtureMissingDependency));
+
+        // Nothing in the group is constructed. Measured: an unresolvable constructor dependency fails
+        // while the container builds the group's call sites, before any instance is created, so this
+        // shape never partially materializes whatever the order.
+        FixtureObservations.CountOf("secondFanIn.constructed").Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_is_fatal_with_the_healthy_contribution_first()
+    {
+        _healthyFirstRoot = TemporaryPluginRoot.Create();
+        using AuditRun run = await AuditProbe.RunAsync(
+            _healthyFirstRoot,
+            "fanInPair",
+            null,
+            PluginFixtures.SecondContributor,
+            PluginFixtures.Contributor
+        );
+
+        AssertBothCandidatesReported(run);
+        run.SingleFinding.ActivationException!.Message.Should().Contain(nameof(IFixtureMissingDependency));
+
+        // Zero here too, and for the same measured reason: the failure is in building the group's call
+        // sites, which happens before the first element of it is constructed.
+        FixtureObservations.CountOf("secondFanIn.constructed").Should().Be(0);
+    }
+
+    /// <summary>
+    /// The same pair, with the broken contribution a factory that throws. That failure happens while
+    /// the group is being materialized rather than while its call sites are built, so elements before
+    /// it in the group are constructed, which is what makes the counters here able to tell one
+    /// activation from two.
+    /// </summary>
+    [Test]
+    public async Task It_activates_each_contribution_once_with_the_broken_factory_first()
+    {
+        _brokenFactoryFirstRoot = TemporaryPluginRoot.Create();
+        using AuditRun run = await AuditProbe.RunAsync(
+            _brokenFactoryFirstRoot,
+            "fanInPairFactory",
+            null,
+            PluginFixtures.Contributor,
+            PluginFixtures.SecondContributor
+        );
+
+        AssertBothCandidatesReported(run);
+
+        // The factory is first, so it throws before the healthy contribution is reached. Invoked once:
+        // a second activation of the group for diagnosis would make it two.
+        FixtureObservations.CountOf("throwingFactory").Should().Be(1);
+        FixtureObservations.CountOf("secondFanIn.constructed").Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_activates_each_contribution_once_with_the_healthy_contribution_first()
+    {
+        _healthyBeforeFactoryRoot = TemporaryPluginRoot.Create();
+        using AuditRun run = await AuditProbe.RunAsync(
+            _healthyBeforeFactoryRoot,
+            "fanInPairFactory",
+            null,
+            PluginFixtures.SecondContributor,
+            PluginFixtures.Contributor
+        );
+
+        AssertBothCandidatesReported(run);
+
+        // Constructed on the way to the broken factory, and once each. Two of either would mean the
+        // group had been activated twice.
+        FixtureObservations.CountOf("secondFanIn.constructed").Should().Be(1);
+        FixtureObservations.CountOf("throwingFactory").Should().Be(1);
+    }
+
+    private static void AssertBothCandidatesReported(AuditRun run)
+    {
+        PluginAuditFinding finding = run.SingleFinding;
+
+        finding.Reason.Should().Be(PluginAuditFailure.DeclaredContractRegistrationNotActivatable);
+        finding.Contract.Should().Be(typeof(IFixtureFanInContract));
+
+        // Both identities are named and neither is singled out.
+        finding.PluginNames.Should().HaveCount(2);
+        finding.PluginNames.Should().Contain(PluginFixtures.Contributor);
+        finding.PluginNames.Should().Contain(PluginFixtures.SecondContributor);
+        finding.Message.Should().Contain(PluginFixtures.Contributor);
+        finding.Message.Should().Contain(PluginFixtures.SecondContributor);
+        finding.Message.Should().Contain("attribution to a single plugin is not available");
+        finding.Message.Should().NotContain("rather than the cause");
+
+        // The container's own exception, kept rather than reformatted.
+        finding.ActivationException.Should().BeOfType<InvalidOperationException>();
+    }
+}
+
+[TestFixture]
+[NonParallelizable]
+public class Given_a_group_holding_a_broken_host_descriptor_beside_a_healthy_plugin_one
+{
+    private TemporaryPluginRoot _root = null!;
+    private AuditRun _run = null!;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        _root = TemporaryPluginRoot.Create();
+        _run = await AuditProbe.RunWithHostCollectionAsync(
+            _root,
+            "healthyFanInBesideBrokenHostDefault",
+            services =>
+                services.TryAddEnumerable(
+                    ServiceDescriptor.Transient<IFixtureFanInContract, BrokenHostFanIn>()
+                ),
+            PluginFixtures.SecondContributor
+        );
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        _run.Dispose();
+        _root.Dispose();
+    }
+
+    [Test]
+    public void It_is_fatal_naming_the_contract()
+    {
+        _run.SingleFinding.Reason.Should().Be(PluginAuditFailure.DeclaredContractRegistrationNotActivatable);
+        _run.SingleFinding.Contract.Should().Be(typeof(IFixtureFanInContract));
+    }
+
+    /// <summary>
+    /// The descriptor that cannot be constructed is the host's, and the only plugin in the group
+    /// contributed a perfectly good one. So the finding has to report that a descriptor nobody
+    /// contributed is in the group, and must not present the plugin as the cause.
+    /// </summary>
+    [Test]
+    public void It_reports_a_descriptor_no_plugin_contributed_and_does_not_blame_the_plugin()
+    {
+        PluginAuditFinding finding = _run.SingleFinding;
+
+        finding.PluginNames.Should().Equal(PluginFixtures.SecondContributor);
+        finding.Message.Should().Contain("contributed by no plugin");
+        finding.Message.Should().Contain("when service composition finished");
+        finding.Message.Should().Contain("attribution to a single plugin is not available");
+        finding.Message.Should().NotContain("rather than the cause");
+    }
+
+    [Test]
+    public void It_keeps_the_original_activation_exception()
+    {
+        _run.SingleFinding.ActivationException.Should().BeOfType<InvalidOperationException>();
+        _run.SingleFinding.ActivationException!.Message.Should().Contain(nameof(IFixtureMissingDependency));
+    }
+}
+
+[TestFixture]
+[NonParallelizable]
+public class Given_an_activation_failure_beside_an_async_only_disposable_that_throws_on_release
+{
+    private TemporaryPluginRoot _root = null!;
+    private AuditRun _run = null!;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        _root = TemporaryPluginRoot.Create();
+
+        // Registered before the hooks, so it is first in the group and is constructed and tracked
+        // by the probe's scope on the way to the plugin's throwing factory. The failure has to be one
+        // that happens while the group materializes: measured, an unresolvable constructor dependency
+        // fails while the call sites are built instead, before anything in the group is constructed,
+        // so the scope would have nothing to release and this case would assert nothing.
+        _run = await AuditProbe.RunWithHostCollectionAsync(
+            _root,
+            "throwingFactory",
+            services =>
+                services.TryAddEnumerable(
+                    ServiceDescriptor.Scoped<IFixtureFanInContract, AsyncOnlyThrowingHostFanIn>()
+                ),
+            PluginFixtures.Contributor
+        );
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        _run.Dispose();
+        _root.Dispose();
+    }
+
+    [Test]
+    public void It_acquired_the_async_only_service_in_the_probes_scope()
+    {
+        FixtureObservations.CountOf("asyncOnlyHost.constructed").Should().Be(1);
+    }
+
+    /// <summary>
+    /// Released asynchronously, and exactly once. A synchronous release would have thrown for a service
+    /// implementing only IAsyncDisposable rather than calling this at all.
+    /// </summary>
+    [Test]
+    public void It_released_the_scope_asynchronously_once()
+    {
+        FixtureObservations.CountOf("asyncOnlyHost.disposeAsync").Should().Be(1);
+    }
+
+    [Test]
+    public void It_keeps_the_activation_failure_as_the_finding()
+    {
+        PluginAuditFinding finding = _run.SingleFinding;
+
+        finding.Reason.Should().Be(PluginAuditFailure.DeclaredContractRegistrationNotActivatable);
+        finding.ActivationException.Should().BeOfType<InvalidOperationException>();
+        finding.ActivationException!.Message.Should().Contain("the plugin's factory failed");
+    }
+
+    /// <summary>
+    /// Both survive, as two objects. A cleanup failure that replaced the activation failure, or that
+    /// escaped, would lose the only account of what was actually wrong with the registrations.
+    /// </summary>
+    [Test]
+    public void It_reports_the_cleanup_failure_separately_from_the_activation_failure()
+    {
+        _run.Result.ScopeCleanupFailure.Should().NotBeNull();
+        _run.Result.ScopeCleanupFailure!.Message.Should()
+            .Contain(AsyncOnlyThrowingHostFanIn.CleanupFailureMessage);
+        _run.Result.ScopeCleanupFailure.Should().NotBeSameAs(_run.SingleFinding.ActivationException);
     }
 }

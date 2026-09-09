@@ -124,11 +124,18 @@ public sealed class ContributorPlugin : EdFiApiPlugin
                 break;
 
             case "unsatisfiable":
+            // The broken half of the two-plugin fan-in pair. The same registration either way: what
+            // the pair varies is which plugin the allowlist puts first.
+            case "fanInPair":
                 services.TryAddEnumerable(
                     ServiceDescriptor.Transient<IFixtureFanInContract, FixtureUnsatisfiableFanIn>()
                 );
                 break;
 
+            // The broken half of the pair whose failure happens while the group is being materialized
+            // rather than while its call sites are built, which is what leaves earlier elements of the
+            // group constructed.
+            case "fanInPairFactory":
             case "throwingFactory":
                 // Add rather than TryAddEnumerable: a descriptor built from an untyped factory names no
                 // implementation type, and TryAddEnumerable refuses one it cannot compare. A factory
