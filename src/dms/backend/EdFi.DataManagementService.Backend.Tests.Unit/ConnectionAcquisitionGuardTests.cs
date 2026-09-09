@@ -16,8 +16,11 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit;
 /// The one connection-acquisition boundary every read-path seam runs inside. What it classifies, what
 /// it deliberately does not, and what it writes to a log.
 /// </summary>
-[TestFixture]
-[Parallelizable]
+/// <remarks>
+/// Deliberately not a <c>[TestFixture]</c> and holding no tests of its own: the nested fixtures derive
+/// from it for its helpers, and NUnit discovers inherited test methods, so a test declared here would
+/// run once more inside each of them. Every other fixture in this suite is shaped the same way.
+/// </remarks>
 public class ConnectionAcquisitionGuardTests
 {
     /// <summary>
@@ -43,7 +46,7 @@ public class ConnectionAcquisitionGuardTests
     private static readonly Func<Exception, string> _describeByType = static exception =>
         exception.GetType().Name;
 
-    private static Task<T> GuardAsync<T>(
+    protected static Task<T> GuardAsync<T>(
         Func<Task<T>> acquireAsync,
         EffectiveTargetKind targetKind,
         Predicate<Exception>? isExpectedFailure = null,
@@ -60,223 +63,231 @@ public class ConnectionAcquisitionGuardTests
             cancellationToken
         );
 
-    [Test]
-    public async Task It_returns_what_the_acquisition_produced()
-    {
-        object acquired = new();
-
-        object returned = await GuardAsync(() => Task.FromResult(acquired), EffectiveTargetKind.Snapshot);
-
-        returned.Should().BeSameAs(acquired);
-    }
-
-    [Test]
-    public async Task It_wraps_an_expected_failure_on_a_snapshot_target()
-    {
-        StubDbException failure = new("connection refused");
-
-        Func<Task> acquire = () =>
-            GuardAsync<object>(() => Throw<object>(failure), EffectiveTargetKind.Snapshot);
-
-        var thrown = await acquire.Should().ThrowAsync<DatabaseConnectionUnavailableException>();
-
-        thrown.Which.TargetKind.Should().Be(EffectiveTargetKind.Snapshot);
-        thrown
-            .Which.InnerException.Should()
-            .BeSameAs(failure, "the provider exception is retained for diagnostics");
-        thrown
-            .Which.Message.Should()
-            .NotContain(
-                "refused",
-                "the wrapper's own message names the target kind and nothing the provider put in its own"
-            );
-    }
-
     /// <summary>
-    /// The condition that keeps two contracts still: the SQL Server write-failure mapper catches
-    /// DbException from session creation, and the custom-view read wrappers catch it too. Both would
-    /// stop firing if a primary or read-replica failure were wrapped, because the wrapper is
-    /// deliberately not a DbException.
+    /// What the guard classifies, what it refuses to classify, and what travels on the wrapper.
     /// </summary>
-    [TestCase(EffectiveTargetKind.Primary)]
-    [TestCase(EffectiveTargetKind.ReadReplica)]
-    public async Task It_propagates_the_same_failure_unwrapped_on_every_other_kind(
-        EffectiveTargetKind targetKind
-    )
+    [TestFixture]
+    [Parallelizable]
+    public class Given_The_Acquisition_Guard : ConnectionAcquisitionGuardTests
     {
-        StubDbException failure = new("connection refused");
-
-        Func<Task> acquire = () => GuardAsync<object>(() => Throw<object>(failure), targetKind);
-
-        var thrown = await acquire.Should().ThrowAsync<DbException>();
-
-        thrown.Which.Should().BeSameAs(failure);
-        thrown.Which.Should().NotBeOfType<DatabaseConnectionUnavailableException>();
-    }
-
-    [Test]
-    public async Task It_propagates_an_unexpected_exception_on_a_snapshot_target()
-    {
-        NullReferenceException defect = new();
-
-        Func<Task> acquire = () =>
-            GuardAsync<object>(
-                () => Throw<object>(defect),
-                EffectiveTargetKind.Snapshot,
-                isExpectedFailure: PostgresqlOrMssqlWouldReject
-            );
-
-        (await acquire.Should().ThrowAsync<NullReferenceException>()).Which.Should().BeSameAs(defect);
-    }
-
-    [Test]
-    public async Task It_propagates_a_null_argument_failure_on_a_snapshot_target()
-    {
-        ArgumentNullException defect = NullArgumentFailure();
-
-        Func<Task> acquire = () =>
-            GuardAsync<object>(
-                () => Throw<object>(defect),
-                EffectiveTargetKind.Snapshot,
-                isExpectedFailure: PostgresqlOrMssqlWouldReject
-            );
-
-        (await acquire.Should().ThrowAsync<ArgumentNullException>()).Which.Should().BeSameAs(defect);
-    }
-
-    /// <summary>
-    /// Disposal of a data source during shutdown is not an unavailable database. Asserted with a
-    /// classifier that accepts everything, so the guarantee rests on the guard's own arm rather than on
-    /// an engine predicate happening to reject the type.
-    /// </summary>
-    [Test]
-    public async Task It_propagates_a_disposal_on_a_snapshot_target_whatever_the_classifier_says()
-    {
-        ObjectDisposedException disposed = new("NpgsqlDataSource");
-
-        Func<Task> acquire = () =>
-            GuardAsync<object>(() => Throw<object>(disposed), EffectiveTargetKind.Snapshot);
-
-        (await acquire.Should().ThrowAsync<ObjectDisposedException>()).Which.Should().BeSameAs(disposed);
-    }
-
-    /// <summary>
-    /// An aborted or timed-out caller is not evidence of a missing snapshot, so it is never wrapped -
-    /// again independently of the classifier, and for every kind alike.
-    /// </summary>
-    [TestCase(EffectiveTargetKind.Primary)]
-    [TestCase(EffectiveTargetKind.ReadReplica)]
-    [TestCase(EffectiveTargetKind.Snapshot)]
-    public async Task It_propagates_a_cancellation_attributable_to_the_supplied_token(
-        EffectiveTargetKind targetKind
-    )
-    {
-        using CancellationTokenSource cancelled = new();
-        await cancelled.CancelAsync();
-
-        Func<Task> acquire = () =>
-            GuardAsync<object>(
-                () => Throw<object>(new OperationCanceledException(cancelled.Token)),
-                targetKind,
-                cancellationToken: cancelled.Token
-            );
-
-        // A wrapped cancellation would fail this outright: the wrapper is not an
-        // OperationCanceledException, so there is nothing further to assert about what it is not.
-        await acquire.Should().ThrowAsync<OperationCanceledException>();
-    }
-
-    /// <summary>
-    /// The engine composes the description; the guard neither invents one nor falls back to the type.
-    /// It travels on the wrapper so the translation sites in Core - which cannot see provider types -
-    /// log the same thing the acquisition boundary did.
-    /// </summary>
-    [Test]
-    public async Task It_carries_the_engine_description_on_the_wrapper()
-    {
-        Func<Task> acquire = () =>
-            GuardAsync<object>(
-                () => Throw<object>(new StubDbException("login failed")),
-                EffectiveTargetKind.Snapshot,
-                describeFailure: static _ => "SqlException(4060)"
-            );
-
-        (await acquire.Should().ThrowAsync<DatabaseConnectionUnavailableException>())
-            .Which.FailureDescription.Should()
-            .Be("SqlException(4060)");
-    }
-
-    [Test]
-    public async Task It_logs_the_engine_description_rather_than_the_type()
-    {
-        CapturingLogger logger = new();
-
-        try
+        [Test]
+        public async Task It_returns_what_the_acquisition_produced()
         {
-            await GuardAsync<object>(
-                () => Throw<object>(new StubDbException($"login failed for '{SecretConnectionString}'")),
-                EffectiveTargetKind.Snapshot,
-                describeFailure: static _ => "SqlException(4060)",
-                logger: logger
-            );
-        }
-        catch (DatabaseConnectionUnavailableException)
-        {
-            // Expected. What was logged on the way is the behavior under test.
+            object acquired = new();
+
+            object returned = await GuardAsync(() => Task.FromResult(acquired), EffectiveTargetKind.Snapshot);
+
+            returned.Should().BeSameAs(acquired);
         }
 
-        logger.Entries.Should().ContainSingle();
-        logger.Entries[0].Message.Should().Contain("SqlException(4060)");
-    }
-
-    /// <summary>
-    /// The description is asked for only where it is used. A failure the guard does not classify must
-    /// not call into the engine at all, which is what keeps a describe implementation from having to
-    /// cope with exceptions its classifier already rejected.
-    /// </summary>
-    [Test]
-    public async Task It_asks_for_no_description_on_a_kind_it_does_not_wrap()
-    {
-        bool described = false;
-
-        try
+        [Test]
+        public async Task It_wraps_an_expected_failure_on_a_snapshot_target()
         {
-            await GuardAsync<object>(
-                () => Throw<object>(new StubDbException("connection refused")),
-                EffectiveTargetKind.ReadReplica,
-                describeFailure: _ =>
-                {
-                    described = true;
-                    return "unused";
-                }
-            );
-        }
-        catch (DbException)
-        {
-            // Expected: it propagates.
+            StubDbException failure = new("connection refused");
+
+            Func<Task> acquire = () =>
+                GuardAsync<object>(() => Throw<object>(failure), EffectiveTargetKind.Snapshot);
+
+            var thrown = await acquire.Should().ThrowAsync<DatabaseConnectionUnavailableException>();
+
+            thrown.Which.TargetKind.Should().Be(EffectiveTargetKind.Snapshot);
+            thrown
+                .Which.InnerException.Should()
+                .BeSameAs(failure, "the provider exception is retained for diagnostics");
+            thrown
+                .Which.Message.Should()
+                .NotContain(
+                    "refused",
+                    "the wrapper's own message names the target kind and nothing the provider put in its own"
+                );
         }
 
-        described.Should().BeFalse();
-    }
+        /// <summary>
+        /// The condition that keeps two contracts still: the SQL Server write-failure mapper catches
+        /// DbException from session creation, and the custom-view read wrappers catch it too. Both would
+        /// stop firing if a primary or read-replica failure were wrapped, because the wrapper is
+        /// deliberately not a DbException.
+        /// </summary>
+        [TestCase(EffectiveTargetKind.Primary)]
+        [TestCase(EffectiveTargetKind.ReadReplica)]
+        public async Task It_propagates_the_same_failure_unwrapped_on_every_other_kind(
+            EffectiveTargetKind targetKind
+        )
+        {
+            StubDbException failure = new("connection refused");
 
-    /// <summary>
-    /// The exclusion is for a cancellation the caller asked for, not for the exception type. A provider
-    /// that raises one while nothing was cancelled is classified like any other failure, so the arm
-    /// cannot become a way to escape classification.
-    /// </summary>
-    [Test]
-    public async Task It_classifies_a_cancellation_the_supplied_token_did_not_ask_for()
-    {
-        Func<Task> acquire = () =>
-            GuardAsync<object>(
-                () => Throw<object>(new OperationCanceledException("nothing was cancelled")),
-                EffectiveTargetKind.Snapshot,
-                cancellationToken: CancellationToken.None
-            );
+            Func<Task> acquire = () => GuardAsync<object>(() => Throw<object>(failure), targetKind);
 
-        var thrown = await acquire.Should().ThrowAsync<DatabaseConnectionUnavailableException>();
+            var thrown = await acquire.Should().ThrowAsync<DbException>();
 
-        thrown.Which.InnerException.Should().BeOfType<OperationCanceledException>();
+            thrown.Which.Should().BeSameAs(failure);
+            thrown.Which.Should().NotBeOfType<DatabaseConnectionUnavailableException>();
+        }
+
+        [Test]
+        public async Task It_propagates_an_unexpected_exception_on_a_snapshot_target()
+        {
+            NullReferenceException defect = new();
+
+            Func<Task> acquire = () =>
+                GuardAsync<object>(
+                    () => Throw<object>(defect),
+                    EffectiveTargetKind.Snapshot,
+                    isExpectedFailure: PostgresqlOrMssqlWouldReject
+                );
+
+            (await acquire.Should().ThrowAsync<NullReferenceException>()).Which.Should().BeSameAs(defect);
+        }
+
+        [Test]
+        public async Task It_propagates_a_null_argument_failure_on_a_snapshot_target()
+        {
+            ArgumentNullException defect = NullArgumentFailure();
+
+            Func<Task> acquire = () =>
+                GuardAsync<object>(
+                    () => Throw<object>(defect),
+                    EffectiveTargetKind.Snapshot,
+                    isExpectedFailure: PostgresqlOrMssqlWouldReject
+                );
+
+            (await acquire.Should().ThrowAsync<ArgumentNullException>()).Which.Should().BeSameAs(defect);
+        }
+
+        /// <summary>
+        /// Disposal of a data source during shutdown is not an unavailable database. Asserted with a
+        /// classifier that accepts everything, so the guarantee rests on the guard's own arm rather than on
+        /// an engine predicate happening to reject the type.
+        /// </summary>
+        [Test]
+        public async Task It_propagates_a_disposal_on_a_snapshot_target_whatever_the_classifier_says()
+        {
+            ObjectDisposedException disposed = new("NpgsqlDataSource");
+
+            Func<Task> acquire = () =>
+                GuardAsync<object>(() => Throw<object>(disposed), EffectiveTargetKind.Snapshot);
+
+            (await acquire.Should().ThrowAsync<ObjectDisposedException>()).Which.Should().BeSameAs(disposed);
+        }
+
+        /// <summary>
+        /// An aborted or timed-out caller is not evidence of a missing snapshot, so it is never wrapped -
+        /// again independently of the classifier, and for every kind alike.
+        /// </summary>
+        [TestCase(EffectiveTargetKind.Primary)]
+        [TestCase(EffectiveTargetKind.ReadReplica)]
+        [TestCase(EffectiveTargetKind.Snapshot)]
+        public async Task It_propagates_a_cancellation_attributable_to_the_supplied_token(
+            EffectiveTargetKind targetKind
+        )
+        {
+            using CancellationTokenSource cancelled = new();
+            await cancelled.CancelAsync();
+
+            Func<Task> acquire = () =>
+                GuardAsync<object>(
+                    () => Throw<object>(new OperationCanceledException(cancelled.Token)),
+                    targetKind,
+                    cancellationToken: cancelled.Token
+                );
+
+            // A wrapped cancellation would fail this outright: the wrapper is not an
+            // OperationCanceledException, so there is nothing further to assert about what it is not.
+            await acquire.Should().ThrowAsync<OperationCanceledException>();
+        }
+
+        /// <summary>
+        /// The engine composes the description; the guard neither invents one nor falls back to the type.
+        /// It travels on the wrapper so the translation sites in Core - which cannot see provider types -
+        /// log the same thing the acquisition boundary did.
+        /// </summary>
+        [Test]
+        public async Task It_carries_the_engine_description_on_the_wrapper()
+        {
+            Func<Task> acquire = () =>
+                GuardAsync<object>(
+                    () => Throw<object>(new StubDbException("login failed")),
+                    EffectiveTargetKind.Snapshot,
+                    describeFailure: static _ => "SqlException(4060)"
+                );
+
+            (await acquire.Should().ThrowAsync<DatabaseConnectionUnavailableException>())
+                .Which.FailureDescription.Should()
+                .Be("SqlException(4060)");
+        }
+
+        [Test]
+        public async Task It_logs_the_engine_description_rather_than_the_type()
+        {
+            CapturingLogger logger = new();
+
+            try
+            {
+                await GuardAsync<object>(
+                    () => Throw<object>(new StubDbException($"login failed for '{SecretConnectionString}'")),
+                    EffectiveTargetKind.Snapshot,
+                    describeFailure: static _ => "SqlException(4060)",
+                    logger: logger
+                );
+            }
+            catch (DatabaseConnectionUnavailableException)
+            {
+                // Expected. What was logged on the way is the behavior under test.
+            }
+
+            logger.Entries.Should().ContainSingle();
+            logger.Entries[0].Message.Should().Contain("SqlException(4060)");
+        }
+
+        /// <summary>
+        /// The description is asked for only where it is used. A failure the guard does not classify must
+        /// not call into the engine at all, which is what keeps a describe implementation from having to
+        /// cope with exceptions its classifier already rejected.
+        /// </summary>
+        [Test]
+        public async Task It_asks_for_no_description_on_a_kind_it_does_not_wrap()
+        {
+            bool described = false;
+
+            try
+            {
+                await GuardAsync<object>(
+                    () => Throw<object>(new StubDbException("connection refused")),
+                    EffectiveTargetKind.ReadReplica,
+                    describeFailure: _ =>
+                    {
+                        described = true;
+                        return "unused";
+                    }
+                );
+            }
+            catch (DbException)
+            {
+                // Expected: it propagates.
+            }
+
+            described.Should().BeFalse();
+        }
+
+        /// <summary>
+        /// The exclusion is for a cancellation the caller asked for, not for the exception type. A provider
+        /// that raises one while nothing was cancelled is classified like any other failure, so the arm
+        /// cannot become a way to escape classification.
+        /// </summary>
+        [Test]
+        public async Task It_classifies_a_cancellation_the_supplied_token_did_not_ask_for()
+        {
+            Func<Task> acquire = () =>
+                GuardAsync<object>(
+                    () => Throw<object>(new OperationCanceledException("nothing was cancelled")),
+                    EffectiveTargetKind.Snapshot,
+                    cancellationToken: CancellationToken.None
+                );
+
+            var thrown = await acquire.Should().ThrowAsync<DatabaseConnectionUnavailableException>();
+
+            thrown.Which.InnerException.Should().BeOfType<OperationCanceledException>();
+        }
     }
 
     [TestFixture]
@@ -373,16 +384,16 @@ public class ConnectionAcquisitionGuardTests
     /// Stands in for the real engine predicates, both of which reject a defect raised inside the
     /// acquisition boundary. Named rather than inlined so the intent is legible at the call site.
     /// </summary>
-    private static bool PostgresqlOrMssqlWouldReject(Exception exception) =>
+    protected static bool PostgresqlOrMssqlWouldReject(Exception exception) =>
         exception is not (NullReferenceException or ArgumentNullException);
 
-    private static Task<T> Throw<T>(Exception exception) => Task.FromException<T>(exception);
+    protected static Task<T> Throw<T>(Exception exception) => Task.FromException<T>(exception);
 
     /// <summary>
     /// A null-argument failure carrying a parameter name that really exists, which is what the static
     /// analyzer requires of any ArgumentException construction.
     /// </summary>
-    private static ArgumentNullException NullArgumentFailure(string? connectionString = null) =>
+    protected static ArgumentNullException NullArgumentFailure(string? connectionString = null) =>
         new(
             nameof(connectionString),
             $"'{nameof(connectionString)}' must not be {connectionString ?? "null"}."

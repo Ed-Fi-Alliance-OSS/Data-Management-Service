@@ -9,6 +9,7 @@ using System.Security.Cryptography;
 using EdFi.DataManagementService.Backend.Mssql;
 using EdFi.DataManagementService.Backend.Postgresql;
 using FluentAssertions;
+using Microsoft.Data.SqlClient;
 using Npgsql;
 using NUnit.Framework;
 
@@ -304,6 +305,39 @@ public class ConnectionAcquisitionClassifierTests
                 .Describe(new StubDbException("some other provider"))
                 .Should()
                 .Be("StubDbException");
+        }
+
+        /// <summary>
+        /// The branch that appends SqlException.Number, which is the shape this describes in almost
+        /// every production case: 4060 for a catalog the login cannot open, 18456 for a failed login,
+        /// -2 for a connection timeout are three different remediations, and the type alone tells them
+        /// apart from none of each other.
+        /// </summary>
+        /// <remarks>
+        /// The exception is obtained rather than constructed, unlike every other case in this fixture,
+        /// because SqlException has no accessible constructor - which is the whole reason this branch
+        /// went uncovered. It stays hermetic: the connection names a loopback port nothing listens on,
+        /// so the refusal is local and immediate, with retries off and a one-second timeout bounding
+        /// the worst case. The number is asserted by shape rather than by value, because which refusal
+        /// code the host reports is not this method's contract - that a number is appended at all is.
+        /// A regression to <c>DbException.SqlState</c>, which SqlClient leaves null and whose trap the
+        /// remarks on Describe warn about, fails the shape assertion.
+        /// </remarks>
+        [Test]
+        public void It_describes_a_server_failure_with_its_error_number()
+        {
+            const string UnreachableConnectionString =
+                "Server=127.0.0.1,1;Database=edfi;User Id=sa;Password=hunter2;"
+                + "TrustServerCertificate=true;Connect Timeout=1;ConnectRetryCount=0";
+
+            using SqlConnection connection = new(UnreachableConnectionString);
+            SqlException failure = Assert.Throws<SqlException>(connection.Open)!;
+
+            string described = MssqlConnectionAcquisitionFailure.Describe(failure);
+
+            described.Should().MatchRegex(@"^SqlException\(-?\d+\)$");
+            described.Should().NotContain("127.0.0.1");
+            described.Should().NotContain("hunter2");
         }
 
         /// <summary>

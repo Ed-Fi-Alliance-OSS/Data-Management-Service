@@ -531,7 +531,8 @@ public sealed class MssqlLeasedConnection : IAsyncDisposable
             DbConnection connection = await lease.OpenAsync(cancellationToken).ConfigureAwait(false);
             return new MssqlLeasedConnection(connection, lease);
         }
-        catch (InvalidOperationException exception) when (target.Kind == EffectiveTargetKind.Snapshot)
+        catch (InvalidOperationException exception)
+            when (target.Kind == EffectiveTargetKind.Snapshot && exception is not ObjectDisposedException)
         {
             // SqlClient reports a timeout waiting for a pooled connection as an
             // InvalidOperationException rather than a TimeoutException - only the non-pooled open
@@ -548,6 +549,13 @@ public sealed class MssqlLeasedConnection : IAsyncDisposable
             // SqlClient ships localized resources, so it is a different string in each of thirteen
             // cultures. Exception.Source does not separate these cases - all of them carry the
             // SqlClient assembly - which is why the invariant is enforced upstream instead.
+            //
+            // ObjectDisposedException is excluded because it derives from InvalidOperationException and
+            // would otherwise be restated here, inside the acquisition lambda - past the point where
+            // ConnectionAcquisition.GuardAsync's own disposal arm could see it, and as a type the
+            // classifier accepts. A disposal is not an unavailable database, and the guard says so; the
+            // restatement must not be the one place that disagrees. MssqlConnectionLease.CreateConnection
+            // raises exactly this type for a released lease, which is reachable from inside this try.
             //
             // Restricted to a snapshot because only a snapshot's response depends on this failure being
             // a connection failure. A primary keeps raising the provider's own exception, which is what

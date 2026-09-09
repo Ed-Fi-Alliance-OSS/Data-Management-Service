@@ -488,6 +488,39 @@ public class MssqlConnectionAcquisitionTests
         }
 
         /// <summary>
+        /// ObjectDisposedException derives from InvalidOperationException, so without an explicit
+        /// exclusion the restatement above would catch a disposal too and hand it on as a type the
+        /// classifier accepts - answering Snapshot Not Found for a shutdown.
+        /// </summary>
+        /// <remarks>
+        /// The restatement runs inside the acquisition lambda, so a converted disposal would already be
+        /// a TimeoutException by the time <c>ConnectionAcquisition.GuardAsync</c> reached its own
+        /// <c>catch (ObjectDisposedException)</c> arm. That arm and its test assert the opposite, which
+        /// is why this is asserted here rather than left to the guard's.
+        /// </remarks>
+        [Test]
+        public async Task It_leaves_a_snapshot_disposal_exactly_as_it_arrived()
+        {
+            ObjectDisposedException disposed = new(nameof(SqlConnection));
+            using RecordingConnection connection = new() { OpenFailure = disposed };
+            MssqlConnectionAcquisition acquisition = new(
+                new SqlClientPoolClearing(),
+                NullLogger<MssqlConnectionAcquisition>.Instance,
+                _ => connection
+            );
+
+            Func<Task> open = () =>
+                MssqlLeasedConnection.OpenAsync(
+                    acquisition,
+                    new EffectiveDataStoreTarget(EffectiveTargetKind.Snapshot, PrimaryConnectionString),
+                    CancellationToken.None
+                );
+
+            (await open.Should().ThrowAsync<ObjectDisposedException>()).Which.Should().BeSameAs(disposed);
+            connection.DisposeCount.Should().Be(1);
+        }
+
+        /// <summary>
         /// A read replica is a derivative but not a snapshot, and only a snapshot's response depends on
         /// the failure being a connection failure. Restricting the restatement to a snapshot is what
         /// leaves the write-failure mapper and the custom-view DbException sites answering exactly as
