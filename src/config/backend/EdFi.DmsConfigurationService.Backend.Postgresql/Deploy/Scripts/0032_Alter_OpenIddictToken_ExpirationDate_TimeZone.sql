@@ -9,6 +9,26 @@
 -- conversions do not round-trip, which made the cleanup sweep's view of a token's expiry depend on
 -- the server's time zone. Storing the instant directly removes the conversion from both paths.
 
+-- Records the session time zone the guarded ALTER below runs under. Case 3 in that comment leaves
+-- no trace in the database afterwards: the implicit cast does not record the zone it reinterpreted
+-- each wall clock through, so a deploy log that omits the zone gives an operator no way to tell an
+-- exact recovery from a silently shifted one. Emitted as a result set rather than RAISE NOTICE
+-- because DbUp's LogScriptOutput captures result sets and never sees a notice, and kept outside the
+-- DO block because an anonymous block returns no result set to the client. The guard is the one the
+-- DO block uses, so an already-upgraded database returns no rows and logs nothing.
+SELECT format(
+    'DMS-1430 OpenIddictToken ExpirationDate migration running with PostgreSQL TimeZone=%s',
+    current_setting('TimeZone')
+) AS "OpenIddictTokenExpirationDateMigrationTimeZone"
+WHERE EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'dmscs'
+      AND table_name = 'OpenIddictToken'
+      AND column_name = 'ExpirationDate'
+      AND data_type = 'timestamp without time zone'
+);
+
 DO $$
 BEGIN
     IF EXISTS (
