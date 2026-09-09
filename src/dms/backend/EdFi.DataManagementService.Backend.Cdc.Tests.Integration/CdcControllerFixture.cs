@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.Concurrent;
 using System.Data.Common;
 using EdFi.DataManagementService.Core.DocumentCache.Cdc;
 using Microsoft.Extensions.DependencyInjection;
@@ -54,7 +55,10 @@ internal sealed class CdcControllerFixture : IAsyncDisposable
         Connect = Hooks.Decorate<ICdcConnectTransport>(
             new CdcConnectRestAdapter(_connectClient),
             name =>
-                name switch
+            {
+                ConnectCalls.Enqueue(name);
+                BeforeConnectCall(name);
+                return name switch
                 {
                     nameof(ICdcConnectTransport.CreateAsync) => CdcControllerBoundary.Registration,
                     nameof(ICdcConnectTransport.UpdateConfigurationForRecordSizeIncreaseAsync) =>
@@ -62,7 +66,8 @@ internal sealed class CdcControllerFixture : IAsyncDisposable
                     nameof(ICdcConnectTransport.DeleteAsync)
                     or nameof(ICdcConnectTransport.DeleteOffsetsAsync) => CdcControllerBoundary.Cleanup,
                     _ => CdcControllerBoundary.Observation,
-                }
+                };
+            }
         );
         Worker = new CdcWorkerDeployment(resources.ControllerProject, "kafka-cdc-worker");
         Metrics = new CdcConnectorTelemetryAdapter(_metricsClient, Connect, Worker);
@@ -72,6 +77,8 @@ internal sealed class CdcControllerFixture : IAsyncDisposable
     public string StateRoot { get; }
     public CdcControllerFixtureHooks Hooks { get; } = new();
     public ICdcConnectTransport Connect { get; }
+    public ConcurrentQueue<string> ConnectCalls { get; } = new();
+    public Action<string> BeforeConnectCall { get; set; } = _ => { };
     public ICdcBindingLifecycleService Bindings { get; }
     public ICdcWorkerInspectionTransport Worker { get; }
     public ICdcWorkerMetricsTransport Metrics { get; }

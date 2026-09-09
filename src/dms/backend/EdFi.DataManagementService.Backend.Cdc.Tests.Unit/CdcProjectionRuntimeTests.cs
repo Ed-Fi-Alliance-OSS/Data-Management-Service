@@ -399,6 +399,17 @@ public class Given_CdcProjectionRuntimeLifetime
     }
 
     [Test]
+    public async Task It_preserves_the_initial_offline_guard_after_processing_starts()
+    {
+        await _runtime.StartProcessingAsync(CancellationToken.None);
+        Func<Task> observe = () => _runtime.ObserveInitialDatabaseAsync(CancellationToken.None);
+        await observe
+            .Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("Initial eligibility requires an offline projection runtime.");
+    }
+
+    [Test]
     public async Task It_cleans_up_when_start_fails()
     {
         _lifetime.FailStart = true;

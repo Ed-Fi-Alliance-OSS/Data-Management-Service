@@ -607,10 +607,26 @@ public sealed partial class CdcEstablishedValidation
             setComponent(CdcDeploymentComponent.WorkflowState);
             token.ThrowIfCancellationRequested();
             Require(Fresh(request, started));
+            bool committedStreaming =
+                rawOffset is CdcTransportResult<CdcConnectOffsetEvidence>.Observed streamingOffset
+                && streamingOffset.Value.State == CdcConnectOffsetState.Streaming;
+            // A prior admission and fresh healthy streaming evidence resolve the REST snapshot omission.
+            // Initial workflows retain their barrier requirement. Explicit snapshot states remain unchanged.
             input = input with
             {
                 ObservedAt = _time.GetUtcNow(),
-                ConnectorRuntime = finalStatus.Runtime with { OperationId = operation },
+                ConnectorRuntime = finalStatus.Runtime with
+                {
+                    OperationId = operation,
+                    SnapshotState =
+                        journal.WriterPublicationAuthorized
+                        && configurationMatches
+                        && committedStreaming
+                        && continuity.Observation.Continuity == CdcSourceHistoryContinuity.Healthy
+                        && finalStatus.Runtime.SnapshotState == CdcConnectorSnapshotState.Unknown
+                            ? CdcConnectorSnapshotState.Completed
+                            : finalStatus.Runtime.SnapshotState,
+                },
                 Lag = telemetry?.ReadForEvaluation(pass),
             };
             var result = Evaluate(
@@ -698,7 +714,8 @@ public sealed partial class CdcEstablishedValidation
                     request.Binding,
                     started,
                     request.Timing.MaximumObservationAge,
-                    ct
+                    ct,
+                    established: true
                 ),
             token
         );

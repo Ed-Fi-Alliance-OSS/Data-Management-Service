@@ -379,10 +379,13 @@ public sealed class CdcInitialEnablement
         CdcBinding binding,
         DateTimeOffset notBefore,
         TimeSpan maximumAge,
-        CancellationToken token
+        CancellationToken token,
+        bool established = false
     )
     {
-        var observation = await runtime.ObserveInitialDatabaseAsync(token);
+        var observation = established
+            ? await runtime.ObserveEstablishedDatabaseAsync(token)
+            : await runtime.ObserveInitialDatabaseAsync(token);
         token.ThrowIfCancellationRequested();
         Require(
             CdcTargetValidator.MapE18TenantKeyToBindingTenantKey(

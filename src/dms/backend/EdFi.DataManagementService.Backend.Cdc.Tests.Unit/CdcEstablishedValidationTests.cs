@@ -98,6 +98,79 @@ internal partial class Given_CdcEstablishedValidation(Ddl.CdcProvider provider)
             .Subject.Value;
     }
 
+    [Test]
+    public async Task It_uses_established_inspection_when_initial_offline_inspection_is_ineligible()
+    {
+        var database = await _runtime.ObserveInitialDatabaseAsync(CancellationToken.None);
+        A.CallTo(() => _runtime.ObserveEstablishedDatabaseAsync(A<CancellationToken>._))
+            .ReturnsLazily(() => database with { ObservedAt = DateTimeOffset.UtcNow });
+        A.CallTo(() => _runtime.ObserveInitialDatabaseAsync(A<CancellationToken>._))
+            .Throws(
+                new InvalidOperationException("Initial eligibility requires an offline projection runtime.")
+            );
+        Fake.ClearRecordedCalls(_runtime);
+        (await ObserveAsync(CdcEstablishedValidationMode.RunningPublication))
+            .PublicationReady.Should()
+            .BeTrue();
+        A.CallTo(() => _runtime.ObserveInitialDatabaseAsync(A<CancellationToken>._)).MustNotHaveHappened();
+        A.CallTo(() => _runtime.ObserveEstablishedDatabaseAsync(A<CancellationToken>._))
+            .MustHaveHappenedOnceExactly();
+    }
+
+    [TestCase(true, CdcConnectorSnapshotState.Unknown, true)]
+    [TestCase(false, CdcConnectorSnapshotState.Unknown, false)]
+    [TestCase(true, CdcConnectorSnapshotState.Running, false)]
+    [TestCase(true, CdcConnectorSnapshotState.NotStarted, false)]
+    public async Task It_requires_admitted_streaming_evidence_to_resolve_unknown_rest_snapshot_state(
+        bool admitted,
+        CdcConnectorSnapshotState snapshot,
+        bool ready
+    )
+    {
+        if (admitted)
+        {
+            _onWrite = _ => { };
+            await using (
+                var session = await _store.AcquireAsync(
+                    TimeSpan.FromSeconds(3),
+                    TimeSpan.FromMilliseconds(20),
+                    CancellationToken.None
+                )
+            )
+            {
+                var journal = await session.ReadAsync(_request.TargetIdentity, CancellationToken.None);
+                await session.RecordIntentAsync(
+                    _request.TargetIdentity,
+                    journal.WorkflowId,
+                    Guid.NewGuid(),
+                    CdcWorkflowEffect.AuthorizeWriterPublication,
+                    [],
+                    CancellationToken.None
+                );
+            }
+            _before = Snapshot();
+            _onWrite = _ => throw new AssertionException("Validation must not write deployment receipts.");
+        }
+        A.CallTo(() => _connect.ReadStatusAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
+            .ReturnsLazily(() =>
+            {
+                var status = Status();
+                return Observed(
+                    new CdcConnectStatus(
+                        status.Runtime with
+                        {
+                            SnapshotState = snapshot,
+                        },
+                        status.WorkerId,
+                        status.Tasks
+                    )
+                );
+            });
+        (await ObserveAsync(CdcEstablishedValidationMode.RunningPublication))
+            .PublicationReady.Should()
+            .Be(ready);
+    }
+
     private void Stopped()
     {
         A.CallTo(() => _connect.ReadStatusAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))

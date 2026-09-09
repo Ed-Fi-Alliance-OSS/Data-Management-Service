@@ -83,6 +83,8 @@ internal abstract class CdcRegistrationTestBase(Ddl.CdcProvider provider)
         services.Configure<CdcBindingStateStoreOptions>(o => o.RootPath = _root);
         _services = services.BuildServiceProvider();
         _runtime = A.Fake<ICdcProjectionRuntime>();
+        A.CallTo(() => _runtime.ObserveEstablishedDatabaseAsync(A<CancellationToken>._))
+            .ReturnsLazily((CancellationToken ct) => _runtime.ObserveInitialDatabaseAsync(ct));
         A.CallTo(() => _runtime.ObserveInitialDatabaseAsync(A<CancellationToken>._))
             .ReturnsLazily(() =>
                 new CdcInitialDatabaseObservation(

@@ -26,6 +26,9 @@ public interface ICdcProjectionRuntime : IAsyncDisposable
         CancellationToken cancellationToken
     );
     Task<CdcInitialDatabaseObservation> ObserveInitialDatabaseAsync(CancellationToken cancellationToken);
+
+    /// <summary>Fresh source/lifecycle facts for an established binding, including while processing.</summary>
+    Task<CdcInitialDatabaseObservation> ObserveEstablishedDatabaseAsync(CancellationToken cancellationToken);
     Task<CdcProviderBarrierCaptureResult> CaptureBarrierAsync(
         CdcDeploymentRequest request,
         ICdcProviderSourcePositionAdapter adapter,
@@ -164,6 +167,15 @@ internal sealed class CdcProjectionRuntime(
                 "Initial eligibility requires an offline projection runtime."
             );
         }
+        return CdcInitialDatabaseInspector.ObserveAsync(provider, targetKey, cancellationToken);
+    }
+
+    public Task<CdcInitialDatabaseObservation> ObserveEstablishedDatabaseAsync(
+        CancellationToken cancellationToken
+    )
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        cancellationToken.ThrowIfCancellationRequested();
         return CdcInitialDatabaseInspector.ObserveAsync(provider, targetKey, cancellationToken);
     }
 

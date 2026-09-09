@@ -340,6 +340,23 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
         );
     }
 
+    public async Task SelectDifferentSourceAsync(string database, CancellationToken token)
+    {
+        var source = CreateManagedSource(database);
+        source.CreateDatabase().Should().BeTrue();
+        source.ProvisionSchema(true);
+        ConnectionString =
+            _provider == CdcProvider.Postgresql
+                ? new NpgsqlConnectionStringBuilder(ConnectionString) { Database = database }.ConnectionString
+                : new SqlConnectionStringBuilder(ConnectionString)
+                {
+                    InitialCatalog = database,
+                }.ConnectionString;
+        // CMS delivery changes to an independent emitted-schema database. The existing binding,
+        // provider executor, connector settings and original source remain untouched.
+        await ReopenRuntimeAsync(token);
+    }
+
     private sealed class RecordingMssqlProvisioner(List<string> preparation)
         : MssqlDatabaseProvisioner(NullLogger.Instance)
     {
@@ -1021,6 +1038,10 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
         public Task<CdcInitialDatabaseObservation> ObserveInitialDatabaseAsync(
             CancellationToken cancellationToken
         ) => inner.ObserveInitialDatabaseAsync(cancellationToken);
+
+        public Task<CdcInitialDatabaseObservation> ObserveEstablishedDatabaseAsync(
+            CancellationToken cancellationToken
+        ) => inner.ObserveEstablishedDatabaseAsync(cancellationToken);
 
         public async Task<CoreCdc.CdcProviderBarrierCaptureResult> CaptureBarrierAsync(
             CdcDeploymentRequest request,
