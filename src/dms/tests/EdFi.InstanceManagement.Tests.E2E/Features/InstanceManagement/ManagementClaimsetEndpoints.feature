@@ -23,6 +23,14 @@ Feature: Management Claimset Endpoints
          When a GET request is made to view-claimsets endpoint with tenant "Tenant_255901"
          Then it should respond with 200
 
+    Scenario: View claimsets with tenant and no token returns 401
+         When a GET request is made to view-claimsets endpoint with tenant "Tenant_255901" and no token
+         Then it should respond with 401
+
+    Scenario: View claimsets with tenant and wrong-role token returns 403
+         When a GET request is made to view-claimsets endpoint with tenant "Tenant_255901" and a wrong-role token
+         Then it should respond with 403
+
     Scenario: View claimsets with invalid tenant returns 404
          When a GET request is made to view-claimsets endpoint with tenant "NonExistentTenant"
          Then it should respond with 404
@@ -40,6 +48,14 @@ Feature: Management Claimset Endpoints
     Scenario: Reload claimsets with valid tenant returns 200
          When a POST request is made to reload-claimsets endpoint with tenant "Tenant_255901"
          Then it should respond with 200
+
+    Scenario: Reload claimsets with tenant and no token returns 401
+         When a POST request is made to reload-claimsets endpoint with tenant "Tenant_255901" and no token
+         Then it should respond with 401
+
+    Scenario: Reload claimsets with tenant and wrong-role token returns 403
+         When a POST request is made to reload-claimsets endpoint with tenant "Tenant_255901" and a wrong-role token
+         Then it should respond with 403
 
     Scenario: Reload claimsets with invalid tenant returns 404
          When a POST request is made to reload-claimsets endpoint with tenant "NonExistentTenant"
