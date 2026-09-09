@@ -262,13 +262,28 @@ internal sealed class PluginDepsManifest
                     );
                 }
 
-                declared.Add(
-                    new PluginDeclaredAssembly(
-                        Path.GetFileNameWithoutExtension(asset.Name),
-                        version,
-                        library.Name
-                    )
-                );
+                string simpleName = Path.GetFileNameWithoutExtension(asset.Name);
+
+                // The simple name goes on to the skew preflight, which asks the runtime for the host's
+                // copy by that name, and the runtime's own assembly-name parsing throws on an empty or
+                // whitespace one before any binding is attempted. That throw is neither a
+                // PluginLoadException nor the FileNotFoundException a missing assembly produces, so it
+                // would leave the operator an unlabelled exception and a silent channel. Refused here
+                // rather than skipped, for the same reason an unparseable version is: a declaration
+                // dropped for want of a usable name is a declaration taken out of the preflight with
+                // nobody told.
+                if (string.IsNullOrWhiteSpace(simpleName))
+                {
+                    throw Unreadable(
+                        pluginName,
+                        manifestPath,
+                        $"'{PluginDiagnosticText.Quote($"{library.Name}.runtime.{asset.Name}")}' declares "
+                            + "a version for a path that names no assembly",
+                        innerException: null
+                    );
+                }
+
+                declared.Add(new PluginDeclaredAssembly(simpleName, version, library.Name));
             }
         }
 

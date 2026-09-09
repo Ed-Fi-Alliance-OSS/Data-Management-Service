@@ -52,6 +52,16 @@ public class Given_a_dependency_manifest_of_the_wrong_shape
             "libraries that are not an object",
             """{"runtimeTarget": {"name": "t"}, "targets": {"t": {}}, "libraries": 3}""",
         },
+        new object[]
+        {
+            "a runtime asset key that names no assembly",
+            """{"runtimeTarget": {"name": "t"}, "targets": {"t": {"a/1.0.0": {"runtime": {"lib/net10.0/.dll": {"assemblyVersion": "1.0.0.0"}}}}}}""",
+        },
+        new object[]
+        {
+            "a runtime asset key whose assembly name is only whitespace",
+            """{"runtimeTarget": {"name": "t"}, "targets": {"t": {"a/1.0.0": {"runtime": {"lib/net10.0/   .dll": {"assemblyVersion": "1.0.0.0"}}}}}}""",
+        },
     ];
 
     [TestCaseSource(nameof(Malformed))]
@@ -63,9 +73,10 @@ public class Given_a_dependency_manifest_of_the_wrong_shape
 
         PluginLoaderRun run = PluginLoaderProbe.RunExpectingFailure(root.RootPath, PluginFixtures.Good);
 
-        // Reading a value of the wrong JSON kind throws InvalidOperationException, which would leave the
-        // loader with an unlabelled exception and an empty channel. This is the case described as
-        // '{description}'.
+        // Each of these would otherwise leave the loader with an unlabelled exception and an empty
+        // channel. Reading a value of the wrong JSON kind throws InvalidOperationException, and an
+        // asset key that names no assembly throws out of the runtime's own assembly-name parsing when
+        // the skew preflight reaches it. This is the case described as '{description}'.
         run.Failure!.Reason.Should().Be(PluginLoadFailure.DepsJsonUnreadable, description);
         run.Failure!.Message.Should().Contain(PluginFixtures.Good);
     }
