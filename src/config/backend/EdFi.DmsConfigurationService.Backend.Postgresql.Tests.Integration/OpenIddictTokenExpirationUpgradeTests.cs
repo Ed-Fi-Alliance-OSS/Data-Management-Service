@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using Dapper;
+using DbUp.Engine.Output;
 using EdFi.DmsConfigurationService.Backend.Deploy;
 using FluentAssertions;
 using Npgsql;
@@ -26,6 +27,8 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration;
 public class Given_a_pre_DMS_1430_OpenIddictToken_PostgreSQL_upgrade
 {
     private const string JournalPattern = "%0032_Alter_OpenIddictToken_ExpirationDate_TimeZone%";
+    private const string TimeZoneDiagnosticPrefix =
+        "DMS-1430 OpenIddictToken ExpirationDate migration running with PostgreSQL TimeZone=";
     private const string WriteTimeZone = "America/New_York";
 
     // A June instant, far from any DST transition, so the -04:00 offset is unambiguous.
@@ -46,6 +49,7 @@ public class Given_a_pre_DMS_1430_OpenIddictToken_PostgreSQL_upgrade
 
     private string _databaseName = string.Empty;
     private string _connectionString = string.Empty;
+    private ScriptOutputCapture _scriptOutput = new();
 
     [OneTimeSetUp]
     public void OneTimeSetup()
@@ -142,6 +146,51 @@ public class Given_a_pre_DMS_1430_OpenIddictToken_PostgreSQL_upgrade
 
         recovered.Should().NotBe(UnambiguousInstant.UtcDateTime);
         recovered.Should().Be(UnambiguousInstant.UtcDateTime.AddHours(-4));
+    }
+
+    /// <summary>
+    /// The shift above leaves no trace in the database, so the deploy log is the only place an
+    /// operator can find which zone the migration reinterpreted the stored wall clocks through.
+    /// Pinned here because the diagnostic only reaches that log as a result set: a RAISE NOTICE
+    /// would leave it silent, and so would the same statement placed inside the migration's DO
+    /// block.
+    /// </summary>
+    [Test]
+    public void It_logs_the_session_time_zone_the_migration_runs_under()
+    {
+        DeploySuccessfully(CreateConnectionString(_databaseName, "UTC"));
+
+        string scriptOutput = _scriptOutput.Output;
+
+        scriptOutput
+            .Should()
+            .Contain(
+                TimeZoneDiagnosticPrefix,
+                "the deploy log is the only record of the zone the guarded ALTER ran under"
+            );
+        scriptOutput
+            .Should()
+            .Contain("TimeZone=UTC", "the diagnostic reports the zone in effect, not a fixed string");
+    }
+
+    [Test]
+    public async Task It_does_not_log_the_session_time_zone_when_the_migration_guard_does_not_run()
+    {
+        DeploySuccessfully(CreateConnectionString(_databaseName, "UTC"));
+
+        await using NpgsqlConnection connection = new(_connectionString);
+        await connection.OpenAsync();
+        int removedJournalEntries = await connection.ExecuteAsync(
+            """DELETE FROM public."dmscs_SchemaVersions" WHERE scriptname LIKE @JournalPattern;""",
+            new { JournalPattern }
+        );
+        removedJournalEntries.Should().Be(1, "the preceding deploy should journal the DMS-1430 migration");
+
+        DeploySuccessfully(CreateConnectionString(_databaseName, "UTC"));
+
+        _scriptOutput
+            .Output.Should()
+            .NotContain(TimeZoneDiagnosticPrefix, "the diagnostic is scoped to the same guard as the ALTER");
     }
 
     /// <summary>
@@ -261,13 +310,42 @@ public class Given_a_pre_DMS_1430_OpenIddictToken_PostgreSQL_upgrade
             Pooling = false,
         }.ConnectionString;
 
-    private static void DeploySuccessfully(string connectionString)
+    private void DeploySuccessfully(string connectionString)
     {
-        DatabaseDeployResult result = new Deploy.DatabaseDeploy().DeployDatabase(connectionString);
+        _scriptOutput = new ScriptOutputCapture();
+
+        DatabaseDeployResult result = new Deploy.DatabaseDeploy
+        {
+            ScriptOutputLog = _scriptOutput,
+        }.DeployDatabase(connectionString);
 
         if (result is DatabaseDeployResult.DatabaseDeployFailure failure)
         {
             Assert.Fail($"Database deploy failed: {failure.Error}");
         }
+    }
+
+    /// <summary>
+    /// Captures the script output DbUp writes for every result set an upgrade script returns, which
+    /// is the channel the migration's time zone diagnostic travels on.
+    /// </summary>
+    private sealed class ScriptOutputCapture : IUpgradeLog
+    {
+        private readonly List<string> _lines = [];
+
+        public string Output => string.Join(Environment.NewLine, _lines);
+
+        public void WriteInformation(string format, params object[] args) => Append(format, args);
+
+        public void WriteWarning(string format, params object[] args) => Append(format, args);
+
+        public void WriteError(string format, params object[] args) => Append(format, args);
+
+        /// <summary>
+        /// DbUp passes result-set rows through with no arguments, so the row text is never treated
+        /// as a format string and a brace in the data cannot break the capture.
+        /// </summary>
+        private void Append(string format, object[] args) =>
+            _lines.Add(args.Length == 0 ? format : string.Format(format, args));
     }
 }
