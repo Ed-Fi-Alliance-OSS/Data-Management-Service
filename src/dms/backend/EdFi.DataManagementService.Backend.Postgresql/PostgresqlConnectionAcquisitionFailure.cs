@@ -23,19 +23,34 @@ internal static class PostgresqlConnectionAcquisitionFailure
     /// True for a failure of data-source or connection construction, connection-string parsing, or the
     /// open call itself: catalog absence, authentication failure, DNS or network failure, timeout, and
     /// firewall rejection all arrive as one of these, and a connection string that is present but
-    /// provider-invalid arrives as a parse failure before the open is even attempted.
+    /// provider-invalid is rejected during construction or parsing, before the open is even attempted.
     /// </summary>
     /// <remarks>
+    /// <para>
+    /// <c>NotSupportedException</c> covers the provider-invalid strings Npgsql rejects for an
+    /// unsupported <i>combination</i> of individually valid options, which parsing accepts and
+    /// <c>Build</c> refuses - <c>Multiplexing</c> with more than one host, and any
+    /// <c>Target Session Attributes</c> other than <c>any</c> on a single-host string. The latter is
+    /// the reachable one: a read-only session attribute is a natural thing to put on a snapshot or
+    /// read-replica connection string, and Npgsql rejects it unless the string also lists several
+    /// hosts. Both are raised by validation inside the data-source construction the acquisition
+    /// boundary spans, so without this arm a misconfigured snapshot answers a service-configuration
+    /// 503 instead of Snapshot Not Found.
+    /// </para>
+    /// <para>
     /// <c>ArgumentNullException</c> is deliberately excluded: a null argument is a programming defect,
     /// not an unreachable database. It is the only listed type it derives from, which is why the
     /// exclusion is written against the <c>ArgumentException</c> arm - <c>and</c> binds tighter than
-    /// <c>or</c> in a pattern, so the exclusion applies to that arm alone.
+    /// <c>or</c> in a pattern, so the exclusion applies to that arm alone. That arm is kept last for
+    /// the same reason: a type added after it would bind to the exclusion rather than stand alone.
+    /// </para>
     /// </remarks>
     public static bool IsExpected(Exception exception) =>
         exception
             is NpgsqlException
                 or TimeoutException
                 or FormatException
+                or NotSupportedException
                 or ArgumentException
                 and not ArgumentNullException;
 

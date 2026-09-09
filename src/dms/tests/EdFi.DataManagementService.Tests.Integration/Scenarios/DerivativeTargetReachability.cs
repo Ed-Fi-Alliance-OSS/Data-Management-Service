@@ -34,8 +34,8 @@ public interface IDerivativeTargetReachability
     string AbsentDatabaseConnectionString(string leasedConnectionString);
 
     /// <summary>
-    /// A connection string that is present and non-blank but that this engine's provider cannot parse
-    /// at all, so acquisition fails before any server is contacted.
+    /// A connection string that is present and non-blank but that this engine's provider refuses
+    /// outright, so acquisition fails before any server is contacted.
     /// </summary>
     /// <remarks>
     /// Distinct from <see cref="AbsentDatabaseConnectionString" />, which is perfectly well-formed text
@@ -43,6 +43,12 @@ public interface IDerivativeTargetReachability
     /// selection deliberately does no provider parsing - so a value like this one must be classified at
     /// the acquisition boundary rather than escape as an unhandled argument failure. It also exercises
     /// the half of each seam guard that a wrap around the open call alone would miss.
+    ///
+    /// Each engine supplies the refusal its own provider actually raises, which is not the same kind on
+    /// both: SQL Server rejects an unsupported keyword while parsing, while PostgreSQL's reachable
+    /// refusal is a validation failure during data-source construction, raised after parsing has
+    /// already accepted every keyword. Both must be classified, so each implementation names the shape
+    /// that would regress if its engine's arm of the classifier were dropped.
     /// </remarks>
     string ProviderInvalidConnectionString(string leasedConnectionString);
 }

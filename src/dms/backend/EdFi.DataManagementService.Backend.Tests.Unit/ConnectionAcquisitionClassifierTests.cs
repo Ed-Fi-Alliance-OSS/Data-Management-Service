@@ -61,6 +61,37 @@ public class ConnectionAcquisitionClassifierTests
                 .IsExpected(new ArgumentException("unknown keyword"))
                 .Should()
                 .BeTrue("Npgsql rejects an unrecognized keyword while building the data source");
+            PostgresqlConnectionAcquisitionFailure
+                .IsExpected(new NotSupportedException("unsupported option combination"))
+                .Should()
+                .BeTrue("Npgsql rejects an unsupported combination of options while building");
+        }
+
+        /// <summary>
+        /// The construction-validation failures, driven through the production build rather than a
+        /// hand-made exception: an unsupported combination of individually valid options is accepted by
+        /// parsing and refused by Build, so the classification is only worth anything if it still
+        /// matches the type Npgsql actually raises.
+        /// </summary>
+        [TestCase(
+            "Host=snapshot-host;Database=edfi;Username=u;Password=p;Target Session Attributes=read-only",
+            TestName = "single-host Target Session Attributes"
+        )]
+        [TestCase(
+            "Host=snapshot-host,other-host;Database=edfi;Username=u;Password=p;Multiplexing=true",
+            TestName = "multiplexing with several hosts"
+        )]
+        public void It_classifies_what_the_real_builder_refuses(string providerInvalidConnectionString)
+        {
+            Action build = () =>
+                NpgsqlDataSourceLifetime.Instance.Build(providerInvalidConnectionString).Dispose();
+
+            NotSupportedException failure = build.Should().Throw<NotSupportedException>().Which;
+
+            PostgresqlConnectionAcquisitionFailure
+                .IsExpected(failure)
+                .Should()
+                .BeTrue("a provider-invalid connection string is an unavailable database, not a defect");
         }
 
         /// <summary>

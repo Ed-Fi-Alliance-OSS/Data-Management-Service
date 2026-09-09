@@ -100,12 +100,22 @@ public abstract class PostgresqlApiIntegrationTestBase : ApiIntegrationTestBase
             }.ConnectionString;
 
         /// <summary>
-        /// Otherwise valid text carrying a keyword Npgsql does not support, which
-        /// <see cref="NpgsqlConnectionStringBuilder" /> rejects while parsing. Built off the leased
-        /// string so the value is realistic in every other respect.
+        /// Otherwise valid text asking for a read-only session on a single-host string, which Npgsql
+        /// accepts while parsing and then refuses while building the data source: the attribute is only
+        /// supported when several hosts are listed. Built off the leased string so the value is
+        /// realistic in every other respect.
         /// </summary>
+        /// <remarks>
+        /// A construction-validation refusal rather than a parse failure, and deliberately so. An
+        /// unsupported keyword fails as an <c>ArgumentException</c>, which the classifier accepted from
+        /// the start; this shape fails as a <c>NotSupportedException</c> raised after parsing has
+        /// accepted every keyword, which is the case that escaped the boundary and answered a
+        /// service-configuration 503 in place of Snapshot Not Found. It is also the more realistic
+        /// misconfiguration of the two, because a read-only session attribute is a plausible thing for
+        /// an operator to put on a read-only derivative.
+        /// </remarks>
         public string ProviderInvalidConnectionString(string leasedConnectionString) =>
-            $"{leasedConnectionString};NotAnNpgsqlKeyword=1";
+            $"{leasedConnectionString};Target Session Attributes=read-only";
 
         private static async Task SetAllowConnectionsAsync(string leasedConnectionString, bool allow)
         {
