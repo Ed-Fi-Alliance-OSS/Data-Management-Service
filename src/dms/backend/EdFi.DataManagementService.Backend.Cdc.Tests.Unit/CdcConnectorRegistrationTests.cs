@@ -41,12 +41,16 @@ internal class Given_CdcConnectorRegistration(Ddl.CdcProvider provider) : CdcReg
         ReadJournal().WriterPublicationAuthorized.Should().BeFalse();
     }
 
-    [TestCase(CdcConnectorRuntimeState.Unassigned, 0)]
-    [TestCase(CdcConnectorRuntimeState.Running, 0)]
-    [TestCase(CdcConnectorRuntimeState.Running, 1)]
+    [TestCase(CdcConnectorRuntimeState.Unassigned, 0, 1)]
+    [TestCase(CdcConnectorRuntimeState.Running, 0, 1)]
+    [TestCase(CdcConnectorRuntimeState.Running, 1, 1)]
+    [TestCase(CdcConnectorRuntimeState.Running, 0, 2)]
+    [TestCase(CdcConnectorRuntimeState.Unassigned, 0, 3)]
+    [TestCase(CdcConnectorRuntimeState.Running, 1, 2)]
     public async Task It_waits_for_task_assignment_before_reading_offsets(
         CdcConnectorRuntimeState connectorState,
-        int taskCount
+        int taskCount,
+        int unassignedRead
     )
     {
         int reads = 0;
@@ -54,9 +58,9 @@ internal class Given_CdcConnectorRegistration(Ddl.CdcProvider provider) : CdcReg
             .ReturnsLazily(() =>
             {
                 var status = Status();
-                if (++reads == 1)
+                if (++reads == unassignedRead)
                 {
-                    _offsetReads.Should().Be(0);
+                    _offsetReads.Should().Be(unassignedRead == 1 ? 0 : 1);
                     status = new(
                         status.Runtime with
                         {
@@ -75,9 +79,73 @@ internal class Given_CdcConnectorRegistration(Ddl.CdcProvider provider) : CdcReg
                 return Observed(status);
             });
         (await RunAsync()).State.Should().Be(CdcTransportEvidenceState.Observed);
-        reads.Should().BeGreaterThan(1);
+        reads.Should().BeGreaterThan(unassignedRead);
+        if (unassignedRead > 1)
+        {
+            _offsetReads
+                .Should()
+                .BeGreaterThan(1, "a late unassigned task discards the earlier offset observation");
+        }
         _offsetReads.Should().BeGreaterThan(0);
         _posts.Should().Be(1);
+    }
+
+    [TestCase(1)]
+    [TestCase(2)]
+    [TestCase(3)]
+    public async Task It_waits_for_initial_status_store_publication_without_recreating_the_connector(
+        int absentRead
+    )
+    {
+        int reads = 0;
+        A.CallTo(() => _connect.ReadStatusAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
+            .ReturnsLazily(() =>
+                ++reads == absentRead ? new CdcTransportResult<CdcConnectStatus>.Absent() : Observed(Status())
+            );
+        (await RunAsync()).State.Should().Be(CdcTransportEvidenceState.Observed);
+        _posts.Should().Be(1);
+        reads.Should().BeGreaterThan(absentRead);
+        _offsetReads.Should().Be(absentRead == 1 ? 1 : 2);
+    }
+
+    [Test]
+    public async Task It_rejects_missing_status_after_durable_establishment()
+    {
+        (await RunAsync()).State.Should().Be(CdcTransportEvidenceState.Observed);
+        A.CallTo(() => _connect.ReadStatusAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
+            .Returns(new CdcTransportResult<CdcConnectStatus>.Absent());
+        (await RunAsync()).State.Should().Be(CdcTransportEvidenceState.Unavailable);
+        _posts.Should().Be(1);
+    }
+
+    [TestCase(CdcConnectorRuntimeState.Failed, 2)]
+    [TestCase(CdcConnectorRuntimeState.Stopped, 2)]
+    [TestCase(CdcConnectorRuntimeState.Paused, 3)]
+    public async Task It_rejects_late_failed_stopped_or_paused_tasks_without_establishment(
+        CdcConnectorRuntimeState state,
+        int changedRead
+    )
+    {
+        int reads = 0;
+        A.CallTo(() => _connect.ReadStatusAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
+            .ReturnsLazily(() =>
+            {
+                if (++reads == changedRead)
+                {
+                    _runtimeState = state;
+                }
+                return Observed(Status());
+            });
+        (await RunAsync()).State.Should().Be(CdcTransportEvidenceState.Unavailable);
+        _offsetReads.Should().Be(1);
+        ReadJournal()
+            .Operations.Single(o => o.Effect == CdcWorkflowEffect.EstablishConnector)
+            .Completions.Should()
+            .BeEmpty();
+        A.CallTo(() => _connect.ResumeAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
+            .MustNotHaveHappened();
+        A.CallTo(() => _connect.RestartAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
+            .MustNotHaveHappened();
     }
 
     [Test]

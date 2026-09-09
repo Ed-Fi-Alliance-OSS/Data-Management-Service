@@ -71,6 +71,7 @@
         />
     </ItemGroup>
     <ItemGroup>
+        <None Include="../Fixtures/document-cache/materialized-documents/descriptor-school-type/expected-cache-row.json" Link="Fixtures/record-size-cache-row.json" CopyToOutputDirectory="PreserveNewest" />
         <None
             Include="../../clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/Fixtures/minimal-api-schema.json"
             Link="Fixtures/minimal-api-schema.json"

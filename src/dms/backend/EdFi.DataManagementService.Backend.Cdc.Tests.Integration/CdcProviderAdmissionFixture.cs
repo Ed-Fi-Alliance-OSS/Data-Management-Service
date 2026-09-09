@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
+using System.Text.Json;
 using Confluent.Kafka;
 using EdFi.DataManagementService.Backend.Ddl;
 using EdFi.DataManagementService.Backend.DocumentCacheRuntime;
@@ -288,19 +289,7 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
                 )
             )
         );
-        Controllers = new(
-            Infrastructure,
-            Provider,
-            Templates,
-            Kafka,
-            new RecordingPositions(
-                _services
-                    .GetServices<CoreCdc.ICdcProviderSourcePositionAdapter>()
-                    .Single(p => p.Provider == binding.Provider),
-                this
-            ),
-            new RecordingMetrics(Infrastructure.Metrics, this)
-        );
+        Controllers = CreateControllers();
         await ReopenRuntimeAsync(cancellationToken);
         // This is the same controller operation used by worker startup, before Docker launches it.
         var offset = Observed(
@@ -308,6 +297,21 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
         );
         offset.PolicyState.Should().Be(CoreCdc.CdcConnectOffsetStorePolicyState.Satisfied);
     }
+
+    public CdcControllerFixtureControllers CreateControllers() =>
+        new(
+            Infrastructure,
+            Provider,
+            Templates,
+            Kafka,
+            new RecordingPositions(
+                _services
+                    .GetServices<CoreCdc.ICdcProviderSourcePositionAdapter>()
+                    .Single(p => p.Provider == Request.Binding.Provider),
+                this
+            ),
+            new RecordingMetrics(Infrastructure.Metrics, this)
+        );
 
     public ICdcManagedDatabaseProvisioner CreateManagedSource(
         string database,
@@ -502,6 +506,30 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
                     // recreate the connector, supply default evidence or infer a streaming offset.
                     RegistrationRetries.Add(unavailable.Diagnostic);
                     return false;
+                }
+                if (result is CdcTransportResult<CdcConnectorRegistrationReceipt>.Unavailable failed)
+                {
+                    var status = await Infrastructure.Connect.ReadStatusAsync(Request, ct);
+                    var offsets = await Infrastructure.Connect.ReadOffsetEvidenceAsync(Request, ct);
+                    await TestContext.Progress.WriteLineAsync(
+                        JsonSerializer.Serialize(
+                            new
+                            {
+                                RegistrationFailure = failed.Diagnostic,
+                                Runtime = status is CdcTransportResult<CdcConnectStatus>.Observed found
+                                    ? new
+                                    {
+                                        found.Value.Runtime.ConnectorState,
+                                        TaskStates = found.Value.Tasks.Select(t => t.State).ToArray(),
+                                    }
+                                    : null,
+                                OffsetState = offsets
+                                    is CdcTransportResult<CdcConnectOffsetEvidence>.Observed value
+                                    ? value.Value.State.ToString()
+                                    : "Unavailable",
+                            }
+                        )
+                    );
                 }
                 Observed(result);
                 return true;

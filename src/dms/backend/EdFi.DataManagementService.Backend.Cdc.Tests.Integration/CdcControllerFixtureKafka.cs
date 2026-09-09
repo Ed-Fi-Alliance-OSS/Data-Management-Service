@@ -3,6 +3,10 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Globalization;
+using Confluent.Kafka;
+using FluentAssertions;
+
 namespace EdFi.DataManagementService.Backend.Cdc.Tests.Integration;
 
 internal sealed partial class CdcConnectorTemplatePinnedImageFixture
@@ -54,4 +58,60 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
             ],
             token
         );
+
+    // Test-owned deployment of static settings. Restart the same isolated container, retaining
+    // its KRaft log, topic IDs, data and ports. The ordinary admin adapter verifies live values.
+    internal async Task ApplyControllerBrokerSizesAsync(
+        IReadOnlyList<CdcKafkaBrokerCapacity> limits,
+        CancellationToken token
+    )
+    {
+        var limit = limits.Single();
+        limit.BrokerId.Should().Be(1);
+        string exports = string.Join(
+            "\n",
+            "export KAFKA_SOCKET_REQUEST_MAX_BYTES="
+                + limit.SocketRequestMaxBytes.ToString(CultureInfo.InvariantCulture),
+            "export KAFKA_REPLICA_FETCH_MAX_BYTES="
+                + limit.ReplicaFetchMaxBytes.ToString(CultureInfo.InvariantCulture),
+            "export KAFKA_REPLICA_FETCH_RESPONSE_MAX_BYTES="
+                + limit.ReplicaFetchResponseMaxBytes.ToString(CultureInfo.InvariantCulture)
+        );
+        // Only validated numeric limits enter this script; the file is sourced on every restart.
+        await _docker.RunAsync(
+            [
+                "exec",
+                "--user",
+                "root",
+                BrokerContainerName,
+                "bash",
+                "-c",
+                "printf '%s\n' '" + exports + "' >> /etc/kafka/docker/bash-config",
+            ],
+            token
+        );
+        await _docker.RunAsync(["restart", BrokerContainerName], token);
+        using var admin = new AdminClientBuilder(
+            new AdminClientConfig { BootstrapServers = ControllerKafkaBootstrapServers }
+        )
+            .SetLogHandler((_, _) => { })
+            .SetErrorHandler((_, _) => { })
+            .Build();
+        await CdcControllerFixture.WaitAsync(
+            _ =>
+            {
+                try
+                {
+                    return Task.FromResult(admin.GetMetadata(TimeSpan.FromSeconds(2)).Brokers.Count == 1);
+                }
+                catch (KafkaException)
+                {
+                    return Task.FromResult(false);
+                }
+            },
+            TimeSpan.FromSeconds(25),
+            TimeSpan.FromMilliseconds(250),
+            token
+        );
+    }
 }

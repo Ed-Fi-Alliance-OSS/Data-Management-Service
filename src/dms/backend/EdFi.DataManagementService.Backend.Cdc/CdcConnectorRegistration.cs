@@ -292,29 +292,21 @@ public sealed class CdcConnectorRegistration
             {
                 var observationStartedAt = _time.GetUtcNow();
                 boundary.Component = CdcDeploymentComponent.Connect;
-                var status = Observed(
-                    await CallAsync(request, ct => _connect.ReadStatusAsync(request, ct), token)
+                var statusEvidence = await CallAsync(
+                    request,
+                    ct => _connect.ReadStatusAsync(request, ct),
+                    token
                 );
-                RequireStatusIdentity(request, status, startup: true);
-                if (!status.IsRunning)
+                if (statusEvidence is CdcTransportResult<CdcConnectStatus>.Absent && !offsetPreviouslySeen)
                 {
-                    // Startup may be asynchronous, but a failed/stopped task requires the guarded lifecycle path.
-                    Require(
-                        status.Runtime.ConnectorState
-                            is not (
-                                CdcConnectorRuntimeState.Failed
-                                or CdcConnectorRuntimeState.Stopped
-                                or CdcConnectorRuntimeState.Paused
-                            )
-                            && status.Tasks.All(t =>
-                                t.State
-                                    is not (
-                                        CdcConnectorRuntimeState.Failed
-                                        or CdcConnectorRuntimeState.Stopped
-                                        or CdcConnectorRuntimeState.Paused
-                                    )
-                            )
-                    );
+                    // The config store can acknowledge creation before the asynchronous status store
+                    // publishes its first record. Absence never supplies readiness or permits recreation.
+                    await Task.Delay(request.Timing.PollInterval, _time, token);
+                    continue;
+                }
+                var status = Observed(statusEvidence);
+                if (!IsRunningOrAwaitingAssignment(request, status))
+                {
                     await Task.Delay(request.Timing.PollInterval, _time, token);
                     continue;
                 }
@@ -364,11 +356,29 @@ public sealed class CdcConnectorRegistration
                 );
                 RequireSameWorker(request, worker, afterWorker);
                 boundary.Component = CdcDeploymentComponent.Connect;
-                var afterStatus = Observed(
-                    await CallAsync(request, ct => _connect.ReadStatusAsync(request, ct), token)
+                var afterStatusEvidence = await CallAsync(
+                    request,
+                    ct => _connect.ReadStatusAsync(request, ct),
+                    token
                 );
-                RequireStatusIdentity(request, afterStatus);
-                Require(afterStatus.IsRunning);
+                if (
+                    afterStatusEvidence is CdcTransportResult<CdcConnectStatus>.Absent
+                    && !offsetPreviouslySeen
+                )
+                {
+                    // The config store can acknowledge creation before the asynchronous status store
+                    // publishes its first record. Absence never supplies readiness or permits recreation.
+                    await Task.Delay(request.Timing.PollInterval, _time, token);
+                    continue;
+                }
+                var afterStatus = Observed(afterStatusEvidence);
+                if (!IsRunningOrAwaitingAssignment(request, afterStatus))
+                {
+                    // Assignment can change after the first RUNNING response. Discard the earlier
+                    // offset/configuration observations and collect an entirely new startup pass.
+                    await Task.Delay(request.Timing.PollInterval, _time, token);
+                    continue;
+                }
                 RequireAssigned(afterWorker, afterStatus);
                 boundary.Component = CdcDeploymentComponent.Kafka;
                 await RequireKafkaAsync(request, currentLive, afterWorker, token);
@@ -401,11 +411,27 @@ public sealed class CdcConnectorRegistration
                 );
                 RequireFresh(request, observationStartedAt);
                 boundary.Component = CdcDeploymentComponent.Connect;
-                var finalStatus = Observed(
-                    await CallAsync(request, ct => _connect.ReadStatusAsync(request, ct), token)
+                var finalStatusEvidence = await CallAsync(
+                    request,
+                    ct => _connect.ReadStatusAsync(request, ct),
+                    token
                 );
-                RequireStatusIdentity(request, finalStatus);
-                Require(finalStatus.IsRunning);
+                if (
+                    finalStatusEvidence is CdcTransportResult<CdcConnectStatus>.Absent
+                    && !offsetPreviouslySeen
+                )
+                {
+                    // The config store can acknowledge creation before the asynchronous status store
+                    // publishes its first record. Absence never supplies readiness or permits recreation.
+                    await Task.Delay(request.Timing.PollInterval, _time, token);
+                    continue;
+                }
+                var finalStatus = Observed(finalStatusEvidence);
+                if (!IsRunningOrAwaitingAssignment(request, finalStatus))
+                {
+                    await Task.Delay(request.Timing.PollInterval, _time, token);
+                    continue;
+                }
                 RequireAssigned(afterWorker, finalStatus);
                 boundary.Component = CdcDeploymentComponent.Worker;
                 var finalWorker = Observed(
@@ -575,11 +601,31 @@ public sealed class CdcConnectorRegistration
         );
     }
 
-    private void RequireStatusIdentity(
-        CdcDeploymentRequest request,
-        CdcConnectStatus status,
-        bool startup = false
-    )
+    private bool IsRunningOrAwaitingAssignment(CdcDeploymentRequest request, CdcConnectStatus status)
+    {
+        RequireStatusIdentity(request, status);
+        // A failed/stopped/paused task still requires the guarded lifecycle path. Only a valid
+        // startup assignment transition can be awaited; it never establishes offset/readiness proof.
+        Require(
+            status.Runtime.ConnectorState
+                is not (
+                    CdcConnectorRuntimeState.Failed
+                    or CdcConnectorRuntimeState.Stopped
+                    or CdcConnectorRuntimeState.Paused
+                )
+                && status.Tasks.All(t =>
+                    t.State
+                        is not (
+                            CdcConnectorRuntimeState.Failed
+                            or CdcConnectorRuntimeState.Stopped
+                            or CdcConnectorRuntimeState.Paused
+                        )
+                )
+        );
+        return status.IsRunning;
+    }
+
+    private void RequireStatusIdentity(CdcDeploymentRequest request, CdcConnectStatus status)
     {
         var context = new CdcObservationValidationContext(
             status.Runtime.OperationId,
@@ -587,17 +633,11 @@ public sealed class CdcConnectorRegistration
             request.Binding.PhysicalSourceFingerprint,
             _time.GetUtcNow()
         );
-        var validation = startup
-            ? CdcConnectorRuntimeObservationValidator.ValidateForStartup(
-                status.Runtime,
-                request.Binding,
-                context
-            )
-            : CdcConnectorRuntimeObservationValidator.ValidateForBinding(
-                status.Runtime,
-                request.Binding,
-                context
-            );
+        var validation = CdcConnectorRuntimeObservationValidator.ValidateForStartup(
+            status.Runtime,
+            request.Binding,
+            context
+        );
         Require(validation.Succeeded && status.Tasks.Count <= 1 && status.Tasks.All(t => t.Id == 0));
         RequireFresh(request, status.Runtime.ObservedAt);
     }
