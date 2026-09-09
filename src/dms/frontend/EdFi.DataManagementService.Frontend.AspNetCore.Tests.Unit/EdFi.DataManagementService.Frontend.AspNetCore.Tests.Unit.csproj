@@ -31,4 +31,5 @@
     <ItemGroup>
         <ProjectReference Include="..\EdFi.DataManagementService.Frontend.AspNetCore\EdFi.DataManagementService.Frontend.AspNetCore.csproj" />
     </ItemGroup>
+    <Import Project="PluginFrontendFixtures.targets" />
 </Project>

@@ -32,5 +32,13 @@
         <ProjectReference Include="..\..\core\EdFi.DataManagementService.Core.External\EdFi.DataManagementService.Core.External.csproj" />
         <ProjectReference Include="..\..\backend\EdFi.DataManagementService.Backend.Mssql\EdFi.DataManagementService.Backend.Mssql.csproj" />
         <ProjectReference Include="..\..\backend\EdFi.DataManagementService.Backend.Postgresql\EdFi.DataManagementService.Backend.Postgresql.csproj" />
+        <!--
+            The plugin hosting assembly, which this project is the first to need: the plugin startup
+            checks read the per-plugin records it produces, and it deliberately does not go to Core,
+            where a reference would invert the dependency and drag the plugin contract into every Core
+            consumer. src/dms/Dockerfile's build stage already carries src/plugins/, which is what lets
+            an image build with this reference in place.
+        -->
+        <ProjectReference Include="..\..\..\plugins\EdFi.Api.Plugins.Hosting\EdFi.Api.Plugins.Hosting.csproj" />
     </ItemGroup>
 </Project>

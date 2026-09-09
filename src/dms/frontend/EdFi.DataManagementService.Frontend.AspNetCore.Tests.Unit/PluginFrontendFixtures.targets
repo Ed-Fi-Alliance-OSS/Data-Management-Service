@@ -1,0 +1,146 @@
+<Project>
+    <!--
+        Publishes the one fixture plugin whose criteria are about the Data Management Service's own
+        types into this project's output as a real plugin directory. Its sources live beside the plugin
+        hosting tests' own fixtures, because that is where fixture plugins live and because the tree
+        already carries the props that keep a deliberately odd test asset out of the analyzer set; only
+        the staging happens here.
+
+        One fixture rather than an import of the hosting project's fixture list. That list is 32
+        directories and publishing all of them into a second project's output would double a long build
+        for assets no test here reads.
+
+        Freshness is a recorded fingerprint rather than an Inputs/Outputs comparison against the staged
+        files, for the reason the hosting project's own targets file records: a publish copies files, a
+        copy carries the source file's modification time, so a staged file is routinely older than an
+        input that has just been edited and the comparison finds the tree out of date forever.
+    -->
+    <ItemGroup>
+        <PluginFrontendFixture
+            Include="$(MSBuildThisFileDirectory)../../../plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Plugins/Acme.DmsContributor/Acme.DmsContributor.csproj"
+        >
+            <StagedName>Acme.DmsContributor</StagedName>
+        </PluginFrontendFixture>
+    </ItemGroup>
+
+    <!--
+        Everything the staged bytes can depend on: the fixture's own tree, the contract and hosting
+        assemblies it references by project, and the two Data Management Service contract projects it
+        references. An edit to any of them changes what the staged plugin is.
+    -->
+    <ItemGroup>
+        <PluginFrontendFixtureInput Include="$(MSBuildThisFileFullPath)" />
+        <PluginFrontendFixtureInput
+            Include="$(MSBuildThisFileDirectory)../../../plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Plugins/Acme.DmsContributor/**/*"
+            Exclude="$(MSBuildThisFileDirectory)../../../plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Plugins/Acme.DmsContributor/bin/**;$(MSBuildThisFileDirectory)../../../plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Plugins/Acme.DmsContributor/obj/**"
+        />
+        <PluginFrontendFixtureInput
+            Include="$(MSBuildThisFileDirectory)../../../plugins/EdFi.Api.Plugins/**/*.cs;$(MSBuildThisFileDirectory)../../../plugins/EdFi.Api.Plugins/*.csproj;$(MSBuildThisFileDirectory)../../../plugins/EdFi.Api.Plugins.Hosting/**/*.cs;$(MSBuildThisFileDirectory)../../../plugins/EdFi.Api.Plugins.Hosting/*.csproj"
+            Exclude="$(MSBuildThisFileDirectory)../../../plugins/EdFi.Api.Plugins/bin/**;$(MSBuildThisFileDirectory)../../../plugins/EdFi.Api.Plugins/obj/**;$(MSBuildThisFileDirectory)../../../plugins/EdFi.Api.Plugins.Hosting/bin/**;$(MSBuildThisFileDirectory)../../../plugins/EdFi.Api.Plugins.Hosting/obj/**"
+        />
+        <PluginFrontendFixtureInput
+            Include="$(MSBuildThisFileDirectory)../../core/EdFi.DataManagementService.CustomValidation/**/*.cs;$(MSBuildThisFileDirectory)../../backend/EdFi.DataManagementService.Backend.External/**/*.cs"
+            Exclude="$(MSBuildThisFileDirectory)../../core/EdFi.DataManagementService.CustomValidation/bin/**;$(MSBuildThisFileDirectory)../../core/EdFi.DataManagementService.CustomValidation/obj/**;$(MSBuildThisFileDirectory)../../backend/EdFi.DataManagementService.Backend.External/bin/**;$(MSBuildThisFileDirectory)../../backend/EdFi.DataManagementService.Backend.External/obj/**"
+        />
+    </ItemGroup>
+
+    <Target
+        Name="PrunePluginFrontendFixtureStaging"
+        Condition="'$(BuildingPluginFixtures)' != 'true' AND '$(DesignTimeBuild)' != 'true'"
+    >
+        <PropertyGroup>
+            <PluginFrontendFixtureStageRoot
+            >$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)', '$(OutDir)', 'PluginFixtures'))</PluginFrontendFixtureStageRoot>
+            <PluginFrontendFixtureStampDir
+            >$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)', '$(IntermediateOutputPath)', 'pluginfixtures'))</PluginFrontendFixtureStampDir>
+            <PluginFrontendFixtureFingerprintFile
+            >$(PluginFrontendFixtureStampDir)staging.fingerprint</PluginFrontendFixtureFingerprintFile>
+            <PluginFrontendFixtureInputList>@(PluginFrontendFixtureInput->'%(Identity)@%(ModifiedTime)', '|')</PluginFrontendFixtureInputList>
+            <PluginFrontendFixtureFingerprintPrefix
+            >$(Configuration)+$(NETCoreSdkRuntimeIdentifier)+@(PluginFrontendFixture->'%(StagedName)', '&amp;')+$([MSBuild]::StableStringHash($(PluginFrontendFixtureInputList)))</PluginFrontendFixtureFingerprintPrefix>
+        </PropertyGroup>
+
+        <ItemGroup Condition="Exists('$(PluginFrontendFixtureStageRoot)')">
+            <PluginFrontendFixtureStagedFile Include="$(PluginFrontendFixtureStageRoot)**/*" />
+        </ItemGroup>
+
+        <PropertyGroup>
+            <PluginFrontendFixtureStagedList>@(PluginFrontendFixtureStagedFile->'%(RecursiveDir)%(Filename)%(Extension)', '|')</PluginFrontendFixtureStagedList>
+            <PluginFrontendFixtureFingerprint
+            >$(PluginFrontendFixtureFingerprintPrefix)+$([MSBuild]::StableStringHash($(PluginFrontendFixtureStagedList)))</PluginFrontendFixtureFingerprint>
+        </PropertyGroup>
+
+        <ReadLinesFromFile
+            File="$(PluginFrontendFixtureFingerprintFile)"
+            Condition="Exists('$(PluginFrontendFixtureFingerprintFile)')"
+        >
+            <Output TaskParameter="Lines" ItemName="PluginFrontendFixturePreviousLine" />
+        </ReadLinesFromFile>
+
+        <PropertyGroup>
+            <PluginFrontendFixturePrevious>@(PluginFrontendFixturePreviousLine)</PluginFrontendFixturePrevious>
+            <PluginFrontendFixtureStale
+                Condition="'$(PluginFrontendFixturePrevious)' != '$(PluginFrontendFixtureFingerprint)'"
+            >true</PluginFrontendFixtureStale>
+        </PropertyGroup>
+
+        <!--
+            Removed wholesale rather than patched, so a file dropped from the fixture's closure cannot
+            survive as a leftover: dotnet publish overwrites what it produces and removes nothing it no
+            longer produces. The path is composed from OutDir and a literal, so it is always inside this
+            project's own output.
+        -->
+        <RemoveDir
+            Directories="$(PluginFrontendFixtureStageRoot)"
+            Condition="'$(PluginFrontendFixtureStale)' == 'true' AND '$(PluginFrontendFixtureStageRoot)' != '' AND Exists('$(PluginFrontendFixtureStageRoot)')"
+        />
+        <Delete
+            Files="$(PluginFrontendFixtureFingerprintFile)"
+            Condition="'$(PluginFrontendFixtureStale)' == 'true'"
+        />
+    </Target>
+
+    <Target
+        Name="PublishPluginFrontendFixtures"
+        AfterTargets="Build"
+        DependsOnTargets="PrunePluginFrontendFixtureStaging"
+        Condition="'$(BuildingPluginFixtures)' != 'true' AND '$(DesignTimeBuild)' != 'true'"
+        Inputs="@(PluginFrontendFixtureInput)"
+        Outputs="$(PluginFrontendFixtureFingerprintFile)"
+    >
+        <RemoveDir
+            Directories="@(PluginFrontendFixture->'$(PluginFrontendFixtureStageRoot)%(StagedName)')"
+            Condition="'$(PluginFrontendFixtureStageRoot)' != ''"
+        />
+
+        <!--
+            BuildingPluginFixtures is passed down so an inner publish can never re-enter this target,
+            and the fixture project is named explicitly so nothing walks back up to this test project.
+            No runtime identifier, deliberately: a runtime-specific publish restores its project
+            references with that identifier too, and NuGet then rewrites their committed lock files.
+        -->
+        <Exec
+            Command="&quot;$(DOTNET_HOST_PATH)&quot; publish &quot;%(PluginFrontendFixture.FullPath)&quot; --configuration $(Configuration) --no-self-contained --output &quot;$(PluginFrontendFixtureStageRoot)%(PluginFrontendFixture.StagedName)&quot; -p:BuildingPluginFixtures=true --nologo --verbosity quiet"
+            EnvironmentVariables="DOTNET_CLI_DO_NOT_USE_MSBUILD_SERVER=1;MSBUILDDISABLENODEREUSE=1"
+            WorkingDirectory="$(MSBuildThisFileDirectory)"
+        />
+
+        <ItemGroup>
+            <PluginFrontendFixtureStagedAfterPublish Include="$(PluginFrontendFixtureStageRoot)**/*" />
+        </ItemGroup>
+
+        <PropertyGroup>
+            <PluginFrontendFixtureStagedListAfterPublish>@(PluginFrontendFixtureStagedAfterPublish->'%(RecursiveDir)%(Filename)%(Extension)', '|')</PluginFrontendFixtureStagedListAfterPublish>
+            <PluginFrontendFixtureFingerprintAfterPublish
+            >$(PluginFrontendFixtureFingerprintPrefix)+$([MSBuild]::StableStringHash($(PluginFrontendFixtureStagedListAfterPublish)))</PluginFrontendFixtureFingerprintAfterPublish>
+        </PropertyGroup>
+
+        <MakeDir Directories="$(PluginFrontendFixtureStampDir)" />
+        <WriteLinesToFile
+            File="$(PluginFrontendFixtureFingerprintFile)"
+            Lines="$(PluginFrontendFixtureFingerprintAfterPublish)"
+            Overwrite="true"
+            WriteOnlyWhenDifferent="true"
+        />
+    </Target>
+</Project>
