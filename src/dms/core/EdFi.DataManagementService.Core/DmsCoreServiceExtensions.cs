@@ -11,6 +11,7 @@ using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.Handler;
+using EdFi.DataManagementService.Core.Management;
 using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Core.ResourceLoadOrder;
@@ -516,6 +517,10 @@ public static class DmsCoreServiceExtensions
         services.AddSingleton<
             IDocumentCacheStatusAuthorizationService,
             DocumentCacheStatusAuthorizationService
+        >();
+        services.AddSingleton<
+            IManagementEndpointAuthorizationService,
+            ManagementEndpointAuthorizationService
         >();
         services.AddTransient<JwtAuthenticationMiddleware>();
         services.AddTransient<JwtRoleAuthenticationMiddleware>();
