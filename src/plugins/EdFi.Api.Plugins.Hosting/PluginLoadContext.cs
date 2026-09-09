@@ -29,6 +29,7 @@ internal sealed class PluginLoadContext : AssemblyLoadContext
     private readonly IReadOnlyDictionary<string, Version> _declaredVersions;
     private readonly Lock _substitutionsLock = new();
     private readonly Dictionary<string, HostFirstSubstitution> _substitutions = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _servedFromHost = new(StringComparer.Ordinal);
 
     internal PluginLoadContext(string pluginName, string entryAssemblyPath)
         : this(pluginName, entryAssemblyPath, new Dictionary<string, Version>(StringComparer.Ordinal)) { }
@@ -62,6 +63,33 @@ internal sealed class PluginLoadContext : AssemblyLoadContext
         }
     }
 
+    /// <summary>
+    /// Whether this context has actually served <paramref name="simpleName"/> from the host.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The substitution record answers a narrower question: it carries only the resolutions where what
+    /// the host served differs from what the plugin declared or asked for. An assembly the host serves
+    /// at exactly the expected version leaves no row there, so nothing else can say whether this
+    /// override was the thing that resolved it. That distinction matters for the assemblies a
+    /// framework-dependent publish does not declare at all, where the manifest cannot say and the
+    /// preflight never looked.
+    /// </para>
+    /// <para>
+    /// Deliberately a set of distinct simple names and not a request log: no ordering, no repeat
+    /// history, no per-call record. Its bound is one name per host assembly this plugin resolves,
+    /// which is the same bound the substitution dictionary beside it already carries. It records only
+    /// the serving path, so a refusal is never counted as a resolution.
+    /// </para>
+    /// </remarks>
+    internal bool HasServedFromHost(string simpleName)
+    {
+        lock (_substitutionsLock)
+        {
+            return _servedFromHost.Contains(simpleName);
+        }
+    }
+
     protected override Assembly? Load(AssemblyName assemblyName)
     {
         if (assemblyName.Name is not { } simpleName)
@@ -87,6 +115,13 @@ internal sealed class PluginLoadContext : AssemblyLoadContext
             // instead would capture it a second time, which is CS9107 and therefore an error under this
             // repository's TreatWarningsAsErrors.
             throw new PluginVersionSkewException(Name!, simpleName, requested, hostVersion);
+        }
+
+        // Recorded here, past the refusal above, so what is recorded is a resolution this override
+        // actually answered rather than one it was merely asked about.
+        lock (_substitutionsLock)
+        {
+            _servedFromHost.Add(simpleName);
         }
 
         if (hostVersion is not null)

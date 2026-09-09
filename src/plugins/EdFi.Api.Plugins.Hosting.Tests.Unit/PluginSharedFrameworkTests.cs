@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Reflection;
 using System.Runtime.Loader;
 using System.Text.Json;
 using FluentAssertions;
@@ -19,34 +18,49 @@ namespace EdFi.Api.Plugins.Hosting.Tests.Unit;
 /// <remarks>
 /// <para>
 /// The evidence boundary matters more here than anywhere else in this suite, so it is stated rather
-/// than left to be inferred. What this fixture proves is <em>provenance and resolution</em>: those
-/// assemblies appear nowhere in the manifest and nowhere in the plugin directory, so the skew
-/// preflight cannot see them, and when the plugin uses them it is the host's own assembly instances it
-/// gets.
+/// than left to be inferred. What this fixture proves is that those assemblies appear nowhere in the
+/// manifest and nowhere in the plugin directory, so the skew preflight cannot see them; that the
+/// loader's own <c>Load</c> override is what answers for each of them rather than the runtime's
+/// fallback; and that what it serves is the host's own assembly instance out of the default context.
 /// </para>
 /// <para>
-/// What it does not prove is a <em>refusal</em>. A genuine shared-framework version skew would need a
-/// plugin compiled against a newer shared framework than the host runs, and with one installed runtime
-/// there is no such compilation. The refusal half belongs to
-/// <c>Given_a_plugin_whose_skewed_reference_the_manifest_does_not_declare</c> in
+/// What it does not prove is a <em>refusal</em>, and it is not evidence of a directly measured
+/// shared-framework version skew. That would need a plugin compiled against a newer shared framework
+/// than the host runs, and with one installed runtime there is no such compilation. The refusal half
+/// belongs to <c>Given_a_plugin_whose_skewed_reference_the_manifest_does_not_declare</c> in
 /// PluginLoaderVersionTests, over Acme.BackstopCtor, whose suppressed manifest row reproduces the one
-/// property that matters - a reference the preflight cannot see - on an ordinary assembly. Neither
-/// fixture is evidence for the other's claim.
+/// property that matters - a reference the preflight cannot see - on an ordinary assembly, and to the
+/// hook case below. Neither fixture is evidence for the other's claim.
 /// </para>
 /// </remarks>
 [TestFixture]
 public class Given_a_plugin_taking_the_hook_signature_from_the_shared_framework
 {
+    private const string ServiceCollectionAssembly = "Microsoft.Extensions.DependencyInjection.Abstractions";
+
+    private const string ConfigurationAssembly = "Microsoft.Extensions.Configuration.Abstractions";
+
     /// <summary>The two assemblies the hook signature names, which this plugin does not ship.</summary>
-    private static readonly string[] SignatureAssemblies =
+    private static readonly string[] SignatureAssemblies = [ServiceCollectionAssembly, ConfigurationAssembly];
+
+    /// <summary>
+    /// The same two, each paired with the plugin method whose body resolves a type out of it.
+    /// </summary>
+    /// <remarks>
+    /// The method matters as much as the name. Resolution has to be driven by the plugin's own code,
+    /// because asking the context to load the assembly directly would be the test resolving it rather
+    /// than the plugin, and the claim is about the plugin's first use.
+    /// </remarks>
+    private static readonly object[] SignatureAssemblyUses =
     [
-        "Microsoft.Extensions.DependencyInjection.Abstractions",
-        "Microsoft.Extensions.Configuration.Abstractions",
+        new object[] { ServiceCollectionAssembly, "ServiceCollectionType" },
+        new object[] { ConfigurationAssembly, "ConfigurationType" },
     ];
 
     private TemporaryPluginRoot _root = null!;
     private PluginLoaderRun _run = null!;
     private Type _pluginType = null!;
+    private PluginLoadContext _context = null!;
 
     [SetUp]
     public void Setup()
@@ -58,6 +72,10 @@ public class Given_a_plugin_taking_the_hook_signature_from_the_shared_framework
         _run.Failure.Should().BeNull();
 
         _pluginType = _run.Result!.Plugins.Single().Instance.GetType();
+
+        // The context the production loader built, reached the way anything holding a loaded plugin
+        // assembly would reach it. Nothing here creates a context or chooses its policy.
+        _context = (PluginLoadContext)AssemblyLoadContext.GetLoadContext(_pluginType.Assembly)!;
     }
 
     [TearDown]
@@ -91,16 +109,20 @@ public class Given_a_plugin_taking_the_hook_signature_from_the_shared_framework
         }
     }
 
+    /// <summary>Runs the plugin's own accessor, which is what forces the resolution.</summary>
+    private Type ResolvedByThePlugin(string accessor) =>
+        (Type)_pluginType.GetMethod(accessor)!.Invoke(null, null)!;
+
     [Test]
     public void It_declares_neither_of_them_in_its_manifest()
     {
         // Not "the manifest has one library": this fixture references the contract by project, so the
         // contract is a manifest entry and whatever else the publish emits is enumerated here rather
         // than assumed. The precise fact is that these two names are not among the declarations.
-        string[] declared = DeclaredRuntimeSimpleNames(
-                PluginFixtures.ManifestOf(PluginFixtures.FrameworkOnly)
-            )
-            .ToArray();
+        string[] declared =
+        [
+            .. DeclaredRuntimeSimpleNames(PluginFixtures.ManifestOf(PluginFixtures.FrameworkOnly)),
+        ];
 
         TestContext.Out.WriteLine($"declared runtime assets: {string.Join(", ", declared)}");
 
@@ -124,30 +146,69 @@ public class Given_a_plugin_taking_the_hook_signature_from_the_shared_framework
         // Resolved from inside the plugin: each method body carries a type reference in the plugin
         // assembly's own metadata, so the answer is what the plugin's context produced rather than
         // what this test project happens to hold.
-        Type serviceCollection = (Type)_pluginType.GetMethod("ServiceCollectionType")!.Invoke(null, null)!;
-        Type configuration = (Type)_pluginType.GetMethod("ConfigurationType")!.Invoke(null, null)!;
-
-        serviceCollection.Should().BeSameAs(typeof(IServiceCollection));
-        configuration.Should().BeSameAs(typeof(IConfiguration));
+        ResolvedByThePlugin("ServiceCollectionType").Should().BeSameAs(typeof(IServiceCollection));
+        ResolvedByThePlugin("ConfigurationType").Should().BeSameAs(typeof(IConfiguration));
     }
 
-    [TestCaseSource(nameof(SignatureAssemblies))]
-    public void It_takes_them_from_the_default_context_rather_than_its_own(string simpleName)
+    [TestCaseSource(nameof(SignatureAssemblyUses))]
+    public void It_reaches_the_loaders_own_override(string simpleName, string accessor)
     {
-        // The provenance claim stated exactly. Both the loader's Load override and, had it declined,
-        // the runtime's own fallback would end at the default context for an assembly the plugin does
-        // not ship, so this asserts where the assembly came from and not which of those two produced
-        // it. That the override is genuinely consulted for an undeclared reference is Acme.BackstopCtor's
-        // evidence, where declining would have produced a private copy instead of a refusal.
-        Assembly resolved = _pluginType
-            .Assembly.GetReferencedAssemblies()
-            .Where(reference => reference.Name == simpleName)
-            .Select(reference =>
-                AssemblyLoadContext.GetLoadContext(_pluginType.Assembly)!.LoadFromAssemblyName(reference)
-            )
-            .Single();
+        // The half a comment cannot stand in for. An assembly the plugin does not ship would arrive
+        // from the default context whether this context's override answered for it or declined and let
+        // the runtime fall back, so provenance alone cannot say which happened. Asking the context the
+        // production loader built whether its own override served the name can.
+        //
+        // Measured, and not what I first assumed: both names are already served by the time Load
+        // returns, so the assertion is not a false-then-true transition. The immediate cause is that
+        // this plugin overrides ContributeServices, and matching an override to its base virtual slot
+        // resolves the override's parameter types when the type is loaded - which the loader's own
+        // candidate scan does, before the plugin is ever used. The fact required is the same either
+        // way, and it holds across the plugin's own use as well.
+        _context.HasServedFromHost(simpleName).Should().BeTrue();
 
-        AssemblyLoadContext.GetLoadContext(resolved).Should().BeSameAs(AssemblyLoadContext.Default);
+        ResolvedByThePlugin(accessor);
+
+        _context.HasServedFromHost(simpleName).Should().BeTrue();
+    }
+
+    [Test]
+    public void It_reports_nothing_for_a_name_this_context_was_never_asked_for()
+    {
+        // The control that makes the assertions above mean something. A predicate that answered yes to
+        // anything would satisfy them without observing a thing, so a name this plugin does not
+        // reference and one nothing anywhere carries both have to come back no.
+        _context.HasServedFromHost("Acme.HostShared").Should().BeFalse();
+        _context.HasServedFromHost("Acme.NoSuchAssembly.ThisPluginHasNever.HeardOf").Should().BeFalse();
+    }
+
+    [TestCaseSource(nameof(SignatureAssemblyUses))]
+    public void It_still_declares_nothing_for_them_after_serving_them(string simpleName, string accessor)
+    {
+        // The two facts have to hold together, or the fixture would prove the override was consulted
+        // for something the preflight could have caught instead. Nothing the resolution does adds a
+        // declaration or a substitution row: there is no manifest version to have differed from.
+        ResolvedByThePlugin(accessor);
+
+        _run.Result!.Plugins.Single()
+            .DeclaredFiles.Should()
+            .NotContain(file => Path.GetFileNameWithoutExtension(file.FileName) == simpleName);
+
+        _run.Result!.Plugins.Single()
+            .MaterializeSubstitutions()
+            .Should()
+            .NotContain(substitution => substitution.AssemblyName == simpleName);
+    }
+
+    [TestCaseSource(nameof(SignatureAssemblyUses))]
+    public void It_takes_them_from_the_default_context_rather_than_its_own(string simpleName, string accessor)
+    {
+        // Provenance, read off the assembly the plugin's own resolution produced rather than off one
+        // this test asked for. simpleName is asserted too, so a fixture whose accessor stopped naming
+        // the assembly it is paired with fails here instead of passing on the other one.
+        Type resolved = ResolvedByThePlugin(accessor);
+
+        resolved.Assembly.GetName().Name.Should().Be(simpleName);
+        AssemblyLoadContext.GetLoadContext(resolved.Assembly).Should().BeSameAs(AssemblyLoadContext.Default);
     }
 
     [Test]
