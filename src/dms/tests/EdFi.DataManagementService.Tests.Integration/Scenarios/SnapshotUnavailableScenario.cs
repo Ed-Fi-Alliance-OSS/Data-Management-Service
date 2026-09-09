@@ -603,13 +603,37 @@ internal static class SnapshotUnavailableScenario
     /// answers, and an unreachable snapshot still returns the exact Snapshot Not Found with no fallback
     /// to the primary's cached rows.
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Both validation verdicts are primed first, exactly as the repository-query scenario above does.
+    /// Making the snapshot unreachable up front instead would fail the fingerprint read, which answers
+    /// the 404 before the coordinator is consulted at all - leaving this a duplicate of seam 1's
+    /// scenario with the bypass itself never exercised.
+    /// </para>
+    /// <para>
+    /// The bypass is then asserted rather than inferred from the status: this fixture's adapter fails
+    /// every acquisition, so a 404 alone cannot separate a target the coordinator declined from one it
+    /// accepted and then fell back on. No lookup attempt is what says the adapter was never reached,
+    /// and the fallback reason is what says it was declined for being a derivative rather than for an
+    /// unresolved target or a disabled setting.
+    /// </para>
+    /// </remarks>
     public static async Task It_bypasses_the_cache_and_still_answers_snapshot_not_found(
         ApiIntegrationHarness harness,
         IDerivativeTargetReachability reachability,
         string snapshotConnectionString
     )
     {
+        ArgumentNullException.ThrowIfNull(harness);
         ArgumentNullException.ThrowIfNull(reachability);
+
+        DocumentCacheReadAcquisitionFailureRecorder recorder =
+            harness.DocumentCacheReadAcquisitionFailureRecorder
+            ?? throw new InvalidOperationException(
+                "The cache-bypass scenario requires the cache read acquisition failure recorder."
+            );
+
+        await PrimeValidationVerdictsAsync(harness);
 
         await reachability.MakeUnreachableAsync(snapshotConnectionString);
 
@@ -619,13 +643,26 @@ internal static class SnapshotUnavailableScenario
 
             await DerivativeRoutingSupport.AssertSnapshotNotFoundAsync(
                 response,
-                "cache acceleration does not apply to a snapshot, so the relational seam answers"
+                "both validation verdicts are cached, so the repository query is the first acquisition "
+                    + "and cache acceleration does not apply to a snapshot"
             );
         }
         finally
         {
             await reachability.MakeReachableAsync(snapshotConnectionString);
         }
+
+        recorder
+            .CountLookupAttempts("query")
+            .Should()
+            .Be(0, "a snapshot-selected read must never reach the cache lookup adapter");
+
+        // Both requests select the snapshot and each records one, so this is asserted as present
+        // rather than as an exact count.
+        recorder
+            .CountTelemetryRecords("RecordFallback", "DerivativeTargetSelected")
+            .Should()
+            .BePositive("the bypass must be the coordinator declining a derivative target");
     }
 
     /// <summary>

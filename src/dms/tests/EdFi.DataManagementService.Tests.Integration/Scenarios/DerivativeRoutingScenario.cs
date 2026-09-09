@@ -825,11 +825,12 @@ internal static class DerivativeRoutingScenario
     {
         foreach (
             (
-                string endpoint,
+                HttpMethod method,
+                string uri,
                 string profileResourceName,
                 string body,
                 string invalidBody
-            ) in MutationEndpoints()
+            ) in MutationRequests()
         )
         {
             foreach (
@@ -843,17 +844,57 @@ internal static class DerivativeRoutingScenario
                 using HttpContent requestContent = content();
                 using HttpResponseMessage response = await DerivativeRoutingSupport.SendAsync(
                     harness,
-                    HttpMethod.Post,
-                    endpoint,
+                    method,
+                    uri,
                     useSnapshotHeaderValue: "true",
                     requestContent
                 );
 
                 await DerivativeRoutingSupport.AssertSnapshotMethodNotAllowedAsync(
                     response,
-                    $"POST {endpoint} with a snapshot request and {shape}"
+                    $"{method} {uri} with a snapshot request and {shape}"
                 );
             }
+        }
+    }
+
+    /// <summary>
+    /// Each endpoint kind over both body-carrying write pipelines: a collection POST and an item PUT.
+    /// </summary>
+    /// <remarks>
+    /// Both verbs are enumerated because <c>CreateUpsertPipeline</c> and <c>CreateUpdatePipeline</c>
+    /// are separately ordered step lists, so selection could drift behind content-type, body, or
+    /// profile validation in one of them while the other stayed correct. The item id is well formed
+    /// and names nothing, for the same reason the invalid shapes above use one: selection rejects
+    /// before any database is opened, so whether the document exists cannot matter. DELETE is absent
+    /// because <c>CreateDeleteByIdPipeline</c> carries no content-type, body, or profile step for
+    /// selection to precede.
+    /// </remarks>
+    private static IEnumerable<(
+        HttpMethod Method,
+        string Uri,
+        string ProfileResourceName,
+        string Body,
+        string SchemaInvalidBody
+    )> MutationRequests()
+    {
+        foreach (
+            (
+                string endpoint,
+                string profileResourceName,
+                string body,
+                string schemaInvalidBody
+            ) in MutationEndpoints()
+        )
+        {
+            yield return (HttpMethod.Post, endpoint, profileResourceName, body, schemaInvalidBody);
+            yield return (
+                HttpMethod.Put,
+                $"{endpoint}/{Guid.NewGuid()}",
+                profileResourceName,
+                body,
+                schemaInvalidBody
+            );
         }
     }
 
