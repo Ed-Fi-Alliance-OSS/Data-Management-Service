@@ -61,6 +61,15 @@ internal static class PluginFixtures
     /// <summary>Ships a dependency the host does not carry, so its own copy is the one served.</summary>
     internal const string PrivateDependency = "Acme.PrivateDependency";
 
+    /// <summary>Returns null from a property the contract declares non-nullable.</summary>
+    internal const string NullName = "Acme.NullName";
+
+    /// <summary>Throws when its Name is read.</summary>
+    internal const string ThrowingName = "Acme.ThrowingName";
+
+    /// <summary>Throws from its constructor.</summary>
+    internal const string ThrowingCtor = "Acme.ThrowingCtor";
+
     /// <summary>Every fixture the staging target is expected to produce.</summary>
     internal static IReadOnlyList<string> All { get; } =
     [
@@ -77,6 +86,9 @@ internal static class PluginFixtures
         DeclaredSkew,
         BackstopCtor,
         PrivateDependency,
+        NullName,
+        ThrowingName,
+        ThrowingCtor,
     ];
 
     /// <summary>

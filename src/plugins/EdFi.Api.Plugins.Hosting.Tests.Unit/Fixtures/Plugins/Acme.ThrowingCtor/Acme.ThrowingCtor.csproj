@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <!--
+        Throws from its constructor, which reaches the loader wrapped in a TargetInvocationException
+        and has to be reported with the plugin's own message rather than the wrapper's.
+    -->
+    <PropertyGroup>
+        <AssemblyName>Acme.ThrowingCtor</AssemblyName>
+        <RootNamespace>Acme.ThrowingCtor</RootNamespace>
+        <Nullable>disable</Nullable>
+    </PropertyGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\..\..\..\EdFi.Api.Plugins\EdFi.Api.Plugins.csproj" />
+    </ItemGroup>
+</Project>

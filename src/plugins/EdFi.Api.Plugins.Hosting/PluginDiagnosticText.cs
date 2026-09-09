@@ -23,8 +23,20 @@ internal static class PluginDiagnosticText
     /// <summary>
     /// Returns <paramref name="value"/> with every control character replaced by a printable escape.
     /// </summary>
-    internal static string Quote(string value)
+    /// <remarks>
+    /// Accepts null and renders it as <c>&lt;null&gt;</c>. The values quoted here come from a plugin a
+    /// third party wrote, and nullable annotations do not constrain a third-party assembly at runtime:
+    /// a plugin can return null from a non-nullable property. Throwing here would replace the named
+    /// refusal an operator needs with a NullReferenceException from inside the loader, which is the one
+    /// outcome a diagnostic helper must never produce.
+    /// </remarks>
+    internal static string Quote(string? value)
     {
+        if (value is null)
+        {
+            return "<null>";
+        }
+
         if (!value.Any(char.IsControl))
         {
             return value;

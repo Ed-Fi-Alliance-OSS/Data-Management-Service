@@ -52,6 +52,15 @@
         <PluginFixture Include="Fixtures/Plugins/Acme.BackstopCtor/Acme.BackstopCtor.csproj">
             <StagedName>Acme.BackstopCtor</StagedName>
         </PluginFixture>
+        <PluginFixture Include="Fixtures/Plugins/Acme.NullName/Acme.NullName.csproj">
+            <StagedName>Acme.NullName</StagedName>
+        </PluginFixture>
+        <PluginFixture Include="Fixtures/Plugins/Acme.ThrowingName/Acme.ThrowingName.csproj">
+            <StagedName>Acme.ThrowingName</StagedName>
+        </PluginFixture>
+        <PluginFixture Include="Fixtures/Plugins/Acme.ThrowingCtor/Acme.ThrowingCtor.csproj">
+            <StagedName>Acme.ThrowingCtor</StagedName>
+        </PluginFixture>
         <PluginFixture Include="Fixtures/Plugins/Acme.PrivateDependency/Acme.PrivateDependency.csproj">
             <StagedName>Acme.PrivateDependency</StagedName>
         </PluginFixture>
@@ -238,11 +247,13 @@
         -->
         <Exec
             Command="&quot;$(DOTNET_HOST_PATH)&quot; publish &quot;%(PluginFixture.FullPath)&quot; --configuration $(Configuration) %(PluginFixture.PublishArgs) --output &quot;$(PluginFixtureStageRoot)%(PluginFixture.StagedName)&quot; -p:BuildingPluginFixtures=true -p:PluginContractAssemblyPath=&quot;$(PluginContractAssemblyPath)&quot; --nologo --verbosity quiet"
+            EnvironmentVariables="DOTNET_CLI_DO_NOT_USE_MSBUILD_SERVER=1;MSBUILDDISABLENODEREUSE=1"
             WorkingDirectory="$(MSBuildProjectDirectory)"
         />
 
         <Exec
             Command="&quot;$(DOTNET_HOST_PATH)&quot; publish &quot;%(PluginFixtureTrimmed.FullPath)&quot; --configuration $(Configuration) %(PluginFixtureTrimmed.PublishArgs) --output &quot;$(PluginFixtureRawRoot)%(PluginFixtureTrimmed.StagedName)&quot; -p:BuildingPluginFixtures=true -p:PluginContractAssemblyPath=&quot;$(PluginContractAssemblyPath)&quot; --nologo --verbosity quiet"
+            EnvironmentVariables="DOTNET_CLI_DO_NOT_USE_MSBUILD_SERVER=1;MSBUILDDISABLENODEREUSE=1"
             WorkingDirectory="$(MSBuildProjectDirectory)"
         />
 

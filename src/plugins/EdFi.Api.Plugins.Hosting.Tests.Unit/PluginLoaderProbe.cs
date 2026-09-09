@@ -5,6 +5,7 @@
 
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Microsoft.Extensions.Configuration;
 using NUnit.Framework;
 
@@ -76,6 +77,61 @@ internal sealed class TemporaryPluginRoot : IDisposable
     internal void Remove(string pluginName, string fileName)
     {
         File.Delete(Path.Combine(RootPath, pluginName, fileName));
+    }
+
+    /// <summary>The staged plugin's dependency manifest.</summary>
+    internal string ManifestPathOf(string pluginName) =>
+        Path.Combine(RootPath, pluginName, $"{pluginName}.deps.json");
+
+    /// <summary>Replaces a staged plugin's dependency manifest with the given text.</summary>
+    internal void WriteManifest(string pluginName, string json)
+    {
+        File.WriteAllText(ManifestPathOf(pluginName), json);
+    }
+
+    /// <summary>
+    /// Rewrites the first declared <c>assemblyVersion</c> in a staged plugin's manifest, keeping every
+    /// other byte of a real published manifest intact.
+    /// </summary>
+    /// <remarks>
+    /// The point is to change exactly one value in a file a publish produced, so that a test about a
+    /// malformed version is about that version rather than about a hand-written manifest that differs
+    /// from a real one in ways nobody enumerated.
+    /// </remarks>
+    internal void ReplaceFirstDeclaredAssemblyVersion(string pluginName, JsonNode? value, bool remove = false)
+    {
+        JsonNode manifest = JsonNode.Parse(File.ReadAllText(ManifestPathOf(pluginName)))!;
+        string targetName = manifest["runtimeTarget"]!["name"]!.GetValue<string>();
+
+        foreach (KeyValuePair<string, JsonNode?> library in manifest["targets"]![targetName]!.AsObject())
+        {
+            if (library.Value?["runtime"] is not JsonObject runtime)
+            {
+                continue;
+            }
+
+            foreach (KeyValuePair<string, JsonNode?> asset in runtime)
+            {
+                if (asset.Value is JsonObject declaration && declaration.ContainsKey("assemblyVersion"))
+                {
+                    if (remove)
+                    {
+                        declaration.Remove("assemblyVersion");
+                    }
+                    else
+                    {
+                        declaration["assemblyVersion"] = value;
+                    }
+
+                    WriteManifest(pluginName, manifest.ToJsonString());
+                    return;
+                }
+            }
+        }
+
+        throw new AssertionException(
+            $"Fixture '{pluginName}' declares no assemblyVersion, so there is nothing to rewrite."
+        );
     }
 
     /// <summary>Writes bytes that are not a managed assembly where an entry assembly belongs.</summary>

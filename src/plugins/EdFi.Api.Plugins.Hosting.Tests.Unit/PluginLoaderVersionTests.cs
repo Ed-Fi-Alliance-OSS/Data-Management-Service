@@ -390,35 +390,42 @@ public class Given_a_plugin_carrying_its_own_copy_of_the_contract
 public class Given_the_default_context_is_asked_for_an_assembly_it_cannot_serve
 {
     [Test]
-    public void It_gives_a_caller_no_way_to_tell_absent_from_older()
+    public void It_throws_the_same_exception_for_an_absent_assembly_and_for_an_older_shared_framework_one()
     {
         Exception? absent = Capture("Acme.NoSuchAssembly.ThisHostHasNever.HeardOf");
         Exception? olderFramework = Capture("System.Runtime, Version=99.0.0.0");
-        Exception? olderApplication = Capture("Acme.HostShared, Version=99.0.0.0");
 
         TestContext.Out.WriteLine($"absent: {Describe(absent)}");
         TestContext.Out.WriteLine($"older, shared framework: {Describe(olderFramework)}");
+
+        // The measurement the loader's approach rests on, pinned exactly rather than loosely: the two
+        // cases that need opposite treatment produce the identical exception, so a catch cannot tell
+        // "the host does not have it" from "the host has an older one". If a future runtime makes them
+        // distinguishable, this fails and the simple-name approach is revisited deliberately rather
+        // than silently.
+        absent.Should().BeOfType<FileNotFoundException>();
+        olderFramework.Should().BeOfType<FileNotFoundException>();
+    }
+
+    [Test]
+    public void It_quietly_serves_an_older_copy_of_an_application_dependency()
+    {
+        // A separate measurement, and a different shape from the one above. For an assembly the
+        // application's own manifest declares, a higher-version request does not fail at all: the host
+        // returns the copy it has. A loader that asked with a version and trusted the answer would be
+        // handed an assembly older than the reference declared with nothing at all to catch, which is
+        // the second reason the loader asks without a version and compares for itself.
+        Exception? olderApplication = Capture("Acme.HostShared, Version=99.0.0.0");
+
         TestContext.Out.WriteLine($"older, application dependency: {Describe(olderApplication)}");
 
-        // Asking for something the host has never heard of is the only case that reliably throws.
-        absent.Should().BeOfType<FileNotFoundException>();
-        Type absentType = absent!.GetType();
+        olderApplication.Should().BeNull();
 
-        // Asking for a higher version of something the host does carry gives a caller nothing to
-        // branch on: it either throws the same exception as the absent case, or it quietly hands back
-        // the older copy. Both outcomes defeat a catch that means to say "the host does not have it":
-        // the first hands a version-skewed plugin its own private copy, and the second serves an
-        // assembly older than the reference declared without anybody being told. That is why the loader
-        // asks by simple name, which carries no version to fail on, and does the comparison itself.
-        foreach (Exception? older in new[] { olderFramework, olderApplication })
-        {
-            (older is null || older.GetType() == absentType)
-                .Should()
-                .BeTrue(
-                    "a higher-version request must not be distinguishable from an absent assembly by "
-                        + $"exception type, but this one produced {Describe(older)}"
-                );
-        }
+        AssemblyLoadContext
+            .Default.LoadFromAssemblyName(new AssemblyName("Acme.HostShared, Version=99.0.0.0"))
+            .GetName()
+            .Version.Should()
+            .Be(new Version(1, 0, 0, 0));
     }
 
     /// <summary>

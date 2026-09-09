@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <!--
+        Throws when its Name is read, which the loader has to report as a named refusal rather than
+        letting a third party's exception escape the loader unlabelled.
+    -->
+    <PropertyGroup>
+        <AssemblyName>Acme.ThrowingName</AssemblyName>
+        <RootNamespace>Acme.ThrowingName</RootNamespace>
+        <Nullable>disable</Nullable>
+    </PropertyGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\..\..\..\EdFi.Api.Plugins\EdFi.Api.Plugins.csproj" />
+    </ItemGroup>
+</Project>

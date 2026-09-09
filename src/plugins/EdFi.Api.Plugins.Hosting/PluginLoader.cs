@@ -190,7 +190,7 @@ public static class PluginLoader
             CheckContractReferences(name, entryAssemblyPath, contractAssemblyNames);
             CheckDeclaredDependencies(name, manifest);
 
-            PluginLoadContext context = new(name, entryAssemblyPath);
+            PluginLoadContext context = CreateLoadContext(name, entryAssemblyPath);
             Assembly entryAssembly = LoadEntryAssembly(name, entryAssemblyPath, context);
 
             if (entryAssembly.GetName().Name is not { } entryAssemblyName)
@@ -219,7 +219,10 @@ public static class PluginLoader
 
             EdFiApiPlugin instance = Activate(name, FindPluginType(name, entryAssembly));
 
-            string declaredName = ReadName(name, instance);
+            // A plugin can return null from Name: it is a non-nullable property on the contract, and a
+            // third-party assembly is not constrained by that at runtime. A null is simply a name that
+            // is not the directory name, so it takes the same refusal and renders as <null>.
+            string? declaredName = ReadName(name, instance);
 
             if (!string.Equals(declaredName, name, StringComparison.Ordinal))
             {
@@ -522,7 +525,30 @@ public static class PluginLoader
         }
     }
 
-    private static string ReadName(string name, EdFiApiPlugin instance)
+    private static PluginLoadContext CreateLoadContext(string name, string entryAssemblyPath)
+    {
+        try
+        {
+            return new PluginLoadContext(name, entryAssemblyPath);
+        }
+        catch (Exception exception)
+            when (exception is ArgumentException or InvalidOperationException or IOException)
+        {
+            // AssemblyDependencyResolver reads the manifest itself, and it is stricter about parts of
+            // it than the loader's own reader needs to be. Its refusal is still a refusal of the
+            // plugin's manifest, so it arrives as one rather than as a raw argument exception.
+            throw new PluginLoadException(
+                PluginLoadFailure.DepsJsonUnreadable,
+                name,
+                $"plugin '{PluginDiagnosticText.Quote(name)}' could not be given a dependency resolver "
+                    + $"over '{PluginDiagnosticText.Quote(entryAssemblyPath)}': "
+                    + PluginDiagnosticText.Quote(exception.Message),
+                exception
+            );
+        }
+    }
+
+    private static string? ReadName(string name, EdFiApiPlugin instance)
     {
         try
         {
