@@ -81,10 +81,9 @@ public class Given_A_Hostile_Correlation_Id_On_Requests_That_Fail_In_Different_L
     private const int MainFactoryArmLoggedEventCount = 3;
 
     /// <summary>
-    /// Every request sent before the snapshot in Setup: the 404, the 401 and the 403 on the
-    /// main factory, plus the two rate-limited ones. Adding a hostile-arm request without
-    /// updating this fails here, which is what keeps the snapshot's ordering invariant real
-    /// instead of comment-enforced.
+    /// Every request sent before the snapshot in Setup: the main-factory ones plus the
+    /// rate-limited ones. Adding a hostile-arm request without updating this fails here, which is
+    /// what keeps the snapshot's ordering invariant real instead of comment-enforced.
     /// </summary>
     private const int HostileArmLoggedEventCount =
         MainFactoryArmLoggedEventCount + RateLimitedArmLoggedEventCount;
