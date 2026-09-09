@@ -20,6 +20,8 @@ Ed-Fi documentation repository, not this one.
 - Add an explicit note that the `traceId`/`correlationId` field-name inconsistency is knowingly left alone in this change and tracked separately as DMS-1518.
 - Add a one-line note that the hardcoded `"correlationid"` `MapFallback` default was removed, so the fallback 404 now honors the configured/disabled correlation-header behavior.
 
+**Status:** folded into the live PR description in round 4 (see PR #1232 body).
+
 ## Files changed and why
 
 ### Production code
