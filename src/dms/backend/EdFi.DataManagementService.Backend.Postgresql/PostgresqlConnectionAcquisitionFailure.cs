@@ -51,18 +51,23 @@ internal static class PostgresqlConnectionAcquisitionFailure
     /// fingerprint verdict is cached, instead of Snapshot Not Found.
     /// </para>
     /// <para>
-    /// The certificate-load failures are named by all three of their own types, because Npgsql
-    /// raises them unwrapped as well. A configured client certificate is loaded after the server has
-    /// agreed to SSL but before the <c>AuthenticateAsClientAsync</c> call that Npgsql's handshake
+    /// The certificate-load failures are named by each of their own types, because Npgsql raises
+    /// them unwrapped as well. A configured client certificate is loaded after the server has agreed
+    /// to SSL but before the <c>AuthenticateAsClientAsync</c> call that Npgsql's handshake
     /// <c>catch</c> turns into an <c>NpgsqlException</c>, so whatever the loader threw escapes as
     /// itself. Which type that is depends on the file: a missing PEM named by <c>SSL Certificate</c>
     /// or <c>SSL Key</c> raises <c>FileNotFoundException</c>, a certificate path under a directory
     /// that does not exist - an omitted deployment mount - raises <c>DirectoryNotFoundException</c>,
-    /// and a missing PFX or a file whose contents are not a certificate raises
-    /// <c>CryptographicException</c>. An arm covering only the first would leave the other two
-    /// answering a service-configuration 503. The broader <c>IOException</c> is deliberately not used
-    /// in their place: the acquisition guard matches a caller's cancellation on the outer type alone,
-    /// so an <c>IOException</c> wrapping an <c>OperationCanceledException</c> would be swallowed into
+    /// a missing PFX or a file whose contents are not a certificate raises
+    /// <c>CryptographicException</c>, and a PEM the process is not permitted to read - a restrictive
+    /// secret mount, or a root-owned file under a non-root process - raises
+    /// <c>UnauthorizedAccessException</c>, as does a certificate or key path naming an existing
+    /// directory. An arm covering only the first would leave the rest answering a
+    /// service-configuration 503. These are the shapes that have been probed, not an exhaustive
+    /// enumeration. The broader <c>IOException</c> is deliberately not used in their place, which
+    /// does leave a path over the length limit and a file held under an exclusive lock unclassified:
+    /// the acquisition guard matches a caller's cancellation on the outer type alone, so an
+    /// <c>IOException</c> wrapping an <c>OperationCanceledException</c> would be swallowed into
     /// Snapshot Not Found.
     /// </para>
     /// <para>
@@ -86,6 +91,7 @@ internal static class PostgresqlConnectionAcquisitionFailure
                 or FileNotFoundException
                 or DirectoryNotFoundException
                 or CryptographicException
+                or UnauthorizedAccessException
                 or ArgumentException
                 and not ArgumentNullException;
 
@@ -101,7 +107,8 @@ internal static class PostgresqlConnectionAcquisitionFailure
     /// alone: a parse failure arriving as an <c>NpgsqlException</c> or an <c>ArgumentException</c>, a
     /// hostname that does not resolve arriving as a bare <c>SocketException</c>, and a client
     /// certificate that cannot be loaded arriving as a bare <c>FileNotFoundException</c>,
-    /// <c>DirectoryNotFoundException</c>, or <c>CryptographicException</c>.
+    /// <c>DirectoryNotFoundException</c>, <c>CryptographicException</c>, or
+    /// <c>UnauthorizedAccessException</c>.
     /// </remarks>
     public static string Describe(Exception exception)
     {

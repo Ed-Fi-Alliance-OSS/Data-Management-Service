@@ -123,12 +123,18 @@ public class ConnectionAcquisitionClassifierTests
         /// resolution failure does. Observed against the Npgsql 8.0.4 this solution pins, driven
         /// through a loopback listener that answered the eight-byte SSL request: a missing PEM named
         /// by SSL Certificate or SSL Key raises FileNotFoundException, a path under a directory that
-        /// does not exist raises DirectoryNotFoundException, and a missing PFX or a file whose
-        /// contents are not a certificate raises CryptographicException. All three are asserted,
-        /// because an arm covering only the first would still answer the omitted-mount case with a
-        /// service-configuration 503. The exceptions are constructed rather than provoked, for the
-        /// same reason as the resolution failure above: provoking them needs a listener that speaks
-        /// the SSL request, which is not a unit test's job.
+        /// does not exist raises DirectoryNotFoundException, a missing PFX or a file whose contents
+        /// are not a certificate raises CryptographicException, and a PEM the process is not
+        /// permitted to read - a restrictive secret mount, or a root-owned file under a non-root
+        /// process - raises UnauthorizedAccessException, as does a certificate or key path naming an
+        /// existing directory. All four are asserted, because an arm covering only the first would
+        /// still answer the omitted-mount and unreadable-file cases with a service-configuration 503.
+        /// These are the probed shapes rather than an exhaustive list: a path over the length limit
+        /// and a file held under an exclusive lock both arrive as a bare IOException, which is
+        /// deliberately left unclassified so the guard's outer-type cancellation match cannot swallow
+        /// a cancellation into Snapshot Not Found. The exceptions are constructed rather than
+        /// provoked, for the same reason as the resolution failure above: provoking them needs a
+        /// listener that speaks the SSL request, which is not a unit test's job.
         /// </summary>
         [Test]
         public void It_accepts_a_client_certificate_that_cannot_be_loaded()
@@ -145,6 +151,10 @@ public class ConnectionAcquisitionClassifierTests
                 .IsExpected(new CryptographicException("The system cannot find the file specified."))
                 .Should()
                 .BeTrue("a missing PFX and a malformed certificate both arrive as this");
+            PostgresqlConnectionAcquisitionFailure
+                .IsExpected(new UnauthorizedAccessException("Access to the path is denied."))
+                .Should()
+                .BeTrue("a certificate file the process cannot read is an unreachable database");
         }
 
         /// <summary>
