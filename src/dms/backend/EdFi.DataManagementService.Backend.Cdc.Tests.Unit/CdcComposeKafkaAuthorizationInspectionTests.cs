@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Confluent.Kafka;
 using FakeItEasy;
 using FluentAssertions;
@@ -20,7 +21,9 @@ public class Given_Cdc_compose_authorization_inspection
     private string _image = null!;
     private string _project = null!;
     private bool _running;
-    private bool _replace;
+    private Action<JsonObject, int> _changeInspection = null!;
+    private string _finalPropertiesSuffix = null!;
+    private int _propertyReads;
     private int _reads;
     private const string Id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
@@ -32,7 +35,9 @@ public class Given_Cdc_compose_authorization_inspection
         _image = CdcComposeBrokerSizeDeployment.BrokerImage;
         _project = "selected";
         _running = true;
-        _replace = false;
+        _changeInspection = (_, _) => { };
+        _finalPropertiesSuffix = "";
+        _propertyReads = 0;
         _reads = 0;
         _properties =
             "node.id=1\nadvertised.listeners=PLAINTEXT://dms-kafka1:9092,EXTERNAL://127.0.0.1:9092\nlistener.security.protocol.map=PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT\n";
@@ -44,7 +49,7 @@ public class Given_Cdc_compose_authorization_inspection
             }
             if (args[0] == "exec")
             {
-                return Task.FromResult(_properties);
+                return Task.FromResult(_properties + (++_propertyReads > 1 ? _finalPropertiesSuffix : ""));
             }
             if (args[0] == "image")
             {
@@ -65,33 +70,49 @@ public class Given_Cdc_compose_authorization_inspection
                 );
             }
             _reads++;
-            return Task.FromResult(
-                JsonSerializer.Serialize(
-                    new[]
+            var container = JsonSerializer
+                .SerializeToNode(
+                    new
                     {
-                        new
+                        Id,
+                        Image = "image",
+                        State = new
                         {
-                            Id,
-                            Image = "image",
-                            State = new
+                            Running = _running,
+                            Restarting = false,
+                            Paused = false,
+                            Pid = 1234,
+                            StartedAt = "2026-09-09T10:00:00Z",
+                            Health = new
                             {
-                                Running = _running,
-                                StartedAt = _replace && _reads > 1 ? "later" : "original",
-                            },
-                            RestartCount = 0,
-                            Config = new
-                            {
-                                Image = _image,
-                                Labels = new Dictionary<string, string>
+                                Status = "healthy",
+                                Log = new[]
                                 {
-                                    ["com.docker.compose.project"] = _project,
-                                    ["com.docker.compose.service"] = "kafka",
+                                    new
+                                    {
+                                        Start = "2026-09-09T10:00:01Z",
+                                        End = "2026-09-09T10:00:02Z",
+                                        ExitCode = 0,
+                                        Output = "healthy",
+                                    },
                                 },
                             },
                         },
+                        RestartCount = 0,
+                        Config = new
+                        {
+                            Image = _image,
+                            Labels = new Dictionary<string, string>
+                            {
+                                ["com.docker.compose.project"] = _project,
+                                ["com.docker.compose.service"] = "kafka",
+                            },
+                        },
                     }
-                )
-            );
+                )!
+                .AsObject();
+            _changeInspection(container, _reads);
+            return Task.FromResult(new JsonArray(container).ToJsonString());
         };
     }
 
@@ -150,11 +171,79 @@ public class Given_Cdc_compose_authorization_inspection
         (await _adapter.InspectAsync([1], default)).State.Should().Be(CdcTransportEvidenceState.Unavailable);
     }
 
-    [Test]
-    public async Task It_rejects_a_broker_replacement_during_inspection()
+    [TestCase("Running", "false")]
+    [TestCase("Paused", "true")]
+    [TestCase("Restarting", "true")]
+    [TestCase("Pid", "5678")]
+    [TestCase("StartedAt", "\"2026-09-09T10:01:00Z\"")]
+    public async Task It_rejects_a_broker_process_change_during_inspection(string property, string value)
     {
-        _replace = true;
+        _changeInspection = (container, read) =>
+        {
+            if (read > 1)
+            {
+                container["State"]![property] = JsonNode.Parse(value);
+            }
+        };
         (await _adapter.InspectAsync([1], default)).State.Should().Be(CdcTransportEvidenceState.Unavailable);
+    }
+
+    [TestCase("Id", "\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"")]
+    [TestCase("RestartCount", "1")]
+    public async Task It_rejects_a_replaced_or_restarted_container(string property, string value)
+    {
+        _changeInspection = (container, read) =>
+        {
+            if (read > 1)
+            {
+                container[property] = JsonNode.Parse(value);
+            }
+        };
+        (await _adapter.InspectAsync([1], default)).State.Should().Be(CdcTransportEvidenceState.Unavailable);
+    }
+
+    [TestCase("Paused")]
+    [TestCase("Restarting")]
+    public async Task It_rejects_a_broker_that_is_not_live_on_both_reads(string property)
+    {
+        _changeInspection = (container, _) => container["State"]![property] = true;
+        (await _adapter.InspectAsync([1], default)).State.Should().Be(CdcTransportEvidenceState.Unavailable);
+    }
+
+    [Test]
+    public async Task It_accepts_routine_health_check_history_changes_between_reads()
+    {
+        _changeInspection = (container, read) =>
+        {
+            if (read > 1)
+            {
+                container["State"]!["Health"]!["Log"]!
+                    .AsArray()
+                    .Add(
+                        JsonSerializer.SerializeToNode(
+                            new
+                            {
+                                Start = "2026-09-09T10:00:31Z",
+                                End = "2026-09-09T10:00:32Z",
+                                ExitCode = 0,
+                                Output = "healthy",
+                            }
+                        )
+                    );
+            }
+        };
+        (await _adapter.InspectAsync([1], default)).State.Should().Be(CdcTransportEvidenceState.Observed);
+        _reads.Should().Be(2);
+        _propertyReads.Should().Be(2);
+    }
+
+    [Test]
+    public async Task It_rejects_live_broker_properties_that_change_between_reads()
+    {
+        _finalPropertiesSuffix =
+            "authorizer.class.name=org.apache.kafka.metadata.authorizer.StandardAuthorizer\n";
+        (await _adapter.InspectAsync([1], default)).State.Should().Be(CdcTransportEvidenceState.Unavailable);
+        _propertyReads.Should().Be(2);
     }
 
     [Test]

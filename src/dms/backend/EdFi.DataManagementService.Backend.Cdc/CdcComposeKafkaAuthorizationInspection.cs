@@ -63,9 +63,12 @@ public sealed class CdcComposeKafkaAuthorizationInspection : ICdcKafkaAuthorizat
             string before = await _docker.RunAsync(["inspect", id], cancellationToken);
             using var document = JsonDocument.Parse(before);
             var container = document.RootElement.EnumerateArray().Single();
+            Require(container.GetProperty("Id").GetString() == id);
+            var state = container.GetProperty("State");
             Require(
-                container.GetProperty("Id").GetString() == id
-                    && container.GetProperty("State").GetProperty("Running").GetBoolean()
+                state.GetProperty("Running").GetBoolean()
+                    && !state.GetProperty("Restarting").GetBoolean()
+                    && !state.GetProperty("Paused").GetBoolean()
             );
             var config = container.GetProperty("Config");
             Require(
@@ -127,10 +130,19 @@ public sealed class CdcComposeKafkaAuthorizationInspection : ICdcKafkaAuthorizat
             );
             using var after = JsonDocument.Parse(await _docker.RunAsync(["inspect", id], cancellationToken));
             var final = after.RootElement.EnumerateArray().Single();
+            Require(final.GetProperty("Id").GetString() == id);
+            // Docker health probes update State.Health.Log without changing the broker process.
+            var finalState = final.GetProperty("State");
+            string[] processProperties = ["Running", "Restarting", "Paused", "Pid", "StartedAt"];
+            foreach (string property in processProperties)
+            {
+                Require(
+                    finalState.GetProperty(property).GetRawText() == state.GetProperty(property).GetRawText()
+                );
+            }
             Require(
-                final.GetProperty("State").GetRawText() == container.GetProperty("State").GetRawText()
-                    && final.GetProperty("RestartCount").GetInt32()
-                        == container.GetProperty("RestartCount").GetInt32()
+                final.GetProperty("RestartCount").GetInt32()
+                    == container.GetProperty("RestartCount").GetInt32()
             );
             Require(
                 properties
