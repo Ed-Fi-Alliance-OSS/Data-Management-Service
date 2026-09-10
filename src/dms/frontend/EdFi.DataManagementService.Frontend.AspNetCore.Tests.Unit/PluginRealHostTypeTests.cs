@@ -5,6 +5,7 @@
 
 using EdFi.Api.Plugins.Hosting;
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.CustomValidation;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -130,6 +131,10 @@ public class Given_a_plugin_that_swallowed_the_refusal_of_displacing_the_real_re
             .Where(descriptor => descriptor.ServiceType == typeof(IDocumentStoreRepository))
             .Should()
             .Equal(repositoryDescriptorsBefore);
+
+        // And the hook did carry on to register the real declared contract after swallowing, so this
+        // is a plugin the checks downstream of the invoker would have accepted.
+        services.Should().Contain(descriptor => descriptor.ServiceType == typeof(ICustomResourceValidator));
     }
 }
 

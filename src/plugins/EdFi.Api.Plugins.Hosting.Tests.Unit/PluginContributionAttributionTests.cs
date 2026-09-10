@@ -25,6 +25,19 @@ internal static class ContributionProbe
         new([new PluginContractEntry(typeof(IFixtureReplaceContract), Cardinality.Replace)]);
 
     /// <summary>
+    /// A registry that declares the fan-in contract, for the cases whose hook registers one.
+    /// </summary>
+    /// <remarks>
+    /// Separate from <see cref="Registry"/> rather than added to it. The swallowed-refusal cases turn on
+    /// the contribution beside the refusal being a genuine declared contract, because what they assert
+    /// is that the host fails anyway on work every other check accepts. Under a registry that does not
+    /// declare it, those cases would still fail at the invoker but for a weaker reason, and the claim
+    /// that nothing downstream would have objected would be untrue.
+    /// </remarks>
+    internal static PluginContractRegistry RegistryDeclaringFanIn { get; } =
+        new([new PluginContractEntry(typeof(IFixtureFanInContract), Cardinality.FanIn)]);
+
+    /// <summary>
     /// A collection the host has populated: a replace-contract descriptor, a host-owned default, two of
     /// the plugin's own service types, and real logging.
     /// </summary>
@@ -875,7 +888,7 @@ public class Given_a_hook_that_swallowed_the_refusal_of_clear
             plugins.ContributeServices(
                 _services,
                 ContributionProbe.HookConfiguration("swallowClear"),
-                ContributionProbe.Registry,
+                ContributionProbe.RegistryDeclaringFanIn,
                 new StringWriter()
             )
         )!;
@@ -913,6 +926,16 @@ public class Given_a_hook_that_swallowed_the_refusal_of_clear
         _hostDescriptorsBefore.Should().NotBeEmpty();
         _services.Should().ContainInOrder(_hostDescriptorsBefore);
     }
+
+    /// <summary>
+    /// The hook really did carry on and register a contract this host declares, which is what makes
+    /// this the case it claims to be: every check downstream of the invoker would have accepted it.
+    /// </summary>
+    [Test]
+    public void It_registered_the_declared_contract_the_refusal_did_not_stop()
+    {
+        _services.Should().Contain(descriptor => descriptor.ServiceType == typeof(IFixtureFanInContract));
+    }
 }
 
 /// <summary>
@@ -942,7 +965,7 @@ public class Given_a_hook_that_swallowed_the_refusal_of_clear_providers
             plugins.ContributeServices(
                 _services,
                 ContributionProbe.HookConfiguration("swallowClearProviders"),
-                ContributionProbe.Registry,
+                ContributionProbe.RegistryDeclaringFanIn,
                 new StringWriter()
             )
         )!;
@@ -967,6 +990,12 @@ public class Given_a_hook_that_swallowed_the_refusal_of_clear_providers
             .Where(descriptor => descriptor.ServiceType == typeof(ILoggerProvider))
             .Should()
             .Equal(_providersBefore);
+    }
+
+    [Test]
+    public void It_registered_the_declared_contract_the_refusal_did_not_stop()
+    {
+        _services.Should().Contain(descriptor => descriptor.ServiceType == typeof(IFixtureFanInContract));
     }
 }
 
