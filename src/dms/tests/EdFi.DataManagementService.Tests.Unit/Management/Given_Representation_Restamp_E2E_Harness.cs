@@ -491,3 +491,184 @@ public sealed class Given_Representation_Restamp_E2E_Harness_Disabled_Command
         events.Should().Equal("restamp-preview", "restamp-execute", "verify", "drain");
     }
 }
+
+[TestFixture]
+public sealed class Given_Representation_Restamp_E2E_Harness_Docker_Failure_Messages
+{
+    [Test]
+    public void It_reports_the_operation_container_exit_code_and_both_streams()
+    {
+        string message = RepresentationRestampE2EHarness.DockerFailureMessage(
+            "cp",
+            "dms-published-dms-1",
+            1,
+            "  copied nothing  ",
+            "  Error response from daemon: No such container: dms-published-dms-1  "
+        );
+
+        message.Should().Contain("docker cp failed");
+        message.Should().Contain("dms-published-dms-1");
+        message.Should().Contain("exit code 1");
+        message.Should().Contain("stdout: copied nothing");
+        message.Should().Contain("stderr: Error response from daemon: No such container");
+    }
+
+    [Test]
+    public void It_names_the_setting_that_selects_the_container_for_each_image_mode()
+    {
+        string message = RepresentationRestampE2EHarness.DockerFailureMessage(
+            "stop",
+            "ed-fi-api",
+            125,
+            "",
+            "No such container"
+        );
+
+        message.Should().Contain("AppSettings__DmsContainerName");
+        message.Should().Contain("local image: ed-fi-api");
+        message.Should().Contain("published image: dms-published-dms-1");
+    }
+
+    [Test]
+    public void It_reports_a_launch_failure_without_inventing_an_exit_code()
+    {
+        string message = RepresentationRestampE2EHarness.DockerStartFailureMessage(
+            "cp",
+            "dms-published-dms-1"
+        );
+
+        message.Should().Contain("failed to start docker for operation 'cp'");
+        message.Should().Contain("dms-published-dms-1");
+        message.Should().NotContain("exit code");
+    }
+}
+
+[TestFixture]
+public sealed class Given_Representation_Restamp_E2E_Harness_Cleanup
+{
+    private const string Context = "representation restamp (Tracking) for document 9622f938";
+
+    [Test]
+    public async Task It_runs_cleanup_after_a_successful_action()
+    {
+        List<string> events = [];
+
+        await RepresentationRestampE2EHarness.RunWithCleanupAsync(
+            Context,
+            () =>
+            {
+                events.Add("action");
+                return Task.CompletedTask;
+            },
+            () =>
+            {
+                events.Add("cleanup");
+                return Task.CompletedTask;
+            }
+        );
+
+        events.Should().Equal("action", "cleanup");
+    }
+
+    [Test]
+    public async Task It_still_runs_cleanup_when_the_action_fails()
+    {
+        var primaryFailure = new InvalidOperationException("restamp failed");
+        var cleanupRan = false;
+
+        Func<Task> act = () =>
+            RepresentationRestampE2EHarness.RunWithCleanupAsync(
+                Context,
+                () => Task.FromException(primaryFailure),
+                () =>
+                {
+                    cleanupRan = true;
+                    return Task.CompletedTask;
+                }
+            );
+
+        InvalidOperationException thrown = (await act.Should().ThrowAsync<InvalidOperationException>()).Which;
+        thrown.Should().BeSameAs(primaryFailure);
+        cleanupRan.Should().BeTrue();
+    }
+
+    [Test]
+    public async Task It_surfaces_a_cleanup_failure_when_the_action_succeeded()
+    {
+        var cleanupFailure = new InvalidOperationException("docker start failed");
+
+        Func<Task> act = () =>
+            RepresentationRestampE2EHarness.RunWithCleanupAsync(
+                Context,
+                () => Task.CompletedTask,
+                () => Task.FromException(cleanupFailure)
+            );
+
+        InvalidOperationException thrown = (await act.Should().ThrowAsync<InvalidOperationException>()).Which;
+        thrown.Should().BeSameAs(cleanupFailure);
+    }
+
+    [Test]
+    public async Task It_preserves_the_primary_failure_first_when_cleanup_also_fails()
+    {
+        var primaryFailure = new InvalidOperationException("restamp failed");
+        var cleanupFailure = new InvalidOperationException("docker start failed");
+
+        Func<Task> act = () =>
+            RepresentationRestampE2EHarness.RunWithCleanupAsync(
+                Context,
+                () => Task.FromException(primaryFailure),
+                () => Task.FromException(cleanupFailure)
+            );
+
+        AggregateException thrown = (await act.Should().ThrowAsync<AggregateException>()).Which;
+        thrown.Message.Should().Contain(Context);
+        thrown.InnerExceptions.Should().Equal(primaryFailure, cleanupFailure);
+    }
+
+    [Test]
+    public async Task It_flattens_a_nested_cleanup_so_the_primary_failure_stays_first()
+    {
+        // The restamp cleanup is itself a RunWithCleanupAsync: reset the lifecycle, then restart the
+        // container whether or not the reset succeeded. All three failures have to survive, in order.
+        var primaryFailure = new InvalidOperationException("restamp failed");
+        var lifecycleFailure = new InvalidOperationException("lifecycle reset failed");
+        var restartFailure = new InvalidOperationException("docker start failed");
+
+        Func<Task> act = () =>
+            RepresentationRestampE2EHarness.RunWithCleanupAsync(
+                Context,
+                () => Task.FromException(primaryFailure),
+                () =>
+                    RepresentationRestampE2EHarness.RunWithCleanupAsync(
+                        "cleanup",
+                        () => Task.FromException(lifecycleFailure),
+                        () => Task.FromException(restartFailure)
+                    )
+            );
+
+        AggregateException thrown = (await act.Should().ThrowAsync<AggregateException>()).Which;
+        thrown.InnerExceptions.Should().Equal(primaryFailure, lifecycleFailure, restartFailure);
+    }
+
+    [Test]
+    public async Task It_restarts_the_container_even_when_the_lifecycle_reset_fails()
+    {
+        // The guardrail that keeps a failed disabled-mode lifecycle reset from leaving DMS stopped.
+        var restartRan = false;
+
+        Func<Task> act = () =>
+            RepresentationRestampE2EHarness.RunWithCleanupAsync(
+                "cleanup",
+                () => Task.FromException(new InvalidOperationException("lifecycle reset failed")),
+                () =>
+                {
+                    restartRan = true;
+                    return Task.CompletedTask;
+                }
+            );
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+        restartRan.Should().BeTrue();
+    }
+}

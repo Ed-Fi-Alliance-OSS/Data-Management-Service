@@ -5,6 +5,7 @@
 
 using System.Data.Common;
 using System.Diagnostics;
+using System.Runtime.ExceptionServices;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.Mssql;
@@ -792,6 +793,80 @@ internal static class RepresentationRestampE2EHarness
             }
         }
     }
+
+    /// <summary>
+    /// Runs <paramref name="cleanup"/> after <paramref name="action"/> whether or not the action
+    /// threw, without letting a cleanup failure replace the primary failure. A single failure
+    /// propagates unchanged; when both fail the result is a flattened AggregateException whose
+    /// first inner exception is the primary one. Flattening keeps that ordering when a cleanup
+    /// delegate is itself built from this helper.
+    /// </summary>
+    internal static async Task RunWithCleanupAsync(string context, Func<Task> action, Func<Task> cleanup)
+    {
+        Exception? primaryFailure = null;
+
+        try
+        {
+            await action();
+        }
+        catch (Exception exception)
+        {
+            primaryFailure = exception;
+        }
+
+        try
+        {
+            await cleanup();
+        }
+        catch (Exception cleanupFailure)
+        {
+            if (primaryFailure is null)
+            {
+                throw;
+            }
+
+            throw new AggregateException(
+                $"{context}: the primary failure was followed by a cleanup failure",
+                primaryFailure,
+                cleanupFailure
+            ).Flatten();
+        }
+
+        if (primaryFailure is not null)
+        {
+            ExceptionDispatchInfo.Capture(primaryFailure).Throw();
+        }
+    }
+
+    /// <summary>
+    /// Describes a Docker command that ran and reported failure. The container name is the first
+    /// thing to check: it differs by image mode, and a name that does not exist otherwise surfaces
+    /// much later as an unrelated API schema loading error from the DocumentCacheAdmin CLI.
+    /// </summary>
+    internal static string DockerFailureMessage(
+        string operation,
+        string containerName,
+        int exitCode,
+        string standardOutput,
+        string standardError
+    ) =>
+        string.Join(
+            Environment.NewLine,
+            $"docker {operation} failed for DMS container '{containerName}' (exit code {exitCode}). "
+                + "Set AppSettings__DmsContainerName to the running DMS container "
+                + $"(local image: {AppSettings.DefaultDmsContainerName}; published image: dms-published-dms-1).",
+            $"stdout: {standardOutput.Trim()}",
+            $"stderr: {standardError.Trim()}"
+        );
+
+    /// <summary>
+    /// Describes a Docker command that could not be launched at all, which carries no exit code to
+    /// report. Kept distinct from <see cref="DockerFailureMessage"/> so a missing Docker CLI is not
+    /// mistaken for a container that rejected the operation.
+    /// </summary>
+    internal static string DockerStartFailureMessage(string operation, string containerName) =>
+        $"failed to start docker for operation '{operation}' on DMS container '{containerName}'; "
+        + "is Docker installed and on PATH?";
 
     private static async Task<ProcessResult> RunProcessAsync(
         string fileName,
