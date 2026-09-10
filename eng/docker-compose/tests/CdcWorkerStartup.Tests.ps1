@@ -11,7 +11,7 @@ Describe 'CDC infrastructure startup' {
         $script:root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
         function Get-StartupBlock($Name, $Marker) {
             $ast = [Management.Automation.Language.Parser]::ParseFile((Join-Path $script:root $Name), [ref]$null, [ref]$null)
-            $node = $ast.FindAll({ param($n) $n -is [Management.Automation.Language.IfStatementAst] -and $n.Extent.Text.StartsWith('if ($CdcKafkaInfrastructure)') }, $true) |
+            $node = $ast.FindAll({ param($n) $n -is [Management.Automation.Language.IfStatementAst] -and ($n.Extent.Text.StartsWith('if ($CdcKafkaInfrastructure)') -or $n.Extent.Text.StartsWith('if ($CdcDatabaseInfrastructure)')) }, $true) |
                 Where-Object { $_.Extent.Text.Contains($Marker) } | Select-Object -First 1
             if ($null -eq $node) { throw 'Missing executable CDC infrastructure phase.' }
             return [scriptblock]::Create($node.Extent.Text)
@@ -25,6 +25,38 @@ Describe 'CDC infrastructure startup' {
             $script:calls.Add((@($args | ForEach-Object { $_ }) -join ' '))
             $global:LASTEXITCODE = 0
         }
+    }
+
+    It '<Script> preserves SQL Server preparation without Kafka selection on <Engine>' -ForEach @(
+        @{ Script = 'start-local-dms.ps1'; Engine = 'postgresql' },
+        @{ Script = 'start-local-dms.ps1'; Engine = 'mssql' },
+        @{ Script = 'start-published-dms.ps1'; Engine = 'postgresql' },
+        @{ Script = 'start-published-dms.ps1'; Engine = 'mssql' }
+    ) {
+        $CdcDatabaseInfrastructure = $true
+        $InfraOnly = $true
+        $DatabaseEngine = $Engine
+        $files = @()
+        . (Get-StartupBlock $Script 'CDC database preparation requires')
+        ($files -contains 'mssql-cdc.yml') | Should -Be ($Engine -eq 'mssql')
+        $files | Should -Not -Contain 'kafka-cdc.yml'
+        $files | Should -Not -Contain 'kafka.yml'
+        $script:calls.Count | Should -Be 0
+    }
+
+    It '<Script> rejects <Flag> during initial CDC database preparation' -ForEach @(
+        foreach ($script in @('start-local-dms.ps1', 'start-published-dms.ps1')) {
+            foreach ($flag in @('EnableKafka', 'EnableKafkaUI', 'CdcKafkaInfrastructure', 'd', 'writers')) {
+                @{ Script = $script; Flag = $flag }
+            }
+        }
+    ) {
+        $CdcDatabaseInfrastructure = $true
+        $InfraOnly = $true
+        $files = @()
+        if ($Flag -eq 'writers') { $InfraOnly = $false } else { Set-Variable $Flag $true }
+        { . (Get-StartupBlock $Script 'CDC database preparation requires') } | Should -Throw '*without Kafka startup or teardown flags*'
+        $script:calls.Count | Should -Be 0
     }
 
     It '<Script> keeps Connect stopped with CDC and UI on <Engine>' -ForEach @(

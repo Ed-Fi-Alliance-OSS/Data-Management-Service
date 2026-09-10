@@ -42,7 +42,11 @@ param (
     [Switch]
     $EnableKafka,
 
-    # CDC phase seam: start broker/UI only; controller owns the later worker launch.
+    # Initial CDC preparation includes provider prerequisites without Kafka artifacts.
+    [switch]
+    $CdcDatabaseInfrastructure,
+
+    # Retained CDC phase seam: start broker/UI only; controller owns the later worker launch.
     [switch]
     $CdcKafkaInfrastructure,
 
@@ -405,6 +409,13 @@ if ($usePostgresqlTmpfs -and $DatabaseEngine -eq "postgresql") {
 
 if (-not $databaseOnlyStartup) {
     $files += @("-f", "published-dms.yml")
+
+    if ($CdcDatabaseInfrastructure) {
+        if (-not $InfraOnly -or $d -or $EnableKafka -or $EnableKafkaUI -or $CdcKafkaInfrastructure) {
+            throw "CDC database preparation requires -InfraOnly without Kafka startup or teardown flags."
+        }
+        if ($DatabaseEngine -eq "mssql") { $files += @("-f", "mssql-cdc.yml") }
+    }
 
     # CDC selects the same broker/qualified worker for either provider. The worker's
     # profile stays inactive until the controller completes fresh offset-store preparation.

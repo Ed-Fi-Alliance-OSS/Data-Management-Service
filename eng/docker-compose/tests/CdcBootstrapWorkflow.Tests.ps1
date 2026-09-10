@@ -50,14 +50,14 @@ Export-ModuleMember -Function *
         # below and in the CDC controller tests; this suite executes both real entry-point wrappers.
         @'
 function Read-BootstrapCdcSettings { param($Path, $DatabaseEngine)
-    return @{ Cdc = @{ DataStoreId = '42'; DeploymentKey = 'local'; InstanceKey = 'datastore-42'; Generation = 1 }; ConfigurationServiceSettings = @{ BaseUrl = 'http://localhost:8081' } }
+    return @{ Provider = $DatabaseEngine; Cdc = @{ DataStoreId = '42'; DeploymentKey = 'local'; InstanceKey = 'datastore-42'; Generation = 1 }; ConfigurationServiceSettings = @{ BaseUrl = 'http://localhost:8081' } }
 }
 function Assert-BootstrapCdcOfflineOwnership { param($Project, [switch]$InfrastructureReady, $DatabaseEngine, $CmsPort)
     if (Test-Path (Join-Path $PSScriptRoot 'writer')) { throw 'Running writer' }
 }
 function New-BootstrapCdcHandoff { param($Settings, $StatePath, $EnvironmentFile, $Project, $IdentityProvider)
     if (Test-Path (Join-Path $PSScriptRoot 'retained.json')) { throw 'Replacement handoff' }
-    $Settings.AppSettings = @{ Datastore = 'postgresql' }
+    $Settings.AppSettings = @{ Datastore = $Settings.Provider }
     $Settings.DataManagement = @{ DocumentCache = @{ Targets = @(@{ DataStoreId = 42 }) } }
     $Settings.Cdc.Compose = @{ Project = $Project; EnvironmentFile = $EnvironmentFile; File = '/compose/kafka-cdc.yml'; BrokerSizeOverrideFile = (Join-Path $StatePath 'broker-size.json') }
     $Settings.Cdc.Worker = @{ Key = 'worker'; OffsetStorageTopic = 'shared-offsets' }
@@ -73,6 +73,10 @@ function New-BootstrapCdcHandoff { param($Settings, $StatePath, $EnvironmentFile
 }
 function Invoke-BootstrapCdcEnable { param($Handoff, $Receipt, $SelectedDataStoreIds, $StatePath)
     Add-Content (Join-Path $PSScriptRoot 'calls') "cdc:$($SelectedDataStoreIds -join ','):$($Receipt.CreationReceipt.Outcome):$StatePath"
+    if (Test-Path (Join-Path $PSScriptRoot 'model-kafka')) {
+        bootstrap-cdc-controller\Invoke-BootstrapCdcEnable -Handoff $Handoff -Receipt $Receipt -SelectedDataStoreIds $SelectedDataStoreIds -StatePath $StatePath
+        return
+    }
     $retained = $Handoff | ConvertTo-Json -Depth 64 | ConvertFrom-Json -AsHashtable
     $retained.Receipt = $Receipt
     if (Test-Path (Join-Path $PSScriptRoot 'real-lifecycle')) {
@@ -89,14 +93,100 @@ function Invoke-BootstrapCdcEnable { param($Handoff, $Receipt, $SelectedDataStor
     if (Test-Path (Join-Path $PSScriptRoot 'fail')) { throw 'CDC unavailable' }
     if ($Receipt.CreationReceipt.Outcome -ne 'Created') { throw 'Reused database' }
 }
+function Invoke-BootstrapCdcKafkaUI { param($Handoff)
+    if (Test-Path (Join-Path $PSScriptRoot 'model-kafka')) {
+        bootstrap-cdc-controller\Invoke-BootstrapCdcKafkaUI -Handoff $Handoff
+    }
+    else { Add-Content (Join-Path $PSScriptRoot 'ui') 'started' }
+}
 Export-ModuleMember -Function *-BootstrapCdc*
 '@ | Set-Content (Join-Path $script:sandbox 'bootstrap-cdc.psm1')
+        function docker { }
+        function Initialize-KafkaFixture($wrapper) {
+            '' | Set-Content (Join-Path $script:sandbox 'model-kafka')
+            New-Item -ItemType Directory (Join-Path $script:sandbox 'resources') -Force | Out-Null
+            Copy-Item (Join-Path $script:composeRoot 'cdc-lifecycle.psm1') $script:sandbox -Force
+            Import-Module (Join-Path $script:sandbox 'cdc-lifecycle.psm1') -Force
+            Copy-Item (Join-Path $script:composeRoot 'bootstrap-cdc.psm1') (Join-Path $script:sandbox 'bootstrap-cdc-controller.psm1')
+            Import-Module (Join-Path $script:sandbox 'bootstrap-cdc-controller.psm1') -Force
+            Mock -ModuleName cdc-lifecycle Invoke-CdcLifecycleDocker {
+                if ($Arguments[0] -eq 'volume' -and (Test-Path (Join-Path (Get-Module cdc-lifecycle).ModuleBase 'resources/managed-volume'))) { return 'managed-volume' }
+                if ($Arguments[0] -eq 'ps' -and (Test-Path (Join-Path (Get-Module cdc-lifecycle).ModuleBase 'resources/kafka-cdc-worker'))) { return 'kafka-cdc-worker' }
+            }
+            Mock -ModuleName bootstrap-cdc-controller docker {
+                ($args -join ' ') | Should -Match 'up --detach --no-deps kafka-ui$'
+                Test-Path (Join-Path (Get-Module cdc-lifecycle).ModuleBase 'resources/kafka-cdc-worker') | Should -BeTrue
+                'present' | Set-Content (Join-Path (Get-Module cdc-lifecycle).ModuleBase 'resources/kafka-ui')
+                Add-Content (Join-Path (Get-Module cdc-lifecycle).ModuleBase 'effects') 'ui'
+                $global:LASTEXITCODE = 0
+            }
+            $ast = [Management.Automation.Language.Parser]::ParseFile((Join-Path $script:composeRoot "start-$wrapper-dms.ps1"), [ref]$null, [ref]$null)
+            foreach ($selection in @(
+                @{ name = 'database-selection'; prefix = 'if ($CdcDatabaseInfrastructure)'; marker = 'CDC database preparation requires' },
+                @{ name = 'kafka-selection'; prefix = 'if ($CdcKafkaInfrastructure)'; marker = 'CDC infrastructure startup requires' },
+                @{ name = 'kafka-start'; prefix = 'if ($CdcKafkaInfrastructure)'; marker = 'Starting CDC broker' },
+                @{ name = 'ui-start'; prefix = 'if ($EnableKafkaUI'; marker = 'Starting Kafka UI' },
+                @{ name = "guard-$wrapper"; prefix = 'if (-not (Test-CdcInfrastructureInvocation))'; marker = 'Assert-CdcUnregisteredInfrastructure' }
+            )) {
+                $node = $ast.FindAll({ param($n) $n -is [Management.Automation.Language.IfStatementAst] }, $true) |
+                    Where-Object { $_.Extent.Text.StartsWith($selection.prefix) -and $_.Extent.Text.Contains($selection.marker) } | Select-Object -Last 1
+                $node | Should -Not -BeNullOrEmpty
+                $body = $node.Extent.Text
+                if ($selection.name.StartsWith('guard-')) { $body = "param([switch]`$d, [switch]`$v)`n" + $body }
+                $body | Set-Content (Join-Path $script:sandbox "$($selection.name).ps1")
+            }
+        }
+        @'
+function Resolve-DmsSchemaTool { return Join-Path $PSScriptRoot 'controller-tool.ps1' }
+Export-ModuleMember -Function Resolve-DmsSchemaTool
+'@ | Set-Content (Join-Path $script:sandbox 'bootstrap-schema-tool.psm1')
+        @'
+param()
+# Simulated native controller transports. The actual CdcWorkerStartup sequence is covered in .NET.
+$inventory = @(Get-ChildItem (Join-Path $PSScriptRoot '.cdc-deployments') -Filter '*.json')
+if ($inventory.Count -ne 1) { exit 1 }
+$deployment = Get-Content $inventory[0] -Raw | ConvertFrom-Json
+if ($deployment.Entries.Count -ne 1 -or $deployment.Entries[0].Bootstrap.Receipt.CreationReceipt.Outcome -ne 'Created') { exit 2 }
+Add-Content (Join-Path $PSScriptRoot 'effects') 'inventory'
+'present' | Set-Content (Join-Path $PSScriptRoot 'resources/kafka')
+'present' | Set-Content (Join-Path $PSScriptRoot 'resources/managed-volume')
+Add-Content (Join-Path $PSScriptRoot 'effects') 'broker'
+Add-Content (Join-Path $PSScriptRoot 'effects') 'offset-policy'
+'present' | Set-Content (Join-Path $PSScriptRoot 'resources/kafka-cdc-worker')
+Add-Content (Join-Path $PSScriptRoot 'effects') 'worker'
+'{"operation":"enable","succeeded":true,"exitCode":0,"data":{"workflowId":"90c9769b-e70f-4c54-97ec-abbdc2d18879","authorizedAt":"2026-09-08T16:00:00Z"}}'
+exit 0
+'@ | Set-Content (Join-Path $script:sandbox 'controller-tool.ps1')
         $start = @'
 param([switch]$InfraOnly, [switch]$DmsOnly, [switch]$EnableConfig, [string]$IdentityProvider,
     [string]$EnvironmentFile, [string]$DatabaseEngine, [switch]$SeparateConfigDatabase,
-    [switch]$EnableKafkaUI, [switch]$CdcKafkaInfrastructure, [switch]$SuppressWriterGuidance,
+    [switch]$EnableKafkaUI, [switch]$CdcKafkaInfrastructure, [switch]$CdcDatabaseInfrastructure, [switch]$SuppressWriterGuidance,
     [switch]$SuppressWrapperContinuationGuidance, [string]$CdcDmsComposeFile,
     [switch]$d, [switch]$v, [switch]$RemoveBootstrap, [string]$CdcBrokerSizeOverrideFile)
+if (Test-Path (Join-Path $PSScriptRoot 'model-kafka')) {
+    $project = if ($PSCommandPath.Contains('published')) { 'dms-published' } else { 'dms-local' }
+    if (-not (Test-CdcDeployment $project)) { Assert-CdcUnregisteredInfrastructure $project }
+    if ($InfraOnly) {
+        function docker {
+            foreach ($service in @('kafka', 'kafka-postgresql-source', 'kafka-ui')) {
+                if ($args -contains $service) {
+                    'present' | Set-Content (Join-Path $PSScriptRoot "resources/$service")
+                    if ($service -ne 'kafka-ui') { 'present' | Set-Content (Join-Path $PSScriptRoot 'resources/managed-volume') }
+                }
+            }
+            $global:LASTEXITCODE = 0
+        }
+        $files = @()
+        $enableKafkaInfrastructure = $EnableKafkaUI -or $CdcKafkaInfrastructure
+        . (Join-Path $PSScriptRoot 'database-selection.ps1')
+        . (Join-Path $PSScriptRoot 'kafka-selection.ps1')
+        Set-Content (Join-Path $PSScriptRoot 'selected-files') -Value ($files -join "`n")
+        # Execute the actual start script's service launch blocks against persistent Docker state.
+        . (Join-Path $PSScriptRoot 'kafka-start.ps1')
+        . (Join-Path $PSScriptRoot 'ui-start.ps1')
+    }
+    if ($DmsOnly) { Add-Content (Join-Path $PSScriptRoot 'effects') 'writer' }
+}
 $phase = if ($d) { if ($v) { 'retire' } else { 'stop' } } elseif ($DmsOnly) { 'dms' } else { 'infra' }
 Add-Content (Join-Path $PSScriptRoot 'identities') "$phase`:$IdentityProvider"
 Add-Content (Join-Path $PSScriptRoot 'calls') "$phase`:$DatabaseEngine`:$EnableKafkaUI`:$CdcKafkaInfrastructure`:$SuppressWriterGuidance`:$CdcDmsComposeFile"
@@ -106,6 +196,7 @@ if ($InfraOnly -and -not $SuppressWriterGuidance) { Write-Information 'early wri
         @'
 param($EnvironmentFile, $DatabaseEngine, [switch]$SeparateConfigDatabase, $DataStoreDatabaseName, [switch]$NoDataStore)
 Add-Content (Join-Path $PSScriptRoot 'calls') "configure:$DatabaseEngine`:$DataStoreDatabaseName"
+if (Test-Path (Join-Path $PSScriptRoot 'configure-failure')) { throw 'Configure failed' }
 $id = if (Test-Path (Join-Path $PSScriptRoot 'mismatch')) { 43 } else { 42 }
 return [pscustomobject]@{ SelectedDataStoreIds = @($id); HasRouteQualifiedDataStores = $false }
 '@ | Set-Content (Join-Path $script:sandbox 'configure-local-data-store.ps1')
@@ -113,8 +204,13 @@ return [pscustomobject]@{ SelectedDataStoreIds = @($id); HasRouteQualifiedDataSt
 param($EnvironmentFile, $DataStoreId, $DatabaseEngine, [switch]$SeparateConfigDatabase, $CdcBindingStatePath,
     [switch]$PrepareCdcProjectionPrerequisites, [switch]$InitialCdcProvisioning, $DeploymentKey, $InstanceKey, $Generation)
 Add-Content (Join-Path $PSScriptRoot 'calls') "provision:$DatabaseEngine`:$PrepareCdcProjectionPrerequisites`:$CdcBindingStatePath`:$InstanceKey`:$InitialCdcProvisioning"
+if (Test-Path (Join-Path $PSScriptRoot 'provision-failure')) { throw 'Provision failed' }
 $outcome = if (Test-Path (Join-Path $PSScriptRoot 'reuse')) { 'Reused' } else { 'Created' }
-if ($CdcBindingStatePath) { return @{ CreationReceipt = @{ Outcome = $outcome } } }
+if ($CdcBindingStatePath) {
+    return @{ WorkflowId = '90c9769b-e70f-4c54-97ec-abbdc2d18879';
+        Target = @{ DataStoreId = '42'; DeploymentKey = $DeploymentKey; InstanceKey = $InstanceKey; Generation = $Generation };
+        CreationReceipt = @{ Outcome = $outcome } }
+}
 '@ | Set-Content (Join-Path $script:sandbox 'provision-dms-schema.ps1')
         @'
 param($EnvironmentFile, $IdentityProvider, $DataStoreId)
@@ -122,7 +218,7 @@ Add-Content (Join-Path $PSScriptRoot 'calls') "seed:$($DataStoreId -join ',')"
 '@ | Set-Content (Join-Path $script:sandbox 'load-dms-seed-data.ps1')
     }
     BeforeEach {
-        foreach ($name in @('calls', 'identities', 'real-lifecycle', 'fail', 'cancel', 'writer', 'reuse', 'mismatch', 'retained.json', '.cdc-deployments')) {
+        foreach ($name in @('calls', 'identities', 'model-kafka', 'resources', 'effects', 'ui', 'selected-files', 'configure-failure', 'provision-failure', 'real-lifecycle', 'fail', 'cancel', 'writer', 'reuse', 'mismatch', 'retained.json', '.cdc-deployments')) {
             Remove-Item (Join-Path $script:sandbox $name) -Recurse -Force -ErrorAction SilentlyContinue
         }
         Get-Module -All | Where-Object { $_.Path -and $_.Path.StartsWith($script:sandbox + [IO.Path]::DirectorySeparatorChar) } | Remove-Module -Force
@@ -137,6 +233,68 @@ Add-Content (Join-Path $PSScriptRoot 'calls') "seed:$($DataStoreId -join ',')"
         Get-Module -All | Where-Object { $_.Path -and $_.Path.StartsWith($script:sandbox + [IO.Path]::DirectorySeparatorChar) } | Remove-Module -Force
     }
 
+    It 'leaves no unregistered Kafka after <failure> for <wrapper>/<provider>, UI=<ui>' -ForEach @(
+        foreach ($wrapper in @('local', 'published')) {
+            foreach ($provider in @('postgresql', 'mssql')) {
+                foreach ($ui in @($false, $true)) {
+                    foreach ($failure in @('configure', 'provision', 'snapshot', 'cancel')) {
+                        @{ wrapper = $wrapper; provider = $provider; ui = $ui; failure = $failure }
+                    }
+                }
+            }
+        }
+    ) {
+        Initialize-KafkaFixture $wrapper
+        $script:arguments.EnableKafkaUI = $ui
+        if ($failure -in @('configure', 'provision')) {
+            '' | Set-Content (Join-Path $script:sandbox "$failure-failure")
+            { & (Join-Path $script:sandbox "bootstrap-$wrapper-dms.ps1") @script:arguments -DatabaseEngine $provider } | Should -Throw "*$failure failed*"
+        }
+        else {
+            Import-Module (Join-Path $script:sandbox 'bootstrap-wrapper.psm1') -Force
+            $callback = if ($failure -eq 'cancel') { { throw [OperationCanceledException]::new('Snapshot cancelled') } } else { { throw 'Snapshot failed' } }
+            { Invoke-BootstrapWrapper -StartScriptName "start-$wrapper-dms.ps1" @script:arguments -DatabaseEngine $provider -BeforeCdcAdmission $callback } | Should -Throw '*Snapshot*'
+        }
+        @(Get-ChildItem (Join-Path $script:sandbox 'resources')).Count | Should -Be 0
+        Test-CdcDeployment "dms-$wrapper" | Should -BeFalse
+        @(Get-Content (Join-Path $script:sandbox 'selected-files')) | Should -Not -Contain 'kafka-cdc.yml'
+        if ($provider -eq 'mssql') {
+            @(Get-Content (Join-Path $script:sandbox 'selected-files')) | Should -Contain 'mssql-cdc.yml'
+        }
+        # Same surviving Docker state, real start-script entry guard, both startup and teardown.
+        foreach ($parameters in @(@{}, @{ d = $true; v = $true })) {
+            { & (Join-Path $script:sandbox "guard-$wrapper.ps1") @parameters } | Should -Not -Throw
+        }
+        @(Get-ChildItem (Join-Path $script:sandbox 'resources')).Count | Should -Be 0
+        Test-Path (Join-Path $script:sandbox 'effects') | Should -BeFalse
+        # This proves only absence of the Kafka state-loss rejection, not retry/adoption authority.
+    }
+
+    It 'registers before Kafka effects and still rejects later inventory loss for <wrapper>/<provider>, UI=<ui>' -ForEach @(
+        foreach ($wrapper in @('local', 'published')) {
+            foreach ($provider in @('postgresql', 'mssql')) {
+                foreach ($ui in @($false, $true)) { @{ wrapper = $wrapper; provider = $provider; ui = $ui } }
+            }
+        }
+    ) {
+        Initialize-KafkaFixture $wrapper
+        $script:arguments.EnableKafkaUI = $ui
+        & (Join-Path $script:sandbox "bootstrap-$wrapper-dms.ps1") @script:arguments -DatabaseEngine $provider
+        $expected = @('inventory', 'broker', 'offset-policy', 'worker')
+        if ($ui) { $expected += 'ui' }
+        $expected += 'writer'
+        @(Get-Content (Join-Path $script:sandbox 'effects')) | Should -Be $expected
+        Test-CdcDeployment "dms-$wrapper" | Should -BeTrue
+        $before = @(Get-ChildItem (Join-Path $script:sandbox 'resources')).Name
+        $before | Should -Contain 'managed-volume'
+        $before | Should -Contain 'kafka-cdc-worker'
+        Remove-Item (Join-Path $script:sandbox ".cdc-deployments/dms-$wrapper.json")
+        foreach ($parameters in @(@{}, @{ d = $true; v = $true })) {
+            { & (Join-Path $script:sandbox "guard-$wrapper.ps1") @parameters } | Should -Throw '*survives without*'
+        }
+        @(Get-ChildItem (Join-Path $script:sandbox 'resources')).Name | Should -Be $before
+    }
+
     It 'orders <wrapper>/<provider> through CDC before DMS and seed, including UI' -ForEach @(
         @{ wrapper = 'local'; provider = 'postgresql' }, @{ wrapper = 'local'; provider = 'mssql' },
         @{ wrapper = 'published'; provider = 'postgresql' }, @{ wrapper = 'published'; provider = 'mssql' }
@@ -144,7 +302,7 @@ Add-Content (Join-Path $PSScriptRoot 'calls') "seed:$($DataStoreId -join ',')"
         & (Join-Path $script:sandbox "bootstrap-$wrapper-dms.ps1") @script:arguments -DatabaseEngine $provider
         $calls = @(Get-Content (Join-Path $script:sandbox 'calls'))
         $calls.Count | Should -Be 6
-        $calls[0] | Should -Be "infra:$provider`:True:True:True:"
+        $calls[0] | Should -Be "infra:$provider`:False:False:True:"
         $calls[1] | Should -Be "configure:$provider`:dedicated_cdc"
         $calls[2] | Should -Be "provision:$provider`:True:$($script:arguments.CdcBindingStatePath):datastore-42:True"
         $calls[3] | Should -Be "cdc:42:Created:$($script:arguments.CdcBindingStatePath)"

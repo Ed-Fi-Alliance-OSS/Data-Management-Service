@@ -924,14 +924,15 @@ function Invoke-BootstrapWrapper {
                 }
             }
 
-            # Infrastructure phase
+            # Prepare database/CMS prerequisites only for initial CDC. The controller starts Kafka
+            # after the original deployment handoff is durable; early failure must not orphan it.
             $startArgs = @{
                 IdentityProvider = $resolvedIdentityProvider
                 InfraOnly = $true
                 EnableConfig = $true
             }
-            if ($EnableKafkaUI) { $startArgs.EnableKafkaUI = $true }
-            if ($EnableKafkaCdc) { $startArgs.CdcKafkaInfrastructure = $true; $startArgs.SuppressWriterGuidance = $true }
+            if ($EnableKafkaUI -and -not $EnableKafkaCdc) { $startArgs.EnableKafkaUI = $true }
+            if ($EnableKafkaCdc) { $startArgs.CdcDatabaseInfrastructure = $true; $startArgs.SuppressWriterGuidance = $true }
             if ($EnableSwaggerUI) { $startArgs.EnableSwaggerUI = $true }
             if ($AddExtensionSecurityMetadata) { $startArgs.AddExtensionSecurityMetadata = $true }
             $startArgs.DatabaseEngine = $DatabaseEngine
@@ -1054,6 +1055,7 @@ function Invoke-BootstrapWrapper {
             }
             Assert-BootstrapCdcOfflineOwnership @cdcOwnership -InfrastructureReady
             Invoke-BootstrapCdcEnable -Handoff $cdcHandoff -Receipt $provisionReceipts[0] -SelectedDataStoreIds $configuredDataStoreIds -StatePath $CdcBindingStatePath
+            if ($EnableKafkaUI) { Invoke-BootstrapCdcKafkaUI -Handoff $cdcHandoff }
             Assert-BootstrapCdcOfflineOwnership @cdcOwnership -InfrastructureReady
             Write-Information 'CDC controller durably authorized writer publication. Local authorization is disabled; this is not ACL isolation evidence.' -InformationAction Continue
             Write-Information ("Inspect CDC: api-schema-tools cdc status --settings '" + $cdcHandoff.SettingsPath.Replace("'", "''") + "' --state-path '" + $CdcBindingStatePath.Replace("'", "''") + "' --json") -InformationAction Continue
