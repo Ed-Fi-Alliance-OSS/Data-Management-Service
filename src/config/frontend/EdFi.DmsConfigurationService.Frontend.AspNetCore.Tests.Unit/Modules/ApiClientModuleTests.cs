@@ -294,6 +294,7 @@ public class ApiClientModuleTests
 
             var getAllResponse = await client.GetAsync("/v3/apiClients?offset=0&limit=25");
             var getByClientIdResponse = await client.GetAsync("/v3/apiClients/test-client-id");
+            var getByIdResponse = await client.GetAsync("/v3/apiClients/1");
 
             var updateResponse = await client.PutAsync(
                 "/v3/apiClients/1",
@@ -318,6 +319,7 @@ public class ApiClientModuleTests
             insertResponse.StatusCode.Should().Be(HttpStatusCode.Created);
             getAllResponse.StatusCode.Should().Be(HttpStatusCode.OK);
             getByClientIdResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            getByIdResponse.StatusCode.Should().Be(HttpStatusCode.OK);
             updateResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
             deleteResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
         }
@@ -4772,5 +4774,247 @@ public class ApiClientModuleTests
             A.CallTo(() => _apiClientRepository.UpdateApiClient(A<ApiClientUpdateCommand>.Ignored))
                 .MustNotHaveHappened();
         }
+    }
+
+    /// <summary>
+    /// Shared arrangement for the two single-item GET routes. Both repository lookups are stubbed to
+    /// succeed unless a fixture narrows one of them, so a test asserting that a lookup was never
+    /// reached proves the route dispatch rather than merely a missing stub.
+    /// </summary>
+    public abstract class ApiClientGetByIdentifierTestBase : ApiClientModuleTests
+    {
+        protected const int StoredApiClientId = 7;
+        protected const string StoredClientKey = "c86b44f2-a80b-450d-be0c-4ecf43397e03";
+
+        protected static ApiClientResponse StoredApiClient() =>
+            new()
+            {
+                Id = StoredApiClientId,
+                ApplicationId = 3,
+                ClientId = StoredClientKey,
+                ClientUuid = Guid.NewGuid(),
+                Name = "Stored API Client",
+                IsApproved = true,
+                DataStoreIds = [1],
+            };
+
+        protected void ArrangeBothLookupsSucceed()
+        {
+            A.CallTo(() => _apiClientRepository.GetApiClientById(A<int>.Ignored))
+                .Returns(new ApiClientGetResult.Success(StoredApiClient()));
+            A.CallTo(() => _apiClientRepository.GetApiClientByClientId(A<string>.Ignored))
+                .Returns(new ApiClientGetResult.Success(StoredApiClient()));
+        }
+    }
+
+    // Instance per test case so each test gets its own fakes: NUnit otherwise shares one fixture
+    // instance across the fixture, and the request issued in Setup would be recorded once per test
+    // method, breaking the call-count assertions below.
+    [TestFixture]
+    [FixtureLifeCycle(LifeCycle.InstancePerTestCase)]
+    public class Given_an_api_client_get_by_numeric_id : ApiClientGetByIdentifierTestBase
+    {
+        private HttpResponseMessage _response = new();
+        private JsonNode _responseBody = JsonNode.Parse("{}")!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            ArrangeBothLookupsSucceed();
+            using var client = SetUpClient();
+
+            _response = await client.GetAsync($"/v3/apiClients/{StoredApiClientId}");
+            _responseBody = JsonNode.Parse(await _response.Content.ReadAsStringAsync())!;
+        }
+
+        [TearDown]
+        public void DisposeResponse() => _response.Dispose();
+
+        [Test]
+        public void It_returns_the_api_client() => _response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        [Test]
+        public void It_returns_the_client_resolved_by_primary_key() =>
+            _responseBody["id"]!.GetValue<int>().Should().Be(StoredApiClientId);
+
+        [Test]
+        public void It_reads_through_the_numeric_lookup() =>
+            A.CallTo(() => _apiClientRepository.GetApiClientById(StoredApiClientId))
+                .MustHaveHappenedOnceExactly();
+
+        [Test]
+        public void It_does_not_read_through_the_client_key_lookup() =>
+            A.CallTo(() => _apiClientRepository.GetApiClientByClientId(A<string>.Ignored))
+                .MustNotHaveHappened();
+    }
+
+    [TestFixture]
+    [FixtureLifeCycle(LifeCycle.InstancePerTestCase)]
+    public class Given_an_api_client_get_by_a_numeric_id_that_does_not_exist
+        : ApiClientGetByIdentifierTestBase
+    {
+        private const int MissingApiClientId = 999;
+
+        private HttpResponseMessage _response = new();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            // The client-key lookup is deliberately left succeeding: if a well-formed numeric id
+            // ever fell through to it, this fixture would observe a 200 instead of the 404 below.
+            ArrangeBothLookupsSucceed();
+            A.CallTo(() => _apiClientRepository.GetApiClientById(A<int>.Ignored))
+                .Returns(new ApiClientGetResult.FailureNotFound());
+
+            using var client = SetUpClient();
+            _response = await client.GetAsync($"/v3/apiClients/{MissingApiClientId}");
+        }
+
+        [TearDown]
+        public void DisposeResponse() => _response.Dispose();
+
+        [Test]
+        public async Task It_returns_the_not_found_contract() =>
+            await AssertContract(
+                _response,
+                HttpStatusCode.NotFound,
+                "urn:ed-fi:api:not-found",
+                "Not Found",
+                $"ApiClient with ID {MissingApiClientId} not found."
+            );
+
+        [Test]
+        public void It_reads_through_the_numeric_lookup() =>
+            A.CallTo(() => _apiClientRepository.GetApiClientById(MissingApiClientId))
+                .MustHaveHappenedOnceExactly();
+
+        [Test]
+        public void It_does_not_fall_back_to_the_client_key_lookup() =>
+            A.CallTo(() => _apiClientRepository.GetApiClientByClientId(A<string>.Ignored))
+                .MustNotHaveHappened();
+    }
+
+    [TestFixture]
+    [FixtureLifeCycle(LifeCycle.InstancePerTestCase)]
+    public class Given_an_api_client_get_by_client_key : ApiClientGetByIdentifierTestBase
+    {
+        private HttpResponseMessage _response = new();
+        private JsonNode _responseBody = JsonNode.Parse("{}")!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            ArrangeBothLookupsSucceed();
+            using var client = SetUpClient();
+
+            _response = await client.GetAsync($"/v3/apiClients/{StoredClientKey}");
+            _responseBody = JsonNode.Parse(await _response.Content.ReadAsStringAsync())!;
+        }
+
+        [TearDown]
+        public void DisposeResponse() => _response.Dispose();
+
+        [Test]
+        public void It_returns_the_api_client() => _response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        [Test]
+        public void It_returns_the_client_resolved_by_client_key() =>
+            _responseBody["clientId"]!.GetValue<string>().Should().Be(StoredClientKey);
+
+        [Test]
+        public void It_reads_through_the_client_key_lookup() =>
+            A.CallTo(() => _apiClientRepository.GetApiClientByClientId(StoredClientKey))
+                .MustHaveHappenedOnceExactly();
+
+        [Test]
+        public void It_does_not_read_through_the_numeric_lookup() =>
+            A.CallTo(() => _apiClientRepository.GetApiClientById(A<int>.Ignored)).MustNotHaveHappened();
+    }
+
+    [TestFixture]
+    [FixtureLifeCycle(LifeCycle.InstancePerTestCase)]
+    public class Given_an_api_client_get_with_a_non_numeric_identifier : ApiClientGetByIdentifierTestBase
+    {
+        // Letters, a decimal point, and a value beyond Int32 range all fail the :int route
+        // constraint, so each is an OAuth client key and must never reach the numeric lookup.
+        [TestCase("abc")]
+        [TestCase("12abc")]
+        [TestCase("1.5")]
+        [TestCase("99999999999")]
+        public async Task It_resolves_only_through_the_client_key_lookup(string identifier)
+        {
+            ArrangeBothLookupsSucceed();
+            A.CallTo(() => _apiClientRepository.GetApiClientByClientId(A<string>.Ignored))
+                .Returns(new ApiClientGetResult.FailureNotFound());
+
+            using var client = SetUpClient();
+            using var response = await client.GetAsync($"/v3/apiClients/{identifier}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            A.CallTo(() => _apiClientRepository.GetApiClientByClientId(identifier))
+                .MustHaveHappenedOnceExactly();
+            A.CallTo(() => _apiClientRepository.GetApiClientById(A<int>.Ignored)).MustNotHaveHappened();
+        }
+    }
+
+    [TestFixture]
+    [FixtureLifeCycle(LifeCycle.InstancePerTestCase)]
+    public class Given_an_api_client_get_with_a_non_positive_numeric_identifier
+        : ApiClientGetByIdentifierTestBase
+    {
+        // The :int constraint accepts zero and a leading sign, so these are numeric ids that simply
+        // do not exist rather than client keys. Pinning them keeps the dispatch rule unambiguous.
+        [TestCase("0", 0)]
+        [TestCase("-1", -1)]
+        public async Task It_resolves_only_through_the_numeric_lookup(string identifier, int expectedId)
+        {
+            ArrangeBothLookupsSucceed();
+            A.CallTo(() => _apiClientRepository.GetApiClientById(A<int>.Ignored))
+                .Returns(new ApiClientGetResult.FailureNotFound());
+
+            using var client = SetUpClient();
+            using var response = await client.GetAsync($"/v3/apiClients/{identifier}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            A.CallTo(() => _apiClientRepository.GetApiClientById(expectedId)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => _apiClientRepository.GetApiClientByClientId(A<string>.Ignored))
+                .MustNotHaveHappened();
+        }
+    }
+
+    [TestFixture]
+    [FixtureLifeCycle(LifeCycle.InstancePerTestCase)]
+    public class Given_an_api_client_get_by_numeric_id_whose_lookup_fails : ApiClientGetByIdentifierTestBase
+    {
+        private const string Sentinel = "SENTINEL_APICLIENT_GET_BY_ID_must_not_leak";
+
+        private HttpResponseMessage _response = new();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            A.CallTo(() => _apiClientRepository.GetApiClientById(A<int>.Ignored))
+                .Returns(new ApiClientGetResult.FailureUnknown(Sentinel));
+
+            using var client = SetUpClient();
+            _response = await client.GetAsync($"/v3/apiClients/{StoredApiClientId}");
+        }
+
+        [TearDown]
+        public void DisposeResponse() => _response.Dispose();
+
+        [Test]
+        public async Task It_returns_the_internal_server_error_contract() =>
+            await AssertContract(
+                _response,
+                HttpStatusCode.InternalServerError,
+                "urn:ed-fi:api:internal-server-error",
+                "Internal Server Error",
+                ""
+            );
+
+        [Test]
+        public async Task It_does_not_leak_the_repository_failure_message() =>
+            (await _response.Content.ReadAsStringAsync()).Should().NotContain(Sentinel);
     }
 }

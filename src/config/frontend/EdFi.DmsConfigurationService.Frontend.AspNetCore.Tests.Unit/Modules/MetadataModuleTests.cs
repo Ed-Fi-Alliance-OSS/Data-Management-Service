@@ -55,6 +55,7 @@ public class MetadataModuleTests
         "PUT /v3/applications/{id} int32",
         "DELETE /v3/applications/{id} int32",
         "PUT /v3/applications/{id}/reset-credential int32",
+        "GET /v3/apiClients/{id} int32",
         "PUT /v3/apiClients/{id} int32",
         "DELETE /v3/apiClients/{id} int32",
         "PUT /v3/apiClients/{id}/reset-credential int32",

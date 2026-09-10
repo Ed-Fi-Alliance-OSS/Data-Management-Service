@@ -71,6 +71,10 @@ public class ApiClientModule : IEndpointModule
             .Produces<ApiClientCredentialsResponse>(200);
         // Limited access endpoints - accessible by service accounts for internal DMS operations
         endpoints.MapLimitedAccess("/v3/apiClients/", GetAll).Produces<List<ApiClientResponse>>(200);
+        // A path segment that parses as an Int32 is the numeric ApiClient id. The route constraint
+        // gives this registration precedence over the client-key route below, so any other segment
+        // (letters, decimals, or digits outside Int32 range) still resolves as an OAuth client key.
+        endpoints.MapLimitedAccess("/v3/apiClients/{id:int}", GetById).Produces<ApiClientResponse>(200);
         endpoints
             .MapLimitedAccess("/v3/apiClients/{clientId}", GetByClientId)
             .Produces<ApiClientResponse>(200);
@@ -289,6 +293,30 @@ public class ApiClientModule : IEndpointModule
         return getResult switch
         {
             ApiClientQueryResult.Success success => Results.Ok(success.ApiClientResponses),
+            _ => FailureResults.Unknown(httpContext.TraceIdentifier),
+        };
+    }
+
+    /// <summary>
+    /// Resolves an ApiClient by its numeric primary key, which is the identifier the Management API
+    /// specification models for this route. Reuses the same tenant-scoped repository read that the
+    /// update, delete, and reset-credential workflows already perform. A path segment that is not a
+    /// valid Int32 never reaches here; it is routed to <see cref="GetByClientId"/> instead.
+    /// </summary>
+    private static async Task<IResult> GetById(
+        int id,
+        HttpContext httpContext,
+        IApiClientRepository apiClientRepository
+    )
+    {
+        ApiClientGetResult getResult = await apiClientRepository.GetApiClientById(id);
+        return getResult switch
+        {
+            ApiClientGetResult.Success success => Results.Ok(success.ApiClientResponse),
+            ApiClientGetResult.FailureNotFound => FailureResults.NotFound(
+                $"ApiClient with ID {id} not found.",
+                httpContext.TraceIdentifier
+            ),
             _ => FailureResults.Unknown(httpContext.TraceIdentifier),
         };
     }
