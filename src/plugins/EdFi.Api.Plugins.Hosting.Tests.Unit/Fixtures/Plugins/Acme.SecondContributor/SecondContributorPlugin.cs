@@ -55,6 +55,15 @@ public sealed class SecondContributorPlugin : EdFiApiPlugin
                 );
                 break;
 
+            case "removableContractUnderWildcardKey":
+                // The same permitted removal, against the earlier plugin's wildcard-keyed
+                // registration, which is reached by naming the key it was registered under.
+                services.RemoveAllKeyed<IAcmeRemovableContract>(KeyedService.AnyKey);
+                services.TryAddEnumerable(
+                    ServiceDescriptor.Transient<IFixtureFanInContract, SecondPluginFanIn>()
+                );
+                break;
+
             default:
                 services.AddSingleton<IAcmeThirdService, AcmeService>();
                 break;

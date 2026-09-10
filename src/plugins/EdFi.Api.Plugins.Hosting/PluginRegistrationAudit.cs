@@ -126,14 +126,28 @@ public static class PluginRegistrationAudit
                 continue;
             }
 
+            // The remedy differs by who claimed, because only one of the two is an operator's to
+            // apply. Removing all but one plugin from the allowlist resolves a claim per plugin; it
+            // cannot touch two claims made inside one plugin, where the allowlist holds a single entry
+            // and removing it takes both claims away along with everything else that plugin
+            // contributes. That case is the plugin's own defect and is addressed to its author.
+            string message =
+                claimants.Count == 1
+                    ? $"the plugin contract '{TypeNameOf(entry.Contract)}' accepts one implementation "
+                        + $"and plugin '{PluginDiagnosticText.Quote(claimants[0])}' registered {claims}. "
+                        + "No allowlist change can choose between registrations made by one plugin, so "
+                        + "the plugin has to register the contract once."
+                    : $"the plugin contract '{TypeNameOf(entry.Contract)}' accepts one implementation "
+                        + $"and {claims} were registered by {DescribePlugins(claimants)}. Only an "
+                        + "operator can decide which one should be live, so remove all but one from "
+                        + "Plugins:Allowed.";
+
             findings.Add(
                 new PluginAuditFinding(
                     PluginAuditFailure.ReplaceContractClaimedMoreThanOnce,
                     claimants,
                     entry.Contract,
-                    $"the plugin contract '{TypeNameOf(entry.Contract)}' accepts one implementation and "
-                        + $"{claims} were registered by {DescribePlugins(claimants)}. Only an operator can "
-                        + "decide which one should be live, so remove all but one from Plugins:Allowed."
+                    message
                 )
             );
         }
@@ -204,6 +218,16 @@ public static class PluginRegistrationAudit
     /// finding can honestly say, so an unattributed one names no plugin rather than inventing one.
     /// </para>
     /// <para>
+    /// Only registrations that survived composition are refused. The rationale is startup activation,
+    /// and a descriptor a later plugin removed is activated by nothing: it is absent from the
+    /// container, so the audit asserts no activation for it and there is nothing left to refuse. The
+    /// records are still read, because they are what attributes a surviving descriptor to the plugin
+    /// that registered it, but a record-sourced candidate is intersected against the composition
+    /// snapshot by reference identity first. Removing a permitted non-host descriptor stays permitted,
+    /// so a removal is nobody's fatal here either; whether the plugin left anything live is the
+    /// separate question <see cref="AuditContractsRegistered"/> answers.
+    /// </para>
+    /// <para>
     /// This says nothing about keyed registrations in general: a declared contract under a concrete
     /// key is activated and supported, and a wildcard registration of anything that is not a declared
     /// contract is ordinary permitted work that nothing here inspects.
@@ -215,6 +239,13 @@ public static class PluginRegistrationAudit
         List<PluginAuditFinding> findings
     )
     {
+        // Everything still on the collection when composition ended. The records are historical, so
+        // this is what narrows them to registrations something could actually be asked to activate.
+        HashSet<ServiceDescriptor> survivors = new(
+            input.DescriptorsAfterContribution,
+            ReferenceEqualityComparer.Instance
+        );
+
         // Records first, so a descriptor a plugin contributed is reported against that plugin, and the
         // snapshot second for whatever is left. A descriptor in both is seen once, by reference, which
         // is what keeps a surviving plugin registration from being reported twice.
@@ -223,9 +254,13 @@ public static class PluginRegistrationAudit
 
         foreach (PluginContributionRecord record in input.Records)
         {
-            // Where(seen.Add) is the filter and the de-duplication at once: the set answers false for
-            // a descriptor already taken, so each reference reaches the list under one registrant.
-            foreach (ServiceDescriptor descriptor in record.Additions.Where(seen.Add))
+            // Survival is tested before de-duplication, so a descriptor a later plugin removed is not
+            // a candidate and does not consume the reference either. Where(seen.Add) is then the
+            // second filter and the de-duplication at once: the set answers false for a descriptor
+            // already taken, so each reference reaches the list under one registrant.
+            foreach (
+                ServiceDescriptor descriptor in record.Additions.Where(survivors.Contains).Where(seen.Add)
+            )
             {
                 candidates.Add((descriptor, record.PluginName));
             }

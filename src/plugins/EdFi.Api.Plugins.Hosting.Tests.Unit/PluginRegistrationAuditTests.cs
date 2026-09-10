@@ -332,6 +332,16 @@ public class Given_two_plugins_claiming_one_replace_contract
         finding.Message.Should().Contain(PluginFixtures.SecondContributor);
         finding.Message.Should().Contain(nameof(IFixtureReplaceContract));
     }
+
+    /// <summary>
+    /// Two plugins each holding a claim is the case the allowlist resolves, and it is the operator's
+    /// to resolve rather than either author's.
+    /// </summary>
+    [Test]
+    public void It_gives_the_operator_the_allowlist_remedy()
+    {
+        _run.SingleFinding.Message.Should().Contain("remove all but one from Plugins:Allowed");
+    }
 }
 
 [TestFixture]
@@ -367,6 +377,22 @@ public class Given_one_plugin_claiming_a_replace_contract_twice
         finding.Reason.Should().Be(PluginAuditFailure.ReplaceContractClaimedMoreThanOnce);
         finding.PluginNames.Should().Equal(PluginFixtures.Contributor);
         finding.Contract.Should().Be(typeof(IFixtureReplaceContract));
+    }
+
+    /// <summary>
+    /// The remedy has to be the author's, because the operator's remedy cannot be applied here: the
+    /// allowlist holds one entry for this plugin, and removing it withdraws the plugin rather than
+    /// choosing between its two registrations.
+    /// </summary>
+    [Test]
+    public void It_tells_the_author_to_register_the_contract_once()
+    {
+        string message = _run.SingleFinding.Message;
+
+        message.Should().Contain(PluginFixtures.Contributor);
+        message.Should().Contain("registered 2");
+        message.Should().Contain("register the contract once");
+        message.Should().NotContain("remove all but one from Plugins:Allowed");
     }
 }
 
@@ -1680,6 +1706,95 @@ public class Given_a_later_plugin_removing_one_of_two_declared_contributions
         _run.Input.Records[1]
             .Removals.Should()
             .ContainSingle(removal => removal.ServiceType == typeof(IAcmeRemovableContract));
+    }
+}
+
+/// <summary>
+/// A wildcard-keyed declared contract one plugin registered and a later plugin removed. The
+/// composition that survives is entirely supported, so it is accepted.
+/// </summary>
+/// <remarks>
+/// Regression coverage for the wildcard refusal reading the historical records without intersecting
+/// them against the composition snapshot: the refusal exists because the required startup activation
+/// cannot reach a wildcard registration, and a descriptor that is no longer on the collection is
+/// activated by nothing, so refusing this composition would fail a boot on a registration that has
+/// already gone. The removable contract is the one declared outside a host-prefixed assembly, which
+/// is what makes the removal permitted, and it carries fan-in cardinality so replace-cardinality
+/// accounting, which counts historical claims on purpose, plays no part in the outcome.
+/// </remarks>
+[TestFixture]
+[NonParallelizable]
+public class Given_a_later_plugin_removing_an_earlier_plugins_wildcard_keyed_contribution
+{
+    private TemporaryPluginRoot _root = null!;
+    private AuditRun _run = null!;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        _root = TemporaryPluginRoot.Create();
+        _run = await AuditProbe.RunAsync(
+            _root,
+            "removableContractUnderWildcardKey",
+            AuditProbe.RegistryWithRemovableContract,
+            PluginFixtures.Contributor,
+            PluginFixtures.SecondContributor
+        );
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        _run.Dispose();
+        _root.Dispose();
+    }
+
+    [Test]
+    public void It_left_no_wildcard_keyed_descriptor_in_the_composition()
+    {
+        _run.Input.DescriptorsAfterContribution.Should()
+            .NotContain(descriptor => descriptor.ServiceType == typeof(IAcmeRemovableContract));
+    }
+
+    /// <summary>
+    /// And the records still say what happened. They are historical, and the check reads survival by
+    /// intersecting them against the snapshot rather than by narrowing them.
+    /// </summary>
+    [Test]
+    public void It_keeps_the_wildcard_addition_and_the_removal_in_the_records()
+    {
+        _run.Input.Records[0]
+            .Additions.Should()
+            .ContainSingle(descriptor =>
+                descriptor.ServiceType == typeof(IAcmeRemovableContract)
+                && descriptor.IsKeyedService
+                && ReferenceEquals(descriptor.ServiceKey, KeyedService.AnyKey)
+            );
+        _run.Input.Records[1]
+            .Removals.Should()
+            .ContainSingle(removal =>
+                removal.ServiceType == typeof(IAcmeRemovableContract)
+                && removal.Descriptor.IsKeyedService
+                && ReferenceEquals(removal.Descriptor.ServiceKey, KeyedService.AnyKey)
+            );
+    }
+
+    [Test]
+    public void It_is_accepted()
+    {
+        _run.Result.Findings.Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// And the boot it accepted really does activate what survived: both plugins' unkeyed fan-in
+    /// contributions, once each, with nothing resolved for the contract whose only registration is
+    /// gone.
+    /// </summary>
+    [Test]
+    public void It_activates_the_surviving_implementations()
+    {
+        FixtureObservations.CountOf("fanIn.constructed").Should().Be(1);
+        FixtureObservations.CountOf("secondFanIn.constructed").Should().Be(1);
     }
 }
 

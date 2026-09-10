@@ -247,6 +247,14 @@ public sealed class ContributorPlugin : EdFiApiPlugin
                 services.TryAddEnumerable(ServiceDescriptor.Transient<IFixtureFanInContract, FixtureFanIn>());
                 break;
 
+            case "removableContractUnderWildcardKey":
+                // The wildcard-keyed shape, on the contract a later plugin is permitted to remove.
+                // The second contribution is unkeyed and survives, so this plugin is not the one left
+                // with nothing live and what the case measures is the wildcard rule alone.
+                services.AddKeyedTransient<IAcmeRemovableContract, AcmeService>(KeyedService.AnyKey);
+                services.TryAddEnumerable(ServiceDescriptor.Transient<IFixtureFanInContract, FixtureFanIn>());
+                break;
+
             case "anyKeyOwnService":
                 // A wildcard-keyed registration of a service type no host declares a contract for,
                 // which stays ordinary permitted work.
