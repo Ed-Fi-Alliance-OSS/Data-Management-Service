@@ -1953,11 +1953,8 @@ function Invoke-ProvisionDmsSchema {
                     $invokeArgs.CdcProjectionPrerequisites = 'owned-local-sql-server'
                 }
             }
-            Invoke-DmsSchemaProvision @invokeArgs
         }
-        else {
-            Invoke-DmsSchemaProvision @invokeArgs
-        }
+        Invoke-DmsSchemaProvision @invokeArgs
 
         $null = $provisionedTargets.Add([pscustomobject]@{
             DatabaseName = $target.DatabaseName
