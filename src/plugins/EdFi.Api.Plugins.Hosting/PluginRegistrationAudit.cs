@@ -18,9 +18,19 @@ namespace EdFi.Api.Plugins.Hosting;
 /// </para>
 /// <para>
 /// Four things are checked before anything is activated and one after. The four are decided from the
-/// records and the host's contract registry alone, so a collection that is already wrong is never
-/// activated: activating registrations that a static check has already refused would run third-party
-/// constructors on a candidate the host has decided not to accept.
+/// records, the composition snapshot and the host's contract registry alone, so a collection that is
+/// already wrong is never activated: activating registrations that a static check has already refused
+/// would run third-party constructors on a candidate the host has decided not to accept.
+/// </para>
+/// <para>
+/// <strong>The composition contract this audit supports.</strong> Declared-contract registration must
+/// be finished by the moment composition ends, which is the moment
+/// <see cref="PluginAuditInput.DescriptorsAfterContribution"/> is taken. A host goes on registering
+/// after that, and unrelated infrastructure registered later is supported and unaffected. A
+/// declared-contract registration, removal or key added after that snapshot is outside what this
+/// audit undertakes to cover: the static checks reason about what the snapshot and the records hold,
+/// and the probe resolves the groups discovered from them. That is a stated boundary rather than a
+/// claim of detection, and nothing here is a promise to notice every possible later registration.
 /// </para>
 /// </remarks>
 public static class PluginRegistrationAudit
@@ -77,6 +87,14 @@ public static class PluginRegistrationAudit
     /// counting descriptors on the collection instead would refuse the case that must pass.
     /// Keyed-ness is not a way to make a second claim invisible, so every attributed descriptor for the
     /// contract counts.
+    /// <para>
+    /// The claims counted are historical: every descriptor the diffs attributed, whether or not it
+    /// survived composition. That is deliberate and is not the same accounting the no-contract check
+    /// below uses. Two plugins that each claimed one replace contract have made an operator decision
+    /// ambiguous, and a later removal of one claim does not resolve which of them the operator meant;
+    /// counting survivors instead would let the pair pass whenever the second plugin tidied up after
+    /// the first. Do not quietly align this with the survival rule below.
+    /// </para>
     /// </remarks>
     private static void AuditReplaceCardinality(PluginAuditInput input, List<PluginAuditFinding> findings)
     {
@@ -166,18 +184,30 @@ public static class PluginRegistrationAudit
     }
 
     /// <summary>
-    /// A declared contract registered under the wildcard service key cannot be activated at startup.
+    /// A declared contract registered under the wildcard service key cannot be activated at startup,
+    /// whoever registered it.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// Measured on net10.0: no enumerable resolve reaches a wildcard registration. Asking for the
     /// wildcard key returns the concrete-keyed registrations and never the wildcard itself, and asking
     /// for a concrete key enumerably returns nothing for it either. Only a single-service resolve with
     /// some concrete key reaches one, and the host holds no key to supply. So the startup activation
     /// this design requires of every declared-contract registration cannot be performed for this one
-    /// shape, and it is refused rather than passed over in silence. This says nothing about keyed
-    /// registrations in general: a declared contract under a concrete key is activated and supported,
-    /// and a wildcard registration of anything that is not a declared contract is ordinary permitted
-    /// work that nothing here inspects.
+    /// shape, and it is refused rather than passed over in silence.
+    /// </para>
+    /// <para>
+    /// There is no exemption for a registration the records do not attribute. The requirement is a
+    /// property of the registration and not of who made it: a host wildcard registration of a declared
+    /// contract is exactly as unactivatable as a plugin's, and exempting it would leave the audit
+    /// asserting an activation it never performed. What changes with attribution is only what the
+    /// finding can honestly say, so an unattributed one names no plugin rather than inventing one.
+    /// </para>
+    /// <para>
+    /// This says nothing about keyed registrations in general: a declared contract under a concrete
+    /// key is activated and supported, and a wildcard registration of anything that is not a declared
+    /// contract is ordinary permitted work that nothing here inspects.
+    /// </para>
     /// </remarks>
     private static void AuditWildcardKeyedContracts(
         PluginAuditInput input,
@@ -185,48 +215,86 @@ public static class PluginRegistrationAudit
         List<PluginAuditFinding> findings
     )
     {
+        // Records first, so a descriptor a plugin contributed is reported against that plugin, and the
+        // snapshot second for whatever is left. A descriptor in both is seen once, by reference, which
+        // is what keeps a surviving plugin registration from being reported twice.
+        HashSet<ServiceDescriptor> seen = new(ReferenceEqualityComparer.Instance);
+        List<(ServiceDescriptor Descriptor, string? PluginName)> candidates = [];
+
         foreach (PluginContributionRecord record in input.Records)
         {
-            HashSet<Type> reported = [];
-
-            foreach (ServiceDescriptor descriptor in record.Additions)
+            // Where(seen.Add) is the filter and the de-duplication at once: the set answers false for
+            // a descriptor already taken, so each reference reaches the list under one registrant.
+            foreach (ServiceDescriptor descriptor in record.Additions.Where(seen.Add))
             {
-                if (
-                    !descriptor.IsKeyedService
-                    || !ReferenceEquals(descriptor.ServiceKey, KeyedService.AnyKey)
-                    || !declaredContracts.Contains(descriptor.ServiceType)
-                    || !reported.Add(descriptor.ServiceType)
-                )
-                {
-                    continue;
-                }
-
-                findings.Add(
-                    new PluginAuditFinding(
-                        PluginAuditFailure.DeclaredContractRegisteredUnderWildcardKey,
-                        [record.PluginName],
-                        descriptor.ServiceType,
-                        $"plugin '{PluginDiagnosticText.Quote(record.PluginName)}' registered the plugin "
-                            + $"contract '{TypeNameOf(descriptor.ServiceType)}' under the wildcard service "
-                            + "key. Every declared-contract registration is resolved once at startup, and "
-                            + "a wildcard registration is reached only by resolving some concrete key, "
-                            + "which the host does not hold for it. Register the contract without a key, "
-                            + "or under a concrete key the host is given."
-                    )
-                );
+                candidates.Add((descriptor, record.PluginName));
             }
+        }
+
+        foreach (ServiceDescriptor descriptor in input.DescriptorsAfterContribution.Where(seen.Add))
+        {
+            candidates.Add((descriptor, null));
+        }
+
+        HashSet<(Type Contract, string? PluginName)> reported = [];
+
+        foreach ((ServiceDescriptor descriptor, string? pluginName) in candidates)
+        {
+            if (
+                !descriptor.IsKeyedService
+                || !ReferenceEquals(descriptor.ServiceKey, KeyedService.AnyKey)
+                || !declaredContracts.Contains(descriptor.ServiceType)
+                || !reported.Add((descriptor.ServiceType, pluginName))
+            )
+            {
+                continue;
+            }
+
+            string registrant = pluginName is null
+                ? "a registration this audit cannot attribute to a plugin"
+                : $"plugin '{PluginDiagnosticText.Quote(pluginName)}'";
+
+            findings.Add(
+                new PluginAuditFinding(
+                    PluginAuditFailure.DeclaredContractRegisteredUnderWildcardKey,
+                    pluginName is null ? [] : [pluginName],
+                    descriptor.ServiceType,
+                    $"{registrant} registered the plugin contract "
+                        + $"'{TypeNameOf(descriptor.ServiceType)}' under the wildcard service key. "
+                        + "Every declared-contract registration is resolved once at startup, and a "
+                        + "wildcard registration is reached only by resolving some concrete key, which "
+                        + "the host does not hold for it. Register the contract without a key, or "
+                        + "under a concrete key the host is given."
+                )
+            );
         }
     }
 
     /// <summary>
-    /// A plugin whose hook ran and registered no declared contract contributed nothing the host will
-    /// call.
+    /// A plugin whose hook ran and left no surviving declared-contract registration contributed
+    /// nothing the host will call.
     /// </summary>
     /// <remarks>
+    /// <para>
+    /// Measured against the composition snapshot by reference identity, not against the plugin's
+    /// additions alone. What the operator was promised is a live implementation, and a registration
+    /// another plugin later removed is not one: the host resolves the contract and gets nothing the
+    /// plugin contributed, which is the same outcome as a plugin that never registered it. Removing a
+    /// permitted non-host descriptor stays permitted, so the removal is nobody's fatal; the
+    /// composition it produces is what fails here, and it fails against the plugin left with nothing
+    /// live.
+    /// </para>
+    /// <para>
+    /// The two cases are told apart in the message rather than by a second reason code, because they
+    /// are one rule with one remedy shape and two very different first questions: whether the plugin
+    /// registered the wrong thing, or whether something else took its registration away.
+    /// </para>
+    /// <para>
     /// The rule the design states is a conjunction over both composition phases: no declared contract
     /// <em>and</em> no configuration source. Phase A does not exist yet, so only the first term is
-    /// live here; the second arrives with the story that adds that phase, and this check has to gain it
-    /// then rather than be read as already complete.
+    /// live here; the second arrives with the story that adds that phase, and this check has to gain
+    /// it then rather than be read as already complete.
+    /// </para>
     /// </remarks>
     private static void AuditContractsRegistered(
         PluginAuditInput input,
@@ -234,31 +302,57 @@ public static class PluginRegistrationAudit
         List<PluginAuditFinding> findings
     )
     {
+        HashSet<ServiceDescriptor> survivors = new(
+            input.DescriptorsAfterContribution,
+            ReferenceEqualityComparer.Instance
+        );
+
         foreach (PluginContributionRecord record in input.Records)
         {
-            if (record.Additions.Any(descriptor => declaredContracts.Contains(descriptor.ServiceType)))
+            List<ServiceDescriptor> declaredAdditions =
+            [
+                .. record.Additions.Where(descriptor => declaredContracts.Contains(descriptor.ServiceType)),
+            ];
+
+            if (declaredAdditions.Exists(survivors.Contains))
             {
                 continue;
             }
 
+            // The record keeps every addition, surviving or not, so both messages can say what the
+            // plugin actually did.
             IEnumerable<string> registered = record
                 .Additions.Select(descriptor => TypeNameOf(descriptor.ServiceType))
                 .Distinct(StringComparer.Ordinal);
 
             string registeredList = string.Join(", ", registered);
+            string whatItRegistered = registeredList.Length == 0 ? "nothing at all" : registeredList;
+
+            string message =
+                declaredAdditions.Count == 0
+                    ? $"plugin '{PluginDiagnosticText.Quote(record.PluginName)}' registered no plugin "
+                        + "contract this host declares, so nothing it contributed will ever be called. "
+                        + "It registered: "
+                        + whatItRegistered
+                        + ". The likeliest cause is a plugin allowlisted on the wrong host; a claim on "
+                        + "a replace-cardinality contract made with TryAdd also lands here, because "
+                        + "such a call declines silently and adds nothing."
+                    : $"plugin '{PluginDiagnosticText.Quote(record.PluginName)}' registered "
+                        + $"{declaredAdditions.Count} plugin contract registration(s) this host "
+                        + "declares, and none of them survived service composition, so nothing it "
+                        + "contributed will ever be called. It registered: "
+                        + whatItRegistered
+                        + ". Removing a descriptor that is neither host-owned nor part of the logging "
+                        + "pipeline is permitted, so the likeliest cause is a later plugin in "
+                        + "Plugins:Allowed removing this one's registration; reorder or remove one of "
+                        + "them.";
 
             findings.Add(
                 new PluginAuditFinding(
                     PluginAuditFailure.NoDeclaredContractRegistered,
                     [record.PluginName],
                     contract: null,
-                    $"plugin '{PluginDiagnosticText.Quote(record.PluginName)}' registered no plugin "
-                        + "contract this host declares, so nothing it contributed will ever be called. It "
-                        + "registered: "
-                        + (registeredList.Length == 0 ? "nothing at all" : registeredList)
-                        + ". The likeliest cause is a plugin allowlisted on the wrong host; a claim on a "
-                        + "replace-cardinality contract made with TryAdd also lands here, because such a "
-                        + "call declines silently and adds nothing."
+                    message
                 )
             );
         }
@@ -270,14 +364,23 @@ public static class PluginRegistrationAudit
     /// </summary>
     /// <remarks>
     /// <para>
-    /// The unit is a group: the unkeyed registrations for a contract, resolved with one
-    /// <c>GetServices</c>, and the registrations under each distinct concrete key the contract is
-    /// registered under by anyone, host included, resolved with one <c>GetKeyedServices</c> each. A
+    /// Reached only when every static check passed, so what it resolves is the surviving supported
+    /// declared-contract registrations: the ones still on the collection when composition ended,
+    /// under a key shape this audit supports. The unit is a group: the unkeyed registrations for a
+    /// contract, resolved with one <c>GetServices</c>, and the registrations under each distinct
+    /// concrete key discovered for the contract, resolved with one <c>GetKeyedServices</c> each. A
     /// group holding both a host descriptor and a plugin's under the same key is one group and one
-    /// resolve. Measured on net10.0, those groups are disjoint
-    /// and each resolve activates every descriptor in its own group exactly once, so nothing is
-    /// activated twice. The wildcard key is never resolved, for the reason
-    /// <see cref="AuditWildcardKeyedContracts"/> records.
+    /// resolve. Measured on net10.0, those groups are disjoint and each resolve activates every
+    /// descriptor in its own group exactly once, so nothing is activated twice. The wildcard key is
+    /// never resolved, for the reason <see cref="AuditWildcardKeyedContracts"/> records, and a
+    /// wildcard declared-contract registration has already been refused by the time this runs.
+    /// </para>
+    /// <para>
+    /// What it resolves is the container the host built, read through the groups the snapshot and the
+    /// records describe. It is not a re-derivation of the container's final contents, and it makes no
+    /// claim about a declared-contract registration the host added after composition ended; the
+    /// audit's supported composition contract, on the type-level remarks above, is where that
+    /// boundary is stated.
     /// </para>
     /// <para>
     /// This is an activation check and not a disposal boundary, and the difference is measured rather
@@ -327,19 +430,21 @@ public static class PluginRegistrationAudit
     }
 
     /// <summary>
-    /// The distinct concrete service keys a contract is registered under, from every source, in the
-    /// order they were registered.
+    /// The distinct concrete service keys discovered for a contract, in the order they were
+    /// registered.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// Read from the collection as it stood when composition finished <em>and</em> from what the
-    /// per-hook comparisons attributed to plugins, because neither alone is the whole set. The snapshot
-    /// is what carries a keyed registration the <em>host</em> made: it belongs to no plugin's record,
-    /// and a set derived from the records alone would form no group for its key and never resolve it,
-    /// so an unconstructible host keyed registration would pass a check that refuses the equivalent
-    /// unkeyed one. The records then add a key whose descriptor a later plugin removed, which is
-    /// permitted for a descriptor that is neither host-owned nor logging, and which is therefore absent
-    /// from the snapshot.
+    /// Discovered from the collection as it stood when composition finished <em>and</em> from what the
+    /// per-hook comparisons attributed to plugins. The snapshot is the load-bearing source: it carries
+    /// a keyed registration the <em>host</em> made, which belongs to no plugin's record, so a set
+    /// derived from the records alone would form no group for its key and never resolve it, and an
+    /// unconstructible host keyed registration would pass a check that refuses the equivalent unkeyed
+    /// one. The records are read as well so that discovery does not depend on a descriptor still being
+    /// present, which keeps this from silently changing shape when a permitted removal takes one away.
+    /// A key discovered only from a record is a key whose descriptors are all gone: its group resolves
+    /// to nothing and activates nothing, and a removed descriptor is not activatable by this or any
+    /// other route.
     /// </para>
     /// <para>
     /// Ordinary key equality, which is what the container itself compares keys with. A key is an object

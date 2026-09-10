@@ -32,8 +32,10 @@ public enum PluginAuditFailure
     HostOwnedServiceTypeClaimed,
 
     /// <summary>
-    /// A plugin's hook ran and registered no declared contract, so it contributed nothing the host will
-    /// ever call.
+    /// A plugin's hook ran and left no surviving declared-contract registration, so it contributed
+    /// nothing the host will ever call. Covers both a plugin that registered no declared contract at
+    /// all and one whose declared registrations were all removed before composition ended; the two
+    /// are told apart in the message.
     /// </summary>
     NoDeclaredContractRegistered,
 
@@ -45,7 +47,8 @@ public enum PluginAuditFailure
 
     /// <summary>
     /// A declared contract was registered under the wildcard service key, which the host cannot
-    /// activate at startup because no key it holds selects that registration.
+    /// activate at startup because no key it holds selects that registration. Refused whoever
+    /// registered it; a finding the records cannot attribute to a plugin names none.
     /// </summary>
     DeclaredContractRegisteredUnderWildcardKey,
 }
@@ -56,7 +59,9 @@ public enum PluginAuditFailure
 /// <remarks>
 /// The plugin names are the ones the host recorded as contributing to whatever the finding is about,
 /// which is not always the same as the party at fault: an activation failure can originate in a
-/// dependency no plugin registered. The message says which of the two it is claiming.
+/// dependency no plugin registered. The message says which of the two it is claiming. An empty list
+/// means the records attribute the finding to nobody, which is a statement about the evidence rather
+/// than an assertion that the host is at fault.
 /// </remarks>
 public sealed class PluginAuditFinding
 {

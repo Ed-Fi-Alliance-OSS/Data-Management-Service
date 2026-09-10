@@ -8,7 +8,7 @@ using Microsoft.Extensions.Logging;
 namespace EdFi.Api.Plugins.Hosting;
 
 /// <summary>
-/// The two service-type tests the plugin rules key on.
+/// The service-type tests the plugin rules key on.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -16,8 +16,9 @@ namespace EdFi.Api.Plugins.Hosting;
 /// coincidence: the wrapper's removal rule, which refuses a plugin editing the host's registrations,
 /// and the guard's displacement check, which refuses a plugin claiming a host service type that is no
 /// declared contract. The other rules do not use it at all - the replace-conflict rule counts claims
-/// against the host's own contract registry, and the no-contract rule intersects a plugin's additions
-/// with that same registry. A third caller, or a widening of the test itself, is the signal this has
+/// against the host's own contract registry, the no-contract rule intersects a plugin's surviving
+/// additions with that same registry, and the two logging tests key on named service types. A third
+/// caller of <see cref="IsHostOwned"/>, or a widening of the test itself, is the signal this has
 /// become a policy engine over a party the trust model says the host cannot constrain, and the answer
 /// then is the inventory record rather than another rule.
 /// </para>
@@ -124,5 +125,41 @@ internal static class HostOwnedServiceTypes
         // The fourth name is an open generic, so it is matched by definition rather than by identity:
         // a descriptor can carry either ILogger<> itself or a closed ILogger<T>.
         return serviceType.IsGenericType && serviceType.GetGenericTypeDefinition() == typeof(ILogger<>);
+    }
+
+    /// <summary>
+    /// Whether an <em>unkeyed</em> registration of <paramref name="serviceType"/> is one the host
+    /// reserves: <see cref="ILoggerFactory"/>, the non-generic <see cref="ILogger"/>, and
+    /// <see cref="ILogger{TCategoryName}"/> open or closed.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A reservation of the host's own logging services rather than a duplicate check. The rule holds
+    /// whether or not a descriptor of that exact type is already on the collection, because what it
+    /// protects is the resolution a host component performs later: an unkeyed
+    /// <c>ILoggerFactory</c> or <c>ILogger&lt;T&gt;</c> resolve takes the last registration, so a
+    /// plugin registering one wins over the host's without removing anything and without the removal
+    /// rule ever seeing a call. A closed <c>ILogger&lt;T&gt;</c> is included for the same reason and is
+    /// the narrower shape of the same displacement: it takes precedence over the host's open generic
+    /// for that one category.
+    /// </para>
+    /// <para>
+    /// <see cref="ILoggerProvider"/> is deliberately absent, which is what keeps the reservation from
+    /// becoming a ban on a plugin shipping its own sink. Providers are enumerated rather than resolved
+    /// singly, so adding one composes with the host's instead of displacing them; that is the
+    /// supported way for a plugin to reach the log. <c>ILoggingBuilder.AddSerilog</c> is that shape and
+    /// stays permitted, while <c>IServiceCollection.AddSerilog</c> can register an
+    /// <see cref="ILoggerFactory"/> and is therefore refused inside a hook by this rule.
+    /// </para>
+    /// <para>
+    /// Keyed registrations are outside this test, and the caller is what applies that: a keyed
+    /// descriptor replaces nothing the host resolves, because an unkeyed resolve never reaches one.
+    /// </para>
+    /// </remarks>
+    internal static bool IsReservedLoggingService(Type serviceType)
+    {
+        ArgumentNullException.ThrowIfNull(serviceType);
+
+        return serviceType != typeof(ILoggerProvider) && IsLoggingPipeline(serviceType);
     }
 }

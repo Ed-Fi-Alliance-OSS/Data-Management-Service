@@ -5,12 +5,14 @@
 
 using System.Collections;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace EdFi.Api.Plugins.Hosting;
 
 /// <summary>
 /// The service collection a plugin's contribution hook is handed: a pass-through that refuses a
-/// removal the plugin is not allowed to make, before the call reaches the real collection.
+/// removal the plugin is not allowed to make, and a registration of a logging service the host
+/// reserves, before the call reaches the real collection.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -18,6 +20,13 @@ namespace EdFi.Api.Plugins.Hosting;
 /// snapshotting the real collection before its hook and diffing after, which needs no wrapper; but a
 /// diff taken after the hook returned would see a removal already applied, with the host's descriptor
 /// already gone. So the removal rules sit in front of the collection and everything else delegates.
+/// </para>
+/// <para>
+/// The logging reservation is here for a different reason, and it is not that it must fire early. It
+/// is here because the post-container audit needs a logger of its own before it can report anything,
+/// so a rule that only ran there would be enforced by machinery the offending registration has already
+/// taken over. Refusing the incoming descriptor keeps the host's logging intact for the report, the
+/// same property the removal rules get from where they sit.
 /// </para>
 /// <para>
 /// It therefore hides, reorders and projects nothing, and it keeps no ledger of calls. The one thing
@@ -80,15 +89,25 @@ internal sealed class RecordingServiceCollection : IServiceCollection
         get => _inner[index];
         set
         {
-            // The descriptor at risk is the one being overwritten, not the one arriving.
+            // The incoming rule first, so the same descriptor is refused for the same reason whichever
+            // write member carried it; the slot it happens to target is what the second rule is about.
+            RefuseReservedLoggingRegistration(value);
             RefuseDisplacementOfPreExisting(DescriptorAt(index));
             _inner[index] = value;
         }
     }
 
-    public void Add(ServiceDescriptor item) => _inner.Add(item);
+    public void Add(ServiceDescriptor item)
+    {
+        RefuseReservedLoggingRegistration(item);
+        _inner.Add(item);
+    }
 
-    public void Insert(int index, ServiceDescriptor item) => _inner.Insert(index, item);
+    public void Insert(int index, ServiceDescriptor item)
+    {
+        RefuseReservedLoggingRegistration(item);
+        _inner.Insert(index, item);
+    }
 
     public void Clear()
     {
@@ -139,6 +158,47 @@ internal sealed class RecordingServiceCollection : IServiceCollection
     /// </remarks>
     private ServiceDescriptor? DescriptorAt(int index) =>
         index >= 0 && index < _inner.Count ? _inner[index] : null;
+
+    /// <summary>
+    /// Refuses an incoming unkeyed registration of a logging service the host reserves.
+    /// </summary>
+    /// <remarks>
+    /// A reservation, not duplicate detection: nothing here reads the collection, so the rule holds
+    /// whether or not the host already registered that exact service type. What it protects is the
+    /// resolve a host component makes later, which takes the last unkeyed registration, so a plugin
+    /// can displace the host's logging by adding rather than by removing and no removal rule would
+    /// ever see the call.
+    /// <para>
+    /// Keyed descriptors pass, because an unkeyed resolve reaches none of them, and so does an
+    /// <c>ILoggerProvider</c>, which is enumerated beside the host's rather than resolved instead of
+    /// it. Those two carve-outs are what keep a plugin's own sink ordinary work.
+    /// </para>
+    /// </remarks>
+    private void RefuseReservedLoggingRegistration(ServiceDescriptor? descriptor)
+    {
+        // A null descriptor is the real collection's business to report, the way an out-of-range index
+        // is: reading it here would replace its exception with one from inside the wrapper.
+        if (
+            descriptor is null
+            || descriptor.IsKeyedService
+            || !HostOwnedServiceTypes.IsReservedLoggingService(descriptor.ServiceType)
+        )
+        {
+            return;
+        }
+
+        throw Report(
+            PluginCompositionFailure.ReservedLoggingServiceRegistered,
+            $"plugin '{PluginDiagnosticText.Quote(_pluginName)}' registered "
+                + $"'{TypeNameOf(descriptor.ServiceType)}' with no service key. The host reserves its "
+                + "own unkeyed logging services, whether or not it has already registered one, because "
+                + "an unkeyed resolve takes the last registration and this one would be it. A "
+                + "plugin that wants its own sink adds an "
+                + $"'{TypeNameOf(typeof(ILoggerProvider))}' instead, which composes with the host's; a "
+                + "keyed logging registration is also permitted, because nothing the host resolves "
+                + "reaches one."
+        );
+    }
 
     private void RefuseDisplacementOfPreExisting(ServiceDescriptor? descriptor)
     {

@@ -59,11 +59,21 @@ public sealed class PluginAuditInput
     /// The descriptors on the service collection at the moment the last hook returned, in order.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// This is what lets a later check tell a descriptor no plugin contributed from one a plugin did,
+    /// and what lets it tell a registration that survived composition from one a later hook removed,
     /// without resolving the collection out of the container, which a plugin is permitted to register
-    /// its own of. What it is not is the container's final descriptor set: a host goes on registering
-    /// after composition, and anything registered then is absent here. A check that reads this must say
-    /// what it is reading rather than describing it as everything the container holds.
+    /// its own of.
+    /// </para>
+    /// <para>
+    /// What it is not is the container's final descriptor set: a host goes on registering after
+    /// composition, and anything registered then is absent here. A check that reads this must say what
+    /// it is reading rather than describing it as everything the container holds. This moment is also
+    /// the deadline the audit's composition contract sets for declared-contract registration:
+    /// unrelated infrastructure the host registers afterwards is supported and unexamined, while a
+    /// declared-contract registration or removal made after it is outside what the audit undertakes to
+    /// cover.
+    /// </para>
     /// </remarks>
     public IReadOnlyList<ServiceDescriptor> DescriptorsAfterContribution { get; }
 }

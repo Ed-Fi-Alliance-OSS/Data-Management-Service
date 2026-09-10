@@ -28,6 +28,15 @@ public enum PluginCompositionFailure
     /// </summary>
     LoggingPipelineDescriptorDisplaced,
 
+    /// <summary>
+    /// The plugin added an unkeyed registration of a logging service the host reserves:
+    /// <c>ILoggerFactory</c>, the non-generic <c>ILogger</c>, or <c>ILogger&lt;&gt;</c> open or closed.
+    /// Such a registration displaces the host's logging by winning a later single-service resolve,
+    /// without removing anything, so the removal rules never see it. Adding an <c>ILoggerProvider</c>
+    /// is untouched, and so is a keyed logging registration.
+    /// </summary>
+    ReservedLoggingServiceRegistered,
+
     /// <summary>The plugin cleared the service collection, which necessarily removes the host's own
     /// registrations.</summary>
     ServiceCollectionCleared,
