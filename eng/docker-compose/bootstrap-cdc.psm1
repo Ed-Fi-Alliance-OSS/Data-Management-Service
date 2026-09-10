@@ -154,7 +154,7 @@ function New-BootstrapCdcHandoff {
     Snapshots supplied settings with staged schemas and the selected local deployment context.
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Creates unique private configuration snapshots within the already authorized bootstrap workflow; no interactive approval surface.')]
-    param([hashtable]$Settings, [string]$InputSettingsPath, [string]$StatePath, [string]$EnvironmentFile, [string]$Project, [string]$DatabaseName)
+    param([hashtable]$Settings, [string]$InputSettingsPath, [string]$StatePath, [string]$EnvironmentFile, [string]$Project, [string]$DatabaseName, [Parameter(Mandatory)][ValidateSet('keycloak', 'self-contained')][string]$IdentityProvider)
     Import-Module (Join-Path $PSScriptRoot 'bootstrap-schema-workspace.psm1') -Force
     Import-Module (Join-Path $PSScriptRoot 'env-utility.psm1') -Force
     Import-Module (Join-Path $PSScriptRoot 'database-safety.psm1') -Force
@@ -218,6 +218,7 @@ function New-BootstrapCdcHandoff {
     $composePath = Join-Path $configurationRoot "bootstrap-$id.dms.json"
     Write-BootstrapCdcPrivateJson -Path $composePath -Value @{ services = @{ dms = @{ environment = $environment } } }
     return [pscustomobject]@{
+        IdentityProvider = $IdentityProvider.ToLowerInvariant()
         Settings = $settingsCopy; SettingsPath = $settingsPath; DmsComposePath = $composePath
         InputSettingsHash = (Get-FileHash -LiteralPath $InputSettingsPath).Hash
         DatabaseNameHash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($DatabaseName)))

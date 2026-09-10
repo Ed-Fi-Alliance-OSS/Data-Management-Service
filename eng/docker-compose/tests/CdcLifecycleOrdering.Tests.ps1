@@ -14,7 +14,7 @@ Describe 'Managed CDC deployment lifecycle ordering' {
         Import-Module (Join-Path $script:root 'cdc-lifecycle.psm1') -Force
         function New-TestHandoff {
             [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Creates isolated test files only.')]
-            param($id, $project = 'dms-local', $provider = 'postgresql')
+            param($id, $project = 'dms-local', $provider = 'postgresql', $identityProvider = 'self-contained')
             $settings = @{
                 AppSettings = @{ Datastore = $provider }
                 DataManagement = @{ DocumentCache = @{ Targets = @(@{ DataStoreId = $id }) } }
@@ -30,7 +30,7 @@ Describe 'Managed CDC deployment lifecycle ordering' {
             $settings | ConvertTo-Json -Depth 20 | Set-Content $settingsPath
             @{ services = @{ dms = @{ environment = @{ DataManagement__DocumentCache__Targets__0__DataStoreId = [string]$id; AppSettings__Datastore = $provider } } } } | ConvertTo-Json -Depth 10 | Set-Content $dmsPath
             foreach ($path in @($settingsPath, $dmsPath)) { [IO.File]::SetUnixFileMode($path, [IO.UnixFileMode]384) }
-            return @{ Settings = $settings; SettingsPath = $settingsPath; DmsComposePath = $dmsPath }
+            return @{ IdentityProvider = $identityProvider; Settings = $settings; SettingsPath = $settingsPath; DmsComposePath = $dmsPath }
         }
         function Read-TestDeployment($project = 'dms-local') {
             Get-Content (Join-Path $script:root ".cdc-deployments/$project.json") -Raw | ConvertFrom-Json -AsHashtable
@@ -124,12 +124,52 @@ Describe 'Managed CDC deployment lifecycle ordering' {
         if ($change -ne 'none') { { Get-CdcBootstrapRetryHandoff @arguments } | Should -Throw }
         else {
             $retained = Get-CdcBootstrapRetryHandoff @arguments
+            $retained.IdentityProvider | Should -Be $handoff.IdentityProvider
             $retained.SettingsPath | Should -Be $handoff.SettingsPath
             $retained.DmsComposePath | Should -Be $handoff.DmsComposePath
             $retained.Receipt.WorkflowId | Should -Be $receipt.WorkflowId
             $retained.EnvironmentFile | Should -Be $handoff.Settings.Cdc.Compose.EnvironmentFile
             (Get-Content (Join-Path $script:root '.cdc-deployments/dms-local.json') -Raw) | Should -Be $original
         }
+    }
+
+    It 'rejects a <change> identity selection before any lifecycle effects' -ForEach @(
+        @{ change = 'missing' }, @{ change = 'unsupported' }, @{ change = 'peer-missing' }, @{ change = 'peer-conflict' }
+    ) {
+        $deployment = Read-TestDeployment
+        switch ($change) {
+            'missing' { $deployment.Remove('IdentityProvider') }
+            'unsupported' { $deployment.IdentityProvider = 'other' }
+            'peer-missing' { $deployment.Entries[0].Remove('IdentityProvider') }
+            'peer-conflict' { $deployment.Entries[0].IdentityProvider = 'keycloak' }
+        }
+        $deployment | ConvertTo-Json -Depth 64 | Set-Content (Join-Path $script:root '.cdc-deployments/dms-local.json')
+        { Invoke-TestLifecycle @{ d = $true } } | Should -Throw '*IdentityProvider*Restore the original complete deployment inventory*'
+        $script:trace.Count | Should -Be 0
+    }
+
+    It 'rejects missing or conflicting provider in an incoming peer (<selection>)' -ForEach @(
+        @{ selection = '' }, @{ selection = 'keycloak' }
+    ) {
+        $original = Get-Content (Join-Path $script:root '.cdc-deployments/dms-local.json') -Raw
+        $peer = New-TestHandoff -id 44 -identityProvider $selection
+        { Register-CdcDeploymentHandoff -Handoff $peer -StatePath (Join-Path $script:root 'peer-state') } | Should -Throw
+        (Get-Content (Join-Path $script:root '.cdc-deployments/dms-local.json') -Raw) | Should -Be $original
+        $script:trace.Count | Should -Be 0
+    }
+
+    It 'rejects a conflicting explicit provider for <operation> before effects' -ForEach @(
+        @{ operation = 'start' }, @{ operation = 'stop' }, @{ operation = 'retire' }, @{ operation = 'admit' }
+    ) {
+        $parameters = @{ IdentityProvider = 'keycloak' }
+        if ($operation -in @('stop', 'retire')) { $parameters.d = $true }
+        if ($operation -eq 'retire') { $parameters.v = $true }
+        if ($operation -eq 'admit') {
+            { Invoke-CdcAdmittedHost -Project 'dms-local' -StartScript '/unused' -Parameters $parameters } | Should -Throw '*IdentityProvider conflicts*'
+        }
+        else { { Invoke-TestLifecycle $parameters } | Should -Throw '*IdentityProvider conflicts*' }
+        $script:trace.Count | Should -Be 0
+        (Read-TestDeployment).Phase | Should -Be 'Active'
     }
 
     It 'stops and verifies both connectors before worker shutdown while retaining custom roots' {

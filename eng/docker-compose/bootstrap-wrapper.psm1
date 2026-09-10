@@ -720,7 +720,10 @@ function Invoke-BootstrapWrapper {
                 throw 'Initial CDC retry requires the original bootstrap environment file.'
             }
             $effectiveEnvFile = $cdcRetry.EnvironmentFile
-            $resolvedIdentityProvider = Resolve-WrapperIdentityProvider -ExplicitProvider $IdentityProvider -ExplicitProviderSupplied:($PSBoundParameters.ContainsKey('IdentityProvider')) -EffectiveEnvironmentFile $effectiveEnvFile
+            if ($PSBoundParameters.ContainsKey('IdentityProvider') -and $IdentityProvider -ine $cdcRetry.IdentityProvider) {
+                throw 'Initial CDC retry IdentityProvider conflicts with the retained deployment.'
+            }
+            $resolvedIdentityProvider = $cdcRetry.IdentityProvider
             Assert-WrapperStagedSchemaWorkspace
         }
         else {
@@ -914,7 +917,7 @@ function Invoke-BootstrapWrapper {
         }
         else {
             if ($EnableKafkaCdc) {
-                $cdcHandoff = New-BootstrapCdcHandoff -Settings $cdcSettings -InputSettingsPath $CdcSettingsPath -StatePath $CdcBindingStatePath -EnvironmentFile $effectiveEnvFile -Project $cdcProject -DatabaseName $DataStoreDatabaseName
+                $cdcHandoff = New-BootstrapCdcHandoff -Settings $cdcSettings -InputSettingsPath $CdcSettingsPath -StatePath $CdcBindingStatePath -EnvironmentFile $effectiveEnvFile -Project $cdcProject -DatabaseName $DataStoreDatabaseName -IdentityProvider $resolvedIdentityProvider
                 $cdcHandoff | Add-Member -NotePropertyName OriginalEnvironmentFile -NotePropertyValue $callerEnvFile -Force
                 if ($OriginalEnvironmentFile) {
                     $cdcHandoff.OriginalEnvironmentFile = $OriginalEnvironmentFile

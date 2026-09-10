@@ -171,9 +171,13 @@ function Read-CdcDeployment {
         if ((Get-FileHash -LiteralPath $value.EnvironmentFile).Hash -cne $value.EnvironmentHash) { throw 'Changed environment' }
         if ($value.ComposeEnvironmentHash -cne (Get-CdcComposeEnvironmentHash)) { throw 'Changed Compose environment' }
         if (@(Get-ChildItem Env:DMS_CDC__*).Count -gt 0) { throw 'Overrides' }
-        return $value
     }
     catch { throw 'CDC deployment inventory or original configuration is missing, changed, or unreadable. Retain infrastructure and reconcile the original deployment; configuration removal is not cleanup authority.' }
+    if ($value['IdentityProvider'] -cnotin @('keycloak', 'self-contained') -or
+        @($value.Entries | Where-Object { $_['IdentityProvider'] -cne $value.IdentityProvider }).Count -gt 0) {
+        throw 'CDC deployment IdentityProvider is missing, unsupported, or contradictory. Restore the original complete deployment inventory with its retained identity-provider selection; an environment default or new override cannot recover it.'
+    }
+    return $value
 }
 
 function Register-CdcDeploymentHandoff {
@@ -183,6 +187,9 @@ function Register-CdcDeploymentHandoff {
     #>
     param($Handoff, [string]$StatePath, $Receipt)
     $Handoff = $Handoff | ConvertTo-Json -Depth 64 | ConvertFrom-Json -AsHashtable
+    if ($Handoff['IdentityProvider'] -cnotin @('keycloak', 'self-contained')) {
+        throw 'CDC handoff requires the original resolved IdentityProvider selection.'
+    }
     $settings = $Handoff.Settings
     $compose = $settings.Cdc.Compose
     $project = $compose.Project
@@ -193,6 +200,7 @@ function Register-CdcDeploymentHandoff {
             @{
                 ComposeEnvironmentHash = Get-CdcComposeEnvironmentHash
                 Version = 1; Project = $project; DatabaseEngine = $settings.AppSettings.Datastore
+                IdentityProvider = $Handoff.IdentityProvider
                 OriginalEnvironmentFile = $Handoff.OriginalEnvironmentFile
                 EnvironmentFile = $compose.EnvironmentFile; EnvironmentHash = (Get-FileHash -LiteralPath $compose.EnvironmentFile).Hash
                 ComposeFile = $compose.File; BrokerSizeOverrideFile = $compose.BrokerSizeOverrideFile
@@ -202,7 +210,8 @@ function Register-CdcDeploymentHandoff {
                 Phase = 'Active'; Entries = @()
             }
         }
-        if ($deployment.Phase -ne 'Active' -or $deployment.DatabaseEngine -cne $settings.AppSettings.Datastore -or
+        if ($deployment.IdentityProvider -cne $Handoff.IdentityProvider -or
+            $deployment.Phase -ne 'Active' -or $deployment.DatabaseEngine -cne $settings.AppSettings.Datastore -or
             $deployment.EnvironmentFile -cne $compose.EnvironmentFile -or $deployment.ComposeFile -cne $compose.File -or
             $deployment.BrokerSizeOverrideFile -cne $compose.BrokerSizeOverrideFile -or
             $deployment.WorkerKey -cne $settings.Cdc.Worker.Key -or $deployment.ConnectEndpoint -cne $settings.Cdc.ConnectEndpoint -or
@@ -215,6 +224,7 @@ function Register-CdcDeploymentHandoff {
             }
         }
         $deployment.Entries += @(@{
+            IdentityProvider = $Handoff.IdentityProvider
             SettingsPath = $Handoff.SettingsPath; SettingsHash = Get-CdcSettingsHash $Handoff.SettingsPath
             DmsComposePath = $Handoff.DmsComposePath; DmsComposeHash = (Get-FileHash -LiteralPath $Handoff.DmsComposePath).Hash
             StatePath = [IO.Path]::GetFullPath($StatePath); Generation = $settings.Cdc.Generation
@@ -255,6 +265,7 @@ function Get-CdcBootstrapRetryHandoff {
         return @{
             Settings = Get-Content -LiteralPath $entry.SettingsPath -Raw | ConvertFrom-Json -AsHashtable
             SettingsPath = $entry.SettingsPath; DmsComposePath = $entry.DmsComposePath
+            IdentityProvider = $deployment.IdentityProvider
             OriginalEnvironmentFile = $deployment.OriginalEnvironmentFile
             EnvironmentFile = $deployment.EnvironmentFile
             InputSettingsHash = $entry.Bootstrap.InputSettingsHash; DatabaseNameHash = $entry.Bootstrap.DatabaseNameHash
@@ -377,6 +388,11 @@ function Invoke-CdcAdmittedHost {
     try {
         $deployment = Read-CdcDeployment $Project
         if ($deployment.Phase -ne 'Active') { throw 'CDC deployment was stopped during admission; DMS handoff is no longer authorized.' }
+        if ($Parameters.ContainsKey('IdentityProvider') -and $Parameters.IdentityProvider -ine $deployment.IdentityProvider) {
+            throw 'CDC lifecycle IdentityProvider conflicts with the retained deployment.'
+        }
+        $Parameters = $Parameters + @{}
+        $Parameters.IdentityProvider = $deployment.IdentityProvider
         Invoke-CdcInfrastructure $StartScript $Parameters
     }
     finally { $lock.Dispose() }
@@ -392,6 +408,9 @@ function Invoke-CdcDeploymentLifecycle {
     try {
         $deployment = Read-CdcDeployment $Project
         # Explicit selection must agree; omitted values inherit the original selected environment.
+        if ($Parameters.ContainsKey('IdentityProvider') -and $Parameters.IdentityProvider -ine $deployment.IdentityProvider) {
+            throw 'CDC lifecycle IdentityProvider conflicts with the retained deployment.'
+        }
         if (($Parameters.ContainsKey('DatabaseEngine') -and $Parameters.DatabaseEngine -cne $deployment.DatabaseEngine) -or
             ($Parameters['CdcBindingStatePath'] -and @($deployment.Entries | Where-Object { $_.StatePath -ceq [IO.Path]::GetFullPath($Parameters.CdcBindingStatePath) }).Count -eq 0) -or
             ($Parameters['CdcSettingsPath'] -and @($deployment.Entries | Where-Object { $_.SettingsPath -ceq [IO.Path]::GetFullPath($Parameters.CdcSettingsPath) }).Count -eq 0)) { throw 'CDC lifecycle selection conflicts with the retained deployment.' }
@@ -411,6 +430,7 @@ function Invoke-CdcDeploymentLifecycle {
         }
         $infrastructure = @{
             EnvironmentFile = $deployment.EnvironmentFile; DatabaseEngine = $deployment.DatabaseEngine
+            IdentityProvider = $deployment.IdentityProvider
             SeparateConfigDatabase = $true; CdcKafkaInfrastructure = $true
             CdcBrokerSizeOverrideFile = $deployment.BrokerSizeOverrideFile
         }
@@ -477,6 +497,7 @@ function Invoke-CdcDeploymentLifecycle {
             $merged = Get-CdcDmsComposeHandoff $deployment
             Invoke-CdcInfrastructure $StartScript @{
                 EnvironmentFile = $deployment.EnvironmentFile; DatabaseEngine = $deployment.DatabaseEngine
+                IdentityProvider = $deployment.IdentityProvider
                 SeparateConfigDatabase = $true; DmsOnly = $true; CdcDmsComposeFile = $merged
             }
         }

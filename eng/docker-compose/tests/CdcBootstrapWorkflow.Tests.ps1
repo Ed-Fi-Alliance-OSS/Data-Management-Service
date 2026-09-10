@@ -29,13 +29,20 @@ function Get-CdcBootstrapRetryHandoff { param($Project, $StatePath, $Settings, $
 function Invoke-CdcAdmittedHost { param($Project, $StartScript, $Parameters) & $StartScript @Parameters }
 Export-ModuleMember -Function Invoke-CdcAdmittedHost, Get-CdcBootstrapRetryHandoff
 '@ | Set-Content (Join-Path $script:sandbox 'cdc-lifecycle.psm1')
+        Copy-Item (Join-Path $script:sandbox 'cdc-lifecycle.psm1') (Join-Path $script:sandbox 'cdc-lifecycle-stub.txt')
         'local=test' | Set-Content (Join-Path $script:sandbox '.env')
         @'
 function Resolve-DataStandardEnvironmentFile { param($DataStandardVersion, $BaseEnvironmentFile, $DockerComposeRoot, $OverlayPrefix) return $BaseEnvironmentFile }
 function Resolve-DatabaseEngineEnvironmentFile { param($DatabaseEngine, $BaseEnvironmentFile, $DockerComposeRoot, $SkipMssqlCmsDatabaseValidation) return $BaseEnvironmentFile }
 function Resolve-CmsDatabaseTopologyEnvironmentFile { param($BaseEnvironmentFile, $DatabaseEngine, $SeparateConfigDatabase, $DockerComposeRoot) return $BaseEnvironmentFile }
 function Confirm-CmsDatabaseTopologyAgreement { param($EnvironmentFile, $DatabaseEngine) }
-function ReadValuesFromEnvFile { param($EnvironmentFile) return @{} }
+function ReadValuesFromEnvFile { param($EnvironmentFile)
+    $values = @{}
+    foreach ($line in Get-Content $EnvironmentFile) {
+        if ($line -match '^([^=]+)=(.*)$') { $values[$Matches[1]] = $Matches[2] }
+    }
+    return $values
+}
 Export-ModuleMember -Function *
 '@ | Set-Content (Join-Path $script:sandbox 'env-utility.psm1')
 
@@ -48,14 +55,31 @@ function Read-BootstrapCdcSettings { param($Path, $DatabaseEngine)
 function Assert-BootstrapCdcOfflineOwnership { param($Project, [switch]$InfrastructureReady, $DatabaseEngine, $CmsPort)
     if (Test-Path (Join-Path $PSScriptRoot 'writer')) { throw 'Running writer' }
 }
-function New-BootstrapCdcHandoff { param($Settings, $StatePath, $EnvironmentFile, $Project)
+function New-BootstrapCdcHandoff { param($Settings, $StatePath, $EnvironmentFile, $Project, $IdentityProvider)
     if (Test-Path (Join-Path $PSScriptRoot 'retained.json')) { throw 'Replacement handoff' }
-    return [pscustomobject]@{ Settings = $Settings; DmsComposePath = (Join-Path $StatePath 'dms.json'); SettingsPath = 'settings.json'; EnvironmentFile = $EnvironmentFile }
+    $Settings.AppSettings = @{ Datastore = 'postgresql' }
+    $Settings.DataManagement = @{ DocumentCache = @{ Targets = @(@{ DataStoreId = 42 }) } }
+    $Settings.Cdc.Compose = @{ Project = $Project; EnvironmentFile = $EnvironmentFile; File = '/compose/kafka-cdc.yml'; BrokerSizeOverrideFile = (Join-Path $StatePath 'broker-size.json') }
+    $Settings.Cdc.Worker = @{ Key = 'worker'; OffsetStorageTopic = 'shared-offsets' }
+    $Settings.Cdc.ConnectEndpoint = 'http://localhost:8083/'
+    $Settings.Cdc.WorkerMetricsEndpoint = 'http://localhost:9404/metrics'
+    New-Item -ItemType Directory $StatePath -Force | Out-Null
+    $settingsPath = Join-Path $StatePath 'settings.json'
+    $dmsPath = Join-Path $StatePath 'dms.json'
+    $Settings | ConvertTo-Json -Depth 64 | Set-Content $settingsPath
+    @{ services = @{ dms = @{ environment = @{ AppSettings__Datastore = 'postgresql' } } } } | ConvertTo-Json -Depth 10 | Set-Content $dmsPath
+    foreach ($path in @($settingsPath, $dmsPath)) { [IO.File]::SetUnixFileMode($path, [IO.UnixFileMode]384) }
+    return [pscustomobject]@{ IdentityProvider = $IdentityProvider; Settings = $Settings; DmsComposePath = $dmsPath; SettingsPath = $settingsPath; EnvironmentFile = $EnvironmentFile; InputSettingsHash = 'fixture-input'; DatabaseNameHash = 'fixture-database' }
 }
 function Invoke-BootstrapCdcEnable { param($Handoff, $Receipt, $SelectedDataStoreIds, $StatePath)
     Add-Content (Join-Path $PSScriptRoot 'calls') "cdc:$($SelectedDataStoreIds -join ','):$($Receipt.CreationReceipt.Outcome):$StatePath"
     $retained = $Handoff | ConvertTo-Json -Depth 64 | ConvertFrom-Json -AsHashtable
     $retained.Receipt = $Receipt
+    if (Test-Path (Join-Path $PSScriptRoot 'real-lifecycle')) {
+        Import-Module (Join-Path $PSScriptRoot 'cdc-lifecycle.psm1')
+        Register-CdcDeploymentHandoff -Handoff $Handoff -StatePath $StatePath -Receipt $Receipt
+        return
+    }
     if (-not (Test-Path (Join-Path $PSScriptRoot 'retained.json'))) {
         $retained | ConvertTo-Json -Depth 64 | Set-Content (Join-Path $PSScriptRoot 'retained.json')
         New-Item -ItemType Directory (Join-Path $PSScriptRoot '.cdc-deployments') -Force | Out-Null
@@ -71,8 +95,10 @@ Export-ModuleMember -Function *-BootstrapCdc*
 param([switch]$InfraOnly, [switch]$DmsOnly, [switch]$EnableConfig, [string]$IdentityProvider,
     [string]$EnvironmentFile, [string]$DatabaseEngine, [switch]$SeparateConfigDatabase,
     [switch]$EnableKafkaUI, [switch]$CdcKafkaInfrastructure, [switch]$SuppressWriterGuidance,
-    [switch]$SuppressWrapperContinuationGuidance, [string]$CdcDmsComposeFile)
-$phase = if ($DmsOnly) { 'dms' } else { 'infra' }
+    [switch]$SuppressWrapperContinuationGuidance, [string]$CdcDmsComposeFile,
+    [switch]$d, [switch]$v, [switch]$RemoveBootstrap, [string]$CdcBrokerSizeOverrideFile)
+$phase = if ($d) { if ($v) { 'retire' } else { 'stop' } } elseif ($DmsOnly) { 'dms' } else { 'infra' }
+Add-Content (Join-Path $PSScriptRoot 'identities') "$phase`:$IdentityProvider"
 Add-Content (Join-Path $PSScriptRoot 'calls') "$phase`:$DatabaseEngine`:$EnableKafkaUI`:$CdcKafkaInfrastructure`:$SuppressWriterGuidance`:$CdcDmsComposeFile"
 if ($InfraOnly -and -not $SuppressWriterGuidance) { Write-Information 'early writer guidance' -InformationAction Continue }
 '@
@@ -96,9 +122,12 @@ Add-Content (Join-Path $PSScriptRoot 'calls') "seed:$($DataStoreId -join ',')"
 '@ | Set-Content (Join-Path $script:sandbox 'load-dms-seed-data.ps1')
     }
     BeforeEach {
-        foreach ($name in @('calls', 'fail', 'cancel', 'writer', 'reuse', 'mismatch', 'retained.json', '.cdc-deployments')) {
+        foreach ($name in @('calls', 'identities', 'real-lifecycle', 'fail', 'cancel', 'writer', 'reuse', 'mismatch', 'retained.json', '.cdc-deployments')) {
             Remove-Item (Join-Path $script:sandbox $name) -Recurse -Force -ErrorAction SilentlyContinue
         }
+        Get-Module -All | Where-Object { $_.Path -and $_.Path.StartsWith($script:sandbox + [IO.Path]::DirectorySeparatorChar) } | Remove-Module -Force
+        Copy-Item (Join-Path $script:sandbox 'cdc-lifecycle-stub.txt') (Join-Path $script:sandbox 'cdc-lifecycle.psm1') -Force
+        'DMS_CONFIG_IDENTITY_PROVIDER=self-contained' | Set-Content (Join-Path $script:sandbox '.env')
         $script:arguments = @{
             EnableKafkaCdc = $true; CdcSettingsPath = 'explicit.json'; CdcBindingStatePath = (Join-Path $TestDrive 'custom-state')
             SeparateConfigDatabase = $true; DataStoreDatabaseName = 'dedicated_cdc'; LoadSeedData = $true; EnableKafkaUI = $true
@@ -140,6 +169,63 @@ Add-Content (Join-Path $PSScriptRoot 'calls') "seed:$($DataStoreId -join ',')"
         @($calls | Where-Object { $_ -match '^dms:' }).Count | Should -Be 1
         $calls[-1] | Should -Be 'seed:42'
         (Get-Content (Join-Path $script:sandbox 'retained.json') -Raw) | Should -Be $retained
+    }
+
+    It 'retains the bootstrap override across <wrapper> stop, startup and teardown (<identity>)' -ForEach @(
+        @{ wrapper = 'local'; identity = 'keycloak'; environment = 'self-contained' },
+        @{ wrapper = 'published'; identity = 'keycloak'; environment = 'self-contained' },
+        @{ wrapper = 'local'; identity = 'self-contained'; environment = 'keycloak' },
+        @{ wrapper = 'published'; identity = 'self-contained'; environment = 'keycloak' }
+    ) {
+        Copy-Item (Join-Path $script:composeRoot 'cdc-lifecycle.psm1') (Join-Path $script:sandbox 'cdc-lifecycle.psm1') -Force
+        '' | Set-Content (Join-Path $script:sandbox 'real-lifecycle')
+        "DMS_CONFIG_IDENTITY_PROVIDER=$environment" | Set-Content (Join-Path $script:sandbox '.env')
+        $entryPoint = Join-Path $script:sandbox "bootstrap-$wrapper-dms.ps1"
+        & $entryPoint @script:arguments -IdentityProvider $identity
+        $inventoryPath = Join-Path $script:sandbox ".cdc-deployments/dms-$wrapper.json"
+        $deployment = Get-Content $inventoryPath -Raw | ConvertFrom-Json -AsHashtable
+        $deployment.IdentityProvider | Should -Be $identity
+        $deployment.Entries[0].IdentityProvider | Should -Be $identity
+        Mock -ModuleName cdc-lifecycle Invoke-CdcLifecycleCommand {
+            $Entry.ConnectorName = 'connector-42'
+        }
+        Mock -ModuleName cdc-lifecycle Invoke-CdcLifecycleRest {
+            if ($Path -eq 'connectors') { return @('connector-42') }
+            return @{ name = 'connector-42'; connector = @{ state = 'STOPPED' }; tasks = @() }
+        }
+        Mock -ModuleName cdc-lifecycle Invoke-CdcLifecycleDocker { return @() }
+        & $entryPoint -d
+        $before = Get-Content (Join-Path $script:sandbox 'identities') -Raw
+        { & $entryPoint -IdentityProvider $environment } | Should -Throw '*IdentityProvider conflicts*'
+        Should -Invoke -ModuleName cdc-lifecycle Invoke-CdcLifecycleCommand -Times 0 -Exactly -ParameterFilter { $Operation -ne 'stop' }
+        (Get-Content (Join-Path $script:sandbox 'identities') -Raw) | Should -Be $before
+        & $entryPoint
+        # Matching explicit selection is also accepted for later lifecycle invocations.
+        & $entryPoint -d -IdentityProvider $identity
+        & $entryPoint -IdentityProvider $identity
+        Mock -ModuleName cdc-lifecycle Invoke-CdcLifecycleRest { return @() }
+        # Avoid deleting the isolated schema workspace after the actual inventory removal.
+        Invoke-CdcDeploymentLifecycle -Project "dms-$wrapper" -StartScript (Join-Path $script:sandbox "start-$wrapper-dms.ps1") -Parameters @{ d = $true; v = $true }
+        @(Get-Content (Join-Path $script:sandbox 'identities')) | Should -Be @(
+            "infra:$identity", "dms:$identity", "stop:$identity", "infra:$identity", "dms:$identity",
+            "stop:$identity", "infra:$identity", "dms:$identity", "retire:$identity"
+        )
+        Test-Path $inventoryPath | Should -BeFalse
+    }
+
+    It 'uses the retained override on initial <wrapper> retry and rejects a conflict' -ForEach @(
+        @{ wrapper = 'local' }, @{ wrapper = 'published' }
+    ) {
+        $entryPoint = Join-Path $script:sandbox "bootstrap-$wrapper-dms.ps1"
+        '' | Set-Content (Join-Path $script:sandbox 'fail')
+        { & $entryPoint @script:arguments -IdentityProvider keycloak } | Should -Throw '*CDC unavailable*'
+        (Get-Content (Join-Path $script:sandbox 'retained.json') -Raw | ConvertFrom-Json).IdentityProvider | Should -Be 'keycloak'
+        $before = Get-Content (Join-Path $script:sandbox 'calls') -Raw
+        { & $entryPoint @script:arguments -IdentityProvider self-contained } | Should -Throw '*IdentityProvider conflicts*'
+        (Get-Content (Join-Path $script:sandbox 'calls') -Raw) | Should -Be $before
+        Remove-Item (Join-Path $script:sandbox 'fail')
+        & $entryPoint @script:arguments
+        @(Get-Content (Join-Path $script:sandbox 'identities')) | Should -Be @('infra:keycloak', 'dms:keycloak')
     }
 
     It 'suppresses DMS, seed and guidance on <failure>' -ForEach @(@{ failure = 'fail' }, @{ failure = 'cancel' }, @{ failure = 'reuse' }) {
@@ -395,14 +481,15 @@ Export-ModuleMember -Function Get-ComposeResolvedEnvValue
         { Read-BootstrapCdcSettings -Path $script:settingsFile -DatabaseEngine postgresql } | Should -Throw '*worker/metrics endpoints*'
     }
     It 'rejects the infrastructure-created database before producing a handoff' {
-        { New-BootstrapCdcHandoff -Settings $script:settings -InputSettingsPath $script:settingsFile -StatePath '/unused' -EnvironmentFile '/selected/env' -Project 'dms-local' -DatabaseName 'edfi_datamanagementservice' } | Should -Throw '*distinct from infrastructure-created*'
+        { New-BootstrapCdcHandoff -Settings $script:settings -InputSettingsPath $script:settingsFile -StatePath '/unused' -EnvironmentFile '/selected/env' -Project 'dms-local' -DatabaseName 'edfi_datamanagementservice' -IdentityProvider keycloak } | Should -Throw '*distinct from infrastructure-created*'
     }
     It 'carries identical projection and CMS settings, ordinary schemas and custom state for <provider>' -ForEach @(
         @{ provider = 'postgresql'; port = 15432 }, @{ provider = 'mssql'; port = 11433 }
     ) {
         $script:settings.AppSettings.Datastore = $provider
         $state = Join-Path $TestDrive 'custom-state'
-        $handoff = New-BootstrapCdcHandoff -Settings $script:settings -InputSettingsPath $script:settingsFile -StatePath $state -EnvironmentFile '/selected/env' -Project 'dms-published' -DatabaseName 'dedicated_cdc'
+        $handoff = New-BootstrapCdcHandoff -Settings $script:settings -InputSettingsPath $script:settingsFile -StatePath $state -EnvironmentFile '/selected/env' -Project 'dms-published' -DatabaseName 'dedicated_cdc' -IdentityProvider keycloak
+        $handoff.IdentityProvider | Should -Be 'keycloak'
         $snapshot = Get-Content $handoff.SettingsPath -Raw | ConvertFrom-Json
         $compose = Get-Content $handoff.DmsComposePath -Raw | ConvertFrom-Json
         $snapshot.Cdc.Compose.Project | Should -Be 'dms-published'
