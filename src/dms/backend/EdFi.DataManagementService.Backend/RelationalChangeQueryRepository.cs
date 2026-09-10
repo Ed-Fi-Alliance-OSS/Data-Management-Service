@@ -42,7 +42,7 @@ public sealed class RelationalChangeQueryRepository(
             cancellationToken
         );
 
-    public Task<TrackedChangeQueryResult> QueryTrackedChanges(
+    public async Task<TrackedChangeQueryResult> QueryTrackedChanges(
         ITrackedChangeQueryRequest request,
         CancellationToken cancellationToken = default
     )
@@ -68,41 +68,67 @@ public sealed class RelationalChangeQueryRepository(
         switch (authorizationOutcome)
         {
             case ReadChangesAuthorizationPlanOutcome.SecurityConfiguration securityConfiguration:
-                return Task.FromResult(
-                    new TrackedChangeQueryResult(
-                        [],
-                        null,
-                        new ChangeQueryAuthorizationFailure.SecurityConfiguration(
-                            securityConfiguration.UnavailableStrategyNames,
-                            securityConfiguration.Errors
-                        )
+                return new TrackedChangeQueryResult(
+                    [],
+                    null,
+                    new ChangeQueryAuthorizationFailure.SecurityConfiguration(
+                        securityConfiguration.UnavailableStrategyNames,
+                        securityConfiguration.Errors
                     )
                 );
             case ReadChangesAuthorizationPlanOutcome.NamespaceNoPrefixesConfigured noPrefixes:
-                return Task.FromResult(
-                    new TrackedChangeQueryResult(
-                        [],
-                        null,
-                        new ChangeQueryAuthorizationFailure.NamespaceNoPrefixesConfigured(
-                            noPrefixes.StrategyName
-                        )
+                return new TrackedChangeQueryResult(
+                    [],
+                    null,
+                    new ChangeQueryAuthorizationFailure.NamespaceNoPrefixesConfigured(noPrefixes.StrategyName)
+                );
+            case ReadChangesAuthorizationPlanOutcome.CustomViewSecurityConfiguration customViewFailure:
+                // Custom views are AND filters in CMS order: validate the views that planned and are configured
+                // ahead of the earliest planning failure first, so an earlier missing or non-conforming view
+                // surfaces its own error instead of being masked by this later planning failure.
+                await ValidateCustomViewsAsync(
+                        relationalRequest,
+                        CustomViewAuthorizationTerminalOrdering.ChecksBeforeTerminal(
+                            customViewFailure.PlannedChecks,
+                            RelationalAuthorizationPlanner.EarliestSecurityConfigurationFailureIndex(
+                                customViewFailure.Failures
+                            )
+                        ),
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+
+                return new TrackedChangeQueryResult(
+                    [],
+                    null,
+                    RelationalReadGuardrails.BuildChangeQueryCustomViewSecurityConfigurationFailure(
+                        customViewFailure.Failures
                     )
                 );
-        }
-
-        if (IsEmptyKeyChangesRequest(relationalRequest))
-        {
-            return Task.FromResult(
-                new TrackedChangeQueryResult(
-                    [],
-                    relationalRequest.PaginationParameters.TotalCount ? 0L : null
-                )
-            );
         }
 
         ReadChangesAuthorizationPlan authorizationPlan = (
             (ReadChangesAuthorizationPlanOutcome.Plan)authorizationOutcome
         ).AuthorizationPlan;
+
+        // Validate every configured custom view before any terminal, including the row-free key-change
+        // shortcut below: a misconfigured view must produce its urn:ed-fi:api:system 500 rather than a
+        // silent empty 200.
+        await ValidateCustomViewsAsync(
+                relationalRequest,
+                authorizationPlan.CustomViewChecks,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        if (IsEmptyKeyChangesRequest(relationalRequest))
+        {
+            return new TrackedChangeQueryResult(
+                [],
+                relationalRequest.PaginationParameters.TotalCount ? 0L : null
+            );
+        }
+
         TrackedChangeAuthorizationSql authorizationSql = TrackedChangeAuthorizationSqlEmitter.Emit(
             authorizationPlan,
             _commandExecutor.Dialect,
@@ -121,7 +147,7 @@ public sealed class RelationalChangeQueryRepository(
 
         if (plan.IsEmpty)
         {
-            return Task.FromResult(new TrackedChangeQueryResult([], plan.TotalCount));
+            return new TrackedChangeQueryResult([], plan.TotalCount);
         }
 
         if (
@@ -129,19 +155,49 @@ public sealed class RelationalChangeQueryRepository(
             { } failure
         )
         {
-            return Task.FromResult(new TrackedChangeQueryResult([], null, failure));
+            return new TrackedChangeQueryResult([], null, failure);
         }
 
-        return _commandExecutor.ExecuteReaderAsync(
-            plan.Command!,
-            (reader, ct) =>
-                TrackedChangeQueryRowReader.ReadAsync(
-                    reader,
-                    relationalRequest.Operation,
-                    fields,
-                    plan.IncludesTotalCount,
-                    ct
-                ),
+        return await _commandExecutor
+            .ExecuteReaderAsync(
+                plan.Command!,
+                (reader, ct) =>
+                    TrackedChangeQueryRowReader.ReadAsync(
+                        reader,
+                        relationalRequest.Operation,
+                        fields,
+                        plan.IncludesTotalCount,
+                        ct
+                    ),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Validates the resolved custom views of this request with the same per-request validator the live read
+    /// paths use, so a missing view or one without a <c>bigint DocumentId</c> column raises
+    /// <see cref="CustomViewAuthorizationValidationException"/> (the <c>urn:ed-fi:api:system</c> 500) before any
+    /// SQL that selects through it is emitted. Tombstone probe arms read DMS-owned tables and need no validation.
+    /// </summary>
+    private Task ValidateCustomViewsAsync(
+        IRelationalTrackedChangeQueryRequest request,
+        IReadOnlyList<ReadChangesCustomViewCheckSpec> customViewChecks,
+        CancellationToken cancellationToken
+    )
+    {
+        if (customViewChecks.Count == 0)
+        {
+            return Task.CompletedTask;
+        }
+
+        return CustomViewAuthorizationValidator.ValidateAsync(
+            _commandExecutor,
+            _commandExecutor.Dialect,
+            ReadChangesCustomViewValidationAdapter.Adapt(
+                request.ResourceModel.RelationalModel.Root.Table,
+                customViewChecks
+            ),
             cancellationToken
         );
     }
@@ -162,6 +218,10 @@ public sealed class RelationalChangeQueryRepository(
             authorizationPlan.NamespaceParameterization,
             authorizationPlan.ClaimParameterization
         );
+        // Everything the command binds beyond the namespace and claim lists — paging, the change-version
+        // window, the deletes query's own descriptor discriminators, and the custom-view descriptor
+        // discriminators (two per descriptor identity part or descriptor basis; custom views bind no claim
+        // parameters) — spends the same ceiling and is counted here.
         int nonAuthorizationParameterCount = command.Parameters.Count - authorizationParameterCount;
 
         if (

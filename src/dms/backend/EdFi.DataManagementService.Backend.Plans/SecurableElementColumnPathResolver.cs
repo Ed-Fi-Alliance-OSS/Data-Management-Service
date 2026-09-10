@@ -230,7 +230,11 @@ internal static class SecurableElementColumnPathResolver
 
     /// <summary>
     /// Resolves the preferred join path from a subject resource model to a basis resource, together with
-    /// the JSON paths of the reference that terminates the winning path.
+    /// the JSON paths of the reference that terminates the winning path. Only references and descriptor
+    /// edges that live on a resource's root table participate: ODS matches basis identifier properties by
+    /// name on the subject root entity, so routes through child collection tables or extension
+    /// (<c>_ext</c>) tables are not join paths (auth.md: authorization checks do not apply to collection
+    /// items or to fields added through extensions).
     /// </summary>
     public static ResolvedBasisResourcePath ResolveBasisResourcePathWithMetadata(
         ConcreteResourceModel subjectResource,
@@ -303,11 +307,15 @@ internal static class SecurableElementColumnPathResolver
         )
         {
             var foundCandidates = new List<BasisPathCandidate>();
+            var rootTable = currentModel.Root;
 
             foreach (var binding in currentModel.DocumentReferenceBindings)
             {
-                var owningTable = FindOwningTable(currentModel, binding.Table);
-                if (owningTable is null)
+                // Only root-table references are authorization subjects. ODS matches basis identifier
+                // properties by name on the subject root entity, so a reference that lives on a child
+                // collection table or an extension (_ext) table can never carry the basis join
+                // (auth.md: checks do not apply to collection items or extension fields).
+                if (!binding.Table.Equals(rootTable.Table))
                 {
                     continue;
                 }
@@ -323,7 +331,7 @@ internal static class SecurableElementColumnPathResolver
                 }
 
                 var sourceColumnName = PersonJoinPathResolver.ResolveToCanonicalColumn(
-                    owningTable,
+                    rootTable,
                     binding.FkColumn
                 );
                 var terminalMatch = IsBasisMatch(
@@ -343,26 +351,21 @@ internal static class SecurableElementColumnPathResolver
                         continue;
                     }
 
-                    var nextSteps = CreateStepsToOwningTable(currentModel, owningTable, stepsSoFar);
-                    if (nextSteps is null)
+                    var nextSteps = new List<ColumnPathStep>(stepsSoFar)
                     {
-                        continue;
-                    }
-
-                    nextSteps.Add(
                         new(
-                            owningTable.Table,
+                            rootTable.Table,
                             sourceColumnName,
                             nextResource.RelationalModel.Root.Table,
                             PersonJoinPathResolver.ResolveToCanonicalColumn(
                                 nextResource.RelationalModel.Root,
                                 RelationalNameConventions.DocumentIdColumnName
                             )
-                        )
-                    );
+                        ),
+                    };
                     var nextHops = new List<(bool IsIdentity, bool IsRequired, bool IsRoleNamed)>(hopsSoFar)
                     {
-                        GetBindingPriority((binding, currentModel)),
+                        GetBindingPriority(binding, rootTable),
                     };
                     var nextVisitedResources = new HashSet<QualifiedResourceName>(visitedResources)
                     {
@@ -375,16 +378,13 @@ internal static class SecurableElementColumnPathResolver
                     continue;
                 }
 
-                var terminalSteps = CreateStepsToOwningTable(currentModel, owningTable, stepsSoFar);
-                if (terminalSteps is null)
+                var terminalSteps = new List<ColumnPathStep>(stepsSoFar)
                 {
-                    continue;
-                }
-
-                terminalSteps.Add(new(owningTable.Table, sourceColumnName, null, null));
+                    new(rootTable.Table, sourceColumnName, null, null),
+                };
                 var terminalHops = new List<(bool IsIdentity, bool IsRequired, bool IsRoleNamed)>(hopsSoFar)
                 {
-                    GetBindingPriority((binding, currentModel)),
+                    GetBindingPriority(binding, rootTable),
                 };
 
                 foundCandidates.Add(
@@ -408,29 +408,25 @@ internal static class SecurableElementColumnPathResolver
                     continue;
                 }
 
-                var owningTable = FindOwningTable(currentModel, descriptorEdge.Table);
-                if (owningTable is null)
+                // The root-only rule above applies to descriptor edges too: a descriptor referenced only
+                // inside a collection or an extension has no identifier column on the subject root table.
+                if (!descriptorEdge.Table.Equals(rootTable.Table))
                 {
                     continue;
                 }
 
-                var descriptorSteps = CreateStepsToOwningTable(currentModel, owningTable, stepsSoFar);
-                if (descriptorSteps is null)
+                var descriptorSteps = new List<ColumnPathStep>(stepsSoFar)
                 {
-                    continue;
-                }
-
-                descriptorSteps.Add(
                     new(
-                        owningTable.Table,
-                        PersonJoinPathResolver.ResolveToCanonicalColumn(owningTable, descriptorEdge.FkColumn),
+                        rootTable.Table,
+                        PersonJoinPathResolver.ResolveToCanonicalColumn(rootTable, descriptorEdge.FkColumn),
                         DescriptorTable,
                         RelationalNameConventions.DocumentIdColumnName
-                    )
-                );
+                    ),
+                };
                 var descriptorHops = new List<(bool IsIdentity, bool IsRequired, bool IsRoleNamed)>(hopsSoFar)
                 {
-                    GetDescriptorEdgePriority(descriptorEdge, owningTable),
+                    GetDescriptorEdgePriority(descriptorEdge, rootTable),
                 };
 
                 foundCandidates.Add(
@@ -444,44 +440,6 @@ internal static class SecurableElementColumnPathResolver
             }
 
             return foundCandidates;
-        }
-
-        static DbTableModel? FindOwningTable(RelationalResourceModel model, DbTableName table) =>
-            model.TablesInDependencyOrder.FirstOrDefault(candidate => candidate.Table.Equals(table));
-
-        static List<ColumnPathStep>? CreateStepsToOwningTable(
-            RelationalResourceModel model,
-            DbTableModel owningTable,
-            IReadOnlyList<ColumnPathStep> stepsSoFar
-        )
-        {
-            var steps = new List<ColumnPathStep>(stepsSoFar);
-            if (owningTable.Table.Equals(model.Root.Table))
-            {
-                return steps;
-            }
-
-            if (owningTable.IdentityMetadata.RootScopeLocatorColumns.Count != 1)
-            {
-                return null;
-            }
-
-            steps.Add(
-                new(
-                    model.Root.Table,
-                    PersonJoinPathResolver.ResolveToCanonicalColumn(
-                        model.Root,
-                        RelationalNameConventions.DocumentIdColumnName
-                    ),
-                    owningTable.Table,
-                    PersonJoinPathResolver.ResolveToCanonicalColumn(
-                        owningTable,
-                        owningTable.IdentityMetadata.RootScopeLocatorColumns[0]
-                    )
-                )
-            );
-
-            return steps;
         }
 
         static bool IsBasisMatch(
@@ -543,28 +501,21 @@ internal static class SecurableElementColumnPathResolver
         }
 
         static (bool IsIdentity, bool IsRequired, bool IsRoleNamed) GetBindingPriority(
-            (DocumentReferenceBinding Binding, RelationalResourceModel OwningModel) bindingInfo
+            DocumentReferenceBinding binding,
+            DbTableModel owningTable
         )
         {
-            var binding = bindingInfo.Binding;
             var isRequired = binding.IsRequired;
 
             if (!isRequired)
             {
-                var owningTable = bindingInfo.OwningModel.TablesInDependencyOrder.FirstOrDefault(table =>
-                    table.Table == binding.Table
+                var fkColumn = owningTable.Columns.FirstOrDefault(column =>
+                    column.ColumnName == binding.FkColumn
                 );
 
-                if (owningTable is not null)
+                if (fkColumn is not null)
                 {
-                    var fkColumn = owningTable.Columns.FirstOrDefault(column =>
-                        column.ColumnName == binding.FkColumn
-                    );
-
-                    if (fkColumn is not null)
-                    {
-                        isRequired = !fkColumn.IsNullable;
-                    }
+                    isRequired = !fkColumn.IsNullable;
                 }
             }
 

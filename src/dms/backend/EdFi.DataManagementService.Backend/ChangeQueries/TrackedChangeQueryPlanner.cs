@@ -834,7 +834,12 @@ internal sealed class TrackedChangeQueryPlanner(SqlDialect dialect)
     private static string BuildQualifiedDiscriminator(IRelationalTrackedChangeQueryRequest request) =>
         $"{request.ResourceInfo.ProjectName.Value}:{request.ResourceInfo.ResourceName.Value}";
 
-    private static string BuildQualifiedDiscriminator(QualifiedResourceName descriptorResource) =>
+    /// <summary>
+    /// The qualified <c>dms.Descriptor.Discriminator</c> value a descriptor resource may be stored under.
+    /// Shared with <see cref="TrackedChangeAuthorizationSqlEmitter"/> so custom-view descriptor seeks bind
+    /// the same two-value discriminator shape the change-query descriptor join does.
+    /// </summary>
+    internal static string BuildQualifiedDiscriminator(QualifiedResourceName descriptorResource) =>
         $"{descriptorResource.ProjectName}:{descriptorResource.ResourceName}";
 
     private static string FormatResource(QualifiedResourceName resource) =>

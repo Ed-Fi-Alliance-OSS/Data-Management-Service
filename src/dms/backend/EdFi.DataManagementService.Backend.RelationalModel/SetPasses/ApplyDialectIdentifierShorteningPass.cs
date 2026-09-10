@@ -1389,12 +1389,28 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
         {
             var join = trackedTable.PersonJoins[index];
             var updatedPath = ShortenColumnPathSteps(join.JoinPath, dialectRules, out var pathChanged);
-            if (pathChanged)
+            var updatedPersonTable = ShortenTable(join.PersonTable, dialectRules);
+            var updatedPersonIdentityColumn = ShortenColumn(join.PersonIdentityColumn, dialectRules);
+            var updatedSourceBindingColumn = ShortenColumn(join.SourceBindingColumn, dialectRules);
+            var joinChanged =
+                pathChanged
+                || !updatedPersonTable.Equals(join.PersonTable)
+                || !updatedPersonIdentityColumn.Equals(join.PersonIdentityColumn)
+                || !updatedSourceBindingColumn.Equals(join.SourceBindingColumn);
+            if (joinChanged)
             {
                 personJoinsChanged = true;
             }
 
-            updatedPersonJoins[index] = pathChanged ? join with { JoinPath = updatedPath } : join;
+            updatedPersonJoins[index] = joinChanged
+                ? join with
+                {
+                    JoinPath = updatedPath,
+                    PersonTable = updatedPersonTable,
+                    PersonIdentityColumn = updatedPersonIdentityColumn,
+                    SourceBindingColumn = updatedSourceBindingColumn,
+                }
+                : join;
         }
 
         changed =

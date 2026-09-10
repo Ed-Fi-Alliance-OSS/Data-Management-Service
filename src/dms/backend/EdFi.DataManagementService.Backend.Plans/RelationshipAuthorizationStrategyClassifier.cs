@@ -261,15 +261,11 @@ internal static class RelationshipAuthorizationStrategyClassifier
         resolution.Outcome switch
         {
             CustomViewStrategyResolutionOutcome.UnknownBasisResource =>
-                new RelationshipAuthorizationFailureMetadata(
-                    RelationshipAuthorizationFailureKind.UnknownCustomViewBasisResource,
+                BuildUnknownCustomViewBasisResourceFailure(
                     resource,
                     configuredStrategy,
                     relationshipLocalOrder,
-                    Location: new RelationshipAuthorizationFailureLocation(
-                        AuthorizationObjectName: resolution.BasisResourceName
-                    ),
-                    Hint: $"Strategy '{configuredStrategy.StrategyName}' matches the {CustomViewConvention} custom-view convention, but its basis resource could not be resolved."
+                    resolution
                 ),
             _ => new RelationshipAuthorizationFailureMetadata(
                 RelationshipAuthorizationFailureKind.InvalidAuthorizationStrategy,
@@ -279,6 +275,28 @@ internal static class RelationshipAuthorizationStrategyClassifier
                 Hint: $"Strategy '{configuredStrategy.StrategyName}' is not a recognized built-in strategy and does not match the {CustomViewConvention} custom-view convention."
             ),
         };
+
+    /// <summary>
+    /// The security-configuration failure for a strategy name in the custom-view convention whose basis
+    /// prefix names no resource. Shared with the ReadChanges planner so both paths report the same
+    /// location and hint.
+    /// </summary>
+    internal static RelationshipAuthorizationFailureMetadata BuildUnknownCustomViewBasisResourceFailure(
+        QualifiedResourceName resource,
+        ConfiguredAuthorizationStrategy configuredStrategy,
+        int relationshipLocalOrder,
+        CustomViewStrategyResolution resolution
+    ) =>
+        new(
+            RelationshipAuthorizationFailureKind.UnknownCustomViewBasisResource,
+            resource,
+            configuredStrategy,
+            relationshipLocalOrder,
+            Location: new RelationshipAuthorizationFailureLocation(
+                AuthorizationObjectName: resolution.BasisResourceName
+            ),
+            Hint: $"Strategy '{configuredStrategy.StrategyName}' matches the {CustomViewConvention} custom-view convention, but its basis resource could not be resolved."
+        );
 
     private static bool IsNoFurtherAuthorizationRequired(string strategyName) =>
         string.Equals(
@@ -314,7 +332,13 @@ internal static class RelationshipAuthorizationStrategyClassifier
         return true;
     }
 
-    private static CustomViewStrategyResolution ResolveCustomViewStrategy(
+    /// <summary>
+    /// Resolves a strategy name against the <c>{BasisResource}With...</c> custom-view convention: every
+    /// <c>With</c> delimiter is considered, the longest resource name prefix wins, and homographs prefer
+    /// the standard project, then extension projects in endpoint order. Shared with the ReadChanges
+    /// planner so the two paths cannot drift on parsing or precedence.
+    /// </summary>
+    internal static CustomViewStrategyResolution ResolveCustomViewStrategy(
         MappingSet mappingSet,
         string strategyName
     )
@@ -410,14 +434,14 @@ internal static class RelationshipAuthorizationStrategyClassifier
             .First();
     }
 
-    private enum CustomViewStrategyResolutionOutcome
+    internal enum CustomViewStrategyResolutionOutcome
     {
         NotCustomViewConvention,
         UnknownBasisResource,
         Resolved,
     }
 
-    private sealed record CustomViewStrategyResolution(
+    internal sealed record CustomViewStrategyResolution(
         CustomViewStrategyResolutionOutcome Outcome,
         string? BasisResourceName,
         QualifiedResourceName? BasisResource

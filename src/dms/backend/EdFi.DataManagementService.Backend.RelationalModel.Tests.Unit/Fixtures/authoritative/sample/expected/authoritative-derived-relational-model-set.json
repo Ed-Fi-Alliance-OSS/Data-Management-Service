@@ -55842,6 +55842,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -55924,6 +55933,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -55993,6 +56011,15 @@
           },
           "is_nullable": false,
           "is_primary_key": true
+        },
+        {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
         },
         {
           "role": "CreatedAt",
@@ -56089,6 +56116,15 @@
           },
           "is_nullable": false,
           "is_primary_key": true
+        },
+        {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
         },
         {
           "role": "CreatedAt",
@@ -56199,6 +56235,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -56283,6 +56328,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -56365,6 +56419,15 @@
           },
           "is_nullable": false,
           "is_primary_key": true
+        },
+        {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
         },
         {
           "role": "CreatedAt",
@@ -56453,6 +56516,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -56523,6 +56595,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -56591,6 +56672,15 @@
           },
           "is_nullable": false,
           "is_primary_key": true
+        },
+        {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
         },
         {
           "role": "CreatedAt",
@@ -56673,6 +56763,15 @@
           },
           "is_nullable": false,
           "is_primary_key": true
+        },
+        {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
         },
         {
           "role": "CreatedAt",
@@ -56769,6 +56868,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -56852,6 +56960,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -56920,6 +57037,15 @@
           },
           "is_nullable": false,
           "is_primary_key": true
+        },
+        {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
         },
         {
           "role": "CreatedAt",
@@ -56992,6 +57118,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -57049,6 +57184,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -57104,6 +57248,15 @@
           },
           "is_nullable": false,
           "is_primary_key": true
+        },
+        {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
         },
         {
           "role": "CreatedAt",
@@ -57187,6 +57340,15 @@
           },
           "is_nullable": false,
           "is_primary_key": true
+        },
+        {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
         },
         {
           "role": "CreatedAt",
@@ -57287,6 +57449,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -57332,19 +57503,6 @@
           },
           "role": "Scalar",
           "origin": "Identity"
-        },
-        {
-          "old_column": "OldContact_DocumentId",
-          "new_column": "NewContact_DocumentId",
-          "source_json_path": "$.contactUniqueId",
-          "canonical_storage_column": "DocumentId",
-          "is_old_column_nullable": false,
-          "is_new_column_nullable": true,
-          "scalar_type": {
-            "kind": "Int64"
-          },
-          "role": "PersonDocumentId",
-          "origin": "SecurableElement"
         }
       ],
       "system_columns": [
@@ -57363,6 +57521,15 @@
           },
           "is_nullable": false,
           "is_primary_key": true
+        },
+        {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
         },
         {
           "role": "CreatedAt",
@@ -57433,6 +57600,15 @@
           },
           "is_nullable": false,
           "is_primary_key": true
+        },
+        {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
         },
         {
           "role": "CreatedAt",
@@ -57529,6 +57705,15 @@
           },
           "is_nullable": false,
           "is_primary_key": true
+        },
+        {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
         },
         {
           "role": "CreatedAt",
@@ -57707,6 +57892,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -57734,6 +57928,12 @@
         {
           "person_join_name": "StudentAcademicRecord_Student",
           "person_kind": "Student",
+          "person_table": {
+            "schema": "edfi",
+            "name": "Student"
+          },
+          "person_identity_column": "StudentUniqueId",
+          "source_binding_column": "StudentAcademicRecord_StudentUniqueId",
           "join_path": [
             {
               "source_table": {
@@ -57850,6 +58050,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -57913,6 +58122,15 @@
           },
           "is_nullable": false,
           "is_primary_key": true
+        },
+        {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
         },
         {
           "role": "CreatedAt",
@@ -57994,6 +58212,15 @@
           },
           "is_nullable": false,
           "is_primary_key": true
+        },
+        {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
         },
         {
           "role": "CreatedAt",
@@ -58091,6 +58318,15 @@
           },
           "is_nullable": false,
           "is_primary_key": true
+        },
+        {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
         },
         {
           "role": "CreatedAt",
@@ -58201,6 +58437,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -58215,6 +58460,12 @@
         {
           "person_join_name": "Student",
           "person_kind": "Student",
+          "person_table": {
+            "schema": "edfi",
+            "name": "Student"
+          },
+          "person_identity_column": "StudentUniqueId",
+          "source_binding_column": "Student_StudentUniqueId",
           "join_path": [
             {
               "source_table": {
@@ -58290,6 +58541,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -58359,6 +58619,15 @@
           },
           "is_nullable": false,
           "is_primary_key": true
+        },
+        {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
         },
         {
           "role": "CreatedAt",
@@ -58443,6 +58712,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -58498,6 +58776,15 @@
           },
           "is_nullable": false,
           "is_primary_key": true
+        },
+        {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
         },
         {
           "role": "CreatedAt",
@@ -58569,6 +58856,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -58638,6 +58934,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -58693,6 +58998,15 @@
           },
           "is_nullable": false,
           "is_primary_key": true
+        },
+        {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
         },
         {
           "role": "CreatedAt",
@@ -58887,6 +59201,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -58987,6 +59310,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -59057,6 +59389,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -59125,6 +59466,15 @@
           },
           "is_nullable": false,
           "is_primary_key": true
+        },
+        {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
         },
         {
           "role": "CreatedAt",
@@ -59344,6 +59694,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -59371,6 +59730,12 @@
         {
           "person_join_name": "StudentSectionAssociation_Student",
           "person_kind": "Student",
+          "person_table": {
+            "schema": "edfi",
+            "name": "Student"
+          },
+          "person_identity_column": "StudentUniqueId",
+          "source_binding_column": "StudentSectionAssociation_StudentUniqueId",
           "join_path": [
             {
               "source_table": {
@@ -59457,6 +59822,15 @@
           },
           "is_nullable": false,
           "is_primary_key": true
+        },
+        {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
         },
         {
           "role": "CreatedAt",
@@ -59569,6 +59943,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -59673,6 +60056,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -59750,6 +60142,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -59818,6 +60219,15 @@
           },
           "is_nullable": false,
           "is_primary_key": true
+        },
+        {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
         },
         {
           "role": "CreatedAt",
@@ -59890,6 +60300,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -59959,6 +60378,15 @@
           },
           "is_nullable": false,
           "is_primary_key": true
+        },
+        {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
         },
         {
           "role": "CreatedAt",
@@ -60045,6 +60473,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -60128,6 +60565,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -60222,6 +60668,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -60314,6 +60769,15 @@
           },
           "is_nullable": false,
           "is_primary_key": true
+        },
+        {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
         },
         {
           "role": "CreatedAt",
@@ -60436,6 +60900,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -60450,6 +60923,12 @@
         {
           "person_join_name": "Staff",
           "person_kind": "Staff",
+          "person_table": {
+            "schema": "edfi",
+            "name": "Staff"
+          },
+          "person_identity_column": "StaffUniqueId",
+          "source_binding_column": "Staff_StaffUniqueId",
           "join_path": [
             {
               "source_table": {
@@ -60512,6 +60991,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -60604,6 +61092,15 @@
           },
           "is_nullable": false,
           "is_primary_key": true
+        },
+        {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
         },
         {
           "role": "CreatedAt",
@@ -60726,6 +61223,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -60740,6 +61246,12 @@
         {
           "person_join_name": "Staff",
           "person_kind": "Staff",
+          "person_table": {
+            "schema": "edfi",
+            "name": "Staff"
+          },
+          "person_identity_column": "StaffUniqueId",
+          "source_binding_column": "Staff_StaffUniqueId",
           "join_path": [
             {
               "source_table": {
@@ -60815,6 +61327,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -60883,6 +61404,15 @@
           },
           "is_nullable": false,
           "is_primary_key": true
+        },
+        {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
         },
         {
           "role": "CreatedAt",
@@ -60971,6 +61501,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -61039,6 +61578,15 @@
           },
           "is_nullable": false,
           "is_primary_key": true
+        },
+        {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
         },
         {
           "role": "CreatedAt",
@@ -61111,6 +61659,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -61178,6 +61735,15 @@
           },
           "is_nullable": false,
           "is_primary_key": true
+        },
+        {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
         },
         {
           "role": "CreatedAt",
@@ -61264,6 +61830,15 @@
           },
           "is_nullable": false,
           "is_primary_key": true
+        },
+        {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
         },
         {
           "role": "CreatedAt",
@@ -61384,6 +61959,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -61405,6 +61989,12 @@
         {
           "person_join_name": "Student",
           "person_kind": "Student",
+          "person_table": {
+            "schema": "edfi",
+            "name": "Student"
+          },
+          "person_identity_column": "StudentUniqueId",
+          "source_binding_column": "Student_StudentUniqueId",
           "join_path": [
             {
               "source_table": {
@@ -61465,6 +62055,15 @@
           },
           "is_nullable": false,
           "is_primary_key": true
+        },
+        {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
         },
         {
           "role": "CreatedAt",
@@ -61565,6 +62164,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -61640,6 +62248,15 @@
           },
           "is_nullable": false,
           "is_primary_key": true
+        },
+        {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
         },
         {
           "role": "CreatedAt",
@@ -61807,6 +62424,15 @@
           },
           "is_nullable": false,
           "is_primary_key": true
+        },
+        {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
         },
         {
           "role": "CreatedAt",
@@ -62011,6 +62637,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -62210,6 +62845,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -62297,6 +62941,15 @@
           },
           "is_nullable": false,
           "is_primary_key": true
+        },
+        {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
         },
         {
           "role": "CreatedAt",
@@ -62447,6 +63100,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -62468,6 +63130,12 @@
         {
           "person_join_name": "Student",
           "person_kind": "Student",
+          "person_table": {
+            "schema": "edfi",
+            "name": "Student"
+          },
+          "person_identity_column": "StudentUniqueId",
+          "source_binding_column": "Student_StudentUniqueId",
           "join_path": [
             {
               "source_table": {
@@ -62570,6 +63238,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -62584,6 +63261,12 @@
         {
           "person_join_name": "Student",
           "person_kind": "Student",
+          "person_table": {
+            "schema": "edfi",
+            "name": "Student"
+          },
+          "person_identity_column": "StudentUniqueId",
+          "source_binding_column": "Student_StudentUniqueId",
           "join_path": [
             {
               "source_table": {
@@ -62646,6 +63329,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -62701,6 +63393,15 @@
           },
           "is_nullable": false,
           "is_primary_key": true
+        },
+        {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
         },
         {
           "role": "CreatedAt",
@@ -62810,6 +63511,15 @@
           },
           "is_nullable": false,
           "is_primary_key": true
+        },
+        {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
         },
         {
           "role": "CreatedAt",
@@ -62947,6 +63657,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -63029,6 +63748,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -63099,6 +63827,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -63137,19 +63874,6 @@
           },
           "role": "Scalar",
           "origin": "Identity"
-        },
-        {
-          "old_column": "OldStaff_DocumentId",
-          "new_column": "NewStaff_DocumentId",
-          "source_json_path": "$.staffUniqueId",
-          "canonical_storage_column": "DocumentId",
-          "is_old_column_nullable": false,
-          "is_new_column_nullable": true,
-          "scalar_type": {
-            "kind": "Int64"
-          },
-          "role": "PersonDocumentId",
-          "origin": "SecurableElement"
         }
       ],
       "system_columns": [
@@ -63168,6 +63892,15 @@
           },
           "is_nullable": false,
           "is_primary_key": true
+        },
+        {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
         },
         {
           "role": "CreatedAt",
@@ -63281,6 +64014,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -63302,6 +64044,12 @@
         {
           "person_join_name": "Staff",
           "person_kind": "Staff",
+          "person_table": {
+            "schema": "edfi",
+            "name": "Staff"
+          },
+          "person_identity_column": "StaffUniqueId",
+          "source_binding_column": "Staff_StaffUniqueId",
           "join_path": [
             {
               "source_table": {
@@ -63415,6 +64163,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -63429,6 +64186,12 @@
         {
           "person_join_name": "Staff",
           "person_kind": "Staff",
+          "person_table": {
+            "schema": "edfi",
+            "name": "Staff"
+          },
+          "person_identity_column": "StaffUniqueId",
+          "source_binding_column": "Staff_StaffUniqueId",
           "join_path": [
             {
               "source_table": {
@@ -63530,6 +64293,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -63544,6 +64316,12 @@
         {
           "person_join_name": "Staff",
           "person_kind": "Staff",
+          "person_table": {
+            "schema": "edfi",
+            "name": "Staff"
+          },
+          "person_identity_column": "StaffUniqueId",
+          "source_binding_column": "Staff_StaffUniqueId",
           "join_path": [
             {
               "source_table": {
@@ -63673,6 +64451,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -63694,6 +64481,12 @@
         {
           "person_join_name": "Staff",
           "person_kind": "Staff",
+          "person_table": {
+            "schema": "edfi",
+            "name": "Staff"
+          },
+          "person_identity_column": "StaffUniqueId",
+          "source_binding_column": "StaffUniqueId_Unified",
           "join_path": [
             {
               "source_table": {
@@ -63795,6 +64588,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -63809,6 +64611,12 @@
         {
           "person_join_name": "Staff",
           "person_kind": "Staff",
+          "person_table": {
+            "schema": "edfi",
+            "name": "Staff"
+          },
+          "person_identity_column": "StaffUniqueId",
+          "source_binding_column": "Staff_StaffUniqueId",
           "join_path": [
             {
               "source_table": {
@@ -63937,6 +64745,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -63958,6 +64775,12 @@
         {
           "person_join_name": "Staff",
           "person_kind": "Staff",
+          "person_table": {
+            "schema": "edfi",
+            "name": "Staff"
+          },
+          "person_identity_column": "StaffUniqueId",
+          "source_binding_column": "Staff_StaffUniqueId",
           "join_path": [
             {
               "source_table": {
@@ -64074,6 +64897,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -64095,6 +64927,12 @@
         {
           "person_join_name": "Staff",
           "person_kind": "Staff",
+          "person_table": {
+            "schema": "edfi",
+            "name": "Staff"
+          },
+          "person_identity_column": "StaffUniqueId",
+          "source_binding_column": "Staff_StaffUniqueId",
           "join_path": [
             {
               "source_table": {
@@ -64236,6 +65074,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -64257,6 +65104,12 @@
         {
           "person_join_name": "Staff",
           "person_kind": "Staff",
+          "person_table": {
+            "schema": "edfi",
+            "name": "Staff"
+          },
+          "person_identity_column": "StaffUniqueId",
+          "source_binding_column": "Staff_StaffUniqueId",
           "join_path": [
             {
               "source_table": {
@@ -64374,6 +65227,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -64395,6 +65257,12 @@
         {
           "person_join_name": "Staff",
           "person_kind": "Staff",
+          "person_table": {
+            "schema": "edfi",
+            "name": "Staff"
+          },
+          "person_identity_column": "StaffUniqueId",
+          "source_binding_column": "Staff_StaffUniqueId",
           "join_path": [
             {
               "source_table": {
@@ -64546,6 +65414,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -64560,6 +65437,12 @@
         {
           "person_join_name": "Staff",
           "person_kind": "Staff",
+          "person_table": {
+            "schema": "edfi",
+            "name": "Staff"
+          },
+          "person_identity_column": "StaffUniqueId",
+          "source_binding_column": "Staff_StaffUniqueId",
           "join_path": [
             {
               "source_table": {
@@ -64622,6 +65505,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -64660,19 +65552,6 @@
           },
           "role": "Scalar",
           "origin": "Identity"
-        },
-        {
-          "old_column": "OldStudent_DocumentId",
-          "new_column": "NewStudent_DocumentId",
-          "source_json_path": "$.studentUniqueId",
-          "canonical_storage_column": "DocumentId",
-          "is_old_column_nullable": false,
-          "is_new_column_nullable": true,
-          "scalar_type": {
-            "kind": "Int64"
-          },
-          "role": "PersonDocumentId",
-          "origin": "SecurableElement"
         }
       ],
       "system_columns": [
@@ -64691,6 +65570,15 @@
           },
           "is_nullable": false,
           "is_primary_key": true
+        },
+        {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
         },
         {
           "role": "CreatedAt",
@@ -64816,6 +65704,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -64837,6 +65734,12 @@
         {
           "person_join_name": "Student",
           "person_kind": "Student",
+          "person_table": {
+            "schema": "edfi",
+            "name": "Student"
+          },
+          "person_identity_column": "StudentUniqueId",
+          "source_binding_column": "Student_StudentUniqueId",
           "join_path": [
             {
               "source_table": {
@@ -64964,6 +65867,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -64978,6 +65890,12 @@
         {
           "person_join_name": "Student",
           "person_kind": "Student",
+          "person_table": {
+            "schema": "edfi",
+            "name": "Student"
+          },
+          "person_identity_column": "StudentUniqueId",
+          "source_binding_column": "Student_StudentUniqueId",
           "join_path": [
             {
               "source_table": {
@@ -65133,6 +66051,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -65154,6 +66081,12 @@
         {
           "person_join_name": "StudentAssessment_Student",
           "person_kind": "Student",
+          "person_table": {
+            "schema": "edfi",
+            "name": "Student"
+          },
+          "person_identity_column": "StudentUniqueId",
+          "source_binding_column": "StudentAssessment_StudentUniqueId",
           "join_path": [
             {
               "source_table": {
@@ -65306,6 +66239,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -65320,6 +66262,12 @@
         {
           "person_join_name": "StudentEducationOrganizationAssociation_Student",
           "person_kind": "Student",
+          "person_table": {
+            "schema": "edfi",
+            "name": "Student"
+          },
+          "person_identity_column": "StudentUniqueId",
+          "source_binding_column": "StudentUniqueId_Unified",
           "join_path": [
             {
               "source_table": {
@@ -65486,6 +66434,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -65500,6 +66457,12 @@
         {
           "person_join_name": "StudentAssessmentRegistration_StudentEducationOrganizationAssociation_Student",
           "person_kind": "Student",
+          "person_table": {
+            "schema": "edfi",
+            "name": "Student"
+          },
+          "person_identity_column": "StudentUniqueId",
+          "source_binding_column": "StudentAssessmentRegistration_StudentUniqueId",
           "join_path": [
             {
               "source_table": {
@@ -65677,6 +66640,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -65698,6 +66670,12 @@
         {
           "person_join_name": "Student",
           "person_kind": "Student",
+          "person_table": {
+            "schema": "edfi",
+            "name": "Student"
+          },
+          "person_identity_column": "StudentUniqueId",
+          "source_binding_column": "Student_StudentUniqueId",
           "join_path": [
             {
               "source_table": {
@@ -65811,6 +66789,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -65825,6 +66812,12 @@
         {
           "person_join_name": "Student",
           "person_kind": "Student",
+          "person_table": {
+            "schema": "edfi",
+            "name": "Student"
+          },
+          "person_identity_column": "StudentUniqueId",
+          "source_binding_column": "Student_StudentUniqueId",
           "join_path": [
             {
               "source_table": {
@@ -66019,6 +67012,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -66046,6 +67048,12 @@
         {
           "person_join_name": "Student",
           "person_kind": "Student",
+          "person_table": {
+            "schema": "edfi",
+            "name": "Student"
+          },
+          "person_identity_column": "StudentUniqueId",
+          "source_binding_column": "Student_StudentUniqueId",
           "join_path": [
             {
               "source_table": {
@@ -66148,6 +67156,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -66162,6 +67179,12 @@
         {
           "person_join_name": "Contact",
           "person_kind": "Contact",
+          "person_table": {
+            "schema": "edfi",
+            "name": "Contact"
+          },
+          "person_identity_column": "ContactUniqueId",
+          "source_binding_column": "Contact_ContactUniqueId",
           "join_path": [
             {
               "source_table": {
@@ -66180,6 +67203,12 @@
         {
           "person_join_name": "Student",
           "person_kind": "Student",
+          "person_table": {
+            "schema": "edfi",
+            "name": "Student"
+          },
+          "person_identity_column": "StudentUniqueId",
+          "source_binding_column": "Student_StudentUniqueId",
           "join_path": [
             {
               "source_table": {
@@ -66309,6 +67338,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -66330,6 +67368,12 @@
         {
           "person_join_name": "Student",
           "person_kind": "Student",
+          "person_table": {
+            "schema": "edfi",
+            "name": "Student"
+          },
+          "person_identity_column": "StudentUniqueId",
+          "source_binding_column": "Student_StudentUniqueId",
           "join_path": [
             {
               "source_table": {
@@ -66431,6 +67475,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -66445,6 +67498,12 @@
         {
           "person_join_name": "Student",
           "person_kind": "Student",
+          "person_table": {
+            "schema": "edfi",
+            "name": "Student"
+          },
+          "person_identity_column": "StudentUniqueId",
+          "source_binding_column": "Student_StudentUniqueId",
           "join_path": [
             {
               "source_table": {
@@ -66533,6 +67592,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -66547,6 +67615,12 @@
         {
           "person_join_name": "Student",
           "person_kind": "Student",
+          "person_table": {
+            "schema": "edfi",
+            "name": "Student"
+          },
+          "person_identity_column": "StudentUniqueId",
+          "source_binding_column": "Student_StudentUniqueId",
           "join_path": [
             {
               "source_table": {
@@ -66635,6 +67709,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -66649,6 +67732,12 @@
         {
           "person_join_name": "Student",
           "person_kind": "Student",
+          "person_table": {
+            "schema": "edfi",
+            "name": "Student"
+          },
+          "person_identity_column": "StudentUniqueId",
+          "source_binding_column": "Student_StudentUniqueId",
           "join_path": [
             {
               "source_table": {
@@ -66777,6 +67866,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -66798,6 +67896,12 @@
         {
           "person_join_name": "Student",
           "person_kind": "Student",
+          "person_table": {
+            "schema": "edfi",
+            "name": "Student"
+          },
+          "person_identity_column": "StudentUniqueId",
+          "source_binding_column": "Student_StudentUniqueId",
           "join_path": [
             {
               "source_table": {
@@ -66900,6 +68004,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -66914,6 +68027,12 @@
         {
           "person_join_name": "Student",
           "person_kind": "Student",
+          "person_table": {
+            "schema": "edfi",
+            "name": "Student"
+          },
+          "person_identity_column": "StudentUniqueId",
+          "source_binding_column": "Student_StudentUniqueId",
           "join_path": [
             {
               "source_table": {
@@ -67002,6 +68121,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -67016,6 +68144,12 @@
         {
           "person_join_name": "Student",
           "person_kind": "Student",
+          "person_table": {
+            "schema": "edfi",
+            "name": "Student"
+          },
+          "person_identity_column": "StudentUniqueId",
+          "source_binding_column": "Student_StudentUniqueId",
           "join_path": [
             {
               "source_table": {
@@ -67169,6 +68303,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -67190,6 +68333,12 @@
         {
           "person_join_name": "Student",
           "person_kind": "Student",
+          "person_table": {
+            "schema": "edfi",
+            "name": "Student"
+          },
+          "person_identity_column": "StudentUniqueId",
+          "source_binding_column": "Student_StudentUniqueId",
           "join_path": [
             {
               "source_table": {
@@ -67291,6 +68440,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -67305,6 +68463,12 @@
         {
           "person_join_name": "Student",
           "person_kind": "Student",
+          "person_table": {
+            "schema": "edfi",
+            "name": "Student"
+          },
+          "person_identity_column": "StudentUniqueId",
+          "source_binding_column": "Student_StudentUniqueId",
           "join_path": [
             {
               "source_table": {
@@ -67446,6 +68610,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -67467,6 +68640,12 @@
         {
           "person_join_name": "Student",
           "person_kind": "Student",
+          "person_table": {
+            "schema": "edfi",
+            "name": "Student"
+          },
+          "person_identity_column": "StudentUniqueId",
+          "source_binding_column": "Student_StudentUniqueId",
           "join_path": [
             {
               "source_table": {
@@ -67620,6 +68799,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -67641,6 +68829,12 @@
         {
           "person_join_name": "Student",
           "person_kind": "Student",
+          "person_table": {
+            "schema": "edfi",
+            "name": "Student"
+          },
+          "person_identity_column": "StudentUniqueId",
+          "source_binding_column": "Student_StudentUniqueId",
           "join_path": [
             {
               "source_table": {
@@ -67794,6 +68988,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -67815,6 +69018,12 @@
         {
           "person_join_name": "Student",
           "person_kind": "Student",
+          "person_table": {
+            "schema": "edfi",
+            "name": "Student"
+          },
+          "person_identity_column": "StudentUniqueId",
+          "source_binding_column": "Student_StudentUniqueId",
           "join_path": [
             {
               "source_table": {
@@ -67968,6 +69177,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -67989,6 +69207,12 @@
         {
           "person_join_name": "Student",
           "person_kind": "Student",
+          "person_table": {
+            "schema": "edfi",
+            "name": "Student"
+          },
+          "person_identity_column": "StudentUniqueId",
+          "source_binding_column": "Student_StudentUniqueId",
           "join_path": [
             {
               "source_table": {
@@ -68142,6 +69366,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -68163,6 +69396,12 @@
         {
           "person_join_name": "Student",
           "person_kind": "Student",
+          "person_table": {
+            "schema": "edfi",
+            "name": "Student"
+          },
+          "person_identity_column": "StudentUniqueId",
+          "source_binding_column": "Student_StudentUniqueId",
           "join_path": [
             {
               "source_table": {
@@ -68344,6 +69583,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -68371,6 +69619,12 @@
         {
           "person_join_name": "Student",
           "person_kind": "Student",
+          "person_table": {
+            "schema": "edfi",
+            "name": "Student"
+          },
+          "person_identity_column": "StudentUniqueId",
+          "source_binding_column": "Student_StudentUniqueId",
           "join_path": [
             {
               "source_table": {
@@ -68581,6 +69835,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -68614,6 +69877,12 @@
         {
           "person_join_name": "Student",
           "person_kind": "Student",
+          "person_table": {
+            "schema": "edfi",
+            "name": "Student"
+          },
+          "person_identity_column": "StudentUniqueId",
+          "source_binding_column": "Student_StudentUniqueId",
           "join_path": [
             {
               "source_table": {
@@ -68715,6 +69984,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -68729,6 +70007,12 @@
         {
           "person_join_name": "Student",
           "person_kind": "Student",
+          "person_table": {
+            "schema": "edfi",
+            "name": "Student"
+          },
+          "person_identity_column": "StudentUniqueId",
+          "source_binding_column": "Student_StudentUniqueId",
           "join_path": [
             {
               "source_table": {
@@ -68883,6 +70167,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -68904,6 +70197,12 @@
         {
           "person_join_name": "Student",
           "person_kind": "Student",
+          "person_table": {
+            "schema": "edfi",
+            "name": "Student"
+          },
+          "person_identity_column": "StudentUniqueId",
+          "source_binding_column": "Student_StudentUniqueId",
           "join_path": [
             {
               "source_table": {
@@ -69057,6 +70356,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -69078,6 +70386,12 @@
         {
           "person_join_name": "Student",
           "person_kind": "Student",
+          "person_table": {
+            "schema": "edfi",
+            "name": "Student"
+          },
+          "person_identity_column": "StudentUniqueId",
+          "source_binding_column": "Student_StudentUniqueId",
           "join_path": [
             {
               "source_table": {
@@ -69231,6 +70545,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -69252,6 +70575,12 @@
         {
           "person_join_name": "Student",
           "person_kind": "Student",
+          "person_table": {
+            "schema": "edfi",
+            "name": "Student"
+          },
+          "person_identity_column": "StudentUniqueId",
+          "source_binding_column": "Student_StudentUniqueId",
           "join_path": [
             {
               "source_table": {
@@ -69403,6 +70732,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -69417,6 +70755,12 @@
         {
           "person_join_name": "Student",
           "person_kind": "Student",
+          "person_table": {
+            "schema": "edfi",
+            "name": "Student"
+          },
+          "person_identity_column": "StudentUniqueId",
+          "source_binding_column": "Student_StudentUniqueId",
           "join_path": [
             {
               "source_table": {
@@ -69596,6 +70940,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -69617,6 +70970,12 @@
         {
           "person_join_name": "Student",
           "person_kind": "Student",
+          "person_table": {
+            "schema": "edfi",
+            "name": "Student"
+          },
+          "person_identity_column": "StudentUniqueId",
+          "source_binding_column": "Student_StudentUniqueId",
           "join_path": [
             {
               "source_table": {
@@ -69770,6 +71129,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -69791,6 +71159,12 @@
         {
           "person_join_name": "Student",
           "person_kind": "Student",
+          "person_table": {
+            "schema": "edfi",
+            "name": "Student"
+          },
+          "person_identity_column": "StudentUniqueId",
+          "source_binding_column": "Student_StudentUniqueId",
           "join_path": [
             {
               "source_table": {
@@ -69944,6 +71318,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -69965,6 +71348,12 @@
         {
           "person_join_name": "Student",
           "person_kind": "Student",
+          "person_table": {
+            "schema": "edfi",
+            "name": "Student"
+          },
+          "person_identity_column": "StudentUniqueId",
+          "source_binding_column": "Student_StudentUniqueId",
           "join_path": [
             {
               "source_table": {
@@ -70118,6 +71507,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -70139,6 +71537,12 @@
         {
           "person_join_name": "Student",
           "person_kind": "Student",
+          "person_table": {
+            "schema": "edfi",
+            "name": "Student"
+          },
+          "person_identity_column": "StudentUniqueId",
+          "source_binding_column": "Student_StudentUniqueId",
           "join_path": [
             {
               "source_table": {
@@ -70227,6 +71631,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -70241,6 +71654,12 @@
         {
           "person_join_name": "Student",
           "person_kind": "Student",
+          "person_table": {
+            "schema": "edfi",
+            "name": "Student"
+          },
+          "person_identity_column": "StudentUniqueId",
+          "source_binding_column": "Student_StudentUniqueId",
           "join_path": [
             {
               "source_table": {
@@ -70315,6 +71734,15 @@
           },
           "is_nullable": false,
           "is_primary_key": true
+        },
+        {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
         },
         {
           "role": "CreatedAt",
@@ -70411,6 +71839,15 @@
           },
           "is_nullable": false,
           "is_primary_key": true
+        },
+        {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
         },
         {
           "role": "CreatedAt",
@@ -70537,6 +71974,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -70628,6 +72074,15 @@
           },
           "is_nullable": false,
           "is_primary_key": true
+        },
+        {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
         },
         {
           "role": "CreatedAt",
@@ -70729,6 +72184,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -70811,6 +72275,15 @@
           },
           "is_nullable": false,
           "is_primary_key": true
+        },
+        {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
         },
         {
           "role": "CreatedAt",
@@ -70907,6 +72380,15 @@
           },
           "is_nullable": false,
           "is_primary_key": true
+        },
+        {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
         },
         {
           "role": "CreatedAt",
@@ -71019,6 +72501,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -71033,6 +72524,12 @@
         {
           "person_join_name": "Staff",
           "person_kind": "Staff",
+          "person_table": {
+            "schema": "edfi",
+            "name": "Staff"
+          },
+          "person_identity_column": "StaffUniqueId",
+          "source_binding_column": "Staff_StaffUniqueId",
           "join_path": [
             {
               "source_table": {
@@ -71120,6 +72617,15 @@
           },
           "is_nullable": false,
           "is_primary_key": true
+        },
+        {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
         },
         {
           "role": "CreatedAt",
@@ -71256,6 +72762,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -71353,6 +72868,15 @@
           },
           "is_nullable": false,
           "is_primary_key": true
+        },
+        {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
         },
         {
           "role": "CreatedAt",
@@ -71464,6 +72988,15 @@
           },
           "is_nullable": false,
           "is_primary_key": true
+        },
+        {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
         },
         {
           "role": "CreatedAt",
@@ -71591,6 +73124,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -71605,6 +73147,12 @@
         {
           "person_join_name": "Staff",
           "person_kind": "Staff",
+          "person_table": {
+            "schema": "edfi",
+            "name": "Staff"
+          },
+          "person_identity_column": "StaffUniqueId",
+          "source_binding_column": "Staff_StaffUniqueId",
           "join_path": [
             {
               "source_table": {
@@ -71666,6 +73214,15 @@
           },
           "is_nullable": false,
           "is_primary_key": true
+        },
+        {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
         },
         {
           "role": "CreatedAt",
@@ -71736,6 +73293,15 @@
           },
           "is_nullable": false,
           "is_primary_key": true
+        },
+        {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
         },
         {
           "role": "CreatedAt",
@@ -71886,6 +73452,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -71907,6 +73482,12 @@
         {
           "person_join_name": "Student",
           "person_kind": "Student",
+          "person_table": {
+            "schema": "edfi",
+            "name": "Student"
+          },
+          "person_identity_column": "StudentUniqueId",
+          "source_binding_column": "Student_StudentUniqueId",
           "join_path": [
             {
               "source_table": {
@@ -72035,6 +73616,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {
@@ -72056,6 +73646,12 @@
         {
           "person_join_name": "Student",
           "person_kind": "Student",
+          "person_table": {
+            "schema": "edfi",
+            "name": "Student"
+          },
+          "person_identity_column": "StudentUniqueId",
+          "source_binding_column": "Student_StudentUniqueId",
           "join_path": [
             {
               "source_table": {

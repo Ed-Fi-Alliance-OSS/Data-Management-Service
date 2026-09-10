@@ -705,19 +705,7 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
         ChangeVersionRange? changeVersionRange = null
     )
     {
-        var commandExecutor = new MssqlRelationalCommandExecutor(
-            async ct =>
-            {
-                var connection = new SqlConnection(_database.ConnectionString);
-                await connection.OpenAsync(ct);
-                return connection;
-            },
-            NullLogger<MssqlRelationalCommandExecutor>.Instance
-        );
-        var repository = new RelationalChangeQueryRepository(
-            commandExecutor,
-            new MssqlRelationalParameterConfigurator()
-        );
+        RelationalChangeQueryRepository repository = CreateChangeQueryRepository();
         var request = new TestTrackedChangeQueryRequest(
             ResourceInfo: resourceInfo,
             Operation: operation,
@@ -1068,6 +1056,8 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
         "Ed-Fi:NonMedicalImmunizationExemptionDescriptor";
 
     private static readonly QualifiedResourceName DisciplineActionResource = new("Ed-Fi", "DisciplineAction");
+    private static readonly QualifiedResourceName StudentResource = new("Ed-Fi", "Student");
+    private static readonly QualifiedResourceName GradeResource = new("Ed-Fi", "Grade");
     private static readonly QualifiedResourceName StudentHealthResource = new("Ed-Fi", "StudentHealth");
     private static readonly QualifiedResourceName SurveyResource = new("Ed-Fi", "Survey");
     private static readonly QualifiedResourceName CrisisTypeDescriptorResource = new(
@@ -1257,6 +1247,99 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
             .GetValue<string>()
             .Should()
             .Be("DA-Students-1");
+    }
+
+    // ── Person resource's own tombstone: DocumentId system column (DMS-1193) ──
+
+    [Test]
+    public async Task ReadChanges_returns_a_deleted_student_through_its_document_id_system_column()
+    {
+        // A person resource's own tombstone carries no self person value column; the trigger writes the
+        // deleted row's DocumentId into the DocumentId system column and the ReadChanges planner
+        // authorizes the self person path through it.
+        const string studentUniqueId = "STU-DocumentId-System-Column";
+        short studentResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "Student");
+        long studentDocumentId = await InsertDocumentAsync(Guid.NewGuid(), studentResourceKeyId);
+        await InsertStudentRootAsync(studentDocumentId, studentUniqueId);
+
+        await InsertAuthEdOrgTupleAsync(AuthClaimEdOrgId, AuthClaimEdOrgId);
+        await InsertTrackedStudentSchoolAssociationAsync(AuthClaimEdOrgId, studentDocumentId);
+
+        await DeleteStudentRootAsync(studentDocumentId);
+
+        long trackedDocumentId = await _database.ExecuteScalarAsync<long>(
+            """
+            SELECT [DocumentId]
+            FROM [tracked_changes_edfi].[Student]
+            WHERE [OldStudentUniqueId] = @studentUniqueId;
+            """,
+            new SqlParameter("@studentUniqueId", studentUniqueId)
+        );
+        trackedDocumentId.Should().Be(studentDocumentId);
+
+        TrackedChangeQueryResult result = await QueryDeletesAsync(
+            StudentResource,
+            [AuthClaimEdOrgId],
+            "RelationshipsWithEdOrgsAndPeopleIncludingDeletes"
+        );
+
+        result.Items.Should().ContainSingle();
+        result.Items[0]!["keyValues"]!["studentUniqueId"]!.GetValue<string>().Should().Be(studentUniqueId);
+
+        TrackedChangeQueryResult unauthorized = await QueryDeletesAsync(
+            StudentResource,
+            [AuthOtherEdOrgId],
+            "RelationshipsWithEdOrgsAndPeopleIncludingDeletes"
+        );
+        unauthorized.Items.Should().BeEmpty();
+    }
+
+    // ── Person DocumentId by natural-key seek under a cascading key change (DMS-1193 Task 44) ──
+
+    [Test]
+    public async Task ReadChanges_keychanges_records_the_old_person_when_a_cascade_repoints_the_association()
+    {
+        // Grade's person column is filled by seeking edfi.Student on the old row's own
+        // StudentSectionAssociation_StudentUniqueId. Hopping through the live association would read the
+        // already re-pointed row and record student B as the "old" person, hiding the key change from a
+        // claim that covers only student A.
+        const string studentA = "STU-Seek-A";
+        const string studentB = "STU-Seek-B";
+
+        await SeedGradeChainReferenceDataAsync();
+        short studentResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "Student");
+        long studentADocumentId = await InsertDocumentAsync(Guid.NewGuid(), studentResourceKeyId);
+        await InsertStudentRootAsync(studentADocumentId, studentA);
+        long studentBDocumentId = await InsertDocumentAsync(Guid.NewGuid(), studentResourceKeyId);
+        await InsertStudentRootAsync(studentBDocumentId, studentB);
+        SectionChainSeed chain = await InsertSectionChainAsync();
+        long associationDocumentId = await InsertStudentSectionAssociationRootAsync(
+            chain,
+            studentADocumentId,
+            studentA
+        );
+        await InsertGradeRootAsync(chain, associationDocumentId, studentA);
+
+        // Only student A is enrolled at the school for the IncludingDeletes people view.
+        await InsertAuthEdOrgTupleAsync(SchoolId, SchoolId);
+        await InsertTrackedStudentSchoolAssociationAsync(SchoolId, studentADocumentId);
+
+        await RepointStudentSectionAssociationAsync(associationDocumentId, studentBDocumentId, studentB);
+
+        (long oldPersonDocumentId, long newPersonDocumentId) =
+            await ReadGradeKeyChangePersonDocumentIdsAsync();
+        oldPersonDocumentId.Should().Be(studentADocumentId, "the old row carries student A's unique id");
+        newPersonDocumentId.Should().Be(studentBDocumentId, "the new row carries student B's unique id");
+
+        TrackedChangeQueryResult result = await QueryKeyChangesAsync(
+            GradeResource,
+            [SchoolId],
+            "RelationshipsWithEdOrgsAndPeopleIncludingDeletes"
+        );
+
+        result.Items.Should().ContainSingle();
+        result.Items[0]!["oldKeyValues"]!["studentUniqueId"]!.GetValue<string>().Should().Be(studentA);
+        result.Items[0]!["newKeyValues"]!["studentUniqueId"]!.GetValue<string>().Should().Be(studentB);
     }
 
     // ── Relationships with students only through responsibility (incl. deletes) ──
@@ -1699,19 +1782,7 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
         TraceId traceId
     )
     {
-        var commandExecutor = new MssqlRelationalCommandExecutor(
-            async ct =>
-            {
-                var connection = new SqlConnection(_database.ConnectionString);
-                await connection.OpenAsync(ct);
-                return connection;
-            },
-            NullLogger<MssqlRelationalCommandExecutor>.Instance
-        );
-        var repository = new RelationalChangeQueryRepository(
-            commandExecutor,
-            new MssqlRelationalParameterConfigurator()
-        );
+        RelationalChangeQueryRepository repository = CreateChangeQueryRepository();
         var request = new TestTrackedChangeQueryRequest(
             ResourceInfo: resourceInfo,
             Operation: operation,
@@ -1755,6 +1826,422 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
 
     // ── Authorization seed helpers ────────────────────────────────────────
 
+    // ── Grade chain seeding (DMS-1193 Task 44) ──────────────────────────
+
+    private const int SeekSchoolYear = 2025;
+    private const string SeekCourseCode = "SEEK-101";
+    private const string SeekSessionName = "Seek Fall";
+    private const string SeekLocalCourseCode = "SEEK-101-L";
+    private const string SeekSectionIdentifier = "SEEK-SEC-1";
+    private const string SeekGradingPeriodName = "Seek GP1";
+    private const string SeekTermDescriptorUri = "uri://ed-fi.org/TermDescriptor#Seek Fall Semester";
+    private const string SeekGradingPeriodDescriptorUri =
+        "uri://ed-fi.org/GradingPeriodDescriptor#Seek First Six Weeks";
+    private const string SeekGradeTypeDescriptorUri = "uri://ed-fi.org/GradeTypeDescriptor#Seek Final";
+    private static readonly DateTime SeekBeginDate = new(2024, 8, 20, 0, 0, 0, DateTimeKind.Unspecified);
+
+    private async Task SeedGradeChainReferenceDataAsync()
+    {
+        short schoolYearResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "SchoolYearType");
+        long schoolYearDocumentId = await InsertDocumentAsync(Guid.NewGuid(), schoolYearResourceKeyId);
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO [edfi].[SchoolYearType] ([DocumentId], [CurrentSchoolYear], [SchoolYear], [SchoolYearDescription])
+            VALUES (@documentId, 1, @schoolYear, 'Seek 2024-2025');
+            """,
+            new SqlParameter("@documentId", schoolYearDocumentId),
+            new SqlParameter("@schoolYear", SeekSchoolYear)
+        );
+
+        await SeedDescriptorAsync(
+            Guid.NewGuid(),
+            "TermDescriptor",
+            "Ed-Fi:TermDescriptor",
+            SeekTermDescriptorUri,
+            "uri://ed-fi.org/TermDescriptor",
+            "Seek Fall Semester",
+            "Seek Fall Semester"
+        );
+        await SeedDescriptorAsync(
+            Guid.NewGuid(),
+            "GradingPeriodDescriptor",
+            "Ed-Fi:GradingPeriodDescriptor",
+            SeekGradingPeriodDescriptorUri,
+            "uri://ed-fi.org/GradingPeriodDescriptor",
+            "Seek First Six Weeks",
+            "Seek First Six Weeks"
+        );
+        await SeedDescriptorAsync(
+            Guid.NewGuid(),
+            "GradeTypeDescriptor",
+            "Ed-Fi:GradeTypeDescriptor",
+            SeekGradeTypeDescriptorUri,
+            "uri://ed-fi.org/GradeTypeDescriptor",
+            "Seek Final",
+            "Seek Final"
+        );
+    }
+
+    private static string DescriptorDocumentIdSql(string resourceName, string uriParameter) =>
+        $"""
+            (SELECT descriptor.[DocumentId]
+             FROM [dms].[Descriptor] descriptor
+             INNER JOIN [dms].[Document] document ON document.[DocumentId] = descriptor.[DocumentId]
+             INNER JOIN [dms].[ResourceKey] resourceKey ON resourceKey.[ResourceKeyId] = document.[ResourceKeyId]
+             WHERE resourceKey.[ProjectName] = 'Ed-Fi' AND resourceKey.[ResourceName] = '{resourceName}'
+               AND descriptor.[Uri] = {uriParameter})
+            """;
+
+    private const string SchoolYearDocumentIdSql =
+        """(SELECT schoolYear.[DocumentId] FROM [edfi].[SchoolYearType] schoolYear WHERE schoolYear.[SchoolYear] = @schoolYear)""";
+
+    /// <summary>
+    /// Seeds the singleton parent chain a Grade needs: Course, Session, CourseOffering, Section, and
+    /// GradingPeriod, all on the fixture school and school year (mirrors the query-authorization volume
+    /// generator's column lists; generated columns are omitted).
+    /// </summary>
+    /// <summary>
+    /// The parent chain a Section (and therefore a StudentSectionAssociation and a Grade) hangs off:
+    /// the school it belongs to, its CourseOffering, the first Section, and the identity values the
+    /// dependents copy into their reference columns.
+    /// </summary>
+    private sealed record SectionChainSeed(
+        long SchoolDocumentId,
+        long ChainSchoolId,
+        long CourseOfferingDocumentId,
+        long SectionDocumentId,
+        string LocalCourseCode,
+        string SessionName,
+        string SectionIdentifier,
+        string GradingPeriodName
+    );
+
+    /// <summary>
+    /// Seeds the singleton parent chain a Grade needs on the fixture school: see the overload below.
+    /// </summary>
+    private async Task<SectionChainSeed> InsertSectionChainAsync() =>
+        await InsertSectionChainAsync(await GetSchoolDocumentIdAsync(), SchoolId, suffix: "");
+
+    /// <summary>
+    /// Seeds the parent chain a Grade needs: Course, Session, CourseOffering, Section, and GradingPeriod,
+    /// all on the given school and the fixture school year (mirrors the query-authorization volume
+    /// generator's column lists; generated columns are omitted). The suffix keeps a second chain's
+    /// natural keys distinct from the first one's.
+    /// </summary>
+    private async Task<SectionChainSeed> InsertSectionChainAsync(
+        long schoolDocumentId,
+        long schoolId,
+        string suffix
+    )
+    {
+        string courseCode = SeekCourseCode + suffix;
+        string sessionName = SeekSessionName + suffix;
+        string localCourseCode = SeekLocalCourseCode + suffix;
+        string sectionIdentifier = SeekSectionIdentifier + suffix;
+        string gradingPeriodName = SeekGradingPeriodName + suffix;
+
+        long courseDocumentId = await InsertDocumentAsync(
+            Guid.NewGuid(),
+            await GetResourceKeyIdAsync("Ed-Fi", "Course")
+        );
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO [edfi].[Course] ([DocumentId], [EducationOrganization_DocumentId],
+                [EducationOrganization_EducationOrganizationId], [CourseCode], [CourseTitle], [NumberOfParts])
+            VALUES (@documentId, @schoolDocumentId, @schoolId, @courseCode, 'Seek Course', 1);
+            """,
+            new SqlParameter("@documentId", courseDocumentId),
+            new SqlParameter("@schoolDocumentId", schoolDocumentId),
+            new SqlParameter("@schoolId", schoolId),
+            new SqlParameter("@courseCode", courseCode)
+        );
+
+        long sessionDocumentId = await InsertDocumentAsync(
+            Guid.NewGuid(),
+            await GetResourceKeyIdAsync("Ed-Fi", "Session")
+        );
+        await _database.ExecuteNonQueryAsync(
+            $"""
+            INSERT INTO [edfi].[Session] ([DocumentId], [SchoolYear_DocumentId], [SchoolYear_SchoolYear],
+                [School_DocumentId], [School_SchoolId], [TermDescriptor_DescriptorId], [BeginDate], [EndDate],
+                [SessionName], [TotalInstructionalDays])
+            VALUES (@documentId, {SchoolYearDocumentIdSql}, @schoolYear, @schoolDocumentId, @schoolId,
+                {DescriptorDocumentIdSql("TermDescriptor", "@termDescriptorUri")}, CAST('2024-08-01' AS date),
+                CAST('2024-12-20' AS date), @sessionName, 90);
+            """,
+            new SqlParameter("@documentId", sessionDocumentId),
+            new SqlParameter("@schoolYear", SeekSchoolYear),
+            new SqlParameter("@schoolDocumentId", schoolDocumentId),
+            new SqlParameter("@schoolId", schoolId),
+            new SqlParameter("@termDescriptorUri", SeekTermDescriptorUri),
+            new SqlParameter("@sessionName", sessionName)
+        );
+
+        long courseOfferingDocumentId = await InsertDocumentAsync(
+            Guid.NewGuid(),
+            await GetResourceKeyIdAsync("Ed-Fi", "CourseOffering")
+        );
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO [edfi].[CourseOffering] ([DocumentId], [SchoolId_Unified], [Course_DocumentId],
+                [Course_CourseCode], [Course_EducationOrganizationId], [School_DocumentId], [Session_DocumentId],
+                [Session_SchoolYear], [Session_SessionName], [LocalCourseCode])
+            VALUES (@documentId, @schoolId, @courseDocumentId, @courseCode, @schoolId, @schoolDocumentId,
+                @sessionDocumentId, @schoolYear, @sessionName, @localCourseCode);
+            """,
+            new SqlParameter("@documentId", courseOfferingDocumentId),
+            new SqlParameter("@schoolId", schoolId),
+            new SqlParameter("@courseDocumentId", courseDocumentId),
+            new SqlParameter("@courseCode", courseCode),
+            new SqlParameter("@schoolDocumentId", schoolDocumentId),
+            new SqlParameter("@sessionDocumentId", sessionDocumentId),
+            new SqlParameter("@schoolYear", SeekSchoolYear),
+            new SqlParameter("@sessionName", sessionName),
+            new SqlParameter("@localCourseCode", localCourseCode)
+        );
+
+        long sectionDocumentId = await InsertSectionRootAsync(
+            schoolId,
+            courseOfferingDocumentId,
+            localCourseCode,
+            sessionName,
+            sectionIdentifier
+        );
+
+        long gradingPeriodDocumentId = await InsertDocumentAsync(
+            Guid.NewGuid(),
+            await GetResourceKeyIdAsync("Ed-Fi", "GradingPeriod")
+        );
+        await _database.ExecuteNonQueryAsync(
+            $"""
+            INSERT INTO [edfi].[GradingPeriod] ([DocumentId], [SchoolYear_DocumentId], [SchoolYear_SchoolYear],
+                [School_DocumentId], [School_SchoolId], [GradingPeriodDescriptor_DescriptorId], [BeginDate],
+                [EndDate], [GradingPeriodName], [TotalInstructionalDays])
+            VALUES (@documentId, {SchoolYearDocumentIdSql}, @schoolYear, @schoolDocumentId, @schoolId,
+                {DescriptorDocumentIdSql("GradingPeriodDescriptor", "@gradingPeriodDescriptorUri")},
+                CAST('2024-08-01' AS date), CAST('2024-09-13' AS date), @gradingPeriodName, 30);
+            """,
+            new SqlParameter("@documentId", gradingPeriodDocumentId),
+            new SqlParameter("@schoolYear", SeekSchoolYear),
+            new SqlParameter("@schoolDocumentId", schoolDocumentId),
+            new SqlParameter("@schoolId", schoolId),
+            new SqlParameter("@gradingPeriodDescriptorUri", SeekGradingPeriodDescriptorUri),
+            new SqlParameter("@gradingPeriodName", gradingPeriodName)
+        );
+
+        return new SectionChainSeed(
+            schoolDocumentId,
+            schoolId,
+            courseOfferingDocumentId,
+            sectionDocumentId,
+            localCourseCode,
+            sessionName,
+            sectionIdentifier,
+            gradingPeriodName
+        );
+    }
+
+    private async Task<long> InsertSectionRootAsync(
+        long schoolId,
+        long courseOfferingDocumentId,
+        string localCourseCode,
+        string sessionName,
+        string sectionIdentifier
+    )
+    {
+        long sectionDocumentId = await InsertDocumentAsync(
+            Guid.NewGuid(),
+            await GetResourceKeyIdAsync("Ed-Fi", "Section")
+        );
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO [edfi].[Section] ([DocumentId], [SchoolId_Unified], [CourseOffering_DocumentId],
+                [CourseOffering_LocalCourseCode], [CourseOffering_SchoolYear], [CourseOffering_SessionName],
+                [SectionIdentifier])
+            VALUES (@documentId, @schoolId, @courseOfferingDocumentId, @localCourseCode, @schoolYear,
+                @sessionName, @sectionIdentifier);
+            """,
+            new SqlParameter("@documentId", sectionDocumentId),
+            new SqlParameter("@schoolId", schoolId),
+            new SqlParameter("@courseOfferingDocumentId", courseOfferingDocumentId),
+            new SqlParameter("@localCourseCode", localCourseCode),
+            new SqlParameter("@schoolYear", SeekSchoolYear),
+            new SqlParameter("@sessionName", sessionName),
+            new SqlParameter("@sectionIdentifier", sectionIdentifier)
+        );
+        return sectionDocumentId;
+    }
+
+    private async Task<long> InsertStudentSectionAssociationRootAsync(
+        SectionChainSeed chain,
+        long studentDocumentId,
+        string studentUniqueId
+    )
+    {
+        long documentId = await InsertDocumentAsync(
+            Guid.NewGuid(),
+            await GetResourceKeyIdAsync("Ed-Fi", "StudentSectionAssociation")
+        );
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO [edfi].[StudentSectionAssociation] ([DocumentId], [Section_DocumentId],
+                [Section_LocalCourseCode], [Section_SchoolId], [Section_SchoolYear], [Section_SessionName],
+                [Section_SectionIdentifier], [Student_DocumentId], [Student_StudentUniqueId], [BeginDate])
+            SELECT @documentId, section.[DocumentId], section.[CourseOffering_LocalCourseCode],
+                section.[SchoolId_Unified], section.[CourseOffering_SchoolYear],
+                section.[CourseOffering_SessionName], section.[SectionIdentifier], @studentDocumentId,
+                @studentUniqueId, @beginDate
+            FROM [edfi].[Section] section
+            WHERE section.[DocumentId] = @sectionDocumentId;
+            """,
+            new SqlParameter("@documentId", documentId),
+            new SqlParameter("@studentDocumentId", studentDocumentId),
+            new SqlParameter("@studentUniqueId", studentUniqueId),
+            new SqlParameter("@beginDate", SeekBeginDate),
+            new SqlParameter("@sectionDocumentId", chain.SectionDocumentId)
+        );
+        return documentId;
+    }
+
+    private async Task<long> InsertGradeRootAsync(
+        SectionChainSeed chain,
+        long associationDocumentId,
+        string studentUniqueId
+    )
+    {
+        long documentId = await InsertDocumentAsync(
+            Guid.NewGuid(),
+            await GetResourceKeyIdAsync("Ed-Fi", "Grade")
+        );
+        await _database.ExecuteNonQueryAsync(
+            $"""
+            INSERT INTO [edfi].[Grade] ([DocumentId], [SchoolId_Unified], [SchoolYear_Unified],
+                [GradingPeriodGradingPeriod_DocumentId],
+                [GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId],
+                [GradingPeriodGradingPeriod_GradingPeriodName], [StudentSectionAssociation_DocumentId],
+                [StudentSectionAssociation_BeginDate], [StudentSectionAssociation_LocalCourseCode],
+                [StudentSectionAssociation_SectionIdentifier], [StudentSectionAssociation_SessionName],
+                [StudentSectionAssociation_StudentUniqueId], [GradeTypeDescriptor_DescriptorId])
+            SELECT @documentId, @schoolId, @schoolYear, gradingPeriod.[DocumentId],
+                gradingPeriod.[GradingPeriodDescriptor_DescriptorId], gradingPeriod.[GradingPeriodName],
+                @associationDocumentId, @beginDate, @localCourseCode, @sectionIdentifier, @sessionName,
+                @studentUniqueId, {DescriptorDocumentIdSql("GradeTypeDescriptor", "@gradeTypeDescriptorUri")}
+            FROM [edfi].[GradingPeriod] gradingPeriod
+            WHERE gradingPeriod.[GradingPeriodName] = @gradingPeriodName;
+            """,
+            new SqlParameter("@documentId", documentId),
+            new SqlParameter("@schoolId", chain.ChainSchoolId),
+            new SqlParameter("@schoolYear", SeekSchoolYear),
+            new SqlParameter("@associationDocumentId", associationDocumentId),
+            new SqlParameter("@beginDate", SeekBeginDate),
+            new SqlParameter("@localCourseCode", chain.LocalCourseCode),
+            new SqlParameter("@sectionIdentifier", chain.SectionIdentifier),
+            new SqlParameter("@sessionName", chain.SessionName),
+            new SqlParameter("@studentUniqueId", studentUniqueId),
+            new SqlParameter("@gradeTypeDescriptorUri", SeekGradeTypeDescriptorUri),
+            new SqlParameter("@gradingPeriodName", chain.GradingPeriodName)
+        );
+        return documentId;
+    }
+
+    /// <summary>
+    /// Re-points the association to another student the way an identity update lands in the root table:
+    /// both binding columns change together, and the composite FK with ON UPDATE CASCADE carries the new
+    /// unique id into Grade, firing Grade's key-change trigger.
+    /// </summary>
+    private async Task RepointStudentSectionAssociationAsync(
+        long associationDocumentId,
+        long newStudentDocumentId,
+        string newStudentUniqueId
+    )
+    {
+        await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE [edfi].[StudentSectionAssociation]
+            SET [Student_DocumentId] = @studentDocumentId, [Student_StudentUniqueId] = @studentUniqueId
+            WHERE [DocumentId] = @documentId;
+            """,
+            new SqlParameter("@studentDocumentId", newStudentDocumentId),
+            new SqlParameter("@studentUniqueId", newStudentUniqueId),
+            new SqlParameter("@documentId", associationDocumentId)
+        );
+    }
+
+    private async Task<(
+        long OldPersonDocumentId,
+        long NewPersonDocumentId
+    )> ReadGradeKeyChangePersonDocumentIdsAsync()
+    {
+        long oldPerson = await _database.ExecuteScalarAsync<long>(
+            """
+            SELECT [OldStudentSectionAssociation_Student_DocumentId]
+            FROM [tracked_changes_edfi].[Grade]
+            WHERE [NewStudentSectionAssociation_StudentUniqueId] IS NOT NULL;
+            """
+        );
+        long newPerson = await _database.ExecuteScalarAsync<long>(
+            """
+            SELECT [NewStudentSectionAssociation_Student_DocumentId]
+            FROM [tracked_changes_edfi].[Grade]
+            WHERE [NewStudentSectionAssociation_StudentUniqueId] IS NOT NULL;
+            """
+        );
+        return (oldPerson, newPerson);
+    }
+
+    private Task<TrackedChangeQueryResult> QueryKeyChangesAsync(
+        QualifiedResourceName resource,
+        long[] claimEdOrgIds,
+        params string[] strategies
+    )
+    {
+        ConcreteResourceModel resourceModel = ResolveResourceModel(resource);
+        TrackedChangeTableInfo trackedTable = _mappingSet.Model.TrackedChangeTablesInNameOrder.Single(x =>
+            x.SourceTable == resourceModel.RelationalModel.Root.Table
+        );
+
+        return QueryTrackedChangesWithAuthorizationAsync(
+            ChangeQueryEndpointOperation.KeyChanges,
+            ResolveResourceInfo(resource),
+            resourceModel,
+            trackedTable,
+            claimEdOrgIds,
+            namespacePrefixes: [],
+            strategies,
+            limit: 25,
+            offset: 0,
+            totalCount: false,
+            changeVersionRange: new ChangeVersionRange(0, long.MaxValue),
+            traceId: new TraceId($"mssql-readchanges-keychanges-{resource.ResourceName}")
+        );
+    }
+
+    private async Task InsertStudentRootAsync(long studentDocumentId, string studentUniqueId)
+    {
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO [edfi].[Student] ([DocumentId], [BirthDate], [FirstName], [LastSurname], [StudentUniqueId])
+            VALUES (@documentId, @birthDate, @firstName, @lastSurname, @studentUniqueId);
+            """,
+            new SqlParameter("@documentId", studentDocumentId),
+            new SqlParameter("@birthDate", new DateTime(2010, 5, 14, 0, 0, 0, DateTimeKind.Unspecified)),
+            new SqlParameter("@firstName", "Tracked"),
+            new SqlParameter("@lastSurname", "Student"),
+            new SqlParameter("@studentUniqueId", studentUniqueId)
+        );
+    }
+
+    private async Task DeleteStudentRootAsync(long studentDocumentId)
+    {
+        await _database.ExecuteNonQueryAsync(
+            """
+            DELETE FROM [edfi].[Student]
+            WHERE [DocumentId] = @documentId;
+            """,
+            new SqlParameter("@documentId", studentDocumentId)
+        );
+    }
+
     private async Task InsertAuthEdOrgTupleAsync(long source, long target)
     {
         await _database.ExecuteNonQueryAsync(
@@ -1777,19 +2264,26 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
 
     private long NextAuthChangeVersion() => _nextAuthChangeVersion++;
 
+    // Seeded tombstones stand in for deleted documents that never existed in dms.Document; the DocumentId
+    // system column is NOT NULL, so each seeded row gets a distinct synthetic value.
+    private long _nextSeededDocumentId = 900_000_000L;
+
+    private long NextSeededDocumentId() => _nextSeededDocumentId++;
+
     private async Task InsertAcademicWeekTombstoneAsync(string weekIdentifier, long oldSchoolId)
     {
         await _database.ExecuteNonQueryAsync(
             """
             INSERT INTO [tracked_changes_edfi].[AcademicWeek]
                 ([OldSchool_SchoolId], [NewSchool_SchoolId], [OldWeekIdentifier], [NewWeekIdentifier],
-                 [Id], [ChangeVersion])
-            VALUES (@oldSchoolId, NULL, @weekIdentifier, NULL, @id, @changeVersion);
+                 [Id], [ChangeVersion], [DocumentId])
+            VALUES (@oldSchoolId, NULL, @weekIdentifier, NULL, @id, @changeVersion, @documentId);
             """,
             new SqlParameter("@oldSchoolId", oldSchoolId),
             new SqlParameter("@weekIdentifier", weekIdentifier),
             new SqlParameter("@id", Guid.NewGuid()),
-            new SqlParameter("@changeVersion", NextAuthChangeVersion())
+            new SqlParameter("@changeVersion", NextAuthChangeVersion()),
+            new SqlParameter("@documentId", NextSeededDocumentId())
         );
     }
 
@@ -1803,15 +2297,16 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
             """
             INSERT INTO [tracked_changes_edfi].[AcademicWeek]
                 ([OldSchool_SchoolId], [NewSchool_SchoolId], [OldWeekIdentifier], [NewWeekIdentifier],
-                 [Id], [ChangeVersion])
-            VALUES (@oldSchoolId, @newSchoolId, @oldWeekIdentifier, @newWeekIdentifier, @id, @changeVersion);
+                 [Id], [ChangeVersion], [DocumentId])
+            VALUES (@oldSchoolId, @newSchoolId, @oldWeekIdentifier, @newWeekIdentifier, @id, @changeVersion, @documentId);
             """,
             new SqlParameter("@oldSchoolId", oldSchoolId),
             new SqlParameter("@newSchoolId", oldSchoolId),
             new SqlParameter("@oldWeekIdentifier", oldWeekIdentifier),
             new SqlParameter("@newWeekIdentifier", newWeekIdentifier),
             new SqlParameter("@id", Guid.NewGuid()),
-            new SqlParameter("@changeVersion", NextAuthChangeVersion())
+            new SqlParameter("@changeVersion", NextAuthChangeVersion()),
+            new SqlParameter("@documentId", NextSeededDocumentId())
         );
     }
 
@@ -1821,13 +2316,14 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
             """
             INSERT INTO [tracked_changes_edfi].[Survey]
                 ([OldNamespace], [NewNamespace], [OldSurveyIdentifier], [NewSurveyIdentifier],
-                 [Id], [ChangeVersion])
-            VALUES (@oldNamespace, NULL, @surveyIdentifier, NULL, @id, @changeVersion);
+                 [Id], [ChangeVersion], [DocumentId])
+            VALUES (@oldNamespace, NULL, @surveyIdentifier, NULL, @id, @changeVersion, @documentId);
             """,
             new SqlParameter("@oldNamespace", oldNamespace),
             new SqlParameter("@surveyIdentifier", surveyIdentifier),
             new SqlParameter("@id", Guid.NewGuid()),
-            new SqlParameter("@changeVersion", NextAuthChangeVersion())
+            new SqlParameter("@changeVersion", NextAuthChangeVersion()),
+            new SqlParameter("@documentId", NextSeededDocumentId())
         );
     }
 
@@ -1841,14 +2337,15 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
             """
             INSERT INTO [tracked_changes_edfi].[Descriptor]
                 ([OldNamespace], [NewNamespace], [OldCodeValue], [NewCodeValue], [Discriminator],
-                 [Id], [ChangeVersion])
-            VALUES (@oldNamespace, NULL, @oldCodeValue, NULL, @discriminator, @id, @changeVersion);
+                 [Id], [ChangeVersion], [DocumentId])
+            VALUES (@oldNamespace, NULL, @oldCodeValue, NULL, @discriminator, @id, @changeVersion, @documentId);
             """,
             new SqlParameter("@oldNamespace", oldNamespace),
             new SqlParameter("@oldCodeValue", oldCodeValue),
             new SqlParameter("@discriminator", discriminator),
             new SqlParameter("@id", Guid.NewGuid()),
-            new SqlParameter("@changeVersion", NextAuthChangeVersion())
+            new SqlParameter("@changeVersion", NextAuthChangeVersion()),
+            new SqlParameter("@documentId", NextSeededDocumentId())
         );
     }
 
@@ -1859,16 +2356,17 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
             INSERT INTO [tracked_changes_edfi].[StudentSchoolAssociation]
                 ([OldEntryDate], [NewEntryDate], [OldSchoolId_Unified], [NewSchoolId_Unified],
                  [OldStudent_StudentUniqueId], [NewStudent_StudentUniqueId],
-                 [OldStudent_DocumentId], [NewStudent_DocumentId], [Id], [ChangeVersion])
+                 [OldStudent_DocumentId], [NewStudent_DocumentId], [Id], [ChangeVersion], [DocumentId])
             VALUES (@entryDate, NULL, @oldSchoolId, NULL, @studentUniqueId, NULL, @oldStudentDocId, NULL,
-                    @id, @changeVersion);
+                    @id, @changeVersion, @documentId);
             """,
             new SqlParameter("@entryDate", new DateTime(2025, 8, 1, 0, 0, 0, DateTimeKind.Unspecified)),
             new SqlParameter("@oldSchoolId", oldSchoolId),
             new SqlParameter("@studentUniqueId", $"STU{oldStudentDocId}"),
             new SqlParameter("@oldStudentDocId", oldStudentDocId),
             new SqlParameter("@id", Guid.NewGuid()),
-            new SqlParameter("@changeVersion", NextAuthChangeVersion())
+            new SqlParameter("@changeVersion", NextAuthChangeVersion()),
+            new SqlParameter("@documentId", NextSeededDocumentId())
         );
     }
 
@@ -1885,9 +2383,9 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
                  [OldResponsibilityDescriptor_Namespace], [NewResponsibilityDescriptor_Namespace],
                  [OldResponsibilityDescriptor_CodeValue], [NewResponsibilityDescriptor_CodeValue],
                  [OldStudent_StudentUniqueId], [NewStudent_StudentUniqueId],
-                 [OldStudent_DocumentId], [NewStudent_DocumentId], [Id], [ChangeVersion])
+                 [OldStudent_DocumentId], [NewStudent_DocumentId], [Id], [ChangeVersion], [DocumentId])
             VALUES (@beginDate, NULL, @oldEdOrgId, NULL, @respNamespace, NULL, @respCodeValue, NULL,
-                    @studentUniqueId, NULL, @oldStudentDocId, NULL, @id, @changeVersion);
+                    @studentUniqueId, NULL, @oldStudentDocId, NULL, @id, @changeVersion, @documentId);
             """,
             new SqlParameter("@beginDate", new DateTime(2025, 8, 1, 0, 0, 0, DateTimeKind.Unspecified)),
             new SqlParameter("@oldEdOrgId", oldEdOrgId),
@@ -1896,7 +2394,8 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
             new SqlParameter("@studentUniqueId", $"STU{oldStudentDocId}"),
             new SqlParameter("@oldStudentDocId", oldStudentDocId),
             new SqlParameter("@id", Guid.NewGuid()),
-            new SqlParameter("@changeVersion", NextAuthChangeVersion())
+            new SqlParameter("@changeVersion", NextAuthChangeVersion()),
+            new SqlParameter("@documentId", NextSeededDocumentId())
         );
     }
 
@@ -1907,14 +2406,15 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
             INSERT INTO [tracked_changes_edfi].[StudentHealth]
                 ([OldEducationOrganization_EducationOrganizationId], [NewEducationOrganization_EducationOrganizationId],
                  [OldStudent_StudentUniqueId], [NewStudent_StudentUniqueId],
-                 [OldStudent_DocumentId], [NewStudent_DocumentId], [Id], [ChangeVersion])
-            VALUES (@oldEdOrgId, NULL, @studentUniqueId, NULL, @oldStudentDocId, NULL, @id, @changeVersion);
+                 [OldStudent_DocumentId], [NewStudent_DocumentId], [Id], [ChangeVersion], [DocumentId])
+            VALUES (@oldEdOrgId, NULL, @studentUniqueId, NULL, @oldStudentDocId, NULL, @id, @changeVersion, @documentId);
             """,
             new SqlParameter("@oldEdOrgId", oldEdOrgId),
             new SqlParameter("@studentUniqueId", $"STU{oldStudentDocId}"),
             new SqlParameter("@oldStudentDocId", oldStudentDocId),
             new SqlParameter("@id", Guid.NewGuid()),
-            new SqlParameter("@changeVersion", NextAuthChangeVersion())
+            new SqlParameter("@changeVersion", NextAuthChangeVersion()),
+            new SqlParameter("@documentId", NextSeededDocumentId())
         );
     }
 
@@ -1930,9 +2430,9 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
                  [OldDisciplineDate], [NewDisciplineDate],
                  [OldStudent_StudentUniqueId], [NewStudent_StudentUniqueId],
                  [OldResponsibilitySchool_SchoolId], [NewResponsibilitySchool_SchoolId],
-                 [OldStudent_DocumentId], [NewStudent_DocumentId], [Id], [ChangeVersion])
+                 [OldStudent_DocumentId], [NewStudent_DocumentId], [Id], [ChangeVersion], [DocumentId])
             VALUES (@identifier, NULL, @disciplineDate, NULL, @studentUniqueId, NULL, @schoolId, NULL,
-                    @oldStudentDocId, NULL, @id, @changeVersion);
+                    @oldStudentDocId, NULL, @id, @changeVersion, @documentId);
             """,
             new SqlParameter("@identifier", disciplineActionIdentifier),
             new SqlParameter("@disciplineDate", new DateTime(2025, 3, 1, 0, 0, 0, DateTimeKind.Unspecified)),
@@ -1940,7 +2440,1245 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
             new SqlParameter("@schoolId", AuthClaimEdOrgId),
             new SqlParameter("@oldStudentDocId", oldStudentDocId),
             new SqlParameter("@id", Guid.NewGuid()),
-            new SqlParameter("@changeVersion", NextAuthChangeVersion())
+            new SqlParameter("@changeVersion", NextAuthChangeVersion()),
+            new SqlParameter("@documentId", NextSeededDocumentId())
+        );
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // Custom view-based ReadChanges authorization (DMS-1193 Tasks 45-48) — SQL Server mirror.
+    //
+    // See the PostgreSQL fixture for the scenario rationale. Live rows are inserted through the root
+    // tables, deletes and identity updates fire the generated tombstone / key-change triggers, and the
+    // custom auth views are created in [auth] the way an implementer would author them (a live arm over
+    // the basis table, optionally unioned with the basis tombstone table for *IncludingDeletes views).
+    // Every request asks for totalCount and a ChangeVersion window bounded to the scenario's own changes.
+    // ──────────────────────────────────────────────────────────────────────
+
+    private const long AlternativeSchoolId = 255901101L;
+    private const long RegularSchoolId = 255901102L;
+    private const string SchoolTypeDescriptorNamespace = "uri://ed-fi.org/SchoolTypeDescriptor";
+    private const string AlternativeSchoolTypeUri = SchoolTypeDescriptorNamespace + "#Alternative";
+    private const string RegularSchoolTypeUri = SchoolTypeDescriptorNamespace + "#Regular";
+    private const string EntryGradeLevelDescriptorUri = "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade";
+    private const string SchoolWithAlternativeTypeStrategy = "SchoolWithAlternativeType";
+    private const string CustomViewBasisNotIdentifyingOrSecurableHintFragment =
+        "neither an identifying property nor a securable element";
+    private static readonly DateTime CustomViewEntryDate = new(
+        2025,
+        8,
+        18,
+        0,
+        0,
+        0,
+        DateTimeKind.Unspecified
+    );
+
+    private static readonly QualifiedResourceName StudentSchoolAssociationResource = new(
+        "Ed-Fi",
+        "StudentSchoolAssociation"
+    );
+    private static readonly QualifiedResourceName SectionResource = new("Ed-Fi", "Section");
+    private static readonly QualifiedResourceName StudentAssessmentResource = new(
+        "Ed-Fi",
+        "StudentAssessment"
+    );
+
+    // ── Direct basis, live ────────────────────────────────────────────────
+
+    [Test]
+    public async Task ReadChanges_custom_view_direct_basis_filters_deleted_associations_by_the_live_school_and_composes_as_AND()
+    {
+        await SeedSchoolTypeDescriptorsAsync();
+        long alternativeSchoolDocumentId = await InsertSchoolRootAsync(
+            AlternativeSchoolId,
+            "Alternative High",
+            AlternativeSchoolTypeUri
+        );
+        long regularSchoolDocumentId = await InsertSchoolRootAsync(
+            RegularSchoolId,
+            "Regular High",
+            RegularSchoolTypeUri
+        );
+        long studentADocumentId = await InsertStudentAsync("STU-CV-Direct-A");
+        long studentBDocumentId = await InsertStudentAsync("STU-CV-Direct-B");
+        long alternativeAssociationDocumentId = await InsertStudentSchoolAssociationRootAsync(
+            alternativeSchoolDocumentId,
+            AlternativeSchoolId,
+            studentADocumentId,
+            "STU-CV-Direct-A"
+        );
+        long regularAssociationDocumentId = await InsertStudentSchoolAssociationRootAsync(
+            regularSchoolDocumentId,
+            RegularSchoolId,
+            studentBDocumentId,
+            "STU-CV-Direct-B"
+        );
+        await CreateCustomAuthViewAsync(
+            SchoolWithAlternativeTypeStrategy,
+            SchoolWithTypeViewSql("Alternative")
+        );
+
+        long windowStart = await GetNewestChangeVersionAsync() + 1;
+        await DeleteEdfiRootAsync("StudentSchoolAssociation", alternativeAssociationDocumentId);
+        await DeleteEdfiRootAsync("StudentSchoolAssociation", regularAssociationDocumentId);
+        ChangeVersionRange window = new(windowStart, await GetNewestChangeVersionAsync());
+
+        // The live seek finds S1 through c.OldSchoolId_Unified and S1 is in the view; S2 is not.
+        TrackedChangeQueryResult customViewOnly = await QueryCustomViewChangesAsync(
+            ChangeQueryEndpointOperation.Deletes,
+            StudentSchoolAssociationResource,
+            [SchoolWithAlternativeTypeStrategy],
+            claimEdOrgIds: [],
+            window
+        );
+        customViewOnly.AuthorizationFailure.Should().BeNull();
+        customViewOnly.TotalCount.Should().Be(1);
+        customViewOnly.Items.Should().ContainSingle();
+        customViewOnly.Items[0]!["keyValues"]!["studentUniqueId"]!
+            .GetValue<string>()
+            .Should()
+            .Be("STU-CV-Direct-A");
+
+        // The relationship strategy alone authorizes S2's tombstone for a claim on S2...
+        TrackedChangeQueryResult relationshipOnly = await QueryCustomViewChangesAsync(
+            ChangeQueryEndpointOperation.Deletes,
+            StudentSchoolAssociationResource,
+            [AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly],
+            claimEdOrgIds: [RegularSchoolId],
+            window
+        );
+        relationshipOnly.Items.Should().ContainSingle();
+        relationshipOnly.Items[0]!["keyValues"]!["studentUniqueId"]!
+            .GetValue<string>()
+            .Should()
+            .Be("STU-CV-Direct-B");
+
+        // ...but composed with the custom view the two filters AND together and the intersection is empty.
+        TrackedChangeQueryResult composed = await QueryCustomViewChangesAsync(
+            ChangeQueryEndpointOperation.Deletes,
+            StudentSchoolAssociationResource,
+            [
+                SchoolWithAlternativeTypeStrategy,
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
+            ],
+            claimEdOrgIds: [RegularSchoolId],
+            window
+        );
+        composed.AuthorizationFailure.Should().BeNull();
+        composed.TotalCount.Should().Be(0);
+        composed.Items.Should().BeEmpty();
+    }
+
+    // ── Deleted basis, no suffix ──────────────────────────────────────────
+
+    [Test]
+    public async Task ReadChanges_custom_view_denies_a_tombstone_whose_basis_school_was_deleted_without_the_suffix()
+    {
+        await SeedSchoolTypeDescriptorsAsync();
+        long alternativeSchoolDocumentId = await InsertSchoolRootAsync(
+            AlternativeSchoolId,
+            "Alternative High",
+            AlternativeSchoolTypeUri
+        );
+        long studentDocumentId = await InsertStudentAsync("STU-CV-DeletedBasis");
+        long associationDocumentId = await InsertStudentSchoolAssociationRootAsync(
+            alternativeSchoolDocumentId,
+            AlternativeSchoolId,
+            studentDocumentId,
+            "STU-CV-DeletedBasis"
+        );
+        await CreateCustomAuthViewAsync(
+            SchoolWithAlternativeTypeStrategy,
+            SchoolWithTypeViewSql("Alternative")
+        );
+
+        long windowStart = await GetNewestChangeVersionAsync() + 1;
+        await DeleteEdfiRootAsync("StudentSchoolAssociation", associationDocumentId);
+        ChangeVersionRange beforeSchoolDelete = new(windowStart, await GetNewestChangeVersionAsync());
+
+        // While the school is live, the seek finds it and the association tombstone is authorized.
+        TrackedChangeQueryResult whileSchoolLive = await QueryCustomViewChangesAsync(
+            ChangeQueryEndpointOperation.Deletes,
+            StudentSchoolAssociationResource,
+            [SchoolWithAlternativeTypeStrategy],
+            claimEdOrgIds: [],
+            beforeSchoolDelete
+        );
+        whileSchoolLive.TotalCount.Should().Be(1);
+        whileSchoolLive.Items.Should().ContainSingle();
+
+        await DeleteEdfiRootAsync("School", alternativeSchoolDocumentId);
+        ChangeVersionRange afterSchoolDelete = new(windowStart, await GetNewestChangeVersionAsync());
+
+        // Once the school is gone the live seek finds nothing: without the IncludingDeletes suffix the
+        // tombstone is denied, matching ODS behavior for a view over live tables.
+        TrackedChangeQueryResult afterDelete = await QueryCustomViewChangesAsync(
+            ChangeQueryEndpointOperation.Deletes,
+            StudentSchoolAssociationResource,
+            [SchoolWithAlternativeTypeStrategy],
+            claimEdOrgIds: [],
+            afterSchoolDelete
+        );
+        afterDelete.AuthorizationFailure.Should().BeNull();
+        afterDelete.TotalCount.Should().Be(0);
+        afterDelete.Items.Should().BeEmpty();
+    }
+
+    // ── Deleted basis, suffixed view ──────────────────────────────────────
+
+    [Test]
+    public async Task ReadChanges_custom_view_with_IncludingDeletes_suffix_authorizes_a_tombstone_through_the_basis_tombstone()
+    {
+        await SeedSchoolTypeDescriptorsAsync();
+        long alternativeSchoolDocumentId = await InsertSchoolRootAsync(
+            AlternativeSchoolId,
+            "Alternative High",
+            AlternativeSchoolTypeUri
+        );
+        long studentDocumentId = await InsertStudentAsync("STU-CV-Suffixed");
+        long associationDocumentId = await InsertStudentSchoolAssociationRootAsync(
+            alternativeSchoolDocumentId,
+            AlternativeSchoolId,
+            studentDocumentId,
+            "STU-CV-Suffixed"
+        );
+        // The live arm is the same rule as the unsuffixed view. The School tombstone carries no descriptor
+        // column, so the tombstone arm returns every deleted school (the implementer's choice per the
+        // migration note); DMS's probe arm is separate and reads tracked_changes_edfi.School directly.
+        await CreateCustomAuthViewAsync(
+            "SchoolWithAlternativeTypeIncludingDeletes",
+            SchoolWithTypeViewSql("Alternative")
+                + """
+
+                UNION
+                SELECT tombstone.[DocumentId]
+                FROM [tracked_changes_edfi].[School] tombstone
+                """
+        );
+
+        long windowStart = await GetNewestChangeVersionAsync() + 1;
+        await DeleteEdfiRootAsync("StudentSchoolAssociation", associationDocumentId);
+        await DeleteEdfiRootAsync("School", alternativeSchoolDocumentId);
+        ChangeVersionRange window = new(windowStart, await GetNewestChangeVersionAsync());
+
+        long trackedSchoolDocumentId = await _database.ExecuteScalarAsync<long>(
+            """
+            SELECT [DocumentId]
+            FROM [tracked_changes_edfi].[School]
+            WHERE [OldSchoolId] = @schoolId;
+            """,
+            new SqlParameter("@schoolId", AlternativeSchoolId)
+        );
+        trackedSchoolDocumentId.Should().Be(alternativeSchoolDocumentId);
+
+        TrackedChangeQueryResult result = await QueryCustomViewChangesAsync(
+            ChangeQueryEndpointOperation.Deletes,
+            StudentSchoolAssociationResource,
+            ["SchoolWithAlternativeTypeIncludingDeletes"],
+            claimEdOrgIds: [],
+            window
+        );
+
+        result.AuthorizationFailure.Should().BeNull();
+        result.TotalCount.Should().Be(1);
+        result.Items.Should().ContainSingle();
+        result.Items[0]!["keyValues"]!["studentUniqueId"]!.GetValue<string>().Should().Be("STU-CV-Suffixed");
+    }
+
+    // ── Self basis on /keyChanges and /deletes ────────────────────────────
+
+    [Test]
+    public async Task ReadChanges_custom_view_self_basis_authorizes_section_key_changes_and_deletes_through_the_document_id_column()
+    {
+        await SeedGradeChainReferenceDataAsync();
+        SectionChainSeed chain = await InsertSectionChainAsync();
+        long sectionX1DocumentId = chain.SectionDocumentId;
+        long sectionX2DocumentId = await InsertSectionRootAsync(
+            chain.ChainSchoolId,
+            chain.CourseOfferingDocumentId,
+            chain.LocalCourseCode,
+            chain.SessionName,
+            "SEEK-SEC-2"
+        );
+        // A self-basis view over the subject's own root table; it returns X1 only.
+        await CreateCustomAuthViewAsync(
+            "SectionWithEvenIdentifier",
+            $"""
+            SELECT section.[DocumentId]
+            FROM [edfi].[Section] section
+            WHERE section.[DocumentId] = {sectionX1DocumentId}
+            """
+        );
+
+        long keyChangeWindowStart = await GetNewestChangeVersionAsync() + 1;
+        await UpdateSectionIdentifierAsync(sectionX1DocumentId, "SEEK-SEC-1-Renamed");
+        await UpdateSectionIdentifierAsync(sectionX2DocumentId, "SEEK-SEC-2-Renamed");
+        ChangeVersionRange keyChangeWindow = new(keyChangeWindowStart, await GetNewestChangeVersionAsync());
+
+        TrackedChangeQueryResult keyChanges = await QueryCustomViewChangesAsync(
+            ChangeQueryEndpointOperation.KeyChanges,
+            SectionResource,
+            ["SectionWithEvenIdentifier"],
+            claimEdOrgIds: [],
+            keyChangeWindow
+        );
+        keyChanges.AuthorizationFailure.Should().BeNull();
+        keyChanges.TotalCount.Should().Be(1);
+        keyChanges.Items.Should().ContainSingle();
+        keyChanges.Items[0]!["oldKeyValues"]!["sectionIdentifier"]!
+            .GetValue<string>()
+            .Should()
+            .Be(chain.SectionIdentifier);
+        keyChanges.Items[0]!["newKeyValues"]!["sectionIdentifier"]!
+            .GetValue<string>()
+            .Should()
+            .Be("SEEK-SEC-1-Renamed");
+
+        long deleteWindowStart = await GetNewestChangeVersionAsync() + 1;
+        await DeleteEdfiRootAsync("Section", sectionX1DocumentId);
+        ChangeVersionRange deleteWindow = new(deleteWindowStart, await GetNewestChangeVersionAsync());
+
+        // The self basis reads the DocumentId system column, so the SQL is the same with or without the
+        // suffix; only the view's contents decide. The live-only view no longer returns the deleted X1.
+        TrackedChangeQueryResult deletesLiveOnly = await QueryCustomViewChangesAsync(
+            ChangeQueryEndpointOperation.Deletes,
+            SectionResource,
+            ["SectionWithEvenIdentifier"],
+            claimEdOrgIds: [],
+            deleteWindow
+        );
+        deletesLiveOnly.AuthorizationFailure.Should().BeNull();
+        deletesLiveOnly.TotalCount.Should().Be(0);
+        deletesLiveOnly.Items.Should().BeEmpty();
+
+        await CreateCustomAuthViewAsync(
+            "SectionWithEvenIdentifierIncludingDeletes",
+            $"""
+            SELECT section.[DocumentId]
+            FROM [edfi].[Section] section
+            WHERE section.[DocumentId] = {sectionX1DocumentId}
+            UNION
+            SELECT tombstone.[DocumentId]
+            FROM [tracked_changes_edfi].[Section] tombstone
+            """
+        );
+
+        TrackedChangeQueryResult deletesIncludingDeleted = await QueryCustomViewChangesAsync(
+            ChangeQueryEndpointOperation.Deletes,
+            SectionResource,
+            ["SectionWithEvenIdentifierIncludingDeletes"],
+            claimEdOrgIds: [],
+            deleteWindow
+        );
+        deletesIncludingDeleted.AuthorizationFailure.Should().BeNull();
+        deletesIncludingDeleted.TotalCount.Should().Be(1);
+        deletesIncludingDeleted.Items.Should().ContainSingle();
+        deletesIncludingDeleted.Items[0]!["keyValues"]!["sectionIdentifier"]!
+            .GetValue<string>()
+            .Should()
+            .Be("SEEK-SEC-1-Renamed");
+    }
+
+    [Test]
+    public async Task ReadChanges_custom_view_self_basis_authorizes_a_key_change_into_the_view_by_current_membership()
+    {
+        await SeedGradeChainReferenceDataAsync();
+        SectionChainSeed chain = await InsertSectionChainAsync();
+        // The view accepts one identifier the seeded Section (SEEK-SEC-1) does not have yet.
+        await CreateCustomAuthViewAsync(
+            "SectionWithReviewedIdentifier",
+            """
+            SELECT section.[DocumentId]
+            FROM [edfi].[Section] section
+            WHERE section.[SectionIdentifier] = 'REVIEWED'
+            """
+        );
+
+        long windowStart = await GetNewestChangeVersionAsync() + 1;
+        await UpdateSectionIdentifierAsync(chain.SectionDocumentId, "REVIEWED");
+        ChangeVersionRange window = new(windowStart, await GetNewestChangeVersionAsync());
+
+        // A stored-DocumentId basis authorizes by the document's current view membership, the rule ODS
+        // applies to its surrogate-keyed bases (c.OldStudentUSI = view.StudentUSI survives a unique-id
+        // change). The renamed Section is in the view now, so its key change is returned, old key included.
+        TrackedChangeQueryResult keyChanges = await QueryCustomViewChangesAsync(
+            ChangeQueryEndpointOperation.KeyChanges,
+            SectionResource,
+            ["SectionWithReviewedIdentifier"],
+            claimEdOrgIds: [],
+            window
+        );
+        keyChanges.AuthorizationFailure.Should().BeNull();
+        keyChanges.TotalCount.Should().Be(1);
+        keyChanges.Items.Should().ContainSingle();
+        keyChanges.Items[0]!["oldKeyValues"]!["sectionIdentifier"]!
+            .GetValue<string>()
+            .Should()
+            .Be(chain.SectionIdentifier);
+        keyChanges.Items[0]!["newKeyValues"]!["sectionIdentifier"]!
+            .GetValue<string>()
+            .Should()
+            .Be("REVIEWED");
+
+        // Renamed back out of the view, the next key change is denied: membership is current, both ways.
+        long secondWindowStart = await GetNewestChangeVersionAsync() + 1;
+        await UpdateSectionIdentifierAsync(chain.SectionDocumentId, chain.SectionIdentifier);
+        ChangeVersionRange secondWindow = new(secondWindowStart, await GetNewestChangeVersionAsync());
+
+        TrackedChangeQueryResult afterRenameBack = await QueryCustomViewChangesAsync(
+            ChangeQueryEndpointOperation.KeyChanges,
+            SectionResource,
+            ["SectionWithReviewedIdentifier"],
+            claimEdOrgIds: [],
+            secondWindow
+        );
+        afterRenameBack.AuthorizationFailure.Should().BeNull();
+        afterRenameBack.TotalCount.Should().Be(0);
+        afterRenameBack.Items.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task ReadChanges_custom_view_with_IncludingDeletes_suffix_resolves_a_renamed_basis_through_its_key_change_row()
+    {
+        await SeedGradeChainReferenceDataAsync();
+        SectionChainSeed chain = await InsertSectionChainAsync();
+        long studentDocumentId = await InsertStudentAsync("STU-CV-Renamed");
+        long associationDocumentId = await InsertStudentSectionAssociationRootAsync(
+            chain,
+            studentDocumentId,
+            "STU-CV-Renamed"
+        );
+        long gradeDocumentId = await InsertGradeRootAsync(chain, associationDocumentId, "STU-CV-Renamed");
+        // Both arms accept the identifier the Section will be renamed to; neither accepts SEEK-SEC-1.
+        await CreateCustomAuthViewAsync(
+            "SectionWithReviewedIdentifierIncludingDeletes",
+            """
+            SELECT section.[DocumentId]
+            FROM [edfi].[Section] section
+            WHERE section.[SectionIdentifier] = 'REVIEWED'
+            UNION
+            SELECT tombstone.[DocumentId]
+            FROM [tracked_changes_edfi].[Section] tombstone
+            WHERE tombstone.[OldSectionIdentifier] = 'REVIEWED'
+            """
+        );
+
+        long windowStart = await GetNewestChangeVersionAsync() + 1;
+        await DeleteEdfiRootAsync("Grade", gradeDocumentId);
+        await DeleteEdfiRootAsync("StudentSectionAssociation", associationDocumentId);
+        await UpdateSectionIdentifierAsync(chain.SectionDocumentId, "REVIEWED");
+        ChangeVersionRange window = new(windowStart, await GetNewestChangeVersionAsync());
+
+        // Without the suffix the live seek by the Grade tombstone's old Section key (SEEK-SEC-1) finds no
+        // row, so the renamed basis is denied, as in ODS for a natural-key basis.
+        await CreateCustomAuthViewAsync(
+            "SectionWithReviewedIdentifier",
+            """
+            SELECT section.[DocumentId]
+            FROM [edfi].[Section] section
+            WHERE section.[SectionIdentifier] = 'REVIEWED'
+            """
+        );
+        TrackedChangeQueryResult liveOnly = await QueryCustomViewChangesAsync(
+            ChangeQueryEndpointOperation.Deletes,
+            GradeResource,
+            ["SectionWithReviewedIdentifier"],
+            claimEdOrgIds: [],
+            window
+        );
+        liveOnly.AuthorizationFailure.Should().BeNull();
+        liveOnly.TotalCount.Should().Be(0);
+        liveOnly.Items.Should().BeEmpty();
+
+        // With the suffix the probe matches the Section's key-change row by the old key and resolves the
+        // basis to its DocumentId, which the view's live arm holds under the new identifier. The suffix
+        // resolves a renamed basis as well as a deleted one; membership is then by the document, not by
+        // the historical key the tombstone recorded.
+        TrackedChangeQueryResult withSuffix = await QueryCustomViewChangesAsync(
+            ChangeQueryEndpointOperation.Deletes,
+            GradeResource,
+            ["SectionWithReviewedIdentifierIncludingDeletes"],
+            claimEdOrgIds: [],
+            window
+        );
+        withSuffix.AuthorizationFailure.Should().BeNull();
+        withSuffix.TotalCount.Should().Be(1);
+        withSuffix.Items.Should().ContainSingle();
+        withSuffix.Items[0]!["keyValues"]!["sectionIdentifier"]!
+            .GetValue<string>()
+            .Should()
+            .Be(chain.SectionIdentifier);
+    }
+
+    // ── Transitive basis ──────────────────────────────────────────────────
+
+    [Test]
+    public async Task ReadChanges_custom_view_transitive_basis_filters_deleted_grades_by_course_offering()
+    {
+        await SeedGradeChainReferenceDataAsync();
+        await SeedSchoolTypeDescriptorsAsync();
+        long otherSchoolDocumentId = await InsertSchoolRootAsync(
+            RegularSchoolId,
+            "Regular High",
+            RegularSchoolTypeUri
+        );
+        SectionChainSeed fixtureSchoolChain = await InsertSectionChainAsync();
+        SectionChainSeed otherSchoolChain = await InsertSectionChainAsync(
+            otherSchoolDocumentId,
+            RegularSchoolId,
+            suffix: "-B"
+        );
+        long studentDocumentId = await InsertStudentAsync("STU-CV-Grade");
+        long fixtureAssociationDocumentId = await InsertStudentSectionAssociationRootAsync(
+            fixtureSchoolChain,
+            studentDocumentId,
+            "STU-CV-Grade"
+        );
+        long otherAssociationDocumentId = await InsertStudentSectionAssociationRootAsync(
+            otherSchoolChain,
+            studentDocumentId,
+            "STU-CV-Grade"
+        );
+        long fixtureGradeDocumentId = await InsertGradeRootAsync(
+            fixtureSchoolChain,
+            fixtureAssociationDocumentId,
+            "STU-CV-Grade"
+        );
+        long otherGradeDocumentId = await InsertGradeRootAsync(
+            otherSchoolChain,
+            otherAssociationDocumentId,
+            "STU-CV-Grade"
+        );
+        // Course offerings of the fixture school only. Grade reaches CourseOffering through
+        // StudentSectionAssociation and Section; the seek pairs the offering's four identity parts with
+        // the Grade tombstone's Old* columns.
+        await CreateCustomAuthViewAsync(
+            "CourseOfferingWithChangeQuerySchool",
+            $"""
+            SELECT courseOffering.[DocumentId]
+            FROM [edfi].[CourseOffering] courseOffering
+            WHERE courseOffering.[SchoolId_Unified] = {SchoolId}
+            """
+        );
+
+        long windowStart = await GetNewestChangeVersionAsync() + 1;
+        await DeleteEdfiRootAsync("Grade", fixtureGradeDocumentId);
+        await DeleteEdfiRootAsync("Grade", otherGradeDocumentId);
+        ChangeVersionRange window = new(windowStart, await GetNewestChangeVersionAsync());
+
+        TrackedChangeQueryResult result = await QueryCustomViewChangesAsync(
+            ChangeQueryEndpointOperation.Deletes,
+            GradeResource,
+            ["CourseOfferingWithChangeQuerySchool"],
+            claimEdOrgIds: [],
+            window
+        );
+
+        result.AuthorizationFailure.Should().BeNull();
+        result.TotalCount.Should().Be(1);
+        result.Items.Should().ContainSingle();
+        result.Items[0]!["keyValues"]!["localCourseCode"]!
+            .GetValue<string>()
+            .Should()
+            .Be(fixtureSchoolChain.LocalCourseCode);
+    }
+
+    // ── Person basis ──────────────────────────────────────────────────────
+
+    [Test]
+    public async Task ReadChanges_custom_view_person_basis_filters_deleted_associations_by_student_and_composes_with_people_strategy()
+    {
+        await SeedGradeChainReferenceDataAsync();
+        await SeedSchoolTypeDescriptorsAsync();
+        long alternativeSchoolDocumentId = await InsertSchoolRootAsync(
+            AlternativeSchoolId,
+            "Alternative High",
+            AlternativeSchoolTypeUri
+        );
+        SectionChainSeed cteChain = await InsertSectionChainAsync();
+        long enrolledStudentDocumentId = await InsertStudentAsync("STU-CV-CTE-Enrolled");
+        long otherStudentDocumentId = await InsertStudentAsync("STU-CV-CTE-Other");
+        await InsertStudentSectionAssociationRootAsync(
+            cteChain,
+            enrolledStudentDocumentId,
+            "STU-CV-CTE-Enrolled"
+        );
+        long enrolledAssociationDocumentId = await InsertStudentSchoolAssociationRootAsync(
+            alternativeSchoolDocumentId,
+            AlternativeSchoolId,
+            enrolledStudentDocumentId,
+            "STU-CV-CTE-Enrolled"
+        );
+        long otherAssociationDocumentId = await InsertStudentSchoolAssociationRootAsync(
+            alternativeSchoolDocumentId,
+            AlternativeSchoolId,
+            otherStudentDocumentId,
+            "STU-CV-CTE-Other"
+        );
+        // auth.md's StudentWithCTECourseEnrollments adapted to DocumentId: students with a section
+        // enrollment in the "CTE" course offering (the fixture chain's local course code stands in for the
+        // academic-subject filter).
+        await CreateCustomAuthViewAsync(
+            "StudentWithCTECourseEnrollments",
+            $"""
+            SELECT association.[Student_DocumentId] AS [DocumentId]
+            FROM [edfi].[StudentSectionAssociation] association
+            INNER JOIN [edfi].[Section] section ON section.[DocumentId] = association.[Section_DocumentId]
+            INNER JOIN [edfi].[CourseOffering] courseOffering
+                ON courseOffering.[DocumentId] = section.[CourseOffering_DocumentId]
+            WHERE courseOffering.[LocalCourseCode] = '{cteChain.LocalCourseCode}'
+            """
+        );
+        // Both students are enrolled at the alternative school for the IncludingDeletes people view.
+        await InsertAuthEdOrgTupleAsync(AlternativeSchoolId, AlternativeSchoolId);
+        await InsertAuthEdOrgTupleAsync(RegularSchoolId, RegularSchoolId);
+
+        long windowStart = await GetNewestChangeVersionAsync() + 1;
+        await DeleteEdfiRootAsync("StudentSchoolAssociation", enrolledAssociationDocumentId);
+        await DeleteEdfiRootAsync("StudentSchoolAssociation", otherAssociationDocumentId);
+        ChangeVersionRange window = new(windowStart, await GetNewestChangeVersionAsync());
+
+        TrackedChangeQueryResult customViewOnly = await QueryCustomViewChangesAsync(
+            ChangeQueryEndpointOperation.Deletes,
+            StudentSchoolAssociationResource,
+            ["StudentWithCTECourseEnrollments"],
+            claimEdOrgIds: [],
+            window
+        );
+        customViewOnly.AuthorizationFailure.Should().BeNull();
+        customViewOnly.TotalCount.Should().Be(1);
+        customViewOnly.Items.Should().ContainSingle();
+        customViewOnly.Items[0]!["keyValues"]!["studentUniqueId"]!
+            .GetValue<string>()
+            .Should()
+            .Be("STU-CV-CTE-Enrolled");
+
+        // The people strategy alone authorizes both tombstones for the alternative school's claim (both
+        // students' deleted associations feed the IncludingDeletes view); AND-composed with the custom
+        // view only the enrolled student survives, and a claim on the other school authorizes nothing.
+        TrackedChangeQueryResult peopleOnly = await QueryCustomViewChangesAsync(
+            ChangeQueryEndpointOperation.Deletes,
+            StudentSchoolAssociationResource,
+            ["RelationshipsWithStudentsOnlyIncludingDeletes"],
+            claimEdOrgIds: [AlternativeSchoolId],
+            window
+        );
+        peopleOnly.TotalCount.Should().Be(2);
+
+        TrackedChangeQueryResult composedAuthorizedClaim = await QueryCustomViewChangesAsync(
+            ChangeQueryEndpointOperation.Deletes,
+            StudentSchoolAssociationResource,
+            ["StudentWithCTECourseEnrollments", "RelationshipsWithStudentsOnlyIncludingDeletes"],
+            claimEdOrgIds: [AlternativeSchoolId],
+            window
+        );
+        composedAuthorizedClaim.TotalCount.Should().Be(1);
+        composedAuthorizedClaim.Items.Should().ContainSingle();
+        composedAuthorizedClaim.Items[0]!["keyValues"]!["studentUniqueId"]!
+            .GetValue<string>()
+            .Should()
+            .Be("STU-CV-CTE-Enrolled");
+
+        TrackedChangeQueryResult composedOtherClaim = await QueryCustomViewChangesAsync(
+            ChangeQueryEndpointOperation.Deletes,
+            StudentSchoolAssociationResource,
+            ["StudentWithCTECourseEnrollments", "RelationshipsWithStudentsOnlyIncludingDeletes"],
+            claimEdOrgIds: [RegularSchoolId],
+            window
+        );
+        composedOtherClaim.TotalCount.Should().Be(0);
+        composedOtherClaim.Items.Should().BeEmpty();
+    }
+
+    // ── Securable non-identity first hop ──────────────────────────────────
+
+    [Test]
+    public async Task ReadChanges_custom_view_securable_non_identity_first_hop_filters_deleted_student_assessments_by_reported_school()
+    {
+        await SeedSchoolTypeDescriptorsAsync();
+        long alternativeSchoolDocumentId = await InsertSchoolRootAsync(
+            AlternativeSchoolId,
+            "Alternative High",
+            AlternativeSchoolTypeUri
+        );
+        long regularSchoolDocumentId = await InsertSchoolRootAsync(
+            RegularSchoolId,
+            "Regular High",
+            RegularSchoolTypeUri
+        );
+        long studentDocumentId = await InsertStudentAsync("STU-CV-Assessed");
+        const string assessmentIdentifier = "CV-ASSESSMENT";
+        const string assessmentNamespace = "uri://ed-fi.org/Assessment";
+        long assessmentDocumentId = await InsertAssessmentRootAsync(
+            assessmentIdentifier,
+            assessmentNamespace
+        );
+        long reportedAlternativeDocumentId = await InsertStudentAssessmentRootAsync(
+            assessmentDocumentId,
+            assessmentIdentifier,
+            assessmentNamespace,
+            studentDocumentId,
+            "STU-CV-Assessed",
+            "SA-Alternative",
+            alternativeSchoolDocumentId,
+            AlternativeSchoolId
+        );
+        long reportedRegularDocumentId = await InsertStudentAssessmentRootAsync(
+            assessmentDocumentId,
+            assessmentIdentifier,
+            assessmentNamespace,
+            studentDocumentId,
+            "STU-CV-Assessed",
+            "SA-Regular",
+            regularSchoolDocumentId,
+            RegularSchoolId
+        );
+        long unreportedDocumentId = await InsertStudentAssessmentRootAsync(
+            assessmentDocumentId,
+            assessmentIdentifier,
+            assessmentNamespace,
+            studentDocumentId,
+            "STU-CV-Assessed",
+            "SA-Unreported",
+            reportedSchoolDocumentId: null,
+            reportedSchoolId: null
+        );
+        await CreateCustomAuthViewAsync(
+            SchoolWithAlternativeTypeStrategy,
+            SchoolWithTypeViewSql("Alternative")
+        );
+
+        long windowStart = await GetNewestChangeVersionAsync() + 1;
+        await DeleteEdfiRootAsync("StudentAssessment", reportedAlternativeDocumentId);
+        await DeleteEdfiRootAsync("StudentAssessment", reportedRegularDocumentId);
+        await DeleteEdfiRootAsync("StudentAssessment", unreportedDocumentId);
+        ChangeVersionRange window = new(windowStart, await GetNewestChangeVersionAsync());
+
+        // reportedSchoolReference is a securable element but not part of the identity; the tombstone
+        // stores OldReportedSchool_SchoolId, so the seek works, and a null old value never matches.
+        TrackedChangeQueryResult result = await QueryCustomViewChangesAsync(
+            ChangeQueryEndpointOperation.Deletes,
+            StudentAssessmentResource,
+            [SchoolWithAlternativeTypeStrategy],
+            claimEdOrgIds: [],
+            window
+        );
+
+        result.AuthorizationFailure.Should().BeNull();
+        result.TotalCount.Should().Be(1);
+        result.Items.Should().ContainSingle();
+        result.Items[0]!["keyValues"]!["studentAssessmentIdentifier"]!
+            .GetValue<string>()
+            .Should()
+            .Be("SA-Alternative");
+    }
+
+    // ── Errors ────────────────────────────────────────────────────────────
+
+    [Test]
+    public async Task ReadChanges_custom_view_over_a_non_identifying_non_securable_reference_fails_planning_while_live_reads_succeed()
+    {
+        await SeedGradeChainReferenceDataAsync();
+        SectionChainSeed chain = await InsertSectionChainAsync();
+        await CreateCustomAuthViewAsync(
+            "LocationWithX",
+            """
+            SELECT location.[DocumentId]
+            FROM [edfi].[Location] location
+            """
+        );
+
+        long windowStart = await GetNewestChangeVersionAsync() + 1;
+        await DeleteEdfiRootAsync("Section", chain.SectionDocumentId);
+        ChangeVersionRange window = new(windowStart, await GetNewestChangeVersionAsync());
+
+        // Section's location reference is optional and neither identifying nor securable, so the Section
+        // tombstone carries no Location values to seek by: planning fails with the ODS-parity hint.
+        TrackedChangeQueryResult deletes = await QueryCustomViewChangesAsync(
+            ChangeQueryEndpointOperation.Deletes,
+            SectionResource,
+            ["LocationWithX"],
+            claimEdOrgIds: [],
+            window
+        );
+
+        ChangeQueryAuthorizationFailure.SecurityConfiguration failure = deletes
+            .AuthorizationFailure.Should()
+            .BeOfType<ChangeQueryAuthorizationFailure.SecurityConfiguration>()
+            .Subject;
+        failure.UnavailableStrategyNames.Should().BeEmpty();
+        failure.Errors.Should().ContainSingle();
+        failure.Errors[0].Should().Contain("'LocationWithX'");
+        failure.Errors[0].Should().Contain("'Ed-Fi.Location'");
+        failure.Errors[0].Should().Contain(CustomViewBasisNotIdentifyingOrSecurableHintFragment);
+        deletes.TotalCount.Should().BeNull();
+        deletes.Items.Should().BeEmpty();
+
+        // The same view keeps working on the live read path, as in ODS.
+        QueryResult liveQuery = await QueryLiveDocumentsAsync(SectionResource, ["LocationWithX"]);
+        liveQuery.Should().BeOfType<QueryResult.QuerySuccess>();
+    }
+
+    [Test]
+    public async Task ReadChanges_custom_view_whose_view_is_missing_fails_validation_before_reading_rows()
+    {
+        await SeedSchoolTypeDescriptorsAsync();
+        long alternativeSchoolDocumentId = await InsertSchoolRootAsync(
+            AlternativeSchoolId,
+            "Alternative High",
+            AlternativeSchoolTypeUri
+        );
+        long studentDocumentId = await InsertStudentAsync("STU-CV-MissingView");
+        long associationDocumentId = await InsertStudentSchoolAssociationRootAsync(
+            alternativeSchoolDocumentId,
+            AlternativeSchoolId,
+            studentDocumentId,
+            "STU-CV-MissingView"
+        );
+
+        long windowStart = await GetNewestChangeVersionAsync() + 1;
+        await DeleteEdfiRootAsync("StudentSchoolAssociation", associationDocumentId);
+        ChangeVersionRange window = new(windowStart, await GetNewestChangeVersionAsync());
+
+        // The per-request validator runs before the change query: a missing view surfaces as the
+        // CustomViewAuthorizationValidationException that the middleware maps to the urn:ed-fi:api:system
+        // 500, and no rows are returned.
+        Func<Task> act = () =>
+            QueryCustomViewChangesAsync(
+                ChangeQueryEndpointOperation.Deletes,
+                StudentSchoolAssociationResource,
+                ["SchoolWithMissingChangeQueryView"],
+                claimEdOrgIds: [],
+                window
+            );
+
+        var assertion = await act.Should().ThrowAsync<CustomViewAuthorizationValidationException>();
+        SqlException providerException = assertion
+            .Which.InnerException.Should()
+            .BeOfType<SqlException>()
+            .Subject;
+        providerException.Message.Should().Contain("Invalid custom authorization view DocumentId contract.");
+    }
+
+    [Test]
+    public async Task ReadChanges_custom_view_with_an_unknown_basis_returns_the_unknown_strategy_failure()
+    {
+        await SeedSchoolTypeDescriptorsAsync();
+        long alternativeSchoolDocumentId = await InsertSchoolRootAsync(
+            AlternativeSchoolId,
+            "Alternative High",
+            AlternativeSchoolTypeUri
+        );
+        long studentDocumentId = await InsertStudentAsync("STU-CV-UnknownBasis");
+        long associationDocumentId = await InsertStudentSchoolAssociationRootAsync(
+            alternativeSchoolDocumentId,
+            AlternativeSchoolId,
+            studentDocumentId,
+            "STU-CV-UnknownBasis"
+        );
+
+        long windowStart = await GetNewestChangeVersionAsync() + 1;
+        await DeleteEdfiRootAsync("StudentSchoolAssociation", associationDocumentId);
+        ChangeVersionRange window = new(windowStart, await GetNewestChangeVersionAsync());
+
+        TrackedChangeQueryResult result = await QueryCustomViewChangesAsync(
+            ChangeQueryEndpointOperation.Deletes,
+            StudentSchoolAssociationResource,
+            ["FooWithBar"],
+            claimEdOrgIds: [],
+            window
+        );
+
+        ChangeQueryAuthorizationFailure.SecurityConfiguration failure = result
+            .AuthorizationFailure.Should()
+            .BeOfType<ChangeQueryAuthorizationFailure.SecurityConfiguration>()
+            .Subject;
+        failure.UnavailableStrategyNames.Should().Equal("FooWithBar");
+        failure
+            .Errors.Should()
+            .Equal(SecurityConfigurationFailureMessages.UnknownAuthorizationStrategies(["FooWithBar"]));
+        result.TotalCount.Should().BeNull();
+        result.Items.Should().BeEmpty();
+    }
+
+    // ── Old values only ───────────────────────────────────────────────────
+
+    [Test]
+    public async Task ReadChanges_custom_view_authorizes_key_changes_by_the_old_school_only()
+    {
+        await SeedSchoolTypeDescriptorsAsync();
+        long alternativeSchoolDocumentId = await InsertSchoolRootAsync(
+            AlternativeSchoolId,
+            "Alternative High",
+            AlternativeSchoolTypeUri
+        );
+        long regularSchoolDocumentId = await InsertSchoolRootAsync(
+            RegularSchoolId,
+            "Regular High",
+            RegularSchoolTypeUri
+        );
+        long studentDocumentId = await InsertStudentAsync("STU-CV-Moved");
+        long associationDocumentId = await InsertStudentSchoolAssociationRootAsync(
+            alternativeSchoolDocumentId,
+            AlternativeSchoolId,
+            studentDocumentId,
+            "STU-CV-Moved"
+        );
+        await CreateCustomAuthViewAsync(
+            SchoolWithAlternativeTypeStrategy,
+            SchoolWithTypeViewSql("Alternative")
+        );
+        await CreateCustomAuthViewAsync("SchoolWithRegularType", SchoolWithTypeViewSql("Regular"));
+
+        long windowStart = await GetNewestChangeVersionAsync() + 1;
+        await MoveStudentSchoolAssociationToSchoolAsync(
+            associationDocumentId,
+            regularSchoolDocumentId,
+            RegularSchoolId
+        );
+        ChangeVersionRange window = new(windowStart, await GetNewestChangeVersionAsync());
+
+        // Key changes authorize by the OLD values: the association moved from the alternative school
+        // (S1) to the regular school (S2), so the alternative-type view returns the key change...
+        TrackedChangeQueryResult byOldSchool = await QueryCustomViewChangesAsync(
+            ChangeQueryEndpointOperation.KeyChanges,
+            StudentSchoolAssociationResource,
+            [SchoolWithAlternativeTypeStrategy],
+            claimEdOrgIds: [],
+            window
+        );
+        byOldSchool.AuthorizationFailure.Should().BeNull();
+        byOldSchool.TotalCount.Should().Be(1);
+        byOldSchool.Items.Should().ContainSingle();
+        JsonObject keyChange = byOldSchool.Items[0]!.AsObject();
+        keyChange["oldKeyValues"]!["schoolId"]!.GetValue<long>().Should().Be(AlternativeSchoolId);
+        keyChange["newKeyValues"]!["schoolId"]!.GetValue<long>().Should().Be(RegularSchoolId);
+
+        // ...and the regular-type view does not, even though the NEW school is regular.
+        TrackedChangeQueryResult byNewSchool = await QueryCustomViewChangesAsync(
+            ChangeQueryEndpointOperation.KeyChanges,
+            StudentSchoolAssociationResource,
+            ["SchoolWithRegularType"],
+            claimEdOrgIds: [],
+            window
+        );
+        byNewSchool.AuthorizationFailure.Should().BeNull();
+        byNewSchool.TotalCount.Should().Be(0);
+        byNewSchool.Items.Should().BeEmpty();
+    }
+
+    // ── Custom view query helpers ─────────────────────────────────────────
+
+    private RelationalChangeQueryRepository CreateChangeQueryRepository()
+    {
+        var commandExecutor = new MssqlRelationalCommandExecutor(
+            async ct =>
+            {
+                var connection = new SqlConnection(_database.ConnectionString);
+                await connection.OpenAsync(ct);
+                return connection;
+            },
+            NullLogger<MssqlRelationalCommandExecutor>.Instance
+        );
+        return new RelationalChangeQueryRepository(
+            commandExecutor,
+            new MssqlRelationalParameterConfigurator()
+        );
+    }
+
+    private async Task<long> GetNewestChangeVersionAsync() =>
+        await CreateChangeQueryRepository().GetNewestChangeVersion();
+
+    private Task<TrackedChangeQueryResult> QueryCustomViewChangesAsync(
+        ChangeQueryEndpointOperation operation,
+        QualifiedResourceName resource,
+        IReadOnlyList<string> strategies,
+        IReadOnlyList<long> claimEdOrgIds,
+        ChangeVersionRange changeVersionRange
+    )
+    {
+        ConcreteResourceModel resourceModel = ResolveResourceModel(resource);
+        TrackedChangeTableInfo trackedTable = _mappingSet.Model.TrackedChangeTablesInNameOrder.Single(x =>
+            x.SourceTable == resourceModel.RelationalModel.Root.Table
+        );
+
+        return QueryTrackedChangesWithAuthorizationAsync(
+            operation,
+            ResolveResourceInfo(resource),
+            resourceModel,
+            trackedTable,
+            claimEdOrgIds,
+            namespacePrefixes: [],
+            strategies,
+            limit: 25,
+            offset: 0,
+            totalCount: true,
+            changeVersionRange,
+            traceId: new TraceId($"mssql-readchanges-customview-{operation}-{resource.ResourceName}")
+        );
+    }
+
+    private async Task<QueryResult> QueryLiveDocumentsAsync(
+        QualifiedResourceName resource,
+        IReadOnlyList<string> strategies
+    )
+    {
+        ResourceInfo resourceInfo = ResolveResourceInfo(resource);
+        return await InvokeDocumentStoreAsync(repository =>
+            repository.QueryDocuments(
+                new RelationalQueryRequest(
+                    ResourceInfo: resourceInfo,
+                    AuthorizationContext: new RelationalAuthorizationContext([], []),
+                    MappingSet: _mappingSet,
+                    QueryElements: [],
+                    AuthorizationStrategyEvaluators:
+                    [
+                        .. strategies.Select(static name => new AuthorizationStrategyEvaluator(
+                            name,
+                            [],
+                            FilterOperator.And
+                        )),
+                    ],
+                    Paging: new CollectionPaging.Traditional(
+                        new PaginationParameters(
+                            Limit: 25,
+                            Offset: 0,
+                            TotalCount: true,
+                            MaximumPageSize: MaximumPageSize
+                        )
+                    ),
+                    TraceId: new TraceId($"mssql-live-query-{resource.ResourceName}"),
+                    PageOrderingMode: PageOrderingMode.DocumentId
+                )
+            )
+        );
+    }
+
+    // ── Custom view seed helpers ──────────────────────────────────────────
+
+    /// <summary>
+    /// Drops and recreates [auth].[{strategyName}] from the given SELECT. Views survive the per-test
+    /// table reset, so each scenario (re)creates the views it depends on. CREATE VIEW must be the only
+    /// statement in its batch, hence the two commands.
+    /// </summary>
+    private async Task CreateCustomAuthViewAsync(string strategyName, string selectSql)
+    {
+        await _database.ExecuteNonQueryAsync($"DROP VIEW IF EXISTS [auth].[{strategyName}];");
+        await _database.ExecuteNonQueryAsync(
+            $"""
+            CREATE VIEW [auth].[{strategyName}] AS
+            {selectSql};
+            """
+        );
+    }
+
+    /// <summary>The auth.md example view: schools whose SchoolTypeDescriptor has the given code value.</summary>
+    private static string SchoolWithTypeViewSql(string schoolTypeCodeValue) =>
+        $"""
+            SELECT school.[DocumentId]
+            FROM [edfi].[School] school
+            INNER JOIN [dms].[Descriptor] descriptor
+                ON descriptor.[DocumentId] = school.[SchoolTypeDescriptor_DescriptorId]
+            WHERE descriptor.[Namespace] = '{SchoolTypeDescriptorNamespace}'
+              AND descriptor.[CodeValue] = '{schoolTypeCodeValue}'
+            """;
+
+    private async Task SeedSchoolTypeDescriptorsAsync()
+    {
+        await SeedDescriptorAsync(
+            Guid.NewGuid(),
+            "SchoolTypeDescriptor",
+            "Ed-Fi:SchoolTypeDescriptor",
+            AlternativeSchoolTypeUri,
+            SchoolTypeDescriptorNamespace,
+            "Alternative",
+            "Alternative"
+        );
+        await SeedDescriptorAsync(
+            Guid.NewGuid(),
+            "SchoolTypeDescriptor",
+            "Ed-Fi:SchoolTypeDescriptor",
+            RegularSchoolTypeUri,
+            SchoolTypeDescriptorNamespace,
+            "Regular",
+            "Regular"
+        );
+    }
+
+    private async Task<long> InsertSchoolRootAsync(
+        long schoolId,
+        string nameOfInstitution,
+        string schoolTypeDescriptorUri
+    )
+    {
+        long documentId = await InsertDocumentAsync(
+            Guid.NewGuid(),
+            await GetResourceKeyIdAsync("Ed-Fi", "School")
+        );
+        await _database.ExecuteNonQueryAsync(
+            $"""
+            INSERT INTO [edfi].[School] ([DocumentId], [NameOfInstitution], [SchoolId],
+                [SchoolTypeDescriptor_DescriptorId])
+            VALUES (@documentId, @nameOfInstitution, @schoolId,
+                {DescriptorDocumentIdSql("SchoolTypeDescriptor", "@schoolTypeDescriptorUri")});
+            """,
+            new SqlParameter("@documentId", documentId),
+            new SqlParameter("@nameOfInstitution", nameOfInstitution),
+            new SqlParameter("@schoolId", schoolId),
+            new SqlParameter("@schoolTypeDescriptorUri", schoolTypeDescriptorUri)
+        );
+        return documentId;
+    }
+
+    private async Task<long> InsertStudentAsync(string studentUniqueId)
+    {
+        long documentId = await InsertDocumentAsync(
+            Guid.NewGuid(),
+            await GetResourceKeyIdAsync("Ed-Fi", "Student")
+        );
+        await InsertStudentRootAsync(documentId, studentUniqueId);
+        return documentId;
+    }
+
+    private async Task<long> InsertStudentSchoolAssociationRootAsync(
+        long schoolDocumentId,
+        long schoolId,
+        long studentDocumentId,
+        string studentUniqueId
+    )
+    {
+        long documentId = await InsertDocumentAsync(
+            Guid.NewGuid(),
+            await GetResourceKeyIdAsync("Ed-Fi", "StudentSchoolAssociation")
+        );
+        await _database.ExecuteNonQueryAsync(
+            $"""
+            INSERT INTO [edfi].[StudentSchoolAssociation] ([DocumentId], [SchoolId_Unified], [School_DocumentId],
+                [Student_DocumentId], [Student_StudentUniqueId], [EntryGradeLevelDescriptor_DescriptorId], [EntryDate])
+            VALUES (@documentId, @schoolId, @schoolDocumentId, @studentDocumentId, @studentUniqueId,
+                {DescriptorDocumentIdSql(
+                "GradeLevelDescriptor",
+                "@entryGradeLevelDescriptorUri"
+            )}, @entryDate);
+            """,
+            new SqlParameter("@documentId", documentId),
+            new SqlParameter("@schoolId", schoolId),
+            new SqlParameter("@schoolDocumentId", schoolDocumentId),
+            new SqlParameter("@studentDocumentId", studentDocumentId),
+            new SqlParameter("@studentUniqueId", studentUniqueId),
+            new SqlParameter("@entryGradeLevelDescriptorUri", EntryGradeLevelDescriptorUri),
+            new SqlParameter("@entryDate", CustomViewEntryDate)
+        );
+        return documentId;
+    }
+
+    /// <summary>
+    /// Moves the association to another school the way an identity update lands in the root table: the
+    /// reference DocumentId and the unified school id change together, firing the key-change trigger.
+    /// </summary>
+    private async Task MoveStudentSchoolAssociationToSchoolAsync(
+        long associationDocumentId,
+        long newSchoolDocumentId,
+        long newSchoolId
+    )
+    {
+        await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE [edfi].[StudentSchoolAssociation]
+            SET [School_DocumentId] = @schoolDocumentId, [SchoolId_Unified] = @schoolId
+            WHERE [DocumentId] = @documentId;
+            """,
+            new SqlParameter("@schoolDocumentId", newSchoolDocumentId),
+            new SqlParameter("@schoolId", newSchoolId),
+            new SqlParameter("@documentId", associationDocumentId)
+        );
+    }
+
+    private async Task UpdateSectionIdentifierAsync(long sectionDocumentId, string sectionIdentifier)
+    {
+        await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE [edfi].[Section]
+            SET [SectionIdentifier] = @sectionIdentifier
+            WHERE [DocumentId] = @documentId;
+            """,
+            new SqlParameter("@sectionIdentifier", sectionIdentifier),
+            new SqlParameter("@documentId", sectionDocumentId)
+        );
+    }
+
+    private async Task<long> InsertAssessmentRootAsync(string assessmentIdentifier, string @namespace)
+    {
+        long documentId = await InsertDocumentAsync(
+            Guid.NewGuid(),
+            await GetResourceKeyIdAsync("Ed-Fi", "Assessment")
+        );
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO [edfi].[Assessment] ([DocumentId], [AssessmentIdentifier], [AssessmentTitle], [Namespace])
+            VALUES (@documentId, @assessmentIdentifier, 'Custom view assessment', @namespace);
+            """,
+            new SqlParameter("@documentId", documentId),
+            new SqlParameter("@assessmentIdentifier", assessmentIdentifier),
+            new SqlParameter("@namespace", @namespace)
+        );
+        return documentId;
+    }
+
+    private async Task<long> InsertStudentAssessmentRootAsync(
+        long assessmentDocumentId,
+        string assessmentIdentifier,
+        string @namespace,
+        long studentDocumentId,
+        string studentUniqueId,
+        string studentAssessmentIdentifier,
+        long? reportedSchoolDocumentId,
+        long? reportedSchoolId
+    )
+    {
+        long documentId = await InsertDocumentAsync(
+            Guid.NewGuid(),
+            await GetResourceKeyIdAsync("Ed-Fi", "StudentAssessment")
+        );
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO [edfi].[StudentAssessment] ([DocumentId], [Assessment_DocumentId],
+                [Assessment_AssessmentIdentifier], [Assessment_Namespace], [ReportedSchool_DocumentId],
+                [ReportedSchool_SchoolId], [Student_DocumentId], [Student_StudentUniqueId],
+                [StudentAssessmentIdentifier])
+            VALUES (@documentId, @assessmentDocumentId, @assessmentIdentifier, @namespace,
+                @reportedSchoolDocumentId, @reportedSchoolId, @studentDocumentId, @studentUniqueId,
+                @studentAssessmentIdentifier);
+            """,
+            new SqlParameter("@documentId", documentId),
+            new SqlParameter("@assessmentDocumentId", assessmentDocumentId),
+            new SqlParameter("@assessmentIdentifier", assessmentIdentifier),
+            new SqlParameter("@namespace", @namespace),
+            new SqlParameter("@reportedSchoolDocumentId", SqlDbType.BigInt)
+            {
+                Value = (object?)reportedSchoolDocumentId ?? DBNull.Value,
+            },
+            new SqlParameter("@reportedSchoolId", SqlDbType.BigInt)
+            {
+                Value = (object?)reportedSchoolId ?? DBNull.Value,
+            },
+            new SqlParameter("@studentDocumentId", studentDocumentId),
+            new SqlParameter("@studentUniqueId", studentUniqueId),
+            new SqlParameter("@studentAssessmentIdentifier", studentAssessmentIdentifier)
+        );
+        return documentId;
+    }
+
+    /// <summary>Deletes one root row through the table, firing the resource's tombstone trigger.</summary>
+    private async Task DeleteEdfiRootAsync(string tableName, long documentId)
+    {
+        await _database.ExecuteNonQueryAsync(
+            $"""
+            DELETE FROM [edfi].[{tableName}]
+            WHERE [DocumentId] = @documentId;
+            """,
+            new SqlParameter("@documentId", documentId)
         );
     }
 }

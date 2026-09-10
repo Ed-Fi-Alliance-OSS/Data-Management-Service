@@ -848,6 +848,13 @@ public enum TrackedChangeSystemColumnRole
     ChangeVersion,
 
     /// <summary>
+    /// <c>DocumentId</c> — the tracked document's <c>dms.Document.DocumentId</c>, read from the row being
+    /// deleted or changed. Carries no <c>Old</c>/<c>New</c> prefix because a document's DocumentId never
+    /// changes. Serves the zero-hop self person path and the custom view-based tombstone probe.
+    /// </summary>
+    DocumentId,
+
+    /// <summary>
     /// <c>CreatedAt</c> — the tracked row insert timestamp.
     /// </summary>
     CreatedAt,

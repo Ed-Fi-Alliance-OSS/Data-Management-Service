@@ -198,4 +198,33 @@ public class Given_CustomViewAuthorization
         first.RootTable.Should().Be(new DbTableName(new DbSchemaName("edfi"), "CourseTranscript"));
         first.RootDocumentIdColumn.Should().Be(new DbColumnName("DocumentId"));
     }
+
+    [Test]
+    public void It_should_plan_a_non_identifying_non_securable_first_hop_on_the_live_read_paths()
+    {
+        // Section's locationReference is optional, not part of Section's identity, and not a securable
+        // element. The live page planner joins the stored Location DocumentId, so the view plans here; the
+        // same view fails ReadChanges planning (CustomViewBasisNotIdentifyingOrSecurable), proving the
+        // restriction is ReadChanges-only, as in ODS.
+        var (modelSet, mappingSet) = Ds52FixtureHelper.BuildAndCompile();
+        var subjectResource = new QualifiedResourceName("Ed-Fi", "Section");
+        var subject = modelSet.ConcreteResourcesInNameOrder.Single(resource =>
+            resource.ResourceKey.Resource == subjectResource
+        );
+        var strategy = new SupportedCustomViewAuthorizationStrategy(
+            new ConfiguredAuthorizationStrategy("LocationWithX", 0),
+            0,
+            new QualifiedResourceName("Ed-Fi", "Location")
+        );
+
+        var outcome = CustomViewAuthorizationPlanner.Plan(mappingSet, subject, [strategy]);
+
+        var check = outcome
+            .Should()
+            .BeOfType<CustomViewAuthorizationPlanOutcome.Plan>()
+            .Subject.Checks.Should()
+            .ContainSingle()
+            .Subject;
+        check.ConfiguredStrategy.StrategyName.Should().Be("LocationWithX");
+    }
 }

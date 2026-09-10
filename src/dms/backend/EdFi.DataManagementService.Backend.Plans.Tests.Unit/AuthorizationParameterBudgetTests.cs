@@ -217,6 +217,43 @@ public class Given_AuthorizationParameterBudget
             .BeTrue();
     }
 
+    // DMS-1193: a ReadChanges custom view binds no claim parameters; a descriptor identity part (or a
+    // descriptor basis) binds two discriminator values per part, which the change-query repository counts
+    // with the query's own parameters. The budget rule itself is unchanged: those two-per-part values simply
+    // spend the same ceiling, so a maximal namespace prefix list trips it exactly where the existing rule says.
+    [Test]
+    public void It_counts_custom_view_descriptor_discriminator_parameters_against_the_command_limit()
+    {
+        var namespacePrefixParameterization = NamespacePrefixParameterizationFactory.Create(
+            SqlDialect.Mssql,
+            CreateNamespacePrefixes(1999),
+            "namespacePrefixes"
+        );
+        const int descriptorDiscriminatorParametersPerPart = 2;
+
+        // 1,999 + 2 paging + 48 descriptor parts × 2 == 2,097, within the ceiling ...
+        AuthorizationParameterBudget
+            .ExceedsCommandParameterLimit(
+                SqlDialect.Mssql,
+                namespacePrefixParameterization,
+                claimEducationOrganizationIdParameterization: null,
+                nonAuthorizationParameterCount: PagingOnly + 48 * descriptorDiscriminatorParametersPerPart
+            )
+            .Should()
+            .BeFalse();
+
+        // ... and one more descriptor part (2,099) is one past it.
+        AuthorizationParameterBudget
+            .ExceedsCommandParameterLimit(
+                SqlDialect.Mssql,
+                namespacePrefixParameterization,
+                claimEducationOrganizationIdParameterization: null,
+                nonAuthorizationParameterCount: PagingOnly + 49 * descriptorDiscriminatorParametersPerPart
+            )
+            .Should()
+            .BeTrue();
+    }
+
     [Test]
     public void It_rejects_a_negative_non_authorization_parameter_count()
     {

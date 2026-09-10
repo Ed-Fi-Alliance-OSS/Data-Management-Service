@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Backend.External;
 using FluentAssertions;
 using NUnit.Framework;
 
@@ -23,12 +24,12 @@ public class Given_CustomViewAuthorizationHintFormatter
     }
 
     [TestCase("StudentWithCTECourseEnrollments", "Student with CTE Course Enrollments")]
-    [TestCase("TransportationTypeDescriptorWithABus", "Transportation Type Descriptor with A Bus")]
+    [TestCase("TransportationTypeDescriptorWithABus", "Transportation Type Descriptor with a Bus")]
     [TestCase(
         "EducationOrganizationWithACategoryContainingAnSWord",
-        "Education Organization with A Category Containing An S Word"
+        "Education Organization with a Category Containing an S Word"
     )]
-    [TestCase("SchoolContainingAnSWord", "School Containing An S Word")]
+    [TestCase("SchoolContainingAnSWord", "School Containing an S Word")]
     [TestCase("StudentWithGrade3Courses", "Student with Grade3 Courses")]
     public void It_should_split_camel_case_while_keeping_acronym_runs_intact(
         string strategyName,
@@ -45,6 +46,24 @@ public class Given_CustomViewAuthorizationHintFormatter
             .FormatDisplayText("StudentWithCoursesWithGrades")
             .Should()
             .Be("Student with Courses with Grades");
+    }
+
+    [TestCase("SchoolWithAProgramOfTheYear", "School with a Program of the Year")]
+    [TestCase("StudentWithAnAbsenceInASemester", "Student with an Absence in a Semester")]
+    [TestCase("StaffWithAssignmentsAndTheirSchools", "Staff with Assignments and Their Schools")]
+    [TestCase("SectionWithASessionAtAnySchoolOrDistrict", "Section with a Session at Any School or District")]
+    public void It_should_lowercase_the_ods_preposition_and_article_list_so_the_hint_matches_the_legacy_api(
+        string strategyName,
+        string expectedDisplayText
+    )
+    {
+        // ODS's CustomAuthorizationViewHintProvider lowercases every token found in its preposition list
+        // (articles, conjunctions, and prepositions), not only the 'With' separator; migrating clients see the
+        // same hint text from both APIs.
+        CustomViewAuthorizationHintFormatter
+            .FormatDisplayText(strategyName)
+            .Should()
+            .Be(expectedDisplayText);
     }
 
     [TestCase("StudentWithCTECourseEnrollments", "a")]
@@ -71,7 +90,7 @@ public class Given_CustomViewAuthorizationHintFormatter
         CustomViewAuthorizationHintFormatter
             .FormatDisplayText("CTEProgramWithAnEnrollment")
             .Should()
-            .Be("CTE Program with An Enrollment");
+            .Be("CTE Program with an Enrollment");
     }
 
     [Test]
@@ -93,5 +112,49 @@ public class Given_CustomViewAuthorizationHintFormatter
         var act = () => CustomViewAuthorizationHintFormatter.Format(strategyName!);
 
         act.Should().Throw<ArgumentException>().WithParameterName("strategyName");
+    }
+
+    [Test]
+    public void It_should_format_the_change_queries_non_identifying_basis_hint_from_the_ods_wording()
+    {
+        // change-queries.md §"Design: error behavior": the ODS "Non-identifying properties" text carried over,
+        // narrowed by the securable allowance. Verbatim for the Section/Location case.
+        CustomViewAuthorizationHintFormatter
+            .FormatBasisNotIdentifyingOrSecurable(
+                "locationReference",
+                new QualifiedResourceName("Ed-Fi", "Section"),
+                new QualifiedResourceName("Ed-Fi", "Location")
+            )
+            .Should()
+            .Be(
+                "The reference 'locationReference' on 'Ed-Fi.Section' leads to custom view basis 'Ed-Fi.Location' "
+                    + "but is neither an identifying property nor a securable element of the subject. This is not "
+                    + "supported by Change Queries, which only track deleted/changed values of identifying and "
+                    + "securable properties. Should a different authorization strategy be used?"
+            );
+    }
+
+    [Test]
+    public void It_formats_the_descriptor_basis_not_identifying_on_intermediate_hint()
+    {
+        // change-queries.md §"Error behavior": a descriptor basis reached through School whose property is not
+        // part of School's identity. Verbatim for the StudentSchoolAssociation/SchoolTypeDescriptor case.
+        CustomViewAuthorizationHintFormatter
+            .FormatDescriptorBasisNotIdentifyingOnIntermediate(
+                "schoolTypeDescriptor",
+                new QualifiedResourceName("Ed-Fi", "School"),
+                "schoolReference",
+                new QualifiedResourceName("Ed-Fi", "StudentSchoolAssociation"),
+                new QualifiedResourceName("Ed-Fi", "SchoolTypeDescriptor")
+            )
+            .Should()
+            .Be(
+                "The descriptor property 'schoolTypeDescriptor' on 'Ed-Fi.School', reached from "
+                    + "'Ed-Fi.StudentSchoolAssociation' through 'schoolReference', leads to custom view basis "
+                    + "'Ed-Fi.SchoolTypeDescriptor' but is not an identifying property of 'Ed-Fi.School', so the "
+                    + "subject's tombstone does not store its value. This is not supported by Change Queries, which "
+                    + "only track deleted/changed values of identifying and securable properties. Should a different "
+                    + "authorization strategy be used?"
+            );
     }
 }

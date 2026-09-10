@@ -737,6 +737,7 @@ CREATE TABLE [tracked_changes_edfi].[Person]
     [NewPersonId] int NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_Person_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_Person] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -843,12 +844,14 @@ BEGIN
         INSERT INTO [tracked_changes_edfi].[Person] (
             [OldPersonId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[PersonId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -865,13 +868,15 @@ BEGIN
                 [OldPersonId],
                 [NewPersonId],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[PersonId],
                 i.[PersonId],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]

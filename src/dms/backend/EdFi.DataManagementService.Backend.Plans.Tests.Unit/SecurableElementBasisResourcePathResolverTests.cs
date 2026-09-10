@@ -571,7 +571,7 @@ public class Given_SecurableElementColumnPathResolver_BasisPath
     }
 
     [Test]
-    public void It_should_not_treat_nested_non_role_named_references_as_role_named()
+    public void It_should_ignore_a_collection_nested_reference_when_a_root_role_named_reference_reaches_the_basis()
     {
         var studentRoot = CreateRootTable(Table("Student"));
         var detailTable = new DbTableName(EdFiSchema, "CourseTranscriptDetail");
@@ -665,15 +665,11 @@ public class Given_SecurableElementColumnPathResolver_BasisPath
             []
         );
 
-        result.Should().HaveCount(2);
+        result.Should().ContainSingle();
         result[0].SourceTable.Should().Be(Table("CourseTranscript"));
-        result[0].SourceColumnName.Should().Be(Col("DocumentId"));
-        result[0].TargetTable.Should().Be(detailTable);
-        result[0].TargetColumnName.Should().Be(Col("CourseTranscript_DocumentId"));
-        result[1].SourceTable.Should().Be(detailTable);
-        result[1].SourceColumnName.Should().Be(Col("NestedStudent_DocumentId"));
-        result[1].TargetTable.Should().BeNull();
-        result[1].TargetColumnName.Should().BeNull();
+        result[0].SourceColumnName.Should().Be(Col("RoleNamedStudent_DocumentId"));
+        result[0].TargetTable.Should().BeNull();
+        result[0].TargetColumnName.Should().BeNull();
     }
 
     [Test]
@@ -1987,8 +1983,11 @@ public class Given_SecurableElementColumnPathResolver_BasisPath
     }
 
     [Test]
-    public void It_should_include_the_root_locator_step_for_non_root_reference_bindings()
+    public void It_should_not_resolve_a_basis_reachable_only_through_a_collection_table()
     {
+        // ODS matches basis identifier properties by name on the subject root entity only, so a
+        // reference that lives on a child collection table is never an authorization subject
+        // (auth.md: checks do not apply to collection items).
         var intermediateRoot = CreateRootTable(
             Table("Intermediate"),
             [
@@ -2087,19 +2086,169 @@ public class Given_SecurableElementColumnPathResolver_BasisPath
             []
         );
 
-        result.Should().HaveCount(3);
-        result[0].SourceTable.Should().Be(Table("CourseTranscript"));
-        result[0].SourceColumnName.Should().Be(Col("DocumentId"));
-        result[0].TargetTable.Should().Be(subjectDetailTable);
-        result[0].TargetColumnName.Should().Be(Col("CourseTranscript_DocumentId"));
-        result[1].SourceTable.Should().Be(subjectDetailTable);
-        result[1].SourceColumnName.Should().Be(Col("Intermediate_DocumentId"));
-        result[1].TargetTable.Should().Be(Table("Intermediate"));
-        result[1].TargetColumnName.Should().Be(Col("DocumentId"));
-        result[2].SourceTable.Should().Be(Table("Intermediate"));
-        result[2].SourceColumnName.Should().Be(Col("Student_DocumentId"));
-        result[2].TargetTable.Should().BeNull();
-        result[2].TargetColumnName.Should().BeNull();
+        result.Should().BeEmpty();
+    }
+
+    [Test]
+    public void It_should_not_resolve_a_basis_reachable_only_through_an_extension_table()
+    {
+        // Extension references live on _ext tables, not on the base resource's root table. ODS never
+        // authorizes through extension fields (auth.md: checks do not apply to fields added through
+        // extensions), so an extension-table route must not produce a basis path.
+        var extensionTable = new DbTableName(EdFiSchema, "StaffExtension");
+        var subjectRoot = CreateRootTable(Table("Staff"));
+        var subjectExtension = new DbTableModel(
+            extensionTable,
+            Path("$._ext.sample"),
+            new TableKey(
+                "PK_StaffExtension",
+                [new DbKeyColumn(Col("Staff_DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            [
+                new DbColumnModel(Col("Staff_DocumentId"), ColumnKind.ParentKeyPart, null, false, null, null),
+                new DbColumnModel(
+                    Col("InterventionStudy_DocumentId"),
+                    ColumnKind.DocumentFk,
+                    null,
+                    false,
+                    null,
+                    new QualifiedResourceName("Sample", "InterventionStudy")
+                ),
+            ],
+            []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                DbTableKind.RootExtension,
+                [Col("Staff_DocumentId")],
+                [Col("Staff_DocumentId")],
+                [Col("Staff_DocumentId")],
+                []
+            ),
+        };
+        var extensionBinding = new DocumentReferenceBinding(
+            false,
+            Path("$._ext.sample.interventionStudyReference"),
+            extensionTable,
+            Col("InterventionStudy_DocumentId"),
+            new QualifiedResourceName("Sample", "InterventionStudy"),
+            [],
+            IsRequired: false
+        );
+        var subjectModel = new RelationalResourceModel(
+            new QualifiedResourceName("Ed-Fi", "Staff"),
+            EdFiSchema,
+            ResourceStorageKind.RelationalTables,
+            subjectRoot,
+            [subjectRoot, subjectExtension],
+            [extensionBinding],
+            []
+        );
+        var subject = CreateConcrete(1, "Ed-Fi", "Staff", subjectModel);
+        var interventionStudy = CreateConcrete(
+            2,
+            "Sample",
+            "InterventionStudy",
+            CreateModel("Sample", "InterventionStudy", CreateRootTable(Table("InterventionStudy")))
+        );
+
+        var result = SecurableElementColumnPathResolver.ResolveBasisResourcePath(
+            subject,
+            new QualifiedResourceName("Sample", "InterventionStudy"),
+            CreateLookup(subject, interventionStudy),
+            []
+        );
+
+        result.Should().BeEmpty();
+    }
+
+    [Test]
+    public void It_should_not_resolve_a_descriptor_basis_reachable_only_through_a_collection_table()
+    {
+        var detailTable = new DbTableName(EdFiSchema, "StudentTransportationDetail");
+        var subjectRoot = CreateRootTable(Table("StudentTransportation"));
+        var subjectDetail = new DbTableModel(
+            detailTable,
+            Path("$.details[*]"),
+            new TableKey(
+                "PK_StudentTransportationDetail",
+                [new DbKeyColumn(Col("CollectionItemId"), ColumnKind.ParentKeyPart)]
+            ),
+            [
+                new DbColumnModel(Col("CollectionItemId"), ColumnKind.ParentKeyPart, null, false, null, null),
+                new DbColumnModel(
+                    Col("StudentTransportation_DocumentId"),
+                    ColumnKind.ParentKeyPart,
+                    null,
+                    false,
+                    null,
+                    null
+                ),
+                new DbColumnModel(
+                    Col("TransportationTypeDescriptor_DescriptorId"),
+                    ColumnKind.DocumentFk,
+                    null,
+                    false,
+                    null,
+                    new QualifiedResourceName("Ed-Fi", "TransportationTypeDescriptor")
+                ),
+            ],
+            []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                DbTableKind.Collection,
+                [Col("CollectionItemId")],
+                [Col("StudentTransportation_DocumentId")],
+                [Col("StudentTransportation_DocumentId")],
+                []
+            ),
+        };
+        var nestedDescriptorEdge = new DescriptorEdgeSource(
+            false,
+            Path("$.details[*].transportationTypeDescriptor"),
+            detailTable,
+            Col("TransportationTypeDescriptor_DescriptorId"),
+            new QualifiedResourceName("Ed-Fi", "TransportationTypeDescriptor")
+        );
+        var subjectModel = new RelationalResourceModel(
+            new QualifiedResourceName("Ed-Fi", "StudentTransportation"),
+            EdFiSchema,
+            ResourceStorageKind.RelationalTables,
+            subjectRoot,
+            [subjectRoot, subjectDetail],
+            [],
+            [nestedDescriptorEdge]
+        );
+        var subject = CreateConcrete(1, "Ed-Fi", "StudentTransportation", subjectModel);
+        var descriptorRoot = new DbTableModel(
+            DescriptorTable,
+            Path("$"),
+            new TableKey("PK_Descriptor", [new DbKeyColumn(Col("DocumentId"), ColumnKind.Scalar)]),
+            [new DbColumnModel(Col("DocumentId"), ColumnKind.Scalar, null, false, null, null)],
+            []
+        );
+        var descriptor = CreateConcrete(
+            2,
+            "Ed-Fi",
+            "TransportationTypeDescriptor",
+            CreateModel(
+                "Ed-Fi",
+                "TransportationTypeDescriptor",
+                descriptorRoot,
+                schema: DmsSchema,
+                storageKind: ResourceStorageKind.SharedDescriptorTable
+            )
+        );
+
+        var result = SecurableElementColumnPathResolver.ResolveBasisResourcePath(
+            subject,
+            new QualifiedResourceName("Ed-Fi", "TransportationTypeDescriptor"),
+            CreateLookup(subject, descriptor),
+            []
+        );
+
+        result.Should().BeEmpty();
     }
 
     [Test]
