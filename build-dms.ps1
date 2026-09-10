@@ -1251,13 +1251,9 @@ function Initialize-E2EDatabase {
         $StartDmsAfterProvisioning
     )
 
-    $dmsContainerName =
-        if ($UsePublishedImage) {
-            "dms-published-dms-1"
-        }
-        else {
-            "ed-fi-api"
-        }
+    # Resolved once by Get-E2EStartupPhasePlan and carried on the context, so the restart target
+    # here, the schema assertion below, and the name the test process exports cannot drift apart.
+    $dmsContainerName = $E2ETestSettings.DmsContainerName
 
     $provisionedEffectiveSchemaHash = Invoke-E2EDatabaseProvisioning -E2ETestSettings $E2ETestSettings
     $dmsStartedAtUtc = [DateTime]::UtcNow.AddSeconds(-2)
