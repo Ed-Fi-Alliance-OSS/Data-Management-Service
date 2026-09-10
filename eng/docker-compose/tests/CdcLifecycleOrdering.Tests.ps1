@@ -47,11 +47,19 @@ Describe 'Managed CDC deployment lifecycle ordering' {
         $script:workerRunning = $true
         $script:badStatus = $false
         $script:failure = ''
+        $script:removedDuringFailure = @()
+        $script:resources = Join-Path $script:root 'resources'
+        New-Item -ItemType Directory $script:resources -Force | Out-Null
+        foreach ($resource in @('worker', 'database', 'worker-volume', 'database-volume', 'network')) {
+            'present' | Set-Content (Join-Path $script:resources $resource)
+        }
         foreach ($id in @(42, 43)) {
             Register-CdcDeploymentHandoff -Handoff (New-TestHandoff $id) -StatePath (Join-Path $script:root "custom-state-$id")
         }
         Mock -ModuleName cdc-lifecycle Invoke-CdcLifecycleCommand {
             $script:trace.Add("$Operation`:$($Entry.DataStoreId)")
+            if (-not (Test-Path (Join-Path $script:resources 'worker')) -or
+                -not (Test-Path (Join-Path $script:resources 'database'))) { throw 'Controller services removed' }
             if ($script:failure -eq "$Operation`:$($Entry.DataStoreId)") { throw 'Controller rejected or cancelled' }
             $Entry.ConnectorName = "connector-$($Entry.DataStoreId)"
             if ($Operation -eq 'retire') { $script:live = @($script:live | Where-Object { $_ -ne $Entry.ConnectorName }) }
@@ -59,6 +67,7 @@ Describe 'Managed CDC deployment lifecycle ordering' {
         }
         Mock -ModuleName cdc-lifecycle Invoke-CdcLifecycleRest {
             $script:trace.Add("rest:$Path")
+            if (-not (Test-Path (Join-Path $script:resources 'worker'))) { throw 'Connect removed' }
             if ($Path -eq 'connectors') { return $script:live }
             $name = $Path.Split('/')[1]
             return @{ name = $name; connector = @{ state = $(if ($script:badStatus) { 'RUNNING' } else { 'STOPPED' }) }; tasks = @() }
@@ -69,7 +78,14 @@ Describe 'Managed CDC deployment lifecycle ordering' {
         Mock -ModuleName cdc-lifecycle Invoke-CdcInfrastructure {
             $phase = if ($Parameters['d']) { if ($Parameters.v) { 'down-volumes' } else { 'stop-worker' } } elseif ($Parameters['DmsOnly']) { 'dms' } else { 'infra' }
             $script:trace.Add($phase)
-            if ($script:failure -eq $phase) { throw 'Infrastructure failed' }
+            if ($script:failure -eq $phase) {
+                foreach ($resource in $script:removedDuringFailure) {
+                    Remove-Item (Join-Path $script:resources $resource) -Force -ErrorAction SilentlyContinue
+                }
+                if (-not (Test-Path (Join-Path $script:resources 'worker'))) { $script:workerRunning = $false }
+                throw 'Infrastructure failed'
+            }
+            if ($phase -eq 'down-volumes') { Get-ChildItem $script:resources | Remove-Item -Force }
             if ($phase -in @('down-volumes', 'stop-worker')) { $script:workerRunning = $false }
         }
     }
@@ -223,18 +239,112 @@ Describe 'Managed CDC deployment lifecycle ordering' {
         Invoke-TestLifecycle @{ d = $true; v = $true }
         $script:trace | Should -Be @('infra', 'start-worker:42', 'rest:connectors', 'rest:connectors/connector-42/status', 'rest:connectors/connector-43/status', 'retire:42', 'retire:43', 'rest:connectors', 'down-volumes')
     }
-    It 'retains inventory and rechecks cleanup after infrastructure deletion failure' {
+    It 'resumes retired <project>/<provider> teardown after removal of <removed>' -ForEach @(
+        foreach ($project in @('dms-local', 'dms-published')) {
+            foreach ($provider in @('postgresql', 'mssql')) {
+                foreach ($removed in @('worker', 'database', 'all')) {
+                    @{ project = $project; provider = $provider; removed = $removed }
+                }
+            }
+        }
+    ) {
+        Remove-Item (Join-Path $script:root '.cdc-deployments') -Recurse -Force
+        foreach ($id in @(42, 43)) {
+            Register-CdcDeploymentHandoff (New-TestHandoff -id $id -project $project -provider $provider) (Join-Path $script:root "custom-state-$id")
+        }
+        $parameters = @{ d = $true; v = $true; DatabaseEngine = $provider }
         $script:failure = 'down-volumes'
-        { Invoke-TestLifecycle @{ d = $true; v = $true } } | Should -Throw
-        (Read-TestDeployment).Phase | Should -Be 'Retired'
+        $script:removedDuringFailure = if ($removed -eq 'all') {
+            @('worker', 'database', 'worker-volume', 'database-volume', 'network')
+        } else { @($removed, "$removed-volume") }
+        { Invoke-TestLifecycle $parameters $project } | Should -Throw '*Infrastructure failed*'
+        (Read-TestDeployment $project).Phase | Should -Be 'Retired'
+        foreach ($resource in $script:removedDuringFailure) {
+            Test-Path (Join-Path $script:resources $resource) | Should -BeFalse
+        }
         $script:failure = ''
         $script:trace.Clear()
-        Invoke-TestLifecycle @{ d = $true; v = $true }
-        $script:trace[0] | Should -Be 'retire:42'
+        Invoke-TestLifecycle $parameters $project
+        $script:trace | Should -Be @('down-volumes')
+        @(Get-ChildItem $script:resources).Count | Should -Be 0
+        Test-CdcDeployment $project | Should -BeFalse
+        Should -Invoke -ModuleName cdc-lifecycle Invoke-CdcInfrastructure -Times 2 -Exactly -ParameterFilter {
+            $Parameters.d -and $Parameters.v -and -not $Parameters.RemoveBootstrap -and
+            $Parameters.DatabaseEngine -eq $provider -and
+            $Parameters.EnvironmentFile -eq (Join-Path $script:root '.env.custom')
+        }
     }
-    It 'rejects <fault> configuration before controller or infrastructure effects' -ForEach @(
-        @{ fault = 'settings' }, @{ fault = 'environment' }, @{ fault = 'missing' }, @{ fault = 'version' }, @{ fault = 'permissions' }
+    It 'resumes after a process exits following successful volume deletion before inventory removal' {
+        # Leave a real, validated Retired checkpoint, then let a separate process complete
+        # the infrastructure primitive and exit before returning to inventory deletion.
+        $script:failure = 'down-volumes'
+        { Invoke-TestLifecycle @{ d = $true; v = $true } } | Should -Throw '*Infrastructure failed*'
+        $childPath = Join-Path $script:root 'interrupt-teardown.ps1'
+        @'
+param($ModulePath, $Resources)
+$ErrorActionPreference = 'Stop'
+Import-Module $ModulePath
+& (Get-Module cdc-lifecycle) {
+    param($Resources)
+    $script:resources = $Resources
+    function script:Invoke-CdcLifecycleCommand { throw 'Unexpected controller call' }
+    function script:Invoke-CdcLifecycleRest { throw 'Unexpected Connect call' }
+    function script:Invoke-CdcLifecycleDocker { throw 'Unexpected worker inspection' }
+    function script:Invoke-CdcInfrastructure {
+        param($StartScript, $Parameters)
+        if (-not $Parameters.d -or -not $Parameters.v) { throw 'Unexpected startup' }
+        Get-ChildItem $script:resources | Remove-Item -Force
+        exit 73
+    }
+} $Resources
+Invoke-CdcDeploymentLifecycle 'dms-local' '/unused/start.ps1' @{ d = $true; v = $true }
+'@ | Set-Content $childPath
+        & pwsh -NoProfile -File $childPath (Join-Path $script:root 'cdc-lifecycle.psm1') $script:resources
+        $LASTEXITCODE | Should -Be 73
+        @(Get-ChildItem $script:resources).Count | Should -Be 0
+        (Read-TestDeployment).Phase | Should -Be 'Retired'
+        $script:failure = ''
+        $script:workerRunning = $false
+        $script:trace.Clear()
+        Invoke-TestLifecycle @{ d = $true; v = $true }
+        $script:trace | Should -Be @('down-volumes')
+        Test-CdcDeployment 'dms-local' | Should -BeFalse
+    }
+    It 'requires destructive teardown to finish a Retired deployment (<operation>)' -ForEach @(
+        @{ operation = 'start'; parameters = @{} }, @{ operation = 'stop'; parameters = @{ d = $true } }
     ) {
+        $script:failure = 'down-volumes'
+        { Invoke-TestLifecycle @{ d = $true; v = $true } } | Should -Throw
+        $script:trace.Clear()
+        { Invoke-TestLifecycle $parameters } | Should -Throw '*destructive teardown*'
+        $script:trace.Count | Should -Be 0
+        (Read-TestDeployment).Phase | Should -Be 'Retired'
+    }
+    It 'does not infer retirement from absent services or binding files in <phase>' -ForEach @(
+        @{ phase = 'Active' }, @{ phase = 'Transition' }, @{ phase = 'Retiring' }
+    ) {
+        $path = Join-Path $script:root '.cdc-deployments/dms-local.json'
+        $deployment = Read-TestDeployment
+        $deployment.Phase = $phase
+        $deployment | ConvertTo-Json -Depth 64 | Set-Content $path
+        Get-ChildItem $script:resources | Remove-Item -Force
+        $script:workerRunning = $false
+        { Invoke-TestLifecycle @{ d = $true; v = $true } } | Should -Throw '*Controller services removed*'
+        $script:trace | Should -Be @('retire:42')
+        (Read-TestDeployment).Phase | Should -Be 'Retiring'
+    }
+    It 'rejects <fault> configuration in <phase> before controller or infrastructure effects' -ForEach @(
+        foreach ($phase in @('Active', 'Retired')) {
+            foreach ($fault in @('settings', 'environment', 'missing', 'version', 'permissions')) {
+                @{ fault = $fault; phase = $phase }
+            }
+        }
+    ) {
+        if ($phase -eq 'Retired') {
+            $script:failure = 'down-volumes'
+            { Invoke-TestLifecycle @{ d = $true; v = $true } } | Should -Throw
+            $script:trace.Clear()
+        }
         $path = Join-Path $script:root '.cdc-deployments/dms-local.json'
         switch ($fault) {
             settings {

@@ -401,8 +401,11 @@ function Invoke-CdcDeploymentLifecycle {
             throw 'CDC lifecycle requires the original effective environment file; omit -EnvironmentFile to inherit it.'
         }
         $down = $Parameters['d'] -eq $true
-        if (-not $down -and -not $Parameters['InfraOnly']) { Get-CdcDmsComposeHandoff $deployment | Out-Null }
         $destructive = $down -and $Parameters['v'] -eq $true
+        if ($deployment.Phase -eq 'Retired' -and -not $destructive) {
+            throw 'CDC governed cleanup is complete; repeat destructive teardown with -d -v to finish infrastructure and inventory removal.'
+        }
+        if (-not $down -and -not $Parameters['InfraOnly']) { Get-CdcDmsComposeHandoff $deployment | Out-Null }
         if (-not $down -and ($Parameters['DbOnly'] -or $Parameters['DmsOnly'] -or $Parameters['DmsBaseUrl'] -or $Parameters['LoadSeedData'])) {
             throw 'Retained CDC startup uses the managed infrastructure/controller/DMS sequence; partial startup and seed flags are unsupported.'
         }
@@ -412,7 +415,10 @@ function Invoke-CdcDeploymentLifecycle {
             CdcBrokerSizeOverrideFile = $deployment.BrokerSizeOverrideFile
         }
         foreach ($flag in @('EnableKafkaUI', 'EnableSwaggerUI')) { if ($Parameters[$flag]) { $infrastructure[$flag] = $true } }
-        if ($down -and ($deployment.Phase -ne 'Stopped' -or (Test-CdcWorkerRunning $Project))) {
+        # Retired is durable only after every governed artifact and the empty worker inventory
+        # were verified. Compose may already have removed those services on a failed down -v;
+        # resume infrastructure cleanup without requiring their live evidence again.
+        if ($down -and $deployment.Phase -ne 'Retired' -and ($deployment.Phase -ne 'Stopped' -or (Test-CdcWorkerRunning $Project))) {
             $deployment.Phase = if ($destructive) { 'Retiring' } else { 'Transition' }
             Write-CdcDeployment $Project $deployment
             if ($destructive) {
