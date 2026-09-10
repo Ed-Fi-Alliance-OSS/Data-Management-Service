@@ -463,6 +463,7 @@ function Invoke-CdcDeploymentLifecycle {
             $preparation = $infrastructure + @{ InfraOnly = $true; CdcDatabaseInfrastructure = $true; SuppressWriterGuidance = $true }
             $preparation.Remove('CdcKafkaInfrastructure')
             $preparation.Remove('EnableKafkaUI')
+            $preparation.Remove('CdcBrokerSizeOverrideFile')
             Invoke-CdcInfrastructure $StartScript $preparation
             Invoke-CdcLifecycleCommand $deployment.Entries[0] 'start-worker'
             if ($Parameters['EnableKafkaUI'] -and -not $destructive) {

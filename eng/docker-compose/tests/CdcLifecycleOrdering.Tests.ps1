@@ -41,6 +41,35 @@ Describe 'Managed CDC deployment lifecycle ordering' {
         function Invoke-TestLifecycle($parameters, $project = 'dms-local') {
             Invoke-CdcDeploymentLifecycle -Project $project -StartScript "/compose/start-$project.ps1" -Parameters $parameters
         }
+        function Get-TestComposeModel($flavor, $parameters) {
+            $composeRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
+            Import-Module (Join-Path $composeRoot 'env-utility.psm1') -Scope Local
+            $ast = [Management.Automation.Language.Parser]::ParseFile((Join-Path $composeRoot "start-$flavor-dms.ps1"), [ref]$null, [ref]$null)
+            # Execute the complete production file-selection span, including the retained override.
+            $first = $ast.Find({ param($n) $n -is [Management.Automation.Language.AssignmentStatementAst] -and $n.Extent.Text.StartsWith('$databaseComposeFile =') }, $true)
+            $last = $ast.Find({ param($n) $n -is [Management.Automation.Language.IfStatementAst] -and $n.Extent.Text.StartsWith('if ($CdcBrokerSizeOverrideFile') }, $true)
+            $first | Should -Not -BeNullOrEmpty
+            $last | Should -Not -BeNullOrEmpty
+            $selection = $ast.Extent.Text.Substring($first.Extent.StartOffset, $last.Extent.EndOffset - $first.Extent.StartOffset)
+            $CdcDatabaseInfrastructure = $CdcKafkaInfrastructure = $EnableKafkaUI = $EnableKafka = $d = $false
+            $InfraOnly = $EnableSwaggerUI = $usePostgresqlTmpfs = $databaseOnlyStartup = $bootstrapMode = $false
+            $CdcBrokerSizeOverrideFile = ''
+            $cmsIncludedInComposeSet = $true
+            $envValues = @{}
+            foreach ($key in $parameters.Keys) { Set-Variable $key $parameters[$key] }
+            . ([scriptblock]::Create($selection)) | Out-Null
+            $arguments = @('compose', '--project-directory', $composeRoot)
+            for ($i = 0; $i -lt $files.Count; $i += 2) {
+                $path = $files[$i + 1]
+                if (-not [IO.Path]::IsPathRooted($path)) { $path = Join-Path $composeRoot $path }
+                $arguments += @('-f', $path)
+            }
+            $arguments += @('--env-file', $parameters.EnvironmentFile, 'config', '--format', 'json')
+            $docker = (Get-Command docker -CommandType Application | Select-Object -First 1).Source
+            $json = & $docker @arguments
+            $LASTEXITCODE | Should -Be 0
+            return $json | ConvertFrom-Json -AsHashtable
+        }
     }
     BeforeEach {
         Remove-Item (Join-Path $script:root '.cdc-deployments') -Recurse -Force -ErrorAction SilentlyContinue
@@ -403,8 +432,79 @@ Export-ModuleMember -Function Resolve-DmsSchemaTool
         $merged.services.dms.environment.DataManagement__DocumentCache__Targets__1__DataStoreId | Should -Be '43'
         Should -Invoke -ModuleName cdc-lifecycle Invoke-CdcInfrastructure -Times 1 -ParameterFilter {
             $Parameters['InfraOnly'] -and $Parameters.EnvironmentFile -eq (Join-Path $script:root '.env.custom') -and
-            $Parameters.CdcBrokerSizeOverrideFile -eq (Join-Path $script:root 'shared/broker-size.json') -and $Parameters.SuppressWriterGuidance
+            -not $Parameters.ContainsKey('CdcBrokerSizeOverrideFile') -and $Parameters.SuppressWriterGuidance
         }
+    }
+    It 'keeps the raised broker override out of stopped <flavor>/<provider> <operation> preparation' -ForEach @(
+        foreach ($flavor in @('local', 'published')) {
+            foreach ($provider in @('postgresql', 'mssql')) {
+                foreach ($operation in @('start', 'retire')) {
+                    @{ flavor = $flavor; provider = $provider; operation = $operation }
+                }
+            }
+        }
+    ) {
+        $project = "dms-$flavor"
+        Remove-Item (Join-Path $script:root '.cdc-deployments') -Recurse -Force
+        @('DMS_HTTP_PORTS=8080', 'POSTGRES_PASSWORD=fixture-password', 'POSTGRES_DB_NAME=fixture',
+            'CONFIG_SERVICE_CLIENT_SECRET=fixture-secret', 'DMS_CONFIG_IDENTITY_CLIENT_SECRET=fixture-secret') |
+            Set-Content (Join-Path $script:root '.env.custom')
+        Register-CdcDeploymentHandoff (New-TestHandoff -id 42 -project $project -provider $provider) (Join-Path $script:root 'custom-state-42')
+        $script:live = @('connector-42')
+        $override = Join-Path $script:root 'shared/broker-size.json'
+        New-Item -ItemType Directory (Split-Path $override) -Force | Out-Null
+        # Same fragment emitted by CdcComposeBrokerSizeDeployment after a size increase.
+        @{ services = @{ kafka = @{ environment = @{
+            KAFKA_SOCKET_REQUEST_MAX_BYTES = '268435456'
+            KAFKA_REPLICA_FETCH_MAX_BYTES = '134217728'
+            KAFKA_REPLICA_FETCH_RESPONSE_MAX_BYTES = '134217728'
+        } } } } | ConvertTo-Json -Depth 10 | Set-Content $override
+        $originalHash = (Get-FileHash $override).Hash
+        Invoke-TestLifecycle @{ d = $true } $project
+        (Read-TestDeployment $project).Phase | Should -Be 'Stopped'
+        $script:trace.Clear()
+        $script:composeFlavor = $flavor
+        $script:brokerOverride = $override
+        Mock -ModuleName cdc-lifecycle Invoke-CdcInfrastructure {
+            $model = Get-TestComposeModel $script:composeFlavor $Parameters
+            if ($Parameters.d) {
+                $Parameters.CdcKafkaInfrastructure | Should -BeTrue
+                $Parameters.CdcBrokerSizeOverrideFile | Should -Be $script:brokerOverride
+                $model.services.kafka.image | Should -Not -BeNullOrEmpty
+                $model.services.kafka.environment.KAFKA_REPLICA_FETCH_MAX_BYTES | Should -Be '134217728'
+                $script:trace.Add('down-volumes')
+            }
+            else {
+                $Parameters.InfraOnly | Should -BeTrue
+                $Parameters.CdcDatabaseInfrastructure | Should -BeTrue
+                $Parameters.ContainsKey('CdcBrokerSizeOverrideFile') | Should -BeFalse
+                $model.services.Keys | Should -Contain 'db'
+                $model.services.Keys | Should -Contain 'config'
+                $model.services.Keys | Should -Not -Contain 'kafka'
+                $model.services.Keys | Should -Not -Contain 'kafka-cdc-worker'
+                $script:trace.Add('infra')
+            }
+        } -ParameterFilter { $Parameters.InfraOnly -or $Parameters.d }
+        Mock -ModuleName cdc-lifecycle Invoke-CdcLifecycleCommand {
+            $settings = Get-Content $Entry.SettingsPath -Raw | ConvertFrom-Json -AsHashtable
+            $settings.Cdc.Compose.BrokerSizeOverrideFile | Should -Be $script:brokerOverride
+            $script:trace.Add("start-worker:$($Entry.DataStoreId)")
+            $script:workerRunning = $true
+        } -ParameterFilter { $Operation -eq 'start-worker' }
+        $parameters = if ($operation -eq 'retire') { @{ d = $true; v = $true } } else { @{} }
+        Invoke-TestLifecycle $parameters $project
+        $expected = @('infra', 'start-worker:42', 'rest:connectors', 'rest:connectors/connector-42/status')
+        if ($operation -eq 'retire') {
+            $expected += @('retire:42', 'rest:connectors', 'down-volumes')
+            Test-CdcDeployment $project | Should -BeFalse
+        }
+        else {
+            $expected += @('start:42', 'dms')
+            (Read-TestDeployment $project).BrokerSizeOverrideFile | Should -Be $override
+            (Read-TestDeployment $project).Phase | Should -Be 'Active'
+        }
+        $script:trace | Should -Be $expected
+        (Get-FileHash $override).Hash | Should -Be $originalHash
     }
     It 'never resumes or starts DMS if worker restart lost STOPPED state' {
         Invoke-TestLifecycle @{ d = $true }
