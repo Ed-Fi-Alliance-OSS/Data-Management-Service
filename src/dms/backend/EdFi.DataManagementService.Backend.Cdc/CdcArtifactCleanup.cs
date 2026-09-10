@@ -18,7 +18,8 @@ public sealed class CdcArtifactCleanupScope
     public CdcArtifactCleanupScope(
         CdcDeploymentRequest request,
         CoreCdc.CdcCompleteBindingIdentity identity,
-        IReadOnlyList<CoreCdc.CdcGovernedArtifactName> inventory
+        IReadOnlyList<CoreCdc.CdcGovernedArtifactName> inventory,
+        bool requireAbsence = false
     )
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -38,9 +39,14 @@ public sealed class CdcArtifactCleanupScope
                 "CDC cleanup requires the exact binding and complete governed inventory."
             );
         }
+        RequireAbsence = requireAbsence;
         Request = request;
         Inventory = Array.AsReadOnly(recovered.Inventory.GovernedArtifacts.ToArray());
     }
+
+    /// <summary>Never-reserved cleanup inspects only; unexpected artifacts reject without deletion.</summary>
+    [JsonIgnore]
+    public bool RequireAbsence { get; }
 
     [JsonIgnore]
     public CdcDeploymentRequest Request { get; }
@@ -205,7 +211,10 @@ public sealed class CdcConnectArtifactCleanupAdapter(ICdcConnectTransport connec
                         : CdcArtifactCleanup.Failure(CdcDeploymentComponent.Connect);
                 }
 
-                if (config is not CdcTransportResult<IReadOnlyDictionary<string, string>>.Observed)
+                if (
+                    scope.RequireAbsence
+                    || config is not CdcTransportResult<IReadOnlyDictionary<string, string>>.Observed
+                )
                 {
                     return CdcArtifactCleanup.Failure(
                         CdcDeploymentComponent.Connect,

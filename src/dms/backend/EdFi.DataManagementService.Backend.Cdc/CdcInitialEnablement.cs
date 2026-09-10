@@ -309,7 +309,7 @@ public sealed class CdcInitialEnablement
         }
     }
 
-    private async Task ValidateSourceInventoryAsync(CdcBinding binding, CancellationToken token)
+    internal async Task ValidateSourceInventoryAsync(CdcBinding binding, CancellationToken token)
     {
         // The existing lifecycle service supplies the complete validated deployment inventory.
         // Per-identity create/exact-match alone cannot detect another configured alias of this source.

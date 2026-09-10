@@ -14,9 +14,9 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
     private bool _controllerComposeKafka;
     private string _controllerComposeDirectory = "";
     private readonly HashSet<string> _controllerComposeVolumes = [];
-    private string ControllerComposeFile => Path.Combine(_controllerComposeDirectory, "compose.json");
-    private string ControllerComposeEnvironment => Path.Combine(_controllerComposeDirectory, "fixture.env");
-    private string ControllerSizeOverride => Path.Combine(_controllerComposeDirectory, "broker-size.json");
+    internal string ControllerComposeFile => Path.Combine(_controllerComposeDirectory, "compose.json");
+    internal string ControllerComposeEnvironment => Path.Combine(_controllerComposeDirectory, "fixture.env");
+    internal string ControllerSizeOverride => Path.Combine(_controllerComposeDirectory, "broker-size.json");
 
     internal ICdcKafkaBrokerSizeDeployment ComposeBrokerSizes =>
         new CdcComposeBrokerSizeDeployment(
@@ -63,6 +63,10 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
             {
                 extends = new { file = shipped, service = "kafka-cdc-worker" },
                 container_name = ConnectContainerName,
+                environment = new Dictionary<string, string>
+                {
+                    ["BOOTSTRAP_SERVERS"] = KafkaBootstrapServers,
+                },
             },
         };
         await File.WriteAllTextAsync(

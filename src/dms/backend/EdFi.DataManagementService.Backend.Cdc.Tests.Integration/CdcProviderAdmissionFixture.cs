@@ -42,6 +42,7 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
     public CdcControllerFixtureControllers Controllers { get; private set; } = null!;
     public CdcKafkaAdminAdapter Kafka { get; private set; } = null!;
     public ICdcProviderSetupService Provider { get; private set; } = null!;
+    public CdcManagedProvisioningResult CreationReceipt { get; private set; } = null!;
     public ICdcConnectorTemplateService Templates { get; private set; } = null!;
     public List<CdcProviderSetupMode> ProviderModes { get; } = [];
     public List<CdcProviderSetupResult> ProviderResults { get; } = [];
@@ -153,7 +154,8 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
     public static async Task<CdcProviderAdmissionFixture> StartAsync(
         CdcProvider provider,
         CancellationToken cancellationToken,
-        bool composeKafka = false
+        bool composeKafka = false,
+        bool offlineKafka = false
     )
     {
         var suite = new CdcProviderAdmissionFixture(provider);
@@ -167,7 +169,7 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
                     suite.Infrastructure = infrastructure;
                     try
                     {
-                        await suite.PrepareAsync(ct);
+                        await suite.PrepareAsync(ct, offlineKafka);
                     }
                     catch (AssertionException)
                     {
@@ -181,7 +183,8 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
                     }
                 },
                 nativeKafka: true,
-                composeKafka: composeKafka
+                composeKafka: composeKafka,
+                offlineKafka: offlineKafka
             );
             return suite;
         }
@@ -192,7 +195,7 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
         }
     }
 
-    private async Task PrepareAsync(CancellationToken cancellationToken)
+    private async Task PrepareAsync(CancellationToken cancellationToken, bool offlineKafka)
     {
         await using var admin = await Infrastructure.OpenAdminConnectionAsync(cancellationToken);
         ConnectionString =
@@ -244,6 +247,7 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
             cancellationToken,
             purpose: CdcWorkflowPurpose.InitialCdcProvisioning
         );
+        CreationReceipt = provisioned;
         provisioned.CreationReceipt.Outcome.Should().Be(CdcDatabaseCreationOutcome.Created);
         await ExecuteAsync(
             _provider == CdcProvider.Postgresql
@@ -381,6 +385,10 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
         );
         Controllers = CreateControllers();
         await ReopenRuntimeAsync(cancellationToken);
+        if (offlineKafka)
+        {
+            return;
+        }
         // This is the same controller operation used by worker startup, before Docker launches it.
         var offset = Observed(
             await KafkaProvisioning().ProvisionOffsetStoreAsync(Request, cancellationToken)

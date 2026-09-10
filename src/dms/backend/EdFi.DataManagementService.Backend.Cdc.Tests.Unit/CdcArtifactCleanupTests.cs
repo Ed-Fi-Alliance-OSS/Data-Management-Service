@@ -194,6 +194,26 @@ public class Given_CdcArtifactCleanupProvider(CdcProvider provider, Kind kind)
     private Task<CdcTransportResult<CoreCdc.CdcGovernedArtifact>> Delete(CancellationToken token = default) =>
         _adapter.DeleteAsync(_scope, kind, token);
 
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task It_CdcBindingRetirement_inspects_never_reserved_provider_artifacts_without_deletion(
+        bool exists
+    )
+    {
+        _exists = exists;
+        _scope = new(
+            _scope.Request,
+            _scope.Request.Binding.ToCompleteBindingIdentity(),
+            _scope.Inventory,
+            requireAbsence: true
+        );
+        (await Delete())
+            .State.Should()
+            .Be(exists ? CdcTransportEvidenceState.Unavailable : CdcTransportEvidenceState.Observed);
+        _trace.Should().Equal("source", "inspect");
+        _exists.Should().Be(exists);
+    }
+
     [Test]
     public async Task It_reobserves_source_and_absence_after_deletion()
     {
@@ -496,6 +516,24 @@ public class Given_CdcArtifactCleanupConnect(CdcProvider provider)
         _trace.Should().Equal("config", "stop", "status", "offsets", "status", "delete", "config");
     }
 
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task It_CdcBindingRetirement_inspects_never_reserved_connectors_without_mutation(bool exists)
+    {
+        _exists = exists;
+        _scope = new(
+            _scope.Request,
+            _scope.Request.Binding.ToCompleteBindingIdentity(),
+            _scope.Inventory,
+            requireAbsence: true
+        );
+        (await Delete(Kind.KafkaConnectConnector))
+            .State.Should()
+            .Be(exists ? CdcTransportEvidenceState.Unavailable : CdcTransportEvidenceState.Observed);
+        _trace.Should().Equal("config");
+        _exists.Should().Be(exists);
+    }
+
     [Test]
     public async Task It_never_deletes_a_connector_with_unremoved_offsets()
     {
@@ -670,6 +708,26 @@ public class Given_CdcArtifactCleanupDatabaseJobs
         {
             Directory.Delete(_root, true);
         }
+    }
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task It_CdcBindingRetirement_inspects_never_reserved_jobs_without_deletion(bool exists)
+    {
+        if (!exists)
+        {
+            _jobs.Clear();
+        }
+        _scope = new(
+            _scope.Request,
+            _scope.Request.Binding.ToCompleteBindingIdentity(),
+            _scope.Inventory,
+            requireAbsence: true
+        );
+        (await Delete())
+            .State.Should()
+            .Be(exists ? CdcTransportEvidenceState.Unavailable : CdcTransportEvidenceState.Observed);
+        _deleted.Should().BeEmpty();
     }
 
     private async Task<CdcTransportResult<CdcTransportAcknowledgement>> Delete(bool retire = true)

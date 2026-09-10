@@ -68,6 +68,9 @@ public sealed class CdcCommandRunner(IApiSchemaFileLoader loader, EffectiveSchem
     internal Func<CdcManagedLifecycle, CdcManagedLifecycle> ConfigureManagedLifecycle { get; init; } =
         lifecycle => lifecycle;
 
+    internal Func<CdcBindingRetirement, CdcBindingRetirement> ConfigureRetirement { get; init; } =
+        retirement => retirement;
+
     [System.Diagnostics.CodeAnalysis.SuppressMessage(
         "Sonar",
         "S1854",
@@ -158,22 +161,6 @@ public sealed class CdcCommandRunner(IApiSchemaFileLoader loader, EffectiveSchem
             var positions = provider
                 .GetServices<ICdcProviderSourcePositionAdapter>()
                 .Single(p => p.Provider == request.Binding.Provider);
-            if (invocation.Operation == CdcCommandOperation.Retire)
-            {
-                var cleanup = new CdcProviderArtifactCleanupAdapter(
-                    request.Binding.Provider == CoreProvider.Postgresql
-                        ? NpgsqlFactory.Instance
-                        : SqlClientFactory.Instance,
-                    connection.ConnectionString
-                );
-                var result = await new CdcBindingRetirement(
-                    invocation.StatePath,
-                    connect,
-                    kafka,
-                    cleanup
-                ).RetireAsync(request, invocation.Generation, invocation.DestructiveCleanup, ct);
-                return Result(result.Succeeded, result, result.Diagnostics);
-            }
             component = CdcDeploymentComponent.Projection;
             await using var runtime = new CdcDeferredProjectionRuntime(async cancellation =>
             {
@@ -182,6 +169,33 @@ public sealed class CdcCommandRunner(IApiSchemaFileLoader loader, EffectiveSchem
                 _ = request.ProviderSetup;
                 return await CreateProjectionRuntime(settings, logger, targetKey, cancellation);
             });
+            if (invocation.Operation == CdcCommandOperation.Retire)
+            {
+                var cleanup = new CdcProviderArtifactCleanupAdapter(
+                    request.Binding.Provider == CoreProvider.Postgresql
+                        ? NpgsqlFactory.Instance
+                        : SqlClientFactory.Instance,
+                    connection.ConnectionString
+                );
+                var result = await ConfigureRetirement(
+                        new CdcBindingRetirement(invocation.StatePath, connect, kafka, cleanup)
+                        {
+                            WorkerStartup = new CdcWorkerStartup(
+                                ConfigureKafkaProvisioning(
+                                    new CdcKafkaProvisioning(
+                                        invocation.StatePath,
+                                        kafka,
+                                        runtime,
+                                        new CdcKafkaProducerInspection(connect, worker)
+                                    )
+                                ),
+                                CreateStartupTransport(config)
+                            ),
+                        }
+                    )
+                    .RetireAsync(request, invocation.Generation, invocation.DestructiveCleanup, ct);
+                return Result(result.Succeeded, result, result.Diagnostics);
+            }
             if (!deferProjection)
             {
                 await runtime.InitializeAsync(ct);

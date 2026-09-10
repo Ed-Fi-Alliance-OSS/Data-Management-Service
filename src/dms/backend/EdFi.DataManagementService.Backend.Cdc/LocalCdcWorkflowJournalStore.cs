@@ -296,8 +296,15 @@ public sealed partial class LocalCdcWorkflowJournalStore
                         // of completed provisioning. If either write is lost, the pair fails closed.
                         await _store.CreateSourceHistoryAsync(next, cancellationToken);
                     }
+                    // Governed never-reserved cleanup verifies absence without changing source exposure.
+                    // Legacy generic retirement keeps its existing conservative historical transition.
                     else if (
-                        operation.Effect is CdcWorkflowEffect.EstablishConnector or CdcWorkflowEffect.Retire
+                        operation.Effect == CdcWorkflowEffect.EstablishConnector
+                        || operation.Effect == CdcWorkflowEffect.Retire
+                            && (
+                                operation.Retirement.IsEmpty
+                                || journal.Operations.Any(o => CanExposeSource(o.Effect))
+                            )
                     )
                     {
                         await _store.AdvanceSourceHistoryAsync(

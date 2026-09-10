@@ -66,6 +66,9 @@ public sealed class CdcBindingRetirement
         _time = time;
     }
 
+    /// <summary>Optional inspection startup for proven initial failures, under the retirement session.</summary>
+    public CdcWorkerStartup WorkerStartup { get; init; } = null!;
+
     public async Task<CdcBindingRetirementResult> RetireAsync(
         CdcDeploymentRequest request,
         long generation,
@@ -101,11 +104,48 @@ public sealed class CdcBindingRetirement
                     && history.CreationTarget == request.TargetIdentity
                     && history.CreationReceipt.Outcome == CdcDatabaseCreationOutcome.Created
                     && history.Transitions[^1].Status
-                        is DocumentCacheDownstreamPublicationStatus.Possible
+                        is DocumentCacheDownstreamPublicationStatus.InternalOnly
+                            or DocumentCacheDownstreamPublicationStatus.Possible
                             or DocumentCacheDownstreamPublicationStatus.Active
                             or DocumentCacheDownstreamPublicationStatus.Historical
             );
-            Require(journal.Operations.Any(o => o.Effect == CdcWorkflowEffect.ReserveBinding));
+            bool neverReserved = !journal.Operations.Any(o => o.Effect == CdcWorkflowEffect.ReserveBinding);
+            bool earlyFailure =
+                journal.Purpose == CdcWorkflowPurpose.InitialCdcProvisioning
+                && journal.Operations.All(o =>
+                    o.Effect
+                        is CdcWorkflowEffect.CreateDatabase
+                            or CdcWorkflowEffect.AssociateSource
+                            or CdcWorkflowEffect.ReserveBinding
+                            or CdcWorkflowEffect.ActivateProjection
+                            or CdcWorkflowEffect.CreateProvider
+                            or CdcWorkflowEffect.PrepareKafka
+                            or CdcWorkflowEffect.Retire
+                );
+            if (neverReserved)
+            {
+                Require(
+                    earlyFailure
+                        && history.Transitions[^1].Status
+                            == DocumentCacheDownstreamPublicationStatus.InternalOnly
+                        && journal.Operations.All(o =>
+                            o.Effect
+                                is CdcWorkflowEffect.CreateDatabase
+                                    or CdcWorkflowEffect.AssociateSource
+                                    or CdcWorkflowEffect.Retire
+                        )
+                );
+            }
+            else
+            {
+                Require(
+                    history.Transitions[^1].Status != DocumentCacheDownstreamPublicationStatus.InternalOnly
+                );
+                earlyFailure &=
+                    history.Transitions[^1].Status == DocumentCacheDownstreamPublicationStatus.Possible
+                    || history.Transitions[^1].Status == DocumentCacheDownstreamPublicationStatus.Historical
+                        && journal.RetirementIntended;
+            }
             var retirements = journal.Operations.Where(o => o.Effect == CdcWorkflowEffect.Retire).ToArray();
             Require(retirements.Length <= 1);
             if (retirements.Length == 1)
@@ -122,9 +162,19 @@ public sealed class CdcBindingRetirement
                     .Retirement.Single()
                     .Steps.Any(s => s.Kind == CdcRetirementStepKind.DeleteState);
             Require(
-                exact.Status == CdcControlPlaneOperationStatus.Succeeded
-                    || exact.Status == CdcControlPlaneOperationStatus.BindingMissing && deletingState
+                neverReserved
+                    ? exact.Status == CdcControlPlaneOperationStatus.BindingMissing
+                    : exact.Status == CdcControlPlaneOperationStatus.Succeeded
+                        || exact.Status == CdcControlPlaneOperationStatus.BindingMissing && deletingState
             );
+            if (neverReserved)
+            {
+                // Exact-match alone cannot detect orphan incidents or another alias of this source.
+                await new CdcInitialEnablement(_store, _bindings, _time).ValidateSourceInventoryAsync(
+                    request.Binding,
+                    token
+                );
+            }
             if (retirements.Length == 0)
             {
                 operationId = Guid.NewGuid();
@@ -135,12 +185,20 @@ public sealed class CdcBindingRetirement
                     token
                 );
             }
+            // Authorization remains protected by this original session through inspection startup.
+            // Established/uncertain connector history retains the existing live-service requirement.
+            if (earlyFailure && WorkerStartup is not null)
+            {
+                component = CdcDeploymentComponent.Worker;
+                RequireObserved(await WorkerStartup.StartInSessionAsync(request, session, true, token));
+            }
             var names = CdcArtifactNameGenerator.RecoverFromBinding(request.Binding);
             Require(names.Succeeded && names.Inventory is not null);
             var scope = new CdcArtifactCleanupScope(
                 request,
                 request.Binding.ToCompleteBindingIdentity(),
-                names.Inventory.GovernedArtifacts
+                names.Inventory.GovernedArtifacts,
+                requireAbsence: neverReserved
             );
             Dictionary<CdcGovernedArtifactKind, CdcGovernedArtifact> evidence = [];
             foreach (var step in RetirementSteps(request.Binding.Provider))
@@ -225,6 +283,20 @@ public sealed class CdcBindingRetirement
 
             async Task DeleteStateAsync(CancellationToken ct)
             {
+                if (neverReserved)
+                {
+                    // No binding ever existed; preserve internal-only history and verify absence again.
+                    await new CdcInitialEnablement(_store, _bindings, _time).ValidateSourceInventoryAsync(
+                        request.Binding,
+                        ct
+                    );
+                    Require(
+                        (
+                            await CallAsync(t => _bindings.ExactMatchBindingAsync(request.Binding, t), ct)
+                        ).Status == CdcControlPlaneOperationStatus.BindingMissing
+                    );
+                    return;
+                }
                 var result = await CallAsync(
                     t =>
                         _bindings.DeleteStateAfterVerifiedCleanupAsync(
@@ -282,7 +354,7 @@ public sealed class CdcBindingRetirement
                                 s.Kind == CdcRetirementStepKind.ConnectSourceOffsets
                                 && s.VerifiedAt.Length == 1
                             ) && steps.Any(s => s.Kind == CdcRetirementStepKind.KafkaConnectConnector);
-                        if (!deletedByThisRetirement)
+                        if (neverReserved || !deletedByThisRetirement)
                         {
                             // Failed-attempt cleanup needs independent empty offset evidence. A missing
                             // connector, missing workflow or HTTP 404 must never be relabeled offset absence.
@@ -312,6 +384,7 @@ public sealed class CdcBindingRetirement
                     }
                     else
                     {
+                        Require(!neverReserved);
                         RequireObserved(config);
                         artifact = RequireObserved(
                             await _connectCleanup.DeleteAsync(scope, kind, ct).WaitAsync(ct)
@@ -332,6 +405,7 @@ public sealed class CdcBindingRetirement
                     artifact.ArtifactKind == kind
                         && artifact.ArtifactName == scope.Artifact(kind).Name
                         && Enum.IsDefined(artifact.CleanupState)
+                        && (!neverReserved || artifact.CleanupState == CdcCleanupState.NotFound)
                 );
                 // Rebuild safe proof text; transport diagnostic strings never enter the journal/result.
                 evidence[kind] = new(

@@ -101,7 +101,11 @@ public sealed class CdcProviderArtifactCleanupAdapter : ICdcProviderArtifactClea
                     return CdcArtifactCleanup.Removed(artifact, false);
                 }
 
-                if (before.Count != 1 || before[0].GetValueOrDefault("safe_to_delete") != "1")
+                if (
+                    scope.RequireAbsence
+                    || before.Count != 1
+                    || before[0].GetValueOrDefault("safe_to_delete") != "1"
+                )
                 {
                     return CdcArtifactCleanup.Failure(
                         CdcDeploymentComponent.ProviderSetup,
@@ -191,7 +195,8 @@ public sealed class CdcProviderArtifactCleanupAdapter : ICdcProviderArtifactClea
                 """;
                 var jobs = await QueryAsync(scope, inspect, token);
                 if (
-                    jobs.Any(row =>
+                    scope.RequireAbsence && jobs.Count > 0
+                    || jobs.Any(row =>
                         row.GetValueOrDefault("job_type") is not ("capture" or "cleanup")
                         || !Guid.TryParseExact(row.GetValueOrDefault("job_id"), "D", out Guid id)
                         || id == Guid.Empty
@@ -327,8 +332,10 @@ public sealed class CdcProviderArtifactCleanupAdapter : ICdcProviderArtifactClea
                 $"""
                 /* cdc:cleanup:role */
                 IF OBJECT_ID(N'cdc.change_tables') IS NOT NULL
-                    AND EXISTS (SELECT 1 FROM cdc.change_tables WHERE role_name = N{literal})
-                    THROW 51000, 'CDC gating role is still in use.', 1;
+                BEGIN
+                    IF EXISTS (SELECT 1 FROM cdc.change_tables WHERE role_name = N{literal})
+                        THROW 51000, 'CDC gating role is still in use.', 1;
+                END;
                 SELECT CASE WHEN p.type = 'R' AND p.is_fixed_role = 0
                     AND NOT EXISTS (SELECT 1 FROM sys.database_role_members m WHERE
                         (m.role_principal_id = p.principal_id AND m.member_principal_id <> DATABASE_PRINCIPAL_ID(N{Literal(

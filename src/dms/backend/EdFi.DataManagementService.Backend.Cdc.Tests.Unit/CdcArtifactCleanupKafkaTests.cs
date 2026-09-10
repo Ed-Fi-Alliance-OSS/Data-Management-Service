@@ -196,6 +196,33 @@ public class Given_CdcArtifactCleanupKafka(CdcProvider provider)
     private Task<CdcTransportResult<CoreCdc.CdcGovernedArtifact>> Delete(Kind kind) =>
         _adapter.DeleteAsync(_scope, kind, CancellationToken.None);
 
+    [TestCase(Kind.PublicTopic, false)]
+    [TestCase(Kind.PublicTopic, true)]
+    [TestCase(Kind.PublicTopicAcls, false)]
+    [TestCase(Kind.PublicTopicAcls, true)]
+    public async Task It_CdcBindingRetirement_inspects_never_reserved_Kafka_artifacts_without_deletion(
+        Kind kind,
+        bool exists
+    )
+    {
+        _scope = new(
+            _scope.Request,
+            _scope.Request.Binding.ToCompleteBindingIdentity(),
+            _scope.Inventory,
+            requireAbsence: true
+        );
+        if (!exists)
+        {
+            _topics.Clear();
+            _grants.Clear();
+        }
+        (await _adapter.DeleteAsync(_scope, kind, default))
+            .State.Should()
+            .Be(exists ? CdcTransportEvidenceState.Unavailable : CdcTransportEvidenceState.Observed);
+        _deleted.Should().BeEmpty();
+        _filters.Should().BeEmpty();
+    }
+
     [Test]
     public async Task It_deletes_only_the_binding_topic_inventory()
     {

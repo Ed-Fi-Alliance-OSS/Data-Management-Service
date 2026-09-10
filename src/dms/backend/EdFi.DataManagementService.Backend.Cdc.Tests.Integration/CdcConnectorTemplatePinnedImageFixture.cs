@@ -176,7 +176,7 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
 
     private string ConnectContainerName => $"{_resourcePrefix}-connect";
 
-    private string ProviderContainerName => $"{_resourcePrefix}-provider";
+    internal string ProviderContainerName => $"{_resourcePrefix}-provider";
 
     public static CdcConnectorTemplatePinnedImageFixture CreateOffline(CdcProvider provider) =>
         new(
@@ -209,7 +209,8 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
         Func<CdcConnectorTemplatePinnedImageFixture, CancellationToken, Task> beforeWorker = null!,
         bool exposeBroker = false,
         bool nativeKafka = false,
-        bool composeKafka = false
+        bool composeKafka = false,
+        bool offlineKafka = false
     )
     {
         CdcConnectorTemplateSmokeSettings settings = CdcConnectorTemplateSmokeSettings.FromEnvironment(
@@ -234,7 +235,8 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
             beforeWorker: beforeWorker,
             exposeBroker: exposeBroker,
             nativeKafka: nativeKafka,
-            composeKafka: composeKafka
+            composeKafka: composeKafka,
+            offlineKafka: offlineKafka
         );
     }
 
@@ -248,7 +250,8 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
         Func<CdcConnectorTemplatePinnedImageFixture, CancellationToken, Task> beforeWorker = null!,
         bool exposeBroker = false,
         bool nativeKafka = false,
-        bool composeKafka = false
+        bool composeKafka = false,
+        bool offlineKafka = false
     )
     {
         var fixture = new CdcConnectorTemplatePinnedImageFixture(
@@ -274,6 +277,22 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
                 fixture._controllerBrokerPort = ((IPEndPoint)reservation.LocalEndpoint).Port;
                 fixture._controllerConnectPort = ((IPEndPoint)connectReservation.LocalEndpoint).Port;
                 fixture._controllerMetricsPort = ((IPEndPoint)metricsReservation.LocalEndpoint).Port;
+            }
+            if (offlineKafka)
+            {
+                if (!composeKafka || !exposeBroker)
+                {
+                    throw new ArgumentException("Offline cleanup requires isolated Compose endpoints.");
+                }
+                await docker.RunAsync(["network", "create", fixture.NetworkName], cancellationToken);
+                await fixture.PrepareControllerComposeAsync(cancellationToken);
+                await fixture.StartProviderAsync(cancellationToken);
+                if (beforeWorker is not null)
+                {
+                    await beforeWorker(fixture, cancellationToken);
+                }
+                fixture._httpClient.BaseAddress = fixture.ControllerConnectEndpoint;
+                return fixture;
             }
             await fixture.StartDockerResourcesAsync(cancellationToken, beforeWorker);
             Uri connectBaseUri = await fixture.ReadMappedConnectBaseUriAsync(cancellationToken);

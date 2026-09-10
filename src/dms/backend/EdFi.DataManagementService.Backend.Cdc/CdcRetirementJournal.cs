@@ -36,8 +36,9 @@ public sealed record CdcRetirementStep(
 );
 
 /// <summary>
-/// Exact binding copied while it still exists, under the controller lock. Only a durable DeleteState
-/// intent permits finishing an interrupted binding/incident deletion without the original binding file.
+/// Exact cleanup scope retained under the controller lock. For reserved workflows only a durable
+/// DeleteState intent permits finishing deletion without the original binding file. Never-reserved
+/// workflows retain their proposed scope and revalidate internal-only history and binding absence.
 /// No credentials, offsets or raw source identity are stored here.
 /// </summary>
 public sealed record CdcRetirementJournal(CdcBinding Binding, ImmutableArray<CdcRetirementStep> Steps);

@@ -54,7 +54,10 @@ public sealed partial class CdcKafkaAdminAdapter
                         return CdcArtifactCleanup.Removed(artifact, false);
                     }
 
-                    if (before is not CdcTransportResult<CdcKafkaTopicEvidence>.Observed)
+                    if (
+                        scope.RequireAbsence
+                        || before is not CdcTransportResult<CdcKafkaTopicEvidence>.Observed
+                    )
                     {
                         return CdcArtifactCleanup.Failure(
                             CdcDeploymentComponent.Kafka,
@@ -112,7 +115,10 @@ public sealed partial class CdcKafkaAdminAdapter
                 }
 
                 var grants = Applicable(evidence.Value, artifact.Name);
-                if (Array.Exists(grants, grant => !allowed.Contains(grant)))
+                if (
+                    scope.RequireAbsence && grants.Length > 0
+                    || Array.Exists(grants, grant => !allowed.Contains(grant))
+                )
                 {
                     return CdcArtifactCleanup.Failure(
                         CdcDeploymentComponent.Kafka,

@@ -23,6 +23,242 @@ namespace EdFi.DataManagementService.Backend.Cdc.Tests.Integration;
 [NonParallelizable]
 public sealed class Given_Cdc_Retirement_Offset_Store(CdcProvider provider)
 {
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task It_cleans_offline_initial_failure_through_the_production_wrapper_command(bool reserved)
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(8));
+        var token = timeout.Token;
+        await using var fixture = await CdcProviderAdmissionFixture.StartAsync(
+            provider,
+            token,
+            composeKafka: true,
+            offlineKafka: true
+        );
+        var resources = fixture.Infrastructure.Resources;
+        var request = fixture.Request;
+        var docker = new DockerCli();
+        (
+            await docker.RunAsync(
+                [
+                    "ps",
+                    "-a",
+                    "--filter",
+                    "label=com.docker.compose.project=" + resources.ControllerProject,
+                    "-q",
+                ],
+                token
+            )
+        )
+            .StandardOutput.Trim()
+            .Should()
+            .BeEmpty();
+        var directory = new DirectoryInfo(TestContext.CurrentContext.TestDirectory);
+        while (!File.Exists(Path.Combine(directory.FullName, "eng", "docker-compose", "cdc-lifecycle.psm1")))
+        {
+            directory = directory.Parent!;
+        }
+        string repository = directory.FullName;
+        string settingsPath = Path.Combine(fixture.Infrastructure.StateRoot, "cleanup-settings.json");
+        var settings = new Dictionary<string, string>
+        {
+            ["AppSettings:Datastore"] = provider == CdcProvider.Postgresql ? "postgresql" : "mssql",
+            ["Cdc:Provider"] = provider == CdcProvider.Postgresql ? "postgresql" : "sqlserver",
+            ["DataManagement:DocumentCache:Targets:0:DataStoreId"] = request.Binding.DataStoreId,
+            ["Cdc:DeploymentKey"] = request.Binding.DeploymentKey,
+            ["Cdc:InstanceKey"] = request.Binding.InstanceKey,
+            ["Cdc:DataStoreId"] = request.Binding.DataStoreId,
+            ["Cdc:Generation"] = request.Binding.Generation.ToString(),
+            ["Cdc:TopicPrefix"] = "edfi.documents",
+            ["Cdc:PartitionCount"] = request.Binding.PartitionCount.ToString(),
+            ["Cdc:MaxRecordBytes"] = "1000000",
+            ["Cdc:KafkaBootstrapServers"] = request.ConnectorPolicy.KafkaBootstrapServers,
+            ["Cdc:KafkaAdminBootstrapServers"] = resources.ControllerKafkaBootstrapServers,
+            ["Cdc:Compose:Project"] = resources.ControllerProject,
+            ["Cdc:Compose:File"] = resources.ControllerComposeFile,
+            ["Cdc:Compose:EnvironmentFile"] = resources.ControllerComposeEnvironment,
+            ["Cdc:Compose:BrokerSizeOverrideFile"] = resources.ControllerSizeOverride,
+            ["Cdc:ConnectEndpoint"] = request.ConnectEndpoint.AbsoluteUri,
+            ["Cdc:WorkerMetricsEndpoint"] = request.WorkerMetricsEndpoint.AbsoluteUri,
+            ["Cdc:LagThresholdMilliseconds"] = "1000",
+            ["Cdc:DurabilityProfile"] = "LocalSingleBroker",
+            ["Cdc:AuthorizationProfile"] = "AuthorizationDisabledLocal",
+            ["Cdc:Worker:Key"] = request.WorkerPolicy.WorkerKey.Value,
+            ["Cdc:Worker:OffsetStorageTopic"] = request.WorkerPolicy.OffsetStorageTopic.Value,
+            ["Cdc:Worker:HeapBytes"] = "1073741824",
+            ["Cdc:Worker:Principal"] = "worker",
+            ["Cdc:Worker:ConnectorPrincipal"] = "connector",
+            ["Cdc:Worker:AdministratorPrincipal"] = "administrator",
+            ["Cdc:SetupConnectionString"] = fixture.ConnectionString,
+            ["Cdc:SetupPrincipal"] = provider == CdcProvider.Postgresql ? "postgres" : "sa",
+            ["Cdc:DatabaseConnectorPrincipal"] = "dms_connector",
+            ["Cdc:Schemas:0"] = Path.Combine(
+                TestContext.CurrentContext.TestDirectory,
+                "Fixtures",
+                "minimal-api-schema.json"
+            ),
+            ["Cdc:Timing:CallMilliseconds"] = "60000",
+            ["Cdc:Timing:WaitMilliseconds"] = "240000",
+            ["Cdc:Timing:PollMilliseconds"] = "250",
+        };
+        foreach (var item in request.ProviderConnectionProperties.Properties)
+        {
+            settings["Cdc:ProviderConnectionProperties:" + item.Key] = item.Value;
+        }
+        await File.WriteAllTextAsync(settingsPath, JsonSerializer.Serialize(settings), token);
+        string bridge = Path.Combine(fixture.Infrastructure.StateRoot, "cleanup-bridge.json");
+        await File.WriteAllTextAsync(
+            bridge,
+            JsonSerializer.Serialize(
+                new
+                {
+                    Receipt = fixture.CreationReceipt,
+                    Live = true,
+                    Cleanup = true,
+                    Flavor = "local",
+                    Project = resources.ControllerProject,
+                    SettingsPath = settingsPath,
+                    StateRoot = fixture.Infrastructure.StateRoot,
+                    Binding = request.Binding,
+                    Provider = provider == CdcProvider.Postgresql ? "postgresql" : "mssql",
+                    IdentityProvider = "self-contained",
+                    WorkerKey = request.WorkerPolicy.WorkerKey.Value,
+                    OffsetTopic = request.WorkerPolicy.OffsetStorageTopic.Value,
+                    ToolPath = Path.Combine(
+                        repository,
+                        "src/dms/clis/EdFi.DataManagementService.SchemaTools/bin",
+                        Directory.GetParent(TestContext.CurrentContext.TestDirectory)!.Name,
+                        "net10.0/api-schema-tools"
+                    ),
+                    ComposeFile = resources.ControllerComposeFile,
+                    EnvironmentFile = resources.ControllerComposeEnvironment,
+                    ProviderContainer = resources.ProviderContainerName,
+                    ConnectEndpoint = request.ConnectEndpoint.AbsoluteUri,
+                }
+            ),
+            token
+        );
+        var info = new System.Diagnostics.ProcessStartInfo("pwsh")
+        {
+            WorkingDirectory = repository,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+        };
+        info.Environment["DMS_T57_BRIDGE"] = bridge;
+        info.ArgumentList.Add("-NoProfile");
+        info.ArgumentList.Add("-Command");
+        info.ArgumentList.Add(
+            "$r = Invoke-Pester -Path eng/docker-compose/tests/CdcLifecycleOrdering.Tests.ps1 -FullName '*production controller session bridge*' -Output Detailed -PassThru; if ($r.PassedCount -ne 1 -or $r.FailedCount -ne 0) { exit 1 }"
+        );
+        using var process = System.Diagnostics.Process.Start(info)!;
+        var output = process.StandardOutput.ReadToEndAsync(token);
+        var error = process.StandardError.ReadToEndAsync(token);
+        try
+        {
+            bool handoffObserved = false;
+            while (!process.HasExited)
+            {
+                if (!File.Exists(bridge + ".request"))
+                {
+                    await Task.Delay(10, token);
+                    continue;
+                }
+                File.Delete(bridge + ".request");
+                handoffObserved.Should().BeFalse();
+                handoffObserved = true;
+                if (reserved)
+                {
+                    Observed(
+                        await fixture.Controllers.Activation.ActivateAsync(request, fixture.Runtime, token)
+                    );
+                    bool interrupted = false;
+                    fixture.Hooks.OnBoundary = e =>
+                    {
+                        if (
+                            !interrupted
+                            && e.Boundary == CdcControllerBoundary.ProviderProof
+                            && e.Edge == CdcControllerEdge.After
+                        )
+                        {
+                            interrupted = true;
+                            throw new IOException("lost provider setup response");
+                        }
+                    };
+                    (await fixture.Controllers.ProviderSetup.SetupAsync(request, fixture.Runtime, token))
+                        .State.Should()
+                        .Be(CdcTransportEvidenceState.Unavailable);
+                    interrupted.Should().BeTrue();
+                    fixture.Hooks.OnBoundary = _ => { };
+                }
+                (
+                    await docker.RunAsync(
+                        [
+                            "ps",
+                            "-a",
+                            "--filter",
+                            "label=com.docker.compose.project=" + resources.ControllerProject,
+                            "-q",
+                        ],
+                        token
+                    )
+                )
+                    .StandardOutput.Trim()
+                    .Should()
+                    .BeEmpty();
+                await File.WriteAllTextAsync(bridge + ".response", "prepared", token);
+            }
+            await process.WaitForExitAsync(token);
+            handoffObserved.Should().BeTrue();
+            process.ExitCode.Should().Be(0, await output + await error);
+        }
+        finally
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(true);
+                await process.WaitForExitAsync(CancellationToken.None);
+            }
+        }
+        (await fixture.Infrastructure.Bindings.ExactMatchBindingAsync(request.Binding, token))
+            .Status.Should()
+            .Be(CoreCdc.CdcControlPlaneOperationStatus.BindingMissing);
+        await using var session = await fixture
+            .Infrastructure.CreateJournalStore()
+            .AcquireAsync(TimeSpan.FromSeconds(2), TimeSpan.FromMilliseconds(10), token);
+        var journal = await session.ReadAsync(request.TargetIdentity, token);
+        journal.Operations.Last().Effect.Should().Be(CdcWorkflowEffect.Retire);
+        journal.Operations.Last().Completions.Should().ContainSingle();
+        journal
+            .Operations.Should()
+            .NotContain(o =>
+                o.Effect == CdcWorkflowEffect.RegisterConnector
+                || o.Effect == CdcWorkflowEffect.AuthorizeWriterPublication
+                || o.Effect == CdcWorkflowEffect.ResumeConnector
+            );
+        var history = await session.ReadSourcePublicationHistoryAsync(
+            request.TargetIdentity,
+            request.Binding.PhysicalSourceFingerprint,
+            token
+        );
+        history
+            .Transitions.Last()
+            .Status.Should()
+            .Be(
+                reserved
+                    ? EdFi.DataManagementService
+                        .Core
+                        .DocumentCache
+                        .DocumentCacheDownstreamPublicationStatus
+                        .Historical
+                    : EdFi.DataManagementService
+                        .Core
+                        .DocumentCache
+                        .DocumentCacheDownstreamPublicationStatus
+                        .InternalOnly
+            );
+    }
+
     [Test]
     public async Task It_retires_after_provider_creation_before_registration_without_changing_shared_storage()
     {

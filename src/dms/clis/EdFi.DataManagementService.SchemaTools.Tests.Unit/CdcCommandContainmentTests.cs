@@ -703,10 +703,15 @@ internal class Given_Cdc_command_managed_start(Ddl.CdcProvider provider) : CdcRe
     private bool _stopped;
     private ICdcWorkerStartupTransport _infrastructure = null!;
     private ICdcBindingLifecycleService _bindings = null!;
+    private ICdcKafkaArtifactCleanupAdapter _cleanupKafka = null!;
+    private ICdcProviderArtifactCleanupAdapter _cleanupProvider = null!;
+    private bool _cleanupOnline;
 
     [SetUp]
     public async Task SetupCommand()
     {
+        _cleanupKafka = null!;
+        _cleanupProvider = null!;
         ShortTiming(1000);
         _infrastructure = A.Fake<ICdcWorkerStartupTransport>();
         A.CallTo(() => _infrastructure.StartBrokerAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
@@ -815,6 +820,20 @@ internal class Given_Cdc_command_managed_start(Ddl.CdcProvider provider) : CdcRe
                 new(_root, _kafka, _runtime, new CdcKafkaProducerInspection(_connect, _worker)),
             ConfigureValidation = _ =>
                 new(_root, _provider, _templates, _kafka, _connect, _worker, _metrics, _positions),
+            ConfigureRetirement = original =>
+                _cleanupKafka is null
+                    ? original
+                    : new CdcBindingRetirement(
+                        _store,
+                        _bindings,
+                        _connect,
+                        _cleanupKafka,
+                        _cleanupProvider,
+                        TimeProvider.System
+                    )
+                    {
+                        WorkerStartup = original.WorkerStartup,
+                    },
             ConfigureManagedLifecycle = _ =>
                 new(_root, _provider, _templates, _kafka, _connect, _worker, _metrics, [_positions]),
         };
@@ -825,13 +844,378 @@ internal class Given_Cdc_command_managed_start(Ddl.CdcProvider provider) : CdcRe
                 _root,
                 1,
                 Target.Generation,
-                false,
+                operation == CdcCommandOperation.Retire,
                 "",
                 false
             ),
             TextWriter.Null,
             token
         );
+    }
+
+    private async Task PrepareEarlyCleanupAsync(bool reserved)
+    {
+        string settings = await File.ReadAllTextAsync(_settingsPath);
+        Directory.Delete(_root, true);
+        if (!OperatingSystem.IsWindows())
+        {
+            Directory.CreateDirectory(
+                _root,
+                UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute
+            );
+        }
+        await File.WriteAllTextAsync(_settingsPath, settings);
+        var provisioner = A.Fake<ICdcManagedDatabaseProvisioner>();
+        A.CallTo(() => provisioner.CreateDatabase()).Returns(true);
+        A.CallTo(() => provisioner.ReadSourceFingerprintAsync(A<CancellationToken>._))
+            .Returns(_request.Binding.PhysicalSourceFingerprint);
+        var receipt = await new CdcManagedDatabaseProvisioning(_store).ProvisionAsync(
+            Target,
+            provisioner,
+            purpose: CdcWorkflowPurpose.InitialCdcProvisioning
+        );
+        if (reserved)
+        {
+            await using var session = await _store.AcquireAsync(
+                TimeSpan.FromSeconds(1),
+                TimeSpan.FromMilliseconds(1),
+                default
+            );
+            await session.RecordIntentAsync(
+                Target,
+                receipt.WorkflowId,
+                Guid.NewGuid(),
+                CdcWorkflowEffect.ReserveBinding,
+                [],
+                default
+            );
+            (await _bindings.CreateBindingIfAbsentAsync(_request.Binding))
+                .Status.Should()
+                .Be(CdcControlPlaneOperationStatus.Succeeded);
+            await session.RecordIntentAsync(
+                Target,
+                receipt.WorkflowId,
+                Guid.NewGuid(),
+                CdcWorkflowEffect.CreateProvider,
+                [],
+                default
+            );
+        }
+        _cleanupOnline = false;
+        A.CallTo(() => _infrastructure.StartWorkerAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
+            .Invokes(() =>
+            {
+                Trace("worker-start");
+                _cleanupOnline = true;
+            });
+        A.CallTo(() => _connect.ReadConfigurationAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
+            .ReturnsLazily(() =>
+            {
+                Trace("cleanup-config");
+                return _cleanupOnline
+                    ? new CdcTransportResult<IReadOnlyDictionary<string, string>>.Absent()
+                    : new CdcTransportResult<IReadOnlyDictionary<string, string>>.Unavailable(
+                        new(CdcDeploymentComponent.Connect, CdcDeploymentFailure.Unavailable)
+                    );
+            });
+        A.CallTo(() => _connect.ReadOffsetEvidenceAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
+            .Returns(new CdcTransportResult<CdcConnectOffsetEvidence>.Absent());
+        _cleanupKafka = A.Fake<ICdcKafkaArtifactCleanupAdapter>(o => o.Strict());
+        _cleanupProvider = A.Fake<ICdcProviderArtifactCleanupAdapter>(o => o.Strict());
+        A.CallTo(() =>
+                _cleanupKafka.InspectRetirementOffsetsAsync(
+                    A<CdcArtifactCleanupScope>._,
+                    A<CancellationToken>._
+                )
+            )
+            .ReturnsLazily(() =>
+            {
+                Trace("cleanup-offsets");
+                _cleanupOnline.Should().BeTrue();
+                return Observed(CdcRetirementOffsetState.Absent);
+            });
+        foreach (var adapter in new ICdcArtifactCleanupAdapter[] { _cleanupKafka, _cleanupProvider })
+        {
+            A.CallTo(() =>
+                    adapter.DeleteAsync(
+                        A<CdcArtifactCleanupScope>._,
+                        A<CdcGovernedArtifactKind>._,
+                        A<CancellationToken>._
+                    )
+                )
+                .ReturnsLazily(
+                    (CdcArtifactCleanupScope scope, CdcGovernedArtifactKind kind, CancellationToken _) =>
+                    {
+                        Trace("cleanup-" + kind);
+                        _cleanupOnline.Should().BeTrue();
+                        scope.RequireAbsence.Should().Be(!reserved);
+                        return Observed(
+                            new CdcGovernedArtifact(
+                                kind,
+                                scope.Inventory.Single(a => a.Kind == kind).Name,
+                                CdcCleanupState.NotFound,
+                                "Verified"
+                            )
+                        );
+                    }
+                );
+        }
+        A.CallTo(() =>
+                _cleanupProvider.DeleteOwnedSqlServerJobsAsync(
+                    A<CdcArtifactCleanupScope>._,
+                    A<LocalCdcWorkflowJournalStore.Session>._,
+                    A<CancellationToken>._
+                )
+            )
+            .ReturnsLazily(() =>
+            {
+                Trace("cleanup-jobs");
+                _cleanupOnline.Should().BeTrue();
+                return Observed(new CdcTransportAcknowledgement());
+            });
+        _trace.Clear();
+    }
+
+    [TestCase(false, "broker-start")]
+    [TestCase(false, "cleanup-offsets")]
+    [TestCase(true, "worker-start")]
+    public async Task It_CdcBindingRetirement_retries_interrupted_cleanup_from_Retiring(
+        bool reserved,
+        string boundary
+    )
+    {
+        await PrepareEarlyCleanupAsync(reserved);
+        bool failed = false;
+        _onCall = call =>
+        {
+            if (!failed && call == boundary)
+            {
+                failed = true;
+                throw new IOException("interrupted");
+            }
+        };
+        await RunWrapperBridgeAsync("local", false, "", cleanup: true, retryCleanup: true);
+        failed.Should().BeTrue();
+        ReadJournal().Operations.Last().Completions.Should().ContainSingle();
+    }
+
+    [TestCase(false, "receipt")]
+    [TestCase(false, "history")]
+    [TestCase(false, "corrupt-history")]
+    [TestCase(false, "orphan-incident")]
+    [TestCase(false, "exposure")]
+    [TestCase(true, "binding")]
+    [TestCase(true, "registration")]
+    [TestCase(false, "unavailable")]
+    public async Task It_CdcBindingRetirement_rejects_unsafe_early_cleanup(bool reserved, string failure)
+    {
+        await PrepareEarlyCleanupAsync(reserved);
+        if (failure == "orphan-incident" && !OperatingSystem.IsWindows())
+        {
+            string directory = Path.Combine(
+                _root,
+                "incidents",
+                _request.Binding.DeploymentKey,
+                _request.Binding.InstanceKey
+            );
+            Directory.CreateDirectory(
+                directory,
+                UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute
+            );
+            string path = Path.Combine(directory, _request.Binding.Generation + ".json");
+            await File.WriteAllTextAsync(path, "{}");
+            File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        }
+        if (failure is "receipt" or "history" or "corrupt-history" or "binding")
+        {
+            string directory = failure switch
+            {
+                "receipt" => "workflows",
+                "binding" => "bindings",
+                _ => "source-history",
+            };
+            string path = Directory
+                .GetFiles(Path.Combine(_root, directory), "*.json", SearchOption.AllDirectories)
+                .Single();
+            if (failure == "corrupt-history")
+            {
+                await File.WriteAllTextAsync(path, "{");
+            }
+            else
+            {
+                File.Delete(path);
+            }
+        }
+        if (failure is "exposure" or "registration")
+        {
+            await using var session = await _store.AcquireAsync(
+                TimeSpan.FromSeconds(1),
+                TimeSpan.FromMilliseconds(1),
+                default
+            );
+            var journal = await session.ReadAsync(Target, default);
+            if (failure == "exposure")
+            {
+                await session.RecordSourceExposureAsync(
+                    Target,
+                    journal.WorkflowId,
+                    _request.Binding.PhysicalSourceFingerprint,
+                    default
+                );
+            }
+            else
+            {
+                await session.RecordIntentAsync(
+                    Target,
+                    journal.WorkflowId,
+                    Guid.NewGuid(),
+                    CdcWorkflowEffect.RegisterConnector,
+                    [],
+                    default
+                );
+            }
+        }
+        if (failure == "unavailable")
+        {
+            A.CallTo(() =>
+                    _cleanupKafka.InspectRetirementOffsetsAsync(
+                        A<CdcArtifactCleanupScope>._,
+                        A<CancellationToken>._
+                    )
+                )
+                .Returns(
+                    new CdcTransportResult<CdcRetirementOffsetState>.Unavailable(
+                        new(CdcDeploymentComponent.Kafka, CdcDeploymentFailure.Unavailable)
+                    )
+                );
+        }
+        (await CommandAsync(CdcCommandOperation.Retire)).Succeeded.Should().BeFalse();
+        if (failure != "unavailable")
+        {
+            _trace.Should().NotContain("broker-start").And.NotContain("worker-start");
+        }
+        _trace.Should().NotContain("resume").And.NotContain("initialize");
+        await using var released = await _store.AcquireAsync(
+            TimeSpan.FromSeconds(1),
+            TimeSpan.FromMilliseconds(1),
+            default
+        );
+    }
+
+    [TestCase(false, false)]
+    [TestCase(true, false)]
+    [TestCase(false, true)]
+    [TestCase(true, true)]
+    public async Task It_CdcBindingRetirement_holds_original_authorization_through_cleanup_startup(
+        bool cancel,
+        bool worker
+    )
+    {
+        await PrepareEarlyCleanupAsync(false);
+        using var caller = new CancellationTokenSource();
+        Func<CdcDeploymentRequest, CancellationToken, Task> effect = async (
+            CdcDeploymentRequest _,
+            CancellationToken ct
+        ) =>
+        {
+            var contender = new LocalCdcWorkflowJournalStore(_root);
+            await FluentActions
+                .Awaiting(async () =>
+                {
+                    await using var other = await contender.AcquireAsync(
+                        TimeSpan.FromMilliseconds(25),
+                        TimeSpan.FromMilliseconds(1),
+                        default
+                    );
+                })
+                .Should()
+                .ThrowAsync<CdcWorkflowStateException>()
+                .Where(e => e.Failure == CdcWorkflowStateFailure.LockTimeout);
+            _cleanupOnline = true;
+            if (cancel)
+            {
+                await caller.CancelAsync();
+                ct.ThrowIfCancellationRequested();
+            }
+        };
+        if (worker)
+        {
+            A.CallTo(() =>
+                    _infrastructure.StartWorkerAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._)
+                )
+                .ReturnsLazily(effect);
+        }
+        else
+        {
+            A.CallTo(() =>
+                    _infrastructure.StartBrokerAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._)
+                )
+                .ReturnsLazily(effect);
+        }
+        if (cancel)
+        {
+            await FluentActions
+                .Awaiting(() => CommandAsync(CdcCommandOperation.Retire, caller.Token))
+                .Should()
+                .ThrowAsync<OperationCanceledException>();
+        }
+        else
+        {
+            (await CommandAsync(CdcCommandOperation.Retire)).Succeeded.Should().BeTrue();
+        }
+        await using var released = await _store.AcquireAsync(
+            TimeSpan.FromSeconds(1),
+            TimeSpan.FromMilliseconds(1),
+            default
+        );
+    }
+
+    [TestCase("local", false)]
+    [TestCase("published", false)]
+    [TestCase("local", true)]
+    [TestCase("published", true)]
+    public async Task It_CdcBindingRetirement_cleans_early_failure_through_the_offline_wrapper(
+        string flavor,
+        bool reserved
+    )
+    {
+        await PrepareEarlyCleanupAsync(reserved);
+        await RunWrapperBridgeAsync(flavor, false, "", cleanup: true);
+        var completed = ReadJournal().Operations.Last();
+        (await CommandAsync(CdcCommandOperation.Retire)).Succeeded.Should().BeTrue();
+        ReadJournal().Operations.Last().Should().BeEquivalentTo(completed);
+        ReadJournal().Operations.Last().Effect.Should().Be(CdcWorkflowEffect.Retire);
+        ReadJournal().Operations.Last().Completions.Should().ContainSingle();
+        (await _bindings.ExactMatchBindingAsync(_request.Binding))
+            .Status.Should()
+            .Be(CdcControlPlaneOperationStatus.BindingMissing);
+        await using var session = await _store.AcquireAsync(
+            TimeSpan.FromSeconds(1),
+            TimeSpan.FromMilliseconds(1),
+            default
+        );
+        var history = await session.ReadSourcePublicationHistoryAsync(
+            Target,
+            _request.Binding.PhysicalSourceFingerprint,
+            default
+        );
+        history
+            .Transitions.Last()
+            .Status.Should()
+            .Be(
+                reserved
+                    ? EdFi.DataManagementService
+                        .Core
+                        .DocumentCache
+                        .DocumentCacheDownstreamPublicationStatus
+                        .Historical
+                    : EdFi.DataManagementService
+                        .Core
+                        .DocumentCache
+                        .DocumentCacheDownstreamPublicationStatus
+                        .InternalOnly
+            );
+        _trace.Should().NotContain("initialize").And.NotContain("resume").And.NotContain("start");
     }
 
     [TestCase("broker-start", false, false)]
@@ -950,6 +1334,17 @@ internal class Given_Cdc_command_managed_start(Ddl.CdcProvider provider) : CdcRe
         string catchUp
     )
     {
+        await RunWrapperBridgeAsync(flavor, reject, catchUp);
+    }
+
+    private async Task RunWrapperBridgeAsync(
+        string flavor,
+        bool reject,
+        string catchUp,
+        bool cleanup = false,
+        bool retryCleanup = false
+    )
+    {
         int postResumePasses = 0;
         bool persistent = catchUp == "persistent";
         if (catchUp.Length > 0)
@@ -997,6 +1392,8 @@ internal class Given_Cdc_command_managed_start(Ddl.CdcProvider provider) : CdcRe
             JsonSerializer.Serialize(
                 new
                 {
+                    Cleanup = cleanup,
+                    RetryCleanup = retryCleanup,
                     Flavor = flavor,
                     Reject = reject,
                     CatchUpTimeout = persistent,
@@ -1041,10 +1438,12 @@ internal class Given_Cdc_command_managed_start(Ddl.CdcProvider provider) : CdcRe
                     await File.ReadAllTextAsync(bridge + ".request", timeout.Token)
                 )!;
                 File.Delete(bridge + ".request");
-                var operation =
-                    arguments[1] == "start-worker"
-                        ? CdcCommandOperation.StartWorker
-                        : CdcCommandOperation.Start;
+                var operation = arguments[1] switch
+                {
+                    "retire" => CdcCommandOperation.Retire,
+                    "start-worker" => CdcCommandOperation.StartWorker,
+                    _ => CdcCommandOperation.Start,
+                };
                 arguments[4].Should().Be("--state-path");
                 arguments[5].Should().Be(_root);
                 var result = await CommandAsync(operation, timeout.Token, arguments[3]);
@@ -1078,7 +1477,7 @@ internal class Given_Cdc_command_managed_start(Ddl.CdcProvider provider) : CdcRe
                 await process.WaitForExitAsync();
             }
         }
-        commands.Should().Be(reject ? 1 : 2);
+        commands.Should().Be(reject || cleanup && !retryCleanup ? 1 : 2);
         if (reject)
         {
             _trace
@@ -1087,7 +1486,7 @@ internal class Given_Cdc_command_managed_start(Ddl.CdcProvider provider) : CdcRe
                 .And.NotContain("worker-start")
                 .And.NotContain("resume");
         }
-        else
+        else if (!retryCleanup)
         {
             _trace.Count(t => t == "broker-start").Should().Be(1);
             _trace.Count(t => t == "worker-start").Should().Be(1);

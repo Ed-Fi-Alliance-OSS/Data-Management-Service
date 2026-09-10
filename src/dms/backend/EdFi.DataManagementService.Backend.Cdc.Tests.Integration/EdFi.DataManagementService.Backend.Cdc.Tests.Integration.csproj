@@ -47,6 +47,10 @@
             Link="Shared\CdcConnectorTemplateTestData.cs"
         />
     </ItemGroup>
+    <!-- The governed cleanup qualification invokes the production CLI through the wrapper's native tool boundary. -->
+    <ItemGroup>
+        <ProjectReference Include="../../clis/EdFi.DataManagementService.SchemaTools/EdFi.DataManagementService.SchemaTools.csproj" ReferenceOutputAssembly="false" />
+    </ItemGroup>
     <!-- Compile the production provisioning owners into this test assembly; no CLI executable dependency. -->
     <ItemGroup>
         <Compile

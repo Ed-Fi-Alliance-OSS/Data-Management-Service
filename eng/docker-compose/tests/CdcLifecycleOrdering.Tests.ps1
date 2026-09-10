@@ -14,6 +14,7 @@ Describe 'Managed CDC deployment lifecycle ordering' {
         Copy-Item (Join-Path $PSScriptRoot '../bootstrap-cdc.psm1') $script:root
         Import-Module (Join-Path $script:root 'cdc-lifecycle.psm1') -Force
         $script:realCommand = & (Get-Module cdc-lifecycle) { (Get-Command Invoke-CdcLifecycleCommand).ScriptBlock }
+        $script:realRest = & (Get-Module cdc-lifecycle) { (Get-Command Invoke-CdcLifecycleRest).ScriptBlock }
         function New-TestHandoff {
             [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Creates isolated test files only.')]
             param($id, $project = 'dms-local', $provider = 'postgresql', $identityProvider = 'self-contained')
@@ -98,7 +99,7 @@ Describe 'Managed CDC deployment lifecycle ordering' {
             # The existing command fixture answers the native tool boundary through temporary files.
             # Its real CdcCommandRunner/CdcWorkerStartup own all authorization and Kafka decisions.
             $bridge = Get-Content $env:DMS_T57_BRIDGE -Raw | ConvertFrom-Json -AsHashtable
-            $project = "dms-$($bridge.Flavor)"
+            $project = if ($bridge.Live) { $bridge.Project } else { "dms-$($bridge.Flavor)" }
             Remove-Item (Join-Path $script:root '.cdc-deployments') -Recurse -Force
             $handoff = New-TestHandoff -id ([int]$bridge.Binding.DataStoreId) -project $project -provider $bridge.Provider -identityProvider $bridge.IdentityProvider
             $flat = Get-Content $bridge.SettingsPath -Raw | ConvertFrom-Json -AsHashtable
@@ -112,21 +113,41 @@ Describe 'Managed CDC deployment lifecycle ordering' {
                 $current[$parts[-1]] = $flat[$key]
             }
             $handoff.Settings.Cdc.Compose.Project = $project
-            $handoff.Settings.Cdc.Compose.EnvironmentFile = Join-Path $script:root '.env.custom'
+            if (-not $bridge.Live) { $handoff.Settings.Cdc.Compose.EnvironmentFile = Join-Path $script:root '.env.custom' }
             $handoff.Settings.Cdc.Worker.Key = $bridge.WorkerKey
             $handoff.Settings.Cdc.Worker.OffsetStorageTopic = $bridge.OffsetTopic
             $handoff.Settings | ConvertTo-Json -Depth 64 | Set-Content $handoff.SettingsPath
-            Register-CdcDeploymentHandoff -Handoff $handoff -StatePath $bridge.StateRoot
+            if ($bridge.Live) {
+                # Isolate the qualification project's inventory, retaining the production handoff/lifecycle logic.
+                Mock -ModuleName cdc-lifecycle Get-CdcDeploymentPath { Join-Path $script:root ".cdc-deployments/$Project.json" }
+            }
+            if ($bridge.Live) {
+                $handoff.InputSettingsHash = (Get-FileHash $bridge.SettingsPath).Hash
+                $databaseKey = if ($bridge.Provider -eq 'postgresql') { 'database.dbname' } else { 'database.names' }
+                $databaseName = $handoff.Settings.Cdc.ProviderConnectionProperties[$databaseKey]
+                $handoff.DatabaseNameHash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($databaseName)))
+                Register-CdcDeploymentHandoff -Handoff $handoff -StatePath $bridge.StateRoot -Receipt $bridge.Receipt
+                [IO.File]::WriteAllText("$env:DMS_T57_BRIDGE.request", '["prepare"]')
+                $deadline = [DateTime]::UtcNow.AddSeconds(90)
+                while (-not (Test-Path "$env:DMS_T57_BRIDGE.response")) {
+                    if ([DateTime]::UtcNow -ge $deadline) { throw 'Initial provider failure was not injected after handoff' }
+                    Start-Sleep -Milliseconds 10
+                }
+                Remove-Item "$env:DMS_T57_BRIDGE.response"
+            }
+            else { Register-CdcDeploymentHandoff -Handoff $handoff -StatePath $bridge.StateRoot }
             & (Get-Module cdc-lifecycle) {
-                param($project, $name)
+                param($project, $name, $cleanup)
                 $deployment = Read-CdcDeployment $project
-                $deployment.Phase = 'Stopped'
+                $deployment.Phase = if ($cleanup) { 'Transition' } else { 'Stopped' }
                 $deployment.Entries[0].ConnectorName = $name
                 Write-CdcDeployment $project $deployment
-            } $project $bridge.Binding.ConnectorName
+            } $project $bridge.Binding.ConnectorName $bridge.Cleanup
             $script:workerRunning = $false
-            $script:live = @($bridge.Binding.ConnectorName)
+            $script:live = if ($bridge.Cleanup) { @() } else { @($bridge.Binding.ConnectorName) }
             $script:trace.Clear()
+            $script:liveBridge = $bridge
+            $script:bridgeProject = $project
             $script:bridgeFlavor = $bridge.Flavor
             $script:bridgeEngine = $bridge.Provider
             $script:bridgeIdentity = $bridge.IdentityProvider
@@ -148,17 +169,52 @@ $result = [IO.File]::ReadAllText($response)
 $result
 exit ([int]($result | ConvertFrom-Json).exitCode)
 '@ | Set-Content $script:bridgeTool
+            if ($bridge.Live) {
+                @'
+param([Parameter(ValueFromRemainingArguments)][string[]]$Arguments)
+$bridge = Get-Content $env:DMS_T57_BRIDGE -Raw | ConvertFrom-Json -AsHashtable
+$result = @(& $bridge.ToolPath @Arguments 2>&1)
+$code = $LASTEXITCODE
+[IO.File]::WriteAllText("$env:DMS_T57_BRIDGE.command", ($result -join "`n"))
+$result
+exit $code
+'@ | Set-Content $script:bridgeTool
+                Mock -ModuleName cdc-lifecycle Invoke-CdcLifecycleRest {
+                    $script:trace.Add("rest:$Path")
+                    & (Get-Module cdc-lifecycle) $script:realRest $Deployment $Path
+                }
+            }
             @'
 function Resolve-DmsSchemaTool { Join-Path $PSScriptRoot 'tool.ps1' }
 Export-ModuleMember -Function Resolve-DmsSchemaTool
 '@ | Set-Content (Join-Path $script:root 'bootstrap-schema-tool.psm1')
             Mock -ModuleName cdc-lifecycle Invoke-CdcLifecycleCommand {
-                & (Get-Module cdc-lifecycle) $script:realCommand $Entry $Operation
+                try { & (Get-Module cdc-lifecycle) $script:realCommand $Entry $Operation }
+                catch {
+                    if ($script:liveBridge.Live) { Write-Information (Get-Content "$env:DMS_T57_BRIDGE.command" -Raw) -InformationAction Continue }
+                    throw
+                }
                 $script:trace.Add("$Operation`:$($Entry.DataStoreId)")
-                if ($Operation -eq 'start-worker') { $script:workerRunning = $true }
+                if ($Operation -in @('start-worker', 'retire')) { $script:workerRunning = $true; 'present' | Set-Content (Join-Path $script:resources 'worker') }
             }
             Mock -ModuleName cdc-lifecycle Invoke-CdcInfrastructure {
                 $Parameters.IdentityProvider | Should -Be $script:bridgeIdentity
+                if ($Parameters.d) {
+                    (Read-TestDeployment $script:bridgeProject).Phase | Should -Be 'Retired'
+                    $script:trace | Should -Contain 'rest:connectors'
+                    $script:trace.Add('down-volumes')
+                    if ($script:liveBridge.Live) {
+                        $docker = (Get-Command docker -CommandType Application | Select-Object -First 1).Source
+                        & $docker compose -f $script:liveBridge.ComposeFile --env-file $script:liveBridge.EnvironmentFile -p $script:bridgeProject --profile cdc-managed-worker down -v | Out-Null
+                        $LASTEXITCODE | Should -Be 0
+                        & $docker rm -f -v $script:liveBridge.ProviderContainer | Out-Null
+                        $LASTEXITCODE | Should -Be 0
+                        $remaining = & $docker volume ls --filter "label=com.docker.compose.project=$script:bridgeProject" -q
+                        $remaining | Should -BeNullOrEmpty
+                    }
+                    Get-ChildItem $script:resources | Remove-Item -Force
+                    return
+                }
                 if ($Parameters.DmsOnly) {
                     (Read-TestDeployment "dms-$script:bridgeFlavor").Phase | Should -Be 'Active'
                     $script:trace.Add('dms')
@@ -198,7 +254,21 @@ Export-ModuleMember -Function Resolve-DmsSchemaTool
                 $script:trace.Add('ui')
                 $global:LASTEXITCODE = 0
             }
-            if ($bridge.Reject) {
+            if ($bridge.Cleanup) {
+                Remove-Item (Join-Path $script:resources 'worker') -Force
+                if ($bridge.RetryCleanup) {
+                    { Invoke-TestLifecycle @{ d = $true; v = $true } $project } | Should -Throw '*unverified evidence*'
+                    (Read-TestDeployment $project).Phase | Should -Be 'Retiring'
+                    $script:trace | Should -Not -Contain 'down-volumes'
+                }
+                Invoke-TestLifecycle @{ d = $true; v = $true } $project
+                $script:trace[-1] | Should -Be 'down-volumes'
+                $script:trace | Should -Not -Contain 'database-infra'
+                $script:trace | Should -Not -Contain 'start-worker'
+                Test-Path (Join-Path $script:root ".cdc-deployments/$project.json") | Should -BeFalse
+                Get-ChildItem $script:resources | Should -BeNullOrEmpty
+            }
+            elseif ($bridge.Reject) {
                 { Invoke-TestLifecycle @{ EnableKafkaUI = $true } $project } | Should -Throw '*unverified evidence*'
                 $script:trace | Should -Be @('database-infra')
                 (Read-TestDeployment $project).Phase | Should -Be 'Transition'
