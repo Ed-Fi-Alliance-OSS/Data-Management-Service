@@ -2,8 +2,8 @@
 
 This file is a lab walkthrough on using the Ed-Fi API (DMS). These instructions
 rely on a compatible `docker compose` command, for
-example coming from Docker Desktop or Podman. See the [docs/](./docs/) for
-additional developer information.
+example coming from Docker Engine with the Compose plugin, Docker Desktop, or
+Podman. See the [docs/](./docs/) for additional developer information.
 
 There are two parts to the lab:
 
@@ -16,6 +16,10 @@ There are two parts to the lab:
 These instructions have been tested in Windows with current (April, 2025)
 versions of both Docker Desktop and Podman. This repository uses PowerShell for
 scripting, which _should_ work on any OS where PowerShell Core 7+ is installed.
+
+On Linux, Docker Engine with the Compose plugin is sufficient. Verify `docker ps`
+and `docker compose version` succeed before starting the stack. If the Engine is
+stopped, start it with `sudo systemctl start docker`.
 
 > [!TIP]
 > If using Podman without Docker in Windows, you can create either

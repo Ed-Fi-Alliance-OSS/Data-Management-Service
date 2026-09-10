@@ -12,7 +12,8 @@ rebuilt to stay in sync with the codebase, or against a locally-debugged API ins
 
 ## Prerequisites
 
-- Docker Desktop running
+- Docker running (Docker Engine with the Compose plugin, or Docker Desktop);
+  `docker ps` and `docker compose version` must succeed in the test session
 - PowerShell Core (`pwsh`) 7.0 or higher
 - .NET 10.0 SDK
 
