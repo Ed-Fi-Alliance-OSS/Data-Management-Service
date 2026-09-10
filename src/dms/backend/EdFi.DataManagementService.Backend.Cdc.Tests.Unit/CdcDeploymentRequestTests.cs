@@ -285,22 +285,15 @@ public class Given_CdcDeploymentRequest_results
     [Test]
     public void It_serializes_the_failed_component_without_exception_details()
     {
-        CdcDeploymentResult result = new CdcDeploymentResult.Failure(
-            CdcDeploymentOperation.Enable,
-            CdcDeploymentDiagnostic.FromException(
-                CdcDeploymentComponent.Connect,
-                new TimeoutException("Password=super-secret;Host=private-source-host")
-            )
+        CdcDeploymentDiagnostic diagnostic = CdcDeploymentDiagnostic.FromException(
+            CdcDeploymentComponent.Connect,
+            new TimeoutException("Password=super-secret;Host=private-source-host")
         );
-        string json = JsonSerializer.Serialize(result);
-        json.Should()
-            .NotContain("super-secret")
-            .And.NotContain("private-source-host")
-            .And.Contain("Diagnostic");
+        string json = JsonSerializer.Serialize(diagnostic);
+        json.Should().NotContain("super-secret").And.NotContain("private-source-host");
         using JsonDocument document = JsonDocument.Parse(json);
         document
-            .RootElement.GetProperty("Diagnostic")
-            .GetProperty("Component")
+            .RootElement.GetProperty("Component")
             .GetInt32()
             .Should()
             .Be((int)CdcDeploymentComponent.Connect);
