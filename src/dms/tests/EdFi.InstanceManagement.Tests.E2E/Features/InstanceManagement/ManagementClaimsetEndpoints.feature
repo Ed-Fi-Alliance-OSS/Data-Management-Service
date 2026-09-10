@@ -7,7 +7,7 @@
 Feature: Management Claimset Endpoints
     Verify that the claimset management endpoints (view-claimsets and reload-claimsets)
     are tenant-aware in multi-tenant deployments.
-    - Endpoints without tenant should return 404 in multi-tenant mode
+    - Authorized endpoint requests without tenant should return 404 in multi-tenant mode
     - Endpoints with valid tenant should return 200
     - Endpoints with invalid tenant should return 404
     - Tenant validation should be case-insensitive
@@ -18,6 +18,14 @@ Feature: Management Claimset Endpoints
     Scenario: View claimsets without tenant returns 404 in multi-tenant mode
          When a GET request is made to view-claimsets endpoint without tenant
          Then it should respond with 404
+
+    Scenario: View claimsets without tenant and no token returns 401
+         When a GET request is made to view-claimsets endpoint without tenant and no token
+         Then it should respond with 401
+
+    Scenario: View claimsets without tenant and wrong-role token returns 403
+         When a GET request is made to view-claimsets endpoint without tenant and a wrong-role token
+         Then it should respond with 403
 
     Scenario: View claimsets with valid tenant returns 200
          When a GET request is made to view-claimsets endpoint with tenant "Tenant_255901"
@@ -44,6 +52,14 @@ Feature: Management Claimset Endpoints
     Scenario: Reload claimsets without tenant returns 404 in multi-tenant mode
          When a POST request is made to reload-claimsets endpoint without tenant
          Then it should respond with 404
+
+    Scenario: Reload claimsets without tenant and no token returns 401
+         When a POST request is made to reload-claimsets endpoint without tenant and no token
+         Then it should respond with 401
+
+    Scenario: Reload claimsets without tenant and wrong-role token returns 403
+         When a POST request is made to reload-claimsets endpoint without tenant and a wrong-role token
+         Then it should respond with 403
 
     Scenario: Reload claimsets with valid tenant returns 200
          When a POST request is made to reload-claimsets endpoint with tenant "Tenant_255901"

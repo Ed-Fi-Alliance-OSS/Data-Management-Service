@@ -12,7 +12,6 @@ using EdFi.DataManagementService.Core.Response;
 using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
 using Microsoft.Extensions.Options;
-using CoreAppSettings = EdFi.DataManagementService.Core.Configuration.AppSettings;
 using FrontendAppSettings = EdFi.DataManagementService.Frontend.AspNetCore.Configuration.AppSettings;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Modules;
@@ -23,7 +22,6 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Modules;
 /// </summary>
 public class ManagementEndpointModule(
     IOptions<FrontendAppSettings> options,
-    IOptions<CoreAppSettings> coreAppSettings,
     IOptions<ManagementEndpointsOptions> managementEndpointsOptions,
     IOptions<JwtAuthenticationOptions> jwtAuthenticationOptions,
     ILogger<ManagementEndpointModule> logger
@@ -35,21 +33,6 @@ public class ManagementEndpointModule(
 
         var managementEndpoints = endpoints.MapGroup("/management");
 
-        // The unscoped forms are 404 in multi-tenant mode. They reach no claimset code, so they are
-        // mapped whether or not the protected routes can be authorized, and they stay anonymous.
-        if (multiTenancy)
-        {
-            managementEndpoints
-                .MapPost("/reload-claimsets", ReloadClaimsetsNotFound)
-                .WithName("ReloadClaimsetsNoTenant")
-                .ExcludeFromDescription();
-
-            managementEndpoints
-                .MapGet("/view-claimsets", ViewClaimsetsNotFound)
-                .WithName("ViewClaimsetsNoTenant")
-                .ExcludeFromDescription();
-        }
-
         // Fail closed at mapping time rather than at request time: without a usable required role
         // there is no way to authorize these endpoints, so they are not exposed at all.
         if (!IsRequiredRoleUsable())
@@ -59,6 +42,18 @@ public class ManagementEndpointModule(
 
         if (multiTenancy)
         {
+            // The unscoped forms preserve the multi-tenant tenant-required 404 for authorized callers
+            // while still denying unauthenticated and wrong-role callers before any response detail.
+            managementEndpoints
+                .MapPost("/reload-claimsets", ClaimsetsNotFound)
+                .WithName("ReloadClaimsetsNoTenant")
+                .ExcludeFromDescription();
+
+            managementEndpoints
+                .MapGet("/view-claimsets", ClaimsetsNotFound)
+                .WithName("ViewClaimsetsNoTenant")
+                .ExcludeFromDescription();
+
             managementEndpoints
                 .MapPost("/{tenant}/reload-claimsets", ReloadClaimsetsTenantAware)
                 .WithName("ReloadClaimsets")
@@ -84,9 +79,7 @@ public class ManagementEndpointModule(
     }
 
     /// <summary>
-    /// True when a request to a claimset management endpoint could be authorized. Warns only when
-    /// claimset reload is enabled, so a deployment that intentionally leaves these endpoints off does
-    /// not log a security warning at every startup.
+    /// True when a request to a claimset management endpoint could be authorized.
     /// </summary>
     private bool IsRequiredRoleUsable()
     {
@@ -99,12 +92,9 @@ public class ManagementEndpointModule(
             return true;
         }
 
-        if (coreAppSettings.Value.EnableClaimsetReload)
-        {
-            logger.LogWarning(
-                "Claimset management endpoints were not mapped because AppSettings:ManagementEndpoints:RequiredRole is missing or invalid, or JwtAuthentication:RoleClaimType is missing or blank. Configure a single role token such as dms-management-operator."
-            );
-        }
+        logger.LogWarning(
+            "Claimset management endpoints were not mapped because AppSettings:ManagementEndpoints:RequiredRole is missing or invalid, or JwtAuthentication:RoleClaimType is missing or blank. Configure a single role token such as dms-management-operator."
+        );
 
         return false;
     }
@@ -230,9 +220,16 @@ public class ManagementEndpointModule(
     }
 
     /// <summary>
-    /// Returns 404 when reload-claimsets is called without a tenant in multi-tenant mode
+    /// Returns 404 when a claimset management endpoint is called without a tenant in multi-tenant mode.
     /// </summary>
-    internal static IResult ReloadClaimsetsNotFound() => NotFoundProblem();
+    internal static async Task<IResult> ClaimsetsNotFound(
+        HttpContext httpContext,
+        IManagementEndpointAuthorizationService authorizationService
+    )
+    {
+        IResult? authorizationFailure = await AuthorizeAsync(httpContext, authorizationService);
+        return authorizationFailure ?? NotFoundProblem();
+    }
 
     /// <summary>
     /// View claimsets for single-tenant deployments (no tenant required)
@@ -283,9 +280,4 @@ public class ManagementEndpointModule(
 
         return ToResult(await apiService.ViewClaimsetsAsync(tenant));
     }
-
-    /// <summary>
-    /// Returns 404 when view-claimsets is called without a tenant in multi-tenant mode
-    /// </summary>
-    internal static IResult ViewClaimsetsNotFound() => NotFoundProblem();
 }

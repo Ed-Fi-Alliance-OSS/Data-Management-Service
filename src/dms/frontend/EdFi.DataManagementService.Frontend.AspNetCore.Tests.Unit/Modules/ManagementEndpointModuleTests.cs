@@ -214,7 +214,7 @@ public class Given_ManagementEndpointModule
     }
 
     [Test]
-    public void It_always_maps_the_unscoped_stubs_in_multi_tenant_mode()
+    public void It_does_not_map_the_unscoped_stubs_in_multi_tenant_mode_when_the_role_is_unusable()
     {
         using WebApplicationFactory<Program> factory = CreateFactory(
             FakeApiService(),
@@ -224,25 +224,79 @@ public class Given_ManagementEndpointModule
 
         IEnumerable<string> patterns = MappedRoutePatterns(factory);
 
-        patterns.Should().Contain("/management/reload-claimsets");
-        patterns.Should().Contain("/management/view-claimsets");
+        patterns.Should().NotContain("/management/reload-claimsets");
+        patterns.Should().NotContain("/management/view-claimsets");
     }
 
-    [Test]
-    public async Task It_answers_404_on_the_unscoped_stubs_in_multi_tenant_mode()
+    [TestCaseSource(nameof(UnscopedMultiTenantStubRouteCases))]
+    public async Task It_returns_401_on_the_unscoped_stubs_in_multi_tenant_mode_when_the_bearer_token_is_missing(
+        string method,
+        string path
+    )
     {
         IApiService apiService = FakeApiService();
         await using WebApplicationFactory<Program> factory = CreateFactory(
             apiService,
-            requiredRole: null,
+            ValidRequiredRole,
             multiTenancy: true
         );
         using HttpClient client = factory.CreateClient();
 
-        HttpResponseMessage response = await client.GetAsync("/management/view-claimsets");
+        HttpResponseMessage response = await CallAsync(client, method, path);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        response.Headers.WwwAuthenticate.ToString().Should().Contain("invalid_token");
+        VerifyNoClaimsetWork(apiService);
+    }
+
+    [TestCaseSource(nameof(UnscopedMultiTenantStubRouteCases))]
+    public async Task It_returns_403_on_the_unscoped_stubs_in_multi_tenant_mode_when_the_role_value_does_not_match(
+        string method,
+        string path
+    )
+    {
+        IApiService apiService = FakeApiService();
+        await using WebApplicationFactory<Program> factory = CreateFactory(
+            apiService,
+            ValidRequiredRole,
+            multiTenancy: true,
+            jwtValidationService: ValidJwtWithClaims(new Claim(RoleClaimType, "some-other-role"))
+        );
+        using HttpClient client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer",
+            ValidBearerToken
+        );
+
+        HttpResponseMessage response = await CallAsync(client, method, path);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        VerifyNoClaimsetWork(apiService);
+    }
+
+    [TestCaseSource(nameof(UnscopedMultiTenantStubRouteCases))]
+    public async Task It_answers_404_on_the_unscoped_stubs_in_multi_tenant_mode_when_the_caller_is_authorized(
+        string method,
+        string path
+    )
+    {
+        IApiService apiService = FakeApiService();
+        await using WebApplicationFactory<Program> factory = CreateFactory(
+            apiService,
+            ValidRequiredRole,
+            multiTenancy: true,
+            jwtValidationService: ValidJwtWithClaims(new Claim(RoleClaimType, ValidRequiredRole))
+        );
+        using HttpClient client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer",
+            ValidBearerToken
+        );
+
+        HttpResponseMessage response = await CallAsync(client, method, path);
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-        A.CallTo(() => apiService.ViewClaimsetsAsync(A<string?>._)).MustNotHaveHappened();
+        VerifyNoClaimsetWork(apiService);
     }
 
     [Test]
@@ -268,7 +322,7 @@ public class Given_ManagementEndpointModule
     }
 
     [Test]
-    public void It_stays_silent_when_the_role_is_unusable_and_claimset_reload_is_disabled()
+    public void It_warns_when_the_role_is_unusable_and_claimset_reload_is_disabled()
     {
         var loggerProvider = new RecordingLoggerProvider();
         using WebApplicationFactory<Program> factory = CreateFactory(
@@ -281,7 +335,7 @@ public class Given_ManagementEndpointModule
 
         loggerProvider
             .Entries.Should()
-            .NotContain(entry =>
+            .ContainSingle(entry =>
                 entry.Category == typeof(ManagementEndpointModule).FullName && entry.Level == LogLevel.Warning
             );
     }
@@ -319,6 +373,12 @@ public class Given_ManagementEndpointModule
         new object[] { "GET", "/management/view-claimsets", false },
         new object[] { "POST", "/management/Tenant1/reload-claimsets", true },
         new object[] { "GET", "/management/Tenant1/view-claimsets", true },
+    ];
+
+    private static readonly object[] UnscopedMultiTenantStubRouteCases =
+    [
+        new object[] { "POST", "/management/reload-claimsets" },
+        new object[] { "GET", "/management/view-claimsets" },
     ];
 
     private static readonly object[] TenantScopedRouteCases =

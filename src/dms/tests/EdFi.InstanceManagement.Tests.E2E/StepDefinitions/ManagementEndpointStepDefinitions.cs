@@ -19,8 +19,32 @@ public class ManagementEndpointStepDefinitions(InstanceManagementContext context
     {
         Console.WriteLine("GET /management/view-claimsets (no tenant)");
 
-        // The unscoped forms are anonymous 404 stubs in multi-tenant mode; deliberately no token.
+        using var client = new DmsApiClient(TestConfiguration.DmsApiUrl, await GetManagementTokenAsync());
+        context.LastResponse = await client.GetViewClaimsetsAsync(tenant: null);
+
+        await LogResponseBodyOnFailureAsync();
+    }
+
+    [When("a GET request is made to view-claimsets endpoint without tenant and no token")]
+    public async Task WhenAGetRequestIsMadeToViewClaimsetsEndpointWithoutTenantAndNoToken()
+    {
+        Console.WriteLine("GET /management/view-claimsets (no tenant, no token)");
+
         using var client = new DmsApiClient(TestConfiguration.DmsApiUrl, NoToken);
+        context.LastResponse = await client.GetViewClaimsetsAsync(tenant: null);
+
+        LogResponse();
+    }
+
+    [When("a GET request is made to view-claimsets endpoint without tenant and a wrong-role token")]
+    public async Task WhenAGetRequestIsMadeToViewClaimsetsEndpointWithoutTenantAndWrongRoleToken()
+    {
+        Console.WriteLine("GET /management/view-claimsets (no tenant, wrong role)");
+
+        using var client = new DmsApiClient(
+            TestConfiguration.DmsApiUrl,
+            await GetWrongRoleDmsTokenAsync("Tenant_255901")
+        );
         context.LastResponse = await client.GetViewClaimsetsAsync(tenant: null);
 
         LogResponse();
@@ -69,7 +93,32 @@ public class ManagementEndpointStepDefinitions(InstanceManagementContext context
     {
         Console.WriteLine("POST /management/reload-claimsets (no tenant)");
 
+        using var client = new DmsApiClient(TestConfiguration.DmsApiUrl, await GetManagementTokenAsync());
+        context.LastResponse = await client.PostReloadClaimsetsAsync(tenant: null);
+
+        await LogResponseBodyOnFailureAsync();
+    }
+
+    [When("a POST request is made to reload-claimsets endpoint without tenant and no token")]
+    public async Task WhenAPostRequestIsMadeToReloadClaimsetsEndpointWithoutTenantAndNoToken()
+    {
+        Console.WriteLine("POST /management/reload-claimsets (no tenant, no token)");
+
         using var client = new DmsApiClient(TestConfiguration.DmsApiUrl, NoToken);
+        context.LastResponse = await client.PostReloadClaimsetsAsync(tenant: null);
+
+        LogResponse();
+    }
+
+    [When("a POST request is made to reload-claimsets endpoint without tenant and a wrong-role token")]
+    public async Task WhenAPostRequestIsMadeToReloadClaimsetsEndpointWithoutTenantAndWrongRoleToken()
+    {
+        Console.WriteLine("POST /management/reload-claimsets (no tenant, wrong role)");
+
+        using var client = new DmsApiClient(
+            TestConfiguration.DmsApiUrl,
+            await GetWrongRoleDmsTokenAsync("Tenant_255901")
+        );
         context.LastResponse = await client.PostReloadClaimsetsAsync(tenant: null);
 
         LogResponse();
