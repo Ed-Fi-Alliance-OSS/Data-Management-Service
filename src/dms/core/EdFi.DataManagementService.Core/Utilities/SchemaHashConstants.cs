@@ -18,7 +18,11 @@ public static class SchemaHashConstants
 
     /// <summary>
     /// Version identifier for the relational mapping conventions.
-    /// Bump this when mapping rules change to force schema mismatch detection.
+    /// Tracks the DMS release line: bump at most once per release, and only if relational
+    /// mapping actually changed during that release cycle. Changing this changes
+    /// EffectiveSchemaHash for every dialect and forces every provisioned database to be
+    /// re-provisioned. See the RelationalMappingVersion release cadence section in the
+    /// repository root AGENTS.md.
     /// This value MUST match the relational_mapping_version used in .mpack files.
     /// </summary>
     public const string RelationalMappingVersion = "v3";

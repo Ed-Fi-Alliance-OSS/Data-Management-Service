@@ -16,6 +16,31 @@ This repository contains the **Ed-Fi Data Management Service (DMS) Platform**, w
 
 - `dotnet csharpier format <directory or file>`
 
+## RelationalMappingVersion Release Cadence
+
+`SchemaHashConstants.RelationalMappingVersion` in
+`src/dms/core/EdFi.DataManagementService.Core/Utilities/SchemaHashConstants.cs`
+tracks the **DMS release line**, not individual changes.
+
+- Bump it at most **once per release**, and only if relational mapping actually changed during that release cycle.
+- Once the current release line's value has been bumped, further relational mapping changes landing before that release ships keep the same value. Do not bump again.
+- Never lower or revert the value.
+
+Current mapping:
+
+- DMS 8.0 released with `v1`.
+- DMS 8.1 releases with `v3`. The 8.1 cycle bumped twice (`v1` -> `v2` -> `v3`), which is more than the convention allows; `v3` stands as the value 8.1 releases with and must not be reverted.
+- Any relational mapping change landing before the 8.1 release keeps `v3`.
+- The next legitimate bump is `v4`, at the first qualifying relational mapping change after 8.1 ships.
+
+Do not infer the current release line from `src/dms/Directory.Build.props`; it is not kept in step with the release line. To review the constant's actual change history:
+
+```powershell
+git log --oneline --date=short --format="%h %cd %s" -G "public const string RelationalMappingVersion" -- src\dms\core\EdFi.DataManagementService.Core\Utilities\SchemaHashConstants.cs
+```
+
+Why the cadence matters: `EffectiveSchemaHashProvider` includes the constant in the hashed manifest, so changing it changes `EffectiveSchemaHash` for every dialect. Databases provisioned against the previous hash then fail startup validation in `ValidateStartupInstancesTask` and receive HTTP 503 at request time until they are re-provisioned. Every bump is a forced re-provision of every existing database, so each extra bump within one release cycle forces an extra one. Holding the value also has a cost: `EffectiveSchemaHash` does not include generated DDL or mapping-set output, so a mapping-only physical change made without a bump can leave validation unable to detect a database provisioned before that change; those databases must be deliberately reprovisioned. See `docs/RELATIONAL-BACKEND.md` for the full schema-fingerprint validation flow.
+
 ## Working with Data Management Service E2E Tests
 
 The Data Management Service E2E tests directory is `src/dms/tests/EdFi.DataManagementService.Tests.E2E/`.
