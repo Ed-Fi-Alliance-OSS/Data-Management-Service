@@ -103,9 +103,9 @@ endpoints
 
 ### 3.1 In scope
 
-1. Add a numeric-id single-item GET at `/v3/apiClients/{id:int}` that resolves against `ApiClient.Id` through the existing `GetApiClientById(int)` repository method, tenant scoping included.
-2. Keep the existing client-key GET at `/v3/apiClients/{clientId}` unchanged in path, handler semantics, authorization policy, and response shape.
-3. Make the served OpenAPI document describe both operations accurately: `GET /v3/apiClients/{id}` with an `int32` `id` parameter (Admin API alignment) and `GET /v3/apiClients/{clientId}` with a `string` parameter, each with a summary/description that names the identifier it takes.
+1. Serve both identifier forms from one single-item GET, `/v3/apiClients/{id}`, resolving the OAuth client key first and falling back to `ApiClient.Id` through the existing `GetApiClientById(int)` only when no key matches. Tenant scoping is unchanged. (R2; the R1 wording specified a separate `{id:int}` route.)
+2. Keep client-key resolution reachable at its existing path with unchanged handler semantics, authorization policy, and response shape. Under R2 that path is the same one segment, resolved key-first.
+3. Publish exactly one single-item GET path item, `/v3/apiClients/{id}`, with a `string` parameter and a summary and description stating the key-first rule. (R2; the R1 wording published two path items.)
 4. Tests at unit (module), OpenAPI-contract, and CMS E2E levels that prove the resolved identifier semantics, including `404` for a well-formed but non-existent numeric id, `404` for a missing client key, and that non-numeric values never reach the numeric path.
 5. Update the operator documentation that currently states the numeric id cannot be used with GET.
 
@@ -121,6 +121,8 @@ endpoints
 ---
 
 ## 4. Route design
+
+> **Superseded by §1.2 (R2).** This section records the R1 two-route plan and is kept as history. The binding route contract is the key-first single route in §1.2.
 
 ### 4.1 Final registration **[REC]**
 
@@ -199,6 +201,8 @@ Both GETs use `MapLimitedAccess` (`ServicePolicy` + `AdminOrAuthMetadataReadOnly
 
 ## 5. OpenAPI representation
 
+> **Superseded by §1.2 (R2).** This section records the R1 two-path-item plan and is kept as history. The published document now carries one single-item GET with a `string` parameter.
+
 ### 5.1 Resulting document shape
 
 The generator (`Microsoft.AspNetCore.OpenApi`) keys path items by the route template with constraints stripped **[INFER, verified in Phase 2 tests]**, so:
@@ -224,6 +228,8 @@ Alternative considered: hide the `{clientId}` GET with `.ExcludeFromDescription(
 ---
 
 ## 6. Affected files
+
+> **Superseded by §1.2 (R2).** This table records the R1 file set as planned. The R2 patch's actual file set is in §12.3.
 
 | Area | File | Change |
 |---|---|---|
@@ -318,6 +324,8 @@ pwsh src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/teardown-local-cms.
 
 ## 8. Implementation phases and steps
 
+> **Superseded by §1.2 (R2) for route and OpenAPI content.** This section records the R1 phase plan as executed and is kept as history; §12 carries the outcomes. The R2 patch is a single commit recorded in §12.3.
+
 Each step ends with a local commit, the SHA, an exact file list, and an approve/reject gate.
 
 ### Phase 0 — Spec approval
@@ -385,13 +393,15 @@ Numeric 404 uses `"ApiClient with ID {id} not found."` (matching the reset-crede
 
 ## 11. Decisions (resolved 2026-09-09) and assumptions
 
+> Q1, Q3 and Q4 still stand. Q2 was reversed by the R2 review; see §1.2.
+
 | # | Question | Decision |
 |---|---|---|
 | **Q1** | Authorization for `GET /v3/apiClients/{id:int}`: `MapLimitedAccess` (same as the sibling reads) or `MapSecuredGet` (ReadOnly/Admin only)? | **`MapLimitedAccess`** (§4.4). Matches the existing collection and key-based reads and exposes nothing the limited-access collection route does not already expose. |
-| **Q2** | OpenAPI: keep documenting the `{clientId}` GET as its own path item (accurate, but the pre-existing "same hierarchy, different name" condition remains), or hide it? | **Keep it documented.** Do not hide it. The ambiguity note in §5.2 stays explicit as a deliberate compatibility compromise. |
+| **Q2** | OpenAPI: keep documenting the `{clientId}` GET as its own path item (accurate, but the pre-existing "same hierarchy, different name" condition remains), or hide it? | ~~**Keep it documented.**~~ **Superseded by §1.2 (R2):** review rejected the compromise. The `{clientId}` path item no longer exists, so there is nothing to document or hide. |
 | **Q3** | Should a follow-up Jira ticket be filed now for a unique index on `dmscs.ApiClient.ClientId` (and possibly `ClientUuid`) in both DDL sets, or is a comment on DMS-1343 sufficient? | **Filed as DMS-1529** under DMS-1072, covering `ClientId` and `ClientUuid` with duplicate-data/migration handling for PostgreSQL and MSSQL. No DDL or repository change in DMS-1343. |
 | **Q4** | Numeric 404 detail text: `"ApiClient with ID {id} not found."` (module-consistent) vs. reusing the existing `"ApiClient not found"`? | **`"ApiClient with ID {id} not found."`** for numeric-id 404s. The key-based 404 message is unchanged. |
-| **A1** | Assumption: the constraint-stripped path key `/v3/apiClients/{id}` is what the generator emits for `{id:int}`. | Verified by `It_does_not_leak_route_constraints_into_path_keys` and by the exact-set test. |
+| **A1** | Assumption: the constraint-stripped path key `/v3/apiClients/{id}` is what the generator emits for `{id:int}`. | Verified under R1 by the exact-set test. Moot under R2: the route carries no constraint, and `It_publishes_exactly_one_single_item_get_for_api_clients` now pins the path key. |
 | **A2** | Assumption: no caller relies on `GET /v3/apiClients/<digits>` returning 404. | No such caller found in DMS, CMS, E2E, or docs. |
 | **A3** | Assumption: the spec's `description` text for the GET ("Get search pattern…") is boilerplate and need not be copied verbatim; CMS wording that names the identifier is preferable. | Confirm or supply preferred wording. |
 
@@ -420,7 +430,25 @@ Numeric 404 uses `"ApiClient with ID {id} not found."` (matching the reset-crede
 
 | Ref | Assumption | Evidence |
 |---|---|---|
-| A1 | The generator publishes `{id:int}` under the constraint-free key `/v3/apiClients/{id}` | Confirmed twice: the exact-set failure in Phase 1 named that key, and `It_publishes_the_numeric_get_without_its_route_constraint` asserts no path key contains a colon |
+| A1 | The generator publishes `{id:int}` under the constraint-free key `/v3/apiClients/{id}` | Confirmed twice under R1: the exact-set failure in Phase 1 named that key, and a contract test asserted no path key contains a colon. R2 removed the constraint, and that test was replaced by `It_publishes_exactly_one_single_item_get_for_api_clients` |
 | §10.1 | The constrained and unconstrained templates are not ambiguous | Both routes are exercised in one host across the unit fixtures; no `AmbiguousMatchException` occurred, and each request reached exactly one repository lookup |
 | §4.3 | Non-numeric, out-of-range, zero and negative segments dispatch as the table describes | Pinned by `Given_an_api_client_get_with_a_non_numeric_identifier` and `Given_an_api_client_get_with_a_non_positive_numeric_identifier`, plus E2E scenario 27 |
 | A3 | CMS wording that names the identifier is preferable to the specification's boilerplate description | Reviewer approved the published summaries and descriptions at the Phase 2 gate |
+
+### 12.3 R2 patch (2026-09-10)
+
+Commit `36e8a4b52`, the key-first replacement described in §1.2. Seven files:
+
+| File | Change |
+|---|---|
+| `ApiClientModule.cs` | Two registrations and two handlers replaced by `MapLimitedAccess("/v3/apiClients/{id}", GetByIdentifier)` and one key-first handler |
+| `ApiClientModuleTests.cs` | Eight GET fixtures reworked for key-first, plus the collision fixture that pins a numeric-looking key over a colliding primary key |
+| `ApiClientOpenApiContractTests.cs` | String parameter, single path item, key-first description |
+| `MetadataModuleTests.cs` | Sweep exclusion for this one operation, pinned entry removed, comment rewritten, and `OpenApi_ApiClient_Response_Schemas_Expose_Story_Fields` repointed off the removed `{clientId}` path |
+| `docs/API-CLIENT-AND-INSTANCE-CONFIGURATION.md` | Dispatch paragraph restated key-first |
+| this spec | §1.2 amendment, guardrail bullets repointed, superseded banners on §4–§6, §11 Q2 reversed |
+| `ApiClients.feature` | Two comments that described the removed route constraint. No executable step changed |
+
+Verification: `dotnet csharpier check src/config` clean over 435 files; the frontend unit project filtered to `ApiClientModuleTests`, `Given_the_served_openapi_document` and `MetadataModuleTests` passed 225 of 225. Injecting numeric-first precedence into the handler failed nine assertions, including both collision assertions, then the handler was restored and the suite reran green. E2E was not rerun, because the only feature-file edits are comments.
+
+Files from the R1 plan that R2 did not touch: `Tenants.feature` and the design README, both already correct.
