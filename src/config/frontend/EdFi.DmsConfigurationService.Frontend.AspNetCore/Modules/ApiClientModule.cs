@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Globalization;
 using System.Net;
 using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.Backend;
@@ -71,27 +72,21 @@ public class ApiClientModule : IEndpointModule
             .Produces<ApiClientCredentialsResponse>(200);
         // Limited access endpoints - accessible by service accounts for internal DMS operations
         endpoints.MapLimitedAccess("/v3/apiClients/", GetAll).Produces<List<ApiClientResponse>>(200);
-        // A path segment that parses as an Int32 is the numeric ApiClient id. The route constraint
-        // gives this registration precedence over the client-key route below, so any other segment
-        // (letters, decimals, or digits outside Int32 range) still resolves as an OAuth client key.
+        // One route carries both identifier forms. The OAuth client key is resolved first and wins
+        // outright, because ClientId has no format constraint: a stored key of "12345" is possible
+        // and must never be shadowed by the unrelated row whose primary key is 12345. Registering a
+        // second templated path here would also collide in OpenAPI, where two paths differing only
+        // by parameter name are the same path.
         endpoints
-            .MapLimitedAccess("/v3/apiClients/{id:int}", GetById)
+            .MapLimitedAccess("/v3/apiClients/{id}", GetByIdentifier)
             .Produces<ApiClientResponse>(200)
-            .WithSummary("Retrieves a specific apiClient based on its numeric identifier.")
+            .WithSummary("Retrieves a specific apiClient by OAuth client key or by numeric identifier.")
             .WithDescription(
-                "The path segment is the numeric ApiClient identifier, the value returned as 'id' in "
-                    + "apiClient responses. A segment that is not a valid 32-bit integer is treated as "
-                    + "an OAuth client key and is served by GET /v3/apiClients/{clientId} instead."
-            );
-        endpoints
-            .MapLimitedAccess("/v3/apiClients/{clientId}", GetByClientId)
-            .Produces<ApiClientResponse>(200)
-            .WithSummary("Retrieves a specific apiClient based on its OAuth client key.")
-            .WithDescription(
-                "The path segment is the OAuth client key, the value returned as 'clientId' in "
-                    + "apiClient responses and as 'key' when credentials are issued. A segment that is "
-                    + "a valid 32-bit integer is treated as the numeric identifier and is served by "
-                    + "GET /v3/apiClients/{id} instead."
+                "The path segment is resolved key-first. It is matched against the OAuth client key "
+                    + "('clientId' in responses, 'key' when credentials are issued), and that match "
+                    + "wins whenever it exists. Only when no client key matches, and the segment is a "
+                    + "valid 32-bit integer, is it resolved as the numeric ApiClient identifier ('id' "
+                    + "in responses)."
             );
     }
 
@@ -313,41 +308,51 @@ public class ApiClientModule : IEndpointModule
     }
 
     /// <summary>
-    /// Resolves an ApiClient by its numeric primary key, which is the identifier the Management API
-    /// specification models for this route. Reuses the same tenant-scoped repository read that the
-    /// update, delete, and reset-credential workflows already perform. A path segment that is not a
-    /// valid Int32 never reaches here; it is routed to <see cref="GetByClientId"/> instead.
+    /// Resolves an ApiClient from a single path segment that may carry either identifier the
+    /// Management API models: the OAuth client key or the numeric primary key.
+    ///
+    /// The client key is resolved first and wins outright. ClientId is stored as a variable-length
+    /// string with no format constraint, so a key such as "12345" is possible even though CMS issues
+    /// GUID keys, and resolving the numeric primary key first would hand that caller an unrelated
+    /// row. The numeric lookup runs only after the key lookup reports the row absent, and reuses the
+    /// same tenant-scoped read that update, delete, and reset-credential perform.
+    ///
+    /// A failed lookup at either stage is an unknown backend state rather than an absent row, so it
+    /// is reported as a sanitized 500 and never falls through to the other lookup.
     /// </summary>
-    private static async Task<IResult> GetById(
-        int id,
+    private static async Task<IResult> GetByIdentifier(
+        string id,
         HttpContext httpContext,
         IApiClientRepository apiClientRepository
     )
     {
-        ApiClientGetResult getResult = await apiClientRepository.GetApiClientById(id);
-        return getResult switch
-        {
-            ApiClientGetResult.Success success => Results.Ok(success.ApiClientResponse),
-            ApiClientGetResult.FailureNotFound => FailureResults.NotFound(
-                $"ApiClient with ID {id} not found.",
-                httpContext.TraceIdentifier
-            ),
-            _ => FailureResults.Unknown(httpContext.TraceIdentifier),
-        };
-    }
+        ApiClientGetResult byClientId = await apiClientRepository.GetApiClientByClientId(id);
 
-    private static async Task<IResult> GetByClientId(
-        string clientId,
-        HttpContext httpContext,
-        IApiClientRepository apiClientRepository
-    )
-    {
-        ApiClientGetResult getResult = await apiClientRepository.GetApiClientByClientId(clientId);
-        return getResult switch
+        if (byClientId is ApiClientGetResult.Success clientKeyMatch)
         {
-            ApiClientGetResult.Success success => Results.Ok(success.ApiClientResponse),
+            return Results.Ok(clientKeyMatch.ApiClientResponse);
+        }
+
+        if (byClientId is not ApiClientGetResult.FailureNotFound)
+        {
+            return FailureResults.Unknown(httpContext.TraceIdentifier);
+        }
+
+        // IntRouteConstraint's parse rules, so the segments treated as numeric are exactly those the
+        // separate {id:int} route accepted before the two routes became one.
+        if (!int.TryParse(id, NumberStyles.Integer, CultureInfo.InvariantCulture, out int numericId))
+        {
+            return FailureResults.NotFound("ApiClient not found", httpContext.TraceIdentifier);
+        }
+
+        ApiClientGetResult byId = await apiClientRepository.GetApiClientById(numericId);
+        return byId switch
+        {
+            ApiClientGetResult.Success primaryKeyMatch => Results.Ok(primaryKeyMatch.ApiClientResponse),
+            // The parsed value rather than the raw segment: it matches the message the other numeric
+            // routes emit and keeps caller-supplied text out of the response body.
             ApiClientGetResult.FailureNotFound => FailureResults.NotFound(
-                "ApiClient not found",
+                $"ApiClient with ID {numericId} not found.",
                 httpContext.TraceIdentifier
             ),
             _ => FailureResults.Unknown(httpContext.TraceIdentifier),

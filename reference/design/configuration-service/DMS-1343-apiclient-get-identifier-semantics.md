@@ -14,7 +14,7 @@
 | Branch | `DMS-1343` (created from `main` at `ab140a4d5`) |
 | Author | Samuel Lugo (with repository audit) |
 | Date | 2026-09-09 |
-| **Status** | **Implemented — 2026-09-09.** Phases 1–4 committed (§12); Phase 5 verification and push are human-gated. Approved 2026-09-09 with reviewer answers to Q1–Q4 in §11 and guardrails in §1.1 |
+| **Status** | **Implemented, amended 2026-09-10.** Phases 1-5 landed as PR #1242; review of that PR superseded the dispatch design, and §1.2 records the key-first replacement. Approved 2026-09-09 with reviewer answers to Q1-Q4 in §11 and guardrails in §1.1 |
 | Jira decision | Option 1 (replace) is struck through in the ticket. Option 2 (support both identifier styles) is the active direction. |
 | Jira comment (2026-08-18) | `dmscs.ApiClient` has no DB-level unique constraint on `ClientId` or `ClientUuid`; recommends the authoritative external identifier receive a unique index. Tracked as follow-up **DMS-1529** (under DMS-1072). |
 | Pre-existing design doc | None found for DMS-1343 in `reference/` or `docs/` (verified). |
@@ -23,12 +23,36 @@
 
 ### 1.1 Review guardrails (binding, 2026-09-09)
 
-- **Identifier rule wording.** Documentation must state the exact rule, never "GET accepts either identifier": *a path segment that is a valid `int32` is the numeric ApiClient `id`; any other segment is the OAuth `clientId` key.*
+- **Identifier rule wording.** Documentation must state the exact rule, never a bare "GET accepts either identifier". The rule is the key-first contract in §1.2, which supersedes the int32-first wording this bullet originally carried.
 - **E2E hygiene.** Tear down the CMS E2E stack before setup and again after the scoped E2E run.
 - **Scope lock.** `ConfigurationServiceApplicationProvider.cs`, all repositories, DDL, and response DTOs stay untouched unless a later review explicitly approves expanding scope.
 - **Gates.** The approved spec is committed alone first (SHA and files reported), then work stops for approval before Phase 1. Every implementation commit is a focused behavior slice with its tests; each gate reports SHA, files edited, and test results, and waits for approval before the next phase.
-- **OpenAPI ambiguity note.** The two single-item GET path items (`{id}` and `{clientId}`) remain documented side by side as a deliberate compatibility compromise, because the final runtime behavior includes both routes (§5.2).
+- **OpenAPI ambiguity note.** Superseded by §1.2. There is now one single-item GET path item, `/v3/apiClients/{id}`, so the collision this bullet accepted no longer exists.
 
+### 1.2 Amendment R2 (2026-09-10) — key-first dispatch on a single route
+
+Team review of PR #1242 rejected the two-route `:int` design. This amendment supersedes §4.1–§4.3, §5.1–§5.2, §11 Q2, and the Jira Implementation Decisions block **on dispatch and OpenAPI shape only**. Scope, non-goals, authorization, tenant scoping, and response shape are unchanged.
+
+**Findings.** (1) `{id:int}` made a numeric-looking `ClientId` unreachable. `ClientId` is `VARCHAR/NVARCHAR(36)` with no format constraint, so a stored key of `"12345"` was shadowed by the unrelated row whose primary key is `12345`. (2) Documenting `get` on both `/v3/apiClients/{id}` and `/v3/apiClients/{clientId}` is a real OpenAPI collision once both path items carry the same operation, because templated paths differing only by parameter name are the same path and a generator may deduplicate either one. (3) The DMS application-context lookup could receive a numeric-id row for a numeric `client_id`, converting its previous `NotFound` into `Unavailable`.
+
+**Resolution.** One registration, `MapLimitedAccess("/v3/apiClients/{id}", GetByIdentifier)`, with a `string` parameter and this contract:
+
+| Client-key lookup | Segment parses as int32 | Numeric lookup | Response |
+|---|---|---|---|
+| Success | not attempted | not called | 200, key-matched row |
+| FailureUnknown | not attempted | not called | 500, sanitized |
+| FailureNotFound | no | not called | 404, `ApiClient not found` |
+| FailureNotFound | yes | Success | 200, id-matched row |
+| FailureNotFound | yes | FailureNotFound | 404, `ApiClient with ID {parsed} not found.` |
+| FailureNotFound | yes | FailureUnknown | 500, sanitized |
+
+Those six rows are the whole contract. Parsing uses `NumberStyles.Integer` with `CultureInfo.InvariantCulture`, the rules `IntRouteConstraint` applied, so the segments treated as numeric are unchanged from R1. The numeric 404 interpolates the parsed integer rather than the raw segment: it matches the message the other numeric routes emit and keeps caller-supplied text out of the response body, at the cost of reporting `007` as `ID 7`.
+
+**Why key-first rather than the review's id-first fallback.** Under id-first, a caller passing the key `"12345"` still receives the row whose primary key is `12345` whenever that row exists, because the first lookup succeeds and the fallback never runs. Finding 1 would stay open verbatim and finding 3 would worsen, since that mismatch is exactly what turns a DMS `NotFound` into `Unavailable`. Key-first inverts the loss onto the new, additive, management-only numeric surface and leaves the security-relevant key path byte-identical to its pre-branch behavior. Gating the fallback on the caller's scope was considered and rejected: making a lookup result depend on authorization would be a worse defect than the one it fixes.
+
+**Consequences accepted.** A numeric-id read costs two queries when no key matches; the DMS path still costs one. The remaining path item declares `id` as a string for `get` and as int32 for `put` and `delete`, which is legal per-operation OpenAPI and describes the runtime honestly.
+
+**Residual risk.** A token whose `client_id` is numeric, matches no stored `ClientId`, and collides with some row's primary key yields a mismatched 200 that DMS converts to `Unavailable` rather than the `NotFound` it returned before this branch. It requires an externally provisioned numeric key, since CMS issues GUID keys. DMS-1529's unique index does not remove this; a format constraint on `ClientId` would, and that note is recorded on DMS-1529.
 **Evidence tags:** **[JIRA]** ticket fact · **[SPEC]** verified in the published Management API 3.0.0 YAML · **[REPO]** verified in the repository at `ab140a4d5` · **[INFER]** inference about framework behavior, verified by a test in the plan · **[REC]** author recommendation.
 
 ---

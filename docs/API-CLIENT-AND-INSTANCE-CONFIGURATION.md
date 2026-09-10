@@ -104,10 +104,13 @@ today. Two different identifiers are involved:
 - the **`clientId`** (returned as `key` when credentials are issued) is the
   OAuth client identifier.
 
-The single-item `GET` accepts either one, and the path segment itself decides
-which lookup runs: a segment that is a valid 32-bit integer is read as the
-numeric `id`, and any other segment is read as the OAuth `clientId` key. The
-two values remain distinct, because a client's `id` and its `key` are different
+The single-item `GET` accepts either one and resolves them key-first. The
+segment is matched against the OAuth `clientId` key, and that match wins
+whenever it exists. Only when no client key matches, and the segment is a valid
+32-bit integer, is it read as the numeric `id`. Key-first is deliberate: a
+`clientId` has no enforced format, so a key made only of digits is possible, and
+reading the numeric `id` first could hand back an unrelated client. The two
+values remain distinct, because a client's `id` and its `key` are different
 values resolved through different columns. You just do not have to convert one
 into the other to read a client.
 

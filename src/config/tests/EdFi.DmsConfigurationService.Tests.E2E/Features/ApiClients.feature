@@ -1074,9 +1074,9 @@ Feature: ApiClients endpoints
                   }
                   """
 
-        # Scenarios 25 onward cover the numeric-id lookup added by DMS-1343. A path segment that is
-        # a valid 32-bit integer resolves the ApiClient primary key; any other segment stays on the
-        # OAuth client-key lookup.
+        # Scenarios 25 onward cover the numeric-id lookup added by DMS-1343. The single-item GET
+        # resolves the OAuth client key first; only when no key matches and the segment is a valid
+        # 32-bit integer does it fall back to the ApiClient primary key.
         @MssqlRepresentative
         Scenario: 25 Ensure clients can GET apiClient by numeric id
             Given a POST request is made to "/v3/applications" with
@@ -1139,7 +1139,7 @@ Feature: ApiClients endpoints
              Then it should respond with 404
 
         Scenario: 27 Verify an identifier that is not a valid integer stays on the client-key lookup
-              # Digits followed by letters fail the route constraint, so this is read as a client
-              # key that does not exist rather than as the numeric id 12.
+              # The value is resolved as a client key first and does not exist. It is not a valid
+              # 32-bit integer either, so there is no numeric fallback and the key 404 stands.
              When a GET request is made to "/v3/apiClients/12abc-not-a-client-key"
              Then it should respond with 404
