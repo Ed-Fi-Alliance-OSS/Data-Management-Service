@@ -213,7 +213,7 @@ public sealed class CdcRecordSizeIncrease
                     await RequireEligible();
 
                     // Two separate PUT/read-back steps. Build from freshly validated live config and replace
-                    // only the size property; never replay rendered/masked credentials over the live payload.
+                    // the size property and externalized secret references, preserving other live properties.
                     await IncreaseProducer("producer.override.buffer.memory", requestedProducerBufferBytes);
                     await RequireEligible();
                     await IncreaseProducer(
@@ -426,11 +426,9 @@ public sealed class CdcRecordSizeIncrease
                         // Masked values are observational only. Replace credentials with the explicitly
                         // supplied externalized references after full live-template validation above.
                         foreach (
-                            var pair in desired
-                                .ProviderConnectionProperties.Properties.Concat(
-                                    desired.KafkaClientSecurityProperties.Properties
-                                )
-                                .Where(pair => updated.ContainsKey(pair.Key))
+                            var pair in validated.RenderedConfiguration.Where(pair =>
+                                CdcConnectorTemplateInputValidator.IsSecretBearingRenderedProperty(pair.Key)
+                            )
                         )
                         {
                             updated[pair.Key] = pair.Value;

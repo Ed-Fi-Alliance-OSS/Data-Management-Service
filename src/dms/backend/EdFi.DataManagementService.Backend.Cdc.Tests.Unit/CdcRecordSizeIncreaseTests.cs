@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Globalization;
+using System.Net;
 using System.Text.Json;
 using EdFi.DataManagementService.Core.DocumentCache.Cdc;
 using FakeItEasy;
@@ -241,6 +242,269 @@ internal class Given_CdcRecordSizeIncrease(Ddl.CdcProvider provider) : CdcReadin
             token,
             operationDeadline
         );
+
+    private Dictionary<string, string> ConfigureMaskedCredentials(string mask = "********")
+    {
+        Dictionary<string, string> security = new()
+        {
+            ["security.protocol"] = "SASL_SSL",
+            ["sasl.mechanism"] = "PLAIN",
+            ["sasl.jaas.config"] = "${env:CDC_KAFKA_JAAS}",
+            ["ssl.truststore.password"] = "${file:/run/secrets/kafka.properties:truststore-password}",
+            ["ssl.keystore.password"] = "${env:CDC_KAFKA_KEYSTORE_PASSWORD}",
+            ["ssl.key.password"] = "${env:CDC_KAFKA_KEY_PASSWORD}",
+            ["ssl.keystore.key"] = "${file:/run/secrets/kafka.properties:keystore-key}",
+        };
+        SetSecurity(security);
+        var rendered = _templates.Render(
+            _request.CreateTemplateRequest(_handoff.TemplateRequest.ProviderSetupEvidence)
+        );
+        rendered.Outcome.Should().Be(CdcConnectorTemplateOutcome.Rendered);
+        _live = new(rendered.Config);
+        var credentials = rendered
+            .Config.Where(p => CdcConnectorTemplateInputValidator.IsSecretBearingRenderedProperty(p.Key))
+            .ToDictionary();
+        foreach (string key in credentials.Keys)
+        {
+            _live[key] = mask;
+        }
+        return credentials;
+    }
+
+    private void SetSecurity(IReadOnlyDictionary<string, string> security) =>
+        _request = new(
+            _request.Binding,
+            _request.DmsSettings,
+            _request.ProviderSetup,
+            _request.ConnectEndpoint,
+            _request.WorkerMetricsEndpoint,
+            _request.ConnectorPolicy,
+            _request.WorkerPolicy,
+            _request.ProviderConnectionProperties,
+            new(security),
+            _request.Timing
+        );
+
+    [TestCase("********")]
+    [TestCase("[hidden]")]
+    public async Task It_restores_rendered_credentials_for_both_size_updates_through_production_Connect(
+        string mask
+    )
+    {
+        var credentials = ConfigureMaskedCredentials(mask);
+        string[] prefixes =
+            Provider == Ddl.CdcProvider.Postgresql
+                ? ["producer.override."]
+                :
+                [
+                    "producer.override.",
+                    "schema.history.internal.producer.",
+                    "schema.history.internal.consumer.",
+                ];
+        credentials.Should().HaveCount(1 + 5 * prefixes.Length);
+        foreach (string prefix in prefixes)
+        {
+            credentials.Should().Contain(prefix + "sasl.jaas.config", "${env:CDC_KAFKA_JAAS}");
+        }
+        credentials.Should().ContainKey("database.password");
+        Dictionary<string, string> original = new(_live);
+        using var http = new CdcConnectHttpFixture(Provider);
+        A.CallTo(() => _connect.ReadConfigurationAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
+            .ReturnsLazily(
+                (CdcDeploymentRequest request, CancellationToken ct) =>
+                {
+                    http.Respond(body: JsonSerializer.Serialize(_live));
+                    return http.Adapter.ReadConfigurationAsync(request, ct);
+                }
+            );
+        A.CallTo(() =>
+                _connect.ValidateConfigurationAsync(
+                    A<CdcDeploymentRequest>._,
+                    A<CdcKafkaConnectRegistrationPayload>._,
+                    A<CancellationToken>._
+                )
+            )
+            .ReturnsLazily(
+                (
+                    CdcDeploymentRequest request,
+                    CdcKafkaConnectRegistrationPayload payload,
+                    CancellationToken ct
+                ) =>
+                {
+                    http.Respond(
+                        body: """{"error_count":0,"configs":[{"value":{"name":"connector.class","errors":[]}}]}"""
+                    );
+                    return http.Adapter.ValidateConfigurationAsync(request, payload, ct);
+                }
+            );
+        A.CallTo(() =>
+                _connect.UpdateConfigurationForRecordSizeIncreaseAsync(
+                    A<CdcDeploymentRequest>._,
+                    A<CdcKafkaConnectRegistrationPayload>._,
+                    A<CancellationToken>._
+                )
+            )
+            .ReturnsLazily(
+                async (
+                    CdcDeploymentRequest request,
+                    CdcKafkaConnectRegistrationPayload payload,
+                    CancellationToken ct
+                ) =>
+                {
+                    _stopped.Should().BeTrue();
+                    _topicLimit.Should().Be(Ceiling);
+                    http.Respond(body: JsonSerializer.Serialize(_live));
+                    http.Respond(
+                        body: JsonSerializer.Serialize(
+                            new
+                            {
+                                name = request.Binding.ConnectorName,
+                                connector = new
+                                {
+                                    state = "STOPPED",
+                                    worker_id = _workerEvidence.ConnectWorkerId,
+                                },
+                                tasks = Array.Empty<object>(),
+                            }
+                        )
+                    );
+                    var changed = payload.Config.Single(p =>
+                        !credentials.ContainsKey(p.Key) && _live[p.Key] != p.Value
+                    );
+                    string step = changed.Key == "producer.override.buffer.memory" ? "buffer" : "request";
+                    http.Http.Responses.Enqueue(_ =>
+                    {
+                        Effect(step + "-before");
+                        _live = new(payload.Config);
+                        foreach (string key in credentials.Keys)
+                        {
+                            _live[key] = mask;
+                        }
+                        Effect(step + "-after");
+                        return Task.FromResult(
+                            new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}") }
+                        );
+                    });
+                    // Reconciliation also sees masked credentials; the controller must reconcile live state.
+                    Dictionary<string, string> after = new(_live) { [changed.Key] = changed.Value };
+                    http.Respond(body: JsonSerializer.Serialize(after));
+                    return await http.Adapter.UpdateConfigurationForRecordSizeIncreaseAsync(
+                        request,
+                        payload,
+                        ct
+                    );
+                }
+            );
+
+        var result = await Execute();
+
+        result.Succeeded.Should().BeTrue(because: string.Join(',', _trace));
+        result.Ready.Should().BeTrue();
+        result.Diagnostics.Should().BeEmpty();
+        _confirmations.Should().Be(1);
+        _effects
+            .Where(e => e is "buffer-after" or "request-after" or "resume-after")
+            .Should()
+            .Equal("buffer-after", "request-after", "resume-after");
+        ReadJournal().HasPendingRecordSizeIncrease.Should().BeFalse();
+        http.Http.Responses.Should().BeEmpty();
+        var puts = http.Http.Calls.Where(c => c.Method == HttpMethod.Put).ToArray();
+        puts.Should().HaveCount(4);
+        for (int i = 0; i < puts.Length; i++)
+        {
+            puts[i].Path.Should().EndWith(i % 2 == 0 ? "/config/validate" : "/config");
+            var payload = JsonSerializer.Deserialize<Dictionary<string, string>>(puts[i].Body)!;
+            payload.Should().Contain(credentials);
+            payload.Values.Should().NotContain(mask);
+            payload
+                .Where(p =>
+                    !credentials.ContainsKey(p.Key)
+                    && p.Key
+                        is not ("producer.override.buffer.memory" or "producer.override.max.request.size")
+                )
+                .Should()
+                .BeEquivalentTo(
+                    original.Where(p =>
+                        !credentials.ContainsKey(p.Key)
+                        && p.Key
+                            is not ("producer.override.buffer.memory" or "producer.override.max.request.size")
+                    )
+                );
+            payload["producer.override.buffer.memory"]
+                .Should()
+                .Be(Ceiling.ToString(CultureInfo.InvariantCulture));
+            payload["producer.override.max.request.size"]
+                .Should()
+                .Be(
+                    i < 2
+                        ? original["producer.override.max.request.size"]
+                        : Ceiling.ToString(CultureInfo.InvariantCulture)
+                );
+        }
+        string serialized = JsonSerializer.Serialize(result) + JsonSerializer.Serialize(ReadJournal());
+        foreach (string reference in credentials.Values)
+        {
+            serialized.Should().NotContain(reference);
+        }
+        serialized.Should().NotContain(mask);
+    }
+
+    [TestCase("missing-reference")]
+    [TestCase("masked-reference")]
+    [TestCase("raw-reference")]
+    [TestCase("unrelated-drift")]
+    public async Task It_rejects_invalid_credentials_or_drift_before_overlay(string defect)
+    {
+        ConfigureMaskedCredentials();
+        Dictionary<string, string> security = new(_request.KafkaClientSecurityProperties.Properties);
+        switch (defect)
+        {
+            case "missing-reference":
+                security.Remove("sasl.jaas.config");
+                break;
+            case "masked-reference":
+                security["sasl.jaas.config"] = "********";
+                break;
+            case "raw-reference":
+                security["sasl.jaas.config"] = "private-raw-credential";
+                break;
+            case "unrelated-drift":
+                _live["producer.override.security.protocol"] = "PLAINTEXT";
+                break;
+        }
+        if (defect is "masked-reference" or "raw-reference")
+        {
+            Action configure = () => SetSecurity(security);
+            configure
+                .Should()
+                .Throw<ArgumentException>()
+                .Which.Message.Should()
+                .NotContain("private-raw-credential")
+                .And.NotContain("********");
+            _effects.Should().BeEmpty();
+            return;
+        }
+        SetSecurity(security);
+
+        var result = await Execute();
+
+        result.Succeeded.Should().BeFalse();
+        result.Ready.Should().BeFalse();
+        _effects.Should().BeEmpty();
+        A.CallTo(() =>
+                _connect.UpdateConfigurationForRecordSizeIncreaseAsync(
+                    A<CdcDeploymentRequest>._,
+                    A<CdcKafkaConnectRegistrationPayload>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+        JsonSerializer
+            .Serialize(result)
+            .Should()
+            .NotContain("private-raw-credential")
+            .And.NotContain("********");
+    }
 
     [TestCase(false)]
     [TestCase(true)]

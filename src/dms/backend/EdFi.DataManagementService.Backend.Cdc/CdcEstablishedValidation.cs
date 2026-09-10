@@ -42,6 +42,9 @@ public sealed record CdcEstablishedValidationObservation(
     [JsonIgnore]
     public IReadOnlyDictionary<string, string> LiveConfiguration { get; init; } = null!;
 
+    [JsonIgnore]
+    internal IReadOnlyDictionary<string, string> RenderedConfiguration { get; init; } = null!;
+
     public CdcRecoveryObservation Recovery { get; init; } = new(CdcRecoveryBoundary.Unobserved, false);
 
     // Identifies invalidation as the sole pre-start blocker. This permits another observation,
@@ -490,18 +493,21 @@ public sealed partial class CdcEstablishedValidation
                 await CallAsync(request, ct => _connect.ReadConfigurationAsync(request, ct), token)
             );
             var templateRequest = request.CreateTemplateRequest(new(request.Binding.Generation, provider));
-            bool configurationMatches =
-                rawOffset is CdcTransportResult<CdcConnectOffsetEvidence>.Observed currentOffset
-                && _templates
-                    .ValidateLiveReadBack(
-                        new(
-                            templateRequest,
-                            live,
-                            templateRequest.ProviderSetupEvidence,
-                            new(currentOffset.Value.SourcePartition)
-                        )
+            bool configurationMatches = false;
+            IReadOnlyDictionary<string, string> rendered = new Dictionary<string, string>();
+            if (rawOffset is CdcTransportResult<CdcConnectOffsetEvidence>.Observed currentOffset)
+            {
+                var template = _templates.ValidateLiveReadBack(
+                    new(
+                        templateRequest,
+                        live,
+                        templateRequest.ProviderSetupEvidence,
+                        new(currentOffset.Value.SourcePartition)
                     )
-                    .Outcome == CdcConnectorTemplateOutcome.Rendered;
+                );
+                configurationMatches = template.Outcome == CdcConnectorTemplateOutcome.Rendered;
+                rendered = template.Config;
+            }
             var configuration = CdcControllerObservations.Configuration(
                 request,
                 operation,
@@ -646,6 +652,7 @@ public sealed partial class CdcEstablishedValidation
             {
                 Recovery = recoveryObservation,
                 LiveConfiguration = new Dictionary<string, string>(live),
+                RenderedConfiguration = rendered,
             };
             if (recoveryObservation.RequiresFreshPass)
             {
