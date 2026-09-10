@@ -732,3 +732,274 @@ public class Given_a_hook_that_replaces_a_descriptor_it_registered_itself
         _inner[0].ServiceType.Should().Be(typeof(IPluginOwnedService));
     }
 }
+
+/// <summary>A logger factory a plugin would install over the host's, which the reservation refuses.</summary>
+internal sealed class FixtureLoggerFactory : ILoggerFactory
+{
+    public void AddProvider(ILoggerProvider provider)
+    {
+        // Nothing to keep: this factory hands out the framework's null loggers whatever is added.
+    }
+
+    public ILogger CreateLogger(string categoryName) => NullLogger.Instance;
+
+    public void Dispose()
+    {
+        // Nothing to release.
+    }
+}
+
+/// <summary>
+/// The host's unkeyed logging services are reserved, and a plugin registering one is refused before
+/// the write lands.
+/// </summary>
+/// <remarks>
+/// <para>
+/// This is a reservation and not duplicate detection, which is why every case here asserts on the
+/// incoming descriptor rather than on what the collection already held. A plugin can take the host's
+/// logging without removing anything: an unkeyed single-service resolve takes the last registration,
+/// so an <c>Add</c> is enough, and the removal rules would never see a call.
+/// </para>
+/// <para>
+/// It is refused at the wrapper rather than in the post-container audit because the audit needs a
+/// logger before it can report anything, and the registration under test is exactly what decides
+/// which logger that is.
+/// </para>
+/// </remarks>
+[TestFixture]
+public class Given_a_hook_that_registers_a_logging_service_the_host_reserves
+{
+    private ServiceCollection _inner = null!;
+    private RecordingServiceCollection _wrapper = null!;
+    private StringWriter _diagnostics = null!;
+    private List<ServiceDescriptor> _before = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _inner = new ServiceCollection();
+        _inner.AddLogging(builder => builder.AddConsole());
+        _before = [.. _inner];
+        _wrapper = WrapperFixture.Wrap(_inner, out _diagnostics);
+    }
+
+    [Test]
+    public void It_refuses_an_added_logger_factory()
+    {
+        Action registration = () => _wrapper.AddSingleton<ILoggerFactory, FixtureLoggerFactory>();
+
+        registration
+            .Should()
+            .Throw<PluginCompositionException>()
+            .Where(exception =>
+                exception.Reason == PluginCompositionFailure.ReservedLoggingServiceRegistered
+                && exception.PluginName == WrapperFixture.PluginName
+            )
+            .WithMessage($"*{WrapperFixture.PluginName}*")
+            .WithMessage($"*{nameof(ILoggerFactory)}*");
+    }
+
+    [Test]
+    public void It_refuses_an_inserted_logger_factory()
+    {
+        Action insertion = () =>
+            _wrapper.Insert(0, ServiceDescriptor.Singleton<ILoggerFactory, FixtureLoggerFactory>());
+
+        insertion
+            .Should()
+            .Throw<PluginCompositionException>()
+            .Where(exception =>
+                exception.Reason == PluginCompositionFailure.ReservedLoggingServiceRegistered
+            );
+    }
+
+    /// <summary>
+    /// The third incoming write path, over a slot the plugin is allowed to overwrite. The removal rule
+    /// has nothing to say about that slot, so the refusal can only be about the descriptor arriving.
+    /// </summary>
+    [Test]
+    public void It_refuses_a_logger_factory_assigned_through_the_indexer()
+    {
+        _wrapper.AddSingleton<IPluginOwnedService, PluginOwnedService>();
+        int ownSlot = _inner.Count - 1;
+
+        Action assignment = () =>
+            _wrapper[ownSlot] = ServiceDescriptor.Singleton<ILoggerFactory, FixtureLoggerFactory>();
+
+        assignment
+            .Should()
+            .Throw<PluginCompositionException>()
+            .Where(exception =>
+                exception.Reason == PluginCompositionFailure.ReservedLoggingServiceRegistered
+            );
+        _inner[ownSlot].ServiceType.Should().Be(typeof(IPluginOwnedService));
+    }
+
+    [Test]
+    public void It_refuses_a_closed_generic_logger()
+    {
+        Action registration = () =>
+            _wrapper.AddSingleton<ILogger<FixtureLoggerFactory>>(NullLogger<FixtureLoggerFactory>.Instance);
+
+        registration
+            .Should()
+            .Throw<PluginCompositionException>()
+            .Where(exception => exception.Reason == PluginCompositionFailure.ReservedLoggingServiceRegistered)
+            .WithMessage($"*{nameof(ILogger)}*");
+    }
+
+    [Test]
+    public void It_refuses_the_open_generic_logger()
+    {
+        Action registration = () =>
+            _wrapper.Add(ServiceDescriptor.Singleton(typeof(ILogger<>), typeof(Logger<>)));
+
+        registration
+            .Should()
+            .Throw<PluginCompositionException>()
+            .Where(exception =>
+                exception.Reason == PluginCompositionFailure.ReservedLoggingServiceRegistered
+            );
+    }
+
+    [Test]
+    public void It_refuses_the_non_generic_logger()
+    {
+        Action registration = () => _wrapper.AddSingleton<ILogger>(NullLogger.Instance);
+
+        registration
+            .Should()
+            .Throw<PluginCompositionException>()
+            .Where(exception =>
+                exception.Reason == PluginCompositionFailure.ReservedLoggingServiceRegistered
+            );
+    }
+
+    /// <summary>
+    /// Refused before the write lands, so the collection is exactly what it was, and reported on the
+    /// loader's own channel, which does not depend on the pipeline the rule protects.
+    /// </summary>
+    [Test]
+    public void It_leaves_the_collection_unchanged_and_reports_the_refusal()
+    {
+        try
+        {
+            _wrapper.AddSingleton<ILoggerFactory, FixtureLoggerFactory>();
+        }
+        catch (PluginCompositionException)
+        {
+            // Expected, and asserted above. What this case is about is the state the refusal left.
+        }
+
+        _inner.Should().Equal(_before);
+        _diagnostics.ToString().Should().Contain(nameof(ILoggerFactory));
+    }
+}
+
+/// <summary>
+/// The reservation is a rule about the host's unkeyed logging, not about a descriptor already being
+/// there, so it fires against a collection that has no logging at all.
+/// </summary>
+/// <remarks>
+/// The consequence for a plugin is stated here rather than left to be discovered: the real
+/// <c>AddLogging</c> helper reaches the collection through the TryAdd family, so it is permitted
+/// against any host that has already wired logging, which both Ed-Fi hosts do before any hook runs.
+/// Against a collection with no logging it would be refused, and that is the reservation working as
+/// specified rather than a gap in it.
+/// </remarks>
+[TestFixture]
+public class Given_a_hook_over_a_collection_holding_no_logging_at_all
+{
+    private ServiceCollection _inner = null!;
+    private RecordingServiceCollection _wrapper = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _inner = new ServiceCollection();
+        _wrapper = WrapperFixture.Wrap(_inner, out _);
+    }
+
+    [Test]
+    public void It_registered_no_logging_to_displace()
+    {
+        _inner.Should().NotContain(descriptor => descriptor.ServiceType == typeof(ILoggerFactory));
+    }
+
+    [Test]
+    public void It_refuses_an_unkeyed_logger_factory_anyway()
+    {
+        Action registration = () => _wrapper.AddSingleton<ILoggerFactory, FixtureLoggerFactory>();
+
+        registration
+            .Should()
+            .Throw<PluginCompositionException>()
+            .Where(exception =>
+                exception.Reason == PluginCompositionFailure.ReservedLoggingServiceRegistered
+            );
+    }
+}
+
+/// <summary>
+/// What the reservation deliberately leaves a plugin: its own sink, its own keyed logging, and the
+/// real <c>AddLogging</c> helper over a collection the host has already wired.
+/// </summary>
+[TestFixture]
+public class Given_a_hook_that_registers_logging_the_reservation_permits
+{
+    private ServiceCollection _inner = null!;
+    private RecordingServiceCollection _wrapper = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _inner = new ServiceCollection();
+        _inner.AddLogging(builder => builder.AddConsole());
+        _wrapper = WrapperFixture.Wrap(_inner, out _);
+    }
+
+    [Test]
+    public void It_permits_a_provider_of_the_plugins_own()
+    {
+        Action registration = () =>
+            _wrapper.AddLogging(builder => builder.AddProvider(new FixtureLoggerProvider()));
+
+        registration.Should().NotThrow();
+        _inner.Count(descriptor => descriptor.ServiceType == typeof(ILoggerProvider)).Should().Be(2);
+    }
+
+    /// <summary>
+    /// A keyed logging registration replaces nothing: an unkeyed resolve, which is what every host
+    /// component makes, reaches no keyed descriptor.
+    /// </summary>
+    [Test]
+    public void It_permits_a_keyed_logger_factory()
+    {
+        Action registration = () => _wrapper.AddKeyedSingleton<ILoggerFactory, FixtureLoggerFactory>("acme");
+
+        registration.Should().NotThrow();
+        _inner
+            .Should()
+            .ContainSingle(descriptor =>
+                descriptor.ServiceType == typeof(ILoggerFactory) && descriptor.IsKeyedService
+            );
+    }
+
+    /// <summary>
+    /// The real helper, not an imitation. Every call <c>AddLogging</c> makes against the collection is
+    /// a TryAdd, so against a host that has already wired logging each one declines and nothing
+    /// arrives for the reservation to refuse.
+    /// </summary>
+    [Test]
+    public void It_permits_the_real_AddLogging_helper()
+    {
+        Action registration = () => _wrapper.AddLogging();
+
+        registration.Should().NotThrow();
+        _inner
+            .Should()
+            .ContainSingle(descriptor =>
+                descriptor.ServiceType == typeof(ILoggerFactory) && !descriptor.IsKeyedService
+            );
+    }
+}

@@ -206,6 +206,47 @@ public sealed class ContributorPlugin : EdFiApiPlugin
                 services.AddKeyedTransient<IFixtureFanInContract, FixtureFanIn>("first");
                 break;
 
+            case "swallowLoggerFactory":
+                // A logger factory of the plugin's own, which the host reserves. Nothing is removed
+                // here: a later unkeyed resolve would simply take this registration because it is
+                // last, which is the displacement the reservation exists for. The refusal is then
+                // swallowed, as the other swallow cases do, so the plugin believes it merely failed to
+                // install its own logging. The three incoming write paths are exercised against the
+                // wrapper directly, which is the level they belong at; what this adds is the same rule
+                // firing through the real invoker and its latch.
+                try
+                {
+                    services.AddSingleton<ILoggerFactory, FixtureLoggerFactory>();
+                }
+                catch (Exception)
+                {
+                    // Swallowed on purpose.
+                }
+
+                services.TryAddEnumerable(ServiceDescriptor.Transient<IFixtureFanInContract, FixtureFanIn>());
+                break;
+
+            case "keyedLoggerFactoryAndProvider":
+                // Everything the reservation deliberately leaves a plugin, through the real loader: a
+                // keyed logger factory, which no unkeyed resolve reaches, and a sink of its own, which
+                // is enumerated beside the host's rather than replacing it.
+                services.AddKeyedSingleton<ILoggerFactory, FixtureLoggerFactory>("acme");
+                services.AddLogging(builder => builder.AddProvider(new FixtureLoggerProvider()));
+                services.TryAddEnumerable(ServiceDescriptor.Transient<IFixtureFanInContract, FixtureFanIn>());
+                break;
+
+            case "removableContract":
+                // A declared contract in an assembly no host prefix matches, so a later plugin is
+                // permitted to remove it. This plugin contributes nothing else.
+                services.AddSingleton<IAcmeRemovableContract, AcmeService>();
+                break;
+
+            case "removableContractPlusFanIn":
+                // The same, beside a second declared contribution the later plugin does not touch.
+                services.AddSingleton<IAcmeRemovableContract, AcmeService>();
+                services.TryAddEnumerable(ServiceDescriptor.Transient<IFixtureFanInContract, FixtureFanIn>());
+                break;
+
             case "anyKeyOwnService":
                 // A wildcard-keyed registration of a service type no host declares a contract for,
                 // which stays ordinary permitted work.
@@ -397,6 +438,25 @@ public sealed class FixtureHostedService : IHostedService
     public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+}
+
+/// <summary>
+/// A logger factory of the plugin's own, which the host's reservation of unkeyed logging refuses.
+/// </summary>
+public sealed class FixtureLoggerFactory : ILoggerFactory
+{
+    public void AddProvider(ILoggerProvider provider)
+    {
+        // Nothing to keep: this factory hands out the framework's null loggers whatever is added.
+    }
+
+    public ILogger CreateLogger(string categoryName) =>
+        Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance;
+
+    public void Dispose()
+    {
+        // Nothing to release.
+    }
 }
 
 /// <summary>A sink of the plugin's own, which the logging carve-out permits.</summary>

@@ -39,6 +39,22 @@ internal static class AuditProbe
     internal static PluginContractRegistry EmptyRegistry { get; } = new([]);
 
     /// <summary>
+    /// The same two contracts plus one declared in an assembly no host prefix matches, for the cases
+    /// where a later plugin removes an earlier plugin's declared contribution.
+    /// </summary>
+    /// <remarks>
+    /// The third contract has to live outside a host-prefixed assembly, because the wrapper refuses a
+    /// plugin removing a host-owned descriptor: with the fixture host's own contracts there is no way
+    /// to compose a permitted removal of a declared contribution at all.
+    /// </remarks>
+    internal static PluginContractRegistry RegistryWithRemovableContract { get; } =
+        new([
+            new PluginContractEntry(typeof(IFixtureFanInContract), Cardinality.FanIn),
+            new PluginContractEntry(typeof(IFixtureReplaceContract), Cardinality.Replace),
+            new PluginContractEntry(typeof(IAcmeRemovableContract), Cardinality.FanIn),
+        ]);
+
+    /// <summary>
     /// The collection a host hands the hooks: real logging, a host default for the replace contract,
     /// and a host-owned service the plugins may not touch.
     /// </summary>
@@ -1515,5 +1531,390 @@ public class Given_a_declared_contract_the_host_registered_under_a_concrete_key
         run.Result.Findings.Should().BeEmpty();
         FixtureObservations.CountOf("hostFanIn.constructed").Should().Be(1);
         FixtureObservations.CountOf("fanIn.constructed").Should().Be(1);
+    }
+}
+
+/// <summary>
+/// A declared contract one plugin registered and a later plugin removed. The removal is permitted and
+/// the composition still fails, against the plugin left with nothing live.
+/// </summary>
+/// <remarks>
+/// The contract under test is declared in <c>Acme.FixtureContracts</c>, which carries no Ed-Fi host
+/// prefix, and that is what makes the case constructible at all: the wrapper refuses a plugin removing
+/// a host-owned descriptor, so a declared contract in the host-prefixed fixture assembly could never
+/// be taken away by a later hook.
+/// </remarks>
+[TestFixture]
+[NonParallelizable]
+public class Given_a_later_plugin_removing_the_only_declared_contribution_of_an_earlier_one
+{
+    private TemporaryPluginRoot _root = null!;
+    private AuditRun _run = null!;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        _root = TemporaryPluginRoot.Create();
+        _run = await AuditProbe.RunAsync(
+            _root,
+            "removableContract",
+            AuditProbe.RegistryWithRemovableContract,
+            PluginFixtures.Contributor,
+            PluginFixtures.SecondContributor
+        );
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        _run.Dispose();
+        _root.Dispose();
+    }
+
+    /// <summary>
+    /// The removal itself is nobody's fatal. What fails is the composition it produced, and only the
+    /// plugin whose contribution is gone is named.
+    /// </summary>
+    [Test]
+    public void It_is_fatal_against_the_plugin_whose_contribution_did_not_survive()
+    {
+        PluginAuditFinding finding = _run.SingleFinding;
+
+        finding.Reason.Should().Be(PluginAuditFailure.NoDeclaredContractRegistered);
+        finding.PluginNames.Should().Equal(PluginFixtures.Contributor);
+    }
+
+    /// <summary>
+    /// The two ways to contribute nothing live read differently, because the first question an
+    /// operator asks is different: whether the plugin registered the wrong thing, or whether something
+    /// else took its registration away.
+    /// </summary>
+    [Test]
+    public void It_says_the_registration_did_not_survive_rather_than_that_none_was_made()
+    {
+        string message = _run.SingleFinding.Message;
+
+        message.Should().Contain("none of them survived service composition");
+        message.Should().Contain(nameof(IAcmeRemovableContract));
+        message.Should().NotContain("registered no plugin contract this host declares");
+    }
+
+    /// <summary>
+    /// The record is historical and stays so: what the plugin did is what the inventory event reports,
+    /// and narrowing it to survivors would under-report the composition an operator has to debug.
+    /// </summary>
+    [Test]
+    public void It_keeps_the_addition_and_the_removal_in_the_records()
+    {
+        _run.Input.Records[0]
+            .Additions.Should()
+            .Contain(descriptor => descriptor.ServiceType == typeof(IAcmeRemovableContract));
+        _run.Input.Records[1]
+            .Removals.Should()
+            .ContainSingle(removal => removal.ServiceType == typeof(IAcmeRemovableContract));
+    }
+
+    /// <summary>
+    /// And the descriptor really is gone from the composition, which is what the check reads.
+    /// </summary>
+    [Test]
+    public void It_left_no_surviving_descriptor_for_the_contract()
+    {
+        _run.Input.DescriptorsAfterContribution.Should()
+            .NotContain(descriptor => descriptor.ServiceType == typeof(IAcmeRemovableContract));
+    }
+
+    /// <summary>
+    /// The plugin that did the removing contributed a declared contract of its own, so it passes. The
+    /// rule is about what survived, not about who removed what.
+    /// </summary>
+    [Test]
+    public void It_does_not_name_the_plugin_that_removed_it()
+    {
+        _run.SingleFinding.PluginNames.Should().NotContain(PluginFixtures.SecondContributor);
+    }
+}
+
+/// <summary>
+/// The same removal, against a plugin that also contributed a declared contract the later plugin did
+/// not touch. One surviving declared registration is enough.
+/// </summary>
+[TestFixture]
+[NonParallelizable]
+public class Given_a_later_plugin_removing_one_of_two_declared_contributions
+{
+    private TemporaryPluginRoot _root = null!;
+    private AuditRun _run = null!;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        _root = TemporaryPluginRoot.Create();
+        _run = await AuditProbe.RunAsync(
+            _root,
+            "removableContractPlusFanIn",
+            AuditProbe.RegistryWithRemovableContract,
+            PluginFixtures.Contributor,
+            PluginFixtures.SecondContributor
+        );
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        _run.Dispose();
+        _root.Dispose();
+    }
+
+    [Test]
+    public void It_audits_clean()
+    {
+        _run.Result.Findings.Should().BeEmpty();
+    }
+
+    [Test]
+    public void It_still_removed_the_contribution_it_was_allowed_to_remove()
+    {
+        _run.Input.DescriptorsAfterContribution.Should()
+            .NotContain(descriptor => descriptor.ServiceType == typeof(IAcmeRemovableContract));
+        _run.Input.Records[1]
+            .Removals.Should()
+            .ContainSingle(removal => removal.ServiceType == typeof(IAcmeRemovableContract));
+    }
+}
+
+/// <summary>
+/// A wildcard-keyed declared contract the <em>host</em> registered. Refused like a plugin's, because
+/// the requirement is a property of the registration rather than of who made it.
+/// </summary>
+[TestFixture]
+[NonParallelizable]
+public class Given_a_declared_contract_the_host_registered_under_the_wildcard_key
+{
+    private TemporaryPluginRoot _root = null!;
+    private AuditRun _run = null!;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        _root = TemporaryPluginRoot.Create();
+        _run = await AuditProbe.RunWithHostCollectionAsync(
+            _root,
+            // An unkeyed plugin contribution, so every key in the case is the host's.
+            "declaredValidatorOnly",
+            services =>
+                services.AddKeyedTransient<IFixtureFanInContract, CountingHostFanIn>(KeyedService.AnyKey),
+            PluginFixtures.Contributor
+        );
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        _run.Dispose();
+        _root.Dispose();
+    }
+
+    [Test]
+    public void It_is_fatal_naming_the_contract()
+    {
+        PluginAuditFinding finding = _run.SingleFinding;
+
+        finding.Reason.Should().Be(PluginAuditFailure.DeclaredContractRegisteredUnderWildcardKey);
+        finding.Contract.Should().Be(typeof(IFixtureFanInContract));
+        finding.Message.Should().Contain("wildcard service key");
+    }
+
+    /// <summary>
+    /// And it invents no plugin. The records attribute this registration to nobody, so the finding
+    /// names nobody and says so rather than blaming whichever plugin happened to be loaded.
+    /// </summary>
+    [Test]
+    public void It_names_no_plugin()
+    {
+        _run.SingleFinding.PluginNames.Should().BeEmpty();
+        _run.SingleFinding.Message.Should().Contain("cannot attribute to a plugin");
+        _run.SingleFinding.Message.Should().NotContain(PluginFixtures.Contributor);
+    }
+
+    /// <summary>
+    /// A static refusal, so it lands before the activation pass and nothing on the rejected candidate
+    /// is constructed.
+    /// </summary>
+    [Test]
+    public void It_activates_nothing()
+    {
+        FixtureObservations.CountOf("hostFanIn.constructed").Should().Be(0);
+        FixtureObservations.CountOf("fanIn.constructed").Should().Be(0);
+    }
+}
+
+/// <summary>
+/// The container behaviour the wildcard refusal rests on, measured against a plain container with no
+/// plugin, no record and no audit in it.
+/// </summary>
+/// <remarks>
+/// Written as a characterization test because the rule is a consequence of how .NET resolves keyed
+/// services rather than of anything this repository decides. If a future runtime makes an enumerable
+/// resolve reach a wildcard registration, this is the case that fails and says the refusal can be
+/// revisited.
+/// </remarks>
+[TestFixture]
+public class Given_a_plain_container_holding_a_wildcard_keyed_registration
+{
+    private ServiceProvider _provider = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        ServiceCollection services = new();
+        services.AddKeyedTransient<IFixtureFanInContract, WildcardFanIn>(KeyedService.AnyKey);
+        services.AddKeyedTransient<IFixtureFanInContract, ConcreteKeyFanIn>("concrete");
+        services.AddTransient<IFixtureFanInContract, UnkeyedFanIn>();
+
+        _provider = services.BuildServiceProvider();
+    }
+
+    [TearDown]
+    public void TearDown() => _provider.Dispose();
+
+    /// <summary>
+    /// Asking for the wildcard key enumerably returns the concrete-key registrations and not the
+    /// wildcard one, which is the measurement the refusal is written from.
+    /// </summary>
+    [Test]
+    public void It_excludes_the_wildcard_registration_from_an_any_key_enumeration()
+    {
+        _provider
+            .GetKeyedServices<IFixtureFanInContract>(KeyedService.AnyKey)
+            .Select(service => service.GetType())
+            .Should()
+            .Equal(typeof(ConcreteKeyFanIn));
+    }
+
+    /// <summary>
+    /// And enumerating a concrete key reaches only what is registered under that key, so the wildcard
+    /// fallback is not an enumerable member of any key's group either.
+    /// </summary>
+    [Test]
+    public void It_excludes_the_wildcard_registration_from_a_concrete_key_enumeration()
+    {
+        _provider
+            .GetKeyedServices<IFixtureFanInContract>("concrete")
+            .Select(service => service.GetType())
+            .Should()
+            .Equal(typeof(ConcreteKeyFanIn));
+
+        _provider.GetKeyedServices<IFixtureFanInContract>("never-registered").Should().BeEmpty();
+    }
+
+    /// <summary>The unkeyed group does not reach it either.</summary>
+    [Test]
+    public void It_excludes_the_wildcard_registration_from_the_unkeyed_enumeration()
+    {
+        _provider
+            .GetServices<IFixtureFanInContract>()
+            .Select(service => service.GetType())
+            .Should()
+            .Equal(typeof(UnkeyedFanIn));
+    }
+
+    /// <summary>
+    /// The positive half, and the reason the refusal is about this audit rather than about the
+    /// registration being useless: a single-service resolve under some concrete key does reach the
+    /// wildcard registration. That is a real resolution path, and it is one the host holds no key for.
+    /// </summary>
+    [Test]
+    public void It_is_reachable_by_a_single_service_resolve_under_any_concrete_key()
+    {
+        _provider
+            .GetKeyedService<IFixtureFanInContract>("a-key-nothing-registered")
+            .Should()
+            .BeOfType<WildcardFanIn>();
+    }
+}
+
+/// <summary>Registered under the wildcard key, so nothing enumerable reaches it.</summary>
+internal sealed class WildcardFanIn : IFixtureFanInContract
+{
+    public string Describe() => nameof(WildcardFanIn);
+}
+
+/// <summary>Registered under one concrete key, which is what an any-key enumeration returns.</summary>
+internal sealed class ConcreteKeyFanIn : IFixtureFanInContract
+{
+    public string Describe() => nameof(ConcreteKeyFanIn);
+}
+
+/// <summary>Registered with no key, so only the unkeyed group reaches it.</summary>
+internal sealed class UnkeyedFanIn : IFixtureFanInContract
+{
+    public string Describe() => nameof(UnkeyedFanIn);
+}
+
+/// <summary>
+/// The permitted half of the logging reservation, through the real loader and the real audit: a
+/// plugin's keyed logger factory and a sink of its own, beside a declared contract.
+/// </summary>
+/// <remarks>
+/// The refusal is proven against the wrapper and, for the latch, through the invoker. This is the
+/// case that proves the rule does not reject the logging work a plugin is supposed to be able to do,
+/// which is the failure mode a reservation risks.
+/// </remarks>
+[TestFixture]
+[NonParallelizable]
+public class Given_a_plugin_registering_keyed_logging_and_a_sink_of_its_own
+{
+    private TemporaryPluginRoot _root = null!;
+    private AuditRun _run = null!;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        _root = TemporaryPluginRoot.Create();
+        _run = await AuditProbe.RunAsync(
+            _root,
+            "keyedLoggerFactoryAndProvider",
+            null,
+            PluginFixtures.Contributor
+        );
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        _run.Dispose();
+        _root.Dispose();
+    }
+
+    [Test]
+    public void It_composes_and_audits_clean()
+    {
+        _run.Result.Findings.Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// The host's unkeyed factory is untouched and still the only one, so nothing a host component
+    /// resolves changed.
+    /// </summary>
+    [Test]
+    public void It_left_the_hosts_unkeyed_logger_factory_as_the_only_one()
+    {
+        _run.Services.Should()
+            .ContainSingle(descriptor =>
+                descriptor.ServiceType == typeof(ILoggerFactory) && !descriptor.IsKeyedService
+            );
+    }
+
+    [Test]
+    public void It_registered_the_plugins_keyed_factory_and_its_own_sink()
+    {
+        _run.Services.Should()
+            .ContainSingle(descriptor =>
+                descriptor.ServiceType == typeof(ILoggerFactory) && descriptor.IsKeyedService
+            );
+        _run.Services.Count(descriptor => descriptor.ServiceType == typeof(ILoggerProvider))
+            .Should()
+            .BeGreaterThan(1);
     }
 }

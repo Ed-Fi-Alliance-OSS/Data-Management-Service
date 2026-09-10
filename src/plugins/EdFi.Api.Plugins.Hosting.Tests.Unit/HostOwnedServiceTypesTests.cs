@@ -162,3 +162,52 @@ public class Given_the_logging_pipeline_service_types
         HostOwnedServiceTypes.IsLoggingPipeline(serviceType).Should().BeFalse();
     }
 }
+
+/// <summary>
+/// The narrower set the host reserves against a plugin's own registration, which is the removal set
+/// minus the one member that composes rather than displaces.
+/// </summary>
+[TestFixture]
+public class Given_the_logging_service_types_the_host_reserves
+{
+    [TestCase(typeof(ILoggerFactory))]
+    [TestCase(typeof(ILogger))]
+    [TestCase(typeof(ILogger<>))]
+    public void It_reserves_every_singly_resolved_logging_service(Type serviceType)
+    {
+        HostOwnedServiceTypes.IsReservedLoggingService(serviceType).Should().BeTrue();
+    }
+
+    /// <summary>
+    /// The narrower shape of the same displacement: a closed logger beats the host's open generic for
+    /// that one category.
+    /// </summary>
+    [Test]
+    public void It_reserves_a_closed_generic_logger()
+    {
+        HostOwnedServiceTypes
+            .IsReservedLoggingService(typeof(ILogger<PluginContractRegistry>))
+            .Should()
+            .BeTrue();
+    }
+
+    /// <summary>
+    /// The one member of the removal set that is not reserved, and the difference is the whole point:
+    /// providers are enumerated, so a plugin's sink composes with the host's rather than replacing it.
+    /// </summary>
+    [Test]
+    public void It_does_not_reserve_the_provider_that_the_removal_rule_protects()
+    {
+        HostOwnedServiceTypes.IsLoggingPipeline(typeof(ILoggerProvider)).Should().BeTrue();
+        HostOwnedServiceTypes.IsReservedLoggingService(typeof(ILoggerProvider)).Should().BeFalse();
+    }
+
+    [TestCase(typeof(IExternalScopeProvider))]
+    [TestCase(typeof(LogLevel))]
+    [TestCase(typeof(int))]
+    [TestCase(typeof(EdFiApiPlugin))]
+    public void It_reserves_nothing_else(Type serviceType)
+    {
+        HostOwnedServiceTypes.IsReservedLoggingService(serviceType).Should().BeFalse();
+    }
+}

@@ -29,6 +29,20 @@ public interface IAcmeThirdService
 }
 
 /// <summary>
+/// A plugin contract a fixture registry declares, in an assembly no host prefix matches.
+/// </summary>
+/// <remarks>
+/// The non-host declaration is the point. A declared contract in the host-prefixed fixture assembly
+/// cannot be removed by a later plugin, because the wrapper refuses that call, so a contract
+/// somewhere else is the only way to compose the case where one plugin's declared contribution does
+/// not survive another plugin's permitted removal.
+/// </remarks>
+public interface IAcmeRemovableContract
+{
+    string Describe();
+}
+
+/// <summary>
 /// A service nothing ever registers, so an implementation taking it in its constructor cannot be
 /// activated.
 /// </summary>
@@ -38,13 +52,21 @@ public interface IFixtureMissingDependency
 }
 
 /// <summary>An implementation, shared so a test can name the type a descriptor carries.</summary>
-public sealed class AcmeService : IAcmeFirstService, IAcmeSecondService, IAcmeThirdService
+public sealed class AcmeService
+    : IAcmeFirstService,
+        IAcmeSecondService,
+        IAcmeThirdService,
+        IAcmeRemovableContract
 {
     public string Describe() => nameof(AcmeService);
 }
 
 /// <summary>A second implementation, for the cases that replace one descriptor with another.</summary>
-public sealed class SecondAcmeService : IAcmeFirstService, IAcmeSecondService, IAcmeThirdService
+public sealed class SecondAcmeService
+    : IAcmeFirstService,
+        IAcmeSecondService,
+        IAcmeThirdService,
+        IAcmeRemovableContract
 {
     public string Describe() => nameof(SecondAcmeService);
 }

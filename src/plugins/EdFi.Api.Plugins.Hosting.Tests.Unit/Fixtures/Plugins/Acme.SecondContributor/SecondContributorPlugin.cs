@@ -44,6 +44,17 @@ public sealed class SecondContributorPlugin : EdFiApiPlugin
                 );
                 break;
 
+            case "removableContract":
+            case "removableContractPlusFanIn":
+                // Removes the earlier plugin's declared contribution, which is permitted because the
+                // contract is declared in an assembly no host prefix matches, and contributes a
+                // declared contract of its own so this plugin is not the one with nothing live.
+                services.RemoveAll<IAcmeRemovableContract>();
+                services.TryAddEnumerable(
+                    ServiceDescriptor.Transient<IFixtureFanInContract, SecondPluginFanIn>()
+                );
+                break;
+
             default:
                 services.AddSingleton<IAcmeThirdService, AcmeService>();
                 break;

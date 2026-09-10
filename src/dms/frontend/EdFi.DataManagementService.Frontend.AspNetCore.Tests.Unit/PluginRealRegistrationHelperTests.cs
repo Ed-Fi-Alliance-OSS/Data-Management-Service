@@ -8,6 +8,7 @@ using EdFi.DataManagementService.CustomValidation;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NUnit.Framework;
 
@@ -32,6 +33,14 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit;
 /// rule being scoped to pre-existing descriptors. That scope is proven by the plugin that registers a
 /// descriptor and then replaces it, in the plugin hosting tests, and the logging carve-out is proven
 /// by the plugin that calls ClearProviders. Do not repurpose this case for either.
+/// </para>
+/// <para>
+/// It does carry the real <c>AddLogging</c> call across the host's reservation of its own unkeyed
+/// logging services, and that is the second thing it is here for. <c>AddLogging</c> reaches the
+/// collection only through the TryAdd family, so against a collection the host's own AddServices has
+/// populated every one of its calls declines and nothing arrives for the reservation to refuse. The
+/// case that measures the reservation itself is in the plugin hosting tests; this one measures that
+/// the reservation does not reject the helper a real plugin calls.
 /// </para>
 /// </remarks>
 [TestFixture]
@@ -180,6 +189,24 @@ public class Given_a_plugin_registering_through_the_real_framework_and_vendor_he
             .Additions.Select(descriptor => descriptor.ServiceType)
             .Should()
             .Contain(serviceType => serviceType.Assembly.GetName().Name == "Microsoft.Extensions.Azure");
+    }
+
+    /// <summary>
+    /// The host's own unkeyed logger factory is still the only one, so the plugin's real
+    /// <c>AddLogging</c> call neither displaced it nor was refused for trying.
+    /// </summary>
+    [Test]
+    public void It_left_the_hosts_unkeyed_logger_factory_as_the_only_one()
+    {
+        _services
+            .Should()
+            .ContainSingle(descriptor =>
+                descriptor.ServiceType == typeof(ILoggerFactory) && !descriptor.IsKeyedService
+            );
+        _auditInput
+            .Records[0]
+            .Additions.Should()
+            .NotContain(descriptor => descriptor.ServiceType == typeof(ILoggerFactory));
     }
 
     /// <summary>

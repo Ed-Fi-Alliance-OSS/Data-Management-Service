@@ -1098,3 +1098,75 @@ public class Given_a_hook_that_swallowed_a_refusal_and_then_tripped_another
             .Be(typeof(HostOwnedDefault));
     }
 }
+
+/// <summary>
+/// The same swallow over the logging reservation: a hook that registers an <c>ILoggerFactory</c> of
+/// its own, catches the refusal, and carries on registering.
+/// </summary>
+/// <remarks>
+/// The reservation reuses the wrapper's latch for the reason the other swallow cases give. A hook
+/// that treats its own setup as best-effort would otherwise turn a host decision into a log line it
+/// never wrote, and here the log line is the thing at stake: the registration under test is what
+/// decides which logger the host has.
+/// </remarks>
+[TestFixture]
+public class Given_a_hook_that_swallowed_the_refusal_of_its_own_logger_factory
+{
+    private TemporaryPluginRoot _root = null!;
+    private ServiceCollection _services = null!;
+    private List<ServiceDescriptor> _loggingBefore = null!;
+    private PluginCompositionException _failure = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _root = TemporaryPluginRoot.Create();
+        LoadedPlugins plugins = ContributionProbe.Load(_root, PluginFixtures.Contributor);
+
+        _services = ContributionProbe.HostCollection();
+        _loggingBefore = [.. _services.Where(descriptor => descriptor.ServiceType == typeof(ILoggerFactory))];
+
+        _failure = Assert.Throws<PluginCompositionException>(() =>
+            plugins.ContributeServices(
+                _services,
+                ContributionProbe.HookConfiguration("swallowLoggerFactory"),
+                ContributionProbe.RegistryDeclaringFanIn,
+                new StringWriter()
+            )
+        )!;
+    }
+
+    [TearDown]
+    public void TearDown() => _root.Dispose();
+
+    [Test]
+    public void It_still_refuses_the_composition_naming_the_logging_service_type()
+    {
+        _failure.Reason.Should().Be(PluginCompositionFailure.ReservedLoggingServiceRegistered);
+        _failure.PluginName.Should().Be(PluginFixtures.Contributor);
+        _failure.Message.Should().Contain(nameof(ILoggerFactory));
+    }
+
+    /// <summary>
+    /// The write never landed, so the host still has exactly the logger factory descriptor it had.
+    /// </summary>
+    [Test]
+    public void It_left_the_hosts_logger_factory_descriptor_alone()
+    {
+        _loggingBefore.Should().NotBeEmpty();
+        _services
+            .Where(descriptor => descriptor.ServiceType == typeof(ILoggerFactory))
+            .Should()
+            .Equal(_loggingBefore);
+    }
+
+    /// <summary>
+    /// The hook really did carry on and register a contract this host declares, which is what makes
+    /// this the case it claims to be: every check downstream of the invoker would have accepted it.
+    /// </summary>
+    [Test]
+    public void It_registered_the_declared_contract_the_refusal_did_not_stop()
+    {
+        _services.Should().Contain(descriptor => descriptor.ServiceType == typeof(IFixtureFanInContract));
+    }
+}
