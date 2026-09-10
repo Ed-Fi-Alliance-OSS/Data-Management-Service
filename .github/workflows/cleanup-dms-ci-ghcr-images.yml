@@ -98,7 +98,7 @@ jobs:
           done
 
       - name: Keep recent DMS CI images
-        uses: actions/delete-package-versions@25ad4af5be03aef10e0b3376b248688b7a44c40b # v5
+        uses: actions/delete-package-versions@e5bc658cc4c965c472efe991f8beea3981499c55 # v5.0.0
         with:
           # Named from the same variables the resolve step above reads, so the version it
           # excludes can never drift from the package this step prunes.
@@ -109,7 +109,7 @@ jobs:
           ignore-versions: ${{ steps.cache-versions.outputs.dms_ignore }}
 
       - name: Keep recent Config CI images
-        uses: actions/delete-package-versions@25ad4af5be03aef10e0b3376b248688b7a44c40b # v5
+        uses: actions/delete-package-versions@e5bc658cc4c965c472efe991f8beea3981499c55 # v5.0.0
         with:
           owner: ${{ env.PACKAGE_OWNER }}
           package-name: ${{ env.CONFIG_CI_PACKAGE }}
@@ -133,7 +133,7 @@ jobs:
       packages: read
     steps:
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
