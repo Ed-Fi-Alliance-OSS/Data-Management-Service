@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <!--
+        Throws from its contribution hook. Two things need it: that the announcement is already on the
+        diagnostic channel when the hook is entered, which only a hook that never returns can prove,
+        and that the host turns the throw into a named fatal without losing the original.
+    -->
+    <PropertyGroup>
+        <AssemblyName>Acme.HookThrows</AssemblyName>
+        <RootNamespace>Acme.HookThrows</RootNamespace>
+    </PropertyGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\..\..\..\EdFi.Api.Plugins\EdFi.Api.Plugins.csproj" />
+        <ProjectReference Include="..\..\Support\AcmeFixtureContracts\Acme.FixtureContracts.csproj" />
+    </ItemGroup>
+</Project>

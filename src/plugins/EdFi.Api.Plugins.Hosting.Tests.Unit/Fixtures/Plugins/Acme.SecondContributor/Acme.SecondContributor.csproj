@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <!--
+        A second plugin identity, so attribution has two hooks to tell apart. It registers a service
+        type the first one never touches, which is what lets a case assert that each record names only
+        its own descriptors rather than merely counting them.
+    -->
+    <PropertyGroup>
+        <AssemblyName>Acme.SecondContributor</AssemblyName>
+        <RootNamespace>Acme.SecondContributor</RootNamespace>
+    </PropertyGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\..\..\..\EdFi.Api.Plugins\EdFi.Api.Plugins.csproj" />
+        <ProjectReference Include="..\..\Support\AcmeFixtureContracts\Acme.FixtureContracts.csproj" />
+        <ProjectReference
+            Include="..\..\Support\FixtureHost\EdFi.DataManagementService.FixtureHost.csproj"
+        />
+    </ItemGroup>
+</Project>

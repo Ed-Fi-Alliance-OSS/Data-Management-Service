@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <!--
+        The plugin the composition cases drive. One fixture rather than seven, because the hook picks
+        its behaviour from the host's configuration and a hook reading configuration is ordinary plugin
+        code rather than a contrivance: every case sets one in-memory key. Seven published directories
+        differing by a few lines each would cost seven publishes per build and would still be one
+        plugin identity as far as attribution is concerned.
+    -->
+    <PropertyGroup>
+        <AssemblyName>Acme.Contributor</AssemblyName>
+        <RootNamespace>Acme.Contributor</RootNamespace>
+    </PropertyGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\..\..\..\EdFi.Api.Plugins\EdFi.Api.Plugins.csproj" />
+        <ProjectReference Include="..\..\Support\AcmeFixtureContracts\Acme.FixtureContracts.csproj" />
+        <ProjectReference
+            Include="..\..\Support\FixtureHost\EdFi.DataManagementService.FixtureHost.csproj"
+        />
+        <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
+        <PackageReference Include="Microsoft.Extensions.Logging" />
+        <PackageReference Include="Microsoft.Extensions.Options" />
+    </ItemGroup>
+</Project>

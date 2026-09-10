@@ -21,6 +21,21 @@
     -->
     <ItemGroup>
         <PackageReference Include="Microsoft.Extensions.Configuration.Binder" />
+        <!--
+            Only for the four service type names in the logging carve-out, which are all declared
+            here. The carve-out is written as names rather than as an assembly or namespace rule, so
+            naming the types is the whole of what this reference buys, and the abstractions package
+            carries no implementation. Nothing in this assembly logs: the loader's own channel is
+            Console.Error, deliberately, because it runs before any logging pipeline exists.
+        -->
+        <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+        <!--
+            The contract's own reference brings this in transitively, and the audit now depends on it
+            directly: it resolves service and keyed-service collections from a scope over the container
+            the host built, and it names the wildcard service key. A direct dependency is declared
+            directly.
+        -->
+        <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
     </ItemGroup>
     <!--
         The loader's collaborators are the filesystem, the dependency manifest, and the runtime's own

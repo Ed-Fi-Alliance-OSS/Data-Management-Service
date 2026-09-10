@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <!--
+        Service types a fixture plugin registers and a test then names, in an assembly carrying no
+        Ed-Fi host prefix, so they are the plugin's own as far as every rule here is concerned.
+
+        It exists so that the composition cases can be written against types rather than against
+        reflected type names: a hook calls RemoveAll<T> and Replace, and a test asserts on typeof(T),
+        and both need the same compile-time type. Referenced by the test project as well as by the
+        fixtures, which is what puts it in the host and therefore has host-first serve one identity of
+        it to the plugins. That reference also puts it in the solution build graph, so it commits a
+        lock file, the same exception Acme.HostShared.v1 takes.
+    -->
+    <PropertyGroup>
+        <AssemblyName>Acme.FixtureContracts</AssemblyName>
+        <RootNamespace>Acme.FixtureContracts</RootNamespace>
+        <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    </PropertyGroup>
+</Project>

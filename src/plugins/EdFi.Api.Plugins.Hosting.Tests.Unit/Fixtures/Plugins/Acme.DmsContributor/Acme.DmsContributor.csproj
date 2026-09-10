@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <!--
+        The one fixture plugin that contributes against the Data Management Service's own types rather
+        than against stand-ins. It is published into the frontend test project's output, because the
+        criteria it exists for are about the real custom validator contract, the real document store
+        repository, and a collection the host's own AddServices has populated, none of which the plugin
+        hosting tests can see.
+
+        Its references into src/dms are test-only and go the harmless direction: a fixture reads the
+        host's contracts, exactly as a real plugin does through the published packages. Nothing gives
+        src/plugins production code a reference to the Data Management Service, and nothing gives that
+        tree a reference to the frontend.
+
+        Host-first resolution serves this plugin the host's copies of all four referenced assemblies at
+        run time, which is what makes the type identities the assertions compare the same ones.
+    -->
+    <PropertyGroup>
+        <AssemblyName>Acme.DmsContributor</AssemblyName>
+        <RootNamespace>Acme.DmsContributor</RootNamespace>
+    </PropertyGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\..\..\..\EdFi.Api.Plugins\EdFi.Api.Plugins.csproj" />
+        <!--
+            For the decoy audit input. A plugin can construct one of these, and the host's has to win
+            anyway by being registered last rather than by being unconstructible.
+        -->
+        <ProjectReference
+            Include="..\..\..\..\EdFi.Api.Plugins.Hosting\EdFi.Api.Plugins.Hosting.csproj"
+        />
+        <ProjectReference
+            Include="..\..\..\..\..\dms\core\EdFi.DataManagementService.CustomValidation\EdFi.DataManagementService.CustomValidation.csproj"
+        />
+        <ProjectReference
+            Include="..\..\..\..\..\dms\backend\EdFi.DataManagementService.Backend.External\EdFi.DataManagementService.Backend.External.csproj"
+        />
+    </ItemGroup>
+</Project>

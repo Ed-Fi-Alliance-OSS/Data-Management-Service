@@ -583,6 +583,22 @@
       "EdFi.Api.CustomValidation": {
         "type": "Project"
       },
+      "edfi.api.plugins": {
+        "type": "Project",
+        "dependencies": {
+          "Microsoft.Extensions.Configuration.Abstractions": "[10.0.1, )",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.1, )"
+        }
+      },
+      "edfi.api.plugins.hosting": {
+        "type": "Project",
+        "dependencies": {
+          "EdFi.Api.Plugins": "[1.0.0, )",
+          "Microsoft.Extensions.Configuration.Binder": "[10.0.1, )",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.1, )",
+          "Microsoft.Extensions.Logging.Abstractions": "[10.0.1, )"
+        }
+      },
       "edfi.datamanagementservice.backend": {
         "type": "Project",
         "dependencies": {
@@ -693,6 +709,7 @@
         "type": "Project",
         "dependencies": {
           "AspNetCore.HealthChecks.NpgSql": "[8.0.2, )",
+          "EdFi.Api.Plugins.Hosting": "[1.0.0, )",
           "EdFi.DataManagementService.Backend.Mssql": "[1.0.0, )",
           "EdFi.DataManagementService.Backend.Postgresql": "[1.0.0, )",
           "EdFi.DataManagementService.Core": "[1.0.0, )",

@@ -383,6 +383,15 @@
       "EdFi.Api.CustomValidation": {
         "type": "Project"
       },
+      "edfi.api.plugins": {
+        "type": "Project"
+      },
+      "edfi.api.plugins.hosting": {
+        "type": "Project",
+        "dependencies": {
+          "EdFi.Api.Plugins": "[1.0.0, )"
+        }
+      },
       "edfi.datamanagementservice.backend": {
         "type": "Project",
         "dependencies": {

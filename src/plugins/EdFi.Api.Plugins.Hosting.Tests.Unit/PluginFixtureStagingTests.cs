@@ -109,6 +109,18 @@ internal static class PluginFixtures
     /// <summary>Throws from its constructor.</summary>
     internal const string ThrowingCtor = "Acme.ThrowingCtor";
 
+    /// <summary>Contributes services, doing whatever the host's Fixture:Behavior key asks for.</summary>
+    internal const string Contributor = "Acme.Contributor";
+
+    /// <summary>A second contributing identity, so attribution has two hooks to tell apart.</summary>
+    internal const string SecondContributor = "Acme.SecondContributor";
+
+    /// <summary>Throws from its contribution hook.</summary>
+    internal const string HookThrows = "Acme.HookThrows";
+
+    /// <summary>Resolves a private and a host-served assembly for the first time inside its hook.</summary>
+    internal const string HookTouch = "Acme.HookTouch";
+
     /// <summary>Every fixture the staging target is expected to produce.</summary>
     internal static IReadOnlyList<string> All { get; } =
     [
@@ -141,6 +153,10 @@ internal static class PluginFixtures
         FrameworkOnly,
         RuntimeTargets,
         OldContract,
+        Contributor,
+        SecondContributor,
+        HookThrows,
+        HookTouch,
     ];
 
     /// <summary>

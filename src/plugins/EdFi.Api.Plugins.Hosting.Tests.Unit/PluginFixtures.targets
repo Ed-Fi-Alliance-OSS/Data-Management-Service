@@ -107,6 +107,18 @@
         <PluginFixture Include="$(MSBuildThisFileDirectory)Fixtures/Plugins/Acme.OldContract/Acme.OldContract.csproj">
             <StagedName>Acme.OldContract</StagedName>
         </PluginFixture>
+        <PluginFixture Include="$(MSBuildThisFileDirectory)Fixtures/Plugins/Acme.Contributor/Acme.Contributor.csproj">
+            <StagedName>Acme.Contributor</StagedName>
+        </PluginFixture>
+        <PluginFixture Include="$(MSBuildThisFileDirectory)Fixtures/Plugins/Acme.SecondContributor/Acme.SecondContributor.csproj">
+            <StagedName>Acme.SecondContributor</StagedName>
+        </PluginFixture>
+        <PluginFixture Include="$(MSBuildThisFileDirectory)Fixtures/Plugins/Acme.HookThrows/Acme.HookThrows.csproj">
+            <StagedName>Acme.HookThrows</StagedName>
+        </PluginFixture>
+        <PluginFixture Include="$(MSBuildThisFileDirectory)Fixtures/Plugins/Acme.HookTouch/Acme.HookTouch.csproj">
+            <StagedName>Acme.HookTouch</StagedName>
+        </PluginFixture>
         <PluginFixture Include="$(MSBuildThisFileDirectory)Fixtures/Plugins/Acme.Native/Acme.Native.csproj">
             <StagedName>Acme.Native</StagedName>
             <PublishArgs>--runtime $(NETCoreSdkRuntimeIdentifier) --no-self-contained</PublishArgs>

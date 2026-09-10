@@ -149,6 +149,13 @@ public static class WebApplicationBuilderExtensions
 
         // Register the startup guard that audits ICustomResourceValidator registrations
         webAppBuilder.Services.AddCustomValidationGuard();
+
+        // Last, and unconditionally. Plugin hooks contribute to a collection this method has finished
+        // populating, and the audit input has to be registered after them for the host's to be the
+        // last registration of that type. With no plugin loaded the contribution phase is a no-op and
+        // the checks run and find nothing, which is what keeps a plugin-free deployment on the same
+        // path as any other.
+        webAppBuilder.Services.AddPluginServiceContributions(webAppBuilder.Configuration);
     }
 
     private static void ConfigureDatastore(WebApplicationBuilder webAppBuilder, Serilog.ILogger logger)
