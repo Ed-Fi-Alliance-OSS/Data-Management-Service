@@ -46,7 +46,7 @@ Admin API v3 payload parity:
 
 ```json
 {
-  "name": "odsDatastore1",
+  "name": "datastore1",
   "databaseTemplate": "Minimal"
 }
 ```
@@ -63,7 +63,7 @@ Location: https://server.example/v3/dataStores/manage/684
 [
   {
     "id": 684,
-    "name": "odsDatastore1",
+    "name": "datastore1",
     "dataStoreId": null,
     "dataStoreName": null,
     "status": "PendingCreate",
@@ -74,7 +74,7 @@ Location: https://server.example/v3/dataStores/manage/684
   },
   {
     "id": 685,
-    "name": "odsDatastore2",
+    "name": "datastore2",
     "dataStoreId": null,
     "dataStoreName": null,
     "status": "PendingCreate",
@@ -91,7 +91,7 @@ Location: https://server.example/v3/dataStores/manage/684
 ```json
 {
   "id": 684,
-  "name": "odsDatastore1",
+  "name": "datastore1",
   "dataStoreId": null,
   "dataStoreName": null,
   "status": "PendingCreate",
