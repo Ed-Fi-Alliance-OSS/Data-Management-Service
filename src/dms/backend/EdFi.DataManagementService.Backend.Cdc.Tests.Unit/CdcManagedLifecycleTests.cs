@@ -161,6 +161,279 @@ internal class Given_CdcManagedLifecycle(Ddl.CdcProvider provider) : CdcReadines
         _calls.Should().NotContain(r => r.Mode != Ddl.CdcProviderSetupMode.ValidateOnly);
     }
 
+    private async Task RetainInterruptedLifecycleAsync(CdcWorkflowEffect effect)
+    {
+        await using var session = await _store.AcquireAsync(
+            TimeSpan.FromSeconds(1),
+            TimeSpan.FromMilliseconds(1),
+            default
+        );
+        await session.RecordIntentAsync(
+            Target,
+            ReadJournal().WorkflowId,
+            Guid.NewGuid(),
+            effect,
+            [],
+            default
+        );
+        // Fresh status observer per invocation, as in CdcCommandRunner. No earlier status call
+        // or discarded controller supplies recovery evidence to this host.
+        ResetManaged();
+        _trace.Clear();
+    }
+
+    [Test]
+    public async Task It_recovers_interrupted_lifecycle_in_one_fresh_invocation(
+        [Values(CdcWorkflowEffect.StopConnector, CdcWorkflowEffect.ResumeConnector)] CdcWorkflowEffect effect,
+        [Values(CdcManagedLifecycleOperation.Restart, CdcManagedLifecycleOperation.Resume)]
+            CdcManagedLifecycleOperation operation,
+        [Values("running", "stopped", "failed")] string state
+    )
+    {
+        await RetainInterruptedLifecycleAsync(effect);
+        _stopped = state == "stopped";
+        _failed = state == "failed";
+        var before = ReadJournal();
+        int passes = 0;
+        A.CallTo(() => _runtime.InitializeAsync(A<CancellationToken>._))
+            .Invokes(() =>
+            {
+                Trace("pass-" + ++passes);
+                if (passes <= 2)
+                {
+                    ReadJournal().Should().BeEquivalentTo(before);
+                    (_resumes + _restarts).Should().Be(0);
+                }
+                else if (passes == 3)
+                {
+                    ReadJournal().Operations.Should().HaveCount(before.Operations.Length + 1);
+                    ReadJournal().Operations.Last().Effect.Should().Be(CdcWorkflowEffect.ResumeConnector);
+                    ReadJournal().Operations.Last().Completions.Should().BeEmpty();
+                    (_resumes + _restarts).Should().Be(0);
+                }
+            });
+        var result = await Execute(operation);
+        result.Succeeded.Should().BeTrue();
+        result.Ready.Should().BeTrue();
+        result.Diagnostics.Should().BeEmpty();
+        result.Boundary.Should().Be(CdcManagedLifecycleBoundary.NativeRecovery);
+        result.Recovery.UnobservedIntervalCertified.Should().BeFalse();
+        passes.Should().Be(5); // Invalidated, fresh, final preflight, running, post-completion.
+        for (int pass = 1; pass <= 3; pass++)
+        {
+            _trace
+                .Skip(_trace.IndexOf("pass-" + pass) + 1)
+                .TakeWhile(t => t != "pass-" + (pass + 1))
+                .Should()
+                .Contain(["provider", "offset", "worker", "status", "config", "brokers"]);
+        }
+        _trace.IndexOf("metrics").Should().BeGreaterThan(_trace.IndexOf("pass-4"));
+        (_resumes + _restarts).Should().Be(1);
+        _restarts
+            .Should()
+            .Be(operation == CdcManagedLifecycleOperation.Restart && state != "stopped" ? 1 : 0);
+        _stops.Should().Be(0);
+        var after = ReadJournal();
+        after.Operations.Take(before.Operations.Length).Should().BeEquivalentTo(before.Operations);
+        after
+            .Operations.Last()
+            .Completions.Single()
+            .Evidence.Should()
+            .BeOfType<CdcWorkflowCompletion.Reconciled>();
+    }
+
+    [Test]
+    public async Task It_rejects_a_second_invalidated_preflight_without_a_third_pass(
+        [Values(CdcWorkflowEffect.StopConnector, CdcWorkflowEffect.ResumeConnector)] CdcWorkflowEffect effect,
+        [Values(CdcManagedLifecycleOperation.Restart, CdcManagedLifecycleOperation.Resume)]
+            CdcManagedLifecycleOperation operation,
+        [Values(2, 3)] int changedPass
+    )
+    {
+        await RetainInterruptedLifecycleAsync(effect);
+        var before = ReadJournal();
+        int passes = 0;
+        A.CallTo(() => _runtime.InitializeAsync(A<CancellationToken>._))
+            .Invokes(() =>
+            {
+                if (++passes == changedPass)
+                {
+                    ReplaceWorker("private-second-recovery");
+                }
+            });
+        var result = await Execute(operation);
+        result.Succeeded.Should().BeFalse();
+        result.Ready.Should().BeFalse();
+        result.Observation.Recovery.RequiresFreshPass.Should().BeTrue();
+        result.Observation.Details.LagMilliseconds.Should().BeNull();
+        passes.Should().Be(changedPass);
+        (_resumes + _restarts + _stops).Should().Be(0);
+        var after = ReadJournal();
+        after.Operations.Should().HaveCount(before.Operations.Length + (changedPass == 3 ? 1 : 0));
+        after.Operations.Last().Completions.Should().BeEmpty();
+        JsonSerializer.Serialize(result).Should().NotContain("private-second-recovery");
+    }
+
+    [Test]
+    public async Task It_rejects_independent_recovery_preflight_failures_without_repeating(
+        [Values(CdcManagedLifecycleOperation.Restart, CdcManagedLifecycleOperation.Resume)]
+            CdcManagedLifecycleOperation operation,
+        [Values(
+            "workflows",
+            "source-history",
+            "corrupt-journal",
+            "provider",
+            "offset",
+            "config",
+            "invalid-config",
+            "unknown-continuity",
+            "brokers",
+            "terminal"
+        )]
+            string failure,
+        [Values(1, 2)] int failedPass
+    )
+    {
+        await RetainInterruptedLifecycleAsync(CdcWorkflowEffect.ResumeConnector);
+        var before = ReadJournal();
+        int passes = 0;
+        A.CallTo(() => _runtime.InitializeAsync(A<CancellationToken>._))
+            .Invokes(() =>
+            {
+                if (++passes != failedPass)
+                {
+                    return;
+                }
+                if (failure is "workflows" or "source-history")
+                {
+                    Directory.Delete(Path.Combine(_root, failure), true);
+                }
+                else if (failure == "corrupt-journal")
+                {
+                    File.WriteAllText(
+                        Directory
+                            .GetFiles(Path.Combine(_root, "workflows"), "*.json", SearchOption.AllDirectories)
+                            .Single(),
+                        "{private-recovery-failure"
+                    );
+                }
+                else if (failure == "invalid-config")
+                {
+                    _live["tasks.max"] = "2";
+                }
+                else if (failure == "unknown-continuity")
+                {
+                    A.CallTo(() =>
+                            _connect.ReadOffsetEvidenceAsync(
+                                A<CdcDeploymentRequest>._,
+                                A<CancellationToken>._
+                            )
+                        )
+                        .Returns(
+                            new CdcTransportResult<CdcConnectOffsetEvidence>.Unavailable(
+                                new(CdcDeploymentComponent.Connect, CdcDeploymentFailure.Unavailable)
+                            )
+                        );
+                }
+                else if (failure == "terminal")
+                {
+                    _offsetState = CdcConnectOffsetState.Missing;
+                }
+                else
+                {
+                    _onCall = name =>
+                    {
+                        if (name == failure)
+                        {
+                            throw new IOException("private-recovery-failure");
+                        }
+                    };
+                }
+            });
+        var result = await Execute(operation);
+        result.Succeeded.Should().BeFalse();
+        result.Ready.Should().BeFalse();
+        passes.Should().Be(failedPass);
+        (_resumes + _restarts).Should().Be(0);
+        if (failure == "terminal")
+        {
+            result.Observation.Status.SourceHistory.Continuity.Should().Be(CdcSourceHistoryContinuity.Lost);
+            result.Observation.IncidentPersistence.Should().Be(CdcIncidentPersistenceState.Persisted);
+            result.Observation.Containment.Should().Be(CdcConnectorContainmentState.Stopped);
+            _stops.Should().Be(1);
+        }
+        else
+        {
+            _stops.Should().Be(0);
+        }
+        if (failure is not ("workflows" or "corrupt-journal"))
+        {
+            ReadJournal().Should().BeEquivalentTo(before);
+        }
+        JsonSerializer.Serialize(result).Should().NotContain("private-recovery-failure");
+    }
+
+    [Test]
+    public async Task It_never_uses_fresh_recovery_to_replace_managed_shutdown_proof(
+        [Values(CdcWorkflowEffect.StopConnector, CdcWorkflowEffect.ResumeConnector)] CdcWorkflowEffect effect
+    )
+    {
+        await RetainInterruptedLifecycleAsync(effect);
+        _stopped = true;
+        var before = ReadJournal();
+        var result = await Execute(CdcManagedLifecycleOperation.Start);
+        result.Succeeded.Should().BeFalse();
+        result.Boundary.Should().Be(CdcManagedLifecycleBoundary.NativeRecovery);
+        A.CallTo(() => _runtime.InitializeAsync(A<CancellationToken>._)).MustHaveHappenedOnceExactly();
+        (_resumes + _restarts + _stops).Should().Be(0);
+        ReadJournal().Should().BeEquivalentTo(before);
+    }
+
+    [Test]
+    public async Task It_keeps_the_original_deadline_and_caller_cancellation_during_fresh_preflight(
+        [Values(CdcManagedLifecycleOperation.Restart, CdcManagedLifecycleOperation.Resume)]
+            CdcManagedLifecycleOperation operation,
+        [Values(false, true)] bool cancelCaller
+    )
+    {
+        await RetainInterruptedLifecycleAsync(CdcWorkflowEffect.StopConnector);
+        var before = ReadJournal();
+        using var caller = new CancellationTokenSource();
+        using var deadline = new CancellationTokenSource();
+        int passes = 0;
+        A.CallTo(() => _runtime.InitializeAsync(A<CancellationToken>._))
+            .ReturnsLazily(
+                async (CancellationToken ct) =>
+                {
+                    if (++passes == 2)
+                    {
+                        await (cancelCaller ? caller : deadline).CancelAsync();
+                        await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+                    }
+                }
+            );
+        var invocation = () =>
+            _managed.ExecuteAsync(new(_request, _runtime, 1000), operation, caller.Token, deadline.Token);
+        if (cancelCaller)
+        {
+            await invocation.Should().ThrowAsync<OperationCanceledException>();
+        }
+        else
+        {
+            var result = await invocation();
+            result.Succeeded.Should().BeFalse();
+            result.Diagnostics.Should().Contain(d => d.Failure == CdcDeploymentFailure.Timeout);
+        }
+        passes.Should().Be(2);
+        (_resumes + _restarts + _stops).Should().Be(0);
+        ReadJournal().Should().BeEquivalentTo(before);
+        await using var released = await _store.AcquireAsync(
+            TimeSpan.FromSeconds(1),
+            TimeSpan.FromMilliseconds(1),
+            default
+        );
+    }
+
     [TestCase(3)]
     [TestCase(4)]
     public async Task It_preserves_terminal_results_after_restart_including_final_validation(int terminalPass)

@@ -44,6 +44,10 @@ public sealed record CdcEstablishedValidationObservation(
 
     public CdcRecoveryObservation Recovery { get; init; } = new(CdcRecoveryBoundary.Unobserved, false);
 
+    // Identifies invalidation as the sole pre-start blocker. This permits another observation,
+    // never a mutation or reuse of this pass's provider, offset or worker evidence.
+    internal bool PreStartInvalidatedByRecovery { get; init; }
+
     public override string ToString() => nameof(CdcEstablishedValidationObservation);
 
     [JsonIgnore]
@@ -645,7 +649,15 @@ public sealed partial class CdcEstablishedValidation
             };
             if (recoveryObservation.RequiresFreshPass)
             {
-                result = result with { PreStartEligible = false, PublicationReady = false };
+                result = result with
+                {
+                    PreStartInvalidatedByRecovery =
+                        mode == CdcEstablishedValidationMode.PreStart
+                        && result.PreStartEligible
+                        && result.Diagnostics.Count == 0,
+                    PreStartEligible = false,
+                    PublicationReady = false,
+                };
             }
             if (progress is not null)
             {

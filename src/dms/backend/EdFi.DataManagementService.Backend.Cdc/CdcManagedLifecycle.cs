@@ -194,6 +194,25 @@ public sealed class CdcManagedLifecycle
                 value => eligibility = value,
                 operationDeadline: token
             );
+            if (
+                operation is CdcManagedLifecycleOperation.Restart or CdcManagedLifecycleOperation.Resume
+                && preflight.Recovery.RequiresFreshPass
+                && eligibility is { PreStartInvalidatedByRecovery: true }
+                && preflight.Diagnostics.Count == 0
+            )
+            {
+                // One complete replacement pass in this session and original deadline. The
+                // invalidated pass authorizes no intent and contributes no publication evidence.
+                eligibility = null!;
+                preflight = await _status.ObserveTargetAsync(
+                    target,
+                    cancellationToken,
+                    session,
+                    CdcEstablishedValidationMode.PreStart,
+                    value => eligibility = value,
+                    operationDeadline: token
+                );
+            }
             failure.Observation = preflight;
             diagnostics.AddRange(preflight.Diagnostics);
             if (preflight.Recovery.Boundary == CdcRecoveryBoundary.NativeRecovery)

@@ -296,14 +296,12 @@ internal class Given_CdcNativeRecovery(Ddl.CdcProvider provider) : CdcReadinessT
     {
         await Observe();
         ReplaceWorker();
-        var first = await Execute(operation);
-        first.Succeeded.Should().BeFalse();
-        first.Boundary.Should().Be(CdcManagedLifecycleBoundary.NativeRecovery);
-        A.CallTo(() => _connect.ResumeAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
-            .MustNotHaveHappened();
-        A.CallTo(() => _connect.RestartAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
-            .MustNotHaveHappened();
-        (await Execute(operation)).Succeeded.Should().BeTrue();
+        _trace.Clear();
+        var result = await Execute(operation);
+        result.Succeeded.Should().BeTrue();
+        result.Boundary.Should().Be(CdcManagedLifecycleBoundary.NativeRecovery);
+        _trace.Count(t => t == "config").Should().Be(5);
+        Fake.GetCalls(_connect).Count(c => c.Method.Name is "ResumeAsync" or "RestartAsync").Should().Be(1);
     }
 
     [Test]
