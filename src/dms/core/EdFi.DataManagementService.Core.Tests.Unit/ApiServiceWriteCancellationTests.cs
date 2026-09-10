@@ -72,10 +72,6 @@ public class ApiServiceWriteCancellationTests
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton(new CacheSettings());
         services.AddSingleton<DatabaseFingerprintProvider>();
-        services.AddTransient<
-            IEffectiveTargetSelectionResponseFactory,
-            DefaultEffectiveTargetSelectionResponseFactory
-        >();
         services.AddTransient<ValidateDatabaseFingerprintMiddleware>();
         services.AddTransient<ILogger<ValidateDatabaseFingerprintMiddleware>>(_ =>
             NullLogger<ValidateDatabaseFingerprintMiddleware>.Instance

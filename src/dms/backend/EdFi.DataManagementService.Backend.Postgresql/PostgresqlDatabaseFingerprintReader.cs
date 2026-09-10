@@ -32,12 +32,24 @@ public class PostgresqlDatabaseFingerprintReader(
     {
         ArgumentNullException.ThrowIfNull(target);
 
-        // The lease is held across the whole support call because the support owns the open, so the
-        // data source stays alive for as long as a connection from it can be in use.
-        await using NpgsqlDataSourceLease lease = dataSourceCache.AcquireLease(target.ConnectionString);
+        // Taking the lease and opening the connection are one guarded step, because the data source is
+        // built - and the connection string therefore parsed - while the lease is taken, and a
+        // provider-invalid string fails there rather than at the open. The leased connection owns both
+        // and releases them in order, so this is also the only disposal the read needs.
+        //
+        // This seam has no CancellationToken by design: nothing on the fingerprint path supplies one,
+        // so no cancellation here is attributable to a caller.
+        await using LeasedNpgsqlConnection leased = await ConnectionAcquisition.GuardAsync(
+            () => dataSourceCache.OpenLeasedConnectionAsync(target.ConnectionString, CancellationToken.None),
+            target.Kind,
+            PostgresqlConnectionAcquisitionFailure.IsExpected,
+            PostgresqlConnectionAcquisitionFailure.Describe,
+            logger,
+            CancellationToken.None
+        );
 
         return await DatabaseFingerprintReaderSupport.ReadFingerprintAsync(
-            lease.CreateConnection,
+            leased.Connection,
             _query,
             logger,
             static exception =>

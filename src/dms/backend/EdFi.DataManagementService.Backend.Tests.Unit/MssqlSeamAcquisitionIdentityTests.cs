@@ -135,7 +135,8 @@ public class MssqlSeamAcquisitionIdentityTests
         new MssqlRelationalWriteSessionFactory(
             selection,
             acquisition,
-            Options.Create(new DatabaseOptions { IsolationLevel = IsolationLevel.ReadCommitted })
+            Options.Create(new DatabaseOptions { IsolationLevel = IsolationLevel.ReadCommitted }),
+            NullLogger<MssqlRelationalWriteSessionFactory>.Instance
         ).CreateAsync();
 
     private static Task ExerciseDocumentHydrator(
@@ -250,7 +251,8 @@ public class MssqlSeamAcquisitionIdentityTests
                     NullLogger<MssqlConnectionAcquisition>.Instance,
                     _ => connection
                 ),
-                Options.Create(new DatabaseOptions { IsolationLevel = IsolationLevel.ReadCommitted })
+                Options.Create(new DatabaseOptions { IsolationLevel = IsolationLevel.ReadCommitted }),
+                NullLogger<MssqlRelationalWriteSessionFactory>.Instance
             );
 
         [Test]
@@ -499,11 +501,14 @@ internal sealed class TransactionCapableConnection : DbConnection
 /// </summary>
 internal static class MssqlReferenceResolverTestAccess
 {
-    public static Task HydrateAsync(IDataStoreSelection selection, IMssqlConnectionAcquisition acquisition) =>
-        new MssqlDocumentHydrator(selection, acquisition).HydrateAsync(
-            null!,
-            null!,
-            new HydrationExecutionOptions(),
-            CancellationToken.None
-        );
+    public static Task HydrateAsync(
+        IDataStoreSelection selection,
+        IMssqlConnectionAcquisition acquisition,
+        CancellationToken cancellationToken = default
+    ) =>
+        new MssqlDocumentHydrator(
+            selection,
+            acquisition,
+            NullLogger<MssqlDocumentHydrator>.Instance
+        ).HydrateAsync(null!, null!, new HydrationExecutionOptions(), cancellationToken);
 }

@@ -134,15 +134,10 @@ internal static class DerivativeWholeRequestScenario
                 useSnapshotHeaderValue: "true"
             );
 
-            string body = await response.Content.ReadAsStringAsync();
-
-            response
-                .StatusCode.Should()
-                .Be(
-                    HttpStatusCode.NotFound,
-                    $"the answer is decided at selection, with every database unreachable: {body}"
-                );
-            body.Should().Contain("Snapshot not found.");
+            await DerivativeRoutingSupport.AssertSnapshotNotFoundAsync(
+                response,
+                "the answer is decided at selection, with every database unreachable"
+            );
         }
         finally
         {
@@ -154,6 +149,12 @@ internal static class DerivativeWholeRequestScenario
     /// <summary>
     /// A mutation rejected for asking for a snapshot is likewise decided before any database is opened.
     /// </summary>
+    /// <remarks>
+    /// Asserted for the shapes a later validation step would otherwise answer as well as for a plain
+    /// valid body, because those shapes reach selection through the same pipeline but would be answered
+    /// after the database-validation steps if selection let them through. With all three databases
+    /// unreachable, any acquisition would surface as a 503 or a 500 instead of the snapshot 405.
+    /// </remarks>
     public static async Task It_opens_no_database_for_a_rejected_mutation(
         ApiIntegrationHarness harness,
         IDerivativeTargetReachability reachability,
@@ -162,26 +163,40 @@ internal static class DerivativeWholeRequestScenario
         string snapshotConnectionString
     )
     {
+        const string ValidBody = """{"studentUniqueId":"derivative-routing-no-database","firstName":"Ada"}""";
+
+        (string Shape, Func<HttpContent> Content)[] shapes =
+        [
+            ("a valid body", () => DerivativeRoutingSupport.RawContent(ValidBody, "application/json")),
+            ("no content type", () => DerivativeRoutingSupport.ContentWithNoMediaType(ValidBody)),
+            (
+                "a body that fails document validation",
+                () => DerivativeRoutingSupport.RawContent("""{"firstName":"Ada"}""", "application/json")
+            ),
+        ];
+
         await reachability.MakeUnreachableAsync(primaryConnectionString);
         await reachability.MakeUnreachableAsync(replicaConnectionString);
         await reachability.MakeUnreachableAsync(snapshotConnectionString);
 
         try
         {
-            using HttpContent content = DerivativeRoutingSupport.StudentContent(
-                "derivative-routing-no-database"
-            );
-            using HttpResponseMessage response = await DerivativeRoutingSupport.SendAsync(
-                harness,
-                HttpMethod.Post,
-                DerivativeRoutingSupport.StudentsEndpoint,
-                useSnapshotHeaderValue: "true",
-                content
-            );
+            foreach ((string shape, Func<HttpContent> content) in shapes)
+            {
+                using HttpContent requestContent = content();
+                using HttpResponseMessage response = await DerivativeRoutingSupport.SendAsync(
+                    harness,
+                    HttpMethod.Post,
+                    DerivativeRoutingSupport.StudentsEndpoint,
+                    useSnapshotHeaderValue: "true",
+                    requestContent
+                );
 
-            response
-                .StatusCode.Should()
-                .Be(HttpStatusCode.MethodNotAllowed, "the rejection precedes every database acquisition");
+                await DerivativeRoutingSupport.AssertSnapshotMethodNotAllowedAsync(
+                    response,
+                    $"{shape} with every database unreachable: the rejection precedes every acquisition"
+                );
+            }
         }
         finally
         {
@@ -196,6 +211,12 @@ internal static class DerivativeWholeRequestScenario
     /// configured connection string succeeds once it is reachable again. Nothing about the first
     /// failure is retained: no cached validation verdict, no poisoned pool, no configuration change.
     /// </summary>
+    /// <remarks>
+    /// The failure half asserts the exact answer rather than merely "not a success". An unreachable
+    /// selected snapshot is Snapshot Not Found, which is the contract this epic introduces and the
+    /// reason a weaker assertion here is not enough: the response this scenario used to allow was the
+    /// database-availability 503, and the two are no longer interchangeable.
+    /// </remarks>
     public static async Task It_recovers_at_an_unchanged_derivative_connection_string(
         ApiIntegrationHarness harness,
         IDerivativeTargetReachability reachability,
@@ -213,15 +234,11 @@ internal static class DerivativeWholeRequestScenario
                 useSnapshotHeaderValue: "true"
             );
 
-            string unavailableBody = await unavailable.Content.ReadAsStringAsync();
-
-            unavailable
-                .StatusCode.Should()
-                .Be(
-                    HttpStatusCode.ServiceUnavailable,
-                    "a configured derivative whose database cannot be opened fails at connection "
-                        + $"acquisition, which is a transient fault rather than a missing snapshot: {unavailableBody}"
-                );
+            await DerivativeRoutingSupport.AssertSnapshotNotFoundAsync(
+                unavailable,
+                "an unreachable selected snapshot is answered as a missing snapshot, not as the "
+                    + "database-availability 503 a derivative acquisition failure produced before"
+            );
         }
         finally
         {

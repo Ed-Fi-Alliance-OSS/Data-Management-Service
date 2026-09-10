@@ -54,7 +54,8 @@ public class Given_MssqlRelationalWriteSessionFactory
                     return connection;
                 }
             ),
-            Options.Create(new DatabaseOptions { IsolationLevel = IsolationLevel.Snapshot })
+            Options.Create(new DatabaseOptions { IsolationLevel = IsolationLevel.Snapshot }),
+            NullLogger<MssqlRelationalWriteSessionFactory>.Instance
         );
 
         await using var session = await sut.CreateAsync();

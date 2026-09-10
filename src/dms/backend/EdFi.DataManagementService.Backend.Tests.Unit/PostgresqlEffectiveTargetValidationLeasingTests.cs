@@ -22,10 +22,11 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit;
 /// </summary>
 /// <remarks>
 /// The substituted lifetime builds each data source against a different endpoint than the caller asked
-/// for. That is what makes the question answerable without a database: the address a read failed
-/// against says where its connection came from, and the lifetime's own open count says whether the
-/// connection was taken from the leased data source at all. Neither read can complete, which is the
-/// point - what each did on the way is the behavior under test.
+/// for and hands back a connection it never opens. That is what makes the question answerable without a
+/// database: the lifetime's own open count says whether the connection was taken from the leased data
+/// source at all, and the address a read failed against would name the target's endpoint if the
+/// connection had been built from its connection string instead. Neither read can complete, which is
+/// the point - what each did on the way is the behavior under test.
 /// </remarks>
 [TestFixture]
 public class Given_A_Postgresql_Effective_Target_Validation_Read
@@ -35,13 +36,6 @@ public class Given_A_Postgresql_Effective_Target_Validation_Read
     /// immediately and without a name to resolve.
     /// </summary>
     private const string TargetEndpoint = "127.0.0.1:1";
-
-    /// <summary>
-    /// The endpoint the cache's data sources are actually built against. Different from the target's,
-    /// so a connection taken from a leased data source and one constructed from the target's own
-    /// connection string fail against addresses that can be told apart.
-    /// </summary>
-    private const string LeasedEndpoint = "127.0.0.1:2";
 
     private const string SnapshotConnectionString =
         "Host=127.0.0.1;Port=1;Database=dms;Username=u;Password=p;Timeout=1";
@@ -91,14 +85,16 @@ public class Given_A_Postgresql_Effective_Target_Validation_Read
     }
 
     /// <summary>
-    /// The address proves the connection came from the leased data source. A connection constructed
-    /// from the target's connection string would have failed against the target's own endpoint, which
-    /// is exactly the reversion this guards.
+    /// The fingerprint read takes its connection from the data source through the cache's own
+    /// lifetime, as the resource-key read does, so the lifetime's open is the direct observation for
+    /// both. A connection constructed from the target's connection string would be opened by neither
+    /// the cache nor the lifetime, and would fail against the target's own endpoint - which is the
+    /// reversion the second assertion still guards.
     /// </summary>
     [Test]
     public void It_opens_the_fingerprint_reads_connection_from_the_leased_data_source()
     {
-        _fingerprintRead.Failure!.Message.Should().Contain(LeasedEndpoint);
+        _fingerprintRead.Opens.Should().Be(1);
         _fingerprintRead
             .Failure!.Message.Should()
             .NotContain(

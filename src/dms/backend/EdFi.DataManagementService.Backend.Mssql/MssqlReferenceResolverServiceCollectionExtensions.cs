@@ -12,6 +12,7 @@ using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache.Cdc;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Backend.Mssql;
 
@@ -166,14 +167,18 @@ internal sealed class MssqlDocumentHydrator : IDocumentHydrator
 
     public MssqlDocumentHydrator(
         IDataStoreSelection dataStoreSelection,
-        IMssqlConnectionAcquisition acquisition
+        IMssqlConnectionAcquisition acquisition,
+        ILogger<MssqlDocumentHydrator> logger
     )
     {
         ArgumentNullException.ThrowIfNull(dataStoreSelection);
         ArgumentNullException.ThrowIfNull(acquisition);
+        ArgumentNullException.ThrowIfNull(logger);
 
+        // Hydration can be the first acquisition of a request whose earlier reads were all served from
+        // cached verdicts, so this seam carries the same guard as the command executor's.
         _openConnectionAsync = cancellationToken =>
-            MssqlSeamConnection.OpenAsync(dataStoreSelection, acquisition, cancellationToken);
+            MssqlSeamConnection.OpenAsync(dataStoreSelection, acquisition, logger, cancellationToken);
     }
 
     public async Task<HydratedPage> HydrateAsync(

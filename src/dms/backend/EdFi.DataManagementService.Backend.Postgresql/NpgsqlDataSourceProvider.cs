@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.External.Backend;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 
@@ -78,6 +79,18 @@ public sealed class NpgsqlDataSourceProvider(
             }
         }
     }
+
+    /// <summary>
+    /// The kind of target this request selected, for a seam that must name the kind without taking a
+    /// second dependency on the request's selection.
+    /// </summary>
+    /// <remarks>
+    /// Read afresh rather than captured with the lease, and deliberately outside the lock: the target
+    /// is write-once per request, so every read names the same database, and answering the kind takes
+    /// no lease and touches none of the state the lock guards. Like <see cref="DataSource" />, this
+    /// throws when no target was selected.
+    /// </remarks>
+    public EffectiveTargetKind TargetKind => dataStoreSelection.GetEffectiveTarget().Kind;
 
     /// <summary>
     /// Releases the lease this request took, if any. Called by the DI scope at the end of the request.

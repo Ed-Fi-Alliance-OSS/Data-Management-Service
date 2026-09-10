@@ -99,6 +99,25 @@ public class MssqlConnectionAcquisitionTests
         }
 
         /// <summary>
+        /// Enlistment off, overriding whatever the operator configured. A derivative is read-only, so it
+        /// has no business joining an ambient distributed transaction - and refusing to enlist is what
+        /// leaves the pool-acquisition timeout as the only InvalidOperationException a derivative open
+        /// can raise, which is the invariant the restatement in OpenAsync reads.
+        /// </summary>
+        [TestCase(EffectiveTargetKind.Snapshot)]
+        [TestCase(EffectiveTargetKind.ReadReplica)]
+        public void It_forces_enlistment_off_over_an_operator_supplied_value(EffectiveTargetKind kind)
+        {
+            string configured = PrimaryConnectionString + "Enlist=true";
+
+            string effective = MssqlConnectionAcquisition.RealizeEffectiveConnectionString(
+                new EffectiveDataStoreTarget(kind, configured)
+            );
+
+            new SqlConnectionStringBuilder(effective).Enlist.Should().BeFalse();
+        }
+
+        /// <summary>
         /// The forced value overrides whatever the operator configured. Without it, SqlClient replays a
         /// failed login or timeout from its blocking period on the request that immediately follows,
         /// which is precisely the recovery this policy exists to prevent.
@@ -421,6 +440,108 @@ public class MssqlConnectionAcquisitionTests
                 MssqlLeasedConnection.OpenAsync(
                     acquisition,
                     EffectiveDataStoreTarget.Primary(PrimaryConnectionString),
+                    CancellationToken.None
+                );
+
+            (await open.Should().ThrowAsync<InvalidOperationException>()).Which.Should().BeSameAs(failure);
+            connection.DisposeCount.Should().Be(1);
+        }
+
+        /// <summary>
+        /// SqlClient reports a timeout waiting for a pooled connection as an InvalidOperationException -
+        /// only its non-pooled open timeout raises TimeoutException - so an exhausted snapshot pool
+        /// would otherwise escape the acquisition boundary unclassified and answer a
+        /// service-configuration 503 where the snapshot contract requires Snapshot Not Found. Restating
+        /// it as the type the classifier already accepts is what carries it to the right response
+        /// without widening the classifier to a type it rejects on purpose.
+        /// </summary>
+        [Test]
+        public async Task It_restates_a_snapshot_pool_acquisition_timeout_as_a_timeout()
+        {
+            InvalidOperationException poolTimeout = new(
+                "Timeout expired. The timeout period elapsed prior to obtaining a connection from the pool."
+            );
+            using RecordingConnection connection = new() { OpenFailure = poolTimeout };
+            MssqlConnectionAcquisition acquisition = new(
+                new SqlClientPoolClearing(),
+                NullLogger<MssqlConnectionAcquisition>.Instance,
+                _ => connection
+            );
+
+            Func<Task> open = () =>
+                MssqlLeasedConnection.OpenAsync(
+                    acquisition,
+                    new EffectiveDataStoreTarget(EffectiveTargetKind.Snapshot, PrimaryConnectionString),
+                    CancellationToken.None
+                );
+
+            TimeoutException restated = (await open.Should().ThrowAsync<TimeoutException>()).Which;
+
+            restated
+                .InnerException.Should()
+                .BeSameAs(poolTimeout, "the provider failure travels for diagnostics only");
+            MssqlConnectionAcquisitionFailure
+                .IsExpected(restated)
+                .Should()
+                .BeTrue("the restated type is the one the classifier already accepts");
+            connection.DisposeCount.Should().Be(1);
+        }
+
+        /// <summary>
+        /// ObjectDisposedException derives from InvalidOperationException, so without an explicit
+        /// exclusion the restatement above would catch a disposal too and hand it on as a type the
+        /// classifier accepts - answering Snapshot Not Found for a shutdown.
+        /// </summary>
+        /// <remarks>
+        /// The restatement runs inside the acquisition lambda, so a converted disposal would already be
+        /// a TimeoutException by the time <c>ConnectionAcquisition.GuardAsync</c> reached its own
+        /// <c>catch (ObjectDisposedException)</c> arm. That arm and its test assert the opposite, which
+        /// is why this is asserted here rather than left to the guard's.
+        /// </remarks>
+        [Test]
+        public async Task It_leaves_a_snapshot_disposal_exactly_as_it_arrived()
+        {
+            ObjectDisposedException disposed = new(nameof(SqlConnection));
+            using RecordingConnection connection = new() { OpenFailure = disposed };
+            MssqlConnectionAcquisition acquisition = new(
+                new SqlClientPoolClearing(),
+                NullLogger<MssqlConnectionAcquisition>.Instance,
+                _ => connection
+            );
+
+            Func<Task> open = () =>
+                MssqlLeasedConnection.OpenAsync(
+                    acquisition,
+                    new EffectiveDataStoreTarget(EffectiveTargetKind.Snapshot, PrimaryConnectionString),
+                    CancellationToken.None
+                );
+
+            (await open.Should().ThrowAsync<ObjectDisposedException>()).Which.Should().BeSameAs(disposed);
+            connection.DisposeCount.Should().Be(1);
+        }
+
+        /// <summary>
+        /// A read replica is a derivative but not a snapshot, and only a snapshot's response depends on
+        /// the failure being a connection failure. Restricting the restatement to a snapshot is what
+        /// leaves the write-failure mapper and the custom-view DbException sites answering exactly as
+        /// they did - and what keeps an unrelated application failure, such as opening inside an
+        /// already-completed TransactionScope, from being relabelled a timeout.
+        /// </summary>
+        [Test]
+        public async Task It_leaves_a_read_replica_open_failure_exactly_as_it_arrived()
+        {
+            InvalidOperationException failure = new("The current TransactionScope is already complete.");
+            using RecordingConnection connection = new() { OpenFailure = failure };
+            MssqlConnectionAcquisition acquisition = new(
+                new SqlClientPoolClearing(),
+                NullLogger<MssqlConnectionAcquisition>.Instance,
+                _ => connection
+            );
+
+            Func<Task> open = () =>
+                MssqlLeasedConnection.OpenAsync(
+                    acquisition,
+                    new EffectiveDataStoreTarget(EffectiveTargetKind.ReadReplica, PrimaryConnectionString),
                     CancellationToken.None
                 );
 

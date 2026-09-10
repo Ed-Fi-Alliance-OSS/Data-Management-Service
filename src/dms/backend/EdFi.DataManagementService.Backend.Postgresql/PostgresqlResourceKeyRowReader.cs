@@ -36,8 +36,16 @@ public class PostgresqlResourceKeyRowReader(
 
         logger.LogDebug("Reading resource key rows from dms.ResourceKey");
 
-        await using LeasedNpgsqlConnection leased = await dataSourceCache.OpenLeasedConnectionAsync(
-            target.ConnectionString,
+        // The guard covers taking the lease as well as the open: the data source is built - and the
+        // connection string therefore parsed - while the lease is taken, so a provider-invalid string
+        // fails there rather than at the open. Command execution below is deliberately outside it; a
+        // failure reading the rows is not an unreachable database.
+        await using LeasedNpgsqlConnection leased = await ConnectionAcquisition.GuardAsync(
+            () => dataSourceCache.OpenLeasedConnectionAsync(target.ConnectionString, cancellationToken),
+            target.Kind,
+            PostgresqlConnectionAcquisitionFailure.IsExpected,
+            PostgresqlConnectionAcquisitionFailure.Describe,
+            logger,
             cancellationToken
         );
 

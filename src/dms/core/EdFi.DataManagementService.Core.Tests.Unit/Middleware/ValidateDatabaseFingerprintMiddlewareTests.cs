@@ -378,4 +378,233 @@ public class ValidateDatabaseFingerprintMiddlewareTests
             _requestInfo.DatabaseFingerprint.Should().BeNull();
         }
     }
+
+    /// <summary>
+    /// Seam 1: the fingerprint read could not acquire a connection. The response depends on which kind
+    /// of target it was reading, which is the whole reason the exception carries the kind.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_The_Fingerprint_Read_Could_Not_Acquire_A_Connection
+        : ValidateDatabaseFingerprintMiddlewareTests
+    {
+        private const string ConnectionString = "Server=snapshot;Database=edfi;Password=hunter2";
+
+        /// <summary>
+        /// What an engine would have composed: the provider type and its own error code, and nothing
+        /// else. Distinct from anything in the connection string, so a log assertion that the string
+        /// is absent still means something when this is present.
+        /// </summary>
+        private const string FailureDescription = "TimeoutException(-2)";
+
+        private sealed class CapturingLogger : ILogger<ValidateDatabaseFingerprintMiddleware>
+        {
+            public List<(LogLevel Level, string Message, Exception? Exception)> Entries { get; } = [];
+
+            public IDisposable? BeginScope<TState>(TState state)
+                where TState : notnull => null;
+
+            public bool IsEnabled(LogLevel logLevel) => true;
+
+            public void Log<TState>(
+                LogLevel logLevel,
+                EventId eventId,
+                TState state,
+                Exception? exception,
+                Func<TState, Exception?, string> formatter
+            )
+            {
+                Entries.Add((logLevel, formatter(state, exception), exception));
+            }
+        }
+
+        /// <summary>
+        /// A provider exception of the shape the seam guard classifies. Its message quotes the
+        /// connection string back, which is exactly what must never reach a log.
+        /// </summary>
+        private static TimeoutException ProviderFailure() =>
+            new($"connection timed out for {ConnectionString}");
+
+        /// <summary>
+        /// Counts its own reads, so the fixture can tell a cached failed verdict from an evicted one
+        /// without depending on when a fake's exception factory is invoked.
+        /// </summary>
+        private sealed class ThrowingFingerprintReader(Exception thrown) : IDatabaseFingerprintReader
+        {
+            public int Reads { get; private set; }
+
+            public Task<DatabaseFingerprint?> ReadFingerprintAsync(EffectiveDataStoreTarget target)
+            {
+                Reads++;
+                throw thrown;
+            }
+        }
+
+        private sealed record Outcome(
+            RequestInfo RequestInfo,
+            bool NextCalled,
+            int Reads,
+            CapturingLogger Logger
+        );
+
+        /// <summary>
+        /// Executes twice against the same middleware and provider, so the second run reveals whether
+        /// the failed verdict was cached. A read count of two means it was evicted.
+        /// </summary>
+        private static async Task<Outcome> ExecuteWith(EffectiveTargetKind kind, Exception thrown)
+        {
+            EffectiveDataStoreTarget target = new(kind, ConnectionString);
+
+            var dataStoreSelection = A.Fake<IDataStoreSelection>();
+            A.CallTo(() => dataStoreSelection.IsSet).Returns(true);
+            A.CallTo(() => dataStoreSelection.GetSelectedDataStore())
+                .Returns(
+                    new DataStore(
+                        Id: 1,
+                        DataStoreType: "Test",
+                        Name: "Test Instance",
+                        ConnectionString: ConnectionString,
+                        RouteContext: []
+                    )
+                );
+            A.CallTo(() => dataStoreSelection.GetEffectiveTarget()).Returns(target);
+
+            var serviceProvider = A.Fake<IServiceProvider>();
+            A.CallTo(() => serviceProvider.GetService(typeof(IDataStoreSelection)))
+                .Returns(dataStoreSelection);
+
+            var schemaSetProvider = A.Fake<IEffectiveSchemaSetProvider>();
+            A.CallTo(() => schemaSetProvider.EffectiveSchemaSet)
+                .Returns(
+                    new EffectiveSchemaSet(
+                        new EffectiveSchemaInfo("1.0", "1.0", "abc123", 0, new byte[32], [], []),
+                        []
+                    )
+                );
+
+            ThrowingFingerprintReader fingerprintReader = new(thrown);
+
+            CapturingLogger logger = new();
+            var middleware = new ValidateDatabaseFingerprintMiddleware(
+                new DatabaseFingerprintProvider(fingerprintReader, TimeProvider.System, new CacheSettings()),
+                schemaSetProvider,
+                logger
+            );
+
+            RequestInfo requestInfo = CreateRequestInfoWithAuthorizations(serviceProvider);
+            bool nextCalled = false;
+
+            await middleware.Execute(
+                requestInfo,
+                () =>
+                {
+                    nextCalled = true;
+                    return Task.CompletedTask;
+                }
+            );
+
+            await middleware.Execute(
+                CreateRequestInfoWithAuthorizations(serviceProvider),
+                () => Task.CompletedTask
+            );
+
+            return new Outcome(requestInfo, nextCalled, fingerprintReader.Reads, logger);
+        }
+
+        private static Task<Outcome> ExecuteWith(EffectiveTargetKind kind) =>
+            ExecuteWith(
+                kind,
+                new DatabaseConnectionUnavailableException(kind, FailureDescription, ProviderFailure())
+            );
+
+        [Test]
+        public async Task It_answers_snapshot_not_found_for_a_snapshot()
+        {
+            Outcome outcome = await ExecuteWith(EffectiveTargetKind.Snapshot);
+
+            outcome.RequestInfo.FrontendResponse.ShouldBeSnapshotNotFound("test-trace-id");
+            outcome.NextCalled.Should().BeFalse();
+            outcome.RequestInfo.DatabaseFingerprint.Should().BeNull();
+        }
+
+        /// <summary>
+        /// A failed verdict must not be cached, or a snapshot rebuilt underneath a running service
+        /// would keep answering 404 until restart. The cache evicts a derivative fault on its own, so
+        /// the second read is the proof rather than an explicit invalidation.
+        /// </summary>
+        [Test]
+        public async Task It_does_not_cache_the_failed_snapshot_verdict()
+        {
+            Outcome outcome = await ExecuteWith(EffectiveTargetKind.Snapshot);
+
+            outcome.Reads.Should().Be(2, "the immediately following request must revalidate");
+        }
+
+        /// <summary>
+        /// Only a snapshot's response depends on the failure being a connection failure. A primary or
+        /// a read replica keeps the transient-error 503 it produces today, which is what stops this
+        /// translation from changing two contracts it was not meant to touch.
+        /// </summary>
+        [TestCase(EffectiveTargetKind.Primary)]
+        [TestCase(EffectiveTargetKind.ReadReplica)]
+        public async Task It_keeps_the_existing_503_for_a_non_snapshot(EffectiveTargetKind kind)
+        {
+            Outcome outcome = await ExecuteWith(kind);
+
+            outcome.RequestInfo.FrontendResponse.StatusCode.Should().Be(503);
+            outcome
+                .RequestInfo.FrontendResponse.Body!.ToString()
+                .Should()
+                .Contain("urn:ed-fi:api:service-configuration-error");
+            outcome.NextCalled.Should().BeFalse();
+        }
+
+        /// <summary>
+        /// A malformed fingerprint on a snapshot is a statement about the database's contents, not
+        /// about reaching it, so the new arm must not swallow it: it keeps the 503 provisioning body.
+        /// </summary>
+        [Test]
+        public async Task It_keeps_the_existing_503_for_a_malformed_snapshot_fingerprint()
+        {
+            Outcome outcome = await ExecuteWith(
+                EffectiveTargetKind.Snapshot,
+                new DatabaseFingerprintValidationException(["malformed"])
+            );
+
+            outcome.RequestInfo.FrontendResponse.StatusCode.Should().Be(503);
+            outcome
+                .RequestInfo.FrontendResponse.Body!.ToString()
+                .Should()
+                .Contain("urn:ed-fi:api:database-fingerprint-validation-error");
+        }
+
+        [Test]
+        public async Task It_logs_the_inner_exception_type_and_the_target_kind()
+        {
+            Outcome outcome = await ExecuteWith(EffectiveTargetKind.Snapshot);
+
+            outcome
+                .Logger.Entries.Should()
+                .Contain(entry =>
+                    entry.Level == LogLevel.Warning
+                    && entry.Message.Contains("Snapshot connection unavailable")
+                    && entry.Message.Contains(nameof(TimeoutException))
+                    && entry.Message.Contains("for Snapshot target")
+                );
+        }
+
+        [Test]
+        public async Task It_never_logs_connection_material()
+        {
+            Outcome outcome = await ExecuteWith(EffectiveTargetKind.Snapshot);
+
+            outcome.Logger.Entries.Should().NotContain(entry => entry.Message.Contains("Password=hunter2"));
+            outcome
+                .Logger.Entries.Should()
+                .OnlyContain(
+                    entry => entry.Exception == null,
+                    "the wrapper's inner provider exception quotes the connection string in its message"
+                );
+        }
+    }
 }

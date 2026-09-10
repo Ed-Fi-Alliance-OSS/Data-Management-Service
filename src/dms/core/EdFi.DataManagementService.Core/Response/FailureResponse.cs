@@ -47,6 +47,8 @@ public static class FailureResponse
     private static readonly string _keyChangeNotSupported =
         $"{_badRequestTypePrefix}:data-validation-failed:key-change-not-supported";
     private static readonly string _methodNotAllowed = $"{_typePrefix}:method-not-allowed";
+    private static readonly string _snapshotMethodNotAllowedType =
+        $"{_typePrefix}:snapshots:method-not-allowed";
     private static readonly string _forbiddenType = $"{_typePrefix}:security:authorization";
     private static readonly string _authorizationDeniedType = $"{_typePrefix}:authorization-denied";
     private static readonly string _routeResolutionErrorType = $"{_typePrefix}:route-resolution-error";
@@ -258,6 +260,27 @@ public static class FailureResponse
             correlationId: traceId.Value,
             validationErrors: [],
             errors
+        );
+
+    /// <summary>
+    /// Produces the 405 problem details for a mutation that asked for a snapshot. It is distinct from
+    /// <see cref="ForMethodNotAllowed" /> in type, title, and detail because the rejection is about the
+    /// selected target being read-only rather than about the route construction: the same route is
+    /// perfectly valid against the primary. Both are 405, so a caller — and every test — must compare
+    /// type, title, and detail rather than the status code to tell the two apart.
+    /// The response header that accompanies this body is <c>Allow: GET</c>, stating what is permitted in
+    /// snapshot context rather than what the route permits on the primary; the header itself is supplied
+    /// by the caller that builds the response.
+    /// </summary>
+    public static JsonNode ForSnapshotMethodNotAllowed(TraceId traceId) =>
+        CreateBaseJsonObject(
+            detail: "An attempt was made to modify data in a Snapshot, but this data is read-only.",
+            type: _snapshotMethodNotAllowedType,
+            title: "Method Not Allowed with Snapshots",
+            status: 405,
+            correlationId: traceId.Value,
+            validationErrors: [],
+            errors: []
         );
 
     public static JsonNode ForUnsupportedMediaType(string detail, TraceId traceId, string[] errors) =>

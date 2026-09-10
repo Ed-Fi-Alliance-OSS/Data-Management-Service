@@ -74,12 +74,10 @@ public sealed class Given_Mssql_DerivativeAvailabilityRecovery : MssqlApiIntegra
                 useSnapshotHeaderValue: "true"
             );
 
-            unavailable
-                .StatusCode.Should()
-                .NotBe(
-                    HttpStatusCode.OK,
-                    "the snapshot database is offline, so the open against it must fail"
-                );
+            await DerivativeRoutingSupport.AssertSnapshotNotFoundAsync(
+                unavailable,
+                "the snapshot database is offline, so the open against it fails and is translated"
+            );
         }
         finally
         {

@@ -345,6 +345,17 @@ public sealed class MssqlConnectionAcquisition : IMssqlConnectionAcquisition, ID
     /// derivative string throws here, inside acquisition, rather than at configuration load or
     /// target selection.
     /// </summary>
+    /// <remarks>
+    /// A derivative is also rebuilt with enlistment off. A derivative is read-only - a mutation can
+    /// never select one - so it has no business joining an ambient distributed transaction, and
+    /// refusing to enlist is what keeps the open's failure surface unambiguous: the enlistment failures
+    /// are the only other way <c>SqlConnection.Open</c> raises an
+    /// <see cref="InvalidOperationException" /> on a freshly constructed connection carrying a
+    /// non-blank string, which is what lets <see cref="MssqlLeasedConnection.OpenAsync" /> read that
+    /// type as the pool-acquisition timeout. Today this changes nothing observable - DMS creates no
+    /// ambient transaction anywhere - and that is the point: the invariant is enforced here rather than
+    /// assumed about code not yet written.
+    /// </remarks>
     internal static string RealizeEffectiveConnectionString(EffectiveDataStoreTarget target)
     {
         ArgumentNullException.ThrowIfNull(target);
@@ -357,6 +368,7 @@ public sealed class MssqlConnectionAcquisition : IMssqlConnectionAcquisition, ID
         SqlConnectionStringBuilder builder = new(target.ConnectionString)
         {
             PoolBlockingPeriod = PoolBlockingPeriod.NeverBlock,
+            Enlist = false,
         };
 
         return builder.ConnectionString;
@@ -499,6 +511,11 @@ public sealed class MssqlLeasedConnection : IAsyncDisposable
     /// Opens a connection for the target through the acquisition boundary. On failure the lease is
     /// released before the original exception propagates.
     /// </summary>
+    /// <remarks>
+    /// A snapshot's pool-acquisition timeout is restated as a <see cref="TimeoutException" /> on the
+    /// way out, for the reason the arm below spells out. Everything else, on every kind, propagates
+    /// exactly as it arrived.
+    /// </remarks>
     internal static async Task<MssqlLeasedConnection> OpenAsync(
         IMssqlConnectionAcquisition acquisition,
         EffectiveDataStoreTarget target,
@@ -513,6 +530,42 @@ public sealed class MssqlLeasedConnection : IAsyncDisposable
         {
             DbConnection connection = await lease.OpenAsync(cancellationToken).ConfigureAwait(false);
             return new MssqlLeasedConnection(connection, lease);
+        }
+        catch (InvalidOperationException exception)
+            when (target.Kind == EffectiveTargetKind.Snapshot && exception is not ObjectDisposedException)
+        {
+            // SqlClient reports a timeout waiting for a pooled connection as an
+            // InvalidOperationException rather than a TimeoutException - only the non-pooled open
+            // timeout gets the latter - so an exhausted snapshot pool would otherwise escape the
+            // acquisition boundary unclassified and answer a service-configuration 503 where the
+            // snapshot contract requires Snapshot Not Found. Restating it as the type the classifier
+            // already accepts keeps that one definition of an expected acquisition failure intact.
+            //
+            // The type is read as the pool timeout because on this path nothing else can raise it: the
+            // connection is constructed fresh and opened exactly once, so neither an uninitialized
+            // ConnectionString nor an already-open connection is reachable, and
+            // RealizeEffectiveConnectionString turns enlistment off for every derivative, so the
+            // ambient-transaction failures cannot arise either. The message is not matched on:
+            // SqlClient ships localized resources, so it is a different string in each of thirteen
+            // cultures. Exception.Source does not separate these cases - all of them carry the
+            // SqlClient assembly - which is why the invariant is enforced upstream instead.
+            //
+            // ObjectDisposedException is excluded because it derives from InvalidOperationException and
+            // would otherwise be restated here, inside the acquisition lambda - past the point where
+            // ConnectionAcquisition.GuardAsync's own disposal arm could see it, and as a type the
+            // classifier accepts. A disposal is not an unavailable database, and the guard says so; the
+            // restatement must not be the one place that disagrees. MssqlConnectionLease.CreateConnection
+            // raises exactly this type for a released lease, which is reachable from inside this try.
+            //
+            // Restricted to a snapshot because only a snapshot's response depends on this failure being
+            // a connection failure. A primary keeps raising the provider's own exception, which is what
+            // the write-failure mapper and the custom-view DbException sites were written against.
+            await DisposeWithoutMaskingAsync(lease).ConfigureAwait(false);
+
+            throw new TimeoutException(
+                "Timed out acquiring a pooled connection for the snapshot target.",
+                exception
+            );
         }
         catch
         {

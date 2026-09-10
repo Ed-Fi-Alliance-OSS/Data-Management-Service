@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.External.Backend;
 using FluentAssertions;
 using NUnit.Framework;
 using static EdFi.DataManagementService.Core.Tests.Unit.Configuration.ValidationCacheSupport;
@@ -30,8 +31,10 @@ public class ValidationEntryCacheTests
     [Parallelizable]
     public class Given_Two_Keys_With_Byte_Identical_Text : ValidationEntryCacheTests
     {
+        private static ValidationCacheKey KeyFor(EffectiveTargetKind kind) => new(kind, ConnectionString);
+
         /// <summary>
-        /// The reason the policy class is in the key at all. A parent and a derivative may be
+        /// One half of the reason the target kind is in the key. A parent and a derivative may be
         /// configured with the same text - a replica reachable at the same address, a snapshot pointed
         /// back at its source - and giving them one entry would give one of them the other's lifetime.
         /// </summary>
@@ -93,6 +96,180 @@ public class ValidationEntryCacheTests
 
             primary.Should().Be("primary first");
             derivative.Should().Be("derivative second");
+        }
+
+        /// <summary>
+        /// The other half. The two derivative kinds share a policy class, so nothing about lifetime
+        /// separates them - but they no longer share an entry, and therefore no longer share the one
+        /// production inside it.
+        /// </summary>
+        [TestCase(true)]
+        [TestCase(false)]
+        public void It_produces_once_for_each_derivative_kind_in_either_order(bool snapshotFirst)
+        {
+            ControlledTimeProvider time = new(Start);
+            var cache = CacheOf(time);
+            int productions = 0;
+
+            Task<string> Produce()
+            {
+                productions++;
+                return Task.FromResult("value");
+            }
+
+            ValidationCacheKey first = snapshotFirst ? SnapshotKey() : DerivativeKey();
+            ValidationCacheKey second = snapshotFirst ? DerivativeKey() : SnapshotKey();
+
+            cache.Read(first, Produce);
+            cache.Read(second, Produce);
+
+            productions.Should().Be(2);
+        }
+
+        [Test]
+        public async Task It_gives_each_derivative_kind_its_own_value()
+        {
+            ControlledTimeProvider time = new(Start);
+            var cache = CacheOf(time);
+
+            string snapshot = await cache.Read(SnapshotKey(), () => Task.FromResult("snapshot")).Value;
+            string replica = await cache.Read(DerivativeKey(), () => Task.FromResult("replica")).Value;
+
+            snapshot.Should().Be("snapshot");
+            replica.Should().Be("replica");
+        }
+
+        /// <summary>
+        /// Separating the kinds must not have given either one a different lifetime: both still expire
+        /// at the derivative expiration, because the expiry rule reads the policy class.
+        /// </summary>
+        [TestCase(EffectiveTargetKind.Snapshot)]
+        [TestCase(EffectiveTargetKind.ReadReplica)]
+        public async Task It_expires_each_derivative_kind_at_the_derivative_expiration(
+            EffectiveTargetKind kind
+        )
+        {
+            ControlledTimeProvider time = new(Start);
+            var cache = CacheOf(time);
+
+            await cache.Read(KeyFor(kind), () => Task.FromResult("first")).Value;
+
+            time.Advance(_expiration - TimeSpan.FromSeconds(1));
+            (await cache.Read(KeyFor(kind), () => Task.FromResult("second")).Value).Should().Be("first");
+
+            time.Advance(TimeSpan.FromSeconds(1));
+            (await cache.Read(KeyFor(kind), () => Task.FromResult("third")).Value).Should().Be("third");
+        }
+
+        /// <summary>
+        /// Nor a different token: both derivative kinds still hand back one that drops the exact entry
+        /// its reader observed.
+        /// </summary>
+        [TestCase(EffectiveTargetKind.Snapshot)]
+        [TestCase(EffectiveTargetKind.ReadReplica)]
+        public async Task It_gives_each_derivative_kind_an_exact_entry_token(EffectiveTargetKind kind)
+        {
+            ControlledTimeProvider time = new(Start);
+            var cache = CacheOf(time);
+
+            ValidationCacheRead<string> read = cache.Read(KeyFor(kind), () => Task.FromResult("first"));
+            await read.Value;
+
+            read.Token.Invalidate();
+
+            string second = await cache.Read(KeyFor(kind), () => Task.FromResult("second")).Value;
+            second.Should().Be("second");
+        }
+    }
+
+    /// <summary>
+    /// The interleaving the shared entry answered wrongly: a snapshot and a read replica configured
+    /// with byte-identical text, both reaching <c>Read</c> before either production completes, and both
+    /// productions failing at connection acquisition.
+    /// </summary>
+    /// <remarks>
+    /// Sequential failures would prove nothing - a faulted derivative entry is evicted, so the second
+    /// reader gets a fresh production even when the two share a key - so the two-stage gate that
+    /// <see cref="Given_Concurrent_First_Readers" /> uses holds both productions in flight until both
+    /// readers have attached.
+    /// <para>
+    /// The two expectations are deliberately asymmetric, because the connection-acquisition guard
+    /// wraps only a snapshot: the snapshot reader must observe a
+    /// <see cref="DatabaseConnectionUnavailableException" /> naming its own kind, which is what the
+    /// Snapshot Not Found response is translated from, and the read-replica reader must observe the
+    /// raw provider exception, which is what keeps its existing response.
+    /// </para>
+    /// </remarks>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Both_Derivative_Kinds_Failing_Concurrently : ValidationEntryCacheTests
+    {
+        /// <summary>
+        /// What an engine would have composed for the wrapped failure: the provider type and its own
+        /// error code. Only the snapshot production wraps, so this is what separates the two
+        /// exceptions the two readers must observe.
+        /// </summary>
+        private const string FailureDescription = "TimeoutException(-2)";
+
+        [TestCase(true)]
+        [TestCase(false)]
+        public async Task It_answers_each_kind_from_its_own_production(bool snapshotFirst)
+        {
+            ControlledTimeProvider time = new(Start);
+            var cache = CacheOf(time);
+
+            TaskCompletionSource gate = new();
+            TimeoutException providerFailure = new("connection refused");
+            int productions = 0;
+
+            // What the guard would raise for each kind: wrapped for a snapshot, untouched otherwise.
+            Func<Task<string>> ProductionFor(EffectiveTargetKind kind) =>
+                async () =>
+                {
+                    Interlocked.Increment(ref productions);
+                    await gate.Task;
+
+                    throw kind == EffectiveTargetKind.Snapshot
+                        ? new DatabaseConnectionUnavailableException(
+                            kind,
+                            FailureDescription,
+                            providerFailure
+                        )
+                        : providerFailure;
+                };
+
+            ValidationCacheKey firstKey = snapshotFirst ? SnapshotKey() : DerivativeKey();
+            ValidationCacheKey secondKey = snapshotFirst ? DerivativeKey() : SnapshotKey();
+
+            // Both readers attach while both productions are still held at the gate.
+            ValidationCacheRead<string> firstRead = cache.Read(firstKey, ProductionFor(firstKey.TargetKind));
+            ValidationCacheRead<string> secondRead = cache.Read(
+                secondKey,
+                ProductionFor(secondKey.TargetKind)
+            );
+
+            gate.SetResult();
+
+            Exception? firstSeen = await CatchAsync(firstRead.Value);
+            Exception? secondSeen = await CatchAsync(secondRead.Value);
+
+            Exception? snapshotSeen = snapshotFirst ? firstSeen : secondSeen;
+            Exception? replicaSeen = snapshotFirst ? secondSeen : firstSeen;
+
+            productions.Should().Be(2, "each derivative kind must fail in its own production");
+
+            snapshotSeen
+                .Should()
+                .BeOfType<DatabaseConnectionUnavailableException>()
+                .Which.TargetKind.Should()
+                .Be(EffectiveTargetKind.Snapshot);
+
+            replicaSeen
+                .Should()
+                .BeSameAs(
+                    providerFailure,
+                    "the read replica must see the raw provider exception, not the snapshot's wrapper"
+                );
         }
     }
 

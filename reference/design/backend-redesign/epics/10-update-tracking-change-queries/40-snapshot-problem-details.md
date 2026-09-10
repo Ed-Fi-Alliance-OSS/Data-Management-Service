@@ -54,14 +54,20 @@ Map the routing outcomes from `39-snapshot-read-replica-runtime-routing.md` to t
 - Provider exceptions are not translated wholesale. Any command-time transport-loss translation uses a narrowly defined provider-specific connectivity classification.
 - Cancellation attributable to a supplied caller or request `CancellationToken` propagates unchanged. It is never wrapped in `DatabaseConnectionUnavailableException` and never translated to Snapshot Not Found, even though it is raised inside the acquisition boundary. Six of the seven baseline seams above accept a token and pass it into the open call, so the exclusion is stated rather than left to the wrapper's author: an aborted or timed-out caller is not evidence of a missing snapshot, and translating it would diverge from primary and read-replica cancellation behavior.
 - The wrapper classifies only the expected provider failures of connection establishment — data-source and connection construction, connection-string parsing, and the open call. Unexpected and programming exceptions raised inside the boundary retain their existing behavior.
-- When E18 cache-backed reads are present, expected connection-establishment failure in the
-  provider cache-lookup adapter is treated as an unavailable cache read and falls through
-  to relational acquisition on the same selected target. That fallback reaches one of the
-  seven wrapped baseline seams: an unavailable selected snapshot therefore produces the
-  required Snapshot Not Found `404`, while a read replica retains the normal
-  database-availability contract and neither target falls back to the primary. Caller
-  cancellation and unexpected or programming exceptions from cache acquisition are not
-  cache misses and propagate unchanged.
+- When E18 cache-backed reads are present, the read-acceleration coordinator declines cache
+  acceleration outright for every non-primary effective target, before any cache adapter is
+  reached. The DocumentCache is materialized from, and keyed by, the parent database, so
+  serving a derivative read from it would answer one database's request with another's
+  documents. A selected `Snapshot` or `ReadReplica` therefore makes exactly one acquisition,
+  at the relational seam, and it is that seam's guard that produces the required Snapshot Not
+  Found `404` or retains the normal database-availability contract; neither target falls back
+  to the primary, and neither reaches the cache adapter to fall through from.
+- The cache-lookup adapter's own acquisition classification therefore governs a primary read
+  only: an expected connection-establishment failure there is an unavailable cache read that
+  falls through to relational acquisition on the primary. Caller cancellation and unexpected or
+  programming exceptions from cache acquisition are not cache misses and propagate unchanged.
+  The adapter and the seam guard share one classification per engine, so the two cannot drift
+  into answering the same provider failure differently.
 - Session-scoped write hydrators that receive an existing connection and transaction are not changed.
 - Translated failures log the underlying error and selected target kind without logging the connection string.
 
@@ -76,11 +82,13 @@ Map the routing outcomes from `39-snapshot-read-replica-runtime-routing.md` to t
 - PostgreSQL and SQL Server tests cover a decrypted, non-blank, provider-invalid derivative connection string at the acquisition boundary, proving the provider's construction-time rejection is classified rather than escaping as an unhandled argument failure: a selected `Snapshot` returns Snapshot Not Found `404` with no fallback, a selected `ReadReplica` returns the normal database-availability response and is not served from the primary, the verdict is not cached so the next request that selects the derivative revalidates instead of reusing the failure, and no log records the connection string. A test that additionally asserts recovery from a corrected CMS row must arrange a data-store configuration refresh, because revalidation on its own re-reads the same cached connection string.
 - Seam-level tests prove cancellation through a supplied `CancellationToken` during a snapshot connection acquisition is not translated to Snapshot Not Found and does not fall back, with primary and read-replica behavior unchanged. These are written against the seams rather than end to end, because no request-scoped token reaches them today; wiring one is out of scope for this story.
 - Document-hydrator tests include a request whose fingerprint and resource-key validations are already cached so hydration is the first failing connection acquisition.
-- When E18 cache-backed reads are present, a cache-enabled integration test makes acquisition
-  fail first in the cache adapter and then in relational fallback on the same selected
-  snapshot, asserting the exact Snapshot Not Found `404` and no primary fallback. A
-  seam-level test proves cancellation from cache acquisition propagates instead of being
-  swallowed as a cache miss.
+- When E18 cache-backed reads are present, a cache-enabled integration test proves an
+  unreachable selected snapshot bypasses the cache adapter and is still answered with the exact
+  Snapshot Not Found `404` and no primary fallback — the bypass is what makes the relational
+  seam the only acquisition, so the test asserts the answer the guard produces rather than a
+  fallback chain. Its pair proves a primary read whose cache acquisition fails is a cache miss
+  that falls through to the relational read and is served. A seam-level test proves cancellation
+  from cache acquisition propagates instead of being swallowed as a cache miss.
 - Tests prove a reachable but unprovisioned or fingerprint-incompatible snapshot returns the existing `503`.
 - Tests prove ordinary query, mapping, and authorization failures against a snapshot are not translated.
 - Tests prove read-replica connectivity failures retain the normal availability response.

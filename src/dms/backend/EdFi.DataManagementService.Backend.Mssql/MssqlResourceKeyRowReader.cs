@@ -33,15 +33,25 @@ public class MssqlResourceKeyRowReader : IResourceKeyRowReader
         CancellationToken cancellationToken = default
     )
     {
+        ArgumentNullException.ThrowIfNull(target);
+
         _logger.LogDebug("Reading resource key rows from dms.ResourceKey");
 
-        await using MssqlConnectionLease lease = await _acquisition.AcquireLeaseAsync(
-            target,
+        // The guard covers taking the lease as well as the open, because the connection string is
+        // parsed twice before the open - once realizing the derivative's effective string, once in the
+        // SqlConnection constructor - so a provider-invalid string fails at one of those rather than at
+        // the open. Command execution below is deliberately outside it; a failure reading the rows is
+        // not an unreachable database.
+        await using MssqlLeasedConnection leased = await ConnectionAcquisition.GuardAsync(
+            () => MssqlLeasedConnection.OpenAsync(_acquisition, target, cancellationToken),
+            target.Kind,
+            MssqlConnectionAcquisitionFailure.IsExpected,
+            MssqlConnectionAcquisitionFailure.Describe,
+            _logger,
             cancellationToken
         );
-        await using var connection = await lease.OpenAsync(cancellationToken);
 
-        await using var command = connection.CreateCommand();
+        await using var command = leased.Connection.CreateCommand();
         command.CommandText = ResourceKeySelectSql;
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);

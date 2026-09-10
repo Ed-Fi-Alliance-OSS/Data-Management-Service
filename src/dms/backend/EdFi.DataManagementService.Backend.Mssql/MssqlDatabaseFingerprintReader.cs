@@ -30,12 +30,27 @@ public class MssqlDatabaseFingerprintReader : IDatabaseFingerprintReader
 
     public async Task<DatabaseFingerprint?> ReadFingerprintAsync(EffectiveDataStoreTarget target)
     {
-        // The lease is held across the whole support call because the support owns the open, so the
-        // pool identity stays claimed for as long as a connection from it can be in use.
-        await using MssqlConnectionLease lease = await _acquisition.AcquireLeaseAsync(target);
+        ArgumentNullException.ThrowIfNull(target);
+
+        // Taking the lease and opening the connection are one guarded step, because the connection
+        // string is parsed twice before the open - once realizing the derivative's effective string,
+        // once in the SqlConnection constructor - and a provider-invalid string fails at one of those
+        // rather than at the open. The leased connection owns both and releases them in order, so this
+        // is also the only disposal the read needs.
+        //
+        // This seam has no CancellationToken by design: nothing on the fingerprint path supplies one,
+        // so no cancellation here is attributable to a caller.
+        await using MssqlLeasedConnection leased = await ConnectionAcquisition.GuardAsync(
+            () => MssqlLeasedConnection.OpenAsync(_acquisition, target, CancellationToken.None),
+            target.Kind,
+            MssqlConnectionAcquisitionFailure.IsExpected,
+            MssqlConnectionAcquisitionFailure.Describe,
+            _logger,
+            CancellationToken.None
+        );
 
         return await DatabaseFingerprintReaderSupport.ReadFingerprintAsync(
-            lease.CreateConnection,
+            leased.Connection,
             _query,
             _logger,
             static exception => exception is SqlException { Number: 207 }

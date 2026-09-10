@@ -125,7 +125,7 @@ internal sealed class PostgresqlDocumentCacheReadLookupAdapter : DocumentCacheRe
         {
             throw;
         }
-        catch (Exception exception) when (IsExpectedConnectionAcquisitionFailure(exception))
+        catch (Exception exception) when (PostgresqlConnectionAcquisitionFailure.IsExpected(exception))
         {
             throw new DocumentCacheReadAcquisitionUnavailableException(
                 "PostgreSQL DocumentCache read lookup connection acquisition failed.",
@@ -145,14 +145,6 @@ internal sealed class PostgresqlDocumentCacheReadLookupAdapter : DocumentCacheRe
         return (connectionString, cancellationToken) =>
             dataSourceCache.OpenLeasedConnectionAsync(connectionString, cancellationToken);
     }
-
-    private static bool IsExpectedConnectionAcquisitionFailure(Exception exception) =>
-        exception
-            is NpgsqlException
-                or TimeoutException
-                or FormatException
-                or ArgumentException
-                and not ArgumentNullException;
 
     private static void AddParameters(NpgsqlCommand dbCommand, IReadOnlyList<RelationalParameter> parameters)
     {

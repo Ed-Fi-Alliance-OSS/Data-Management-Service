@@ -7,6 +7,7 @@ using System.Data;
 using System.Data.Common;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Core.Configuration;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace EdFi.DataManagementService.Backend.Mssql;
@@ -19,16 +20,22 @@ internal sealed class MssqlRelationalWriteSessionFactory : IRelationalWriteSessi
     public MssqlRelationalWriteSessionFactory(
         IDataStoreSelection dataStoreSelection,
         IMssqlConnectionAcquisition acquisition,
-        IOptions<DatabaseOptions> databaseOptions
+        IOptions<DatabaseOptions> databaseOptions,
+        ILogger<MssqlRelationalWriteSessionFactory> logger
     )
     {
         ArgumentNullException.ThrowIfNull(dataStoreSelection);
         ArgumentNullException.ThrowIfNull(acquisition);
         ArgumentNullException.ThrowIfNull(databaseOptions);
+        ArgumentNullException.ThrowIfNull(logger);
 
         _isolationLevel = databaseOptions.Value.IsolationLevel;
+
+        // The same guarded opener the read seams use. It is a no-op here by construction: a mutation
+        // always selects the primary, and the guard wraps only a snapshot, so an open failure stays a
+        // DbException for DefaultRelationalWriteExecutor's write-failure mapper to route.
         _openConnectionAsync = cancellationToken =>
-            MssqlSeamConnection.OpenAsync(dataStoreSelection, acquisition, cancellationToken);
+            MssqlSeamConnection.OpenAsync(dataStoreSelection, acquisition, logger, cancellationToken);
     }
 
     internal MssqlRelationalWriteSessionFactory(

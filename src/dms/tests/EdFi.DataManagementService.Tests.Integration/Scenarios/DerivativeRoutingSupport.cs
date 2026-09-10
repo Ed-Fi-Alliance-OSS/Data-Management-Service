@@ -26,6 +26,13 @@ namespace EdFi.DataManagementService.Tests.Integration.Scenarios;
 internal static class DerivativeRoutingSupport
 {
     public const string StudentsEndpoint = "/data/ed-fi/students";
+
+    /// <summary>
+    /// The fixture's descriptor endpoint. Snapshot policy is asserted against a descriptor as well as a
+    /// resource because the acceptance criteria cover both.
+    /// </summary>
+    public const string SchoolTypeDescriptorsEndpoint = "/data/ed-fi/schoolTypeDescriptors";
+
     public const string UseSnapshotHeaderName = "Use-Snapshot";
 
     /// <summary>The Student unique id held only by the parent database.</summary>
@@ -225,4 +232,93 @@ internal static class DerivativeRoutingSupport
 
     public static StringContent RawContent(string body, string mediaType) =>
         new(body, Encoding.UTF8, new MediaTypeHeaderValue(mediaType).MediaType!);
+
+    /// <summary>
+    /// A body sent with no <c>Content-Type</c> header at all, which is a distinct case from an
+    /// unsupported one: <c>ValidateContentTypeMiddleware</c> accepts a missing header and only rejects
+    /// an explicit value it does not support.
+    /// </summary>
+    public static StringContent ContentWithNoMediaType(string body)
+    {
+        StringContent content = new(body);
+
+        // StringContent defaults to text/plain; charset=utf-8, and only clearing it produces a request
+        // with no Content-Type. HttpClient does not substitute one of its own.
+        content.Headers.ContentType = null;
+
+        return content;
+    }
+
+    /// <summary>The methods a snapshot permits, whatever the route.</summary>
+    /// <remarks>
+    /// Deliberately not a route's method set: this one describes the target, so it stays GET on a
+    /// collection path as well as an item path.
+    /// </remarks>
+    private static readonly string[] _snapshotMethods = ["GET"];
+
+    /// <summary>
+    /// The snapshot method-not-allowed body: the read-only rejection, its own problem type, title, and
+    /// detail, <c>Allow: GET</c>, and <c>application/problem+json</c>.
+    /// </summary>
+    /// <remarks>
+    /// Every field is asserted, because the route-semantics answer is also a 405 - so a status
+    /// assertion cannot tell the two apart. Nor can any single field in general: on a partitions path
+    /// the two <c>Allow</c> values coincide at <c>GET</c>, leaving the problem details and the content
+    /// type as the only difference there.
+    /// </remarks>
+    public static async Task AssertSnapshotMethodNotAllowedAsync(HttpResponseMessage response, string because)
+    {
+        ArgumentNullException.ThrowIfNull(response);
+
+        string body = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed, $"{because}: {body}");
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json", because);
+        response
+            .Content.Headers.Allow.Should()
+            .BeEquivalentTo(
+                _snapshotMethods,
+                $"{because}: Allow states what a snapshot permits, not what the route permits on the primary"
+            );
+
+        JsonNode problem = JsonNode.Parse(body)!;
+        problem["type"]!
+            .GetValue<string>()
+            .Should()
+            .Be("urn:ed-fi:api:snapshots:method-not-allowed", because);
+        problem["title"]!.GetValue<string>().Should().Be("Method Not Allowed with Snapshots", because);
+        problem["detail"]!
+            .GetValue<string>()
+            .Should()
+            .Be("An attempt was made to modify data in a Snapshot, but this data is read-only.", because);
+        problem["status"]!.GetValue<int>().Should().Be(405, because);
+        problem["correlationId"]!.GetValue<string>().Should().NotBeNullOrWhiteSpace(because);
+    }
+
+    /// <summary>
+    /// The Snapshot Not Found body: the shared not-found type and title, the detail that names the
+    /// snapshot, and <c>application/problem+json</c>.
+    /// </summary>
+    /// <remarks>
+    /// Several production sites answer with this - selection for a read with no snapshot configured,
+    /// and each connection-unavailable translation site for a snapshot that could not be reached - and
+    /// a client must not be able to tell them apart. Every field is therefore asserted against this one
+    /// definition, so a body that drifted at one site could not pass on its status code alone.
+    /// </remarks>
+    public static async Task AssertSnapshotNotFoundAsync(HttpResponseMessage response, string because)
+    {
+        ArgumentNullException.ThrowIfNull(response);
+
+        string body = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound, $"{because}: {body}");
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json", because);
+
+        JsonNode problem = JsonNode.Parse(body)!;
+        problem["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:not-found", because);
+        problem["title"]!.GetValue<string>().Should().Be("Not Found", because);
+        problem["detail"]!.GetValue<string>().Should().Be("Snapshot not found.", because);
+        problem["status"]!.GetValue<int>().Should().Be(404, because);
+        problem["correlationId"]!.GetValue<string>().Should().NotBeNullOrWhiteSpace(because);
+    }
 }

@@ -684,14 +684,13 @@ public class DatabaseFingerprintReaderSupportTests
         {
             _act = async () =>
                 await DatabaseFingerprintReaderSupport.ReadFingerprintAsync(
-                    () =>
-                        new StubDbConnection(
-                            new StubDbCommand(() => 1, () => throw new NotSupportedException()),
-                            new StubDbCommand(
-                                () => throw new NotSupportedException(),
-                                () => throw new ProjectionFailureException("provider projection failure")
-                            )
-                        ),
+                    new StubDbConnection(
+                        new StubDbCommand(() => 1, () => throw new NotSupportedException()),
+                        new StubDbCommand(
+                            () => throw new NotSupportedException(),
+                            () => throw new ProjectionFailureException("provider projection failure")
+                        )
+                    ),
                     new DatabaseFingerprintReaderQuery(
                         TableDisplayName,
                         "select 1",
@@ -725,14 +724,13 @@ public class DatabaseFingerprintReaderSupportTests
         {
             _act = async () =>
                 await DatabaseFingerprintReaderSupport.ReadFingerprintAsync(
-                    () =>
-                        new StubDbConnection(
-                            new StubDbCommand(() => 1, () => throw new NotSupportedException()),
-                            new StubDbCommand(
-                                () => throw new NotSupportedException(),
-                                () => throw new TimeoutException("temporary failure")
-                            )
-                        ),
+                    new StubDbConnection(
+                        new StubDbCommand(() => 1, () => throw new NotSupportedException()),
+                        new StubDbCommand(
+                            () => throw new NotSupportedException(),
+                            () => throw new TimeoutException("temporary failure")
+                        )
+                    ),
                     new DatabaseFingerprintReaderQuery(
                         TableDisplayName,
                         "select 1",

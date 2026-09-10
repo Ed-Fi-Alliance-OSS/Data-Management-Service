@@ -18,7 +18,8 @@ namespace EdFi.DataManagementService.Core.Middleware;
 
 /// <summary>
 /// Validates that the selected database has been provisioned by reading the
-/// dms.EffectiveSchema fingerprint. Short-circuits with 503 if unprovisioned.
+/// dms.EffectiveSchema fingerprint. Short-circuits with 503 if unprovisioned, and with Snapshot Not
+/// Found if the fingerprint read could not acquire a connection to a selected snapshot.
 /// </summary>
 internal class ValidateDatabaseFingerprintMiddleware(
     DatabaseFingerprintProvider fingerprintProvider,
@@ -144,12 +145,47 @@ internal class ValidateDatabaseFingerprintMiddleware(
 
             return;
         }
+        catch (DatabaseConnectionUnavailableException ex) when (ex.TargetKind == EffectiveTargetKind.Snapshot)
+        {
+            // A snapshot the request asked for but that cannot be reached is Snapshot Not Found, not a
+            // service failure: to a client it is indistinguishable from a snapshot that was never
+            // configured, which is what the selection step already answers with this same response.
+            //
+            // The engine's log-safe description and the target kind only, for the reason the generic
+            // catch below spells out - and here the exception carries a provider exception as
+            // InnerException, whose message is exactly where a connection string appears. The
+            // description is the provider's type and its own error code, which is what separates a
+            // wrong password from an absent catalog from an unreachable host.
+#pragma warning disable S6667
+            logger.LogWarning(
+                "Snapshot connection unavailable ({Failure}) for {TargetKind} target of data store "
+                    + "{DataStoreId} ({Name}). Answering Snapshot Not Found. TraceId: {TraceId}",
+                ex.FailureDescription,
+                ex.TargetKind,
+                selectedInstance.Id,
+                LoggingSanitizer.SanitizeForLogging(selectedInstance.Name),
+                requestInfo.FrontendRequest.TraceId.Value
+            );
+#pragma warning restore S6667
+
+            // No explicit invalidation: the entry faulted, and a derivative fault is never retained,
+            // so the cache has already evicted it and the next request revalidates.
+            requestInfo.FrontendResponse = SnapshotFailureResponse.NotFound(
+                requestInfo.FrontendRequest.TraceId
+            );
+
+            return;
+        }
         catch (Exception ex)
         {
             // Only the exception's type, never the exception itself and never its message, data, or
             // inner exceptions. This is the catch that sees a selected-but-provider-invalid or
             // unreachable target fail inside connection acquisition, and a provider exception from
             // parsing or opening a connection string can quote its values back.
+            // A Primary or ReadReplica connection-unavailable wrapper would land here, deliberately:
+            // only a snapshot's response depends on the failure being a connection failure, and this
+            // arm logs nothing of it but its type and assigns no caught exception, so the wrapper's
+            // inner provider message never reaches a sink.
             // S6667 asks for the caught exception to be passed to the logger. That is the right
             // default and the wrong thing here, for the reason above: the exception carries the
             // untrusted value. Its type is logged instead, which is the part that helps an operator

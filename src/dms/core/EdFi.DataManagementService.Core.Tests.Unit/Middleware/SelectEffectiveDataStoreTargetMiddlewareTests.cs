@@ -80,12 +80,7 @@ public class SelectEffectiveDataStoreTargetMiddlewareTests
 
     private static SelectEffectiveDataStoreTargetMiddleware CreateMiddleware(
         DerivativeRoutingPolicy policy
-    ) =>
-        new(
-            policy,
-            new DefaultEffectiveTargetSelectionResponseFactory(),
-            NullLogger<SelectEffectiveDataStoreTargetMiddleware>.Instance
-        );
+    ) => new(policy, NullLogger<SelectEffectiveDataStoreTargetMiddleware>.Instance);
 
     /// <summary>
     /// Runs the step over the real production selection, so what the assertions observe is the
@@ -273,10 +268,44 @@ public class SelectEffectiveDataStoreTargetMiddlewareTests
             _requestInfo.FrontendResponse.StatusCode.Should().Be(404);
         }
 
+        /// <summary>
+        /// The shared not-found type, not a snapshot-specific one: the design reuses the existing
+        /// not-found factory for this response, so only the detail names the snapshot.
+        /// </summary>
         [Test]
-        public void It_returns_the_snapshot_not_found_body()
+        public void It_returns_the_not_found_type()
         {
-            _requestInfo.FrontendResponse.Body!.ToString().Should().Contain("Snapshot not found.");
+            _requestInfo.FrontendResponse.Body!["type"]!.ToString().Should().Be("urn:ed-fi:api:not-found");
+        }
+
+        [Test]
+        public void It_returns_the_not_found_title()
+        {
+            _requestInfo.FrontendResponse.Body!["title"]!.ToString().Should().Be("Not Found");
+        }
+
+        [Test]
+        public void It_returns_the_snapshot_not_found_detail()
+        {
+            _requestInfo.FrontendResponse.Body!["detail"]!.ToString().Should().Be("Snapshot not found.");
+        }
+
+        [Test]
+        public void It_returns_404_in_the_body_status()
+        {
+            _requestInfo.FrontendResponse.Body!["status"]!.GetValue<int>().Should().Be(404);
+        }
+
+        [Test]
+        public void It_carries_the_request_correlation_id()
+        {
+            _requestInfo.FrontendResponse.Body!["correlationId"]!.ToString().Should().Be("test-trace-id");
+        }
+
+        [Test]
+        public void It_uses_the_problem_json_content_type()
+        {
+            _requestInfo.FrontendResponse.ContentType.Should().Be("application/problem+json");
         }
     }
 
@@ -318,30 +347,69 @@ public class SelectEffectiveDataStoreTargetMiddlewareTests
             _requestInfo.FrontendResponse.StatusCode.Should().Be(405);
         }
 
+        /// <summary>
+        /// Asserted as the whole type rather than a substring: the route-semantics 405's
+        /// urn:ed-fi:api:method-not-allowed is a substring of this one, so a Contains assertion
+        /// accepts either body and cannot tell the two contracts apart.
+        /// </summary>
         [Test]
-        public void It_returns_the_method_not_allowed_problem_type()
+        public void It_returns_the_snapshot_method_not_allowed_type()
         {
-            _requestInfo.FrontendResponse.Body!.ToString().Should().Contain("method-not-allowed");
+            _requestInfo.FrontendResponse.Body!["type"]!
+                .ToString()
+                .Should()
+                .Be("urn:ed-fi:api:snapshots:method-not-allowed");
+        }
+
+        [Test]
+        public void It_returns_the_snapshot_method_not_allowed_title()
+        {
+            _requestInfo.FrontendResponse.Body!["title"]!
+                .ToString()
+                .Should()
+                .Be("Method Not Allowed with Snapshots");
         }
 
         /// <summary>
-        /// The allowed-method set for a snapshot request is defined by separate work, so the interim
-        /// response states no Allow rather than stating one that will change.
+        /// The detail names the read-only target rather than the request construction, because the
+        /// same route is valid against the primary.
         /// </summary>
         [Test]
-        public void It_sends_no_allow_header()
+        public void It_returns_the_read_only_detail()
         {
-            _requestInfo.FrontendResponse.Headers.Should().NotContainKey("Allow");
+            _requestInfo.FrontendResponse.Body!["detail"]!
+                .ToString()
+                .Should()
+                .Be("An attempt was made to modify data in a Snapshot, but this data is read-only.");
+        }
+
+        [Test]
+        public void It_returns_405_in_the_body_status()
+        {
+            _requestInfo.FrontendResponse.Body!["status"]!.GetValue<int>().Should().Be(405);
+        }
+
+        [Test]
+        public void It_carries_the_request_correlation_id()
+        {
+            _requestInfo.FrontendResponse.Body!["correlationId"]!.ToString().Should().Be("test-trace-id");
         }
 
         /// <summary>
-        /// The exact content type for a snapshot request is likewise defined elsewhere, so this
-        /// response carries the default rather than the one the terminal 405 sends.
+        /// Allow states what is permitted in snapshot context, where the target is read-only, rather
+        /// than what this route would permit on the primary - so it is GET even though the route's own
+        /// set is GET, POST.
         /// </summary>
         [Test]
-        public void It_uses_the_default_content_type()
+        public void It_sends_allow_get()
         {
-            _requestInfo.FrontendResponse.ContentType.Should().Be("application/json");
+            _requestInfo.FrontendResponse.Headers.Should().ContainKey("Allow").WhoseValue.Should().Be("GET");
+        }
+
+        [Test]
+        public void It_uses_the_problem_json_content_type()
+        {
+            _requestInfo.FrontendResponse.ContentType.Should().Be("application/problem+json");
         }
     }
 }
