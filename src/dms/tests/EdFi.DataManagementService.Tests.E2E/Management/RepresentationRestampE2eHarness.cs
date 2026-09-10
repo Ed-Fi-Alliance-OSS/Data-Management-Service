@@ -641,24 +641,13 @@ internal static class RepresentationRestampE2EHarness
         IReadOnlyList<string> commandArguments
     )
     {
-        List<string> arguments =
-        [
-            "run",
-            "--project",
+        IReadOnlyList<string> arguments = BuildCliProcessArguments(
             ToolProjectPath(),
-            "--no-build",
-            "--",
+            BuildConfiguration(),
             command,
-            "--data-store-id",
-            dataStoreId.ToString(),
-        ];
-
-        foreach (string commandArgument in commandArguments)
-        {
-            arguments.Add(commandArgument);
-        }
-
-        arguments.Add("--json");
+            dataStoreId,
+            commandArguments
+        );
 
         ProcessResult result = await RunProcessAsync(
             "dotnet",
@@ -843,6 +832,33 @@ internal static class RepresentationRestampE2EHarness
         return new(process.ExitCode, await standardOutput, await standardError);
     }
 
+    /// <summary>
+    /// Builds the <c>dotnet</c> argument list that launches the DocumentCacheAdmin CLI. The
+    /// configuration is passed explicitly because <c>dotnet run</c> defaults to Debug, so a
+    /// Release test run would otherwise try to start the CLI out of an unbuilt bin/Debug.
+    /// </summary>
+    internal static IReadOnlyList<string> BuildCliProcessArguments(
+        string toolProjectPath,
+        string buildConfiguration,
+        string command,
+        long dataStoreId,
+        IReadOnlyList<string> commandArguments
+    ) =>
+        [
+            "run",
+            "--project",
+            toolProjectPath,
+            "--configuration",
+            buildConfiguration,
+            "--no-build",
+            "--",
+            command,
+            "--data-store-id",
+            dataStoreId.ToString(),
+            .. commandArguments,
+            "--json",
+        ];
+
     private static string ToolProjectPath() =>
         Path.Combine(
             RepositoryRoot(),
@@ -852,6 +868,32 @@ internal static class RepresentationRestampE2EHarness
             "EdFi.DataManagementService.DocumentCacheAdmin",
             "EdFi.DataManagementService.DocumentCacheAdmin.csproj"
         );
+
+    private static string BuildConfiguration() =>
+        BuildConfiguration(new DirectoryInfo(AppContext.BaseDirectory));
+
+    /// <summary>
+    /// Resolves the build configuration the CLI has to be launched from. The test assembly's own
+    /// output directory is the only reliable signal: it is written to bin/&lt;configuration&gt;, and
+    /// the CLI is built into the matching directory by the E2E project's build-order reference to
+    /// it. Falls back to Debug, which is what <c>dotnet run</c> would have used anyway, so a
+    /// layout without a configuration segment behaves exactly as it does today.
+    /// </summary>
+    internal static string BuildConfiguration(DirectoryInfo startDirectory)
+    {
+        DirectoryInfo? directory = startDirectory;
+        while (directory is not null)
+        {
+            if (directory.Name is "Debug" or "Release")
+            {
+                return directory.Name;
+            }
+
+            directory = directory.Parent;
+        }
+
+        return "Debug";
+    }
 
     private static string RepositoryRoot() => RepositoryRoot(new DirectoryInfo(AppContext.BaseDirectory));
 

@@ -69,6 +69,96 @@ public sealed class Given_Representation_Restamp_E2E_Harness
             .Be(repositoryRoot);
     }
 
+    [TestCase("Debug")]
+    [TestCase("Release")]
+    public void It_reads_the_build_configuration_from_the_test_assembly_output_directory(
+        string buildConfiguration
+    )
+    {
+        string outputDirectory = Path.Combine(
+            _temporaryDirectory,
+            "EdFi.DataManagementService.Tests.E2E",
+            "bin",
+            buildConfiguration,
+            "net10.0"
+        );
+        Directory.CreateDirectory(outputDirectory);
+
+        RepresentationRestampE2EHarness
+            .BuildConfiguration(new DirectoryInfo(outputDirectory))
+            .Should()
+            .Be(buildConfiguration);
+    }
+
+    [Test]
+    public void It_reads_the_nearest_configuration_segment_when_an_ancestor_directory_also_matches()
+    {
+        // A repository checked out under a path segment named Release must not outrank the
+        // configuration segment of the output directory itself.
+        string outputDirectory = Path.Combine(
+            _temporaryDirectory,
+            "Release",
+            "EdFi.DataManagementService.Tests.E2E",
+            "bin",
+            "Debug",
+            "net10.0"
+        );
+        Directory.CreateDirectory(outputDirectory);
+
+        RepresentationRestampE2EHarness
+            .BuildConfiguration(new DirectoryInfo(outputDirectory))
+            .Should()
+            .Be("Debug");
+    }
+
+    [Test]
+    public void It_falls_back_to_debug_when_the_output_directory_has_no_configuration_segment()
+    {
+        string outputDirectory = Path.Combine(_temporaryDirectory, "artifacts", "net10.0");
+        Directory.CreateDirectory(outputDirectory);
+
+        RepresentationRestampE2EHarness
+            .BuildConfiguration(new DirectoryInfo(outputDirectory))
+            .Should()
+            .Be("Debug");
+    }
+
+    [Test]
+    public void It_launches_the_document_cache_admin_cli_in_the_current_build_configuration()
+    {
+        const string toolProjectPath =
+            "/repository/src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin/EdFi.DataManagementService.DocumentCacheAdmin.csproj";
+        const string documentUuid = "9622f938-2c1a-4f99-9bc4-10970b1c2649";
+
+        IReadOnlyList<string> arguments = RepresentationRestampE2EHarness.BuildCliProcessArguments(
+            toolProjectPath,
+            "Release",
+            "restamp-preview",
+            1,
+            ["--mode", "tracking", "--document-uuid", documentUuid]
+        );
+
+        arguments
+            .Should()
+            .Equal(
+                "run",
+                "--project",
+                toolProjectPath,
+                "--configuration",
+                "Release",
+                "--no-build",
+                "--",
+                "restamp-preview",
+                "--data-store-id",
+                "1",
+                "--mode",
+                "tracking",
+                "--document-uuid",
+                documentUuid,
+                "--json"
+            );
+    }
+
     [Test]
     public void It_selects_postgresql_for_the_postgresql_database_engine()
     {
