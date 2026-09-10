@@ -91,6 +91,43 @@ internal static class CdcControllerObservations
         return observation;
     }
 
+    internal static CdcConnectorOffsetObservation Offset(
+        CdcDeploymentRequest request,
+        string operation,
+        CdcConnectOffsetEvidence offset,
+        string expectedSourcePartitionHash,
+        DateTimeOffset now
+    )
+    {
+        bool postgres = request.Binding.Provider == CoreProvider.Postgresql;
+        // The transport already parses provider positions. Preserve null/snapshot/malformed and
+        // authoritative match outcomes so Core, rather than the controller, classifies history loss.
+        return new(
+            CdcJsonContract.CurrentContractVersion,
+            operation,
+            now,
+            request.TargetIdentity,
+            request.Binding.Provider,
+            request.Binding.PhysicalSourceFingerprint,
+            request.Binding.ConnectorName,
+            request.Binding.ConnectorName,
+            postgres
+                ? offset.Postgresql.SourcePartitionMatchResult
+                : offset.SqlServer.SourcePartitionMatchResult,
+            string.IsNullOrEmpty(offset.SourcePartitionHash)
+            && offset.State != CdcConnectOffsetState.Streaming
+                ? expectedSourcePartitionHash
+                : offset.SourcePartitionHash,
+            offset.State == CdcConnectOffsetState.Snapshot,
+            offset.State == CdcConnectOffsetState.Null,
+            postgres ? offset.Postgresql.LsnProc : null,
+            postgres ? null : offset.SqlServer.CommitLsn,
+            postgres ? null : offset.SqlServer.ChangeLsn,
+            postgres ? null : offset.SqlServer.EventSerialNo,
+            []
+        );
+    }
+
     private static void Require(bool condition) =>
         CdcWorkflowJournalValidation.Require(condition, CdcWorkflowStateFailure.Contradictory);
 }

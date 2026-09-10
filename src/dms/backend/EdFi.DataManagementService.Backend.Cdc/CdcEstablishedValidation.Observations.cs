@@ -144,40 +144,4 @@ public sealed partial class CdcEstablishedValidation
         var response = await CallAsync(request, ct => runtime.ObserveAsync(ct), token);
         return CdcControllerObservations.Projection(request, response, operation, started, _time.GetUtcNow());
     }
-
-    private CdcConnectorOffsetObservation Offset(
-        CdcDeploymentRequest request,
-        string operation,
-        CdcConnectOffsetEvidence offset,
-        string expectedSourcePartitionHash
-    )
-    {
-        bool postgres = request.Binding.Provider == CdcProvider.Postgresql;
-        // The transport already parses provider positions. Preserve null/snapshot/malformed and
-        // authoritative match outcomes so Core, rather than the controller, classifies history loss.
-        return new(
-            CdcJsonContract.CurrentContractVersion,
-            operation,
-            _time.GetUtcNow(),
-            request.TargetIdentity,
-            request.Binding.Provider,
-            request.Binding.PhysicalSourceFingerprint,
-            request.Binding.ConnectorName,
-            request.Binding.ConnectorName,
-            postgres
-                ? offset.Postgresql.SourcePartitionMatchResult
-                : offset.SqlServer.SourcePartitionMatchResult,
-            string.IsNullOrEmpty(offset.SourcePartitionHash)
-            && offset.State != CdcConnectOffsetState.Streaming
-                ? expectedSourcePartitionHash
-                : offset.SourcePartitionHash,
-            offset.State == CdcConnectOffsetState.Snapshot,
-            offset.State == CdcConnectOffsetState.Null,
-            postgres ? offset.Postgresql.LsnProc : null,
-            postgres ? null : offset.SqlServer.CommitLsn,
-            postgres ? null : offset.SqlServer.ChangeLsn,
-            postgres ? null : offset.SqlServer.EventSerialNo,
-            []
-        );
-    }
 }

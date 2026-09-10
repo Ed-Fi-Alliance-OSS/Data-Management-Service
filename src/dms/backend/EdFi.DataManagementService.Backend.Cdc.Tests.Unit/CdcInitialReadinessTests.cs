@@ -8,6 +8,7 @@ using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.DocumentCache.Cdc;
 using FakeItEasy;
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
 using Ddl = EdFi.DataManagementService.Backend.Ddl;
 
@@ -18,6 +19,15 @@ namespace EdFi.DataManagementService.Backend.Cdc.Tests.Unit;
 [Platform(Exclude = "Win", Reason = "Local CDC state requires Unix owner-only permissions.")]
 internal class Given_CdcInitialReadiness(Ddl.CdcProvider provider) : CdcReadinessTestBase(provider)
 {
+    [SetUp]
+    public void SetupTerminalContainment() =>
+        A.CallTo(() => _connect.StopAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
+            .ReturnsLazily(() =>
+            {
+                ConfigureStoppedReadBack(() => true);
+                return Observed(new CdcTransportAcknowledgement());
+            });
+
     [TestCase(
         CdcConnectOffsetState.Streaming,
         CdcConnectorSnapshotState.Unknown,
@@ -82,6 +92,328 @@ internal class Given_CdcInitialReadiness(Ddl.CdcProvider provider) : CdcReadines
         (await ReadyAsync()).State.Should().Be(expected);
         ReadJournal().WriterPublicationAuthorized.Should().Be(expected == CdcTransportEvidenceState.Observed);
     }
+
+    [TestCase("retained-gap", CdcIncidentFailureCategory.RetainedHistoryGap)]
+    [TestCase("missing", CdcIncidentFailureCategory.ConnectOffsetMissing)]
+    [TestCase("malformed", CdcIncidentFailureCategory.ConnectOffsetMalformed)]
+    [TestCase("source-mismatch", CdcIncidentFailureCategory.ConnectSourcePartitionMismatch)]
+    [TestCase("null", CdcIncidentFailureCategory.ConnectOffsetMalformed)]
+    [TestCase("snapshot", CdcIncidentFailureCategory.ConnectOffsetMalformed)]
+    public async Task It_retains_and_contains_established_history_loss_before_initial_publication(
+        string failure,
+        CdcIncidentFailureCategory expected
+    )
+    {
+        ShortTiming(300);
+        var healthyProvider = _change;
+        var healthyOffset = Offsets();
+        var offset = LostOffset(failure, healthyOffset);
+        A.CallTo(() => _connect.ReadOffsetEvidenceAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
+            .Returns(Observed(offset));
+        if (failure == "retained-gap")
+        {
+            _change = result =>
+                healthyProvider(result) with
+                {
+                    ProviderHistoryObservations = healthyProvider(result)
+                        .ProviderHistoryObservations.Select(h =>
+                            h with
+                            {
+                                SafeObservedValues = h.SafeObservedValues.ToDictionary(
+                                    kv => kv.Key,
+                                    kv =>
+                                        kv.Key switch
+                                        {
+                                            "restart_lsn" => "0_11",
+                                            "confirmed_flush_lsn" => "0_11",
+                                            "retained_min_lsn" => "0x00000001000000020004",
+                                            _ => kv.Value,
+                                        }
+                                ),
+                            }
+                        )
+                        .ToArray(),
+                };
+        }
+        var bindings = _services.GetRequiredService<ICdcBindingLifecycleService>();
+        bool stopped = false;
+        ConfigureStoppedReadBack(() => stopped);
+        A.CallTo(() => _connect.StopAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
+            .ReturnsLazily(async () =>
+            {
+                var retained = await bindings.ExactMatchBindingAsync(_request.Binding);
+                retained.State!.State.Should().Be(CdcBindingState.IncidentLatched);
+                retained.State.Incident!.FailureCategory.Should().Be(expected);
+                ReadJournal().WriterPublicationAuthorized.Should().BeFalse();
+                Func<Task> contender = async () =>
+                {
+                    await using var other = await _store.AcquireAsync(
+                        TimeSpan.FromMilliseconds(20),
+                        TimeSpan.FromMilliseconds(5),
+                        CancellationToken.None
+                    );
+                };
+                await contender.Should().ThrowAsync<CdcWorkflowStateException>();
+                Trace("stop");
+                stopped = true;
+                return Observed(new CdcTransportAcknowledgement());
+            });
+
+        var result = await ReadyAsync();
+        result.State.Should().Be(CdcTransportEvidenceState.Unavailable);
+        var state = await bindings.ExactMatchBindingAsync(_request.Binding);
+        state.State!.Incident.Should().NotBeNull();
+        state.State.Incident!.FailureCategory.Should().Be(expected);
+        stopped.Should().BeTrue();
+        _trace.IndexOf("stop").Should().BeLessThan(_trace.IndexOf("stopped-readback"));
+        _trace.IndexOf("stopped-readback").Should().BeLessThan(_trace.IndexOf("dispose"));
+        _trace.Should().NotContain("metrics");
+        _disposals.Should().Be(1);
+        ReadJournal().WriterPublicationAuthorized.Should().BeFalse();
+        A.CallTo(() => _connect.StopAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
+            .MustHaveHappenedOnceExactly();
+
+        // Later healthy samples cannot erase the terminal generation seen in this invocation.
+        _change = healthyProvider;
+        stopped = false;
+        A.CallTo(() => _connect.ReadOffsetEvidenceAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
+            .Returns(Observed(healthyOffset));
+        _trace.Clear();
+        (await ReadyAsync()).State.Should().Be(CdcTransportEvidenceState.Unavailable);
+        _trace.Should().Equal("dispose");
+        ReadJournal().WriterPublicationAuthorized.Should().BeFalse();
+        await using var released = await _store.AcquireAsync(
+            TimeSpan.FromMilliseconds(100),
+            TimeSpan.FromMilliseconds(5),
+            CancellationToken.None
+        );
+    }
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task It_does_not_invent_history_loss_when_the_offset_endpoint_is_unavailable(bool absent)
+    {
+        A.CallTo(() => _connect.ReadOffsetEvidenceAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
+            .Returns(
+                absent
+                    ? new CdcTransportResult<CdcConnectOffsetEvidence>.Absent()
+                    : new CdcTransportResult<CdcConnectOffsetEvidence>.Unavailable(
+                        new(CdcDeploymentComponent.Connect, CdcDeploymentFailure.Unavailable)
+                    )
+            );
+        (await ReadyAsync()).State.Should().Be(CdcTransportEvidenceState.Unavailable);
+        var bindings = _services.GetRequiredService<ICdcBindingLifecycleService>();
+        (await bindings.ExactMatchBindingAsync(_request.Binding)).State!.Incident.Should().BeNull();
+        A.CallTo(() => _connect.StopAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
+            .MustNotHaveHappened();
+        _disposals.Should().Be(1);
+        ReadJournal().WriterPublicationAuthorized.Should().BeFalse();
+    }
+
+    [TestCase("persist")]
+    [TestCase("stop")]
+    [TestCase("readback")]
+    public async Task It_attempts_shutdown_and_reports_initial_containment_failures(string failure)
+    {
+        ShortTiming();
+        A.CallTo(() => _connect.ReadOffsetEvidenceAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
+            .Returns(Observed(LostOffset("missing", Offsets())));
+        if (failure == "persist")
+        {
+            var real = _services.GetRequiredService<ICdcBindingLifecycleService>();
+            var faulting = A.Fake<ICdcBindingLifecycleService>();
+            A.CallTo(() => faulting.ExactMatchBindingAsync(A<CdcBinding>._, A<CancellationToken>._))
+                .ReturnsLazily(
+                    (CdcBinding binding, CancellationToken token) =>
+                        real.ExactMatchBindingAsync(binding, token)
+                );
+            A.CallTo(() => faulting.LatchSourceHistoryLossAsync(A<CdcIncident>._, A<CancellationToken>._))
+                .Throws(new IOException("private-incident-storage"));
+            _readiness = new(
+                _store,
+                faulting,
+                _provider,
+                _templates,
+                _kafka,
+                _connect,
+                _worker,
+                _metrics,
+                _positions,
+                TimeProvider.System
+            );
+        }
+        bool stopRequested = false;
+        ConfigureStoppedReadBack(() => stopRequested);
+        A.CallTo(() => _connect.StopAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
+            .ReturnsLazily(() =>
+            {
+                stopRequested = true;
+                if (failure == "stop")
+                {
+                    throw new IOException("private-stop-response");
+                }
+                if (failure == "readback")
+                {
+                    A.CallTo(() =>
+                            _connect.ReadStatusAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._)
+                        )
+                        .Returns(
+                            new CdcTransportResult<CdcConnectStatus>.Unavailable(
+                                new(CdcDeploymentComponent.Connect, CdcDeploymentFailure.Unavailable)
+                            )
+                        );
+                }
+                return Observed(new CdcTransportAcknowledgement());
+            });
+
+        var result = await ReadyAsync();
+        result.State.Should().Be(CdcTransportEvidenceState.Unavailable);
+        result
+            .Diagnostics.Should()
+            .ContainSingle()
+            .Which.Component.Should()
+            .Be(failure == "persist" ? CdcDeploymentComponent.WorkflowState : CdcDeploymentComponent.Connect);
+        JsonSerializer.Serialize(result).Should().NotContain("private-");
+        stopRequested.Should().BeTrue();
+        if (failure != "readback")
+        {
+            _trace.Should().Contain("stopped-readback");
+        }
+        _disposals.Should().Be(1);
+        ReadJournal().WriterPublicationAuthorized.Should().BeFalse();
+        await using var released = await _store.AcquireAsync(
+            TimeSpan.FromMilliseconds(100),
+            TimeSpan.FromMilliseconds(5),
+            CancellationToken.None
+        );
+    }
+
+    [Test]
+    public async Task It_preserves_caller_cancellation_during_initial_containment()
+    {
+        using var cancellation = new CancellationTokenSource();
+        A.CallTo(() => _connect.ReadOffsetEvidenceAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
+            .Returns(Observed(LostOffset("missing", Offsets())));
+        A.CallTo(() => _connect.StopAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
+            .ReturnsLazily(() =>
+            {
+                cancellation.Cancel();
+                return Observed(new CdcTransportAcknowledgement());
+            });
+        Func<Task> act = async () => await ReadyAsync(cancellation.Token);
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        var bindings = _services.GetRequiredService<ICdcBindingLifecycleService>();
+        (await bindings.ExactMatchBindingAsync(_request.Binding)).State!.Incident.Should().NotBeNull();
+        _disposals.Should().Be(1);
+        ReadJournal().WriterPublicationAuthorized.Should().BeFalse();
+        await using var released = await _store.AcquireAsync(
+            TimeSpan.FromMilliseconds(100),
+            TimeSpan.FromMilliseconds(5),
+            CancellationToken.None
+        );
+    }
+
+    [Test]
+    public async Task It_finishes_initial_containment_after_the_admission_deadline_expires()
+    {
+        ShortTiming(300);
+        var elapsed = System.Diagnostics.Stopwatch.StartNew();
+        bool stopRequested = false;
+        ConfigureStoppedReadBack(() =>
+            stopRequested && elapsed.Elapsed > _request.Timing.WaitTimeout + TimeSpan.FromMilliseconds(30)
+        );
+        A.CallTo(() => _connect.ReadOffsetEvidenceAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
+            .ReturnsLazily(
+                async (CdcDeploymentRequest _, CancellationToken token) =>
+                {
+                    await Task.Delay(TimeSpan.FromMilliseconds(150), token);
+                    return Observed(LostOffset("missing", Offsets()));
+                }
+            );
+        A.CallTo(() => _connect.StopAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
+            .ReturnsLazily(() =>
+            {
+                stopRequested = true;
+                return Observed(new CdcTransportAcknowledgement());
+            });
+        elapsed.Restart();
+        var result = await ReadyAsync();
+        result.State.Should().Be(CdcTransportEvidenceState.Unavailable);
+        result
+            .Diagnostics.Should()
+            .ContainSingle()
+            .Which.Failure.Should()
+            .Be(CdcDeploymentFailure.ValidationFailed);
+        elapsed.Elapsed.Should().BeGreaterThan(_request.Timing.WaitTimeout);
+        _trace.Should().Contain("stopped-readback");
+        _trace.IndexOf("stopped-readback").Should().BeLessThan(_trace.IndexOf("dispose"));
+        var bindings = _services.GetRequiredService<ICdcBindingLifecycleService>();
+        (await bindings.ExactMatchBindingAsync(_request.Binding)).State!.Incident.Should().NotBeNull();
+        ReadJournal().WriterPublicationAuthorized.Should().BeFalse();
+    }
+
+    private static CdcConnectOffsetEvidence LostOffset(string failure, CdcConnectOffsetEvidence healthy) =>
+        new(
+            failure switch
+            {
+                "missing" => CdcConnectOffsetState.Missing,
+                "null" => CdcConnectOffsetState.Null,
+                "snapshot" => CdcConnectOffsetState.Snapshot,
+                "malformed" => CdcConnectOffsetState.Malformed,
+                _ => CdcConnectOffsetState.Streaming,
+            },
+            failure switch
+            {
+                "missing" => "",
+                "source-mismatch" => "sha256:" + new string('b', 64),
+                _ => healthy.SourcePartitionHash,
+            },
+            healthy.Postgresql with
+            {
+                SourcePartitionMatchResult =
+                    failure == "missing"
+                        ? CdcConnectorOffsetMatchResult.Missing
+                        : CdcConnectorOffsetMatchResult.Exact,
+                LsnProc = failure == "malformed" ? null : healthy.Postgresql.LsnProc,
+            },
+            healthy.SqlServer with
+            {
+                SourcePartitionMatchResult =
+                    failure == "missing"
+                        ? CdcConnectorOffsetMatchResult.Missing
+                        : CdcConnectorOffsetMatchResult.Exact,
+                CommitLsn = failure == "malformed" ? null : healthy.SqlServer.CommitLsn,
+                EventSerialNo = CdcSqlServerProviderPosition.HeartbeatAfterImageEventSerialNo,
+            }
+        )
+        {
+            SourcePartition = healthy.SourcePartition,
+        };
+
+    private void ConfigureStoppedReadBack(Func<bool> stopped) =>
+        A.CallTo(() => _connect.ReadStatusAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
+            .ReturnsLazily(() =>
+            {
+                var status = Status();
+                if (!stopped())
+                {
+                    return Observed(status);
+                }
+                Trace("stopped-readback");
+                return Observed(
+                    new CdcConnectStatus(
+                        status.Runtime with
+                        {
+                            ConnectorState = CdcConnectorRuntimeState.Stopped,
+                            TaskCount = 0,
+                            RunningTaskCount = 0,
+                            SoleTaskState = CdcConnectorRuntimeState.Unknown,
+                        },
+                        status.WorkerId,
+                        []
+                    )
+                );
+            });
 
     [Test]
     public async Task It_orders_fresh_admission_and_disposal_before_durable_publication()

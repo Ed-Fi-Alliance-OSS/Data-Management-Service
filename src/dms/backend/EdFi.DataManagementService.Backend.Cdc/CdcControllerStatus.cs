@@ -220,8 +220,41 @@ public sealed partial class CdcControllerStatus
                 )
                 {
                     containmentAttempted = true;
-                    persistence = await PersistAsync(request, progress, diagnostics, token);
-                    containment = await ContainAsync(request, progress, diagnostics, token);
+                    var terminal = new CdcSourceHistoryContainment(_bindings, _connect, _time);
+                    persistence = await terminal.PersistAsync(
+                        request,
+                        progress.SourceHistory,
+                        progress.Input.BindingState!,
+                        diagnostics,
+                        state =>
+                            progress.Capture(
+                                progress.Input with
+                                {
+                                    BindingState = state,
+                                    ObservedAt = _time.GetUtcNow(),
+                                },
+                                progress.HasPendingRecordSizeIncrease
+                            ),
+                        token
+                    );
+                    containment = await terminal.StopAsync(
+                        request,
+                        diagnostics,
+                        runtime =>
+                            progress.Capture(
+                                progress.Input with
+                                {
+                                    ObservedAt = _time.GetUtcNow(),
+                                    ConnectorRuntime = runtime with
+                                    {
+                                        OperationId = progress.Input.OperationId,
+                                    },
+                                    Lag = null,
+                                },
+                                progress.HasPendingRecordSizeIncrease
+                            ),
+                        token
+                    );
                     // Containment does not renew the expired observation or permit more ordinary work.
                     observationTimeout.Token.ThrowIfCancellationRequested();
                 }

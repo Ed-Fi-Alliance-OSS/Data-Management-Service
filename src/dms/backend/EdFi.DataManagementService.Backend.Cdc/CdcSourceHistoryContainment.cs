@@ -7,29 +7,36 @@ using EdFi.DataManagementService.Core.DocumentCache.Cdc;
 
 namespace EdFi.DataManagementService.Backend.Cdc;
 
-public sealed partial class CdcControllerStatus
+/// <summary>Persists classified terminal loss and verifies shutdown under the caller's controller session.</summary>
+internal sealed class CdcSourceHistoryContainment(
+    ICdcBindingLifecycleService bindings,
+    ICdcConnectTransport connect,
+    TimeProvider time
+)
 {
-    private async Task<CdcIncidentPersistenceState> PersistAsync(
+    internal async Task<CdcIncidentPersistenceState> PersistAsync(
         CdcDeploymentRequest request,
-        CdcEstablishedStatusProgress progress,
+        CdcSourceHistoryClassificationResult classification,
+        CdcBindingStateContract bindingState,
         List<CdcDeploymentDiagnostic> diagnostics,
+        Action<CdcBindingStateContract> capture,
         CancellationToken token
     )
     {
-        if (progress.Input.BindingState is { State: CdcBindingState.IncidentLatched, Incident: not null })
+        if (bindingState is { State: CdcBindingState.IncidentLatched, Incident: not null })
         {
             return CdcIncidentPersistenceState.Persisted;
         }
         try
         {
-            var candidate = progress.SourceHistory.IncidentCandidate;
+            var candidate = classification.IncidentCandidate;
             if (candidate is null)
             {
                 throw new CdcWorkflowStateException(CdcWorkflowStateFailure.Contradictory);
             }
             var result = await CallAsync(
                 request,
-                ct => _bindings.LatchSourceHistoryLossAsync(candidate.ToIncident(), ct),
+                ct => bindings.LatchSourceHistoryLossAsync(candidate.ToIncident(), ct),
                 token
             );
             if (result.Status != CdcControlPlaneOperationStatus.Succeeded)
@@ -47,14 +54,14 @@ public sealed partial class CdcControllerStatus
             // Independent durable read-back is required even after acknowledgement or an idempotent retry.
             var readBack = await CallAsync(
                 request,
-                ct => _bindings.ExactMatchBindingAsync(request.Binding, ct),
+                ct => bindings.ExactMatchBindingAsync(request.Binding, ct),
                 token
             );
             if (
                 readBack.Status != CdcControlPlaneOperationStatus.Succeeded
                 || readBack.State is not { State: CdcBindingState.IncidentLatched, Incident: not null } state
                 || !CdcIncidentValidator
-                    .ValidateForBinding(state.Incident, request.Binding, _time.GetUtcNow())
+                    .ValidateForBinding(state.Incident, request.Binding, time.GetUtcNow())
                     .Succeeded
             )
             {
@@ -63,14 +70,7 @@ public sealed partial class CdcControllerStatus
                 );
                 return CdcIncidentPersistenceState.Failed;
             }
-            progress.Capture(
-                progress.Input with
-                {
-                    BindingState = state,
-                    ObservedAt = _time.GetUtcNow(),
-                },
-                progress.HasPendingRecordSizeIncrease
-            );
+            capture(state);
             return CdcIncidentPersistenceState.Persisted;
         }
         catch (Exception exception)
@@ -81,17 +81,17 @@ public sealed partial class CdcControllerStatus
         }
     }
 
-    private async Task<CdcConnectorContainmentState> ContainAsync(
+    internal async Task<CdcConnectorContainmentState> StopAsync(
         CdcDeploymentRequest request,
-        CdcEstablishedStatusProgress progress,
         List<CdcDeploymentDiagnostic> diagnostics,
+        Action<CdcConnectorRuntimeObservation> capture,
         CancellationToken token
     )
     {
         // A lost stop response is ambiguous. Always try fresh read-back; never equate HTTP success with stop.
         try
         {
-            var acknowledgement = await CallAsync(request, ct => _connect.StopAsync(request, ct), token);
+            var acknowledgement = await CallAsync(request, ct => connect.StopAsync(request, ct), token);
             diagnostics.AddRange(acknowledgement.Diagnostics);
         }
         catch (Exception exception)
@@ -105,16 +105,16 @@ public sealed partial class CdcControllerStatus
         {
             while (true)
             {
-                var readStarted = _time.GetUtcNow();
+                var readStarted = time.GetUtcNow();
                 var response = await CallAsync(
                     request,
-                    ct => _connect.ReadStatusAsync(request, ct),
+                    ct => connect.ReadStatusAsync(request, ct),
                     wait.Token
                 );
                 if (response is CdcTransportResult<CdcConnectStatus>.Observed observed)
                 {
                     var status = observed.Value;
-                    var now = _time.GetUtcNow();
+                    var now = time.GetUtcNow();
                     if (
                         status.IsStopped
                         && status.Runtime.TaskCount == 0
@@ -136,18 +136,7 @@ public sealed partial class CdcControllerStatus
                             .Succeeded
                     )
                     {
-                        progress.Capture(
-                            progress.Input with
-                            {
-                                ObservedAt = now,
-                                ConnectorRuntime = status.Runtime with
-                                {
-                                    OperationId = progress.Input.OperationId,
-                                },
-                                Lag = null,
-                            },
-                            progress.HasPendingRecordSizeIncrease
-                        );
+                        capture(status.Runtime);
                         return CdcConnectorContainmentState.Stopped;
                     }
                 }
@@ -157,7 +146,7 @@ public sealed partial class CdcControllerStatus
                     diagnostics.Add(new(CdcDeploymentComponent.Connect, CdcDeploymentFailure.Unavailable));
                     return CdcConnectorContainmentState.Failed;
                 }
-                await Task.Delay(request.Timing.PollInterval, _time, wait.Token);
+                await Task.Delay(request.Timing.PollInterval, time, wait.Token);
             }
         }
         catch (Exception exception)
@@ -165,6 +154,48 @@ public sealed partial class CdcControllerStatus
             token.ThrowIfCancellationRequested();
             diagnostics.Add(Diagnostic(CdcDeploymentComponent.Connect, exception));
             return CdcConnectorContainmentState.Failed;
+        }
+    }
+
+    private static CdcDeploymentDiagnostic Diagnostic(
+        CdcDeploymentComponent component,
+        Exception exception
+    ) =>
+        exception switch
+        {
+            CdcEstablishedValidation.EvidenceException evidence => evidence.Diagnostic,
+            OperationCanceledException or TimeoutException => new(component, CdcDeploymentFailure.Timeout),
+            CdcWorkflowStateException state => new(
+                component,
+                state.Failure switch
+                {
+                    CdcWorkflowStateFailure.LockTimeout => CdcDeploymentFailure.Timeout,
+                    CdcWorkflowStateFailure.Missing or CdcWorkflowStateFailure.Unavailable =>
+                        CdcDeploymentFailure.Unavailable,
+                    _ => CdcDeploymentFailure.ValidationFailed,
+                }
+            ),
+            _ => CdcDeploymentDiagnostic.FromException(component, exception),
+        };
+
+    private static async Task<T> CallAsync<T>(
+        CdcDeploymentRequest request,
+        Func<CancellationToken, Task<T>> action,
+        CancellationToken token
+    )
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
+        timeout.CancelAfter(request.Timing.CallTimeout);
+        try
+        {
+            var result = await action(timeout.Token).WaitAsync(timeout.Token);
+            timeout.Token.ThrowIfCancellationRequested();
+            return result;
+        }
+        catch (OperationCanceledException)
+            when (!token.IsCancellationRequested && timeout.IsCancellationRequested)
+        {
+            throw new TimeoutException();
         }
     }
 }

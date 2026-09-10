@@ -346,7 +346,13 @@ public sealed partial class CdcEstablishedValidation
         );
         // A REST endpoint failure/absence is unknown; only successful offset evidence proves loss.
         var offset = rawOffset is CdcTransportResult<CdcConnectOffsetEvidence>.Observed observed
-            ? Offset(request, operation, observed.Value, establishment.SourcePartitionHash)
+            ? CdcControllerObservations.Offset(
+                request,
+                operation,
+                observed.Value,
+                establishment.SourcePartitionHash,
+                _time.GetUtcNow()
+            )
             : null;
         if (rawOffset is CdcTransportResult<CdcConnectOffsetEvidence>.Unavailable unavailable)
         {

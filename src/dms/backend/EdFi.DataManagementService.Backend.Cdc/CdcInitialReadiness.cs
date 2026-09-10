@@ -244,11 +244,13 @@ public sealed class CdcInitialReadiness
                                     token
                                 )
                             );
-                            Require(
-                                rawOffset.State == CdcConnectOffsetState.Streaming
-                                    && rawOffset.SourcePartitionHash == established.SourcePartitionHash
+                            offset = CdcControllerObservations.Offset(
+                                request,
+                                operation,
+                                rawOffset,
+                                established.SourcePartitionHash,
+                                _time.GetUtcNow()
                             );
-                            offset = Offset(request, operation, rawOffset);
                             boundary.Component = CdcDeploymentComponent.ProviderSetup;
                             barrier = _positions.ObserveProviderBarrier(
                                 new(
@@ -260,6 +262,12 @@ public sealed class CdcInitialReadiness
                                     established.SourcePartitionHash
                                 )
                             );
+                            // Invalid established offsets must reach the continuity classifier before
+                            // barrier validation can reject the admission pass.
+                            if (barrier.BarrierState != CdcProviderBarrierState.NotReached)
+                            {
+                                break;
+                            }
                             Require(
                                 CdcProviderBarrierObservationValidator
                                     .Validate(
@@ -273,11 +281,6 @@ public sealed class CdcInitialReadiness
                                     )
                                     .Succeeded
                             );
-                            if (barrier.BarrierState == CdcProviderBarrierState.Reached)
-                            {
-                                break;
-                            }
-                            Require(barrier.BarrierState == CdcProviderBarrierState.NotReached);
                             await DelayAsync(request, token);
                         }
                         var provider = await InspectProviderAsync(request, runtime, session, boundary, token);
@@ -306,8 +309,9 @@ public sealed class CdcInitialReadiness
                             };
                         }
                         boundary.Component = CdcDeploymentComponent.ProviderSetup;
-                        Task<CdcSourceHistoryClassificationResult> ObserveContinuityAsync() =>
-                            CallAsync(
+                        async Task<CdcSourceHistoryClassificationResult> ObserveContinuityAsync()
+                        {
+                            var classification = await CallAsync(
                                 request,
                                 ct =>
                                     _positions.ObserveSourceHistoryAsync(
@@ -330,6 +334,31 @@ public sealed class CdcInitialReadiness
                                     ),
                                 token
                             );
+                            if (classification.Observation.Continuity == CdcSourceHistoryContinuity.Lost)
+                            {
+                                // Consume this classification, never a later healthy reobservation. The
+                                // caller token gives latch/stop independent budgets under this session.
+                                var terminal = new CdcSourceHistoryContainment(_bindings, _connect, _time);
+                                List<CdcDeploymentDiagnostic> diagnostics = [];
+                                await terminal.PersistAsync(
+                                    request,
+                                    classification,
+                                    exact.State!,
+                                    diagnostics,
+                                    _ => { },
+                                    cancellationToken
+                                );
+                                await terminal.StopAsync(request, diagnostics, _ => { }, cancellationToken);
+                                throw new EvidenceException(
+                                    diagnostics.FirstOrDefault()
+                                        ?? new(
+                                            CdcDeploymentComponent.ProviderSetup,
+                                            CdcDeploymentFailure.ValidationFailed
+                                        )
+                                );
+                            }
+                            return classification;
+                        }
                         var continuity = await ObserveContinuityAsync();
                         if (
                             request.Binding.Provider == CoreProvider.Postgresql
@@ -346,11 +375,13 @@ public sealed class CdcInitialReadiness
                                     token
                                 )
                             );
-                            Require(
-                                rawOffset.State == CdcConnectOffsetState.Streaming
-                                    && rawOffset.SourcePartitionHash == established.SourcePartitionHash
+                            offset = CdcControllerObservations.Offset(
+                                request,
+                                operation,
+                                rawOffset,
+                                established.SourcePartitionHash,
+                                _time.GetUtcNow()
                             );
-                            offset = Offset(request, operation, rawOffset);
                             boundary.Component = CdcDeploymentComponent.ProviderSetup;
                             continuity = await ObserveContinuityAsync();
                             if (continuity.Observation.Continuity == CdcSourceHistoryContinuity.Unknown)
@@ -373,6 +404,24 @@ public sealed class CdcInitialReadiness
                             Require(refreshedBarrier.BarrierState == CdcProviderBarrierState.Reached);
                         }
                         Require(continuity.Observation.Continuity == CdcSourceHistoryContinuity.Healthy);
+                        Require(
+                            rawOffset.State == CdcConnectOffsetState.Streaming
+                                && rawOffset.SourcePartitionHash == established.SourcePartitionHash
+                        );
+                        Require(
+                            barrier.BarrierState == CdcProviderBarrierState.Reached
+                                && CdcProviderBarrierObservationValidator
+                                    .Validate(
+                                        barrier,
+                                        new(
+                                            operation,
+                                            request.TargetIdentity,
+                                            request.Binding.PhysicalSourceFingerprint,
+                                            _time.GetUtcNow()
+                                        )
+                                    )
+                                    .Succeeded
+                        );
                         boundary.Component = CdcDeploymentComponent.Projection;
                         var second = await ProjectionAsync(request, runtime, operation, boundary, token);
                         if (!CaughtUp(second))
@@ -731,31 +780,6 @@ public sealed class CdcInitialReadiness
             Observed(await CallAsync(request, ct => _worker.InspectAsync(request, ct), token))
         );
     }
-
-    private CdcConnectorOffsetObservation Offset(
-        CdcDeploymentRequest request,
-        string operation,
-        CdcConnectOffsetEvidence offset
-    ) =>
-        new(
-            CdcJsonContract.CurrentContractVersion,
-            operation,
-            _time.GetUtcNow(),
-            request.TargetIdentity,
-            request.Binding.Provider,
-            request.Binding.PhysicalSourceFingerprint,
-            request.Binding.ConnectorName,
-            request.Binding.ConnectorName,
-            CdcConnectorOffsetMatchResult.Exact,
-            offset.SourcePartitionHash,
-            false,
-            false,
-            request.Binding.Provider == CoreProvider.Postgresql ? offset.Postgresql.LsnProc : null,
-            request.Binding.Provider == CoreProvider.SqlServer ? offset.SqlServer.CommitLsn : null,
-            request.Binding.Provider == CoreProvider.SqlServer ? offset.SqlServer.ChangeLsn : null,
-            request.Binding.Provider == CoreProvider.SqlServer ? offset.SqlServer.EventSerialNo : null,
-            []
-        );
 
     private bool Fresh(CdcDeploymentRequest request, DateTimeOffset at) =>
         at <= _time.GetUtcNow() && _time.GetUtcNow() - at <= request.Timing.MaximumObservationAge;
