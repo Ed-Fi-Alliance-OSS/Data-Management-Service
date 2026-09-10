@@ -581,8 +581,14 @@ public sealed class Given_Cdc_Controller_Managed_Lifecycle(CdcProvider provider)
         return incident;
     }
 
-    private sealed class InterruptedCleanup(ICdcArtifactCleanupAdapter inner) : ICdcArtifactCleanupAdapter
+    private sealed class InterruptedCleanup(ICdcKafkaArtifactCleanupAdapter inner)
+        : ICdcKafkaArtifactCleanupAdapter
     {
+        public Task<CdcTransportResult<CdcRetirementOffsetState>> InspectRetirementOffsetsAsync(
+            CdcArtifactCleanupScope scope,
+            CancellationToken cancellationToken
+        ) => inner.InspectRetirementOffsetsAsync(scope, cancellationToken);
+
         public bool Interrupted { get; private set; }
 
         public async Task<CdcTransportResult<CoreCdc.CdcGovernedArtifact>> DeleteAsync(

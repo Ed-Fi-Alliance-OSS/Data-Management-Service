@@ -68,6 +68,21 @@ public interface ICdcArtifactCleanupAdapter
     );
 }
 
+/// <summary>Retirement-only inspection of the exact connector namespace in shared worker storage.</summary>
+public interface ICdcKafkaArtifactCleanupAdapter : ICdcArtifactCleanupAdapter
+{
+    Task<CdcTransportResult<CdcRetirementOffsetState>> InspectRetirementOffsetsAsync(
+        CdcArtifactCleanupScope scope,
+        CancellationToken cancellationToken
+    );
+}
+
+public enum CdcRetirementOffsetState
+{
+    Absent,
+    Present,
+}
+
 public interface ICdcProviderArtifactCleanupAdapter : ICdcArtifactCleanupAdapter
 {
     Task<CdcTransportResult<CdcTransportAcknowledgement>> DeleteOwnedSqlServerJobsAsync(

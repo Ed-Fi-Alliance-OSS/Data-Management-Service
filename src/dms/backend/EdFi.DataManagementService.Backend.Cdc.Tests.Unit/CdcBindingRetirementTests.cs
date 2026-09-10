@@ -28,7 +28,7 @@ internal class Given_CdcBindingRetirement(Ddl.CdcProvider provider)
     private ICdcBindingLifecycleService _bindings = null!;
     private ICdcBindingLifecycleService _realBindings = null!;
     private ICdcConnectTransport _connect = null!;
-    private ICdcArtifactCleanupAdapter _kafka = null!;
+    private ICdcKafkaArtifactCleanupAdapter _kafka = null!;
     private ICdcProviderArtifactCleanupAdapter _provider = null!;
     private CdcBindingRetirement _controller = null!;
     private Guid _workflow;
@@ -119,7 +119,7 @@ internal class Given_CdcBindingRetirement(Ddl.CdcProvider provider)
         _stopped = false;
         _jobs = provider == Ddl.CdcProvider.SqlServer;
         _connect = A.Fake<ICdcConnectTransport>(options => options.Strict());
-        _kafka = A.Fake<ICdcArtifactCleanupAdapter>(options => options.Strict());
+        _kafka = A.Fake<ICdcKafkaArtifactCleanupAdapter>(options => options.Strict());
         _provider = A.Fake<ICdcProviderArtifactCleanupAdapter>(options => options.Strict());
         A.CallTo(() => _connect.ReadConfigurationAsync(_request, A<CancellationToken>._))
             .ReturnsLazily(() =>
@@ -427,6 +427,84 @@ internal class Given_CdcBindingRetirement(Ddl.CdcProvider provider)
         (await Run()).Succeeded.Should().BeFalse();
         File.Exists(BindingPath).Should().BeTrue();
         _trace.Should().NotContain("PublicTopic");
+    }
+
+    [TestCase(CdcRetirementOffsetState.Absent, true)]
+    [TestCase(CdcRetirementOffsetState.Present, false)]
+    public async Task It_uses_kafka_absence_only_when_absent_connector_rest_cannot_inspect_offsets(
+        CdcRetirementOffsetState state,
+        bool succeeds
+    )
+    {
+        _exists = _offsets = _jobs = false;
+        _artifacts.Clear();
+        A.CallTo(() => _connect.ReadOffsetEvidenceAsync(_request, A<CancellationToken>._))
+            .Returns(
+                new CdcTransportResult<CdcConnectOffsetEvidence>.Unavailable(
+                    new(CdcDeploymentComponent.Connect, CdcDeploymentFailure.Unavailable)
+                )
+            );
+        A.CallTo(() =>
+                _kafka.InspectRetirementOffsetsAsync(A<CdcArtifactCleanupScope>._, A<CancellationToken>._)
+            )
+            .Returns(Observed(state));
+        (await Run()).Succeeded.Should().Be(succeeds);
+        File.Exists(BindingPath).Should().Be(!succeeds);
+        _trace.Should().NotContain("offset-delete").And.NotContain("connector-delete");
+        A.CallTo(() =>
+                _kafka.InspectRetirementOffsetsAsync(A<CdcArtifactCleanupScope>._, A<CancellationToken>._)
+            )
+            .MustHaveHappened();
+    }
+
+    [Test]
+    public async Task It_retains_state_when_both_absent_connector_offset_sources_are_unavailable()
+    {
+        _exists = false;
+        A.CallTo(() => _connect.ReadOffsetEvidenceAsync(_request, A<CancellationToken>._))
+            .Returns(
+                new CdcTransportResult<CdcConnectOffsetEvidence>.Unavailable(
+                    new(CdcDeploymentComponent.Connect, CdcDeploymentFailure.Unavailable)
+                )
+            );
+        A.CallTo(() =>
+                _kafka.InspectRetirementOffsetsAsync(A<CdcArtifactCleanupScope>._, A<CancellationToken>._)
+            )
+            .Returns(
+                new CdcTransportResult<CdcRetirementOffsetState>.Unavailable(
+                    new(CdcDeploymentComponent.Kafka, CdcDeploymentFailure.AuthenticationFailed)
+                )
+            );
+        var result = await Run();
+        result.Succeeded.Should().BeFalse();
+        result
+            .Diagnostics.Should()
+            .ContainSingle()
+            .Which.Should()
+            .BeEquivalentTo(
+                new CdcDeploymentDiagnostic(
+                    CdcDeploymentComponent.Kafka,
+                    CdcDeploymentFailure.AuthenticationFailed
+                )
+            );
+        File.Exists(BindingPath).Should().BeTrue();
+        _trace.Should().NotContain("PublicTopic").And.NotContain("connector-delete");
+    }
+
+    [Test]
+    public async Task It_never_overrides_observed_retained_rest_offsets_with_kafka_absence()
+    {
+        _exists = false;
+        A.CallTo(() =>
+                _kafka.InspectRetirementOffsetsAsync(A<CdcArtifactCleanupScope>._, A<CancellationToken>._)
+            )
+            .Returns(Observed(CdcRetirementOffsetState.Absent));
+        (await Run()).Succeeded.Should().BeFalse();
+        File.Exists(BindingPath).Should().BeTrue();
+        A.CallTo(() =>
+                _kafka.InspectRetirementOffsetsAsync(A<CdcArtifactCleanupScope>._, A<CancellationToken>._)
+            )
+            .MustNotHaveHappened();
     }
 
     [Test]

@@ -46,7 +46,7 @@ public sealed record CdcKafkaBrokerAuthorization(
 
 /// <summary>
 /// Raw Kafka evidence/effects beneath the controller's policy observation facade. Callers authorize
-/// and journal effects. No partition/configuration repair, deletes, producer, consumer or offset reads.
+/// and journal effects. No partition/configuration repair. Retirement-only storage inspection is a separate contract.
 /// </summary>
 public interface ICdcKafkaAdminAdapter
 {
@@ -86,7 +86,7 @@ public interface ICdcKafkaAdminAdapter
 /// </summary>
 public sealed partial class CdcKafkaAdminAdapter
     : ICdcKafkaAdminAdapter,
-        ICdcArtifactCleanupAdapter,
+        ICdcKafkaArtifactCleanupAdapter,
         IDisposable
 {
     private readonly IAdminClient _client;
@@ -145,6 +145,9 @@ public sealed partial class CdcKafkaAdminAdapter
                 .Build();
             return new CdcTransportResult<CdcKafkaAdminAdapter>.Observed(
                 new(client, authorization, true, brokerSizes)
+                {
+                    CreateOffsetConsumer = () => BuildOffsetConsumer(safe),
+                }
             );
         }
         catch (Exception exception)

@@ -5,7 +5,10 @@
 
 using System.Text.Json;
 using Confluent.Kafka;
+using EdFi.DataManagementService.Core.DocumentCache.Cdc;
+using FakeItEasy;
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
 using static EdFi.DataManagementService.Backend.Cdc.Tests.Integration.CdcKafkaPolicyFixture;
 using CoreCdc = EdFi.DataManagementService.Core.DocumentCache.Cdc;
@@ -76,6 +79,139 @@ public sealed class Given_authorized_three_broker_cdc_policy
         if (_fixture is not null)
         {
             await _fixture.DisposeAsync();
+        }
+    }
+
+    [Test]
+    public async Task It_inspects_retirement_offsets_with_existing_admin_authority_and_rejects_denied_access()
+    {
+        var scope = new CdcArtifactCleanupScope(
+            _request,
+            _request.Binding.ToCompleteBindingIdentity(),
+            CoreCdc.CdcArtifactNameGenerator.RecoverFromBinding(_request.Binding).Inventory!.GovernedArtifacts
+        );
+        using var admin = new AdminClientBuilder(new AdminClientConfig(_fixture.Client("admin")))
+            .SetLogHandler((_, _) => { })
+            .SetErrorHandler((_, _) => { })
+            .Build();
+        var groups = (await admin.ListConsumerGroupsAsync())
+            .Valid.Select(group => group.GroupId)
+            .Order()
+            .ToArray();
+        var before = Value(await _fixture.Adapter.InspectAclsAsync(_request, Token));
+        Value(await _fixture.Adapter.InspectRetirementOffsetsAsync(scope, Token))
+            .Should()
+            .Be(CdcRetirementOffsetState.Absent);
+        string key = JsonSerializer.Serialize(
+            new object[] { _request.Binding.ConnectorName, new { server = "fixture" } }
+        );
+        await CdcRetirementOffsetStoreProbe.WriteAsync(
+            _fixture.Client("admin"),
+            _fixture.OffsetTopic,
+            key,
+            "{}",
+            Token
+        );
+        Value(await _fixture.Adapter.InspectRetirementOffsetsAsync(scope, Token))
+            .Should()
+            .Be(CdcRetirementOffsetState.Present);
+        using var denied = Value(
+            CdcKafkaAdminAdapter.Create(new AdminClientConfig(_fixture.Client("consumer-a")), _fixture)
+        );
+        (await denied.InspectRetirementOffsetsAsync(scope, Token))
+            .State.Should()
+            .Be(CdcTransportEvidenceState.Unavailable);
+        await AssertDeniedRetirementRetainsBindingAsync(denied);
+        await CdcRetirementOffsetStoreProbe.WriteAsync(
+            _fixture.Client("admin"),
+            _fixture.OffsetTopic,
+            key,
+            null!,
+            Token
+        );
+        Value(await _fixture.Adapter.InspectRetirementOffsetsAsync(scope, Token))
+            .Should()
+            .Be(CdcRetirementOffsetState.Absent);
+        Value(await _fixture.Adapter.InspectAclsAsync(_request, Token))
+            .Grants.Should()
+            .BeEquivalentTo(before.Grants);
+        (await admin.ListConsumerGroupsAsync())
+            .Valid.Select(group => group.GroupId)
+            .Order()
+            .Should()
+            .Equal(groups);
+    }
+
+    private async Task AssertDeniedRetirementRetainsBindingAsync(CdcKafkaAdminAdapter denied)
+    {
+        // Synthetic ownership isolates the controller's state-preservation boundary in this broker-only lane.
+        // The provider lanes separately qualify physical CREATE and real capture cleanup.
+        string root = Path.Combine(
+            Path.GetTempPath(),
+            "cdc-denied-retirement-" + Guid.NewGuid().ToString("N")
+        );
+        try
+        {
+            var store = new LocalCdcWorkflowJournalStore(root);
+            var provisioner = A.Fake<ICdcManagedDatabaseProvisioner>();
+            A.CallTo(() => provisioner.CreateDatabase()).Returns(true);
+            A.CallTo(() => provisioner.ReadSourceFingerprintAsync(A<CancellationToken>._))
+                .Returns(_request.Binding.PhysicalSourceFingerprint);
+            var provisioned = await new CdcManagedDatabaseProvisioning(store).ProvisionAsync(
+                _request.TargetIdentity,
+                provisioner,
+                purpose: CdcWorkflowPurpose.InitialCdcProvisioning
+            );
+            var services = new ServiceCollection().AddDmsCdcControlPlane();
+            services.Configure<CoreCdc.CdcBindingStateStoreOptions>(options => options.RootPath = root);
+            using var providerServices = services.BuildServiceProvider();
+            var bindings = providerServices.GetRequiredService<CoreCdc.ICdcBindingLifecycleService>();
+            await using (
+                var session = await store.AcquireAsync(
+                    _request.Timing.CallTimeout,
+                    _request.Timing.PollInterval,
+                    Token
+                )
+            )
+            {
+                await session.RecordIntentAsync(
+                    _request.TargetIdentity,
+                    provisioned.WorkflowId,
+                    Guid.NewGuid(),
+                    CdcWorkflowEffect.ReserveBinding,
+                    [],
+                    Token
+                );
+                (await bindings.CreateBindingIfAbsentAsync(_request.Binding, Token))
+                    .Status.Should()
+                    .Be(CoreCdc.CdcControlPlaneOperationStatus.Succeeded);
+            }
+            using var http = CdcConnectRestAdapter.CreateHttpClient();
+            var provider = A.Fake<ICdcProviderArtifactCleanupAdapter>(options => options.Strict());
+            var retirement = new CdcBindingRetirement(
+                root,
+                new CdcConnectRestAdapter(http),
+                denied,
+                provider
+            );
+            var result = await retirement.RetireAsync(_request, _request.Binding.Generation, true, Token);
+            result.Succeeded.Should().BeFalse();
+            result
+                .Diagnostics.Should()
+                .ContainSingle()
+                .Which.Component.Should()
+                .Be(CdcDeploymentComponent.Kafka);
+            (await bindings.ExactMatchBindingAsync(_request.Binding, Token))
+                .Status.Should()
+                .Be(CoreCdc.CdcControlPlaneOperationStatus.Succeeded);
+            Fake.GetCalls(provider).Should().BeEmpty();
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, true);
+            }
         }
     }
 

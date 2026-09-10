@@ -104,7 +104,7 @@ internal sealed class CdcControllerFixtureControllers
         );
 
     public CdcBindingRetirement Retirement(
-        ICdcArtifactCleanupAdapter kafka,
+        ICdcKafkaArtifactCleanupAdapter kafka,
         ICdcProviderArtifactCleanupAdapter provider
     ) =>
         new(

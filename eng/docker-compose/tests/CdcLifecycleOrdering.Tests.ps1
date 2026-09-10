@@ -194,6 +194,19 @@ Describe 'Managed CDC deployment lifecycle ordering' {
         $script:trace | Should -Be @('retire:42', 'retire:43', 'rest:connectors', 'down-volumes')
         Test-CdcDeployment 'dms-local' | Should -BeFalse
     }
+    It 'retires retained bindings after pre-registration interruption before deleting volumes' {
+        $script:live = @()
+        Invoke-TestLifecycle @{ d = $true; v = $true }
+        $script:trace | Should -Be @('retire:42', 'retire:43', 'rest:connectors', 'down-volumes')
+        Test-CdcDeployment 'dms-local' | Should -BeFalse
+    }
+    It 'blocks volume deletion when an absent connector has unverifiable offsets' {
+        $script:live = @()
+        $script:failure = 'retire:42'
+        { Invoke-TestLifecycle @{ d = $true; v = $true } } | Should -Throw
+        $script:trace | Should -Not -Contain 'down-volumes'
+        (Read-TestDeployment).Phase | Should -Be 'Retiring'
+    }
     It 'retains partial cleanup and retries controller retirement before volume deletion' {
         $script:failure = 'retire:43'
         { Invoke-TestLifecycle @{ d = $true; v = $true } } | Should -Throw

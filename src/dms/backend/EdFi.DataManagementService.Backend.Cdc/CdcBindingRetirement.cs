@@ -26,14 +26,14 @@ public sealed class CdcBindingRetirement
     private readonly ICdcBindingLifecycleService _bindings;
     private readonly ICdcConnectTransport _connect;
     private readonly ICdcArtifactCleanupAdapter _connectCleanup;
-    private readonly ICdcArtifactCleanupAdapter _kafka;
+    private readonly ICdcKafkaArtifactCleanupAdapter _kafka;
     private readonly ICdcProviderArtifactCleanupAdapter _provider;
     private readonly TimeProvider _time;
 
     public CdcBindingRetirement(
         string stateRoot,
         ICdcConnectTransport connect,
-        ICdcArtifactCleanupAdapter kafka,
+        ICdcKafkaArtifactCleanupAdapter kafka,
         ICdcProviderArtifactCleanupAdapter provider
     )
         : this(
@@ -52,7 +52,7 @@ public sealed class CdcBindingRetirement
         LocalCdcWorkflowJournalStore store,
         ICdcBindingLifecycleService bindings,
         ICdcConnectTransport connect,
-        ICdcArtifactCleanupAdapter kafka,
+        ICdcKafkaArtifactCleanupAdapter kafka,
         ICdcProviderArtifactCleanupAdapter provider,
         TimeProvider time
     )
@@ -286,16 +286,28 @@ public sealed class CdcBindingRetirement
                         {
                             // Failed-attempt cleanup needs independent empty offset evidence. A missing
                             // connector, missing workflow or HTTP 404 must never be relabeled offset absence.
-                            var offset = RequireObserved(
-                                await CallAsync(t => _connect.ReadOffsetEvidenceAsync(request, t), ct)
+                            var offset = await CallAsync(
+                                t => _connect.ReadOffsetEvidenceAsync(request, t),
+                                ct
                             );
-                            Require(offset.State == CdcConnectOffsetState.Missing);
+                            if (offset is CdcTransportResult<CdcConnectOffsetEvidence>.Observed observed)
+                            {
+                                Require(observed.Value.State == CdcConnectOffsetState.Missing);
+                            }
+                            else
+                            {
+                                component = CdcDeploymentComponent.Kafka;
+                                var retained = RequireObserved(
+                                    await CallAsync(t => _kafka.InspectRetirementOffsetsAsync(scope, t), ct)
+                                );
+                                Require(retained == CdcRetirementOffsetState.Absent);
+                            }
                         }
                         artifact = new(
                             kind,
                             scope.Artifact(kind).Name,
                             CdcCleanupState.NotFound,
-                            "Verified offset removal and current connector absence."
+                            "Verified offset absence and current connector absence."
                         );
                     }
                     else
