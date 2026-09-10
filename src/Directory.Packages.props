@@ -54,13 +54,6 @@
     <PackageVersion Include="Microsoft.Extensions.Caching.Hybrid" Version="9.5.0" />
     <PackageVersion Include="Microsoft.Extensions.Caching.Memory" Version="10.0.1" />
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.1" />
-    <!--
-      Test-only, and the one package here no shipped assembly reaches. The recording service
-      collection has to be proven against a real vendor registration helper rather than an imitation,
-      and AddAzureClients is the registration a plugin is most likely to make; only a fixture plugin
-      references it, and its transitive closure reaches no production project.
-    -->
-    <PackageVersion Include="Microsoft.Extensions.Azure" Version="1.11.0" />
     <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.1" />
     <PackageVersion Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.1" />
     <PackageVersion Include="Microsoft.Extensions.Http" Version="10.0.1" />

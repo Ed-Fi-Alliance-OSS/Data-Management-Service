@@ -27,5 +27,20 @@
             hand-rolling an equivalent.
         -->
         <PackageVersion Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.1" />
+        <!--
+            The vendor registration helper the real-helpers fixture is proven against. AddAzureClients
+            is the cloud registration a plugin is most likely to make, and the point of that fixture is
+            to run the library as published rather than an imitation of it.
+
+            It lives here for the same reason as the entry above, and the reason is placement rather
+            than policy: this is a fixture-only version, nothing outside this tree references the
+            package, and no shipped assembly is reached by its closure. Versions the repository already
+            manages still arrive through the import above, so a fixture inherits every one of them and
+            this file adds only what no production project has an opinion about. A central entry in
+            src/Directory.Packages.props would put a test-only dependency in the file every production
+            project reads and, as the Options.ConfigurationExtensions measurement showed, can rewrite
+            committed lock files that have nothing to do with this work.
+        -->
+        <PackageVersion Include="Microsoft.Extensions.Azure" Version="1.11.0" />
     </ItemGroup>
 </Project>

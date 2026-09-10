@@ -7,8 +7,9 @@
         Microsoft.Extensions.Azure is the vendor helper. AddAzureClients is the ordinary cloud
         registration a plugin is most likely to make, and Azure.Extensions.AspNetCore.Configuration.-
         Secrets, the other obvious candidate, is a configuration provider that registers nothing.
-        The version is managed centrally like every other, and the entry there says what this comment
-        says: no production project references it and its closure reaches no shipped assembly.
+        Its version is pinned in the fixture tree's own Directory.Packages.props rather than the
+        repository's, because it is a fixture-only dependency no production project references; every
+        other version here is inherited from the repository's central file through that one's import.
 
         Published into the frontend test project's output, because the criterion is about a collection
         the Data Management Service's own AddServices has populated.
