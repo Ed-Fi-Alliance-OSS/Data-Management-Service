@@ -64,7 +64,13 @@ Describe "Docker Compose logging defaults (DMS-1407)" {
 
         foreach ($service in $services) {
             $inheritsAzureDefaults = $RelativePath -eq "eng/azure-vm/compose/docker-compose.yml" -and $service.Block -match '<<:\s*\*app-defaults'
-            if ($service.Block -notmatch $script:composeLogBlockPattern -and -not $inheritsAzureDefaults) {
+            # The shared broker is checked as its own tracked service file. Accept its inherited
+            # defaults only when the child does not replace the logging configuration.
+            $inheritsKafkaDefaults = $RelativePath -in @('eng/docker-compose/kafka.yml', 'eng/docker-compose/kafka-cdc.yml') -and
+                $service.Name -eq 'kafka' -and
+                $service.Block -match '(?m)^    extends:\s*\r?\n      file: kafka-broker\.yml\s*\r?\n      service: kafka\s*$' -and
+                $service.Block -notmatch '(?m)^    logging:'
+            if ($service.Block -notmatch $script:composeLogBlockPattern -and -not $inheritsAzureDefaults -and -not $inheritsKafkaDefaults) {
                 $violations.Add("$RelativePath service '$($service.Name)' must keep the bounded json-file logging defaults")
             }
         }
@@ -102,6 +108,7 @@ Describe "Docker Compose logging defaults (DMS-1407)" {
             "eng/docker-compose/bootstrap-dms.yml",
             "eng/docker-compose/local-dms-document-cache.yml",
             "eng/docker-compose/local-dms-diagnostics.yml",
+            "eng/docker-compose/mssql-cdc.yml",
             "eng/docker-compose/mssql-tmpfs.yml",
             "eng/docker-compose/postgresql-tmpfs.yml"
         )
@@ -184,6 +191,18 @@ Describe "Docker Compose logging defaults (DMS-1407)" {
 
         @(Get-ComposeLoggingViolation -RelativePath $relativePath -Content $mutatedContent) |
             Should -Contain "$relativePath anchor 'x-app-defaults' must keep the bounded json-file logging defaults"
+    }
+
+    It "rejects a Kafka child that overrides the inherited logging cap in <File>" -ForEach @(
+        @{ File = 'kafka.yml' }, @{ File = 'kafka-cdc.yml' }
+    ) {
+        $relativePath = "eng/docker-compose/$File"
+        $content = Get-Content -LiteralPath (Join-Path $script:repoRoot $relativePath) -Raw
+        $mutatedContent = $content.Replace('      service: kafka', "      service: kafka`n    logging:`n      driver: none")
+
+        $mutatedContent | Should -Not -Be $content
+        @(Get-ComposeLoggingViolation -RelativePath $relativePath -Content $mutatedContent) |
+            Should -Contain "$relativePath service 'kafka' must keep the bounded json-file logging defaults"
     }
 
     It "does not document invalid Docker max-size values as the unbounded escape hatch" {

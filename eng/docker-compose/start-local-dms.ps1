@@ -240,7 +240,6 @@ if (-not (Test-CdcInfrastructureInvocation)) {
         return
     }
     if ($CdcBindingStatePath -or $CdcSettingsPath) { throw 'CDC lifecycle requires its original retained deployment inventory.' }
-    Assert-CdcUnregisteredInfrastructure -Project 'dms-local'
 }
 
 $databaseOnlyStartup = $DbOnly -and -not $d
@@ -502,6 +501,11 @@ if ($CdcDmsComposeFile) {
         throw 'CDC DMS settings handoff requires -DmsOnly and an existing Compose override.'
     }
     $files += @('-f', $CdcDmsComposeFile)
+}
+
+# Complete offline validation before inspecting Docker, and inspect before any stack changes.
+if (-not (Test-CdcInfrastructureInvocation)) {
+    Assert-CdcUnregisteredInfrastructure -Project 'dms-local'
 }
 
 if ($d) {

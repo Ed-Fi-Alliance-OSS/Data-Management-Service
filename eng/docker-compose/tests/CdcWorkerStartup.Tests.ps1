@@ -20,6 +20,10 @@ Describe 'CDC infrastructure startup' {
     }
 
     BeforeEach {
+        $d = $false
+        $EnableKafka = $false
+        $EnableKafkaUI = $false
+        $CdcKafkaInfrastructure = $false
         $script:calls = [Collections.Generic.List[string]]::new()
         Mock docker {
             $script:calls.Add((@($args | ForEach-Object { $_ }) -join ' '))
