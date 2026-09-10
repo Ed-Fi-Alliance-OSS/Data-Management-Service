@@ -135,7 +135,7 @@ internal class Given_CdcManagedLifecycle(Ddl.CdcProvider provider) : CdcReadines
     ) => _managed.ExecuteAsync(new(_request, _runtime, 1000), operation, token);
 
     [TearDown]
-    public void It_retains_artifacts_and_never_uses_initial_activation_or_projection_ownership()
+    public void It_retains_artifacts_and_never_uses_initial_activation_or_disposes_the_callers_runtime()
     {
         Fake.GetCalls(_connect)
             .Should()
@@ -148,7 +148,6 @@ internal class Given_CdcManagedLifecycle(Ddl.CdcProvider provider) : CdcReadines
         Fake.GetCalls(_kafka)
             .Should()
             .NotContain(c => !c.Method.Name.StartsWith("Inspect", StringComparison.Ordinal));
-        A.CallTo(() => _runtime.StartProcessingAsync(A<CancellationToken>._)).MustNotHaveHappened();
         A.CallTo(() =>
                 _runtime.ActivateAsync(
                     A<DocumentCacheGuardedNewEmptyActivationRequest>._,
@@ -688,6 +687,12 @@ internal class Given_CdcManagedLifecycle(Ddl.CdcProvider provider) : CdcReadines
         _resumes.Should().Be(1);
         _restarts.Should().Be(0);
         _trace.IndexOf("offset").Should().BeLessThan(_trace.IndexOf("resume"));
+        _trace.Count(t => t == "start").Should().Be(operation == CdcManagedLifecycleOperation.Start ? 1 : 0);
+        if (operation == CdcManagedLifecycleOperation.Start)
+        {
+            _trace.IndexOf("start").Should().BeGreaterThan(_trace.IndexOf("offset"));
+            _trace.IndexOf("start").Should().BeLessThan(_trace.IndexOf("resume"));
+        }
         _trace.IndexOf("metrics").Should().BeGreaterThan(_trace.IndexOf("resume"));
         ReadJournal().Operations.Last().Effect.Should().Be(CdcWorkflowEffect.ResumeConnector);
         ReadJournal().Operations.Last().Completions.Should().HaveCount(1);

@@ -61,7 +61,6 @@ public sealed class Given_Cdc_Compose_Persistence(CdcProvider provider)
             )
         );
         await _fixture.ReopenRuntimeAsync(Token);
-        await _fixture.Runtime.StartProcessingAsync(Token);
         _admin = new AdminClientBuilder(
             new AdminClientConfig { BootstrapServers = Resources.ControllerKafkaBootstrapServers }
         )

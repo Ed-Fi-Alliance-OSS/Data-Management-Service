@@ -7,6 +7,7 @@ using System.Net;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.Cdc;
+using EdFi.DataManagementService.Backend.Cdc.Tests.Unit;
 using EdFi.DataManagementService.Backend.Ddl;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.DocumentCache.Cdc;
@@ -18,6 +19,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using CoreProvider = EdFi.DataManagementService.Core.DocumentCache.Cdc.CdcProvider;
+using Ddl = EdFi.DataManagementService.Backend.Ddl;
 
 namespace EdFi.DataManagementService.SchemaTools.Tests.Unit;
 
@@ -680,5 +682,300 @@ public partial class Given_Cdc_command_configuration
             trace.Add("unexpected-http");
             return new HttpResponseMessage(HttpStatusCode.InternalServerError);
         }
+    }
+}
+
+[TestFixture(Ddl.CdcProvider.Postgresql)]
+[TestFixture(Ddl.CdcProvider.SqlServer)]
+[Platform(Exclude = "Win", Reason = "Local CDC state requires Unix owner-only permissions.")]
+internal class Given_Cdc_command_managed_start(Ddl.CdcProvider provider) : CdcReadinessTestBase(provider)
+{
+    private string _settingsPath = null!;
+    private bool _stopped;
+    private ICdcBindingLifecycleService _bindings = null!;
+
+    [SetUp]
+    public async Task SetupCommand()
+    {
+        ShortTiming(1000);
+        _bindings = _services.GetRequiredService<ICdcBindingLifecycleService>();
+        _stopped = false;
+        A.CallTo(() => _connect.StopAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
+            .ReturnsLazily(() =>
+            {
+                Trace("stop");
+                _stopped = true;
+                return Observed(new CdcTransportAcknowledgement());
+            });
+        A.CallTo(() => _connect.ResumeAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
+            .ReturnsLazily(() =>
+            {
+                Trace("resume");
+                _stopped = false;
+                return Observed(new CdcTransportAcknowledgement());
+            });
+        A.CallTo(() => _connect.ReadStatusAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
+            .ReturnsLazily(() =>
+            {
+                Trace("status");
+                var live = Status();
+                return Observed(
+                    _stopped
+                        ? new CdcConnectStatus(
+                            live.Runtime with
+                            {
+                                ConnectorState = CdcConnectorRuntimeState.Stopped,
+                                SoleTaskState = CdcConnectorRuntimeState.Stopped,
+                                TaskCount = 0,
+                                RunningTaskCount = 0,
+                            },
+                            live.WorkerId,
+                            []
+                        )
+                        : live
+                );
+            });
+        _settingsPath = Path.Combine(_root, "command-settings.json");
+        await File.WriteAllTextAsync(
+            _settingsPath,
+            JsonSerializer.Serialize(
+                new Dictionary<string, string>
+                {
+                    ["AppSettings:Datastore"] =
+                        Provider == Ddl.CdcProvider.Postgresql ? "postgresql" : "mssql",
+                    ["Cdc:Provider"] = Provider == Ddl.CdcProvider.Postgresql ? "postgresql" : "sqlserver",
+                    ["Cdc:DeploymentKey"] = Target.DeploymentKey,
+                    ["Cdc:InstanceKey"] = Target.InstanceKey,
+                    ["Cdc:DataStoreId"] = Target.DataStoreId,
+                    ["Cdc:Generation"] = Target.Generation.ToString(),
+                    ["Cdc:LagThresholdMilliseconds"] = "1000",
+                    ["Cdc:Compose:Project"] = "test",
+                    ["Cdc:Compose:File"] = "/unused-compose",
+                    ["Cdc:Compose:EnvironmentFile"] = "/unused-env",
+                    ["Cdc:Compose:BrokerSizeOverrideFile"] = "/unused-size",
+                    ["Cdc:DurabilityProfile"] = "LocalSingleBroker",
+                    ["Cdc:AuthorizationProfile"] = "AuthorizationDisabledLocal",
+                    ["Cdc:KafkaAdminBootstrapServers"] = "127.0.0.1:1",
+                    ["Cdc:SetupConnectionString"] =
+                        Provider == Ddl.CdcProvider.Postgresql ? "Host=localhost" : "Server=localhost",
+                }
+            )
+        );
+        (await CommandAsync(CdcCommandOperation.Stop)).Succeeded.Should().BeTrue();
+        await CdcCommandRunner.RequireManagedShutdownAsync(_root, _request, default);
+        _trace.Clear();
+        _disposals = 0;
+        Fake.ClearRecordedCalls(_runtime);
+        Fake.ClearRecordedCalls(_connect);
+    }
+
+    private Task<CdcCommandResult> CommandAsync(
+        CdcCommandOperation operation = CdcCommandOperation.Start,
+        CancellationToken token = default
+    )
+    {
+        var runner = new CdcCommandRunner(
+            A.Fake<IApiSchemaFileLoader>(),
+            new(A.Fake<IEffectiveSchemaHashProvider>(), A.Fake<IResourceKeySeedProvider>())
+        )
+        {
+            CreateRequest = (_, _, _, _, _, _, _, _) => Task.FromResult(_request),
+            CreateProjectionRuntime = (_, _, _, _) =>
+            {
+                Trace("initialize");
+                return Task.FromResult(Observed(_runtime));
+            },
+            ConfigureValidation = _ =>
+                new(_root, _provider, _templates, _kafka, _connect, _worker, _metrics, _positions),
+            ConfigureManagedLifecycle = _ =>
+                new(_root, _provider, _templates, _kafka, _connect, _worker, _metrics, [_positions]),
+        };
+        return runner.RunAsync(
+            new(operation, _settingsPath, _root, 1, Target.Generation, false, "", false),
+            TextWriter.Null,
+            token
+        );
+    }
+
+    private void LoseHistory(string evidence)
+    {
+        if (evidence == "offset")
+        {
+            _offsetState = CdcConnectOffsetState.Missing;
+        }
+        else
+        {
+            // Successful provider inspection observes a recreated same-named slot/capture identity.
+            _identity = new('b', 64);
+        }
+    }
+
+    [TestCase("offset")]
+    [TestCase("provider")]
+    public async Task It_latches_and_contains_new_history_loss_through_managed_start_dispatch(string evidence)
+    {
+        LoseHistory(evidence);
+        var before = ReadJournal();
+        var result = await CommandAsync();
+        result.Succeeded.Should().BeFalse();
+        var retained = await _bindings.ExactMatchBindingAsync(_request.Binding);
+        retained.State!.State.Should().Be(CdcBindingState.IncidentLatched);
+        var lifecycle = result.Data.Should().BeOfType<CdcManagedLifecycleResult>().Subject;
+        lifecycle.Observation.IncidentPersistence.Should().Be(CdcIncidentPersistenceState.Persisted);
+        lifecycle.Observation.Containment.Should().Be(CdcConnectorContainmentState.Stopped);
+        lifecycle.Observation.Status.SourceHistory.Continuity.Should().Be(CdcSourceHistoryContinuity.Lost);
+        _trace.Should().Contain("stop");
+        _trace.Skip(_trace.IndexOf("stop") + 1).Should().Contain("status");
+        _trace.Should().NotContain("start").And.NotContain("resume");
+        _disposals.Should().Be(1);
+        ReadJournal().Should().BeEquivalentTo(before);
+        _offsetState = CdcConnectOffsetState.Streaming;
+        _identity = new('a', 64);
+        _trace.Clear();
+        (await CommandAsync()).Succeeded.Should().BeFalse();
+        (await CommandAsync(CdcCommandOperation.Restart)).Succeeded.Should().BeFalse();
+        (await _bindings.ExactMatchBindingAsync(_request.Binding))
+            .State!.State.Should()
+            .Be(CdcBindingState.IncidentLatched);
+        _trace.Should().NotContain("start").And.NotContain("resume");
+        A.CallTo(() => _connect.RestartAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
+            .MustNotHaveHappened();
+        _disposals.Should().Be(3);
+        JsonSerializer.Serialize(result, CdcCommandHost.JsonOptions).Should().NotContain("private-source");
+    }
+
+    [TestCase("offset")]
+    [TestCase("provider")]
+    public async Task It_keeps_explicit_validate_observational_when_history_is_lost(string evidence)
+    {
+        LoseHistory(evidence);
+        var before = ReadJournal();
+        var result = await CommandAsync(CdcCommandOperation.Validate);
+        result.Succeeded.Should().BeFalse();
+        result
+            .Data.Should()
+            .BeOfType<CdcEstablishedValidationObservation>()
+            .Which.Continuity.Should()
+            .Be(CdcSourceHistoryContinuity.Lost);
+        (await _bindings.ExactMatchBindingAsync(_request.Binding))
+            .State!.State.Should()
+            .Be(CdcBindingState.BindingPresent);
+        _trace.Should().NotContain("stop").And.NotContain("start").And.NotContain("resume");
+        ReadJournal().Should().BeEquivalentTo(before);
+        _disposals.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_starts_projection_after_locked_preflight_and_drains_queued_work_before_handoff()
+    {
+        _backlog = true;
+        A.CallTo(() => _runtime.StartProcessingAsync(A<CancellationToken>._))
+            .ReturnsLazily(async () =>
+            {
+                Trace("start");
+                _stopped.Should().BeTrue();
+                _trace.Should().Contain(["provider", "offset", "config", "brokers", "status"]);
+                ReadJournal().Operations.Last().Effect.Should().Be(CdcWorkflowEffect.StopConnector);
+                // Processing starts under the same exclusive session that authorized startup.
+                await FluentActions
+                    .Awaiting(async () =>
+                    {
+                        await using var competing = await _store.AcquireAsync(
+                            TimeSpan.FromMilliseconds(30),
+                            TimeSpan.FromMilliseconds(1),
+                            default
+                        );
+                    })
+                    .Should()
+                    .ThrowAsync<CdcWorkflowStateException>()
+                    .Where(e => e.Failure == CdcWorkflowStateFailure.LockTimeout);
+                _backlog = false;
+            });
+        var result = await CommandAsync();
+        result.Succeeded.Should().BeTrue(JsonSerializer.Serialize(result));
+        result.Data.Should().BeOfType<CdcManagedLifecycleResult>().Which.Ready.Should().BeTrue();
+        _trace.Count(t => t == "start").Should().Be(1);
+        _trace
+            .Skip(_trace.IndexOf("start") + 1)
+            .TakeWhile(t => t != "resume")
+            .Should()
+            .Contain(["provider", "offset", "status"]);
+        _trace.Count(t => t == "resume").Should().Be(1);
+        _disposals.Should().Be(1);
+        _barriers.Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_rechecks_history_after_processing_starts_before_resuming()
+    {
+        _onCall = name =>
+        {
+            if (name == "start")
+            {
+                _offsetState = CdcConnectOffsetState.Missing;
+            }
+        };
+        var result = await CommandAsync();
+        result.Succeeded.Should().BeFalse();
+        var lifecycle = result.Data.Should().BeOfType<CdcManagedLifecycleResult>().Subject;
+        lifecycle.Observation.IncidentPersistence.Should().Be(CdcIncidentPersistenceState.Persisted);
+        lifecycle.Observation.Containment.Should().Be(CdcConnectorContainmentState.Stopped);
+        _trace.Should().Contain("start").And.Contain("stop").And.NotContain("resume");
+        _disposals.Should().Be(1);
+    }
+
+    [TestCase("running")]
+    [TestCase("unavailable")]
+    public async Task It_rejects_invalid_start_preflight_before_processing(string evidence)
+    {
+        if (evidence == "running")
+        {
+            _stopped = false;
+        }
+        else
+        {
+            A.CallTo(() =>
+                    _connect.ReadOffsetEvidenceAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._)
+                )
+                .Returns(
+                    new CdcTransportResult<CdcConnectOffsetEvidence>.Unavailable(
+                        new(CdcDeploymentComponent.Connect, CdcDeploymentFailure.Unavailable)
+                    )
+                );
+        }
+        var before = ReadJournal();
+        (await CommandAsync()).Succeeded.Should().BeFalse();
+        _trace.Should().NotContain("start").And.NotContain("resume").And.NotContain("stop");
+        (await _bindings.ExactMatchBindingAsync(_request.Binding))
+            .State!.State.Should()
+            .Be(CdcBindingState.BindingPresent);
+        ReadJournal().Should().BeEquivalentTo(before);
+        _disposals.Should().Be(1);
+    }
+
+    [TestCase("offset")]
+    [TestCase("start")]
+    public async Task It_preserves_caller_cancellation_and_disposes_the_start_runtime(string boundary)
+    {
+        using var caller = new CancellationTokenSource();
+        _onCall = name =>
+        {
+            if (name == boundary)
+            {
+                caller.Cancel();
+                caller.Token.ThrowIfCancellationRequested();
+            }
+        };
+        await FluentActions
+            .Awaiting(() => CommandAsync(token: caller.Token))
+            .Should()
+            .ThrowAsync<OperationCanceledException>();
+        _trace.Should().NotContain("resume");
+        _disposals.Should().Be(1);
+        await using var session = await _store.AcquireAsync(
+            TimeSpan.FromSeconds(1),
+            TimeSpan.FromMilliseconds(1),
+            default
+        );
     }
 }

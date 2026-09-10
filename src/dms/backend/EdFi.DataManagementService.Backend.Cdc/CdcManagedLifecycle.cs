@@ -244,6 +244,17 @@ public sealed class CdcManagedLifecycle
                 boundary = CdcManagedLifecycleBoundary.NativeRecovery;
             }
 
+            if (operation == CdcManagedLifecycleOperation.Start)
+            {
+                // The managed HTTP host is offline. Start its invocation-owned projection executor
+                // only after fresh eligibility and verified STOPPED evidence under this session.
+                // Initialization for preflight observations does not start processing.
+                failure.Component = CdcDeploymentComponent.Projection;
+                await target.Runtime.StartProcessingAsync(token);
+                token.ThrowIfCancellationRequested();
+                failure.Component = CdcDeploymentComponent.WorkflowState;
+            }
+
             var resumeId = Guid.NewGuid();
             await session.RecordIntentAsync(
                 request.TargetIdentity,

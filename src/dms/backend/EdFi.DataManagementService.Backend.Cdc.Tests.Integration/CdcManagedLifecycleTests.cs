@@ -113,13 +113,12 @@ public sealed class Given_Cdc_Controller_Managed_Lifecycle(CdcProvider provider)
         );
         before.PreStartEligible.Should().BeTrue("{0}", string.Join(", ", before.Diagnostics));
         before.PublicationReady.Should().BeFalse();
-        // No projection work is created by a heartbeat; start still requires a fresh running runtime observation.
-        await _fixture.Runtime.StartProcessingAsync(Token);
-        Func<Task> initial = () => _fixture.Runtime.ObserveInitialDatabaseAsync(Token);
-        await initial.Should().ThrowAsync<InvalidOperationException>();
+        // Managed start owns processing after its preflight, then requires a fresh running observation.
         var start = await ExecuteAsync(CdcManagedLifecycleOperation.Start);
         start.Succeeded.Should().BeTrue("{0}", string.Join(", ", start.Diagnostics));
         start.Ready.Should().BeTrue();
+        Func<Task> initial = () => _fixture.Runtime.ObserveInitialDatabaseAsync(Token);
+        await initial.Should().ThrowAsync<InvalidOperationException>();
         await CdcControllerFixture.WaitAsync(
             async _ => !Equals(await OffsetAsync(), offset),
             _fixture.Request.Timing.WaitTimeout,

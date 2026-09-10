@@ -54,6 +54,10 @@ public sealed class CdcCommandRunner(IApiSchemaFileLoader loader, EffectiveSchem
             config.CreateRequestAsync(state, connection, loader, builder, token, defer, retained);
     internal Func<CdcInitialEnableWorkflow, CdcInitialEnableWorkflow> ConfigureEnableWorkflow { get; init; } =
         workflow => workflow;
+    internal Func<CdcEstablishedValidation, CdcEstablishedValidation> ConfigureValidation { get; init; } =
+        validation => validation;
+    internal Func<CdcManagedLifecycle, CdcManagedLifecycle> ConfigureManagedLifecycle { get; init; } =
+        lifecycle => lifecycle;
 
     [System.Diagnostics.CodeAnalysis.SuppressMessage(
         "Sonar",
@@ -174,15 +178,17 @@ public sealed class CdcCommandRunner(IApiSchemaFileLoader loader, EffectiveSchem
                 await runtime.InitializeAsync(ct);
             }
             var target = new CdcControllerStatusTarget(request, runtime, config.LagThreshold);
-            var validation = new CdcEstablishedValidation(
-                invocation.StatePath,
-                setup,
-                templates,
-                kafka,
-                connect,
-                worker,
-                metrics,
-                positions
+            var validation = ConfigureValidation(
+                new CdcEstablishedValidation(
+                    invocation.StatePath,
+                    setup,
+                    templates,
+                    kafka,
+                    connect,
+                    worker,
+                    metrics,
+                    positions
+                )
             );
             var status = new CdcControllerStatus(
                 invocation.StatePath,
@@ -337,36 +343,19 @@ public sealed class CdcCommandRunner(IApiSchemaFileLoader loader, EffectiveSchem
                         CdcCommandOperation.Stop => CdcManagedLifecycleOperation.Stop,
                         _ => throw new ArgumentException("CDC command input is invalid."),
                     };
-                    if (operation == CdcManagedLifecycleOperation.Start)
-                    {
-                        await RequireManagedShutdownAsync(invocation.StatePath, request, ct);
-                        var eligibility = Require(
-                            await validation.ValidateAsync(
-                                request,
-                                runtime,
-                                CdcEstablishedValidationMode.PreStart,
-                                config.LagThreshold,
-                                cancellationToken: ct
+                    var lifecycle = await ConfigureManagedLifecycle(
+                            new CdcManagedLifecycle(
+                                invocation.StatePath,
+                                setup,
+                                templates,
+                                kafka,
+                                connect,
+                                worker,
+                                metrics,
+                                [positions]
                             )
-                        );
-                        if (!eligibility.PreStartEligible)
-                        {
-                            return Result(false, eligibility, eligibility.Diagnostics);
-                        }
-                        // Managed stack startup still has the HTTP host offline. Drain retained
-                        // projection work through its existing executor, disposed with this invocation.
-                        await runtime.StartProcessingAsync(ct);
-                    }
-                    var lifecycle = await new CdcManagedLifecycle(
-                        invocation.StatePath,
-                        setup,
-                        templates,
-                        kafka,
-                        connect,
-                        worker,
-                        metrics,
-                        [positions]
-                    ).ExecuteAsync(target, operation, token, ct);
+                        )
+                        .ExecuteAsync(target, operation, token, ct);
                     return Result(lifecycle.Succeeded, lifecycle, lifecycle.Diagnostics);
             }
 
