@@ -49,14 +49,13 @@ A row expired beyond that skew is therefore unreachable by the only production r
 The DMS data API never reads the table at all: there are zero `OpenIddictToken` references
 anywhere under `src/dms`, because the data API validates bearer tokens statelessly via JWKS.
 
-Timestamps are UTC wall-clock values, stored as `timestamp without time zone` on PostgreSQL and
-`DATETIME2` on SQL Server.
+`ExpirationDate` is an instant, stored as `timestamp with time zone` on PostgreSQL and `DATETIME2`
+holding UTC on SQL Server.
 Any deletion predicate must therefore compare against UTC "now", never local time.
-On PostgreSQL the UTC-wall-clock property holds because writes pass `DateTimeOffset` values that
-Npgsql sends as `timestamptz`, which the server converts through the session time zone; the
-shipped containers run UTC, and the sweep's bound takes the identical conversion path as the
-pre-existing insert, so the two stay consistent under any single session time zone (see the
-latent observation below).
+As shipped by DMS-1354 the PostgreSQL column was `timestamp without time zone`, which made both the
+insert and the sweep convert through the session time zone; DMS-1430 replaced that with the
+`timestamptz` declaration described under Time-Zone Independence below, so neither path converts
+any more.
 A deletion predicate is already index-supported on both engines: `IX_OpenIddictToken_ExpirationDate`
 exists in both engines' DDL, in `0016_Create_openiddict_Token_Table.sql`.
 
@@ -210,22 +209,103 @@ sufficient to run it.
   consistent with the bounded-staleness stance the
   [ownership-token operational-lifecycle record](../backend-redesign/design-docs/ownership-token-operational-lifecycle.md)
   adopted.
-- The PostgreSQL storage of these timestamps carries a latent time-zone dependence: both the
-  pre-existing insert and the sweep's bound convert through the session time zone, so they stay
-  mutually consistent, but a server configured with a DST-observing time zone would interpret
-  wall-clock values near transitions up to an hour off, which could delete a row while the
-  validator still accepts its token.
-  The shipped containers run UTC, so this has never bitten; any fix must change the insert path,
-  the sweep bound, and possibly the column type (`timestamptz`) together, and is therefore
-  recorded here rather than folded into this change.
-  The SQL Server implementation compares `DATETIME2` against a UTC `DateTime` and has no such
-  dependence.
+- The PostgreSQL time-zone dependence this record originally deferred is resolved by DMS-1430; see
+  Time-Zone Independence below.
 - Integration test coverage for `DeleteExpiredTokensAsync` exists for both engines, in each
   project's `OpenIddictDataRepositoryTests.cs`
   (`EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration` and
   `EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration`), covering a mix of expired
   and unexpired rows and a row at the exact expiration boundary; the SQL Server cases skip
   locally when no SQL Server connection is configured and run in CI.
+
+## Time-Zone Independence (DMS-1430)
+
+DMS-1354 shipped `ExpirationDate` as `timestamp without time zone` while both repository paths bound
+`DateTimeOffset` values, which Npgsql sends as `timestamptz`.
+The insert cast down to a wall clock through the PostgreSQL session time zone, and the sweep's
+predicate cast the stored column back up through it, using the operator `timestamp_le_timestamptz`.
+Those two conversions do not round-trip on a DST-observing server.
+DMS-1430 declares the column `timestamp with time zone`, adds the guarded migration
+`0032_Alter_OpenIddictToken_ExpirationDate_TimeZone.sql`, and pins both the insert parameter and the
+sweep bound to `DbType.DateTimeOffset` normalized with `ToUniversalTime()`.
+Neither path converts any more, so no stored value and no comparison depends on the session zone.
+
+### Correction to the original failure description
+
+This record previously stated that a DST-observing server "could delete a row while the validator
+still accepts its token".
+That framing is wrong for a *stable* session zone and is corrected here.
+Under a single unchanging DST-observing zone the round trip errs strictly late: a fall-back wall
+clock is ambiguous and PostgreSQL resolves it to the later of the two candidate instants, and a
+spring-forward gap resolves forward, so the sweep could only *under*-delete and rows lingered past
+their true expiry.
+Premature deletion of a live token was real but needed the session zone to **differ** between the
+write and the sweep - an operator changing the server `timezone`, setting `PGTZ`, or adding
+`Timezone=` to one connection string, with rows written under the old zone still present.
+Both defects are removed by the same change; the distinction matters only for describing the
+pre-fix severity honestly.
+
+### What the migration can and cannot recover
+
+`0032` reinterprets each stored wall clock through the session time zone *the migration runs under*.
+That is the best available inverse of how the rows were written, not a full repair, because the old
+column type discarded information before the script ever runs.
+Three cases, and they differ in whether the result can land early:
+
+1. **Same session zone as the write, unambiguous wall clock.** Exact recovery.
+   On the shipped UTC containers this is the identity, no value moves, and this case applies
+   throughout.
+2. **Same session zone, wall clock in a DST transition window.** Late or equal.
+   Two instants an hour apart were already stored identically, so both recover as the later one.
+   This matches how the sweep already read such a row before the fix, and the error direction is
+   late: the token lingers, it is never swept early.
+3. **Session zone changed since the write.** Irrecoverable, and the result may land **earlier** as
+   well as later, by the difference between the two offsets.
+   A row written under `America/New_York` for `18:00Z` stores `14:00`; migrated under `UTC` it
+   reconstructs as `14:00Z`, four hours early.
+   The zone a row was written under was never recorded, so nothing in the migration can detect or
+   correct this.
+   The mitigation is operational: run the upgrade under the same session time zone the rows were
+   written under.
+
+Case 2's "later or equal" property does **not** extend to case 3.
+The script carries no `USING` clause for the same reason: the implicit assignment cast is the
+inverse of how the rows were written, whereas `USING "ExpirationDate" AT TIME ZONE 'UTC'` forces
+case 3 on every row of a non-UTC server.
+
+### Operational cost
+
+`ALTER COLUMN ... TYPE` takes an `ACCESS EXCLUSIVE` lock and rewrites the table and the
+`ExpirationDate` index.
+This applies only to an existing database still carrying the old column type: the script's guard
+checks the declared type first, so the rewrite happens at most once per database and is skipped
+entirely on a fresh install and on any replay.
+The pause is proportional to the row count, which the sweep above bounds; an install upgrading from
+a pre-DMS-1354 build may still carry an unbounded backlog and should expect a correspondingly longer
+one-time pause.
+No operator time-zone requirement follows from this change - the point of the fix is that the
+session zone no longer matters at run time.
+
+### Deliberate scope limit
+
+`CreationDate` and `RedemptionDate` on the same table remain `timestamp without time zone` and carry
+the same latent dependence.
+They are intentionally out of scope for DMS-1430: no predicate compares them, and no production code
+path reads them, so nothing about cleanup or validation safety depends on them.
+Converting them is available as follow-up cleanup rather than part of this fix.
+The CMS-wide `CreatedAt` / `LastModifiedAt` audit columns follow one convention across every `dmscs`
+table and are a separate decision again.
+SQL Server needed no counterpart change and has none.
+
+### Coverage
+
+`Given_A_DST_Observing_PostgreSQL_Session_Time_Zone` in the PostgreSQL
+`OpenIddictDataRepositoryTests.cs` runs the repository against an `America/New_York` session
+connection with two expirations that collide on one wall clock, asserting distinct stored instants,
+a sweep that deletes only the truly expired row, and an unchanged read-back.
+`Given_a_pre_DMS_1430_OpenIddictToken_PostgreSQL_upgrade` exercises `0032` against a journaled
+pre-upgrade database, pinning exact recovery, `NULL` preservation, replay safety, and both
+unrecoverable cases above.
 
 ## Evidence Baseline
 
@@ -237,3 +317,9 @@ This record was evaluated against DMS
   [`24fe66cfc`](https://github.com/Ed-Fi-Alliance-OSS/Ed-Fi-ODS/tree/24fe66cfc04459ad6d6cac09d635d3c149b24669).
 - Ed-Fi-ODS-Implementation at
   [`37ff595c1`](https://github.com/Ed-Fi-Alliance-OSS/Ed-Fi-ODS-Implementation/tree/37ff595c171b73e524d96b13103ef9ae01712beb).
+
+The Time-Zone Independence section was added for DMS-1430 and evaluated separately, against
+PostgreSQL 16.8 (`postgres:16.8-alpine`, the image the shipped stacks use) and Npgsql 8.0.4.
+Its conversion, ambiguity-resolution, and migration claims were measured on that version rather than
+derived from documentation; the ambiguity-resolution rule was checked across `America/New_York`,
+`Europe/London`, `Australia/Sydney`, and `America/Santiago`.

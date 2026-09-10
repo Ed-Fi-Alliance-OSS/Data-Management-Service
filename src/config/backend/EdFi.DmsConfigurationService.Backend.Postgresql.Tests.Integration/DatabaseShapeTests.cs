@@ -298,6 +298,34 @@ public class Given_CMS_PostgreSQL_database_shape
         }
     }
 
+    /// <summary>
+    /// DMS-1430: the token cleanup sweep compares this column against a bound the repository binds
+    /// as an instant. While it was declared timestamp without time zone, both the insert and the
+    /// sweep converted through the PostgreSQL session time zone, and those conversions do not
+    /// round-trip on a DST-observing server. Only the timestamptz declaration keeps the stored value
+    /// and the sweep bound in agreement, so the declared type is asserted here rather than left to
+    /// the DDL alone. CreationDate and RedemptionDate remain wall-clock columns: no predicate
+    /// compares them and no production path reads them, so converting them is a possible follow-up
+    /// rather than part of this fix.
+    /// </summary>
+    [Test]
+    public void It_should_declare_the_OpenIddictToken_expiration_as_an_instant()
+    {
+        ColumnShape expirationColumn = _columns
+            .Should()
+            .ContainSingle(column =>
+                column.TableName == "OpenIddictToken" && column.ColumnName == "ExpirationDate"
+            )
+            .Which;
+
+        expirationColumn
+            .DataType.Should()
+            .Be(
+                "timestamp with time zone",
+                "the cleanup sweep must compare instants, not session-time-zone wall clocks"
+            );
+    }
+
     [Test]
     public void It_should_use_DMS_style_constraint_names_for_representative_core_tenant_and_OpenIddict_tables()
     {
