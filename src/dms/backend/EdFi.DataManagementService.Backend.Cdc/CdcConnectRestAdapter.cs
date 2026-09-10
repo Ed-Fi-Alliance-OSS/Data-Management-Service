@@ -207,17 +207,6 @@ public sealed class CdcConnectRestAdapter(HttpClient client, TimeProvider timePr
             cancellationToken
         );
 
-    public async Task<CdcTransportResult<CoreCdc.CdcConnectorRuntimeObservation>> ReadRuntimeAsync(
-        CdcDeploymentRequest request,
-        CancellationToken cancellationToken
-    )
-    {
-        var result = await ReadStatusAsync(request, cancellationToken);
-        return result is CdcTransportResult<CdcConnectStatus>.Observed status
-            ? new CdcTransportResult<CoreCdc.CdcConnectorRuntimeObservation>.Observed(status.Value.Runtime)
-            : Transfer<CdcConnectStatus, CoreCdc.CdcConnectorRuntimeObservation>(result);
-    }
-
     public Task<CdcTransportResult<JsonElement>> ReadOffsetsAsync(
         CdcDeploymentRequest request,
         CancellationToken cancellationToken

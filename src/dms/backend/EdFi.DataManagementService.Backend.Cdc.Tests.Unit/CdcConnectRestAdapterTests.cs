@@ -912,7 +912,7 @@ public class Given_CdcConnectRestAdapter_failure_boundaries
                 break;
         }
         fixture.Respond(body: root.ToJsonString());
-        var result = await fixture.Adapter.ReadRuntimeAsync(fixture.Request, CancellationToken.None);
+        var result = await fixture.Adapter.ReadStatusAsync(fixture.Request, CancellationToken.None);
         result.Diagnostics.Single().Failure.Should().Be(CdcDeploymentFailure.ValidationFailed);
     }
 
@@ -929,11 +929,11 @@ public class Given_CdcConnectRestAdapter_failure_boundaries
     {
         using CdcConnectHttpFixture fixture = new();
         fixture.Respond(body: fixture.Status(connector, task));
-        var result = await fixture.Adapter.ReadRuntimeAsync(fixture.Request, CancellationToken.None);
+        var result = await fixture.Adapter.ReadStatusAsync(fixture.Request, CancellationToken.None);
         var runtime = result
             .Should()
-            .BeOfType<CdcTransportResult<CoreCdc.CdcConnectorRuntimeObservation>.Observed>()
-            .Which.Value;
+            .BeOfType<CdcTransportResult<CdcConnectStatus>.Observed>()
+            .Which.Value.Runtime;
         runtime.ConnectorState.Should().Be(expected);
         CoreCdc
             .CdcConnectorRuntimeObservationValidator.ValidateForBinding(

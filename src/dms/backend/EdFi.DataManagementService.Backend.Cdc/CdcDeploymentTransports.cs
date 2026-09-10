@@ -56,10 +56,6 @@ public interface ICdcConnectTransport
         CdcKafkaConnectRegistrationPayload payload,
         CancellationToken cancellationToken
     );
-    Task<CdcTransportResult<CoreCdc.CdcConnectorRuntimeObservation>> ReadRuntimeAsync(
-        CdcDeploymentRequest request,
-        CancellationToken cancellationToken
-    );
     Task<CdcTransportResult<JsonElement>> ReadOffsetsAsync(
         CdcDeploymentRequest request,
         CancellationToken cancellationToken
