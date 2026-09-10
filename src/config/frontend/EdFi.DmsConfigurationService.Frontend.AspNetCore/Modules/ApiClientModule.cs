@@ -74,10 +74,25 @@ public class ApiClientModule : IEndpointModule
         // A path segment that parses as an Int32 is the numeric ApiClient id. The route constraint
         // gives this registration precedence over the client-key route below, so any other segment
         // (letters, decimals, or digits outside Int32 range) still resolves as an OAuth client key.
-        endpoints.MapLimitedAccess("/v3/apiClients/{id:int}", GetById).Produces<ApiClientResponse>(200);
+        endpoints
+            .MapLimitedAccess("/v3/apiClients/{id:int}", GetById)
+            .Produces<ApiClientResponse>(200)
+            .WithSummary("Retrieves a specific apiClient based on its numeric identifier.")
+            .WithDescription(
+                "The path segment is the numeric ApiClient identifier, the value returned as 'id' in "
+                    + "apiClient responses. A segment that is not a valid 32-bit integer is treated as "
+                    + "an OAuth client key and is served by GET /v3/apiClients/{clientId} instead."
+            );
         endpoints
             .MapLimitedAccess("/v3/apiClients/{clientId}", GetByClientId)
-            .Produces<ApiClientResponse>(200);
+            .Produces<ApiClientResponse>(200)
+            .WithSummary("Retrieves a specific apiClient based on its OAuth client key.")
+            .WithDescription(
+                "The path segment is the OAuth client key, the value returned as 'clientId' in "
+                    + "apiClient responses and as 'key' when credentials are issued. A segment that is "
+                    + "a valid 32-bit integer is treated as the numeric identifier and is served by "
+                    + "GET /v3/apiClients/{id} instead."
+            );
     }
 
     /// <summary>

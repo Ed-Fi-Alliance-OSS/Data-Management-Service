@@ -40,8 +40,12 @@ public class MetadataModuleTests
     /// int32, so all of them are int32. Asserted as an exact set: the sweep cannot pass trivially on
     /// an empty document, a route disappearing from the document fails the test, and a single
     /// operation regressing to int64 fails it as well.
-    /// The nine item routes are joined by five secondary routes that carry the same identifier.
-    /// /v3/apiClients/{clientId} is a string parameter and is excluded by the "id" name filter.
+    /// The entries span ten item routes and the six secondary routes that carry the same identifier;
+    /// a path contributes one entry per operation, so several paths appear more than once.
+    /// DMS-1343 added GET /v3/apiClients/{id}, which the generator publishes as a further operation
+    /// on the existing item path rather than as a new path, because it strips the :int route
+    /// constraint from the key. The separate /v3/apiClients/{clientId} GET resolves the OAuth client
+    /// key, declares a string parameter, and is excluded by the "id" name filter.
     /// /v3/tenants/{id} is out of scope and only appears when multi-tenancy is enabled - it is pinned
     /// as int64 by It_should_declare_the_out_of_scope_tenant_id_path_parameter_as_int64.
     /// </summary>
