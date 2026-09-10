@@ -16,7 +16,10 @@ public sealed record CdcRecordSizeIncreaseResult(
     bool Ready,
     Guid OperationId,
     IReadOnlyList<CdcDeploymentDiagnostic> Diagnostics
-);
+)
+{
+    public CdcControllerTargetStatus Observation { get; init; } = null!;
+}
 
 /// <summary>
 /// Explicit, acknowledged size rollout. The previous request and scope are retained on retry. The
@@ -30,7 +33,6 @@ public sealed class CdcRecordSizeIncrease
     private readonly ICdcKafkaAdminAdapter _kafka;
     private readonly ICdcKafkaRecordSizeAdministration _sizes;
     private readonly ICdcConnectTransport _connect;
-    private readonly CdcEstablishedValidation _validation;
     private readonly CdcControllerStatus _status;
     private readonly TimeProvider _time;
 
@@ -73,7 +75,6 @@ public sealed class CdcRecordSizeIncrease
         _kafka = kafka;
         _sizes = sizes;
         _connect = connect;
-        _validation = validation;
         _time = time;
         _status = new(store, bindings, connect, _ => validation, time);
     }
@@ -87,14 +88,19 @@ public sealed class CdcRecordSizeIncrease
             CancellationToken,
             Task<CdcRecordSizeIncreaseConfirmation>
         > confirm,
-        CancellationToken cancellationToken = default
+        CancellationToken cancellationToken = default,
+        CancellationToken operationDeadline = default
     )
     {
         ArgumentNullException.ThrowIfNull(previousTarget);
         ArgumentNullException.ThrowIfNull(scope);
         var previous = previousTarget.Request;
         var component = CdcDeploymentComponent.WorkflowState;
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        CdcControllerTargetStatus lastObservation = null!;
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken,
+            operationDeadline
+        );
         timeout.CancelAfter(previous.Timing.WaitTimeout);
         var token = timeout.Token;
         try
@@ -131,32 +137,10 @@ public sealed class CdcRecordSizeIncrease
             {
                 // A new operation starts from the declared previous policy. Only retained pending
                 // intent permits reconciliation of intermediate limits on a resumed invocation.
-                var baseline = await _validation.ObserveInSessionAsync(
-                    previous,
-                    previousTarget.Runtime,
-                    CdcEstablishedValidationMode.PreStart,
-                    previousTarget.LagThresholdMilliseconds,
-                    previousTarget.Integrity,
-                    session,
-                    c => component = c,
-                    token
-                );
+                var baseline = await Observe(previousTarget, session, token);
                 if (baseline.Recovery.RequiresFreshPass)
                 {
-                    baseline = await _validation.ObserveInSessionAsync(
-                        previous,
-                        previousTarget.Runtime,
-                        CdcEstablishedValidationMode.PreStart,
-                        previousTarget.LagThresholdMilliseconds,
-                        previousTarget.Integrity,
-                        session,
-                        c => component = c,
-                        token
-                    );
-                }
-                if (baseline.Continuity == CdcSourceHistoryContinuity.Lost)
-                {
-                    await _status.ObserveTargetAsync(previousTarget, token, session);
+                    baseline = await Observe(previousTarget, session, token);
                 }
                 Require(baseline.PreStartEligible);
             }
@@ -167,7 +151,6 @@ public sealed class CdcRecordSizeIncrease
                 async ct =>
                 {
                     var rollout = new CdcRecordSizeRollout(invocation, previous, desired);
-                    var recovery = new CdcNativeRecoveryObserver();
                     Guid resumeId = Guid.Empty;
                     CdcWorkerInspection worker = null!;
                     var current = await ValidateStage(false);
@@ -304,17 +287,17 @@ public sealed class CdcRecordSizeIncrease
                     );
                     ct.ThrowIfCancellationRequested();
                     // Persistence is historical. Return success only after another ordinary, fresh pass.
-                    var final = await _validation.ObserveInSessionAsync(
-                        desired,
-                        previousTarget.Runtime,
-                        CdcEstablishedValidationMode.RunningPublication,
-                        previousTarget.LagThresholdMilliseconds,
-                        previousTarget.Integrity,
+                    var final = await Observe(
+                        new(
+                            desired,
+                            previousTarget.Runtime,
+                            previousTarget.LagThresholdMilliseconds,
+                            previousTarget.Integrity
+                        ),
                         session,
-                        c => component = c,
                         ct,
-                        recovery: recovery,
-                        managedResumeId: resumeId
+                        CdcEstablishedValidationMode.RunningPublication,
+                        resumeId
                     );
                     Require(final.PublicationReady);
                     return new CdcRecordSizeIncreaseResult(true, true, scope.OperationId, []);
@@ -332,26 +315,21 @@ public sealed class CdcRecordSizeIncrease
                             Require(stage.ConnectorPolicy == desired.ConnectorPolicy);
                         }
 
-                        var observation = await _validation.ObserveInSessionAsync(
-                            stage,
-                            previousTarget.Runtime,
+                        var observation = await Observe(
+                            new(
+                                stage,
+                                previousTarget.Runtime,
+                                previousTarget.LagThresholdMilliseconds,
+                                previousTarget.Integrity
+                            ),
+                            session,
+                            ct,
                             publication
                                 ? CdcEstablishedValidationMode.RunningPublication
                                 : CdcEstablishedValidationMode.PreStart,
-                            previousTarget.LagThresholdMilliseconds,
-                            previousTarget.Integrity,
-                            session,
-                            c => component = c,
-                            ct,
-                            recovery: recovery,
-                            managedResumeId: resumeId,
-                            rollout: rollout
+                            resumeId,
+                            rollout
                         );
-                        if (observation.Continuity == CdcSourceHistoryContinuity.Lost)
-                        {
-                            await _status.ObserveTargetAsync(previousTarget, ct, session);
-                            Require(false);
-                        }
                         if (observation.Worker is not null && worker is not null)
                         {
                             CdcConnectorRegistration.RequireSameWorker(desired, worker, observation.Worker);
@@ -495,7 +473,47 @@ public sealed class CdcRecordSizeIncrease
                 ),
                 _ => CdcDeploymentDiagnostic.FromException(component, exception),
             };
-            return new(false, false, scope.OperationId, [diagnostic]);
+            return new(
+                false,
+                false,
+                scope.OperationId,
+                (lastObservation?.Diagnostics ?? [])
+                    .Append(diagnostic)
+                    .DistinctBy(d => (d.Component, d.Failure))
+                    .ToArray()
+            )
+            {
+                Observation = lastObservation!,
+            };
+        }
+
+        async Task<CdcEstablishedValidationObservation> Observe(
+            CdcControllerStatusTarget target,
+            LocalCdcWorkflowJournalStore.Session session,
+            CancellationToken deadline,
+            CdcEstablishedValidationMode mode = CdcEstablishedValidationMode.PreStart,
+            Guid resumeId = default,
+            CdcRecordSizeRollout rollout = null!
+        )
+        {
+            CdcEstablishedValidationObservation observation = null!;
+            lastObservation = await _status.ObserveTargetAsync(
+                target,
+                cancellationToken,
+                session,
+                mode,
+                value => observation = value,
+                resumeId,
+                deadline,
+                rollout
+            );
+            Require(lastObservation.Status.SourceHistory.Continuity != CdcSourceHistoryContinuity.Lost);
+            if (lastObservation.Diagnostics.FirstOrDefault() is { } diagnostic)
+            {
+                throw new CdcEstablishedValidation.EvidenceException(diagnostic);
+            }
+            Require(observation is not null);
+            return observation;
         }
 
         async Task<T> Call<T>(Func<CancellationToken, Task<T>> action)

@@ -37,6 +37,8 @@ public sealed record CdcManagedLifecycleResult(
     IReadOnlyList<CdcDeploymentDiagnostic> Diagnostics
 )
 {
+    public CdcControllerTargetStatus Observation { get; init; } = null!;
+
     public CdcRecoveryObservation Recovery { get; init; } = new(CdcRecoveryBoundary.Unobserved, false);
 }
 
@@ -93,7 +95,8 @@ public sealed class CdcManagedLifecycle
     public async Task<CdcManagedLifecycleResult> ExecuteAsync(
         CdcControllerStatusTarget target,
         CdcManagedLifecycleOperation operation,
-        CancellationToken cancellationToken = default
+        CancellationToken cancellationToken = default,
+        CancellationToken operationDeadline = default
     )
     {
         ArgumentNullException.ThrowIfNull(target);
@@ -101,7 +104,10 @@ public sealed class CdcManagedLifecycle
         var failure = new FailureBoundary();
         var boundary = CdcManagedLifecycleBoundary.Unverified;
         List<CdcDeploymentDiagnostic> diagnostics = [];
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken,
+            operationDeadline
+        );
         timeout.CancelAfter(request.Timing.WaitTimeout);
         var token = timeout.Token;
         try
@@ -182,11 +188,13 @@ public sealed class CdcManagedLifecycle
             CdcEstablishedValidationObservation eligibility = null!;
             var preflight = await _status.ObserveTargetAsync(
                 target,
-                token,
+                cancellationToken,
                 session,
                 CdcEstablishedValidationMode.PreStart,
-                value => eligibility = value
+                value => eligibility = value,
+                operationDeadline: token
             );
+            failure.Observation = preflight;
             diagnostics.AddRange(preflight.Diagnostics);
             if (preflight.Recovery.Boundary == CdcRecoveryBoundary.NativeRecovery)
             {
@@ -230,12 +238,14 @@ public sealed class CdcManagedLifecycle
             eligibility = null!;
             preflight = await _status.ObserveTargetAsync(
                 target,
-                token,
+                cancellationToken,
                 session,
                 CdcEstablishedValidationMode.PreStart,
                 value => eligibility = value,
-                resumeId
+                resumeId,
+                operationDeadline: token
             );
+            failure.Observation = preflight;
             diagnostics.AddRange(preflight.Diagnostics);
             if (preflight.Recovery.Boundary == CdcRecoveryBoundary.NativeRecovery)
             {
@@ -278,12 +288,14 @@ public sealed class CdcManagedLifecycle
                 CdcEstablishedValidationObservation current = null!;
                 var status = await _status.ObserveTargetAsync(
                     target,
-                    token,
+                    cancellationToken,
                     session,
                     CdcEstablishedValidationMode.RunningPublication,
                     value => current = value,
-                    resumeId
+                    resumeId,
+                    operationDeadline: token
                 );
+                failure.Observation = status;
                 if (status.Status.SourceHistory.Continuity == CdcSourceHistoryContinuity.Lost)
                 {
                     diagnostics.AddRange(status.Diagnostics);
@@ -319,18 +331,20 @@ public sealed class CdcManagedLifecycle
                     CdcEstablishedValidationObservation finalObservation = null!;
                     var final = await _status.ObserveTargetAsync(
                         target,
-                        token,
+                        cancellationToken,
                         session,
                         CdcEstablishedValidationMode.RunningPublication,
                         value => finalObservation = value,
-                        resumeId
+                        resumeId,
+                        operationDeadline: token
                     );
+                    failure.Observation = final;
+                    diagnostics.AddRange(final.Diagnostics);
                     if (finalObservation is { Worker: not null })
                     {
                         RequireUnchangedWorker(finalObservation.Worker);
                     }
                     token.ThrowIfCancellationRequested();
-                    diagnostics.AddRange(final.Diagnostics);
                     bool ready = final.Status.Readiness == CdcReadiness.Ready;
                     return new(
                         operation,
@@ -341,6 +355,7 @@ public sealed class CdcManagedLifecycle
                         diagnostics.DistinctBy(d => (d.Component, d.Failure)).ToArray()
                     )
                     {
+                        Observation = final,
                         Recovery = final.Recovery,
                     };
                 }
@@ -383,6 +398,7 @@ public sealed class CdcManagedLifecycle
                 diagnostics.DistinctBy(d => (d.Component, d.Failure)).ToArray()
             )
             {
+                Observation = failure.Observation,
                 Recovery = new(
                     boundary == CdcManagedLifecycleBoundary.NativeRecovery
                         ? CdcRecoveryBoundary.NativeRecovery
@@ -501,6 +517,7 @@ public sealed class CdcManagedLifecycle
 
     private sealed class FailureBoundary
     {
+        public CdcControllerTargetStatus Observation { get; set; } = null!;
         public CdcDeploymentComponent Component { get; set; } = CdcDeploymentComponent.WorkflowState;
     }
 

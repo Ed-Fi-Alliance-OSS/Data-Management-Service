@@ -218,7 +218,10 @@ internal class Given_CdcRecordSizeIncrease(Ddl.CdcProvider provider) : CdcReadin
         Trace(step);
     }
 
-    private Task<CdcRecordSizeIncreaseResult> Execute(CancellationToken token = default) =>
+    private Task<CdcRecordSizeIncreaseResult> Execute(
+        CancellationToken token = default,
+        CancellationToken operationDeadline = default
+    ) =>
         _increase.IncreaseAsync(
             new(_request, _runtime, 1000),
             _scope,
@@ -235,8 +238,234 @@ internal class Given_CdcRecordSizeIncrease(Ddl.CdcProvider provider) : CdcReadin
                 );
                 return Task.FromResult(_confirmation);
             },
-            token
+            token,
+            operationDeadline
         );
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task It_contains_terminal_loss_during_rollout_and_after_final_completion(bool final)
+    {
+        ShortTiming(1000);
+        using var deadline = new CancellationTokenSource();
+        _onCall = name =>
+        {
+            if (!final && name == "broker-after")
+            {
+                _identity = new('b', 64);
+            }
+        };
+        A.CallTo(() => _runtime.InitializeAsync(A<CancellationToken>._))
+            .Invokes(() =>
+            {
+                if (final && _effects.Contains("resume-after") && !ReadJournal().HasPendingRecordSizeIncrease)
+                {
+                    _identity = new('b', 64);
+                }
+            });
+        int stops = 0;
+        A.CallTo(() => _connect.StopAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
+            .ReturnsLazily(
+                async (CdcDeploymentRequest _, CancellationToken ct) =>
+                {
+                    _stopped = true;
+                    if (++stops == 2)
+                    {
+                        await deadline.CancelAsync();
+                        await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+                    }
+                    return Observed(new CdcTransportAcknowledgement());
+                }
+            );
+        var result = await Execute(operationDeadline: deadline.Token);
+        result.Succeeded.Should().BeFalse();
+        result.Ready.Should().BeFalse();
+        result.Observation.Status.SourceHistory.Continuity.Should().Be(CdcSourceHistoryContinuity.Lost);
+        result.Observation.IncidentPersistence.Should().Be(CdcIncidentPersistenceState.Persisted);
+        result.Observation.Containment.Should().Be(CdcConnectorContainmentState.Stopped);
+        result
+            .Diagnostics.Should()
+            .Contain(d =>
+                d.Component == CdcDeploymentComponent.Connect && d.Failure == CdcDeploymentFailure.Timeout
+            );
+        stops.Should().Be(2);
+        ReadJournal().HasPendingRecordSizeIncrease.Should().Be(!final);
+        _effects.Count(e => e == "resume-before").Should().Be(final ? 1 : 0);
+    }
+
+    [TestCase("operation-wait", false)]
+    [TestCase("latch", false)]
+    [TestCase("stop", false)]
+    [TestCase("read-back", false)]
+    [TestCase("latch", true)]
+    [TestCase("stop", true)]
+    [TestCase("read-back", true)]
+    public async Task It_preserves_terminal_containment_budgets_and_honors_only_caller_cancellation(
+        string boundary,
+        bool cancelCaller
+    )
+    {
+        ShortTiming(100);
+        _identity = new('b', 64);
+        CancellationToken observationToken = default;
+        if (boundary == "operation-wait")
+        {
+            // Equal call/wait budgets guarantee the operation expires during the latch, after
+            // terminal evidence is captured, without depending on a narrow scheduling window.
+            _request = new(
+                _request.Binding,
+                _request.DmsSettings,
+                _request.ProviderSetup,
+                _request.ConnectEndpoint,
+                _request.WorkerMetricsEndpoint,
+                _request.ConnectorPolicy,
+                _request.WorkerPolicy,
+                _request.ProviderConnectionProperties,
+                _request.KafkaClientSecurityProperties,
+                new(_request.Timing.WaitTimeout, _request.Timing.WaitTimeout, _request.Timing.PollInterval)
+            );
+            A.CallTo(() => _runtime.InitializeAsync(A<CancellationToken>._))
+                .ReturnsLazily(
+                    (CancellationToken ct) =>
+                    {
+                        observationToken = ct;
+                        return Task.CompletedTask;
+                    }
+                );
+        }
+        using var caller = new CancellationTokenSource();
+        using var deadline = new CancellationTokenSource();
+        var real = _services.GetRequiredService<ICdcBindingLifecycleService>();
+        var bindings = A.Fake<ICdcBindingLifecycleService>();
+        A.CallTo(() => bindings.ExactMatchBindingAsync(A<CdcBinding>._, A<CancellationToken>._))
+            .ReturnsLazily(
+                (CdcBinding binding, CancellationToken ct) => real.ExactMatchBindingAsync(binding, ct)
+            );
+        A.CallTo(() => bindings.LatchSourceHistoryLossAsync(A<CdcIncident>._, A<CancellationToken>._))
+            .ReturnsLazily(
+                async (CdcIncident incident, CancellationToken ct) =>
+                {
+                    if (boundary is "latch" or "operation-wait")
+                    {
+                        if (boundary == "latch")
+                        {
+                            Expire();
+                        }
+                        await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+                    }
+                    return await real.LatchSourceHistoryLossAsync(incident, ct);
+                }
+            );
+        int stops = 0;
+        int readBacks = 0;
+        A.CallTo(() => _connect.StopAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
+            .ReturnsLazily(
+                async (CdcDeploymentRequest _, CancellationToken ct) =>
+                {
+                    stops++;
+                    _stopped = true;
+                    if (boundary == "operation-wait")
+                    {
+                        observationToken.IsCancellationRequested.Should().BeTrue();
+                        ct.IsCancellationRequested.Should().BeFalse();
+                    }
+                    if (boundary == "stop")
+                    {
+                        Expire();
+                        await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+                    }
+                    return Observed(new CdcTransportAcknowledgement());
+                }
+            );
+        _onCall = name =>
+        {
+            if (name == "status" && _stopped)
+            {
+                readBacks++;
+                if (boundary == "read-back")
+                {
+                    Expire();
+                }
+            }
+        };
+        _validation = new(
+            _store,
+            bindings,
+            _provider,
+            _templates,
+            _kafka,
+            _connect,
+            _worker,
+            _metrics,
+            _positions,
+            TimeProvider.System
+        );
+        _increase = new(_store, bindings, _kafka, _sizes, _connect, _validation, TimeProvider.System);
+        async Task Run()
+        {
+            var result = await _increase.IncreaseAsync(
+                new(_request, _runtime, 1000),
+                _scope,
+                Ceiling,
+                (_, _) => throw new AssertionException("Terminal baseline cannot request confirmation"),
+                caller.Token,
+                deadline.Token
+            );
+            result.Succeeded.Should().BeFalse();
+            result.Ready.Should().BeFalse();
+            var observation = result.Observation;
+            observation.Status.SourceHistory.Continuity.Should().Be(CdcSourceHistoryContinuity.Lost);
+            observation.Status.Readiness.Should().Be(CdcReadiness.NotReady);
+            observation
+                .IncidentPersistence.Should()
+                .Be(
+                    boundary is "latch" or "operation-wait"
+                        ? CdcIncidentPersistenceState.Failed
+                        : CdcIncidentPersistenceState.Persisted
+                );
+            observation.Containment.Should().Be(CdcConnectorContainmentState.Stopped);
+            stops.Should().Be(1);
+            readBacks.Should().BeGreaterThan(0);
+            if (boundary != "read-back")
+            {
+                result
+                    .Diagnostics.Should()
+                    .Contain(d =>
+                        d.Failure == CdcDeploymentFailure.Timeout
+                        && d.Component
+                            == (
+                                (boundary == "latch" || boundary == "operation-wait")
+                                    ? CdcDeploymentComponent.WorkflowState
+                                    : CdcDeploymentComponent.Connect
+                            )
+                    );
+            }
+            JsonSerializer.Serialize(result).Should().NotContain("private");
+            deadline.IsCancellationRequested.Should().Be(boundary != "operation-wait");
+        }
+        if (cancelCaller)
+        {
+            await FluentActions.Awaiting(Run).Should().ThrowAsync<OperationCanceledException>();
+            stops.Should().Be(boundary == "latch" ? 0 : 1);
+        }
+        else
+        {
+            await Run();
+        }
+        _effects.Should().BeEmpty();
+        ReadJournal().HasPendingRecordSizeIncrease.Should().BeFalse();
+        void Expire()
+        {
+            if (cancelCaller)
+            {
+                caller.Cancel();
+            }
+            else
+            {
+                deadline.Cancel();
+            }
+        }
+    }
 
     [Test]
     public async Task It_orders_confirmed_effects_and_restores_only_fresh_readiness()

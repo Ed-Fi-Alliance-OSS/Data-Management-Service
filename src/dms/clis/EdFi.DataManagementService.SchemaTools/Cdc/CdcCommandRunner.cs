@@ -252,7 +252,7 @@ public sealed class CdcCommandRunner(IApiSchemaFileLoader loader, EffectiveSchem
                     );
                     return Result(validated.PublicationReady, validated, validated.Diagnostics);
                 case CdcCommandOperation.Status:
-                    return StatusResult(await status.StatusAsync([target], ct));
+                    return StatusResult(await status.StatusAsync([target], token, ct));
                 case CdcCommandOperation.Watch:
                     CdcControllerStatusResult last = null!;
                     await foreach (
@@ -260,6 +260,7 @@ public sealed class CdcCommandRunner(IApiSchemaFileLoader loader, EffectiveSchem
                             [target],
                             invocation.MaximumPasses,
                             request.Timing.PollInterval,
+                            token,
                             ct
                         )
                     )
@@ -269,7 +270,19 @@ public sealed class CdcCommandRunner(IApiSchemaFileLoader loader, EffectiveSchem
                             JsonSerializer.Serialize(pass, CdcCommandHost.JsonOptions)
                         );
                     }
-                    return StatusResult(last);
+                    if (
+                        last is null
+                        || (
+                            ct.IsCancellationRequested
+                            && !last.Targets.Any(t =>
+                                t.Status.SourceHistory.Continuity == CdcSourceHistoryContinuity.Lost
+                            )
+                        )
+                    )
+                    {
+                        ct.ThrowIfCancellationRequested();
+                    }
+                    return StatusResult(last!);
                 case CdcCommandOperation.IncreaseRecordSize:
                     var acknowledgement = await ReadAcknowledgementAsync(invocation, request, ct);
                     var scope = new CdcRecordSizeIncreaseScope(
@@ -311,6 +324,7 @@ public sealed class CdcCommandRunner(IApiSchemaFileLoader loader, EffectiveSchem
                                 )
                             );
                         },
+                        token,
                         ct
                     );
                     return Result(increase.Succeeded && increase.Ready, increase, increase.Diagnostics);
@@ -352,7 +366,7 @@ public sealed class CdcCommandRunner(IApiSchemaFileLoader loader, EffectiveSchem
                         worker,
                         metrics,
                         [positions]
-                    ).ExecuteAsync(target, operation, ct);
+                    ).ExecuteAsync(target, operation, token, ct);
                     return Result(lifecycle.Succeeded, lifecycle, lifecycle.Diagnostics);
             }
 

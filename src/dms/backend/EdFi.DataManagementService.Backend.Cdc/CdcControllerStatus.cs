@@ -64,9 +64,14 @@ public sealed partial class CdcControllerStatus
         _time = time;
     }
 
+    /// <summary>
+    /// Caller cancellation applies to every step. An optional enclosing deadline bounds observation
+    /// only; terminal persistence, stop and read-back retain their independent configured budgets.
+    /// </summary>
     public async Task<CdcControllerStatusResult> StatusAsync(
         IReadOnlyList<CdcControllerStatusTarget> targets,
-        CancellationToken cancellationToken = default
+        CancellationToken cancellationToken = default,
+        CancellationToken operationDeadline = default
     )
     {
         ArgumentNullException.ThrowIfNull(targets);
@@ -82,7 +87,9 @@ public sealed partial class CdcControllerStatus
         foreach (var target in selected)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            results.Add(await ObserveTargetAsync(target, cancellationToken));
+            results.Add(
+                await ObserveTargetAsync(target, cancellationToken, operationDeadline: operationDeadline)
+            );
         }
         PropagateSharedOffsetStoreIssues(selected, results);
         var aggregate = CdcAggregateStatusEvaluator.Evaluate(
@@ -101,7 +108,8 @@ public sealed partial class CdcControllerStatus
         IReadOnlyList<CdcControllerStatusTarget> targets,
         int maximumPasses,
         TimeSpan interval,
-        CancellationToken cancellationToken = default
+        CancellationToken cancellationToken = default,
+        CancellationToken operationDeadline = default
     )
     {
         ArgumentNullException.ThrowIfNull(targets);
@@ -116,24 +124,46 @@ public sealed partial class CdcControllerStatus
                 "Watch requires 1-10000 passes and a positive interval of at most five minutes."
             );
         }
-        return WatchPassesAsync(targets.ToArray(), maximumPasses, interval, cancellationToken);
+        return WatchPassesAsync(
+            targets.ToArray(),
+            maximumPasses,
+            interval,
+            cancellationToken,
+            operationDeadline
+        );
     }
 
     private async IAsyncEnumerable<CdcControllerStatusResult> WatchPassesAsync(
         CdcControllerStatusTarget[] selected,
         int maximumPasses,
         TimeSpan interval,
-        [EnumeratorCancellation] CancellationToken cancellationToken
+        [EnumeratorCancellation] CancellationToken cancellationToken,
+        CancellationToken operationDeadline
     )
     {
         for (int index = 0; index < maximumPasses; index++)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (operationDeadline.IsCancellationRequested)
+            {
+                yield break;
+            }
             if (index > 0)
             {
-                await Task.Delay(interval, _time, cancellationToken);
+                using var delay = CancellationTokenSource.CreateLinkedTokenSource(
+                    cancellationToken,
+                    operationDeadline
+                );
+                try
+                {
+                    await Task.Delay(interval, _time, delay.Token);
+                }
+                catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+                {
+                    yield break;
+                }
             }
-            yield return await StatusAsync(selected, cancellationToken);
+            yield return await StatusAsync(selected, cancellationToken, operationDeadline);
         }
     }
 
@@ -143,7 +173,9 @@ public sealed partial class CdcControllerStatus
         LocalCdcWorkflowJournalStore.Session retainedSession = null!,
         CdcEstablishedValidationMode mode = CdcEstablishedValidationMode.RunningPublication,
         Action<CdcEstablishedValidationObservation> observed = null!,
-        Guid managedResumeId = default
+        Guid managedResumeId = default,
+        CancellationToken operationDeadline = default,
+        CdcRecordSizeRollout rollout = null!
     )
     {
         var request = target.Request;
@@ -159,7 +191,10 @@ public sealed partial class CdcControllerStatus
         var persistence = CdcIncidentPersistenceState.NotRequired;
         var containment = CdcConnectorContainmentState.NotRequired;
         var component = CdcDeploymentComponent.WorkflowState;
-        using var observationTimeout = CancellationTokenSource.CreateLinkedTokenSource(token);
+        using var observationTimeout = CancellationTokenSource.CreateLinkedTokenSource(
+            token,
+            operationDeadline
+        );
         observationTimeout.CancelAfter(request.Timing.WaitTimeout);
         try
         {
@@ -187,6 +222,8 @@ public sealed partial class CdcControllerStatus
                     containmentAttempted = true;
                     persistence = await PersistAsync(request, progress, diagnostics, token);
                     containment = await ContainAsync(request, progress, diagnostics, token);
+                    // Containment does not renew the expired observation or permit more ordinary work.
+                    observationTimeout.Token.ThrowIfCancellationRequested();
                 }
             };
             try
@@ -234,10 +271,12 @@ public sealed partial class CdcControllerStatus
                         observationTimeout.Token,
                         progress,
                         _recovery,
-                        managedResumeId
+                        managedResumeId,
+                        rollout
                     );
                 diagnostics.AddRange(observation.Diagnostics);
                 observed?.Invoke(observation);
+                observationTimeout.Token.ThrowIfCancellationRequested();
             }
             catch (Exception exception)
             {

@@ -526,6 +526,109 @@ public partial class Given_Cdc_command_configuration
         Directory.Exists(journalPath).Should().Be(failure == "unreadable");
     }
 
+    [TestCase(CdcCommandOperation.Status, false)]
+    [TestCase(CdcCommandOperation.Watch, false)]
+    [TestCase(CdcCommandOperation.Status, true)]
+    [TestCase(CdcCommandOperation.Watch, true)]
+    public async Task It_returns_terminal_containment_after_the_command_deadline_but_honors_caller_cancellation(
+        CdcCommandOperation operation,
+        bool cancelCaller
+    )
+    {
+        _settings["Cdc:Timing:CallMilliseconds"] = "600";
+        _settings["Cdc:Timing:WaitMilliseconds"] = "1000";
+        _settings["Cdc:Timing:PollMilliseconds"] = "1";
+        var request = await RequestAsync();
+        var services = new ServiceCollection();
+        services.AddDmsCdcControlPlane();
+        services.Configure<CdcBindingStateStoreOptions>(options => options.RootPath = _root);
+        await using var scope = services.BuildServiceProvider();
+        var bindings = scope.GetRequiredService<ICdcBindingLifecycleService>();
+        await RetainBindingAsync(bindings, request, true);
+        List<string> trace = [];
+        using var caller = new CancellationTokenSource();
+        using var http = new ContainmentHandler(request.Binding.ConnectorName, trace)
+        {
+            AfterStatus = ct => Task.Delay(100, ct),
+            AfterStop = async ct =>
+            {
+                if (cancelCaller)
+                {
+                    await caller.CancelAsync();
+                }
+                // The command has less than one call budget left. Lose the HTTP response after
+                // accepting stop; the production adapter and controller must independently read back.
+                await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+            },
+        };
+        var runner = new CdcCommandRunner(A.Fake<IApiSchemaFileLoader>(), SchemaBuilder())
+        {
+            CreateRequest = async (_, _, _, _, _, ct, _, _) =>
+            {
+                await Task.Delay(700, ct);
+                return request;
+            },
+            CreateConnectClient = () => new HttpClient(http, disposeHandler: false),
+            CreateProjectionRuntime = (_, _, _, ct) =>
+            {
+                trace.Add("runtime");
+                ct.ThrowIfCancellationRequested();
+                throw new IOException(PreparationSentinel);
+            },
+        };
+        string settingsPath = Path.Combine(_root, "deadline-settings.txt");
+        await File.WriteAllTextAsync(
+            settingsPath,
+            JsonSerializer.Serialize(_settings.AsEnumerable().ToDictionary(p => p.Key, p => p.Value))
+        );
+        using var output = new StringWriter();
+        async Task Run()
+        {
+            var result = await runner.RunAsync(
+                new(operation, settingsPath, _root, 3, 0, false, "", false),
+                output,
+                caller.Token
+            );
+            result.Succeeded.Should().BeFalse();
+            var status = result.Data.Should().BeOfType<CdcControllerStatusResult>().Subject.Targets.Single();
+            status.Status.SourceHistory.Continuity.Should().Be(CdcSourceHistoryContinuity.Lost);
+            status.Status.Readiness.Should().Be(CdcReadiness.NotReady);
+            status.IncidentPersistence.Should().Be(CdcIncidentPersistenceState.Persisted);
+            status.Containment.Should().Be(CdcConnectorContainmentState.Stopped);
+            trace.Count(t => t == "stop").Should().Be(1);
+            trace.Should().NotContain("runtime");
+            trace.Count(t => t == "status").Should().BeGreaterThan(0);
+            result
+                .Diagnostics.Should()
+                .Contain(d =>
+                    d.Component == CdcDeploymentComponent.Connect && d.Failure == CdcDeploymentFailure.Timeout
+                );
+            JsonSerializer
+                .Serialize(result, CdcCommandHost.JsonOptions)
+                .Should()
+                .NotContain(PreparationSentinel);
+            if (operation == CdcCommandOperation.Watch)
+            {
+                output.ToString().Split('\n', StringSplitOptions.RemoveEmptyEntries).Should().HaveCount(1);
+            }
+        }
+        if (cancelCaller)
+        {
+            await FluentActions.Awaiting(Run).Should().ThrowAsync<OperationCanceledException>();
+            trace.Should().NotContain("status");
+        }
+        else
+        {
+            await Run();
+        }
+        // The completed pass releases its controller lock, including when it outlives the command.
+        await using var session = await new LocalCdcWorkflowJournalStore(_root).AcquireAsync(
+            TimeSpan.FromSeconds(1),
+            TimeSpan.FromMilliseconds(1),
+            default
+        );
+    }
+
     private static EffectiveSchemaSetBuilder SchemaBuilder() =>
         new(
             new EffectiveSchemaHashProvider(NullLogger<EffectiveSchemaHashProvider>.Instance),
@@ -535,8 +638,10 @@ public partial class Given_Cdc_command_configuration
     private sealed class ContainmentHandler(string connector, List<string> trace) : HttpMessageHandler
     {
         private bool _stopped;
+        internal Func<CancellationToken, Task> AfterStop { get; init; } = _ => Task.CompletedTask;
+        internal Func<CancellationToken, Task> AfterStatus { get; init; } = _ => Task.CompletedTask;
 
-        protected override Task<HttpResponseMessage> SendAsync(
+        protected override async Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
             CancellationToken cancellationToken
         )
@@ -547,33 +652,33 @@ public partial class Given_Cdc_command_configuration
             {
                 _stopped = true;
                 trace.Add("stop");
-                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NoContent));
+                await AfterStop(cancellationToken);
+                return new HttpResponseMessage(HttpStatusCode.NoContent);
             }
             if (request.Method == HttpMethod.Get && path == $"/connectors/{connector}/status")
             {
                 trace.Add("status");
-                return Task.FromResult(
-                    new HttpResponseMessage(HttpStatusCode.OK)
-                    {
-                        Content = new StringContent(
-                            JsonSerializer.Serialize(
-                                new
+                await AfterStatus(cancellationToken);
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(
+                        JsonSerializer.Serialize(
+                            new
+                            {
+                                name = connector,
+                                connector = new
                                 {
-                                    name = connector,
-                                    connector = new
-                                    {
-                                        state = _stopped ? "STOPPED" : "RUNNING",
-                                        worker_id = "worker:8083",
-                                    },
-                                    tasks = Array.Empty<object>(),
-                                }
-                            )
-                        ),
-                    }
-                );
+                                    state = _stopped ? "STOPPED" : "RUNNING",
+                                    worker_id = "worker:8083",
+                                },
+                                tasks = Array.Empty<object>(),
+                            }
+                        )
+                    ),
+                };
             }
             trace.Add("unexpected-http");
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.InternalServerError));
+            return new HttpResponseMessage(HttpStatusCode.InternalServerError);
         }
     }
 }
