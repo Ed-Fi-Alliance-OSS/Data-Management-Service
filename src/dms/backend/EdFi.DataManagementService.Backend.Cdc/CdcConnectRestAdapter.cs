@@ -266,7 +266,8 @@ public sealed class CdcConnectRestAdapter(HttpClient client, TimeProvider timePr
             HttpMethod.Post,
             "/restart?includeTasks=true&onlyFailed=false",
             stopped: false,
-            cancellationToken
+            cancellationToken,
+            requireAcknowledgement: true
         );
 
     private Task<CdcTransportResult<CdcTransportAcknowledgement>> ChangeStateAsync(
@@ -274,14 +275,20 @@ public sealed class CdcConnectRestAdapter(HttpClient client, TimeProvider timePr
         HttpMethod method,
         string suffix,
         bool stopped,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        bool requireAcknowledgement = false
     ) =>
         PassAsync(
             request,
             async token =>
             {
                 var effect = await SendAsync(request, method, Path(request, suffix), "", token);
-                if (IsDefinitiveFailure(effect))
+                // RUNNING alone cannot prove that an uncertain restart was accepted. Let the
+                // lifecycle controller reconcile any transition from its pre-request observation.
+                if (
+                    IsDefinitiveFailure(effect)
+                    || (requireAcknowledgement && effect is not CdcTransportResult<JsonElement>.Observed)
+                )
                 {
                     return Transfer<JsonElement, CdcTransportAcknowledgement>(effect);
                 }

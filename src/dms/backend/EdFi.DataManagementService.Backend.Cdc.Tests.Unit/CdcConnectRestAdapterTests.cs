@@ -599,14 +599,47 @@ public class Given_CdcConnectRestAdapter_lifecycle
             .Be(_fixture.Path(restart ? "/restart?includeTasks=true&onlyFailed=false" : "/resume"));
     }
 
-    [Test]
-    public async Task It_reconciles_a_lost_stop_response()
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task It_reconciles_a_lost_stop_or_resume_response(bool resume)
     {
         _fixture.TimeoutOnce();
-        _fixture.Respond(body: _fixture.Status("STOPPED", taskCount: 0));
-        var result = await _fixture.Adapter.StopAsync(_fixture.Request, CancellationToken.None);
+        _fixture.Respond(body: resume ? _fixture.Status() : _fixture.Status("STOPPED", taskCount: 0));
+        var result = resume
+            ? await _fixture.Adapter.ResumeAsync(_fixture.Request, CancellationToken.None)
+            : await _fixture.Adapter.StopAsync(_fixture.Request, CancellationToken.None);
         result.State.Should().Be(CdcTransportEvidenceState.Observed);
         _fixture.Http.Calls.Count(call => call.Method == HttpMethod.Put).Should().Be(1);
+    }
+
+    [TestCase("connection", CdcDeploymentFailure.Unavailable)]
+    [TestCase("timeout", CdcDeploymentFailure.Timeout)]
+    [TestCase("conflict", CdcDeploymentFailure.Conflict)]
+    public async Task It_preserves_an_unsuccessful_restart_response_without_inferring_acknowledgement(
+        string failure,
+        CdcDeploymentFailure expected
+    )
+    {
+        switch (failure)
+        {
+            case "connection":
+                _fixture.Http.Responses.Enqueue(_ => throw new HttpRequestException("private-password"));
+                break;
+            case "timeout":
+                _fixture.TimeoutOnce();
+                break;
+            default:
+                _fixture.Respond(HttpStatusCode.Conflict);
+                break;
+        }
+        _fixture.Respond(body: _fixture.Status());
+
+        var result = await _fixture.Adapter.RestartAsync(_fixture.Request, CancellationToken.None);
+
+        result.State.Should().Be(CdcTransportEvidenceState.Unavailable);
+        result.Diagnostics.Should().ContainSingle().Which.Failure.Should().Be(expected);
+        _fixture.Http.Calls.Should().ContainSingle().Which.Method.Should().Be(HttpMethod.Post);
+        JsonSerializer.Serialize(result).Should().NotContain("private-password");
     }
 
     [Test]
