@@ -170,6 +170,17 @@ param(
     $DataStandardVersion
 )
 
+# Check script-level bindings before imports or dispatch: even explicit false/empty CDC inputs
+# must not silently enter a build command that cannot perform the CDC admission handoff.
+$cdcParametersSupplied = @(
+    foreach ($parameterName in @('EnableKafkaCdc', 'CdcSettingsPath', 'CdcBindingStatePath')) {
+        if ($PSBoundParameters.ContainsKey($parameterName)) { "-$parameterName" }
+    }
+)
+if ($Command -ne 'E2ETest' -and $cdcParametersSupplied.Count -gt 0) {
+    throw "Command '$Command' does not support CDC parameters: $($cdcParametersSupplied -join ', '). These parameters require E2ETest. For initial bootstrap, use eng/docker-compose/bootstrap-local-dms.ps1 or bootstrap-published-dms.ps1 with their existing CDC inputs."
+}
+
 # Captured here (script scope) rather than at the point of use: $PSBoundParameters inside the
 # Invoke-Main script block below reflects that block's own bindings, not this script's, so the
 # ContainsKey check has to run in this scope while the top-level $PSBoundParameters is populated.

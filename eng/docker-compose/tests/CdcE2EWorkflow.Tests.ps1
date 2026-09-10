@@ -128,7 +128,26 @@ Describe 'Root CDC E2ETest launch ordering' {
             $node = $ast.Find({ param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $name }, $true)
             . ([scriptblock]::Create($node.Extent.Text))
         }
+        # Run the real script-level parameter binding and dispatch, retaining guards and assignments.
+        # Imports and function definitions are replaced by the controlled boundaries below so a
+        # rejected invocation cannot install tools, build images, provision, start DMS or seed data.
+        $statements = $ast.EndBlock.Statements | Where-Object {
+            $_ -isnot [Management.Automation.Language.FunctionDefinitionAst] -and
+            -not ($_ -is [Management.Automation.Language.PipelineAst] -and
+                $_.PipelineElements[0] -is [Management.Automation.Language.CommandAst] -and
+                $_.PipelineElements[0].GetCommandName() -eq 'Import-Module')
+        }
+        $script:buildDispatch = [scriptblock]::Create(
+            $ast.ParamBlock.Extent.Text + "`n" + (($statements | ForEach-Object { $_.Extent.Text }) -join "`n")
+        )
+        function Invoke-Main { param([scriptblock]$MainBlock) & $MainBlock }
         function Invoke-Step { param([scriptblock]$Action) & $Action }
+        function Install-NugetCli { return 'nuget' }
+        function Invoke-Build {}
+        function Start-BootstrapDockerEnvironment {
+            [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Side-effect-free boundary stub; Pester verifies dispatch without starting infrastructure.')]
+            param()
+        }
         function Get-E2ETestEnvironmentContext { return $script:context }
         function RunE2E {
             [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'Production-compatible boundary stub; Pester verifies the arguments.')]
@@ -144,12 +163,58 @@ Describe 'Root CDC E2ETest launch ordering' {
             DataStoreDatabaseName = 'primary_e2e'; SnapshotDatabaseName = 'snapshot_e2e'
         }
         Mock Import-Module {}
+        Mock Install-NugetCli { return 'nuget' }
+        Mock Set-Alias {}
+        Mock Invoke-Build {}
+        Mock Start-BootstrapDockerEnvironment {}
         Mock Invoke-E2ECdcSetup {}
         Mock RunE2E {}
     }
+    It 'rejects <BuildCommand> with explicitly bound <CdcParameter>=<Value> before build or startup effects' -ForEach @(
+        @{ BuildCommand = 'StartEnvironment'; CdcParameter = 'EnableKafkaCdc'; Value = $true },
+        @{ BuildCommand = 'StartEnvironment'; CdcParameter = 'EnableKafkaCdc'; Value = $false },
+        @{ BuildCommand = 'StartEnvironment'; CdcParameter = 'CdcSettingsPath'; Value = '/selected/settings.json' },
+        @{ BuildCommand = 'StartEnvironment'; CdcParameter = 'CdcBindingStatePath'; Value = '/selected/state' },
+        @{ BuildCommand = 'Build'; CdcParameter = 'CdcSettingsPath'; Value = '' },
+        @{ BuildCommand = 'Build'; CdcParameter = 'CdcBindingStatePath'; Value = '/selected/state' }
+    ) {
+        $arguments = @{ Command = $BuildCommand; IsLocalBuild = $true; LoadSeedData = $true }
+        $arguments[$CdcParameter] = $Value
+        $failure = $null
+        try { & $script:buildDispatch @arguments } catch { $failure = $_ }
+
+        Should -Invoke Install-NugetCli -Times 0
+        Should -Invoke Invoke-Build -Times 0
+        Should -Invoke Start-BootstrapDockerEnvironment -Times 0
+        Should -Invoke Invoke-E2ECdcSetup -Times 0
+        Should -Invoke RunE2E -Times 0
+        $failure | Should -Not -BeNullOrEmpty
+        $failure.Exception.Message | Should -Match $BuildCommand
+        $failure.Exception.Message | Should -Match $CdcParameter
+        $failure.Exception.Message | Should -Match 'E2ETest'
+        $failure.Exception.Message | Should -Match 'bootstrap-local-dms.ps1|bootstrap-published-dms.ps1'
+    }
+    It 'preserves ordinary <BuildCommand> dispatch without CDC inputs' -ForEach @(
+        @{ BuildCommand = 'StartEnvironment'; Boundary = 'Start-BootstrapDockerEnvironment' },
+        @{ BuildCommand = 'Build'; Boundary = 'Invoke-Build' }
+    ) {
+        & $script:buildDispatch -Command $BuildCommand
+        Should -Invoke $Boundary -Times 1 -Exactly
+    }
+    It 'retains E2ETest rejection of <CdcParameter> without opt-in' -ForEach @(
+        @{ CdcParameter = 'CdcSettingsPath' }, @{ CdcParameter = 'CdcBindingStatePath' }
+    ) {
+        $arguments = @{ Command = 'E2ETest' }
+        $arguments[$CdcParameter] = '/selected/input'
+        { & $script:buildDispatch @arguments } | Should -Throw '*require -EnableKafkaCdc*'
+        Should -Invoke Invoke-E2ECdcSetup -Times 0
+        Should -Invoke RunE2E -Times 0
+        Should -Invoke Start-BootstrapDockerEnvironment -Times 0
+    }
     It 'passes explicit CDC settings through the command dispatcher before tests' {
-        Invoke-TestExecution E2ETests -EnableKafkaCdc -CdcSettingsPath '/selected/settings.json' `
-            -CdcBindingStatePath '/selected/state' -SkipDockerBuild -UsePublishedImage -TestFilter 'Category=smoke'
+        & $script:buildDispatch -Command E2ETest -EnableKafkaCdc -CdcSettingsPath '/selected/settings.json' `
+            -CdcBindingStatePath '/selected/state' -SkipDockerBuild -UsePublishedImage -TestFilter 'Category=smoke' `
+            -Configuration Release -UsePrebuiltOutput
         Should -Invoke Invoke-E2ECdcSetup -Times 1 -Exactly -ParameterFilter {
             $EnvironmentFile -eq '/effective/.env' -and $OriginalEnvironmentFile -eq '/selected/.env' -and $DatabaseEngine -eq 'mssql' -and
             $DatabaseName -eq 'primary_e2e' -and $SnapshotDatabaseName -eq 'snapshot_e2e' -and
