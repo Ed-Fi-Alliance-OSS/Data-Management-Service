@@ -97,12 +97,19 @@ an absent one, depending on the deployment's identity provider.
 #### Provisioning a Client With No Data Store Assignment
 
 The sequence below is the whole lifecycle, using only endpoints that exist
-today. Two different identifiers are involved and they are not interchangeable:
+today. Two different identifiers are involved:
 
 - the **numeric `id`** returned in the API-client response body is the
   management identifier used in `PUT`, `DELETE` and `reset-credential` routes;
 - the **`clientId`** (returned as `key` when credentials are issued) is the
-  OAuth client identifier, and it is what `GET /v3/apiClients/{clientId}` takes.
+  OAuth client identifier.
+
+The single-item `GET` accepts either one, and the path segment itself decides
+which lookup runs: a segment that is a valid 32-bit integer is read as the
+numeric `id`, and any other segment is read as the OAuth `clientId` key. The
+two values remain distinct, because a client's `id` and its `key` are different
+values resolved through different columns. You just do not have to convert one
+into the other to read a client.
 
 `POST /v3/applications` returns the **application's** id in `id`, not the
 initial client's. To act on that client, read it with
@@ -139,7 +146,8 @@ initial client's. To act on that client, read it with
    parameter, so omitting it sends an empty scope, which the self-contained
    provider ignores but Keycloak rejects with `invalid_scope`.
 8. **Delete a client** — `DELETE /v3/apiClients/{numeric id}`, after which
-   `GET /v3/apiClients/{key}` reports `404`.
+   both `GET /v3/apiClients/{numeric id}` and `GET /v3/apiClients/{key}` report
+   `404`.
 
 What the resulting token can *do* with a DMS identity API is out of scope here:
 **the DMS identity routes do not exist yet.** This section documents only how to

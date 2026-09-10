@@ -14,7 +14,7 @@
 | Branch | `DMS-1343` (created from `main` at `ab140a4d5`) |
 | Author | Samuel Lugo (with repository audit) |
 | Date | 2026-09-09 |
-| **Status** | **Approved — 2026-09-09** (reviewer answers to Q1–Q4 recorded in §11; guardrails in §1.1) |
+| **Status** | **Implemented — 2026-09-09.** Phases 1–4 committed (§12); Phase 5 verification and push are human-gated. Approved 2026-09-09 with reviewer answers to Q1–Q4 in §11 and guardrails in §1.1 |
 | Jira decision | Option 1 (replace) is struck through in the ticket. Option 2 (support both identifier styles) is the active direction. |
 | Jira comment (2026-08-18) | `dmscs.ApiClient` has no DB-level unique constraint on `ClientId` or `ClientUuid`; recommends the authoritative external identifier receive a unique index. Tracked as follow-up **DMS-1529** (under DMS-1072). |
 | Pre-existing design doc | None found for DMS-1343 in `reference/` or `docs/` (verified). |
@@ -373,13 +373,30 @@ Numeric 404 uses `"ApiClient with ID {id} not found."` (matching the reset-crede
 
 ---
 
-## 12. Progress (filled during implementation)
+## 12. Progress
 
-| Step | Commit | Files | Status |
+| Step | Commit | Files | Outcome |
 |---|---|---|---|
-| 0.1 | — | this spec | pending approval |
-| 1.1–1.2 | — | | |
-| 2.1–2.3 | — | | |
-| 3.1–3.3 | — | | |
-| 4.1–4.3 | — | | |
-| 5.1–5.2 | — | | |
+| 0.1 | `f54d7f5aa`, `124c7f6fc` | this spec | Approved 2026-09-09 with the §1.1 guardrails; the second commit replaced the docs-phase wording with the exact dispatch rule |
+| 1.1–1.2 | `c6beb368f` | `ApiClientModule.cs`, `ApiClientModuleTests.cs`, `MetadataModuleTests.cs` | Numeric route, `GetById` handler, six new fixtures (19 tests). Full CMS frontend unit project: 1118 passed |
+| 2.1–2.3 | `a8fa8cbe7` | `ApiClientModule.cs`, `ApiClientOpenApiContractTests.cs`, `MetadataModuleTests.cs` | Operation summaries and descriptions, four contract tests, doc-comment rewrite. Full project: 1122 passed |
+| 3.1–3.3 | `08c0dff77` | `ApiClients.feature`, `Tenants.feature` | Scenarios 25–27 and the matched same-URL tenant pair. ApiClients 25 passed; Tenants 4 passed with multi-tenancy enabled |
+| 4.1–4.3 | this commit | `docs/API-CLIENT-AND-INSTANCE-CONFIGURATION.md`, `reference/design/configuration-service/README.md`, this spec | Documentation and closeout |
+| 5.1–5.2 | — | — | Final verification and push, human-gated |
+
+### 12.1 Deviations from the plan, and why
+
+1. **The pinned id-parameter set moved from Phase 2 into Phase 1.** Registering the route immediately adds `GET /v3/apiClients/{id}` to the served document, so `OpenApi_Declares_Resource_Identifiers_As_Int32` fails the moment the route exists. The single array entry shipped with the route to keep every commit green; the doc-comment rewrite stayed in Phase 2 as planned.
+2. **The doc comment's route counts were corrected, not just reworded.** It claimed nine item routes and five secondary routes. Enumerating the pinned array gives ten and six. The counts were already stale before this ticket, because this change adds an operation to an existing path rather than a new path. Reviewer confirmed the correction should stand.
+3. **The cross-tenant E2E step gained a positive read.** The planned step asserted only tenant B's `404`, which an unsubstituted `{tenantAClientId}` placeholder would also produce through the client-key route. Tenant A now reads the identical URL and gets `200` first, so the `404` can only come from tenant scoping.
+4. **The Tenants feature ran on PostgreSQL with multi-tenancy enabled.** Its scenarios are `@MultitenantOnly` and skip unless `DMS_CONFIG_MULTI_TENANCY=true` is set on both the stack and the test process. CI runs that lane only against MSSQL. A temporary environment file was used and deleted; no repository environment file changed.
+5. **Q3 produced DMS-1529.** Database-level uniqueness for `dmscs.ApiClient.ClientId` and `ClientUuid` is filed under DMS-1072, including duplicate-data and migration handling for both engines. No DDL or repository change was made here.
+
+### 12.2 Assumptions closed by evidence
+
+| Ref | Assumption | Evidence |
+|---|---|---|
+| A1 | The generator publishes `{id:int}` under the constraint-free key `/v3/apiClients/{id}` | Confirmed twice: the exact-set failure in Phase 1 named that key, and `It_publishes_the_numeric_get_without_its_route_constraint` asserts no path key contains a colon |
+| §10.1 | The constrained and unconstrained templates are not ambiguous | Both routes are exercised in one host across the unit fixtures; no `AmbiguousMatchException` occurred, and each request reached exactly one repository lookup |
+| §4.3 | Non-numeric, out-of-range, zero and negative segments dispatch as the table describes | Pinned by `Given_an_api_client_get_with_a_non_numeric_identifier` and `Given_an_api_client_get_with_a_non_positive_numeric_identifier`, plus E2E scenario 27 |
+| A3 | CMS wording that names the identifier is preferable to the specification's boilerplate description | Reviewer approved the published summaries and descriptions at the Phase 2 gate |
