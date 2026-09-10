@@ -237,7 +237,6 @@ internal sealed class MssqlRepresentationRestampE2EProviderOperations()
 
 internal static class RepresentationRestampE2EHarness
 {
-    private const string DmsContainerName = "ed-fi-api";
     private const string ConfigurationServiceClientId = "CMSReadOnlyAccess";
     private const string ConfigurationServiceClientSecret = "ValidClientSecret1234567890!Abcd";
     private const string ConfigurationServiceScope = "edfi_admin_api/readonly_access";
@@ -254,6 +253,7 @@ internal static class RepresentationRestampE2EHarness
         DocumentCacheRepresentationRestampMode mode
     )
     {
+        string containerName = AppSettings.DmsContainerName;
         string schemaCopyDirectory = Path.Combine(
             Path.GetTempPath(),
             "dms1318-restamp-schema",
@@ -266,121 +266,150 @@ internal static class RepresentationRestampE2EHarness
             async () =>
             {
                 var projectionExpected = false;
+                // Cleanup undoes only what actually happened: the container is restarted only after a
+                // stop that succeeded, and the lifecycle is reset only after it was really set to
+                // Disabled. A wrong container name fails on the copy below, before DMS is touched.
+                var dmsStopped = false;
+                var lifecycleSetToDisabled = false;
                 IRepresentationRestampE2EProviderOperations providerOperations = ProviderOperationsFor(
                     ProviderFor(AppSettings.DatabaseEngine)
                 );
                 string connectionString = AppSettings.DataStoreAdminConnectionString;
-                await RunProcessAsync(
-                    "docker",
-                    ["cp", $"{DmsContainerName}:/app/ApiSchema", schemaCopyDirectory]
-                );
-                await RunProcessAsync("docker", ["stop", DmsContainerName]);
 
-                try
-                {
-                    await using DocumentCacheAdminCliTarget target = CreateExternalTarget(
-                        schemaCopyDirectory
-                    );
-                    providerOperations = ProviderOperationsFor(target.ProviderToken);
-                    connectionString = target.ConnectionString;
-                    await SetLifecycleAsync(
-                        providerOperations,
-                        connectionString,
-                        mode == DocumentCacheRepresentationRestampMode.Tracking
-                            ? DocumentCacheLifecycleState.Tracking
-                            : DocumentCacheLifecycleState.Disabled,
-                        CancellationToken.None
-                    );
-                    await using DocumentCacheAdminTestConfigurationService configurationService =
-                        DocumentCacheAdminTestConfigurationService.Start(
-                            target,
-                            ConfigurationServiceEncryptionKey
-                        );
-                    long originalContentVersion = await ReadCanonicalContentVersionAsync(
-                        providerOperations,
-                        connectionString,
-                        documentUuid,
-                        CancellationToken.None
-                    );
-                    long? originalRequiredWorkVersion = await ReadRequiredWorkVersionAsync(
-                        providerOperations,
-                        connectionString,
-                        documentUuid,
-                        CancellationToken.None
-                    );
-                    await ExecuteRestampCommandsAsync(
-                        documentUuid,
-                        mode,
-                        (command, arguments) =>
-                            RunCliAsync(
-                                command,
-                                target.DataStoreId,
-                                configurationService.BaseUri,
-                                target.AppSettingsDatastore,
-                                target.ApiSchemaDirectory,
-                                arguments
-                            ),
-                        async () =>
-                        {
-                            long restampedContentVersion = await ReadCanonicalContentVersionAsync(
-                                providerOperations,
-                                connectionString,
-                                documentUuid,
-                                CancellationToken.None
-                            );
-                            restampedContentVersion.Should().BeGreaterThan(originalContentVersion);
-                            if (mode == DocumentCacheRepresentationRestampMode.Tracking)
-                            {
-                                long? restampedRequiredWorkVersion = await ReadRequiredWorkVersionAsync(
-                                    providerOperations,
-                                    connectionString,
-                                    documentUuid,
-                                    CancellationToken.None
-                                );
-                                restampedRequiredWorkVersion.Should().Be(restampedContentVersion);
-                            }
-                            else
-                            {
-                                long? restampedRequiredWorkVersion = await ReadRequiredWorkVersionAsync(
-                                    providerOperations,
-                                    connectionString,
-                                    documentUuid,
-                                    CancellationToken.None
-                                );
-                                restampedRequiredWorkVersion
-                                    .Should()
-                                    .Be(
-                                        originalRequiredWorkVersion,
-                                        "Disabled restamp must not enqueue or update projection work"
-                                    );
-                            }
-                        },
-                        async () =>
-                        {
-                            await DrainOrdinaryProjectorAsync(target);
-                            projectionExpected = true;
-                        }
-                    );
-                }
-                finally
-                {
-                    if (mode == DocumentCacheRepresentationRestampMode.Disabled)
+                await RunWithCleanupAsync(
+                    $"representation restamp ({mode}) for document {documentUuid} against DMS container '{containerName}'",
+                    async () =>
                     {
+                        await RunDockerAsync(
+                            "cp",
+                            containerName,
+                            ["cp", $"{containerName}:/app/ApiSchema", schemaCopyDirectory]
+                        );
+                        await RunDockerAsync("stop", containerName, ["stop", containerName]);
+                        dmsStopped = true;
+
+                        await using DocumentCacheAdminCliTarget target = CreateExternalTarget(
+                            schemaCopyDirectory
+                        );
+                        providerOperations = ProviderOperationsFor(target.ProviderToken);
+                        connectionString = target.ConnectionString;
                         await SetLifecycleAsync(
                             providerOperations,
                             connectionString,
-                            DocumentCacheLifecycleState.Tracking,
+                            mode == DocumentCacheRepresentationRestampMode.Tracking
+                                ? DocumentCacheLifecycleState.Tracking
+                                : DocumentCacheLifecycleState.Disabled,
                             CancellationToken.None
                         );
-                    }
+                        lifecycleSetToDisabled = mode == DocumentCacheRepresentationRestampMode.Disabled;
+                        await using DocumentCacheAdminTestConfigurationService configurationService =
+                            DocumentCacheAdminTestConfigurationService.Start(
+                                target,
+                                ConfigurationServiceEncryptionKey
+                            );
+                        long originalContentVersion = await ReadCanonicalContentVersionAsync(
+                            providerOperations,
+                            connectionString,
+                            documentUuid,
+                            CancellationToken.None
+                        );
+                        long? originalRequiredWorkVersion = await ReadRequiredWorkVersionAsync(
+                            providerOperations,
+                            connectionString,
+                            documentUuid,
+                            CancellationToken.None
+                        );
+                        await ExecuteRestampCommandsAsync(
+                            documentUuid,
+                            mode,
+                            (command, arguments) =>
+                                RunCliAsync(
+                                    command,
+                                    target.DataStoreId,
+                                    configurationService.BaseUri,
+                                    target.AppSettingsDatastore,
+                                    target.ApiSchemaDirectory,
+                                    arguments
+                                ),
+                            async () =>
+                            {
+                                long restampedContentVersion = await ReadCanonicalContentVersionAsync(
+                                    providerOperations,
+                                    connectionString,
+                                    documentUuid,
+                                    CancellationToken.None
+                                );
+                                restampedContentVersion.Should().BeGreaterThan(originalContentVersion);
+                                if (mode == DocumentCacheRepresentationRestampMode.Tracking)
+                                {
+                                    long? restampedRequiredWorkVersion = await ReadRequiredWorkVersionAsync(
+                                        providerOperations,
+                                        connectionString,
+                                        documentUuid,
+                                        CancellationToken.None
+                                    );
+                                    restampedRequiredWorkVersion.Should().Be(restampedContentVersion);
+                                }
+                                else
+                                {
+                                    long? restampedRequiredWorkVersion = await ReadRequiredWorkVersionAsync(
+                                        providerOperations,
+                                        connectionString,
+                                        documentUuid,
+                                        CancellationToken.None
+                                    );
+                                    restampedRequiredWorkVersion
+                                        .Should()
+                                        .Be(
+                                            originalRequiredWorkVersion,
+                                            "Disabled restamp must not enqueue or update projection work"
+                                        );
+                                }
+                            },
+                            async () =>
+                            {
+                                await DrainOrdinaryProjectorAsync(target);
+                                projectionExpected = true;
+                            }
+                        );
+                    },
+                    // Nested so a failed lifecycle reset cannot skip the restart: the reset is the
+                    // inner action and the restart is its cleanup, which runs either way.
+                    () =>
+                        RunWithCleanupAsync(
+                            $"cleanup after representation restamp ({mode}) for DMS container '{containerName}'",
+                            async () =>
+                            {
+                                if (lifecycleSetToDisabled)
+                                {
+                                    await SetLifecycleAsync(
+                                        providerOperations,
+                                        connectionString,
+                                        DocumentCacheLifecycleState.Tracking,
+                                        CancellationToken.None
+                                    );
+                                }
+                            },
+                            async () =>
+                            {
+                                if (!dmsStopped)
+                                {
+                                    return;
+                                }
 
-                    await RunProcessAsync("docker", ["start", DmsContainerName]);
-                    await WaitForDmsAsync();
-                    if (projectionExpected)
-                    {
-                        await WaitForProjectedCacheAsync(providerOperations, connectionString, documentUuid);
-                    }
-                }
+                                await RunDockerAsync("start", containerName, ["start", containerName]);
+                                await WaitForDmsAsync();
+                                if (projectionExpected)
+                                {
+                                    await WaitForProjectedCacheAsync(
+                                        providerOperations,
+                                        connectionString,
+                                        documentUuid
+                                    );
+                                }
+                            }
+                        )
+                );
             }
         );
     }
@@ -867,6 +896,46 @@ internal static class RepresentationRestampE2EHarness
     internal static string DockerStartFailureMessage(string operation, string containerName) =>
         $"failed to start docker for operation '{operation}' on DMS container '{containerName}'; "
         + "is Docker installed and on PATH?";
+
+    /// <summary>
+    /// Runs one Docker command against the DMS container and fails immediately if it did not
+    /// succeed. Without this the discarded exit code let a wrong container name run on until the
+    /// DocumentCacheAdmin CLI failed to load an API schema that was never copied out.
+    /// </summary>
+    private static async Task RunDockerAsync(
+        string operation,
+        string containerName,
+        IReadOnlyList<string> arguments
+    )
+    {
+        ProcessResult result;
+
+        try
+        {
+            result = await RunProcessAsync("docker", arguments);
+        }
+        catch (Exception exception)
+            when (exception is System.ComponentModel.Win32Exception or InvalidOperationException)
+        {
+            throw new InvalidOperationException(
+                DockerStartFailureMessage(operation, containerName),
+                exception
+            );
+        }
+
+        if (result.ExitCode != 0)
+        {
+            throw new InvalidOperationException(
+                DockerFailureMessage(
+                    operation,
+                    containerName,
+                    result.ExitCode,
+                    result.StandardOutput,
+                    result.StandardError
+                )
+            );
+        }
+    }
 
     private static async Task<ProcessResult> RunProcessAsync(
         string fileName,
