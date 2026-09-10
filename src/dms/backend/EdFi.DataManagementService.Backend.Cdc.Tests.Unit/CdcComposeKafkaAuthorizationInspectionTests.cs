@@ -4,6 +4,8 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json;
+using Confluent.Kafka;
+using FakeItEasy;
 using FluentAssertions;
 using NUnit.Framework;
 
@@ -26,14 +28,14 @@ public class Given_Cdc_compose_authorization_inspection
     public void Setup()
     {
         _docker = new Docker();
-        _adapter = new("selected", "localhost:9092", _docker);
+        _adapter = new("selected", "127.0.0.1:9092", "dms-kafka1:9092", _docker);
         _image = CdcComposeBrokerSizeDeployment.BrokerImage;
         _project = "selected";
         _running = true;
         _replace = false;
         _reads = 0;
         _properties =
-            "node.id=1\nadvertised.listeners=PLAINTEXT://kafka:19092,EXTERNAL://localhost:9092\nlistener.security.protocol.map=PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT\n";
+            "node.id=1\nadvertised.listeners=PLAINTEXT://dms-kafka1:9092,EXTERNAL://127.0.0.1:9092\nlistener.security.protocol.map=PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT\n";
         _docker.Run = (IReadOnlyList<string> args, CancellationToken _) =>
         {
             if (args[0] == "ps")
@@ -158,7 +160,96 @@ public class Given_Cdc_compose_authorization_inspection
     [Test]
     public async Task It_rejects_a_different_admin_endpoint()
     {
-        _properties = _properties.Replace("localhost:9092", "other:9092", StringComparison.Ordinal);
+        _properties = _properties.Replace("127.0.0.1:9092", "other:9092", StringComparison.Ordinal);
+        (await _adapter.InspectAsync([1], default)).State.Should().Be(CdcTransportEvidenceState.Unavailable);
+    }
+
+    [TestCase("private-other-broker:9092", "127.0.0.1:9092")]
+    [TestCase("dms-kafka1:9092", "private-other-broker:9092")]
+    [TestCase("private-other-broker:9092", "private-other-broker:9092")]
+    [TestCase("dms-kafka1:9092,private-other-broker:9092", "127.0.0.1:9092")]
+    public async Task It_rejects_requested_endpoints_outside_the_same_live_broker(
+        string workerEndpoint,
+        string adminEndpoint
+    )
+    {
+        _adapter = new("selected", adminEndpoint, workerEndpoint, _docker);
+        var result = await _adapter.InspectAsync([1], default);
+        result.State.Should().Be(CdcTransportEvidenceState.Unavailable);
+        result.Diagnostics.Should().ContainSingle().Which.Component.Should().Be(CdcDeploymentComponent.Kafka);
+        JsonSerializer.Serialize(result).Should().NotContain("private-other-broker");
+    }
+
+    [TestCase("dms-kafka1:9092", CdcTransportEvidenceState.Observed)]
+    [TestCase("private-other-broker:9092", CdcTransportEvidenceState.Unavailable)]
+    public async Task It_correlates_matching_requested_and_effective_worker_endpoints_with_admin_evidence(
+        string workerEndpoint,
+        CdcTransportEvidenceState expected
+    )
+    {
+        var original = CdcDeploymentRequestTestData.Request(
+            worker: CdcDeploymentRequestTestData.Worker(digest: CdcQualifiedWorkerImage.Digests.Single())
+        );
+        CdcDeploymentRequest request = new(
+            original.Binding,
+            original.DmsSettings,
+            original.ProviderSetup,
+            original.ConnectEndpoint,
+            original.WorkerMetricsEndpoint,
+            new(workerEndpoint, original.ConnectorPolicy.MaxRecordBytes),
+            original.WorkerPolicy,
+            original.ProviderConnectionProperties,
+            original.KafkaClientSecurityProperties,
+            original.Timing
+        );
+        CdcWorkerInspection worker = new(
+            "healthy-worker-process",
+            request.WorkerMetricsEndpoint,
+            new Dictionary<string, string>
+            {
+                ["bootstrap.servers"] = workerEndpoint,
+                ["group.id"] = request.WorkerPolicy.WorkerKey.Value,
+                ["offset.storage.topic"] = request.WorkerPolicy.OffsetStorageTopic.Value,
+                ["connector.client.config.override.policy"] = "All",
+            },
+            request.WorkerPolicy.QualifiedImageDigest,
+            request.WorkerPolicy.HeapBytes,
+            "worker:8083"
+        );
+        // Matching worker input/evidence alone is insufficient; Kafka policy needs the broker correlation.
+        CdcConnectorRegistration.RequireWorker(request, worker);
+        var client = A.Fake<IAdminClient>(options => options.Strict());
+        A.CallTo(() => client.Dispose()).DoesNothing();
+        A.CallTo(() => client.GetMetadata(request.Timing.CallTimeout))
+            .Returns(new Metadata([new BrokerMetadata(1, "127.0.0.1", 9092)], [], 1, "selected"));
+        using var kafka = new CdcKafkaAdminAdapter(
+            client,
+            new CdcComposeKafkaAuthorizationInspection(
+                "selected",
+                "127.0.0.1:9092",
+                request.ConnectorPolicy.KafkaBootstrapServers,
+                _docker
+            )
+        );
+        var result = await kafka.InspectAclsAsync(request, default);
+        result.State.Should().Be(expected);
+        if (expected == CdcTransportEvidenceState.Unavailable)
+        {
+            result
+                .Diagnostics.Should()
+                .ContainSingle()
+                .Which.Component.Should()
+                .Be(CdcDeploymentComponent.Kafka);
+        }
+        JsonSerializer.Serialize(result).Should().NotContain("private-other-broker");
+    }
+
+    [TestCase("dms-kafka1:9092", "other:9092")]
+    [TestCase("PLAINTEXT://", "")]
+    [TestCase("advertised.listeners", "unavailable.listeners")]
+    public async Task It_requires_unambiguous_live_worker_listener_evidence(string before, string after)
+    {
+        _properties = _properties.Replace(before, after, StringComparison.Ordinal);
         (await _adapter.InspectAsync([1], default)).State.Should().Be(CdcTransportEvidenceState.Unavailable);
     }
 

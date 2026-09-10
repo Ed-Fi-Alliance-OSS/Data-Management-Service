@@ -211,6 +211,43 @@ internal class Given_CdcManagedLifecycle(Ddl.CdcProvider provider) : CdcReadines
         ReadJournal().Operations.Last().Completions.Should().HaveCount(1);
     }
 
+    [TestCase(CdcManagedLifecycleOperation.Start, "")]
+    [TestCase(CdcManagedLifecycleOperation.Start, "private-other-broker:9092")]
+    [TestCase(CdcManagedLifecycleOperation.Resume, "")]
+    [TestCase(CdcManagedLifecycleOperation.Resume, "private-other-broker:9092")]
+    [TestCase(CdcManagedLifecycleOperation.Restart, "")]
+    [TestCase(CdcManagedLifecycleOperation.Restart, "private-other-broker:9092")]
+    public async Task It_rejects_worker_broker_drift_before_managed_resume(
+        CdcManagedLifecycleOperation operation,
+        string endpoint
+    )
+    {
+        (await Execute(CdcManagedLifecycleOperation.Stop)).Succeeded.Should().BeTrue();
+        ChangeWorkerBootstrap(endpoint);
+        var result = await Execute(operation);
+        result.Succeeded.Should().BeFalse();
+        result.Ready.Should().BeFalse();
+        _resumes.Should().Be(0);
+        _restarts.Should().Be(0);
+        JsonSerializer.Serialize(result).Should().NotContain("private-other-broker");
+    }
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task It_rejects_worker_broker_drift_before_restarting_a_running_or_failed_connector(
+        bool failed
+    )
+    {
+        _failed = failed;
+        ChangeWorkerBootstrap("private-other-broker:9092");
+        var result = await Execute(CdcManagedLifecycleOperation.Restart);
+        result.Succeeded.Should().BeFalse();
+        result.Ready.Should().BeFalse();
+        _resumes.Should().Be(0);
+        _restarts.Should().Be(0);
+        JsonSerializer.Serialize(result).Should().NotContain("private-other-broker");
+    }
+
     [Test]
     public async Task It_restarts_a_recoverable_failed_task_without_prestart_lag()
     {

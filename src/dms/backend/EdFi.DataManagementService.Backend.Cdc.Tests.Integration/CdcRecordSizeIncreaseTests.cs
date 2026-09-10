@@ -105,7 +105,8 @@ public sealed partial class Given_Cdc_Controller_Record_Size_Increase(CdcProvide
                 new AdminClientConfig { BootstrapServers = servers },
                 new CdcComposeKafkaAuthorizationInspection(
                     _fixture.Infrastructure.Resources.ControllerProject,
-                    servers
+                    servers,
+                    _fixture.Request.ConnectorPolicy.KafkaBootstrapServers
                 ),
                 new BrokerDeployment(_fixture.Infrastructure.Resources)
             )

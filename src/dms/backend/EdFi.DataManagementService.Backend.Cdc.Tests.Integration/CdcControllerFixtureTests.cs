@@ -368,7 +368,8 @@ public sealed class Given_CdcControllerFixtureLive(CdcProvider provider)
                     kafkaConfig,
                     new CdcComposeKafkaAuthorizationInspection(
                         fixture.Resources.ControllerProject,
-                        kafkaConfig.BootstrapServers
+                        kafkaConfig.BootstrapServers,
+                        fixture.Resources.KafkaBootstrapServers
                     )
                 )
         ).Value;

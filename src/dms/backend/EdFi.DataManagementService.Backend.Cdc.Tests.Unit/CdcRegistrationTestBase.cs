@@ -149,6 +149,7 @@ internal abstract class CdcRegistrationTestBase(Ddl.CdcProvider provider)
             _request.WorkerMetricsEndpoint,
             new Dictionary<string, string>
             {
+                ["bootstrap.servers"] = _request.ConnectorPolicy.KafkaBootstrapServers,
                 ["group.id"] = _request.WorkerPolicy.WorkerKey.Value,
                 ["offset.storage.topic"] = _request.WorkerPolicy.OffsetStorageTopic.Value,
                 ["connector.client.config.override.policy"] = "All",
@@ -271,6 +272,27 @@ internal abstract class CdcRegistrationTestBase(Ddl.CdcProvider provider)
         await _runtime.DisposeAsync();
         await _services.DisposeAsync();
         Directory.Delete(_root, true);
+    }
+
+    protected void ChangeWorkerBootstrap(string endpoint)
+    {
+        var configuration = new Dictionary<string, string>(_workerEvidence.EffectiveConfiguration);
+        if (endpoint.Length == 0)
+        {
+            configuration.Remove("bootstrap.servers");
+        }
+        else
+        {
+            configuration["bootstrap.servers"] = endpoint;
+        }
+        _workerEvidence = new(
+            _workerEvidence.ProcessIdentity,
+            _workerEvidence.MetricsEndpoint,
+            configuration,
+            _workerEvidence.ImageDigest,
+            _workerEvidence.HeapBytes,
+            _workerEvidence.ConnectWorkerId
+        );
     }
 
     protected Ddl.CdcProviderSetupResult ProviderResult(Ddl.CdcProviderSetupRequest r)

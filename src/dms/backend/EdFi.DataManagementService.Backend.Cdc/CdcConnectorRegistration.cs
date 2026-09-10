@@ -580,6 +580,8 @@ public sealed class CdcConnectorRegistration
                 && CdcQualifiedWorkerImage.Digests.Contains(worker.ImageDigest)
                 && worker.ImageDigest == request.WorkerPolicy.QualifiedImageDigest
                 && worker.HeapBytes == request.WorkerPolicy.HeapBytes
+                && worker.EffectiveConfiguration.GetValueOrDefault("bootstrap.servers")
+                    == request.ConnectorPolicy.KafkaBootstrapServers
                 && worker.EffectiveConfiguration.GetValueOrDefault("group.id")
                     == request.WorkerPolicy.WorkerKey.Value
                 && worker.EffectiveConfiguration.GetValueOrDefault("offset.storage.topic")

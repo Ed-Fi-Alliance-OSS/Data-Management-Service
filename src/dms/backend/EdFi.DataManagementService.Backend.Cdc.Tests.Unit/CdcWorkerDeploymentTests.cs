@@ -84,6 +84,9 @@ public sealed class Given_CdcWorkerDeployment
     [TestCase("public-port")]
     [TestCase("runtime-identity")]
     [TestCase("heap")]
+    [TestCase("bootstrap")]
+    [TestCase("bootstrap-missing")]
+    [TestCase("bootstrap-empty")]
     [TestCase("offset")]
     [TestCase("group")]
     [TestCase("advertised")]
@@ -195,7 +198,7 @@ public sealed class Given_CdcWorkerDeployment
             {
                 RuntimeReads++;
                 string text =
-                    "1234\n268435456\noffset.storage.topic=connect-offsets\nconnector.client.config.override.policy=All\ngroup.id=worker\nconfig.storage.topic=config\nstatus.storage.topic=status\nbootstrap.servers=broker:9092\nrest.advertised.host.name=worker\nrest.advertised.port=8083\n";
+                    "1234\n268435456\noffset.storage.topic=connect-offsets\nconnector.client.config.override.policy=All\ngroup.id=worker\nconfig.storage.topic=config\nstatus.storage.topic=status\nbootstrap.servers=broker-1:9092,broker-2:9092\nrest.advertised.host.name=worker\nrest.advertised.port=8083\n";
                 return Task.FromResult(
                     Fault switch
                     {
@@ -206,6 +209,18 @@ public sealed class Given_CdcWorkerDeployment
                         ),
                         "heap" => text.Replace("268435456", "1"),
                         "offset" => text.Replace("connect-offsets", "other"),
+                        "bootstrap-missing" => text.Replace(
+                            "bootstrap.servers=broker-1:9092,broker-2:9092\n",
+                            ""
+                        ),
+                        "bootstrap-empty" => text.Replace(
+                            "bootstrap.servers=broker-1:9092,broker-2:9092",
+                            "bootstrap.servers="
+                        ),
+                        "bootstrap" => text.Replace(
+                            "bootstrap.servers=broker-1:9092,broker-2:9092",
+                            "bootstrap.servers=other:9092"
+                        ),
                         "group" => text.Replace("group.id=worker", "group.id=other"),
                         "advertised" => text.Replace(
                             "rest.advertised.host.name=worker",

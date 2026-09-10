@@ -12,20 +12,27 @@ namespace EdFi.DataManagementService.Backend.Cdc;
 public sealed class CdcComposeKafkaAuthorizationInspection : ICdcKafkaAuthorizationInspection
 {
     private readonly string _project;
-    private readonly string _bootstrapServers;
+    private readonly string _adminBootstrapServers;
+    private readonly string _workerBootstrapServers;
     private readonly ICdcWorkerDockerCommand _docker;
 
-    public CdcComposeKafkaAuthorizationInspection(string project, string bootstrapServers)
-        : this(project, bootstrapServers, new CdcWorkerDockerCommand()) { }
+    public CdcComposeKafkaAuthorizationInspection(
+        string project,
+        string adminBootstrapServers,
+        string workerBootstrapServers
+    )
+        : this(project, adminBootstrapServers, workerBootstrapServers, new CdcWorkerDockerCommand()) { }
 
     internal CdcComposeKafkaAuthorizationInspection(
         string project,
-        string bootstrapServers,
+        string adminBootstrapServers,
+        string workerBootstrapServers,
         ICdcWorkerDockerCommand docker
     )
     {
         _project = project;
-        _bootstrapServers = bootstrapServers;
+        _adminBootstrapServers = adminBootstrapServers;
+        _workerBootstrapServers = workerBootstrapServers;
         _docker = docker;
     }
 
@@ -97,11 +104,16 @@ public sealed class CdcComposeKafkaAuthorizationInspection : ICdcKafkaAuthorizat
             );
             var parsed = Parse(properties);
             Require(parsed["node.id"] == brokerIds[0].ToString(CultureInfo.InvariantCulture));
+            // This adapter qualifies two explicit endpoints of one local broker, not aliases or clusters.
+            string[][] listeners = parsed["advertised.listeners"]
+                .Split(',')
+                .Select(x => x.Split("://", StringSplitOptions.None))
+                .ToArray();
+            Require(Array.TrueForAll(listeners, x => x.Length == 2 && x[0].Length > 0 && x[1].Length > 0));
+            string[] endpoints = listeners.Select(x => x[1]).ToArray();
             Require(
-                parsed["advertised.listeners"]
-                    .Split(',')
-                    .Select(x => x[(x.IndexOf("://", StringComparison.Ordinal) + 3)..])
-                    .Contains(_bootstrapServers, StringComparer.Ordinal)
+                endpoints.Contains(_adminBootstrapServers, StringComparer.Ordinal)
+                    && endpoints.Contains(_workerBootstrapServers, StringComparer.Ordinal)
             );
             Require(
                 !parsed.TryGetValue("authorizer.class.name", out var authorizer) || authorizer.Length == 0

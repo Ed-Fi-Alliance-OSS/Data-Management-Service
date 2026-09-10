@@ -73,7 +73,8 @@ public sealed class Given_Cdc_Compose_Persistence(CdcProvider provider)
                 new AdminClientConfig { BootstrapServers = Resources.ControllerKafkaBootstrapServers },
                 new CdcComposeKafkaAuthorizationInspection(
                     Resources.ControllerProject,
-                    Resources.ControllerKafkaBootstrapServers
+                    Resources.ControllerKafkaBootstrapServers,
+                    Resources.KafkaBootstrapServers
                 ),
                 Resources.ComposeBrokerSizes
             )

@@ -374,7 +374,8 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
                 kafkaConfig,
                 new CdcComposeKafkaAuthorizationInspection(
                     Infrastructure.Resources.ControllerProject,
-                    kafkaConfig.BootstrapServers
+                    kafkaConfig.BootstrapServers,
+                    Request.ConnectorPolicy.KafkaBootstrapServers
                 )
             )
         );

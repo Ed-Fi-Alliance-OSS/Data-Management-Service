@@ -199,6 +199,7 @@ public sealed class Given_CdcWorkerComposeStartup
                         profiles = new[] { "cdc-managed-worker" },
                         environment = new
                         {
+                            BOOTSTRAP_SERVERS = _request.ConnectorPolicy.KafkaBootstrapServers,
                             OFFSET_STORAGE_TOPIC = "connect-offsets",
                             GROUP_ID = "worker",
                             CONNECT_CONNECTOR_CLIENT_CONFIG_OVERRIDE_POLICY = "All",
@@ -240,6 +241,7 @@ public sealed class Given_CdcWorkerComposeStartup
 
     [TestCase("image")]
     [TestCase("offset")]
+    [TestCase("bootstrap")]
     [TestCase("worker")]
     [TestCase("profile")]
     [TestCase("override")]
@@ -249,6 +251,10 @@ public sealed class Given_CdcWorkerComposeStartup
         {
             "image" => _configuration.Replace(Image, "example/qualified:latest"),
             "offset" => _configuration.Replace("connect-offsets", "other-offsets"),
+            "bootstrap" => _configuration.Replace(
+                _request.ConnectorPolicy.KafkaBootstrapServers,
+                "other:9092"
+            ),
             "worker" => _configuration.Replace("\"worker\"", "\"other\""),
             "profile" => _configuration.Replace("cdc-managed-worker", "default"),
             _ => _configuration.Replace("All", "None"),

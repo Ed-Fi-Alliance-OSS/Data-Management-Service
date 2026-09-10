@@ -341,8 +341,26 @@ internal class Given_CdcConnectorRegistration(Ddl.CdcProvider provider) : CdcReg
             .MustNotHaveHappened();
     }
 
+    [TestCase("")]
+    [TestCase("private-other-broker:9092")]
+    public async Task It_rejects_missing_or_different_worker_broker_before_registration(string endpoint)
+    {
+        ChangeWorkerBootstrap(endpoint);
+        var result = await RunAsync();
+        result.State.Should().Be(CdcTransportEvidenceState.Unavailable);
+        result
+            .Diagnostics.Should()
+            .ContainSingle()
+            .Which.Component.Should()
+            .Be(CdcDeploymentComponent.Worker);
+        _posts.Should().Be(0);
+        _trace.Should().NotContain("preflight");
+        JsonSerializer.Serialize(result).Should().NotContain("private-other-broker");
+    }
+
     [TestCase("image")]
     [TestCase("heap")]
+    [TestCase("bootstrap.servers")]
     [TestCase("group.id")]
     [TestCase("offset.storage.topic")]
     [TestCase("connector.client.config.override.policy")]

@@ -364,6 +364,26 @@ internal partial class Given_CdcEstablishedValidation
         _calls.Should().BeEmpty();
     }
 
+    [TestCase(CdcEstablishedValidationMode.PreStart, "")]
+    [TestCase(CdcEstablishedValidationMode.PreStart, "private-other-broker:9092")]
+    [TestCase(CdcEstablishedValidationMode.RunningPublication, "")]
+    [TestCase(CdcEstablishedValidationMode.RunningPublication, "private-other-broker:9092")]
+    public async Task It_rejects_worker_broker_drift_despite_otherwise_healthy_evidence(
+        CdcEstablishedValidationMode mode,
+        string endpoint
+    )
+    {
+        ChangeWorkerBootstrap(endpoint);
+        var result = await ValidateAsync(mode);
+        result.State.Should().Be(CdcTransportEvidenceState.Unavailable);
+        result
+            .Diagnostics.Should()
+            .ContainSingle()
+            .Which.Component.Should()
+            .Be(CdcDeploymentComponent.Worker);
+        System.Text.Json.JsonSerializer.Serialize(result).Should().NotContain("private-other-broker");
+    }
+
     [Test]
     public async Task It_identifies_an_authoritatively_absent_worker()
     {

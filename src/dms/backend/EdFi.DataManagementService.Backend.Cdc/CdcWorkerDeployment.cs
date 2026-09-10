@@ -122,6 +122,7 @@ public sealed class CdcWorkerDeployment : ICdcWorkerInspectionTransport
             Require(sections.Length == 3 && long.TryParse(sections[0], out long ticks) && ticks > 0);
             Require(long.TryParse(sections[1], out long heap) && heap > 0);
             var properties = ParseProperties(sections[2]);
+            Require(properties["bootstrap.servers"] == request.ConnectorPolicy.KafkaBootstrapServers);
             Require(properties["offset.storage.topic"] == request.WorkerPolicy.OffsetStorageTopic.Value);
             Require(
                 properties["connector.client.config.override.policy"] == "All"

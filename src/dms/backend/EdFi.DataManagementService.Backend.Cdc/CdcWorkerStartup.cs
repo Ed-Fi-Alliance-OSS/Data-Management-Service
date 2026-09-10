@@ -212,6 +212,8 @@ public sealed class CdcComposeWorkerStartupTransport : ICdcWorkerStartupTranspor
             !image.Contains("@sha256:", StringComparison.Ordinal)
             || !_qualifiedImages.Contains(image)
             || !image.EndsWith("@" + request.WorkerPolicy.QualifiedImageDigest, StringComparison.Ordinal)
+            || worker.GetProperty("environment").GetProperty("BOOTSTRAP_SERVERS").GetString()
+                != request.ConnectorPolicy.KafkaBootstrapServers
             || worker.GetProperty("environment").GetProperty("OFFSET_STORAGE_TOPIC").GetString()
                 != request.WorkerPolicy.OffsetStorageTopic.Value
             || worker.GetProperty("environment").GetProperty("GROUP_ID").GetString()

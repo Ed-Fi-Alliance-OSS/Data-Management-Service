@@ -85,6 +85,7 @@ public partial class Given_Cdc_command_configuration
                         request.WorkerMetricsEndpoint,
                         new Dictionary<string, string>
                         {
+                            ["bootstrap.servers"] = request.ConnectorPolicy.KafkaBootstrapServers,
                             ["group.id"] = request.WorkerPolicy.WorkerKey.Value,
                             ["offset.storage.topic"] = request.WorkerPolicy.OffsetStorageTopic.Value,
                             ["connector.client.config.override.policy"] = "All",

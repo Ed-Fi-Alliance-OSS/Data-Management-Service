@@ -133,7 +133,8 @@ public sealed class CdcCommandRunner(IApiSchemaFileLoader loader, EffectiveSchem
                         adminConfig,
                         new CdcComposeKafkaAuthorizationInspection(
                             config.Project,
-                            adminConfig.BootstrapServers
+                            adminConfig.BootstrapServers,
+                            request.ConnectorPolicy.KafkaBootstrapServers
                         ),
                         sizes
                     )
