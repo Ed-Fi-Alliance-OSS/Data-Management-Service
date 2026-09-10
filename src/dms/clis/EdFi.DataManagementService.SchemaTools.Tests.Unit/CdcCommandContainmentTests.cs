@@ -301,7 +301,9 @@ public partial class Given_Cdc_command_configuration
                     .Subject,
             };
             target.Should().NotBeNull();
-            target.Diagnostics.Should().Contain(d => d.Component == CdcDeploymentComponent.Projection);
+            // This fixture retains a binding but no establishment evidence. Containment-aware
+            // preflight now rejects incomplete provenance before projection preparation.
+            target.Diagnostics.Should().Contain(d => d.Component == CdcDeploymentComponent.WorkflowState);
             target.Status.Readiness.Should().Be(CdcReadiness.NotReady);
             target.Status.SourceHistory.IncidentLatched.Should().Be(terminal);
             if (terminal)
@@ -319,14 +321,7 @@ public partial class Given_Cdc_command_configuration
                 target.Status.SourceHistory.Continuity.Should().NotBe(CdcSourceHistoryContinuity.Lost);
                 trace.Should().NotContain("stop");
             }
-            if (boundary is "schema-load" or "schema-result" or "ddl-inventory" or "membership")
-            {
-                trace.Should().NotContain(t => t.StartsWith("runtime", StringComparison.Ordinal));
-            }
-            else
-            {
-                trace.Should().Contain("runtime-" + boundary);
-            }
+            trace.Should().NotContain(t => t.StartsWith("runtime", StringComparison.Ordinal));
             if (operation == CdcCommandOperation.Watch)
             {
                 output.ToString().Split('\n', StringSplitOptions.RemoveEmptyEntries).Should().HaveCount(2);
@@ -574,7 +569,7 @@ public partial class Given_Cdc_command_configuration
                 target.Status.SourceHistory.Continuity.Should().NotBe(CdcSourceHistoryContinuity.Lost);
                 trace.Should().NotContain("stop");
             }
-            trace.Should().Contain("runtime");
+            trace.Should().NotContain("runtime");
             if (operation == CdcCommandOperation.Watch)
             {
                 var passes = output.ToString().Split('\n', StringSplitOptions.RemoveEmptyEntries);
@@ -923,6 +918,8 @@ internal class Given_Cdc_command_managed_start(Ddl.CdcProvider provider) : CdcRe
                 new(_root, _kafka, _runtime, new CdcKafkaProducerInspection(_connect, _worker)),
             ConfigureValidation = _ =>
                 new(_root, _provider, _templates, _kafka, _connect, _worker, _metrics, _positions),
+            ConfigureStatus = _ =>
+                new(_root, _provider, _templates, _kafka, _connect, _worker, _metrics, [_positions]),
             ConfigureRetirement = original =>
                 _cleanupKafka is null
                     ? original
@@ -1609,6 +1606,107 @@ internal class Given_Cdc_command_managed_start(Ddl.CdcProvider provider) : CdcRe
         }
     }
 
+    [TestCase(CdcCommandOperation.Start, "healthy")]
+    [TestCase(CdcCommandOperation.Start, "unknown")]
+    [TestCase(CdcCommandOperation.Status, "offset")]
+    [TestCase(CdcCommandOperation.Watch, "offset")]
+    [TestCase(CdcCommandOperation.Status, "provider")]
+    [TestCase(CdcCommandOperation.Watch, "provider")]
+    [TestCase(CdcCommandOperation.Status, "healthy")]
+    [TestCase(CdcCommandOperation.Watch, "healthy")]
+    [TestCase(CdcCommandOperation.Status, "unknown")]
+    [TestCase(CdcCommandOperation.Watch, "unknown")]
+    public async Task It_observes_continuity_before_failed_runtime_preparation(
+        CdcCommandOperation operation,
+        string evidence
+    )
+    {
+        bool terminal = evidence is "offset" or "provider";
+        if (terminal)
+        {
+            LoseHistory(evidence);
+        }
+        else if (evidence == "unknown")
+        {
+            A.CallTo(() =>
+                    _connect.ReadOffsetEvidenceAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._)
+                )
+                .Returns(
+                    new CdcTransportResult<CdcConnectOffsetEvidence>.Unavailable(
+                        new(CdcDeploymentComponent.Connect, CdcDeploymentFailure.Unavailable)
+                    )
+                );
+        }
+        _stopped = false;
+        var before = ReadJournal();
+        (await _bindings.ExactMatchBindingAsync(_request.Binding)).State!.Incident.Should().BeNull();
+        _onCall = name =>
+        {
+            if (name == "initialize")
+            {
+                throw new HttpRequestException("private-cms-preparation-failure");
+            }
+        };
+
+        var result = await CommandAsync(operation);
+
+        result.Succeeded.Should().BeFalse();
+        var target =
+            operation == CdcCommandOperation.Start
+                ? result.Data.Should().BeOfType<CdcManagedLifecycleResult>().Subject.Observation
+                : result.Data.Should().BeOfType<CdcControllerStatusResult>().Subject.Targets.Single();
+        target.Status.Readiness.Should().Be(CdcReadiness.NotReady);
+        target.Diagnostics.Should().Contain(d => d.Component == CdcDeploymentComponent.Projection);
+        _trace.Should().Contain("provider").And.Contain("initialize");
+        _trace.IndexOf("provider").Should().BeLessThan(_trace.IndexOf("initialize"));
+        if (evidence != "unknown")
+        {
+            _trace.IndexOf("offset").Should().BeInRange(0, _trace.IndexOf("initialize") - 1);
+        }
+        if (Provider == Ddl.CdcProvider.SqlServer)
+        {
+            _trace.IndexOf("schema-history").Should().BeInRange(0, _trace.IndexOf("initialize") - 1);
+        }
+        var retained = await _bindings.ExactMatchBindingAsync(_request.Binding);
+        if (terminal)
+        {
+            retained.State!.State.Should().Be(CdcBindingState.IncidentLatched);
+            retained.State.Incident.Should().NotBeNull();
+            target.Status.SourceHistory.Continuity.Should().Be(CdcSourceHistoryContinuity.Lost);
+            target.IncidentPersistence.Should().Be(CdcIncidentPersistenceState.Persisted);
+            target.Containment.Should().Be(CdcConnectorContainmentState.Stopped);
+            _stopped.Should().BeTrue();
+            _trace.IndexOf("stop").Should().BeInRange(0, _trace.IndexOf("initialize") - 1);
+            _trace
+                .IndexOf("status")
+                .Should()
+                .BeInRange(_trace.IndexOf("stop") + 1, _trace.IndexOf("initialize") - 1);
+        }
+        else
+        {
+            retained.State!.Incident.Should().BeNull();
+            target
+                .Status.SourceHistory.Continuity.Should()
+                .Be(
+                    evidence == "healthy"
+                        ? CdcSourceHistoryContinuity.Healthy
+                        : CdcSourceHistoryContinuity.Unknown
+                );
+            target.IncidentPersistence.Should().Be(CdcIncidentPersistenceState.NotRequired);
+            target.Containment.Should().Be(CdcConnectorContainmentState.NotRequired);
+            _trace.Should().NotContain("stop");
+        }
+        _trace.Should().NotContain("start").And.NotContain("resume");
+        _disposals.Should().Be(0);
+        ReadJournal().Should().BeEquivalentTo(before);
+        JsonSerializer.Serialize(result, CdcCommandHost.JsonOptions).Should().NotContain("private-cms");
+        await using var session = await _store.AcquireAsync(
+            TimeSpan.FromSeconds(1),
+            TimeSpan.FromMilliseconds(1),
+            default
+        );
+    }
+
     [TestCase("offset")]
     [TestCase("provider")]
     public async Task It_latches_and_contains_new_history_loss_through_managed_start_dispatch(string evidence)
@@ -1770,7 +1868,7 @@ internal class Given_Cdc_command_managed_start(Ddl.CdcProvider provider) : CdcRe
             .Should()
             .ThrowAsync<OperationCanceledException>();
         _trace.Should().NotContain("resume");
-        _disposals.Should().Be(1);
+        _disposals.Should().Be(boundary == "offset" ? 0 : 1);
         await using var session = await _store.AcquireAsync(
             TimeSpan.FromSeconds(1),
             TimeSpan.FromMilliseconds(1),

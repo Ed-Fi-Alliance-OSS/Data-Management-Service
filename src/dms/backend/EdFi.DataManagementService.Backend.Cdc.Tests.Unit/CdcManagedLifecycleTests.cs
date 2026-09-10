@@ -194,7 +194,7 @@ internal class Given_CdcManagedLifecycle(Ddl.CdcProvider provider) : CdcReadines
         _failed = state == "failed";
         var before = ReadJournal();
         int passes = 0;
-        A.CallTo(() => _runtime.InitializeAsync(A<CancellationToken>._))
+        A.CallTo(() => _provider.SetupAsync(A<Ddl.CdcProviderSetupRequest>._, A<CancellationToken>._))
             .Invokes(() =>
             {
                 Trace("pass-" + ++passes);
@@ -210,7 +210,10 @@ internal class Given_CdcManagedLifecycle(Ddl.CdcProvider provider) : CdcReadines
                     ReadJournal().Operations.Last().Completions.Should().BeEmpty();
                     (_resumes + _restarts).Should().Be(0);
                 }
-            });
+            })
+            .ReturnsLazily(
+                (Ddl.CdcProviderSetupRequest request, CancellationToken _) => ProviderResult(request)
+            );
         var result = await Execute(operation);
         result.Succeeded.Should().BeTrue();
         result.Ready.Should().BeTrue();
@@ -252,14 +255,17 @@ internal class Given_CdcManagedLifecycle(Ddl.CdcProvider provider) : CdcReadines
         await RetainInterruptedLifecycleAsync(effect);
         var before = ReadJournal();
         int passes = 0;
-        A.CallTo(() => _runtime.InitializeAsync(A<CancellationToken>._))
+        A.CallTo(() => _provider.SetupAsync(A<Ddl.CdcProviderSetupRequest>._, A<CancellationToken>._))
             .Invokes(() =>
             {
                 if (++passes == changedPass)
                 {
                     ReplaceWorker("private-second-recovery");
                 }
-            });
+            })
+            .ReturnsLazily(
+                (Ddl.CdcProviderSetupRequest request, CancellationToken _) => ProviderResult(request)
+            );
         var result = await Execute(operation);
         result.Succeeded.Should().BeFalse();
         result.Ready.Should().BeFalse();
@@ -296,7 +302,7 @@ internal class Given_CdcManagedLifecycle(Ddl.CdcProvider provider) : CdcReadines
         await RetainInterruptedLifecycleAsync(CdcWorkflowEffect.ResumeConnector);
         var before = ReadJournal();
         int passes = 0;
-        A.CallTo(() => _runtime.InitializeAsync(A<CancellationToken>._))
+        A.CallTo(() => _provider.SetupAsync(A<Ddl.CdcProviderSetupRequest>._, A<CancellationToken>._))
             .Invokes(() =>
             {
                 if (++passes != failedPass)
@@ -348,7 +354,10 @@ internal class Given_CdcManagedLifecycle(Ddl.CdcProvider provider) : CdcReadines
                         }
                     };
                 }
-            });
+            })
+            .ReturnsLazily(
+                (Ddl.CdcProviderSetupRequest request, CancellationToken _) => ProviderResult(request)
+            );
         var result = await Execute(operation);
         result.Succeeded.Should().BeFalse();
         result.Ready.Should().BeFalse();
@@ -383,7 +392,8 @@ internal class Given_CdcManagedLifecycle(Ddl.CdcProvider provider) : CdcReadines
         var result = await Execute(CdcManagedLifecycleOperation.Start);
         result.Succeeded.Should().BeFalse();
         result.Boundary.Should().Be(CdcManagedLifecycleBoundary.NativeRecovery);
-        A.CallTo(() => _runtime.InitializeAsync(A<CancellationToken>._)).MustHaveHappenedOnceExactly();
+        A.CallTo(() => _runtime.ObserveEstablishedDatabaseAsync(A<CancellationToken>._))
+            .MustHaveHappenedOnceExactly();
         (_resumes + _restarts + _stops).Should().Be(0);
         ReadJournal().Should().BeEquivalentTo(before);
     }
@@ -400,15 +410,16 @@ internal class Given_CdcManagedLifecycle(Ddl.CdcProvider provider) : CdcReadines
         using var caller = new CancellationTokenSource();
         using var deadline = new CancellationTokenSource();
         int passes = 0;
-        A.CallTo(() => _runtime.InitializeAsync(A<CancellationToken>._))
+        A.CallTo(() => _provider.SetupAsync(A<Ddl.CdcProviderSetupRequest>._, A<CancellationToken>._))
             .ReturnsLazily(
-                async (CancellationToken ct) =>
+                async (Ddl.CdcProviderSetupRequest request, CancellationToken ct) =>
                 {
                     if (++passes == 2)
                     {
                         await (cancelCaller ? caller : deadline).CancelAsync();
                         await Task.Delay(Timeout.InfiniteTimeSpan, ct);
                     }
+                    return ProviderResult(request);
                 }
             );
         var invocation = () =>
@@ -442,14 +453,17 @@ internal class Given_CdcManagedLifecycle(Ddl.CdcProvider provider) : CdcReadines
         _backlog = terminalPass > 4;
         using var deadline = new CancellationTokenSource();
         int passes = 0;
-        A.CallTo(() => _runtime.InitializeAsync(A<CancellationToken>._))
+        A.CallTo(() => _provider.SetupAsync(A<Ddl.CdcProviderSetupRequest>._, A<CancellationToken>._))
             .Invokes(() =>
             {
                 if (++passes == terminalPass)
                 {
                     _identity = new('b', 64);
                 }
-            });
+            })
+            .ReturnsLazily(
+                (Ddl.CdcProviderSetupRequest request, CancellationToken _) => ProviderResult(request)
+            );
         A.CallTo(() => _connect.StopAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
             .ReturnsLazily(
                 async (CdcDeploymentRequest _, CancellationToken ct) =>
@@ -497,7 +511,6 @@ internal class Given_CdcManagedLifecycle(Ddl.CdcProvider provider) : CdcReadines
     {
         ShortTiming(100);
         _identity = new('b', 64);
-        CancellationToken observationToken = default;
         if (boundary == "operation-wait")
         {
             // Equal call/wait budgets guarantee the operation expires during the latch, after
@@ -514,14 +527,6 @@ internal class Given_CdcManagedLifecycle(Ddl.CdcProvider provider) : CdcReadines
                 _request.KafkaClientSecurityProperties,
                 new(_request.Timing.WaitTimeout, _request.Timing.WaitTimeout, _request.Timing.PollInterval)
             );
-            A.CallTo(() => _runtime.InitializeAsync(A<CancellationToken>._))
-                .ReturnsLazily(
-                    (CancellationToken ct) =>
-                    {
-                        observationToken = ct;
-                        return Task.CompletedTask;
-                    }
-                );
         }
         using var caller = new CancellationTokenSource();
         using var deadline = new CancellationTokenSource();
@@ -556,7 +561,6 @@ internal class Given_CdcManagedLifecycle(Ddl.CdcProvider provider) : CdcReadines
                     _stopped = true;
                     if (boundary == "operation-wait")
                     {
-                        observationToken.IsCancellationRequested.Should().BeTrue();
                         ct.IsCancellationRequested.Should().BeFalse();
                     }
                     if (boundary == "stop")

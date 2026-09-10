@@ -519,14 +519,17 @@ internal class Given_CdcRecordSizeIncrease(Ddl.CdcProvider provider) : CdcReadin
                 _identity = new('b', 64);
             }
         };
-        A.CallTo(() => _runtime.InitializeAsync(A<CancellationToken>._))
+        A.CallTo(() => _provider.SetupAsync(A<Ddl.CdcProviderSetupRequest>._, A<CancellationToken>._))
             .Invokes(() =>
             {
                 if (final && _effects.Contains("resume-after") && !ReadJournal().HasPendingRecordSizeIncrease)
                 {
                     _identity = new('b', 64);
                 }
-            });
+            })
+            .ReturnsLazily(
+                (Ddl.CdcProviderSetupRequest request, CancellationToken _) => ProviderResult(request)
+            );
         int stops = 0;
         A.CallTo(() => _connect.StopAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
             .ReturnsLazily(
@@ -571,7 +574,6 @@ internal class Given_CdcRecordSizeIncrease(Ddl.CdcProvider provider) : CdcReadin
     {
         ShortTiming(100);
         _identity = new('b', 64);
-        CancellationToken observationToken = default;
         if (boundary == "operation-wait")
         {
             // Equal call/wait budgets guarantee the operation expires during the latch, after
@@ -588,14 +590,6 @@ internal class Given_CdcRecordSizeIncrease(Ddl.CdcProvider provider) : CdcReadin
                 _request.KafkaClientSecurityProperties,
                 new(_request.Timing.WaitTimeout, _request.Timing.WaitTimeout, _request.Timing.PollInterval)
             );
-            A.CallTo(() => _runtime.InitializeAsync(A<CancellationToken>._))
-                .ReturnsLazily(
-                    (CancellationToken ct) =>
-                    {
-                        observationToken = ct;
-                        return Task.CompletedTask;
-                    }
-                );
         }
         using var caller = new CancellationTokenSource();
         using var deadline = new CancellationTokenSource();
@@ -630,7 +624,6 @@ internal class Given_CdcRecordSizeIncrease(Ddl.CdcProvider provider) : CdcReadin
                     _stopped = true;
                     if (boundary == "operation-wait")
                     {
-                        observationToken.IsCancellationRequested.Should().BeTrue();
                         ct.IsCancellationRequested.Should().BeFalse();
                     }
                     if (boundary == "stop")

@@ -263,6 +263,73 @@ internal partial class Given_CdcControllerStatus(Ddl.CdcProvider provider) : Cdc
         AssertContained(await TargetStatusAsync());
     }
 
+    [TestCase("offset")]
+    [TestCase("provider")]
+    [TestCase("healthy")]
+    [TestCase("unknown")]
+    public async Task It_observes_continuity_before_failed_runtime_preparation(string evidence)
+    {
+        bool terminal = evidence is "offset" or "provider";
+        if (evidence == "offset")
+        {
+            _offsetState = CdcConnectOffsetState.Missing;
+        }
+        else if (evidence == "provider")
+        {
+            _identity = new('b', 64);
+        }
+        else if (evidence == "unknown")
+        {
+            A.CallTo(() =>
+                    _connect.ReadOffsetEvidenceAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._)
+                )
+                .Returns(
+                    new CdcTransportResult<CdcConnectOffsetEvidence>.Unavailable(
+                        new(CdcDeploymentComponent.Connect, CdcDeploymentFailure.Unavailable)
+                    )
+                );
+        }
+        (await _bindings.ExactMatchBindingAsync(_request.Binding)).State!.Incident.Should().BeNull();
+        await using var deferred = new CdcDeferredProjectionRuntime(_ =>
+        {
+            Trace("initialize");
+            throw new HttpRequestException("private-cms-preparation-failure");
+        });
+
+        var result = await _status.StatusAsync([new(_request, deferred, 1000)]);
+
+        var target = result.Targets.Single();
+        target.Status.Readiness.Should().Be(CdcReadiness.NotReady);
+        target.Diagnostics.Should().Contain(d => d.Component == CdcDeploymentComponent.Projection);
+        _trace.IndexOf("provider").Should().BeInRange(0, _trace.IndexOf("initialize") - 1);
+        var retained = await _bindings.ExactMatchBindingAsync(_request.Binding);
+        if (terminal)
+        {
+            AssertContained(target);
+            retained.State!.Incident.Should().NotBeNull();
+            _trace.IndexOf("stop").Should().BeInRange(0, _trace.IndexOf("initialize") - 1);
+            _trace
+                .IndexOf("status")
+                .Should()
+                .BeInRange(_trace.IndexOf("stop") + 1, _trace.IndexOf("initialize") - 1);
+        }
+        else
+        {
+            retained.State!.Incident.Should().BeNull();
+            target
+                .Status.SourceHistory.Continuity.Should()
+                .Be(
+                    evidence == "healthy"
+                        ? CdcSourceHistoryContinuity.Healthy
+                        : CdcSourceHistoryContinuity.Unknown
+                );
+            target.IncidentPersistence.Should().Be(CdcIncidentPersistenceState.NotRequired);
+            target.Containment.Should().Be(CdcConnectorContainmentState.NotRequired);
+            _stops.Should().Be(0);
+        }
+        JsonSerializer.Serialize(target).Should().NotContain("private-cms");
+    }
+
     [Test]
     public async Task It_reports_unknown_continuity_without_latching_or_stopping()
     {

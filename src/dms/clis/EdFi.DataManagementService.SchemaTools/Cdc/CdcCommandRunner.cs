@@ -65,6 +65,7 @@ public sealed class CdcCommandRunner(IApiSchemaFileLoader loader, EffectiveSchem
         workflow => workflow;
     internal Func<CdcEstablishedValidation, CdcEstablishedValidation> ConfigureValidation { get; init; } =
         validation => validation;
+    internal Func<CdcControllerStatus, CdcControllerStatus> ConfigureStatus { get; init; } = status => status;
     internal Func<CdcManagedLifecycle, CdcManagedLifecycle> ConfigureManagedLifecycle { get; init; } =
         lifecycle => lifecycle;
 
@@ -217,15 +218,17 @@ public sealed class CdcCommandRunner(IApiSchemaFileLoader loader, EffectiveSchem
                     positions
                 )
             );
-            var status = new CdcControllerStatus(
-                invocation.StatePath,
-                setup,
-                templates,
-                kafka,
-                connect,
-                worker,
-                metrics,
-                [positions]
+            var status = ConfigureStatus(
+                new CdcControllerStatus(
+                    invocation.StatePath,
+                    setup,
+                    templates,
+                    kafka,
+                    connect,
+                    worker,
+                    metrics,
+                    [positions]
+                )
             );
             switch (invocation.Operation)
             {

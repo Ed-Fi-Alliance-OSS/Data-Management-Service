@@ -257,8 +257,6 @@ public sealed partial class CdcControllerStatus
                     );
                 }
                 await progress.ContainTerminal();
-                component = CdcDeploymentComponent.Projection;
-                await target.Runtime.InitializeAsync(observationTimeout.Token);
                 var observation = await _validation(request.Binding.Provider)
                     .ObserveInSessionAsync(
                         request,
