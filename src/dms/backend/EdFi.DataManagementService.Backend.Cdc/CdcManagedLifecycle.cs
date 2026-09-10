@@ -313,6 +313,7 @@ public sealed class CdcManagedLifecycle
             }
 
             // Fresh passes after the effect: never reuse pre-start status or a disposed telemetry pass.
+            bool resumeReconciled = false;
             while (true)
             {
                 CdcEstablishedValidationObservation current = null!;
@@ -335,7 +336,7 @@ public sealed class CdcManagedLifecycle
                 {
                     RequireUnchangedWorker(current.Worker);
                 }
-                if (current is { Connector.IsRunning: true, PreStartEligible: true })
+                if (!resumeReconciled && current is { Connector.IsRunning: true, PreStartEligible: true })
                 {
                     // Unchanged RUNNING state cannot reconcile whether an unacknowledged restart
                     // actually ran. A stopped/failed -> RUNNING transition can be independently observed.
@@ -358,39 +359,48 @@ public sealed class CdcManagedLifecycle
                         },
                         token
                     );
-                    CdcEstablishedValidationObservation finalObservation = null!;
-                    var final = await _status.ObserveTargetAsync(
-                        target,
-                        cancellationToken,
-                        session,
-                        CdcEstablishedValidationMode.RunningPublication,
-                        value => finalObservation = value,
-                        resumeId,
-                        operationDeadline: token
-                    );
-                    failure.Observation = final;
-                    diagnostics.AddRange(final.Diagnostics);
-                    if (finalObservation is { Worker: not null })
-                    {
-                        RequireUnchangedWorker(finalObservation.Worker);
-                    }
-                    token.ThrowIfCancellationRequested();
-                    bool ready = final.Status.Readiness == CdcReadiness.Ready;
-                    return new(
-                        operation,
-                        ready,
-                        false,
-                        ready,
-                        boundary,
-                        diagnostics.DistinctBy(d => (d.Component, d.Failure)).ToArray()
-                    )
-                    {
-                        Observation = final,
-                        Recovery = final.Recovery,
-                    };
+                    resumeReconciled = true;
+                    // Readiness must be fresh after completion persistence, even if this pass was ready.
+                    continue;
                 }
-                diagnostics.AddRange(status.Diagnostics);
-                // Unknown/provenance failures reject; only an otherwise eligible transitioning task is polled.
+                token.ThrowIfCancellationRequested();
+                if (resumeReconciled)
+                {
+                    bool ready = status.Status.Readiness == CdcReadiness.Ready;
+                    bool catchingUp =
+                        current is { Connector.IsRunning: true, PreStartEligible: true }
+                        && !status.Recovery.RequiresFreshPass
+                        && status.Status.PrimaryBlockingCategory
+                            is CdcBlockingCategory.ProjectionBacklog
+                                or CdcBlockingCategory.LagExceeded
+                        && status.Diagnostics.All(d =>
+                            d.Failure == CdcDeploymentFailure.ValidationFailed
+                            && d.Component
+                                is CdcDeploymentComponent.Projection
+                                    or CdcDeploymentComponent.Metrics
+                        )
+                        && status.Status.ConnectorRuntime.State == CdcComponentState.Satisfied
+                        && CanCatchUp(status.Status.Projection, CdcBlockingCategory.ProjectionBacklog)
+                        && CanCatchUp(status.Status.Lag, CdcBlockingCategory.LagExceeded);
+                    if (ready || !catchingUp)
+                    {
+                        diagnostics.AddRange(status.Diagnostics);
+                        return new(
+                            operation,
+                            ready,
+                            false,
+                            ready,
+                            boundary,
+                            diagnostics.DistinctBy(d => (d.Component, d.Failure)).ToArray()
+                        )
+                        {
+                            Observation = status,
+                            Recovery = status.Recovery,
+                        };
+                    }
+                }
+                // Unknown/provenance failures reject; an eligible transitioning task remains bounded
+                // by the original deadline. Completed resumes wait only for known lag or queued work.
                 Require(current is { PreStartEligible: true });
                 await Task.Delay(request.Timing.PollInterval, _time, token);
             }
@@ -398,6 +408,10 @@ public sealed class CdcManagedLifecycle
         catch (Exception exception)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (failure.Observation is not null)
+            {
+                diagnostics.AddRange(failure.Observation.Diagnostics);
+            }
             diagnostics.Add(
                 exception switch
                 {
@@ -428,7 +442,7 @@ public sealed class CdcManagedLifecycle
                 diagnostics.DistinctBy(d => (d.Component, d.Failure)).ToArray()
             )
             {
-                Observation = failure.Observation,
+                Observation = failure.Observation!,
                 Recovery = new(
                     boundary == CdcManagedLifecycleBoundary.NativeRecovery
                         ? CdcRecoveryBoundary.NativeRecovery
@@ -438,6 +452,10 @@ public sealed class CdcManagedLifecycle
             };
         }
     }
+
+    private static bool CanCatchUp(CdcComponent component, CdcBlockingCategory temporaryBlocker) =>
+        component.State == CdcComponentState.Satisfied
+        || component.State == CdcComponentState.NotSatisfied && component.Category == temporaryBlocker;
 
     private static async Task<bool> MutateAsync(
         CdcDeploymentRequest request,

@@ -203,6 +203,11 @@ Export-ModuleMember -Function Resolve-DmsSchemaTool
                 $script:trace | Should -Be @('database-infra')
                 (Read-TestDeployment $project).Phase | Should -Be 'Transition'
             }
+            elseif ($bridge.CatchUpTimeout) {
+                { Invoke-TestLifecycle @{ EnableKafkaUI = $true } $project } | Should -Throw '*unverified evidence*'
+                $script:trace | Should -Not -Contain 'dms'
+                (Read-TestDeployment $project).Phase | Should -Be 'Transition'
+            }
             else {
                 Invoke-TestLifecycle @{ EnableKafkaUI = $true } $project
                 $script:trace | Should -Contain 'ui'

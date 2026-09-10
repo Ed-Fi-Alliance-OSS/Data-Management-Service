@@ -166,30 +166,10 @@ public sealed class Given_Cdc_Compose_Persistence(CdcProvider provider)
         start
             .Recovery.Boundary.Should()
             .Be(CdcRecoveryBoundary.VerifiedManagedRestart, "{0}", JsonSerializer.Serialize(start));
-        start.Diagnostics.Should().NotContain(d => d.Component != CdcDeploymentComponent.Metrics);
-        // A completed start returns its current readiness; it need not already have consumed
-        // the new event. Poll fresh validation only, without another restart or a larger lag limit.
-        await CdcControllerFixture.WaitAsync(
-            async ct =>
-            {
-                var live = Observed(
-                    await _fixture.Controllers.Validation.ValidateAsync(
-                        _request,
-                        _fixture.Runtime,
-                        CdcEstablishedValidationMode.RunningPublication,
-                        60_000,
-                        cancellationToken: ct
-                    )
-                );
-                live.PreStartEligible.Should().BeTrue();
-                live.Continuity.Should().Be(CoreCdc.CdcSourceHistoryContinuity.Healthy);
-                live.Diagnostics.Should().NotContain(d => d.Component != CdcDeploymentComponent.Metrics);
-                return live.PublicationReady;
-            },
-            _request.Timing.WaitTimeout,
-            _request.Timing.PollInterval,
-            Token
-        );
+        // The shipped lifecycle invocation owns catch-up before the wrapper can publish DMS.
+        start.Succeeded.Should().BeTrue("{0}", JsonSerializer.Serialize(start));
+        start.Ready.Should().BeTrue();
+        start.Diagnostics.Should().BeEmpty();
         _evidence.Add(
             new
             {

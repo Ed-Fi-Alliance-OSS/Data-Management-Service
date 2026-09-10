@@ -937,15 +937,38 @@ internal class Given_Cdc_command_managed_start(Ddl.CdcProvider provider) : CdcRe
         _trace.Should().NotContain("broker-start").And.NotContain("worker-start");
     }
 
-    [TestCase("local", false)]
-    [TestCase("published", false)]
-    [TestCase("local", true)]
-    [TestCase("published", true)]
+    [TestCase("local", false, "")]
+    [TestCase("published", false, "")]
+    [TestCase("local", true, "")]
+    [TestCase("published", true, "")]
+    [TestCase("local", false, "backlog")]
+    [TestCase("published", false, "lag")]
+    [TestCase("local", false, "persistent")]
     public async Task It_CdcWorkerStartup_controls_the_retained_wrapper_first_launch(
         string flavor,
-        bool reject
+        bool reject,
+        string catchUp
     )
     {
+        int postResumePasses = 0;
+        bool persistent = catchUp == "persistent";
+        if (catchUp.Length > 0)
+        {
+            _backlog = catchUp != "lag";
+            _lag = catchUp == "lag" ? 1001 : 1;
+            _onCall = call =>
+            {
+                if (call == "metrics" && _trace.Contains("resume"))
+                {
+                    postResumePasses++;
+                    if (postResumePasses > 3 && !persistent)
+                    {
+                        _backlog = false;
+                        _lag = 1;
+                    }
+                }
+            };
+        }
         if (reject)
         {
             await using var session = await _store.AcquireAsync(
@@ -976,6 +999,7 @@ internal class Given_Cdc_command_managed_start(Ddl.CdcProvider provider) : CdcRe
                 {
                     Flavor = flavor,
                     Reject = reject,
+                    CatchUpTimeout = persistent,
                     SettingsPath = _settingsPath,
                     StateRoot = _root,
                     Binding = _request.Binding,
@@ -1024,6 +1048,17 @@ internal class Given_Cdc_command_managed_start(Ddl.CdcProvider provider) : CdcRe
                 arguments[4].Should().Be("--state-path");
                 arguments[5].Should().Be(_root);
                 var result = await CommandAsync(operation, timeout.Token, arguments[3]);
+                if (operation == CdcCommandOperation.Start && catchUp.Length > 0)
+                {
+                    result.Succeeded.Should().Be(!persistent, JsonSerializer.Serialize(result));
+                    result
+                        .Data.Should()
+                        .BeOfType<CdcManagedLifecycleResult>()
+                        .Which.Ready.Should()
+                        .Be(!persistent);
+                    postResumePasses.Should().BeGreaterThan(3);
+                    ReadJournal().Operations.Last().Completions.Should().ContainSingle();
+                }
                 await File.WriteAllTextAsync(
                     bridge + ".response.tmp",
                     JsonSerializer.Serialize(result, CdcCommandHost.JsonOptions),

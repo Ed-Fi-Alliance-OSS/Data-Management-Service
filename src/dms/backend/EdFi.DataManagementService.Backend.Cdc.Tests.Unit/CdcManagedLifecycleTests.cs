@@ -435,9 +435,11 @@ internal class Given_CdcManagedLifecycle(Ddl.CdcProvider provider) : CdcReadines
 
     [TestCase(3)]
     [TestCase(4)]
+    [TestCase(5)]
     public async Task It_preserves_terminal_results_after_restart_including_final_validation(int terminalPass)
     {
         ShortTiming(1000);
+        _backlog = terminalPass > 4;
         using var deadline = new CancellationTokenSource();
         int passes = 0;
         A.CallTo(() => _runtime.InitializeAsync(A<CancellationToken>._))
@@ -865,13 +867,136 @@ internal class Given_CdcManagedLifecycle(Ddl.CdcProvider provider) : CdcReadines
         _resumes.Should().Be(0);
     }
 
+    [TestCase(CdcManagedLifecycleOperation.Start, true)]
+    [TestCase(CdcManagedLifecycleOperation.Restart, false)]
+    [TestCase(CdcManagedLifecycleOperation.Resume, true)]
+    public async Task It_waits_for_delayed_catch_up_with_one_mutation_and_completion(
+        CdcManagedLifecycleOperation operation,
+        bool backlog
+    )
+    {
+        (await Execute(CdcManagedLifecycleOperation.Stop)).Succeeded.Should().BeTrue();
+        ShortTiming(1000);
+        _backlog = backlog;
+        _lag = backlog ? 1 : 1001;
+        int passes = 0;
+        int completions = 0;
+        _onCall = call =>
+        {
+            if (call == "metrics" && _resumes + _restarts > 0 && ++passes == 4)
+            {
+                _backlog = false;
+                _lag = 1;
+            }
+        };
+        _onWrite = boundary =>
+        {
+            if (boundary == CdcWorkflowWriteBoundary.AfterAtomicReplacement && _resumes + _restarts > 0)
+            {
+                completions++;
+            }
+        };
+        var result = await Execute(operation);
+        result.Succeeded.Should().BeTrue();
+        result.Ready.Should().BeTrue();
+        result.Diagnostics.Should().BeEmpty();
+        result.Observation.Status.PrimaryBlockingCategory.Should().Be(CdcBlockingCategory.None);
+        passes.Should().BeGreaterThanOrEqualTo(4);
+        (_resumes + _restarts).Should().Be(1);
+        completions.Should().Be(1);
+        ReadJournal().Operations.Last().Completions.Should().ContainSingle();
+    }
+
+    [TestCase("cancel")]
+    [TestCase("terminal")]
+    [TestCase("unknown")]
+    public async Task It_rejects_or_contains_new_evidence_during_catch_up(string change)
+    {
+        ShortTiming(1000);
+        _backlog = true;
+        int passes = 0;
+        using var caller = new CancellationTokenSource();
+        _onCall = call =>
+        {
+            if (call == "provider" && _restarts > 0 && ++passes == 3)
+            {
+                if (change == "cancel")
+                {
+                    caller.Cancel();
+                }
+                else if (change == "terminal")
+                {
+                    _identity = new('b', 64);
+                }
+                else
+                {
+                    A.CallTo(() =>
+                            _metrics.CollectAsync(
+                                A<CdcDeploymentRequest>._,
+                                A<CdcTelemetryObservationPass>._,
+                                A<CancellationToken>._
+                            )
+                        )
+                        .Returns(
+                            new CdcTransportResult<CdcConnectorTelemetryObservation>.Unavailable(
+                                new(CdcDeploymentComponent.Metrics, CdcDeploymentFailure.Unavailable)
+                            )
+                        );
+                }
+            }
+        };
+        if (change == "cancel")
+        {
+            await FluentActions
+                .Awaiting(() => Execute(CdcManagedLifecycleOperation.Restart, caller.Token))
+                .Should()
+                .ThrowAsync<OperationCanceledException>();
+        }
+        else
+        {
+            var result = await Execute(CdcManagedLifecycleOperation.Restart);
+            result.Succeeded.Should().BeFalse();
+            result.Ready.Should().BeFalse();
+            if (change == "terminal")
+            {
+                result.Observation.IncidentPersistence.Should().Be(CdcIncidentPersistenceState.Persisted);
+                result.Observation.Containment.Should().Be(CdcConnectorContainmentState.Stopped);
+            }
+            else
+            {
+                result
+                    .Diagnostics.Should()
+                    .Contain(d =>
+                        d.Component == CdcDeploymentComponent.Metrics
+                        && d.Failure == CdcDeploymentFailure.Unavailable
+                    );
+            }
+        }
+        passes.Should().Be(3);
+        _restarts.Should().Be(1);
+        _stops.Should().Be(change == "terminal" ? 1 : 0);
+        await using var session = await _store.AcquireAsync(
+            TimeSpan.FromSeconds(1),
+            TimeSpan.FromMilliseconds(1),
+            default
+        );
+    }
+
     [TestCase(false)]
     [TestCase(true)]
     public async Task It_requires_fresh_post_mutation_lag_and_projection(bool backlog)
     {
+        ShortTiming(100);
         _backlog = backlog;
         _lag = backlog ? 1 : 1001;
+        var elapsed = System.Diagnostics.Stopwatch.StartNew();
         var result = await Execute(CdcManagedLifecycleOperation.Restart);
+        elapsed
+            .Elapsed.Should()
+            .BeGreaterThanOrEqualTo(_request.Timing.WaitTimeout - TimeSpan.FromMilliseconds(20))
+            .And.BeLessThan(TimeSpan.FromSeconds(3));
+        result.Diagnostics.Should().Contain(d => d.Failure == CdcDeploymentFailure.Timeout);
+        ReadJournal().Operations.Last().Completions.Should().ContainSingle();
         _restarts.Should().Be(1);
         result.Ready.Should().BeFalse();
         result.Succeeded.Should().BeFalse();
@@ -1157,6 +1282,15 @@ internal class Given_CdcManagedLifecycle(Ddl.CdcProvider provider) : CdcReadines
     [Test]
     public async Task It_collects_new_telemetry_after_completion_persistence()
     {
+        ShortTiming(100);
+        bool observedLagAfterCompletion = false;
+        _onCall = call =>
+        {
+            if (call == "metrics" && _lag == 1001)
+            {
+                observedLagAfterCompletion = true;
+            }
+        };
         _onWrite = b =>
         {
             if (b == CdcWorkflowWriteBoundary.AfterAtomicReplacement && _restarts > 0)
@@ -1167,7 +1301,8 @@ internal class Given_CdcManagedLifecycle(Ddl.CdcProvider provider) : CdcReadines
         var result = await Execute(CdcManagedLifecycleOperation.Restart);
         _restarts.Should().Be(1);
         result.Ready.Should().BeFalse();
-        result.Diagnostics.Should().Contain(d => d.Component == CdcDeploymentComponent.Metrics);
+        observedLagAfterCompletion.Should().BeTrue();
+        result.Diagnostics.Should().Contain(d => d.Failure == CdcDeploymentFailure.Timeout);
     }
 
     [Test]
