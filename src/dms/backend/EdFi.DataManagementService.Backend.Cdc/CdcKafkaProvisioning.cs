@@ -73,6 +73,30 @@ public sealed class CdcKafkaProvisioning : ICdcKafkaAdministrationTransport
         _time = time;
     }
 
+    internal LocalCdcWorkflowJournalStore Store => _store;
+
+    internal Task<CdcWorkflowJournal> RequireInitialStartupAsync(
+        CdcDeploymentRequest request,
+        LocalCdcWorkflowJournalStore.Session session,
+        CancellationToken token
+    ) => EligibleWorkflowAsync(request, session, new Boundary(), token);
+
+    internal async Task<CdcTransportResult<CdcConnectOffsetStorePolicyObservation>> OffsetStoreInSessionAsync(
+        CdcDeploymentRequest request,
+        LocalCdcWorkflowJournalStore.Session session,
+        bool provision,
+        CancellationToken token
+    ) =>
+        await ExecuteInSessionAsync(
+            request,
+            true,
+            provision,
+            CdcDeploymentKafkaPolicy.ObserveOffsetStore,
+            session,
+            new Boundary(),
+            token
+        );
+
     public Task<CdcTransportResult<CdcConnectOffsetStorePolicyObservation>> ObserveOffsetStoreAsync(
         CdcDeploymentRequest request,
         CancellationToken cancellationToken
@@ -117,16 +141,7 @@ public sealed class CdcKafkaProvisioning : ICdcKafkaAdministrationTransport
                     : request.Timing.CallTimeout,
                 token
             );
-            if (provision)
-            {
-                await PrepareAsync(request, shared, session, boundary, token);
-            }
-            boundary.Component = CdcDeploymentComponent.Kafka;
-            var evidence = await InspectAsync(request, shared, includeProducer: !shared, token);
-            token.ThrowIfCancellationRequested();
-            return new CdcTransportResult<T>.Observed(
-                observe(request, Guid.NewGuid().ToString("D"), _time.GetUtcNow(), evidence)
-            );
+            return await ExecuteInSessionAsync(request, shared, provision, observe, session, boundary, token);
         }
         catch (OperationCanceledException)
             when (!cancellationToken.IsCancellationRequested && timeout.IsCancellationRequested)
@@ -156,6 +171,29 @@ public sealed class CdcKafkaProvisioning : ICdcKafkaAdministrationTransport
                 CdcDeploymentDiagnostic.FromException(boundary.Component, exception)
             );
         }
+    }
+
+    private async Task<CdcTransportResult<T>> ExecuteInSessionAsync<T>(
+        CdcDeploymentRequest request,
+        bool shared,
+        bool provision,
+        Func<CdcDeploymentRequest, string, DateTimeOffset, CdcKafkaDeploymentEvidence, T> observe,
+        LocalCdcWorkflowJournalStore.Session session,
+        Boundary boundary,
+        CancellationToken token
+    )
+        where T : notnull
+    {
+        if (provision)
+        {
+            await PrepareAsync(request, shared, session, boundary, token);
+        }
+        boundary.Component = CdcDeploymentComponent.Kafka;
+        var evidence = await InspectAsync(request, shared, includeProducer: !shared, token);
+        token.ThrowIfCancellationRequested();
+        return new CdcTransportResult<T>.Observed(
+            observe(request, Guid.NewGuid().ToString("D"), _time.GetUtcNow(), evidence)
+        );
     }
 
     private async Task PrepareAsync(

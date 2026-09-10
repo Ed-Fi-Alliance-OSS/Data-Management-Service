@@ -130,7 +130,7 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
 
     internal async Task RecreateControllerComposeAsync(
         CdcDeploymentRequest request,
-        ICdcKafkaAdministrationTransport kafka,
+        CdcKafkaProvisioning kafka,
         CancellationToken token
     )
     {

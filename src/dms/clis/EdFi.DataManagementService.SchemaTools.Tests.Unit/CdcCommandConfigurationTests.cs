@@ -163,8 +163,15 @@ public partial class Given_Cdc_command_configuration(string providerToken, CoreP
                 );
             }
         }
-        Func<Task> act = () =>
-            CdcCommandRunner.RequireManagedShutdownAsync(_root, request, CancellationToken.None);
+        Func<Task> act = async () =>
+        {
+            await using var session = await new LocalCdcWorkflowJournalStore(_root).AcquireAsync(
+                TimeSpan.FromSeconds(1),
+                TimeSpan.FromMilliseconds(1),
+                default
+            );
+            await CdcWorkerStartup.RequireManagedShutdownAsync(session, request, default);
+        };
         if (evidence == "verified")
         {
             await act.Should().NotThrowAsync();

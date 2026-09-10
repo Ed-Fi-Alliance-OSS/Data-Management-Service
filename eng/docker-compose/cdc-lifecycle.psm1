@@ -460,8 +460,16 @@ function Invoke-CdcDeploymentLifecycle {
             # cannot turn an earlier successful stop into authority for a second worker launch.
             $deployment.Phase = 'Transition'
             Write-CdcDeployment $Project $deployment
-            Invoke-CdcInfrastructure $StartScript ($infrastructure + @{ InfraOnly = $true; SuppressWriterGuidance = $true })
+            $preparation = $infrastructure + @{ InfraOnly = $true; CdcDatabaseInfrastructure = $true; SuppressWriterGuidance = $true }
+            $preparation.Remove('CdcKafkaInfrastructure')
+            $preparation.Remove('EnableKafkaUI')
+            Invoke-CdcInfrastructure $StartScript $preparation
             Invoke-CdcLifecycleCommand $deployment.Entries[0] 'start-worker'
+            if ($Parameters['EnableKafkaUI'] -and -not $destructive) {
+                Import-Module (Join-Path $PSScriptRoot 'bootstrap-cdc.psm1')
+                $settings = Get-Content -LiteralPath $deployment.Entries[0].SettingsPath -Raw | ConvertFrom-Json -AsHashtable
+                Invoke-BootstrapCdcKafkaUI -Handoff @{ Settings = $settings }
+            }
             Assert-CdcWorkerInventory $deployment -Stopped
             if ($destructive) {
                 $deployment.Phase = 'Retiring'

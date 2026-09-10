@@ -52,6 +52,15 @@ public sealed class CdcCommandRunner(IApiSchemaFileLoader loader, EffectiveSchem
     internal DeploymentRequestFactory CreateRequest { get; init; } =
         (config, state, connection, loader, builder, token, defer, retained) =>
             config.CreateRequestAsync(state, connection, loader, builder, token, defer, retained);
+    internal Func<CdcCommandConfiguration, ICdcWorkerStartupTransport> CreateStartupTransport { get; init; } =
+        config => new CdcComposeWorkerStartupTransport(
+            config.ComposeFile,
+            config.EnvironmentFile,
+            config.Project,
+            config.BrokerSizeOverride
+        );
+    internal Func<CdcKafkaProvisioning, CdcKafkaProvisioning> ConfigureKafkaProvisioning { get; init; } =
+        provisioning => provisioning;
     internal Func<CdcInitialEnableWorkflow, CdcInitialEnableWorkflow> ConfigureEnableWorkflow { get; init; } =
         workflow => workflow;
     internal Func<CdcEstablishedValidation, CdcEstablishedValidation> ConfigureValidation { get; init; } =
@@ -205,21 +214,17 @@ public sealed class CdcCommandRunner(IApiSchemaFileLoader loader, EffectiveSchem
                 case CdcCommandOperation.StartWorker:
                     // The wrapper holds its deployment inventory lock and accounts for every peer.
                     // This target still needs the controller's original completed shutdown intent.
-                    await RequireManagedShutdownAsync(invocation.StatePath, request, ct);
                     var retained = Require(
                         await new CdcWorkerStartup(
-                            new CdcKafkaProvisioning(
-                                invocation.StatePath,
-                                kafka,
-                                runtime,
-                                new CdcKafkaProducerInspection(connect, worker)
+                            ConfigureKafkaProvisioning(
+                                new CdcKafkaProvisioning(
+                                    invocation.StatePath,
+                                    kafka,
+                                    runtime,
+                                    new CdcKafkaProducerInspection(connect, worker)
+                                )
                             ),
-                            new CdcComposeWorkerStartupTransport(
-                                config.ComposeFile,
-                                config.EnvironmentFile,
-                                config.Project,
-                                config.BrokerSizeOverride
-                            )
+                            CreateStartupTransport(config)
                         ).StartRetainedAsync(request, ct)
                     );
                     return Result(true, retained, []);
@@ -405,32 +410,6 @@ public sealed class CdcCommandRunner(IApiSchemaFileLoader loader, EffectiveSchem
                     ? CdcDeploymentFailure.InvalidInput
                     : CdcDeploymentDiagnostic.FromException(component, exception).Failure
             );
-        }
-    }
-
-    internal static async Task RequireManagedShutdownAsync(
-        string statePath,
-        CdcDeploymentRequest request,
-        CancellationToken token
-    )
-    {
-        await using var session = await new LocalCdcWorkflowJournalStore(statePath).AcquireAsync(
-            request.Timing.CallTimeout,
-            request.Timing.PollInterval < request.Timing.CallTimeout
-                ? request.Timing.PollInterval
-                : request.Timing.CallTimeout,
-            token
-        );
-        var journal = await session.ReadAsync(request.TargetIdentity, token);
-        var latest = journal.Operations.Last();
-        if (
-            latest.Effect != CdcWorkflowEffect.StopConnector
-            || latest.Completions is not [{ Evidence: CdcWorkflowCompletion.Shutdown }]
-        )
-        {
-            throw new CdcCommandEvidenceException([
-                new(CdcDeploymentComponent.WorkflowState, CdcDeploymentFailure.ValidationFailed),
-            ]);
         }
     }
 

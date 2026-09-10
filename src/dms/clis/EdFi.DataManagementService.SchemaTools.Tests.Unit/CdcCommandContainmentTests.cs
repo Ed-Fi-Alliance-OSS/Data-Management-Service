@@ -213,7 +213,16 @@ public partial class Given_Cdc_command_configuration
                     || t.StartsWith("runtime", StringComparison.Ordinal)
                 );
             trace.Should().Contain("worker").And.Contain("stop").And.Contain("status");
-            await CdcCommandRunner.RequireManagedShutdownAsync(_root, request, default);
+            await using (
+                var shutdownSession = await new LocalCdcWorkflowJournalStore(_root).AcquireAsync(
+                    TimeSpan.FromSeconds(1),
+                    TimeSpan.FromMilliseconds(1),
+                    default
+                )
+            )
+            {
+                await CdcWorkerStartup.RequireManagedShutdownAsync(shutdownSession, request, default);
+            }
         }
         else
         {
@@ -692,12 +701,18 @@ internal class Given_Cdc_command_managed_start(Ddl.CdcProvider provider) : CdcRe
 {
     private string _settingsPath = null!;
     private bool _stopped;
+    private ICdcWorkerStartupTransport _infrastructure = null!;
     private ICdcBindingLifecycleService _bindings = null!;
 
     [SetUp]
     public async Task SetupCommand()
     {
         ShortTiming(1000);
+        _infrastructure = A.Fake<ICdcWorkerStartupTransport>();
+        A.CallTo(() => _infrastructure.StartBrokerAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
+            .Invokes(() => Trace("broker-start"));
+        A.CallTo(() => _infrastructure.StartWorkerAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
+            .Invokes(() => Trace("worker-start"));
         _bindings = _services.GetRequiredService<ICdcBindingLifecycleService>();
         _stopped = false;
         A.CallTo(() => _connect.StopAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
@@ -762,7 +777,16 @@ internal class Given_Cdc_command_managed_start(Ddl.CdcProvider provider) : CdcRe
             )
         );
         (await CommandAsync(CdcCommandOperation.Stop)).Succeeded.Should().BeTrue();
-        await CdcCommandRunner.RequireManagedShutdownAsync(_root, _request, default);
+        await using (
+            var shutdownSession = await new LocalCdcWorkflowJournalStore(_root).AcquireAsync(
+                TimeSpan.FromSeconds(1),
+                TimeSpan.FromMilliseconds(1),
+                default
+            )
+        )
+        {
+            await CdcWorkerStartup.RequireManagedShutdownAsync(shutdownSession, _request, default);
+        }
         _trace.Clear();
         _disposals = 0;
         Fake.ClearRecordedCalls(_runtime);
@@ -771,7 +795,8 @@ internal class Given_Cdc_command_managed_start(Ddl.CdcProvider provider) : CdcRe
 
     private Task<CdcCommandResult> CommandAsync(
         CdcCommandOperation operation = CdcCommandOperation.Start,
-        CancellationToken token = default
+        CancellationToken token = default,
+        string settingsPath = ""
     )
     {
         var runner = new CdcCommandRunner(
@@ -785,16 +810,253 @@ internal class Given_Cdc_command_managed_start(Ddl.CdcProvider provider) : CdcRe
                 Trace("initialize");
                 return Task.FromResult(Observed(_runtime));
             },
+            CreateStartupTransport = _ => _infrastructure,
+            ConfigureKafkaProvisioning = _ =>
+                new(_root, _kafka, _runtime, new CdcKafkaProducerInspection(_connect, _worker)),
             ConfigureValidation = _ =>
                 new(_root, _provider, _templates, _kafka, _connect, _worker, _metrics, _positions),
             ConfigureManagedLifecycle = _ =>
                 new(_root, _provider, _templates, _kafka, _connect, _worker, _metrics, [_positions]),
         };
         return runner.RunAsync(
-            new(operation, _settingsPath, _root, 1, Target.Generation, false, "", false),
+            new(
+                operation,
+                string.IsNullOrEmpty(settingsPath) ? _settingsPath : settingsPath,
+                _root,
+                1,
+                Target.Generation,
+                false,
+                "",
+                false
+            ),
             TextWriter.Null,
             token
         );
+    }
+
+    [TestCase("broker-start", false, false)]
+    [TestCase("worker-start", false, false)]
+    [TestCase("broker-start", true, false)]
+    [TestCase("worker-start", true, false)]
+    [TestCase("worker-start", false, true)]
+    public async Task It_CdcWorkerStartup_keeps_the_command_session_until_launch_finishes(
+        string boundary,
+        bool cancel,
+        bool fail
+    )
+    {
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var caller = new CancellationTokenSource();
+        async Task Pause(CancellationToken token)
+        {
+            Trace(boundary);
+            entered.SetResult();
+            await release.Task.WaitAsync(token);
+            if (fail)
+            {
+                throw new IOException("controlled infrastructure failure");
+            }
+        }
+        if (boundary == "broker-start")
+        {
+            A.CallTo(() =>
+                    _infrastructure.StartBrokerAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._)
+                )
+                .ReturnsLazily((CdcDeploymentRequest _, CancellationToken token) => Pause(token));
+        }
+        else
+        {
+            A.CallTo(() =>
+                    _infrastructure.StartWorkerAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._)
+                )
+                .ReturnsLazily((CdcDeploymentRequest _, CancellationToken token) => Pause(token));
+        }
+        var command = CommandAsync(CdcCommandOperation.StartWorker, caller.Token);
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var contender = _store.AcquireAsync(TimeSpan.FromSeconds(3), TimeSpan.FromMilliseconds(1), default);
+        try
+        {
+            contender
+                .IsCompleted.Should()
+                .BeFalse(
+                    "startup must retain authorization through the first broker and final worker effect"
+                );
+            if (cancel)
+            {
+                await caller.CancelAsync();
+                await FluentActions.Awaiting(() => command).Should().ThrowAsync<OperationCanceledException>();
+            }
+            else
+            {
+                release.SetResult();
+                (await command).Succeeded.Should().Be(!fail);
+            }
+        }
+        finally
+        {
+            await caller.CancelAsync();
+            release.TrySetResult();
+            try
+            {
+                await command;
+            }
+            catch (OperationCanceledException)
+            {
+                // Join the cancelled command even when a preceding assertion failed.
+            }
+            await using var competing = await contender;
+        }
+        if (cancel && boundary == "broker-start")
+        {
+            _trace.Should().NotContain("worker-start");
+        }
+    }
+
+    [TestCase(CdcWorkflowEffect.ResumeConnector)]
+    [TestCase(CdcWorkflowEffect.Retire)]
+    public async Task It_CdcWorkerStartup_rejects_a_shutdown_consumed_before_command_lock_acquisition(
+        CdcWorkflowEffect effect
+    )
+    {
+        Task<CdcCommandResult> command;
+        await using (
+            var session = await _store.AcquireAsync(
+                TimeSpan.FromSeconds(1),
+                TimeSpan.FromMilliseconds(1),
+                default
+            )
+        )
+        {
+            command = CommandAsync(CdcCommandOperation.StartWorker);
+            command.IsCompleted.Should().BeFalse();
+            var journal = await session.ReadAsync(Target, default);
+            await session.RecordIntentAsync(Target, journal.WorkflowId, Guid.NewGuid(), effect, [], default);
+        }
+        (await command).Succeeded.Should().BeFalse();
+        _trace.Should().NotContain("broker-start").And.NotContain("worker-start");
+    }
+
+    [TestCase("local", false)]
+    [TestCase("published", false)]
+    [TestCase("local", true)]
+    [TestCase("published", true)]
+    public async Task It_CdcWorkerStartup_controls_the_retained_wrapper_first_launch(
+        string flavor,
+        bool reject
+    )
+    {
+        if (reject)
+        {
+            await using var session = await _store.AcquireAsync(
+                TimeSpan.FromSeconds(1),
+                TimeSpan.FromMilliseconds(1),
+                default
+            );
+            var journal = await session.ReadAsync(Target, default);
+            await session.RecordIntentAsync(
+                Target,
+                journal.WorkflowId,
+                Guid.NewGuid(),
+                CdcWorkflowEffect.ResumeConnector,
+                [],
+                default
+            );
+        }
+        string repository = TestContext.CurrentContext.TestDirectory;
+        while (!Directory.Exists(Path.Combine(repository, "eng", "docker-compose")))
+        {
+            repository = Directory.GetParent(repository)!.FullName;
+        }
+        string bridge = Path.Combine(_root, "wrapper-bridge.json");
+        await File.WriteAllTextAsync(
+            bridge,
+            JsonSerializer.Serialize(
+                new
+                {
+                    Flavor = flavor,
+                    Reject = reject,
+                    SettingsPath = _settingsPath,
+                    StateRoot = _root,
+                    Binding = _request.Binding,
+                    Provider = Provider == Ddl.CdcProvider.Postgresql ? "postgresql" : "mssql",
+                    IdentityProvider = Provider == Ddl.CdcProvider.Postgresql ? "self-contained" : "keycloak",
+                    WorkerKey = _request.WorkerPolicy.WorkerKey.Value,
+                    OffsetTopic = _request.WorkerPolicy.OffsetStorageTopic.Value,
+                }
+            )
+        );
+        var info = new System.Diagnostics.ProcessStartInfo("pwsh")
+        {
+            WorkingDirectory = repository,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+        };
+        info.Environment["DMS_T57_BRIDGE"] = bridge;
+        info.ArgumentList.Add("-NoProfile");
+        info.ArgumentList.Add("-Command");
+        info.ArgumentList.Add(
+            "$r = Invoke-Pester -Path eng/docker-compose/tests/CdcLifecycleOrdering.Tests.ps1 -FullName '*production controller session bridge*' -Output Detailed -PassThru; if ($r.PassedCount -ne 1 -or $r.FailedCount -ne 0) { exit 1 }"
+        );
+        using var process = System.Diagnostics.Process.Start(info)!;
+        var error = process.StandardError.ReadToEndAsync();
+        var output = process.StandardOutput.ReadToEndAsync();
+        int commands = 0;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(45));
+        try
+        {
+            while (!process.HasExited)
+            {
+                if (!File.Exists(bridge + ".request"))
+                {
+                    await Task.Delay(10, timeout.Token);
+                    continue;
+                }
+                var arguments = JsonSerializer.Deserialize<string[]>(
+                    await File.ReadAllTextAsync(bridge + ".request", timeout.Token)
+                )!;
+                File.Delete(bridge + ".request");
+                var operation =
+                    arguments[1] == "start-worker"
+                        ? CdcCommandOperation.StartWorker
+                        : CdcCommandOperation.Start;
+                arguments[4].Should().Be("--state-path");
+                arguments[5].Should().Be(_root);
+                var result = await CommandAsync(operation, timeout.Token, arguments[3]);
+                await File.WriteAllTextAsync(
+                    bridge + ".response.tmp",
+                    JsonSerializer.Serialize(result, CdcCommandHost.JsonOptions),
+                    timeout.Token
+                );
+                File.Move(bridge + ".response.tmp", bridge + ".response");
+                commands++;
+            }
+            await process.WaitForExitAsync(timeout.Token);
+            process.ExitCode.Should().Be(0, await output + await error);
+        }
+        finally
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(true);
+                await process.WaitForExitAsync();
+            }
+        }
+        commands.Should().Be(reject ? 1 : 2);
+        if (reject)
+        {
+            _trace
+                .Should()
+                .NotContain("broker-start")
+                .And.NotContain("worker-start")
+                .And.NotContain("resume");
+        }
+        else
+        {
+            _trace.Count(t => t == "broker-start").Should().Be(1);
+            _trace.Count(t => t == "worker-start").Should().Be(1);
+        }
     }
 
     private void LoseHistory(string evidence)

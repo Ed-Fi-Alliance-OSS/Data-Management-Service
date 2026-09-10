@@ -9,8 +9,8 @@ using EdFi.DataManagementService.Core.DocumentCache.Cdc;
 namespace EdFi.DataManagementService.Backend.Cdc;
 
 /// <summary>
-/// Infrastructure startup only. The owner must perform retained-connector shutdown/provenance
-/// checks before restarting an established worker; this interface never resumes a connector.
+/// Explicit infrastructure effects; CdcWorkerStartup owns authorization under its controller session.
+/// This interface never resumes a connector.
 /// Broker startup (including UI) cannot start Connect through Compose dependencies or profiles.
 /// </summary>
 public interface ICdcWorkerStartupTransport
@@ -20,10 +20,7 @@ public interface ICdcWorkerStartupTransport
 }
 
 /// <summary>One fresh offset-store preparation and policy gate precedes each worker launch.</summary>
-public sealed class CdcWorkerStartup(
-    ICdcKafkaAdministrationTransport kafka,
-    ICdcWorkerStartupTransport infrastructure
-)
+public sealed class CdcWorkerStartup(CdcKafkaProvisioning kafka, ICdcWorkerStartupTransport infrastructure)
 {
     public async Task<CdcTransportResult<CdcTransportAcknowledgement>> StartAsync(
         CdcDeploymentRequest request,
@@ -47,36 +44,33 @@ public sealed class CdcWorkerStartup(
         timeout.CancelAfter(request.Timing.WaitTimeout);
         try
         {
-            await infrastructure.StartBrokerAsync(request, timeout.Token);
-            DateTimeOffset started = DateTimeOffset.UtcNow;
-            var result = createMissingOffsetStore
-                ? await kafka.ProvisionOffsetStoreAsync(request, timeout.Token)
-                : await kafka.ObserveOffsetStoreAsync(request, timeout.Token);
-            DateTimeOffset now = DateTimeOffset.UtcNow;
-            if (result is not CdcTransportResult<CdcConnectOffsetStorePolicyObservation>.Observed observed)
-            {
-                return Reject();
-            }
-            var value = observed.Value;
-            var validation = CdcConnectOffsetStorePolicyObservationValidator.Validate(
-                value,
-                new(value.OperationId, request.TargetIdentity, request.Binding.PhysicalSourceFingerprint, now)
+            await using var session = await kafka.Store.AcquireAsync(
+                request.Timing.CallTimeout,
+                request.Timing.PollInterval < request.Timing.CallTimeout
+                    ? request.Timing.PollInterval
+                    : request.Timing.CallTimeout,
+                timeout.Token
             );
-            if (
-                !validation.Succeeded
-                || value.PolicyState != CdcConnectOffsetStorePolicyState.Satisfied
-                || value.WorkerKey != request.WorkerPolicy.WorkerKey.Value
-                || value.OffsetStorageTopic != request.WorkerPolicy.OffsetStorageTopic.Value
-                || value.ObservedAt < started
-                || value.ObservedAt > now
-                || now - value.ObservedAt > request.Timing.MaximumObservationAge
-            )
+            if (createMissingOffsetStore)
             {
-                return Reject();
+                await kafka.RequireInitialStartupAsync(request, session, timeout.Token);
             }
-            timeout.Token.ThrowIfCancellationRequested();
-            await infrastructure.StartWorkerAsync(request, timeout.Token);
-            return new CdcTransportResult<CdcTransportAcknowledgement>.Observed(new());
+            else
+            {
+                await RequireManagedShutdownAsync(session, request, timeout.Token);
+            }
+            return await StartInSessionAsync(request, session, createMissingOffsetStore, timeout.Token);
+        }
+        catch (CdcWorkflowStateException exception)
+        {
+            return new CdcTransportResult<CdcTransportAcknowledgement>.Unavailable(
+                new(
+                    CdcDeploymentComponent.WorkflowState,
+                    exception.Failure == CdcWorkflowStateFailure.LockTimeout
+                        ? CdcDeploymentFailure.Timeout
+                        : CdcDeploymentFailure.ValidationFailed
+                )
+            );
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -94,6 +88,72 @@ public sealed class CdcWorkerStartup(
                 CdcDeploymentDiagnostic.FromException(CdcDeploymentComponent.Worker, exception)
             );
         }
+    }
+
+    /// <summary>The caller retains the session from its original startup authorization through both effects.</summary>
+    internal async Task<CdcTransportResult<CdcTransportAcknowledgement>> StartInSessionAsync(
+        CdcDeploymentRequest request,
+        LocalCdcWorkflowJournalStore.Session session,
+        bool createMissingOffsetStore,
+        CancellationToken token
+    )
+    {
+        await infrastructure.StartBrokerAsync(request, token);
+        DateTimeOffset started = DateTimeOffset.UtcNow;
+        var result = await kafka.OffsetStoreInSessionAsync(request, session, createMissingOffsetStore, token);
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        if (result is not CdcTransportResult<CdcConnectOffsetStorePolicyObservation>.Observed observed)
+        {
+            return Reject();
+        }
+        if (!ValidOffsetStore(request, observed.Value, started, now))
+        {
+            return Reject();
+        }
+        token.ThrowIfCancellationRequested();
+        await infrastructure.StartWorkerAsync(request, token);
+        return new CdcTransportResult<CdcTransportAcknowledgement>.Observed(new());
+    }
+
+    internal static bool ValidOffsetStore(
+        CdcDeploymentRequest request,
+        CdcConnectOffsetStorePolicyObservation value,
+        DateTimeOffset started,
+        DateTimeOffset now
+    )
+    {
+        var validation = CdcConnectOffsetStorePolicyObservationValidator.Validate(
+            value,
+            new(value.OperationId, request.TargetIdentity, request.Binding.PhysicalSourceFingerprint, now)
+        );
+        if (
+            !validation.Succeeded
+            || value.PolicyState != CdcConnectOffsetStorePolicyState.Satisfied
+            || value.WorkerKey != request.WorkerPolicy.WorkerKey.Value
+            || value.OffsetStorageTopic != request.WorkerPolicy.OffsetStorageTopic.Value
+            || value.ObservedAt < started
+            || value.ObservedAt > now
+            || now - value.ObservedAt > request.Timing.MaximumObservationAge
+        )
+        {
+            return false;
+        }
+        return true;
+    }
+
+    internal static async Task RequireManagedShutdownAsync(
+        LocalCdcWorkflowJournalStore.Session session,
+        CdcDeploymentRequest request,
+        CancellationToken token
+    )
+    {
+        var journal = await session.ReadAsync(request.TargetIdentity, token);
+        var latest = journal.Operations.Last();
+        CdcWorkflowJournalValidation.Require(
+            latest.Effect == CdcWorkflowEffect.StopConnector
+                && latest.Completions is [{ Evidence: CdcWorkflowCompletion.Shutdown }],
+            CdcWorkflowStateFailure.Contradictory
+        );
     }
 
     private static CdcTransportResult<CdcTransportAcknowledgement> Reject() =>

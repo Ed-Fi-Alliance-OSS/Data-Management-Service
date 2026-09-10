@@ -41,9 +41,7 @@ public sealed class Given_authorized_three_broker_cdc_policy
             _request = _fixture.Request();
             _peer = _fixture.Request("b");
             await _fixture.PrepareOffsetsAsync(_request, timeout.Token);
-            Value(
-                await new CdcWorkerStartup(_fixture.Controller, _fixture).StartAsync(_request, timeout.Token)
-            );
+            Value(await _fixture.StartPolicyWorkerAsync(_request, true, timeout.Token));
             await _fixture.ProvisionTopicsAsync(_request, timeout.Token);
             await _fixture.ProvisionTopicsAsync(_peer, timeout.Token);
             foreach (var request in new[] { _request, _peer })
@@ -362,12 +360,7 @@ public sealed class Given_authorized_three_broker_cdc_policy
             Value(matched).Configuration[key].Value.Should().Be(changed);
             if (role == CdcKafkaTopicRole.SharedOffsets)
             {
-                (
-                    await new CdcWorkerStartup(_fixture.Controller, _fixture).StartRetainedAsync(
-                        _request,
-                        Token
-                    )
-                )
+                (await _fixture.StartPolicyWorkerAsync(_request, false, Token))
                     .State.Should()
                     .Be(CdcTransportEvidenceState.Unavailable);
                 _fixture.WorkerLaunches.Should().Be(1);

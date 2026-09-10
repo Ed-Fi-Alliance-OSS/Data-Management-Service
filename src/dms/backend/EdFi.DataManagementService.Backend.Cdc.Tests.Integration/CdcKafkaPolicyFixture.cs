@@ -322,6 +322,27 @@ internal sealed class CdcKafkaPolicyFixture(bool secured)
         );
     }
 
+    // This fixture tests Kafka policy without a source workflow.
+    // Composed controller fixtures cover owned startup authorization.
+    internal async Task<CdcTransportResult<CdcTransportAcknowledgement>> StartPolicyWorkerAsync(
+        CdcDeploymentRequest request,
+        bool provision,
+        CancellationToken token
+    )
+    {
+        await using var session = await Controller.Store.AcquireAsync(
+            request.Timing.CallTimeout,
+            request.Timing.PollInterval,
+            token
+        );
+        return await new CdcWorkerStartup(Controller, this).StartInSessionAsync(
+            request,
+            session,
+            provision,
+            token
+        );
+    }
+
     internal Task PrepareOffsetsAsync(CdcDeploymentRequest request, CancellationToken token) =>
         WaitAsync(
             async () =>

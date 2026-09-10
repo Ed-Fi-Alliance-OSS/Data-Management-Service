@@ -116,6 +116,92 @@ internal class Given_Cdc_command_enable_retry(Ddl.CdcProvider provider) : CdcRea
         );
     }
 
+    [TestCase("broker-start", false)]
+    [TestCase("worker-start", false)]
+    [TestCase("broker-start", true)]
+    [TestCase("worker-start", true)]
+    public async Task It_CdcWorkerStartup_serializes_initial_command_infrastructure(
+        string boundary,
+        bool cancel
+    )
+    {
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var caller = new CancellationTokenSource();
+        async Task Pause(CancellationToken token)
+        {
+            Trace(boundary);
+            entered.SetResult();
+            await release.Task.WaitAsync(token);
+            if (!cancel)
+            {
+                throw new IOException("controlled infrastructure failure");
+            }
+        }
+        if (boundary == "broker-start")
+        {
+            A.CallTo(() =>
+                    _infrastructure.StartBrokerAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._)
+                )
+                .ReturnsLazily((CdcDeploymentRequest _, CancellationToken token) => Pause(token));
+        }
+        else
+        {
+            A.CallTo(() =>
+                    _infrastructure.StartWorkerAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._)
+                )
+                .ReturnsLazily((CdcDeploymentRequest _, CancellationToken token) => Pause(token));
+        }
+        var command = CommandAsync(caller.Token);
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var contender = _store.AcquireAsync(TimeSpan.FromSeconds(3), TimeSpan.FromMilliseconds(1), default);
+        try
+        {
+            contender
+                .IsCompleted.Should()
+                .BeFalse(
+                    "the initial workflow must retain authorization through both infrastructure effects"
+                );
+            if (cancel)
+            {
+                await caller.CancelAsync();
+                await FluentActions.Awaiting(() => command).Should().ThrowAsync<OperationCanceledException>();
+            }
+            else
+            {
+                release.SetResult();
+                (await command).Succeeded.Should().BeFalse();
+            }
+        }
+        finally
+        {
+            await caller.CancelAsync();
+            release.TrySetResult();
+            try
+            {
+                await command;
+            }
+            catch (OperationCanceledException)
+            {
+                // Join the cancelled command even when a preceding assertion failed.
+            }
+            await using var competing = await contender;
+        }
+        // Failed infrastructure must release the session; retry uses fresh original provenance.
+        if (!cancel)
+        {
+            A.CallTo(() =>
+                    _infrastructure.StartBrokerAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._)
+                )
+                .Returns(Task.CompletedTask);
+            A.CallTo(() =>
+                    _infrastructure.StartWorkerAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._)
+                )
+                .Returns(Task.CompletedTask);
+            (await CommandAsync()).Succeeded.Should().BeTrue();
+        }
+    }
+
     [TestCase("provider")]
     [TestCase("broker-start")]
     [TestCase("worker-start")]

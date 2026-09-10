@@ -11,7 +11,9 @@ Describe 'Managed CDC deployment lifecycle ordering' {
         $script:root = Join-Path $TestDrive 'compose'
         New-Item -ItemType Directory $script:root | Out-Null
         Copy-Item (Join-Path $PSScriptRoot '../cdc-lifecycle.psm1') $script:root
+        Copy-Item (Join-Path $PSScriptRoot '../bootstrap-cdc.psm1') $script:root
         Import-Module (Join-Path $script:root 'cdc-lifecycle.psm1') -Force
+        $script:realCommand = & (Get-Module cdc-lifecycle) { (Get-Command Invoke-CdcLifecycleCommand).ScriptBlock }
         function New-TestHandoff {
             [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Creates isolated test files only.')]
             param($id, $project = 'dms-local', $provider = 'postgresql', $identityProvider = 'self-contained')
@@ -90,6 +92,125 @@ Describe 'Managed CDC deployment lifecycle ordering' {
         }
     }
     AfterAll { Remove-Module cdc-lifecycle -Force }
+
+    if ($env:DMS_T57_BRIDGE) {
+        It 'uses the production controller session bridge for retained wrapper startup' {
+            # The existing command fixture answers the native tool boundary through temporary files.
+            # Its real CdcCommandRunner/CdcWorkerStartup own all authorization and Kafka decisions.
+            $bridge = Get-Content $env:DMS_T57_BRIDGE -Raw | ConvertFrom-Json -AsHashtable
+            $project = "dms-$($bridge.Flavor)"
+            Remove-Item (Join-Path $script:root '.cdc-deployments') -Recurse -Force
+            $handoff = New-TestHandoff -id ([int]$bridge.Binding.DataStoreId) -project $project -provider $bridge.Provider -identityProvider $bridge.IdentityProvider
+            $flat = Get-Content $bridge.SettingsPath -Raw | ConvertFrom-Json -AsHashtable
+            foreach ($key in $flat.Keys) {
+                $parts = $key.Split(':')
+                $current = $handoff.Settings
+                for ($i = 0; $i -lt $parts.Count - 1; $i++) {
+                    if (-not $current.ContainsKey($parts[$i])) { $current[$parts[$i]] = @{} }
+                    $current = $current[$parts[$i]]
+                }
+                $current[$parts[-1]] = $flat[$key]
+            }
+            $handoff.Settings.Cdc.Compose.Project = $project
+            $handoff.Settings.Cdc.Compose.EnvironmentFile = Join-Path $script:root '.env.custom'
+            $handoff.Settings.Cdc.Worker.Key = $bridge.WorkerKey
+            $handoff.Settings.Cdc.Worker.OffsetStorageTopic = $bridge.OffsetTopic
+            $handoff.Settings | ConvertTo-Json -Depth 64 | Set-Content $handoff.SettingsPath
+            Register-CdcDeploymentHandoff -Handoff $handoff -StatePath $bridge.StateRoot
+            & (Get-Module cdc-lifecycle) {
+                param($project, $name)
+                $deployment = Read-CdcDeployment $project
+                $deployment.Phase = 'Stopped'
+                $deployment.Entries[0].ConnectorName = $name
+                Write-CdcDeployment $project $deployment
+            } $project $bridge.Binding.ConnectorName
+            $script:workerRunning = $false
+            $script:live = @($bridge.Binding.ConnectorName)
+            $script:trace.Clear()
+            $script:bridgeFlavor = $bridge.Flavor
+            $script:bridgeEngine = $bridge.Provider
+            $script:bridgeIdentity = $bridge.IdentityProvider
+            $script:bridgeEntryPath = $handoff.SettingsPath
+            $script:bridgeTool = Join-Path $script:root 'tool.ps1'
+            @'
+param([Parameter(ValueFromRemainingArguments)][string[]]$Arguments)
+$request = "$env:DMS_T57_BRIDGE.request"
+$response = "$env:DMS_T57_BRIDGE.response"
+[IO.File]::WriteAllText("$request.tmp", ($Arguments | ConvertTo-Json -Compress))
+[IO.File]::Move("$request.tmp", $request)
+$deadline = [DateTime]::UtcNow.AddSeconds(30)
+while (-not (Test-Path $response)) {
+    if ([DateTime]::UtcNow -ge $deadline) { exit 1 }
+    Start-Sleep -Milliseconds 10
+}
+$result = [IO.File]::ReadAllText($response)
+[IO.File]::Delete($response)
+$result
+exit ([int]($result | ConvertFrom-Json).exitCode)
+'@ | Set-Content $script:bridgeTool
+            @'
+function Resolve-DmsSchemaTool { Join-Path $PSScriptRoot 'tool.ps1' }
+Export-ModuleMember -Function Resolve-DmsSchemaTool
+'@ | Set-Content (Join-Path $script:root 'bootstrap-schema-tool.psm1')
+            Mock -ModuleName cdc-lifecycle Invoke-CdcLifecycleCommand {
+                & (Get-Module cdc-lifecycle) $script:realCommand $Entry $Operation
+                $script:trace.Add("$Operation`:$($Entry.DataStoreId)")
+                if ($Operation -eq 'start-worker') { $script:workerRunning = $true }
+            }
+            Mock -ModuleName cdc-lifecycle Invoke-CdcInfrastructure {
+                $Parameters.IdentityProvider | Should -Be $script:bridgeIdentity
+                if ($Parameters.DmsOnly) {
+                    (Read-TestDeployment "dms-$script:bridgeFlavor").Phase | Should -Be 'Active'
+                    $script:trace.Add('dms')
+                    return
+                }
+                $Parameters.SeparateConfigDatabase | Should -BeTrue
+                $script:trace.Add('database-infra')
+                # Execute both actual provider/Compose selection and the old first-broker effect.
+                # No test pre-starts either Kafka or Connect.
+                $ast = [Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot "../start-$script:bridgeFlavor-dms.ps1"), [ref]$null, [ref]$null)
+                $blocks = @('CDC database preparation requires', 'CDC infrastructure startup requires', 'Starting CDC broker') | ForEach-Object {
+                    $marker = $_
+                    $node = $ast.FindAll({ param($n) $n -is [Management.Automation.Language.IfStatementAst] -and ($n.Extent.Text.StartsWith('if ($CdcDatabaseInfrastructure)') -or $n.Extent.Text.StartsWith('if ($CdcKafkaInfrastructure)')) }, $true) |
+                        Where-Object { $_.Extent.Text.Contains($marker) } | Select-Object -First 1
+                    [scriptblock]::Create($node.Extent.Text)
+                }
+                & {
+                    param($parameters, $blocks)
+                    $CdcDatabaseInfrastructure = $CdcKafkaInfrastructure = $EnableKafkaUI = $EnableKafka = $d = $false
+                    $upArgs = @('-d')
+                    foreach ($key in $parameters.Keys) { Set-Variable $key $parameters[$key] }
+                    $files = @()
+                    $enableKafkaInfrastructure = $false
+                    foreach ($block in $blocks) { . $block | Out-Null }
+                    $files | Should -Not -Contain 'kafka-cdc.yml'
+                    ($files -contains 'mssql-cdc.yml') | Should -Be ($DatabaseEngine -eq 'mssql')
+                } $Parameters $blocks
+                $Parameters.CdcDatabaseInfrastructure | Should -BeTrue
+                $Parameters.CdcKafkaInfrastructure | Should -Not -BeTrue
+                $Parameters.EnableKafkaUI | Should -Not -BeTrue
+            }
+            function docker { throw 'Wrapper launched Kafka outside the controller startup session' }
+            Import-Module (Join-Path $script:root 'bootstrap-cdc.psm1') -Force
+            Mock -ModuleName bootstrap-cdc docker {
+                (@($args) -join ' ') | Should -Match 'up --detach --no-deps kafka-ui$'
+                $script:workerRunning | Should -BeTrue
+                $script:trace.Add('ui')
+                $global:LASTEXITCODE = 0
+            }
+            if ($bridge.Reject) {
+                { Invoke-TestLifecycle @{ EnableKafkaUI = $true } $project } | Should -Throw '*unverified evidence*'
+                $script:trace | Should -Be @('database-infra')
+                (Read-TestDeployment $project).Phase | Should -Be 'Transition'
+            }
+            else {
+                Invoke-TestLifecycle @{ EnableKafkaUI = $true } $project
+                $script:trace | Should -Contain 'ui'
+                $script:trace[-1] | Should -Be 'dms'
+                (Read-TestDeployment $project).Phase | Should -Be 'Active'
+            }
+        }
+    }
 
     It 'recovers only the original initial handoff (<change>)' -ForEach @(
         @{ change = 'none' }, @{ change = 'settings' }, @{ change = 'state' },
