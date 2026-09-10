@@ -249,6 +249,8 @@ Files deliberately **not** changed: every `IApiClientRepository` implementation,
 
 ## 7. Test plan
 
+> **Superseded by §1.2 (R2).** This section records the R1 test plan and is kept as history. Its numeric-first expectations are inverted under R2, where the client-key lookup runs first on every request and the OpenAPI `id` parameter is a `string`. The tests the R2 patch actually carries are listed in §12.3.
+
 ### 7.1 Unit — `ApiClientModuleTests.cs` (NUnit, FluentAssertions, FakeItEasy)
 
 New fixtures follow the file's `Given_…` / `It_…` style and reuse `SetUpClient()`.
@@ -358,6 +360,8 @@ Each step ends with a local commit, the SHA, an exact file list, and an approve/
 
 ## 9. Backwards compatibility
 
+> **Superseded by §1.2 (R2).** This table assesses the R1 two-route design and is kept as history; it reasons about `:int` route selection and a separately documented `/v3/apiClients/{clientId}` path item, neither of which exists under R2. The R2 assessment is in §1.2: the client key is resolved first, so every case that worked before this branch returns the same row, and the residual is recorded there.
+
 | Concern | Assessment |
 |---|---|
 | Existing key-based callers (`GET /v3/apiClients/{guid}`) | Unaffected: GUID keys contain hyphens and letters, never satisfy `:int`, and continue to select the string route. Response body and status codes unchanged. |
@@ -370,6 +374,8 @@ Each step ends with a local commit, the SHA, an exact file list, and an approve/
 ---
 
 ## 10. Risks
+
+> **Superseded by §1.2 (R2) except §10.5.** These entries assess the R1 two-route design and are kept as history. Two are now inverted: R2 has no route constraint and therefore no precedence question (§10.1), and a numeric-looking client key is no longer shadowed but deliberately wins (§10.2). §10.5, the missing uniqueness constraint, still stands and is tracked as DMS-1529.
 
 ### 10.1 Route precedence **[INFER → tested]**
 ASP.NET Core ranks constrained parameter segments above unconstrained ones, so the two templates are not ambiguous. If this assumption were wrong, the app would throw `AmbiguousMatchException` on the first matching request; the Phase 1 unit tests exercise both templates against a numeric and a string value in the same host and would fail immediately.
