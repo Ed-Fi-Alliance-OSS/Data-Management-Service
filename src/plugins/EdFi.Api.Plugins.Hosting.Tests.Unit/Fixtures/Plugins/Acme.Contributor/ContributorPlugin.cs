@@ -330,6 +330,28 @@ public sealed class ContributorPlugin : EdFiApiPlugin
                 services.TryAddEnumerable(ServiceDescriptor.Transient<IFixtureFanInContract, FixtureFanIn>());
                 break;
 
+            case "nullAdd":
+                // A null descriptor, which the collection itself accepts and the per-hook diff then
+                // fails on outside the invoker's handling, naming no plugin. The wrapper rejects it
+                // instead, so the failure lands inside the hook.
+                services.Add(null!);
+                break;
+
+            case "nullInsert":
+                services.Insert(0, null!);
+                break;
+
+            case "nullIndexerAssignment":
+                // Over a pre-existing descriptor for a service type no host owns, which this plugin is
+                // permitted to overwrite, so the displacement rule has nothing to say about the slot
+                // and the refusal can only be about the null arriving.
+                services[
+                    services.IndexOf(
+                        services.First(descriptor => descriptor.ServiceType == typeof(IAcmeSecondService))
+                    )
+                ] = null!;
+                break;
+
             case "decliningTryAdd":
                 // Declines, because the host default already holds the contract, and contributes
                 // nothing else. The decline itself is invisible at the seam.

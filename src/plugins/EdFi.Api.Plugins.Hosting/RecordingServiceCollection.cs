@@ -38,6 +38,13 @@ namespace EdFi.Api.Plugins.Hosting;
 /// name is the design's, and it now describes the pre-hook snapshot this holds rather than any
 /// recording of calls.
 /// </para>
+/// <para>
+/// Each incoming write member rejects a null descriptor itself rather than passing it on.
+/// <c>ServiceCollection</c> accepts null through all three, and the failure then surfaces from the
+/// per-hook diff, which runs outside the invoker's handling of a hook's exceptions and so reports
+/// nothing about the plugin that caused it. Rejecting it here puts the failure inside the hook, where
+/// the invoker names the plugin.
+/// </para>
 /// </remarks>
 internal sealed class RecordingServiceCollection : IServiceCollection
 {
@@ -89,6 +96,8 @@ internal sealed class RecordingServiceCollection : IServiceCollection
         get => _inner[index];
         set
         {
+            ArgumentNullException.ThrowIfNull(value);
+
             // The incoming rule first, so the same descriptor is refused for the same reason whichever
             // write member carried it; the slot it happens to target is what the second rule is about.
             RefuseReservedLoggingRegistration(value);
@@ -99,12 +108,14 @@ internal sealed class RecordingServiceCollection : IServiceCollection
 
     public void Add(ServiceDescriptor item)
     {
+        ArgumentNullException.ThrowIfNull(item);
         RefuseReservedLoggingRegistration(item);
         _inner.Add(item);
     }
 
     public void Insert(int index, ServiceDescriptor item)
     {
+        ArgumentNullException.ThrowIfNull(item);
         RefuseReservedLoggingRegistration(item);
         _inner.Insert(index, item);
     }
@@ -174,13 +185,10 @@ internal sealed class RecordingServiceCollection : IServiceCollection
     /// it. Those two carve-outs are what keep a plugin's own sink ordinary work.
     /// </para>
     /// </remarks>
-    private void RefuseReservedLoggingRegistration(ServiceDescriptor? descriptor)
+    private void RefuseReservedLoggingRegistration(ServiceDescriptor descriptor)
     {
-        // A null descriptor is the real collection's business to report, the way an out-of-range index
-        // is: reading it here would replace its exception with one from inside the wrapper.
         if (
-            descriptor is null
-            || descriptor.IsKeyedService
+            descriptor.IsKeyedService
             || !HostOwnedServiceTypes.IsReservedLoggingService(descriptor.ServiceType)
         )
         {

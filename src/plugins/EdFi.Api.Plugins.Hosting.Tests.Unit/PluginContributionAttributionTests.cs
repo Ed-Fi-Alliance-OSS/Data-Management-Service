@@ -1170,3 +1170,118 @@ public class Given_a_hook_that_swallowed_the_refusal_of_its_own_logger_factory
         _services.Should().Contain(descriptor => descriptor.ServiceType == typeof(IFixtureFanInContract));
     }
 }
+
+/// <summary>
+/// A null descriptor through each of the collection's three incoming write paths, refused as an
+/// argument fault rather than as a host rule.
+/// </summary>
+/// <remarks>
+/// <para>
+/// <c>ServiceCollection</c> accepts null through <c>Add</c>, <c>Insert</c> and the indexer, so without
+/// a guard the null sits in the collection until the per-hook diff reads it. That diff runs after the
+/// invoker's exception handling has been left behind, so the process died on a dictionary lookup
+/// naming no plugin, over a collection the offending plugin had already been credited with.
+/// </para>
+/// <para>
+/// Rejecting it in the wrapper puts the throw back inside the hook, where the invoker's existing
+/// catch-all names the plugin and keeps the original exception. That is why this needs no failure
+/// reason of its own and does not latch a refusal: nothing here is a host rule about what a plugin may
+/// register, it is an argument the collection should never have taken.
+/// </para>
+/// </remarks>
+[TestFixture]
+public class Given_a_hook_that_hands_the_collection_a_null_descriptor
+{
+    /// <summary>What one write path's attempt left behind.</summary>
+    private sealed record NullWrite(
+        PluginCompositionException Failure,
+        string Diagnostics,
+        List<ServiceDescriptor> Before,
+        List<ServiceDescriptor> After
+    );
+
+    private static readonly string[] WritePaths = ["nullAdd", "nullInsert", "nullIndexerAssignment"];
+
+    private TemporaryPluginRoot _root = null!;
+    private Dictionary<string, NullWrite> _attempts = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _root = TemporaryPluginRoot.Create();
+        LoadedPlugins plugins = ContributionProbe.Load(_root, PluginFixtures.Contributor);
+
+        _attempts = [];
+
+        foreach (string writePath in WritePaths)
+        {
+            ServiceCollection services = ContributionProbe.HostCollection();
+            List<ServiceDescriptor> before = [.. services];
+            StringWriter diagnostics = new();
+
+            PluginCompositionException failure = Assert.Throws<PluginCompositionException>(() =>
+                plugins.ContributeServices(
+                    services,
+                    ContributionProbe.HookConfiguration(writePath),
+                    ContributionProbe.Registry,
+                    diagnostics
+                )
+            )!;
+
+            _attempts[writePath] = new NullWrite(failure, diagnostics.ToString(), before, [.. services]);
+        }
+    }
+
+    [TearDown]
+    public void TearDown() => _root.Dispose();
+
+    [Test]
+    public void It_becomes_a_fatal_naming_the_plugin_and_the_composition_phase()
+    {
+        foreach ((string writePath, NullWrite attempt) in _attempts)
+        {
+            attempt
+                .Failure.Reason.Should()
+                .Be(PluginCompositionFailure.ContributeServicesThrew, "of {0}", writePath);
+            attempt.Failure.PluginName.Should().Be(PluginFixtures.Contributor, "of {0}", writePath);
+            attempt.Failure.Message.Should().Contain(PluginFixtures.Contributor, "of {0}", writePath);
+        }
+    }
+
+    /// <summary>
+    /// The exception the guard threw is kept rather than flattened into the message, which is what
+    /// leaves a plugin author the frame inside their own hook that made the call.
+    /// </summary>
+    [Test]
+    public void It_keeps_the_argument_exception_the_guard_threw()
+    {
+        foreach ((string writePath, NullWrite attempt) in _attempts)
+        {
+            attempt.Failure.InnerException.Should().BeOfType<ArgumentNullException>("of {0}", writePath);
+        }
+    }
+
+    [Test]
+    public void It_reports_the_refusal_on_the_diagnostic_channel()
+    {
+        foreach ((string writePath, NullWrite attempt) in _attempts)
+        {
+            attempt.Diagnostics.Should().Contain("plugin composition refused:", "of {0}", writePath);
+            attempt.Diagnostics.Should().Contain(PluginFixtures.Contributor, "of {0}", writePath);
+        }
+    }
+
+    /// <summary>
+    /// Refused before the write reached the real collection, so the host has exactly the descriptors it
+    /// had, by reference, and no null among them for anything downstream to read.
+    /// </summary>
+    [Test]
+    public void It_leaves_the_hosts_collection_exactly_as_it_was()
+    {
+        foreach ((string writePath, NullWrite attempt) in _attempts)
+        {
+            attempt.Before.Should().NotBeEmpty("of {0}", writePath);
+            attempt.After.Should().Equal(attempt.Before, "of {0}", writePath);
+        }
+    }
+}
