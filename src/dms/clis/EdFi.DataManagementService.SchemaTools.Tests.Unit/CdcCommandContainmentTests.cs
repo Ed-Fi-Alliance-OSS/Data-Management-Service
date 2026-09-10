@@ -35,6 +35,10 @@ public partial class Given_Cdc_command_configuration
                 CdcCommandOperation.Status,
                 CdcCommandOperation.Watch,
                 CdcCommandOperation.Stop,
+                CdcCommandOperation.Start,
+                CdcCommandOperation.Restart,
+                CdcCommandOperation.Resume,
+                CdcCommandOperation.IncreaseRecordSize,
             }
         )
         {
@@ -53,7 +57,11 @@ public partial class Given_Cdc_command_configuration
             {
                 foreach (bool terminal in new[] { false, true })
                 {
-                    yield return new TestCaseData(operation, boundary, terminal);
+                    yield return new TestCaseData(operation, boundary, terminal, false);
+                    if (operation == CdcCommandOperation.IncreaseRecordSize)
+                    {
+                        yield return new TestCaseData(operation, boundary, terminal, true);
+                    }
                 }
             }
         }
@@ -63,7 +71,8 @@ public partial class Given_Cdc_command_configuration
     public async Task It_dispatches_containment_and_stop_before_fallible_preparation(
         CdcCommandOperation operation,
         string boundary,
-        bool terminal
+        bool terminal,
+        bool pendingIncrease
     )
     {
         var request = await RequestAsync();
@@ -74,8 +83,57 @@ public partial class Given_Cdc_command_configuration
         var bindings = scope.GetRequiredService<ICdcBindingLifecycleService>();
         await RetainBindingAsync(bindings, request, terminal);
         var original = await bindings.ExactMatchBindingAsync(request.Binding);
+        var acknowledgement = new CdcCommandAcknowledgement(
+            Guid.NewGuid(),
+            request.Binding.ToCompleteBindingIdentity(),
+            request.ConnectorPolicy.MaxRecordBytes,
+            20000000,
+            33554432,
+            "operator",
+            true,
+            []
+        );
+        string acknowledgementPath = Path.Combine(_root, "acknowledgement-input.txt");
+        await File.WriteAllTextAsync(
+            acknowledgementPath,
+            JsonSerializer.Serialize(acknowledgement, CdcCommandHost.JsonOptions)
+        );
+        if (pendingIncrease)
+        {
+            await using var session = await new LocalCdcWorkflowJournalStore(_root).AcquireAsync(
+                TimeSpan.FromSeconds(1),
+                TimeSpan.FromMilliseconds(1),
+                default
+            );
+            var journal = await session.ReadAsync(request.TargetIdentity, default);
+            var increaseScope = new CdcRecordSizeIncreaseScope(
+                acknowledgement.OperationId,
+                acknowledgement.BindingIdentity,
+                acknowledgement.PreviousMaxRecordBytes,
+                acknowledgement.RequestedMaxRecordBytes
+            );
+            var confirmation = session.BeginRecordSizeAcknowledgement(journal.WorkflowId, increaseScope);
+            await confirmation.ConfirmAndRunAsync(
+                new(
+                    increaseScope,
+                    new(confirmation.InvocationId, "operator", DateTimeOffset.UtcNow, true, []),
+                    true
+                ),
+                _ => Task.FromResult(true),
+                default
+            );
+        }
         List<string> trace = [];
-        using var http = new ContainmentHandler(request.Binding.ConnectorName, trace);
+        using var http = new ContainmentHandler(request.Binding.ConnectorName, trace)
+        {
+            Configuration = pendingIncrease
+                ? new Dictionary<string, string>
+                {
+                    ["producer.override.max.request.size"] = "10000000",
+                    ["producer.override.buffer.memory"] = "33554432",
+                }
+                : null!,
+        };
         var worker = A.Fake<ICdcWorkerInspectionTransport>();
         A.CallTo(() => worker.InspectAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
             .ReturnsLazily(() =>
@@ -183,7 +241,7 @@ public partial class Given_Cdc_command_configuration
         );
         using var output = new StringWriter();
         var result = await runner.RunAsync(
-            new(operation, settingsPath, _root, 2, 0, false, "", false),
+            new(operation, settingsPath, _root, 2, 0, false, acknowledgementPath, true),
             output,
             default
         );
@@ -227,8 +285,22 @@ public partial class Given_Cdc_command_configuration
         else
         {
             result.Succeeded.Should().BeFalse();
-            var status = result.Data.Should().BeOfType<CdcControllerStatusResult>().Subject;
-            var target = status.Targets.Should().ContainSingle().Subject;
+            var target = operation switch
+            {
+                CdcCommandOperation.Start or CdcCommandOperation.Restart or CdcCommandOperation.Resume =>
+                    result.Data.Should().BeOfType<CdcManagedLifecycleResult>().Subject.Observation,
+                CdcCommandOperation.IncreaseRecordSize => result
+                    .Data.Should()
+                    .BeOfType<CdcRecordSizeIncreaseResult>()
+                    .Subject.Observation,
+                _ => result
+                    .Data.Should()
+                    .BeOfType<CdcControllerStatusResult>()
+                    .Subject.Targets.Should()
+                    .ContainSingle()
+                    .Subject,
+            };
+            target.Should().NotBeNull();
             target.Diagnostics.Should().Contain(d => d.Component == CdcDeploymentComponent.Projection);
             target.Status.Readiness.Should().Be(CdcReadiness.NotReady);
             target.Status.SourceHistory.IncidentLatched.Should().Be(terminal);
@@ -236,8 +308,9 @@ public partial class Given_Cdc_command_configuration
             {
                 target.Containment.Should().Be(CdcConnectorContainmentState.Stopped);
                 target.Status.SourceHistory.Continuity.Should().Be(CdcSourceHistoryContinuity.Lost);
-                trace[0].Should().Be("stop");
-                trace[1].Should().Be("status");
+                int stopIndex = pendingIncrease ? 1 : 0;
+                trace[stopIndex].Should().Be("stop");
+                trace[stopIndex + 1].Should().Be("status");
                 trace.Count(t => t == "stop").Should().Be(operation == CdcCommandOperation.Watch ? 2 : 1);
             }
             else
@@ -260,6 +333,23 @@ public partial class Given_Cdc_command_configuration
             }
         }
         trace.Should().NotContain("unexpected-http");
+        await using var finalSession = await new LocalCdcWorkflowJournalStore(_root).AcquireAsync(
+            TimeSpan.FromSeconds(1),
+            TimeSpan.FromMilliseconds(1),
+            default
+        );
+        var finalJournal = await finalSession.ReadAsync(request.TargetIdentity, default);
+        finalJournal.Operations.Should().NotContain(o => o.Effect == CdcWorkflowEffect.ResumeConnector);
+        var increases = finalJournal
+            .Operations.Where(o => o.Effect == CdcWorkflowEffect.IncreaseRecordSize)
+            .ToArray();
+        increases.Should().HaveCount(pendingIncrease ? 1 : 0);
+        if (pendingIncrease)
+        {
+            increases[0].Completions.Should().BeEmpty();
+            increases[0].RecordSizeIncrease.Single().Acknowledgements.Should().HaveCount(2);
+            trace[0].Should().Be("configuration");
+        }
     }
 
     private static async Task RetainBindingAsync(
@@ -649,6 +739,7 @@ public partial class Given_Cdc_command_configuration
     private sealed class ContainmentHandler(string connector, List<string> trace) : HttpMessageHandler
     {
         private bool _stopped;
+        internal IReadOnlyDictionary<string, string> Configuration { get; init; } = null!;
         internal Func<CancellationToken, Task> AfterStop { get; init; } = _ => Task.CompletedTask;
         internal Func<CancellationToken, Task> AfterStatus { get; init; } = _ => Task.CompletedTask;
 
@@ -686,6 +777,18 @@ public partial class Given_Cdc_command_configuration
                             }
                         )
                     ),
+                };
+            }
+            if (
+                request.Method == HttpMethod.Get
+                && path == $"/connectors/{connector}/config"
+                && Configuration is not null
+            )
+            {
+                trace.Add("configuration");
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(JsonSerializer.Serialize(Configuration)),
                 };
             }
             trace.Add("unexpected-http");

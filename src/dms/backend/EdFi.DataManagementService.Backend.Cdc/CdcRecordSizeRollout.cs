@@ -100,11 +100,12 @@ internal sealed class CdcRecordSizeRollout(
             _ => throw new CdcWorkflowStateException(CdcWorkflowStateFailure.Contradictory),
         };
 
+    // Policy cloning precedes preflight; projection inputs must remain deferred until after containment.
     internal static CdcDeploymentRequest WithPolicy(CdcDeploymentRequest request, int ceiling, int buffer) =>
-        new(
+        CdcDeploymentRequest.CreateDeferred(
             request.Binding,
             request.DmsSettings,
-            request.ProviderSetup,
+            () => request.ProviderSetup,
             request.ConnectEndpoint,
             request.WorkerMetricsEndpoint,
             new(

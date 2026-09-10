@@ -94,7 +94,11 @@ public sealed class CdcCommandRunner(IApiSchemaFileLoader loader, EffectiveSchem
                 invocation.Operation
                 is CdcCommandOperation.Status
                     or CdcCommandOperation.Watch
-                    or CdcCommandOperation.Stop;
+                    or CdcCommandOperation.Stop
+                    or CdcCommandOperation.Start
+                    or CdcCommandOperation.Restart
+                    or CdcCommandOperation.Resume
+                    or CdcCommandOperation.IncreaseRecordSize;
             config.ValidateControllerSettings();
             settings["Cdc:PublicationHistory:StatePath"] = invocation.StatePath;
             settings["Cdc:PublicationHistory:DeploymentKey"] = config.Target.DeploymentKey;
