@@ -20,7 +20,9 @@ namespace EdFi.Api.Plugins.Hosting;
 /// already gone. So the removal rules sit in front of the collection and everything else delegates.
 /// </para>
 /// <para>
-/// It therefore hides, reorders and projects nothing, and it keeps no ledger of calls. An earlier
+/// It therefore hides, reorders and projects nothing, and it keeps no ledger of calls. The one thing
+/// it remembers is the first refusal it raised, because a hook that catches that exception must not be
+/// able to compose anyway; see <see cref="FirstRefusal"/>. An earlier
 /// design masked replace-cardinality descriptors from the plugin's view; that is withdrawn as unsound,
 /// because <c>RemoveAll&lt;T&gt;</c> and <c>Replace</c> walk the collection by index and write those
 /// indices back to the real one, so a projection makes them remove descriptors nobody asked for. The
@@ -57,6 +59,17 @@ internal sealed class RecordingServiceCollection : IServiceCollection
         _diagnostics = diagnostics;
         _preExisting = new HashSet<ServiceDescriptor>(inner, ReferenceEqualityComparer.Instance);
     }
+
+    /// <summary>
+    /// The first refusal this wrapper raised, or null when it raised none.
+    /// </summary>
+    /// <remarks>
+    /// Throwing alone does not carry the host's decision: registration code that wraps best-effort
+    /// setup in a catch-all swallows the exception and returns as though nothing happened, and the
+    /// invoker has to be able to fail the composition anyway. The first refusal is kept rather than the
+    /// last, because it is the rule that fired before the rest of the hook ran on top of it.
+    /// </remarks>
+    internal PluginCompositionException? FirstRefusal { get; private set; }
 
     public int Count => _inner.Count;
 
@@ -162,18 +175,24 @@ internal sealed class RecordingServiceCollection : IServiceCollection
     }
 
     /// <summary>
-    /// Writes the refusal to the loader's diagnostic channel and returns the exception to throw.
+    /// Writes the refusal to the loader's diagnostic channel, records it, and returns the exception to
+    /// throw.
     /// </summary>
     /// <remarks>
     /// Written before the call reaches the real collection, so the descriptors the refusal is about are
     /// still in place when it is reported. The channel is the loader's own rather than a logger,
-    /// because the pipeline a logger would use is exactly what one of these rules protects.
+    /// because the pipeline a logger would use is exactly what one of these rules protects. Recorded as
+    /// well as returned so that swallowing the exception cannot turn the refusal into a log line; the
+    /// caller still throws it immediately, which is what keeps the offending call from landing.
     /// </remarks>
     private PluginCompositionException Report(PluginCompositionFailure reason, string message)
     {
         _diagnostics.WriteLine($"plugin composition refused: {message}");
 
-        return new PluginCompositionException(reason, _pluginName, message);
+        PluginCompositionException refusal = new(reason, _pluginName, message);
+        FirstRefusal ??= refusal;
+
+        return refusal;
     }
 
     private static string TypeNameOf(Type serviceType) =>

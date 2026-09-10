@@ -165,6 +165,62 @@ internal sealed record AuditRun(
     public void Dispose() => Provider.Dispose();
 }
 
+/// <summary>
+/// A hook doing all the permitted things that neighbour a refusal, through composition and the audit.
+/// </summary>
+/// <remarks>
+/// The regression against a refusal record that latches too eagerly. Removing a pre-existing descriptor
+/// for a service type no host owns and adding a logging provider of its own are both permitted, and
+/// they are the two calls closest to the rules that are not: a wrapper that recorded a refusal here
+/// would fail every legitimate plugin that tidies up after itself or installs its own sink.
+/// </remarks>
+[TestFixture]
+[NonParallelizable]
+public class Given_a_hook_that_removes_a_non_host_descriptor_and_adds_a_provider_beside_a_contract
+{
+    private TemporaryPluginRoot _root = null!;
+    private AuditRun _run = null!;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        _root = TemporaryPluginRoot.Create();
+        _run = await AuditProbe.RunAsync(
+            _root,
+            "permittedRemovalAndProvider",
+            null,
+            PluginFixtures.Contributor
+        );
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        _run.Dispose();
+        _root.Dispose();
+    }
+
+    [Test]
+    public void It_composes_and_audits_clean()
+    {
+        _run.Result.Findings.Should().BeEmpty();
+    }
+
+    [Test]
+    public void It_removed_the_descriptor_it_was_allowed_to_remove()
+    {
+        _run.Services.Should().NotContain(descriptor => descriptor.ServiceType == typeof(IAcmeSecondService));
+    }
+
+    [Test]
+    public void It_kept_the_hosts_own_logging_provider_beside_the_plugins()
+    {
+        _run.Services.Count(descriptor => descriptor.ServiceType == typeof(ILoggerProvider))
+            .Should()
+            .BeGreaterThan(1);
+    }
+}
+
 [TestFixture]
 [NonParallelizable]
 public class Given_one_plugin_claiming_a_replace_contract_over_the_hosts_default

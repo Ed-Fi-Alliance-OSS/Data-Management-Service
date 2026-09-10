@@ -74,6 +74,65 @@ public class Given_a_plugin_displacing_the_hosts_real_document_store_repository
     }
 }
 
+/// <summary>
+/// The displacement refused, caught by the plugin, and followed by a valid declared-contract
+/// registration, against the real repository on a collection <c>AddServices</c> has populated.
+/// </summary>
+/// <remarks>
+/// Registration code that treats its own setup as best-effort catches the host's refusal without ever
+/// knowing there was one, and every downstream check passes on what such a hook leaves behind: the
+/// wrapper refused before the write landed so the diff records no removal, and the plugin registered a
+/// declared contract like any other. The host keeps its own fatal decision instead.
+/// </remarks>
+[TestFixture]
+[NonParallelizable]
+public class Given_a_plugin_that_swallowed_the_refusal_of_displacing_the_real_repository
+{
+    private string _pluginRoot = null!;
+
+    [SetUp]
+    public void Setup() => _pluginRoot = PluginCompositionProbe.CreatePluginRoot();
+
+    [TearDown]
+    public void TearDown() => PluginCompositionProbe.DeletePluginRoot(_pluginRoot);
+
+    [Test]
+    public void It_still_refuses_the_composition_and_leaves_the_repository_alone()
+    {
+        LoadedPlugins plugins = PluginCompositionProbe.Load(_pluginRoot);
+        IServiceCollection services = PluginCompositionProbe.DmsPopulatedCollection();
+
+        List<ServiceDescriptor> repositoryDescriptorsBefore =
+        [
+            .. services.Where(descriptor => descriptor.ServiceType == typeof(IDocumentStoreRepository)),
+        ];
+
+        Action contribution = () =>
+            services.AddPluginServiceContributions(
+                PluginCompositionProbe.HookConfiguration("swallowHostTypeReplace"),
+                plugins
+            );
+
+        contribution
+            .Should()
+            .Throw<PluginCompositionException>()
+            .Where(exception =>
+                exception.Reason == PluginCompositionFailure.HostOwnedDescriptorDisplaced
+                && exception.PluginName == PluginCompositionProbe.DmsContributor
+            )
+            .WithMessage($"*{nameof(IDocumentStoreRepository)}*");
+
+        // The protected descriptors, by reference. The plugin's own validator registration is left
+        // where the hook put it: refusing the composition is the answer, not rolling back the
+        // additions a plugin was allowed to make.
+        repositoryDescriptorsBefore.Should().NotBeEmpty();
+        services
+            .Where(descriptor => descriptor.ServiceType == typeof(IDocumentStoreRepository))
+            .Should()
+            .Equal(repositoryDescriptorsBefore);
+    }
+}
+
 [TestFixture]
 [NonParallelizable]
 public class Given_a_plugin_registering_the_hosts_real_document_store_repository

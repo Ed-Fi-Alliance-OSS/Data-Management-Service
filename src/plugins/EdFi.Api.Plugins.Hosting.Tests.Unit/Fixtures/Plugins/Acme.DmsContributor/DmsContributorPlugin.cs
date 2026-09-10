@@ -61,6 +61,26 @@ public sealed class DmsContributorPlugin : EdFiApiPlugin
                 AssignOverTheHostsRepositoryDescriptor(services);
                 break;
 
+            case "swallowHostTypeReplace":
+                // The displacement refused, caught, and followed by a perfectly valid declared-contract
+                // registration. Every downstream check passes on what this leaves behind, so the
+                // invoker's own record of the refusal is the only thing that can fail it.
+                try
+                {
+                    services.Replace(
+                        ServiceDescriptor.Scoped<IDocumentStoreRepository>(_ =>
+                            throw new NotSupportedException("the fixture never intends this to resolve")
+                        )
+                    );
+                }
+                catch (Exception)
+                {
+                    // Swallowed the way registration code treating its own setup as best-effort would.
+                }
+
+                AddValidator(services);
+                break;
+
             default:
                 AddValidator(services);
                 break;

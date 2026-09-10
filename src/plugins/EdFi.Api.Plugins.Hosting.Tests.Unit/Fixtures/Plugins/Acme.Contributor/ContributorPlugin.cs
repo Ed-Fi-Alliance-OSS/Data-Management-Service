@@ -20,8 +20,9 @@ namespace Acme.Contributor;
 /// </summary>
 /// <remarks>
 /// Everything here is code a real plugin could contain: it registers its own services, occasionally
-/// edits its own registrations, and in two cases does something the host refuses. What the host
-/// refuses is refused at the wrapper, so those branches never complete.
+/// edits its own registrations, and in several cases does something the host refuses. What the host
+/// refuses is refused at the wrapper, so those branches never complete. A few branches then catch the
+/// refusal and carry on, which is the shape that must still fail the composition.
 /// </remarks>
 public sealed class ContributorPlugin : EdFiApiPlugin
 {
@@ -209,6 +210,74 @@ public sealed class ContributorPlugin : EdFiApiPlugin
                 // A wildcard-keyed registration of a service type no host declares a contract for,
                 // which stays ordinary permitted work.
                 services.AddKeyedTransient<IAcmeFirstService, AcmeService>(KeyedService.AnyKey);
+                services.TryAddEnumerable(ServiceDescriptor.Transient<IFixtureFanInContract, FixtureFanIn>());
+                break;
+
+            case "swallowClear":
+                // The shape the host's latch exists for: a plugin that wraps setup in a catch-all, so
+                // the refusal never leaves the hook. It catches Exception rather than the host's own
+                // exception type because a plugin that references the hosting assembly is the rarer
+                // case; this is ordinary defensive registration code.
+                try
+                {
+                    services.Clear();
+                }
+                catch (Exception)
+                {
+                    // Swallowed on purpose. A real plugin would be treating its own setup as
+                    // best-effort and would not know the host had refused anything.
+                }
+
+                services.TryAddEnumerable(ServiceDescriptor.Transient<IFixtureFanInContract, FixtureFanIn>());
+                break;
+
+            case "swallowClearProviders":
+                try
+                {
+                    services.AddLogging(builder => builder.ClearProviders());
+                }
+                catch (Exception)
+                {
+                    // As above: the plugin believes it merely failed to install its own sink.
+                }
+
+                services.TryAddEnumerable(ServiceDescriptor.Transient<IFixtureFanInContract, FixtureFanIn>());
+                break;
+
+            case "swallowClearThenThrow":
+                try
+                {
+                    services.Clear();
+                }
+                catch (Exception)
+                {
+                    // Swallowed, and then the hook fails for a reason of its own.
+                }
+
+                throw new InvalidOperationException("the plugin failed after swallowing the refusal");
+
+            case "swallowClearThenDisplaceHostDefault":
+                try
+                {
+                    services.Clear();
+                }
+                catch (Exception)
+                {
+                    // Swallowed, and then the hook trips a second, different refusal that it does not
+                    // catch, so both of the invoker's exception paths are exercised by this pair.
+                }
+
+                services.Replace(
+                    ServiceDescriptor.Singleton<IFixtureHostService, FixtureHostServiceStandIn>()
+                );
+                break;
+
+            case "permittedRemovalAndProvider":
+                // Everything a plugin is allowed to do that neighbours a refusal: removing a
+                // pre-existing descriptor for a service type no host owns, adding a sink of its own,
+                // and registering a declared contract. Nothing here may latch a refusal.
+                services.RemoveAll<IAcmeSecondService>();
+                services.AddLogging(builder => builder.AddProvider(new FixtureLoggerProvider()));
                 services.TryAddEnumerable(ServiceDescriptor.Transient<IFixtureFanInContract, FixtureFanIn>());
                 break;
 

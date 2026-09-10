@@ -845,3 +845,227 @@ public class Given_a_hook_refused_while_the_host_is_using_the_real_error_channel
             .Equal(_providersBefore);
     }
 }
+
+/// <summary>
+/// A hook that caught the refusal of <c>Clear</c> and went on to register a valid declared contract.
+/// </summary>
+/// <remarks>
+/// The case the invoker's record of the refusal exists for. Nothing downstream can notice this one:
+/// the wrapper refused before the call landed, so the per-hook diff sees no removal, and the audit sees
+/// a plugin that registered a declared contract like any other.
+/// </remarks>
+[TestFixture]
+public class Given_a_hook_that_swallowed_the_refusal_of_clear
+{
+    private TemporaryPluginRoot _root = null!;
+    private ServiceCollection _services = null!;
+    private List<ServiceDescriptor> _hostDescriptorsBefore = null!;
+    private PluginCompositionException _failure = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _root = TemporaryPluginRoot.Create();
+        LoadedPlugins plugins = ContributionProbe.Load(_root, PluginFixtures.Contributor);
+
+        _services = ContributionProbe.HostCollection();
+        _hostDescriptorsBefore = [.. _services];
+
+        _failure = Assert.Throws<PluginCompositionException>(() =>
+            plugins.ContributeServices(
+                _services,
+                ContributionProbe.HookConfiguration("swallowClear"),
+                ContributionProbe.Registry,
+                new StringWriter()
+            )
+        )!;
+    }
+
+    [TearDown]
+    public void TearDown() => _root.Dispose();
+
+    [Test]
+    public void It_still_refuses_the_composition_naming_the_plugin()
+    {
+        _failure.Reason.Should().Be(PluginCompositionFailure.ServiceCollectionCleared);
+        _failure.PluginName.Should().Be(PluginFixtures.Contributor);
+    }
+
+    /// <summary>
+    /// The rule that fired, not a generic hook failure. A refusal carries no inner exception, which is
+    /// what separates it from the exception the invoker raises when a hook throws.
+    /// </summary>
+    [Test]
+    public void It_reports_the_rule_that_fired_rather_than_a_hook_failure()
+    {
+        _failure.Reason.Should().NotBe(PluginCompositionFailure.ContributeServicesThrew);
+        _failure.InnerException.Should().BeNull();
+    }
+
+    /// <summary>
+    /// Every descriptor the host held before the hook is still there, by reference. The hook's own
+    /// legal registration is left where it is: refusing the composition is the host's answer, and
+    /// rolling a plugin's permitted additions back is not part of it.
+    /// </summary>
+    [Test]
+    public void It_left_every_descriptor_the_host_had_registered_in_place()
+    {
+        _hostDescriptorsBefore.Should().NotBeEmpty();
+        _services.Should().ContainInOrder(_hostDescriptorsBefore);
+    }
+}
+
+/// <summary>
+/// The same swallow over the logging carve-out, through the real <c>ClearProviders</c> call.
+/// </summary>
+[TestFixture]
+public class Given_a_hook_that_swallowed_the_refusal_of_clear_providers
+{
+    private TemporaryPluginRoot _root = null!;
+    private ServiceCollection _services = null!;
+    private List<ServiceDescriptor> _providersBefore = null!;
+    private PluginCompositionException _failure = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _root = TemporaryPluginRoot.Create();
+        LoadedPlugins plugins = ContributionProbe.Load(_root, PluginFixtures.Contributor);
+
+        _services = ContributionProbe.HostCollection();
+        _providersBefore =
+        [
+            .. _services.Where(descriptor => descriptor.ServiceType == typeof(ILoggerProvider)),
+        ];
+
+        _failure = Assert.Throws<PluginCompositionException>(() =>
+            plugins.ContributeServices(
+                _services,
+                ContributionProbe.HookConfiguration("swallowClearProviders"),
+                ContributionProbe.Registry,
+                new StringWriter()
+            )
+        )!;
+    }
+
+    [TearDown]
+    public void TearDown() => _root.Dispose();
+
+    [Test]
+    public void It_still_refuses_the_composition_naming_the_logging_service_type()
+    {
+        _failure.Reason.Should().Be(PluginCompositionFailure.LoggingPipelineDescriptorDisplaced);
+        _failure.PluginName.Should().Be(PluginFixtures.Contributor);
+        _failure.Message.Should().Contain(nameof(ILoggerProvider));
+    }
+
+    [Test]
+    public void It_left_the_hosts_provider_descriptors_in_place()
+    {
+        _providersBefore.Should().NotBeEmpty();
+        _services
+            .Where(descriptor => descriptor.ServiceType == typeof(ILoggerProvider))
+            .Should()
+            .Equal(_providersBefore);
+    }
+}
+
+/// <summary>
+/// A hook that swallowed a refusal and then failed for a reason of its own.
+/// </summary>
+/// <remarks>
+/// The refusal wins. The later failure is ordinarily a consequence of the work the refusal cut short,
+/// so reporting it would name the symptom and hide the host-owned rule that actually fired.
+/// </remarks>
+[TestFixture]
+public class Given_a_hook_that_swallowed_a_refusal_and_then_threw
+{
+    private TemporaryPluginRoot _root = null!;
+    private PluginCompositionException _failure = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _root = TemporaryPluginRoot.Create();
+        LoadedPlugins plugins = ContributionProbe.Load(_root, PluginFixtures.Contributor);
+
+        _failure = Assert.Throws<PluginCompositionException>(() =>
+            plugins.ContributeServices(
+                ContributionProbe.HostCollection(),
+                ContributionProbe.HookConfiguration("swallowClearThenThrow"),
+                ContributionProbe.Registry,
+                new StringWriter()
+            )
+        )!;
+    }
+
+    [TearDown]
+    public void TearDown() => _root.Dispose();
+
+    [Test]
+    public void It_reports_the_swallowed_refusal_rather_than_the_later_failure()
+    {
+        _failure.Reason.Should().Be(PluginCompositionFailure.ServiceCollectionCleared);
+        _failure.PluginName.Should().Be(PluginFixtures.Contributor);
+    }
+
+    [Test]
+    public void It_does_not_report_the_hook_as_having_thrown()
+    {
+        _failure.Reason.Should().NotBe(PluginCompositionFailure.ContributeServicesThrew);
+        _failure.InnerException.Should().BeNull();
+    }
+}
+
+/// <summary>
+/// A hook that swallowed one refusal and then tripped a second it did not catch.
+/// </summary>
+/// <remarks>
+/// The first is reported, because it is the rule that fired before the rest of the hook ran. This is
+/// the other of the invoker's two exception paths: here a refusal is in flight when the second is
+/// found, where the case above arrives with an unrelated exception.
+/// </remarks>
+[TestFixture]
+public class Given_a_hook_that_swallowed_a_refusal_and_then_tripped_another
+{
+    private TemporaryPluginRoot _root = null!;
+    private ServiceCollection _services = null!;
+    private PluginCompositionException _failure = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _root = TemporaryPluginRoot.Create();
+        LoadedPlugins plugins = ContributionProbe.Load(_root, PluginFixtures.Contributor);
+
+        _services = ContributionProbe.HostCollection();
+        _failure = Assert.Throws<PluginCompositionException>(() =>
+            plugins.ContributeServices(
+                _services,
+                ContributionProbe.HookConfiguration("swallowClearThenDisplaceHostDefault"),
+                ContributionProbe.Registry,
+                new StringWriter()
+            )
+        )!;
+    }
+
+    [TearDown]
+    public void TearDown() => _root.Dispose();
+
+    [Test]
+    public void It_reports_the_first_refusal_rather_than_the_second()
+    {
+        _failure.Reason.Should().Be(PluginCompositionFailure.ServiceCollectionCleared);
+        _failure.Reason.Should().NotBe(PluginCompositionFailure.HostOwnedDescriptorDisplaced);
+    }
+
+    [Test]
+    public void It_left_the_hosts_descriptor_in_place()
+    {
+        _services
+            .Should()
+            .ContainSingle(descriptor => descriptor.ServiceType == typeof(IFixtureHostService))
+            .Which.ImplementationType.Should()
+            .Be(typeof(HostOwnedDefault));
+    }
+}

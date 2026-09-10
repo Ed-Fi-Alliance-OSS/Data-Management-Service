@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Runtime.ExceptionServices;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -50,6 +51,12 @@ public sealed class LoadedPlugins
     /// at a time.
     /// </para>
     /// <para>
+    /// A hook that catches its own refusal and returns still fails the composition. The refusal is the
+    /// host's decision and not the plugin's to handle: the wrapper refused before the write landed, so
+    /// the host's descriptors are intact either way, but the hook stopped partway through its own
+    /// registrations and admitting it would leave a half-composed plugin in a built container.
+    /// </para>
+    /// <para>
     /// The return value is handed back rather than registered. The host owns that decision: it
     /// registers this instance after every hook has run, which is what stops a plugin's own
     /// registration of the same type from winning.
@@ -61,7 +68,8 @@ public sealed class LoadedPlugins
     /// </para>
     /// </remarks>
     /// <exception cref="PluginCompositionException">
-    /// A hook removed something it may not remove, cleared the collection, or threw.
+    /// A hook removed something it may not remove, cleared the collection, threw, or caught one of
+    /// those refusals and returned.
     /// </exception>
     public PluginAuditInput ContributeServices(
         IServiceCollection services,
@@ -119,14 +127,26 @@ public sealed class LoadedPlugins
         {
             plugin.Instance.ContributeServices(wrapper, configuration);
         }
-        catch (PluginCompositionException)
+        catch (PluginCompositionException refusal)
         {
             // Already the named fatal, already reported by the wrapper that raised it. Wrapping it
-            // again would bury the rule that fired under a generic "the hook threw".
+            // again would bury the rule that fired under a generic "the hook threw". A hook that
+            // swallowed an earlier refusal and then tripped a second one is reported on the first,
+            // which is the rule that fired before the rest of the hook ran.
+            if (wrapper.FirstRefusal is { } earlier && !ReferenceEquals(earlier, refusal))
+            {
+                ExceptionDispatchInfo.Capture(earlier).Throw();
+            }
+
             throw;
         }
         catch (Exception exception)
         {
+            // A refusal the hook caught outranks whatever it failed on next: the later failure is
+            // ordinarily a consequence of the work the refusal cut short, so reporting the symptom
+            // would hide the host-owned rule that actually fired.
+            ThrowFirstRefusal(wrapper);
+
             string message =
                 $"plugin '{PluginDiagnosticText.Quote(plugin.Name)}' threw from ContributeServices, the "
                 + $"service composition phase: {PluginDiagnosticText.Quote(exception.GetType().FullName)}: "
@@ -140,6 +160,27 @@ public sealed class LoadedPlugins
                 message,
                 exception
             );
+        }
+
+        // The hook returned, which is not the same as having composed. Nothing else can notice a
+        // refusal it caught: the wrapper refused before the write landed, so the diff sees no removal,
+        // and the audit sees a plugin that registered a contract like any other.
+        ThrowFirstRefusal(wrapper);
+    }
+
+    /// <summary>
+    /// Throws the first refusal the wrapper raised, when a hook caught it and carried on.
+    /// </summary>
+    /// <remarks>
+    /// Thrown through <see cref="ExceptionDispatchInfo"/> rather than with a plain <c>throw</c> of the
+    /// exception object, which would overwrite the stack trace the original throw recorded with this
+    /// frame and lose the call inside the hook that the refusal is about.
+    /// </remarks>
+    private static void ThrowFirstRefusal(RecordingServiceCollection wrapper)
+    {
+        if (wrapper.FirstRefusal is { } refusal)
+        {
+            ExceptionDispatchInfo.Capture(refusal).Throw();
         }
     }
 
