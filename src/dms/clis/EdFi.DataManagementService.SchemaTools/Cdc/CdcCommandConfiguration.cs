@@ -13,6 +13,7 @@ using EdFi.DataManagementService.Core.DocumentCache.Cdc;
 using EdFi.DataManagementService.Core.Startup;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 using CoreProvider = EdFi.DataManagementService.Core.DocumentCache.Cdc.CdcProvider;
 using DdlProvider = EdFi.DataManagementService.Backend.Ddl.CdcProvider;
@@ -136,30 +137,56 @@ public sealed class CdcCommandConfiguration(IConfigurationRoot settings)
         IApiSchemaFileLoader loader,
         EffectiveSchemaSetBuilder builder,
         CancellationToken token,
-        bool deferProjectionPreparation = false
+        bool deferProjectionPreparation = false,
+        bool useRetainedBinding = false
     )
     {
         ValidateControllerSettings();
         var target = Target;
         var timing = Timing;
         string fingerprint;
-        // Read only existing trusted provenance. Every controller revalidates it under its own lock.
-        await using (
-            var session = await new LocalCdcWorkflowJournalStore(statePath).AcquireAsync(
-                timing.CallTimeout,
-                timing.PollInterval < timing.CallTimeout ? timing.PollInterval : timing.CallTimeout,
-                token
-            )
-        )
+        CdcBinding retainedBinding = null!;
+        if (useRetainedBinding)
         {
-            var journal = await session.ReadAsync(target, token);
-            fingerprint = journal
-                .Operations.Where(o => o.Effect == CdcWorkflowEffect.AssociateSource)
-                .SelectMany(o => o.Completions)
-                .Select(c => c.Evidence)
-                .OfType<CdcWorkflowCompletion.Source>()
-                .Single()
-                .PhysicalSourceFingerprint;
+            // Status/watch need the original binding to contain retained incidents even when the
+            // journal cannot be read. Journal-dependent observation remains the controller's job.
+            var services = new ServiceCollection();
+            services.AddDmsCdcControlPlane();
+            services.Configure<CdcBindingStateStoreOptions>(options => options.RootPath = statePath);
+            await using var provider = services.BuildServiceProvider();
+            var retained = await provider
+                .GetRequiredService<ICdcBindingLifecycleService>()
+                .ReadBindingAsync(CdcBindingIdentity.FromTargetIdentity(target), token);
+            if (
+                retained.Status != CdcControlPlaneOperationStatus.Succeeded
+                || retained.State?.Binding is null
+            )
+            {
+                throw new ArgumentException("CDC retained binding is unavailable or invalid.");
+            }
+            retainedBinding = retained.State.Binding;
+            fingerprint = retainedBinding.PhysicalSourceFingerprint;
+        }
+        else
+        {
+            // Read only existing trusted provenance. Every controller revalidates it under its own lock.
+            await using (
+                var session = await new LocalCdcWorkflowJournalStore(statePath).AcquireAsync(
+                    timing.CallTimeout,
+                    timing.PollInterval < timing.CallTimeout ? timing.PollInterval : timing.CallTimeout,
+                    token
+                )
+            )
+            {
+                var journal = await session.ReadAsync(target, token);
+                fingerprint = journal
+                    .Operations.Where(o => o.Effect == CdcWorkflowEffect.AssociateSource)
+                    .SelectMany(o => o.Completions)
+                    .Select(c => c.Evidence)
+                    .OfType<CdcWorkflowCompletion.Source>()
+                    .Single()
+                    .PhysicalSourceFingerprint;
+            }
         }
         var names = CdcArtifactNameGenerator.Render(
             new(
@@ -190,6 +217,14 @@ public sealed class CdcCommandConfiguration(IConfigurationRoot settings)
             CdcTargetValidator.KafkaMurmur2V1PartitionerAlgorithm,
             CdcJsonContract.CurrentContractVersion
         );
+        if (useRetainedBinding)
+        {
+            if (binding != retainedBinding)
+            {
+                throw new ArgumentException("CDC command input does not match the retained binding.");
+            }
+            binding = retainedBinding;
+        }
         var ddlProvider =
             GetProvider() == CoreProvider.Postgresql ? DdlProvider.Postgresql : DdlProvider.SqlServer;
         CdcProviderSetupRequest PrepareProviderSetup()

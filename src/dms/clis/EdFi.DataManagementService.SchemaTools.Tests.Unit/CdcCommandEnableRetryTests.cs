@@ -94,7 +94,7 @@ internal class Given_Cdc_command_enable_retry(Ddl.CdcProvider provider) : CdcRea
             new(A.Fake<IEffectiveSchemaHashProvider>(), A.Fake<IResourceKeySeedProvider>())
         )
         {
-            CreateRequest = (_, _, _, _, _, _, _) => Task.FromResult(_request),
+            CreateRequest = (_, _, _, _, _, _, _, _) => Task.FromResult(_request),
             CreateProjectionRuntime = (_, _, _, _) => Task.FromResult(Observed(_runtime)),
             ConfigureEnableWorkflow = _ =>
                 new(

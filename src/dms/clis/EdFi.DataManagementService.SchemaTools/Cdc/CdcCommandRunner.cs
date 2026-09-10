@@ -46,11 +46,12 @@ public sealed class CdcCommandRunner(IApiSchemaFileLoader loader, EffectiveSchem
         IApiSchemaFileLoader loader,
         EffectiveSchemaSetBuilder schemaBuilder,
         CancellationToken token,
-        bool deferProjection
+        bool deferProjection,
+        bool useRetainedBinding
     );
     internal DeploymentRequestFactory CreateRequest { get; init; } =
-        (config, state, connection, loader, builder, token, defer) =>
-            config.CreateRequestAsync(state, connection, loader, builder, token, defer);
+        (config, state, connection, loader, builder, token, defer, retained) =>
+            config.CreateRequestAsync(state, connection, loader, builder, token, defer, retained);
     internal Func<CdcInitialEnableWorkflow, CdcInitialEnableWorkflow> ConfigureEnableWorkflow { get; init; } =
         workflow => workflow;
 
@@ -99,7 +100,8 @@ public sealed class CdcCommandRunner(IApiSchemaFileLoader loader, EffectiveSchem
                 loader,
                 schemaBuilder,
                 ct,
-                deferProjection
+                deferProjection,
+                invocation.Operation is CdcCommandOperation.Status or CdcCommandOperation.Watch
             );
             var targetKey = DocumentCacheTargetKey.Create(
                 settings["Cdc:TenantKey"] ?? "",
