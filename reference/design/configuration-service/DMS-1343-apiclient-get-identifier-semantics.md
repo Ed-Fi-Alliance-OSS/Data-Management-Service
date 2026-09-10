@@ -209,7 +209,7 @@ Alternative considered: hide the `{clientId}` GET with `.ExcludeFromDescription(
 | CMS OpenAPI tests | `.../Frontend.AspNetCore.Tests.Unit/Modules/ApiClientOpenApiContractTests.cs` | New tests: `{id}` GET parameter is int32 with the numeric description; `{clientId}` GET parameter is string with the key description; no constraint-bearing path key. |
 | CMS E2E | `src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/Features/ApiClients.feature` | New scenarios 25–27 (numeric GET 200, numeric 404, digits-plus-letters 404). |
 | CMS E2E | `src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/Features/Tenants.feature` | One added step pair in the existing cross-tenant scenario: tenant B `GET /v3/apiClients/{tenantAClientId}` → 404. |
-| Docs | `docs/API-CLIENT-AND-INSTANCE-CONFIGURATION.md` | State that GET accepts either identifier; keep the key-based discovery step. |
+| Docs | `docs/API-CLIENT-AND-INSTANCE-CONFIGURATION.md` | State the exact dispatch rule: a valid `int32` path segment is the numeric ApiClient `id`; any other segment is the OAuth `clientId` key. Keep the key-based discovery step. |
 | Docs | `reference/design/configuration-service/README.md` | Link this spec. |
 | Spec | this file | Status/progress updates at each gate. |
 
