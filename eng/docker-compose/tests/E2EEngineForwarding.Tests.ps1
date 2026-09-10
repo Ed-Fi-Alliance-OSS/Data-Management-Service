@@ -290,6 +290,61 @@ Describe "Get-E2ETestEnvironmentContext resolves the E2E database name with Comp
         { Get-E2ETestEnvironmentContext -EnvironmentFile "./.env.e2e" -DatabaseEngine "postgresql" } |
             Should -Throw "*E2E_DATABASE_NAME*"
     }
+
+    # DMS-1527: the restamp harness copies the API schema out of the DMS container and stops/starts
+    # it by name, so the context has to hand the test process the name Compose actually created.
+    # Taking it from Get-E2EStartupPhasePlan keeps one decision point for the Docker phases and the
+    # test process; published-dms.yml sets no container_name, so the two modes disagree.
+    It "carries the <Label> DMS container name from the startup phase plan" -ForEach @(
+        @{ Label = "local-image"; Published = $false; Expected = "ed-fi-api" }
+        @{ Label = "published-image"; Published = $true; Expected = "dms-published-dms-1" }
+    ) {
+        $context = Get-E2ETestEnvironmentContext `
+            -EnvironmentFile "./.env.e2e" `
+            -DatabaseEngine "postgresql" `
+            -UsePublishedImage:$Published
+
+        $context.DmsContainerName | Should -Be $Expected
+    }
+
+    It "defaults to the local-image DMS container name when the image mode is not specified" {
+        $context = Get-E2ETestEnvironmentContext -EnvironmentFile "./.env.e2e" -DatabaseEngine "postgresql"
+
+        $context.DmsContainerName | Should -Be "ed-fi-api"
+    }
+
+    # The two functions are only ever used together, and each one's own tests pass even when the
+    # field one produces is not the field the other requires. Run the real pair so a context that
+    # stops satisfying the process context's guard fails here instead of in an E2E run.
+    It "produces a context the test process accepts, exporting the <Label> container name" -ForEach @(
+        @{ Label = "local-image"; Published = $false; Expected = "ed-fi-api" }
+        @{ Label = "published-image"; Published = $true; Expected = "dms-published-dms-1" }
+    ) {
+        . ([scriptblock]::Create((Get-BuildScriptFunctionText -ScriptPath $script:buildScript -FunctionName "Invoke-WithE2ETestProcessContext")))
+
+        $context = Get-E2ETestEnvironmentContext `
+            -EnvironmentFile "./.env.e2e" `
+            -DatabaseEngine "postgresql" `
+            -UsePublishedImage:$Published
+
+        $observed = $null
+        try {
+            Invoke-WithE2ETestProcessContext -E2ETestSettings $context -Action {
+                $script:observed = $env:AppSettings__DmsContainerName
+            }
+        }
+        finally {
+            foreach ($name in @(
+                    "AppSettings__DataStoreDatabaseName", "AppSettings__DatabaseEngine",
+                    "AppSettings__DataStoreAdminConnectionString", "AppSettings__DataStoreConnectionString",
+                    "AppSettings__DataStoreSnapshotConnectionString", "AppSettings__DmsContainerName",
+                    "DMS_E2E_ENVIRONMENT_FILE")) {
+                Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
+            }
+        }
+
+        $script:observed | Should -Be $Expected
+    }
 }
 
 Describe "DocumentCache hosted E2E environment isolation" {

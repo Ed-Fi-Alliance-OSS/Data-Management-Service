@@ -390,7 +390,13 @@ function Get-E2ETestEnvironmentContext {
         # Database engine backing the E2E stack. "postgresql" (default) or "mssql". An empty value
         # is normalized to postgresql so an omitted top-level -DatabaseEngine is behavior-compatible.
         [string]
-        $DatabaseEngine = "postgresql"
+        $DatabaseEngine = "postgresql",
+
+        # Selects the DMS container name the test process targets, via Get-E2EStartupPhasePlan.
+        # Compose names the container from the project and service unless a compose file sets
+        # container_name, which only the local one does.
+        [switch]
+        $UsePublishedImage
     )
 
     $resolvedDatabaseEngine =
@@ -475,6 +481,13 @@ function Get-E2ETestEnvironmentContext {
         -EnvironmentValues $environmentValues `
         -DatabaseName $e2eSnapshotDatabaseName
 
+    # One decision point for the DMS container name, shared with the Docker phases: the restamp
+    # harness copies the API schema out of that container and stops/starts it, so the name the test
+    # process gets has to be the one Compose actually created.
+    $startupPhasePlan = Get-E2EStartupPhasePlan `
+        -DatabaseEngine $resolvedDatabaseEngine `
+        -UsePublishedImage:$UsePublishedImage
+
     return [pscustomobject]@{
         EnvironmentFile = $environmentFilePath
         ShouldProvisionE2EDatabase = $true
@@ -484,6 +497,7 @@ function Get-E2ETestEnvironmentContext {
         DataStoreAdminConnectionString = $connectionStrings.AdminConnectionString
         DataStoreConnectionString = $connectionStrings.RegistrationConnectionString
         DataStoreSnapshotConnectionString = $snapshotConnectionStrings.RegistrationConnectionString
+        DmsContainerName = $startupPhasePlan.DmsContainerName
         TestResultSuffix = Get-E2ETestResultSuffix -TestFilter $TestFilter
     }
 }
@@ -511,6 +525,8 @@ function Invoke-WithE2ETestProcessContext {
     $previousDataStoreConnectionString = $env:AppSettings__DataStoreConnectionString
     $previousDataStoreSnapshotConnectionStringExists = Test-Path Env:AppSettings__DataStoreSnapshotConnectionString
     $previousDataStoreSnapshotConnectionString = $env:AppSettings__DataStoreSnapshotConnectionString
+    $previousDmsContainerNameExists = Test-Path Env:AppSettings__DmsContainerName
+    $previousDmsContainerName = $env:AppSettings__DmsContainerName
     $previousE2EEnvironmentFileExists = Test-Path Env:DMS_E2E_ENVIRONMENT_FILE
     $previousE2EEnvironmentFile = $env:DMS_E2E_ENVIRONMENT_FILE
     $previousNodeOptionsExists = Test-Path Env:NODE_OPTIONS
@@ -521,7 +537,15 @@ function Invoke-WithE2ETestProcessContext {
             throw "AppSettings__DataStoreDatabaseName must be set for the DMS E2E test process."
         }
 
+        # The representation-restamp harness copies the API schema out of the DMS container and
+        # stops/starts it by name, and the name differs by image mode. Fail here rather than let the
+        # harness fall back to its local-image default and target a container that does not exist.
+        if ([string]::IsNullOrWhiteSpace($E2ETestSettings.DmsContainerName)) {
+            throw "AppSettings__DmsContainerName must be set for the DMS E2E test process."
+        }
+
         $env:AppSettings__DataStoreDatabaseName = $E2ETestSettings.DataStoreDatabaseName
+        $env:AppSettings__DmsContainerName = $E2ETestSettings.DmsContainerName
         # Engine and the two opaque connection strings for the C# harness (host-side admin/reset
         # access and the Docker-network registration string). The values contain secrets and are set
         # into the environment only; they are never written to host output.
@@ -568,6 +592,13 @@ function Invoke-WithE2ETestProcessContext {
         }
         else {
             Remove-Item Env:AppSettings__DataStoreConnectionString -ErrorAction SilentlyContinue
+        }
+
+        if ($previousDmsContainerNameExists) {
+            $env:AppSettings__DmsContainerName = $previousDmsContainerName
+        }
+        else {
+            Remove-Item Env:AppSettings__DmsContainerName -ErrorAction SilentlyContinue
         }
 
         if ($previousE2EEnvironmentFileExists) {
@@ -1295,7 +1326,8 @@ function E2ETests {
         -EnvironmentFile $EnvironmentFile `
         -EnvironmentOverlayFile $EnvironmentOverlayFile `
         -TestFilter $TestFilter `
-        -DatabaseEngine $DatabaseEngine
+        -DatabaseEngine $DatabaseEngine `
+        -UsePublishedImage:$UsePublishedImage
 
     # Resolve the startup phase plan once (single decision point, unit-tested in
     # E2EEngineForwarding.Tests.ps1). SQL Server requires the generated relational DDL to exist before
