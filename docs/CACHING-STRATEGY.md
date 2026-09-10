@@ -154,7 +154,7 @@ built-in stampede protection
 **Invalidation Strategy:**
 
 - TTL-based expiration after the configured duration
-- Manual invalidation via `/claimsets/reload` management endpoint
+- Manual invalidation via `/management/reload-claimsets` management endpoint
 - Requires `AppSettings:EnableClaimsetReload: true` to enable manual reload
 - Requires a valid `AppSettings:ManagementEndpoints:RequiredRole`; the endpoints are not mapped
   without one, and callers must present a bearer token carrying that role under
@@ -584,7 +584,7 @@ Re-prime cache with new schemas
 
 ### 3. Manual Invalidation
 
-Used by: ClaimSets (via `/claimsets/reload` endpoint)
+Used by: ClaimSets (via `/management/reload-claimsets` endpoint)
 
 Administrators can trigger cache invalidation through management endpoints.
 Requires `EnableClaimsetReload: true` in configuration. The endpoints are additionally mapped only
