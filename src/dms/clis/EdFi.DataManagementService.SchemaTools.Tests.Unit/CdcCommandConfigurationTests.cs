@@ -221,20 +221,23 @@ public partial class Given_Cdc_command_configuration(string providerToken, CoreP
     [TestCase("Cdc:Timing:CallMilliseconds", "0")]
     [TestCase("Cdc:LagThresholdMilliseconds", "-1")]
     [TestCase("Cdc:LagThresholdMilliseconds", "")]
-    public void It_rejects_unsupported_or_mismatched_configuration_before_runtime(string key, string value)
+    public async Task It_rejects_unsupported_or_mismatched_configuration_before_runtime(
+        string key,
+        string value
+    )
     {
         _settings[key] = value;
-        Action act = _config.Validate;
-        act.Should().Throw<ArgumentException>();
+        Func<Task> act = () => RequestAsync();
+        await act.Should().ThrowAsync<ArgumentException>();
     }
 
     [Test]
-    public void It_does_not_accept_membership_in_an_unused_configuration_section()
+    public async Task It_does_not_accept_membership_in_an_unused_configuration_section()
     {
         _settings["DataManagement:DocumentCache:Targets:0:DataStoreId"] = "99";
         _settings["DocumentCache:Targets:0:DataStoreId"] = "42";
-        Action act = _config.Validate;
-        act.Should().Throw<ArgumentException>();
+        Func<Task> act = () => RequestAsync();
+        await act.Should().ThrowAsync<ArgumentException>();
     }
 
     [Test]
