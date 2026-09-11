@@ -846,11 +846,29 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
             return;
         }
 
+        int failures = 0;
         if (_controllerComposeKafka && File.Exists(ControllerComposeFile))
         {
             using var composeTimeout = new CancellationTokenSource(TimeSpan.FromMinutes(1));
-            await RunControllerComposeAsync(["down", "--volumes", "--remove-orphans"], composeTimeout.Token);
-            Directory.Delete(_controllerComposeDirectory, recursive: true);
+            try
+            {
+                await RunControllerComposeAsync(
+                    ["down", "--volumes", "--remove-orphans"],
+                    composeTimeout.Token
+                );
+            }
+            catch
+            {
+                failures++;
+            }
+            try
+            {
+                Directory.Delete(_controllerComposeDirectory, recursive: true);
+            }
+            catch
+            {
+                failures++;
+            }
         }
 
         List<IReadOnlyList<string>> cleanup =
@@ -861,7 +879,6 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
             ["network", "rm", NetworkName],
             .. _controllerComposeVolumes.Select(name => new[] { "volume", "rm", name }),
         ];
-        int failures = 0;
         foreach (var arguments in cleanup)
         {
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
