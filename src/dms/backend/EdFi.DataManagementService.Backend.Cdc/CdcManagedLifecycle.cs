@@ -367,21 +367,7 @@ public sealed class CdcManagedLifecycle
                 if (resumeReconciled)
                 {
                     bool ready = status.Status.Readiness == CdcReadiness.Ready;
-                    bool catchingUp =
-                        current is { Connector.IsRunning: true, PreStartEligible: true }
-                        && !status.Recovery.RequiresFreshPass
-                        && status.Status.PrimaryBlockingCategory
-                            is CdcBlockingCategory.ProjectionBacklog
-                                or CdcBlockingCategory.LagExceeded
-                        && status.Diagnostics.All(d =>
-                            d.Failure == CdcDeploymentFailure.ValidationFailed
-                            && d.Component
-                                is CdcDeploymentComponent.Projection
-                                    or CdcDeploymentComponent.Metrics
-                        )
-                        && status.Status.ConnectorRuntime.State == CdcComponentState.Satisfied
-                        && CanCatchUp(status.Status.Projection, CdcBlockingCategory.ProjectionBacklog)
-                        && CanCatchUp(status.Status.Lag, CdcBlockingCategory.LagExceeded);
+                    bool catchingUp = CdcKnownCatchUp.CanCatchUp(current, status);
                     if (ready || !catchingUp)
                     {
                         diagnostics.AddRange(status.Diagnostics);
@@ -452,10 +438,6 @@ public sealed class CdcManagedLifecycle
             };
         }
     }
-
-    private static bool CanCatchUp(CdcComponent component, CdcBlockingCategory temporaryBlocker) =>
-        component.State == CdcComponentState.Satisfied
-        || component.State == CdcComponentState.NotSatisfied && component.Category == temporaryBlocker;
 
     private static async Task<bool> MutateAsync(
         CdcDeploymentRequest request,

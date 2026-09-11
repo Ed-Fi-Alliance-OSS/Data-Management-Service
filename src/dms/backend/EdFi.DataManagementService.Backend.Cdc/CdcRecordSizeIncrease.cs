@@ -511,18 +511,7 @@ public sealed class CdcRecordSizeIncrease
             bool catchingUp =
                 mode == CdcEstablishedValidationMode.RunningPublication
                 && rollout is not null
-                && observation is { Connector.IsRunning: true, PreStartEligible: true }
-                && !lastObservation.Recovery.RequiresFreshPass
-                && lastObservation.Status.PrimaryBlockingCategory
-                    is CdcBlockingCategory.ProjectionBacklog
-                        or CdcBlockingCategory.LagExceeded
-                && lastObservation.Diagnostics.All(d =>
-                    d.Failure == CdcDeploymentFailure.ValidationFailed
-                    && d.Component is CdcDeploymentComponent.Projection or CdcDeploymentComponent.Metrics
-                )
-                && lastObservation.Status.ConnectorRuntime.State == CdcComponentState.Satisfied
-                && CanCatchUp(lastObservation.Status.Projection, CdcBlockingCategory.ProjectionBacklog)
-                && CanCatchUp(lastObservation.Status.Lag, CdcBlockingCategory.LagExceeded);
+                && CdcKnownCatchUp.CanCatchUp(observation, lastObservation);
             if (!catchingUp && lastObservation.Diagnostics.FirstOrDefault() is { } diagnostic)
             {
                 throw new CdcEstablishedValidation.EvidenceException(diagnostic);
@@ -530,10 +519,6 @@ public sealed class CdcRecordSizeIncrease
             Require(observation is not null);
             return observation;
         }
-
-        static bool CanCatchUp(CdcComponent component, CdcBlockingCategory temporaryBlocker) =>
-            component.State == CdcComponentState.Satisfied
-            || component.State == CdcComponentState.NotSatisfied && component.Category == temporaryBlocker;
 
         async Task<T> Call<T>(Func<CancellationToken, Task<T>> action)
         {
