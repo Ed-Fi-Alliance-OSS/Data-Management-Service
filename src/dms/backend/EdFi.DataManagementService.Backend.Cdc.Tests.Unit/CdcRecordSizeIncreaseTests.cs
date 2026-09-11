@@ -506,6 +506,136 @@ internal class Given_CdcRecordSizeIncrease(Ddl.CdcProvider provider) : CdcReadin
             .And.NotContain("********");
     }
 
+    [TestCase("unavailable")]
+    [TestCase("malformed")]
+    [TestCase("out-of-order")]
+    [TestCase("failed-shutdown")]
+    [TestCase("uncertain-stop")]
+    public async Task It_contains_retained_loss_before_pending_rollout_configuration(string failure)
+    {
+        await using (
+            var session = await _store.AcquireAsync(
+                _request.Timing.CallTimeout,
+                _request.Timing.PollInterval,
+                default
+            )
+        )
+        {
+            var journal = await session.ReadAsync(_request.TargetIdentity, default);
+            var invocation = session.BeginRecordSizeAcknowledgement(journal.WorkflowId, _scope);
+            await invocation.ConfirmAndRunAsync(
+                new(_scope, new(invocation.InvocationId, "operator", DateTimeOffset.UtcNow, true, []), true),
+                _ => Task.FromResult(true),
+                default
+            );
+        }
+        _confirmations = 1;
+        var bindings = _services.GetRequiredService<ICdcBindingLifecycleService>();
+        var incident = new CdcIncident(
+            CdcJsonContract.CurrentContractVersion,
+            CdcIncidentType.SourceHistoryContinuityLost,
+            DateTimeOffset.UtcNow,
+            _request.Binding.ToCompleteBindingIdentity(),
+            CdcIncidentFailureCategory.ConnectOffsetMissing,
+            new(
+                _request.Binding.ConnectorName,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                [CdcIncidentUnavailableFact.ConnectOffset]
+            )
+        );
+        (await bindings.LatchSourceHistoryLossAsync(incident))
+            .Status.Should()
+            .Be(CdcControlPlaneOperationStatus.Succeeded);
+        string before = JsonSerializer.Serialize(ReadJournal());
+        _live["producer.override.max.request.size"] =
+            failure == "malformed" ? "private-invalid-size" : Ceiling.ToString(CultureInfo.InvariantCulture);
+        A.CallTo(() => _connect.ReadConfigurationAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
+            .ReturnsLazily(() =>
+            {
+                Trace("config");
+                return failure is "unavailable" or "failed-shutdown" or "uncertain-stop"
+                    ? new CdcTransportResult<IReadOnlyDictionary<string, string>>.Unavailable(
+                        new(CdcDeploymentComponent.Connect, CdcDeploymentFailure.Unavailable)
+                    )
+                    : Observed<IReadOnlyDictionary<string, string>>(_live);
+            });
+        A.CallTo(() => _connect.StopAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
+            .ReturnsLazily(() =>
+            {
+                Trace("stop");
+                _stopped.Should().BeFalse();
+                _stopped = failure != "failed-shutdown";
+                if (failure is "failed-shutdown" or "uncertain-stop")
+                {
+                    throw new HttpRequestException("private-stop-sentinel");
+                }
+                return Observed(new CdcTransportAcknowledgement());
+            });
+        if (failure == "failed-shutdown")
+        {
+            A.CallTo(() => _connect.ReadStatusAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
+                .ReturnsLazily(() =>
+                {
+                    Trace("status");
+                    return new CdcTransportResult<CdcConnectStatus>.Unavailable(
+                        new(CdcDeploymentComponent.Connect, CdcDeploymentFailure.Unavailable)
+                    );
+                });
+        }
+        _trace.Clear();
+
+        var result = await Execute();
+
+        result.Succeeded.Should().BeFalse();
+        result.Ready.Should().BeFalse();
+        result.Observation.Should().NotBeNull();
+        result.Observation.Status.SourceHistory.Continuity.Should().Be(CdcSourceHistoryContinuity.Lost);
+        result.Observation.IncidentPersistence.Should().Be(CdcIncidentPersistenceState.Persisted);
+        result
+            .Observation.Containment.Should()
+            .Be(
+                failure == "failed-shutdown"
+                    ? CdcConnectorContainmentState.Failed
+                    : CdcConnectorContainmentState.Stopped
+            );
+        _trace.Should().Equal("stop", "status");
+        _confirmations.Should().Be(1);
+        _effects.Should().BeEmpty();
+        JsonSerializer.Serialize(ReadJournal()).Should().Be(before);
+        (await bindings.ExactMatchBindingAsync(_request.Binding))
+            .State!.Incident.Should()
+            .BeEquivalentTo(incident);
+        if (failure is "failed-shutdown" or "uncertain-stop")
+        {
+            result
+                .Diagnostics.Should()
+                .Contain(d =>
+                    d.Component == CdcDeploymentComponent.Connect
+                    && d.Failure == CdcDeploymentFailure.Unavailable
+                );
+        }
+        JsonSerializer
+            .Serialize(result)
+            .Should()
+            .NotContain("private-stop-sentinel")
+            .And.NotContain("private-invalid-size");
+        await using var released = await _store.AcquireAsync(
+            _request.Timing.CallTimeout,
+            _request.Timing.PollInterval,
+            default
+        );
+    }
+
     [TestCase(false)]
     [TestCase(true)]
     public async Task It_contains_terminal_loss_during_rollout_and_after_final_completion(bool final)

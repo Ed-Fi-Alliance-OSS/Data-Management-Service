@@ -175,7 +175,8 @@ public sealed partial class CdcControllerStatus
         Action<CdcEstablishedValidationObservation> observed = null!,
         Guid managedResumeId = default,
         CancellationToken operationDeadline = default,
-        CdcRecordSizeRollout rollout = null!
+        CdcRecordSizeRollout rollout = null!,
+        bool stopAfterRetainedIncident = false
     )
     {
         var request = target.Request;
@@ -290,24 +291,31 @@ public sealed partial class CdcControllerStatus
                     );
                 }
                 await progress.ContainTerminal();
-                var observation = await _validation(request.Binding.Provider)
-                    .ObserveInSessionAsync(
-                        request,
-                        target.Runtime,
-                        mode,
-                        target.LagThresholdMilliseconds,
-                        target.Integrity,
-                        session,
-                        c => component = c,
-                        observationTimeout.Token,
-                        progress,
-                        _recovery,
-                        managedResumeId,
-                        rollout
-                    );
-                diagnostics.AddRange(observation.Diagnostics);
-                observed?.Invoke(observation);
-                observationTimeout.Token.ThrowIfCancellationRequested();
+                // A terminal rollout retry needs containment only; live configuration cannot admit it.
+                if (
+                    !stopAfterRetainedIncident
+                    || progress.SourceHistory?.Observation.Continuity != CdcSourceHistoryContinuity.Lost
+                )
+                {
+                    var observation = await _validation(request.Binding.Provider)
+                        .ObserveInSessionAsync(
+                            request,
+                            target.Runtime,
+                            mode,
+                            target.LagThresholdMilliseconds,
+                            target.Integrity,
+                            session,
+                            c => component = c,
+                            observationTimeout.Token,
+                            progress,
+                            _recovery,
+                            managedResumeId,
+                            rollout
+                        );
+                    diagnostics.AddRange(observation.Diagnostics);
+                    observed?.Invoke(observation);
+                    observationTimeout.Token.ThrowIfCancellationRequested();
+                }
             }
             catch (Exception exception)
             {

@@ -121,6 +121,11 @@ public sealed class CdcRecordSizeIncrease
             Require(!journal.RetirementIntended);
             var exact = await Call(ct => _bindings.ExactMatchBindingAsync(previous.Binding, ct));
             Require(exact.Status == CdcControlPlaneOperationStatus.Succeeded);
+            if (exact.State is { Incident: not null })
+            {
+                // Retained loss takes precedence over confirmation and fallible rollout configuration.
+                await Observe(previousTarget, session, token, stopAfterRetainedIncident: true);
+            }
             var pending = journal.Operations.SingleOrDefault(o =>
                 o.Effect == CdcWorkflowEffect.IncreaseRecordSize && o.Completions.IsEmpty
             );
@@ -491,7 +496,8 @@ public sealed class CdcRecordSizeIncrease
             CancellationToken deadline,
             CdcEstablishedValidationMode mode = CdcEstablishedValidationMode.PreStart,
             Guid resumeId = default,
-            CdcRecordSizeRollout rollout = null!
+            CdcRecordSizeRollout rollout = null!,
+            bool stopAfterRetainedIncident = false
         )
         {
             CdcEstablishedValidationObservation observation = null!;
@@ -503,7 +509,8 @@ public sealed class CdcRecordSizeIncrease
                 value => observation = value,
                 resumeId,
                 deadline,
-                rollout
+                rollout,
+                stopAfterRetainedIncident
             );
             Require(lastObservation.Status.SourceHistory.Continuity != CdcSourceHistoryContinuity.Lost);
             // Only the acknowledged publication wait may outlast known lag or queued work.

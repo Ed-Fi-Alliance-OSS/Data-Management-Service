@@ -65,6 +65,12 @@ public partial class Given_Cdc_command_configuration
                 }
             }
         }
+        foreach (
+            string boundary in new[] { "configuration-unavailable", "failed-shutdown", "uncertain-stop" }
+        )
+        {
+            yield return new TestCaseData(CdcCommandOperation.IncreaseRecordSize, boundary, true, true);
+        }
     }
 
     [TestCaseSource(nameof(PreparationFailures))]
@@ -126,6 +132,16 @@ public partial class Given_Cdc_command_configuration
         List<string> trace = [];
         using var http = new ContainmentHandler(request.Binding.ConnectorName, trace)
         {
+            AfterStop = _ =>
+                boundary is "failed-shutdown" or "uncertain-stop"
+                    ? Task.FromException(new HttpRequestException(PreparationSentinel))
+                    : Task.CompletedTask,
+            AfterStatus = _ =>
+                boundary == "failed-shutdown"
+                    ? Task.FromException(new HttpRequestException(PreparationSentinel))
+                    : Task.CompletedTask,
+            ConfigurationUnavailable =
+                boundary is "configuration-unavailable" or "failed-shutdown" or "uncertain-stop",
             Configuration = pendingIncrease
                 ? new Dictionary<string, string>
                 {
@@ -301,18 +317,47 @@ public partial class Given_Cdc_command_configuration
                     .Subject,
             };
             target.Should().NotBeNull();
-            // This fixture retains a binding but no establishment evidence. Containment-aware
-            // preflight now rejects incomplete provenance before projection preparation.
-            target.Diagnostics.Should().Contain(d => d.Component == CdcDeploymentComponent.WorkflowState);
+            // Terminal size retries return immediately after containment. Other paths still reject
+            // this fixture's incomplete establishment provenance before projection preparation.
+            if (operation != CdcCommandOperation.IncreaseRecordSize || !terminal)
+            {
+                target.Diagnostics.Should().Contain(d => d.Component == CdcDeploymentComponent.WorkflowState);
+            }
             target.Status.Readiness.Should().Be(CdcReadiness.NotReady);
             target.Status.SourceHistory.IncidentLatched.Should().Be(terminal);
             if (terminal)
             {
-                target.Containment.Should().Be(CdcConnectorContainmentState.Stopped);
+                target
+                    .Containment.Should()
+                    .Be(
+                        boundary == "failed-shutdown"
+                            ? CdcConnectorContainmentState.Failed
+                            : CdcConnectorContainmentState.Stopped
+                    );
+                target.IncidentPersistence.Should().Be(CdcIncidentPersistenceState.Persisted);
                 target.Status.SourceHistory.Continuity.Should().Be(CdcSourceHistoryContinuity.Lost);
-                int stopIndex = pendingIncrease ? 1 : 0;
-                trace[stopIndex].Should().Be("stop");
-                trace[stopIndex + 1].Should().Be("status");
+                trace[0].Should().Be("stop");
+                trace[1].Should().Be("status");
+                if (boundary == "failed-shutdown")
+                {
+                    result
+                        .Diagnostics.Should()
+                        .Contain(d =>
+                            d.Component == CdcDeploymentComponent.Connect
+                            && d.Failure == CdcDeploymentFailure.Unavailable
+                        );
+                }
+                else if (boundary == "uncertain-stop")
+                {
+                    // The REST adapter reconciles the lost stop response before containment's
+                    // independent read-back, so no unresolved transport failure remains.
+                    trace.Count(t => t == "status").Should().Be(2);
+                    result
+                        .Diagnostics.Should()
+                        .ContainSingle()
+                        .Which.Failure.Should()
+                        .Be(CdcDeploymentFailure.ValidationFailed);
+                }
                 trace.Count(t => t == "stop").Should().Be(operation == CdcCommandOperation.Watch ? 2 : 1);
             }
             else
@@ -342,8 +387,15 @@ public partial class Given_Cdc_command_configuration
         if (pendingIncrease)
         {
             increases[0].Completions.Should().BeEmpty();
-            increases[0].RecordSizeIncrease.Single().Acknowledgements.Should().HaveCount(2);
-            trace[0].Should().Be("configuration");
+            increases[0].RecordSizeIncrease.Single().Acknowledgements.Should().HaveCount(terminal ? 1 : 2);
+            if (terminal)
+            {
+                trace.Should().NotContain("configuration");
+            }
+            else
+            {
+                trace[0].Should().Be("configuration");
+            }
         }
     }
 
@@ -735,6 +787,7 @@ public partial class Given_Cdc_command_configuration
     {
         private bool _stopped;
         internal IReadOnlyDictionary<string, string> Configuration { get; init; } = null!;
+        internal bool ConfigurationUnavailable { get; init; }
         internal Func<CancellationToken, Task> AfterStop { get; init; } = _ => Task.CompletedTask;
         internal Func<CancellationToken, Task> AfterStatus { get; init; } = _ => Task.CompletedTask;
 
@@ -781,6 +834,10 @@ public partial class Given_Cdc_command_configuration
             )
             {
                 trace.Add("configuration");
+                if (ConfigurationUnavailable)
+                {
+                    return new HttpResponseMessage(HttpStatusCode.ServiceUnavailable);
+                }
                 return new HttpResponseMessage(HttpStatusCode.OK)
                 {
                     Content = new StringContent(JsonSerializer.Serialize(Configuration)),
