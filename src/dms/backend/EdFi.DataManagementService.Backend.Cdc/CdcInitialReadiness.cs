@@ -160,7 +160,7 @@ public sealed class CdcInitialReadiness
                             && history.Transitions[^1].Status
                                 == DocumentCacheDownstreamPublicationStatus.Active
                     );
-                    var exact = await ExactAsync(request, token);
+                    var exact = await ExactAsync(request, token, cancellationToken);
                     string operation = Guid.NewGuid().ToString("D");
                     var proof = new InitialCdcProvisioningProof(
                         CdcJsonContract.CurrentContractVersion,
@@ -383,7 +383,7 @@ public sealed class CdcInitialReadiness
                         var status = await RequireRunningAsync(request, worker, operation, boundary, token);
                         await RequireSameWorkerAsync(request, worker, boundary, token);
                         boundary.Component = CdcDeploymentComponent.WorkflowState;
-                        exact = await ExactAsync(request, token);
+                        exact = await ExactAsync(request, token, cancellationToken);
                         var now = _time.GetUtcNow();
                         var input = new CdcInitialAdmissionEvaluationInput(
                             operation,
@@ -565,7 +565,8 @@ public sealed class CdcInitialReadiness
 
     private async Task<CdcBindingLifecycleResult> ExactAsync(
         CdcDeploymentRequest request,
-        CancellationToken token
+        CancellationToken token,
+        CancellationToken caller
     )
     {
         var exact = await CallAsync(
@@ -575,8 +576,24 @@ public sealed class CdcInitialReadiness
         );
         Require(
             exact.Status == CdcControlPlaneOperationStatus.Succeeded
-                && exact.State?.State == CdcBindingState.BindingPresent
+                && exact.State?.State is CdcBindingState.BindingPresent or CdcBindingState.IncidentLatched
         );
+        if (exact.State!.Incident is not null)
+        {
+            // Retained loss is authoritative without projection or provider inputs. A failed earlier
+            // stop or native recovery still requires shutdown; healthy samples cannot clear this latch.
+            var retained = CdcSourceHistoryContinuityClassifier.Evaluate(
+                new(Guid.NewGuid().ToString("D"), _time.GetUtcNow(), _time.GetUtcNow(), request.Binding)
+                {
+                    LatchedIncident = exact.State.Incident,
+                }
+            );
+            if (retained.Observation.Continuity == CdcSourceHistoryContinuity.Lost)
+            {
+                await ContainLossAsync(request, retained, exact.State, caller);
+            }
+        }
+        Require(exact.State.State == CdcBindingState.BindingPresent);
         return exact;
     }
 
@@ -608,7 +625,7 @@ public sealed class CdcInitialReadiness
                 .Operations.Single(o => o.Effect == CdcWorkflowEffect.CreateProvider)
                 .Completions.Single()
                 .Evidence;
-        var exact = await ExactAsync(request, token);
+        var exact = await ExactAsync(request, token, caller);
         CdcProviderSetupObservationMapping mapped = null!;
         CdcSourceHistoryClassificationResult continuity = null!;
         CdcConnectOffsetEvidence rawOffset = null!;
@@ -669,24 +686,7 @@ public sealed class CdcInitialReadiness
                     if (classification.Observation.Continuity == CdcSourceHistoryContinuity.Lost)
                     {
                         // Consume this exact classification under the held session. No full-status resample.
-                        var terminal = new CdcSourceHistoryContainment(_bindings, _connect, _time);
-                        List<CdcDeploymentDiagnostic> diagnostics = [];
-                        await terminal.PersistAsync(
-                            request,
-                            classification,
-                            exact.State!,
-                            diagnostics,
-                            _ => { },
-                            caller
-                        );
-                        await terminal.StopAsync(request, diagnostics, _ => { }, caller);
-                        throw new EvidenceException(
-                            diagnostics.FirstOrDefault()
-                                ?? new(
-                                    CdcDeploymentComponent.ProviderSetup,
-                                    CdcDeploymentFailure.ValidationFailed
-                                )
-                        );
+                        await ContainLossAsync(request, classification, exact.State!, caller);
                     }
                     return classification;
                 }
@@ -736,6 +736,23 @@ public sealed class CdcInitialReadiness
             }
         );
         return (provider, mapped, continuity, rawOffset, offset);
+    }
+
+    private async Task ContainLossAsync(
+        CdcDeploymentRequest request,
+        CdcSourceHistoryClassificationResult classification,
+        CdcBindingStateContract bindingState,
+        CancellationToken caller
+    )
+    {
+        var terminal = new CdcSourceHistoryContainment(_bindings, _connect, _time);
+        List<CdcDeploymentDiagnostic> diagnostics = [];
+        await terminal.PersistAsync(request, classification, bindingState, diagnostics, _ => { }, caller);
+        await terminal.StopAsync(request, diagnostics, _ => { }, caller);
+        throw new EvidenceException(
+            diagnostics.FirstOrDefault()
+                ?? new(CdcDeploymentComponent.ProviderSetup, CdcDeploymentFailure.ValidationFailed)
+        );
     }
 
     private async Task<CdcProjectionCorrelationObservation> ProjectionAsync(

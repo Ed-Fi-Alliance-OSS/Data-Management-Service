@@ -24,6 +24,7 @@ internal class Given_Cdc_command_enable_retry(Ddl.CdcProvider provider) : CdcRea
 {
     private ICdcBindingLifecycleService _bindings = null!;
     private string _settingsPath = null!;
+    private bool _failRuntimePreparation;
     private ICdcWorkerStartupTransport _infrastructure = null!;
     private string JournalPath =>
         Directory.GetFiles(Path.Combine(_root, "workflows"), "*.json", SearchOption.AllDirectories).Single();
@@ -31,6 +32,7 @@ internal class Given_Cdc_command_enable_retry(Ddl.CdcProvider provider) : CdcRea
     [SetUp]
     public void SetupCommand()
     {
+        _failRuntimePreparation = false;
         _bindings = _services.GetRequiredService<ICdcBindingLifecycleService>();
         // Reuse the qualified synthetic transport inventory, starting before provider intent.
         // Every interruption and subsequent retry below goes through the real command/coordinator.
@@ -98,7 +100,15 @@ internal class Given_Cdc_command_enable_retry(Ddl.CdcProvider provider) : CdcRea
         )
         {
             CreateRequest = (_, _, _, _, _, _, _, _) => Task.FromResult(_request),
-            CreateProjectionRuntime = (_, _, _, _) => Task.FromResult(Observed(_runtime)),
+            CreateProjectionRuntime = (_, _, _, _) =>
+            {
+                Trace("prepare-runtime");
+                if (_failRuntimePreparation)
+                {
+                    throw new IOException("controlled CMS runtime preparation failure");
+                }
+                return Task.FromResult(Observed(_runtime));
+            },
             ConfigureEnableWorkflow = _ =>
                 new(
                     _root,
@@ -174,9 +184,14 @@ internal class Given_Cdc_command_enable_retry(Ddl.CdcProvider provider) : CdcRea
             });
     }
 
-    [TestCase("provider-missing")]
-    [TestCase("provider-recreated")]
-    public async Task It_contains_provider_loss_before_enable_retry_setup_rejects_it(string failure)
+    [TestCase("provider-missing", false)]
+    [TestCase("provider-recreated", false)]
+    [TestCase("provider-missing", true)]
+    [TestCase("provider-recreated", true)]
+    public async Task It_contains_provider_loss_before_enable_retry_setup_rejects_it(
+        string failure,
+        bool failRetainedRuntimePreparation
+    )
     {
         await InterruptAfterEstablishmentAsync();
         var healthy = _change;
@@ -193,16 +208,75 @@ internal class Given_Cdc_command_enable_retry(Ddl.CdcProvider provider) : CdcRea
                     : CdcIncidentFailureCategory.ProviderArtifactRecreated
             );
         _trace.Should().Contain("stopped-readback");
-        _trace.IndexOf("stopped-readback").Should().BeLessThan(_trace.IndexOf("dispose"));
+        _trace.Should().NotContain("prepare-runtime").And.NotContain("dispose");
         _trace.Should().NotContain("start").And.NotContain("barrier");
         ReadJournal().WriterPublicationAuthorized.Should().BeFalse();
         _change = healthy;
         _identity = new('a', 64);
         _runtimeState = CdcConnectorRuntimeState.Running;
+        _failRuntimePreparation = failRetainedRuntimePreparation;
         _trace.Clear();
         (await CommandAsync()).Succeeded.Should().BeFalse();
-        _trace.Should().NotContain("provider");
+        _trace.Should().NotContain("provider").And.NotContain("prepare-runtime");
+        _trace.Should().ContainInOrder("stop", "stopped-readback");
+        (await _bindings.ExactMatchBindingAsync(_request.Binding))
+            .State!.Incident.Should()
+            .BeEquivalentTo(state.State.Incident);
         ReadJournal().WriterPublicationAuthorized.Should().BeFalse();
+    }
+
+    [TestCase("provider-missing")]
+    [TestCase("offset-missing")]
+    [TestCase("healthy")]
+    [TestCase("unknown")]
+    public async Task It_inspects_initial_retry_continuity_before_failed_runtime_preparation(string evidence)
+    {
+        await InterruptAfterEstablishmentAsync();
+        _failRuntimePreparation = true;
+        ConfigureInitialStop();
+        ConfigureInitialProviderLoss(evidence);
+        if (evidence == "offset-missing")
+        {
+            _offsetState = CdcConnectOffsetState.Missing;
+        }
+        if (evidence == "unknown")
+        {
+            var healthy = _change;
+            _change = result => healthy(result) with { ProviderHistoryObservations = [] };
+        }
+        var result = await CommandAsync();
+        result.Succeeded.Should().BeFalse();
+        _trace.Should().Contain("provider");
+        var state = await _bindings.ExactMatchBindingAsync(_request.Binding);
+        if (evidence is "provider-missing" or "offset-missing")
+        {
+            state.State!.Incident.Should().NotBeNull();
+            state
+                .State.Incident!.FailureCategory.Should()
+                .Be(
+                    evidence == "provider-missing"
+                        ? CdcIncidentFailureCategory.ProviderArtifactMissing
+                        : CdcIncidentFailureCategory.ConnectOffsetMissing
+                );
+            _trace.Should().ContainInOrder("stop", "stopped-readback");
+            _trace.Should().NotContain("prepare-runtime");
+        }
+        else
+        {
+            state.State!.Incident.Should().BeNull();
+            _trace.Should().ContainInOrder("provider", "offset", "prepare-runtime");
+            _trace.Should().NotContain("stop");
+        }
+        _trace.Should().NotContain("start").And.NotContain("barrier").And.NotContain("dispose");
+        _trace.Should().NotContain("broker-start").And.NotContain("worker-start");
+        _posts.Should().Be(1);
+        ReadJournal().WriterPublicationAuthorized.Should().BeFalse();
+        JsonSerializer.Serialize(result).Should().NotContain("controlled CMS runtime preparation failure");
+        await using var released = await _store.AcquireAsync(
+            TimeSpan.FromSeconds(1),
+            TimeSpan.FromMilliseconds(1),
+            default
+        );
     }
 
     [Test]

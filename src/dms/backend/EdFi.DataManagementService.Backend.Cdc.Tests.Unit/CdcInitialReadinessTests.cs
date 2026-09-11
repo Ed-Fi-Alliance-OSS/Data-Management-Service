@@ -204,7 +204,7 @@ internal class Given_CdcInitialReadiness(Ddl.CdcProvider provider) : CdcReadines
             .Returns(Observed(healthyOffset));
         _trace.Clear();
         (await ReadyAsync()).State.Should().Be(CdcTransportEvidenceState.Unavailable);
-        _trace.Should().Equal("dispose");
+        _trace.Should().Equal("stop", "stopped-readback", "dispose");
         ReadJournal().WriterPublicationAuthorized.Should().BeFalse();
         await using var released = await _store.AcquireAsync(
             TimeSpan.FromMilliseconds(100),

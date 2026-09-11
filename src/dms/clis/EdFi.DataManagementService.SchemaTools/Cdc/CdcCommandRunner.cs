@@ -93,7 +93,8 @@ public sealed class CdcCommandRunner(IApiSchemaFileLoader loader, EffectiveSchem
             using var settingsLifetime = (IDisposable)settings;
             bool deferProjection =
                 invocation.Operation
-                is CdcCommandOperation.Status
+                is CdcCommandOperation.Enable
+                    or CdcCommandOperation.Status
                     or CdcCommandOperation.Watch
                     or CdcCommandOperation.Stop
                     or CdcCommandOperation.Start
