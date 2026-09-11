@@ -344,7 +344,7 @@ DMS-1437 requires operationally reviewed defaults and bounds before coding, with
 1. `/v3/dataStores/manage` is the only managed route family; `/v3/dbDataStores` is obsolete.
 2. Managed POST is create-only and rejects duplicates with `400`.
 3. Managed POST returns `202` and an absolute management-resource `Location` with no required response body.
-4. Refresh POST targets `202`, an absolute job-resource `Location`, and `jobQueuedResult`; this is a contract delta from checked-in `201` and is blocked on ADMINAPI-1496 plus a pinned updated OpenAPI revision.
+4. Refresh POST targets `202`, a `/v3/jobs/{jobId}` `Location`, and `jobQueuedResult`; this is a contract delta from checked-in `201` and is blocked on ADMINAPI-1496 plus a pinned updated OpenAPI revision.
 5. `databaseTemplate` accepts `Minimal` and `Sample`; `Sample` maps to DMS `Populated` artifacts.
 6. Successful managed delete physically deletes the owned database and removes its ordinary catalog row.
 7. The tenant aggregate education-organization GET route is implemented by DMS-1441 over one snapshot-backed query model. The unsupported all-data-store and single-data-store GET routes are excluded from parity scope unless product explicitly decides to diverge from Admin API.
