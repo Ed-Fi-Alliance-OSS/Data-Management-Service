@@ -6,6 +6,7 @@ API client credentials for the Data Management Service.
 
 Detailed design notes:
 
+* [API Client GET Identifier Semantics (DMS-1343)](./DMS-1343-apiclient-get-identifier-semantics.md)
 * [Authorization in the Configuration Service](./CS-AUTH.md)
 * [Claimset Management](./CLAIMSET-MGMT.md)
 * [Expired Access Token Cleanup](./TOKEN-CLEANUP.md)

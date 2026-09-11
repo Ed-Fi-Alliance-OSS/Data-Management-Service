@@ -1073,3 +1073,73 @@ Feature: ApiClients endpoints
                     "dataStoreIds": [{dataStoreId}]
                   }
                   """
+
+        # Scenarios 25 onward cover the numeric-id lookup added by DMS-1343. The single-item GET
+        # resolves the OAuth client key first; only when no key matches and the segment is a valid
+        # 32-bit integer does it fall back to the ApiClient primary key.
+        @MssqlRepresentative
+        Scenario: 25 Ensure clients can GET apiClient by numeric id
+            Given a POST request is made to "/v3/applications" with
+                  """
+                  {
+                   "vendorId": {vendorId},
+                   "applicationName": "Test Application 25",
+                   "claimSetName": "TestClaim01",
+                   "dataStoreIds": [{dataStoreId}]
+                  }
+                  """
+             When a POST request is made to "/v3/apiClients" with
+                  """
+                  {
+                   "applicationId": {applicationId},
+                   "name": "Client 25",
+                   "isApproved": true,
+                   "dataStoreIds": [{dataStoreId}]
+                  }
+                  """
+             Then it should respond with 201
+              And the response body credentials are captured as "client25"
+              And the response body id is captured as "client25Id"
+             When a GET request is made to "/v3/apiClients/{client25Id}"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  {
+                    "id": {client25Id},
+                    "applicationId": {applicationId},
+                    "clientId": "{client25Key}",
+                    "clientUuid": "{clientUuid}",
+                    "name": "Client 25",
+                    "isApproved": true,
+                    "creatorOwnershipTokenId": null,
+                    "ownershipTokenIds": [],
+                    "dataStoreIds": [{dataStoreId}]
+                  }
+                  """
+              # The OAuth client key resolves the same client, so neither lookup was repurposed.
+             When a GET request is made to "/v3/apiClients/{client25Key}"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  {
+                    "id": {client25Id},
+                    "applicationId": {applicationId},
+                    "clientId": "{client25Key}",
+                    "clientUuid": "{clientUuid}",
+                    "name": "Client 25",
+                    "isApproved": true,
+                    "creatorOwnershipTokenId": null,
+                    "ownershipTokenIds": [],
+                    "dataStoreIds": [{dataStoreId}]
+                  }
+                  """
+
+        Scenario: 26 Verify error handling when getting a well-formed but non-existent numeric id
+             When a GET request is made to "/v3/apiClients/99999"
+             Then it should respond with 404
+
+        Scenario: 27 Verify an identifier that is not a valid integer stays on the client-key lookup
+              # The value is resolved as a client key first and does not exist. It is not a valid
+              # 32-bit integer either, so there is no numeric fallback and the key 404 stands.
+             When a GET request is made to "/v3/apiClients/12abc-not-a-client-key"
+             Then it should respond with 404

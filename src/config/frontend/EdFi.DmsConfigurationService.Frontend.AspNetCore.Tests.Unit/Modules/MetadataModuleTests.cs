@@ -40,8 +40,12 @@ public class MetadataModuleTests
     /// int32, so all of them are int32. Asserted as an exact set: the sweep cannot pass trivially on
     /// an empty document, a route disappearing from the document fails the test, and a single
     /// operation regressing to int64 fails it as well.
-    /// The nine item routes are joined by five secondary routes that carry the same identifier.
-    /// /v3/apiClients/{clientId} is a string parameter and is excluded by the "id" name filter.
+    /// The entries span ten item routes and the six secondary routes that carry the same identifier;
+    /// a path contributes one entry per operation, so several paths appear more than once.
+    /// One operation is deliberately absent. GET /v3/apiClients/{id} accepts either identifier and
+    /// resolves the OAuth client key first, so its id parameter is a string and the sweep skips it;
+    /// ApiClientOpenApiContractTests pins that parameter as a string instead. PUT and DELETE on the
+    /// same path keep their int32 id, which is why the path still appears below.
     /// /v3/tenants/{id} is out of scope and only appears when multi-tenancy is enabled - it is pinned
     /// as int64 by It_should_declare_the_out_of_scope_tenant_id_path_parameter_as_int64.
     /// </summary>
@@ -206,6 +210,13 @@ public class MetadataModuleTests
             foreach (var operation in path.Value.EnumerateObject())
             {
                 if (!HttpMethodNames.Contains(operation.Name))
+                {
+                    continue;
+                }
+
+                // DMS-1343: this GET takes either identifier and resolves the client key first, so
+                // its id parameter is a string by design rather than a regression to be caught here.
+                if (operation.Name == "get" && path.Name.TrimEnd('/') == "/v3/apiClients/{id}")
                 {
                     continue;
                 }
@@ -640,10 +651,10 @@ public class MetadataModuleTests
         var postProperties = ResolveJsonResponseSchemaProperties(doc, pathItem, "post", "201");
         postProperties.Should().ContainKeys("applicationId", "name", "key", "secret");
 
-        var apiClientByIdPath = "/v3/apiClients/{clientId}".TrimEnd('/').ToLowerInvariant();
+        var apiClientByIdPath = "/v3/apiClients/{id}".TrimEnd('/').ToLowerInvariant();
         pathMap
             .Should()
-            .ContainKey(apiClientByIdPath, "path /v3/apiClients/{clientId} should exist in OpenAPI spec");
+            .ContainKey(apiClientByIdPath, "path /v3/apiClients/{id} should exist in OpenAPI spec");
         var pathItemById = pathMap[apiClientByIdPath];
 
         var getByIdProperties = ResolveJsonResponseSchemaProperties(doc, pathItemById, "get", "200");

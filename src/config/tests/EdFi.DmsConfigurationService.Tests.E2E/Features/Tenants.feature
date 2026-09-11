@@ -349,8 +349,16 @@ Feature: Tenants endpoints
                         "dataStoreIds": []
                     }
                   """
+              # The same client is readable by its numeric id inside its own tenant, which is what
+              # makes tenant B's 404 on the identical URL below a scoping result.
+             When a GET request is made to "/v3/apiClients/{tenantAClientId}" with header "Tenant" value "TenantA_{scenarioRunId}"
+             Then it should respond with 200
               # Tenant B can neither read, update, reset nor delete tenant A's unassigned client.
              When a GET request is made to "/v3/apiClients/{tenantAEmptyKey}" with header "Tenant" value "TenantB_{scenarioRunId}"
+             Then it should respond with 404
+              # Same URL, different tenant header: the numeric-id lookup is tenant scoped exactly
+              # like the client-key lookup above.
+             When a GET request is made to "/v3/apiClients/{tenantAClientId}" with header "Tenant" value "TenantB_{scenarioRunId}"
              Then it should respond with 404
              When a PUT request is made to "/v3/apiClients/{tenantAClientId}" with header "Tenant" value "TenantB_{scenarioRunId}" and
                   """

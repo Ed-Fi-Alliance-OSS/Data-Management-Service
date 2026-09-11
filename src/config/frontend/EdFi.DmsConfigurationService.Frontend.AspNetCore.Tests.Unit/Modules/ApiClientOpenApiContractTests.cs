@@ -50,6 +50,23 @@ public class Given_the_served_openapi_document
     private JsonNode RequestBodyExample(string path, string method) =>
         _document["paths"]![path]![method]!["requestBody"]!["content"]!["application/json"]!["example"]!;
 
+    private JsonNode SingleItemGetOperation(string path) => _document["paths"]![path]!["get"]!;
+
+    private JsonNode GetPathParameter(string path, string parameterName) =>
+        SingleItemGetOperation(path)["parameters"]!
+            .AsArray()
+            .Single(parameter =>
+                parameter!["name"]!.GetValue<string>() == parameterName
+                && parameter["in"]!.GetValue<string>() == "path"
+            )!;
+
+    /// <summary>True for the single-item apiClient path itself, excluding sub-resource paths such
+    /// as the ownership and reset-credential routes.</summary>
+    private static bool IsApiClientItemPath(string path) =>
+        path.StartsWith("/v3/apiClients/", StringComparison.Ordinal)
+        && path.EndsWith('}')
+        && !path["/v3/apiClients/".Length..].Contains('/');
+
     [Test]
     public void It_documents_the_insert_data_store_ids_as_optional_with_empty_allowed()
     {
@@ -117,5 +134,50 @@ public class Given_the_served_openapi_document
     public void It_publishes_an_empty_data_store_assignment_example(string path, string method)
     {
         RequestBodyExample(path, method)["dataStoreIds"]!.AsArray().Should().BeEmpty();
+    }
+
+    [Test]
+    public void It_declares_the_api_client_get_id_parameter_as_a_string()
+    {
+        // One route now carries both identifier forms, so the published parameter is the raw
+        // segment. PUT and DELETE on this same path keep their int32 id, which is deliberate:
+        // they accept only the numeric identifier.
+        JsonNode parameter = GetPathParameter("/v3/apiClients/{id}", "id");
+
+        parameter["required"]!.GetValue<bool>().Should().BeTrue();
+        parameter["schema"]!["type"]!.GetValue<string>().Should().Be("string");
+    }
+
+    [Test]
+    public void It_publishes_exactly_one_single_item_get_for_api_clients()
+    {
+        // Two templated paths that differ only by parameter name are the same path to OpenAPI, and
+        // a generator may deduplicate them arbitrarily. Only one item path may carry a get.
+        List<string> singleItemGetPaths =
+        [
+            .. _document["paths"]!
+                .AsObject()
+                .Where(path => path.Value!["get"] is not null && IsApiClientItemPath(path.Key))
+                .Select(path => path.Key),
+        ];
+
+        singleItemGetPaths.Should().Equal("/v3/apiClients/{id}");
+    }
+
+    [Test]
+    public void It_documents_the_key_first_identifier_dispatch()
+    {
+        // The segment is ambiguous by construction, so the published text is the only place a
+        // reader learns which identifier wins when both could match.
+        JsonNode operation = SingleItemGetOperation("/v3/apiClients/{id}");
+        string summary = operation["summary"]!.GetValue<string>();
+        string description = operation["description"]!.GetValue<string>();
+
+        summary.Should().Contain("OAuth client key");
+        summary.Should().Contain("numeric identifier");
+        description.Should().Contain("key-first");
+        description.Should().Contain("wins whenever it exists");
+        description.Should().Contain("Only when no client key matches");
+        description.Should().Contain("32-bit integer");
     }
 }
