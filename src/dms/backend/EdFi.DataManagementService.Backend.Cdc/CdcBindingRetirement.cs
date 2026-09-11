@@ -127,7 +127,8 @@ public sealed class CdcBindingRetirement
                 Require(
                     earlyFailure
                         && history.Transitions[^1].Status
-                            == DocumentCacheDownstreamPublicationStatus.InternalOnly
+                            is DocumentCacheDownstreamPublicationStatus.InternalOnly
+                                or DocumentCacheDownstreamPublicationStatus.Possible
                         && journal.Operations.All(o =>
                             o.Effect
                                 is CdcWorkflowEffect.CreateDatabase
@@ -285,7 +286,7 @@ public sealed class CdcBindingRetirement
             {
                 if (neverReserved)
                 {
-                    // No binding ever existed; preserve internal-only history and verify absence again.
+                    // No binding ever existed; preserve recorded exposure and verify absence again.
                     await new CdcInitialEnablement(_store, _bindings, _time).ValidateSourceInventoryAsync(
                         request.Binding,
                         ct

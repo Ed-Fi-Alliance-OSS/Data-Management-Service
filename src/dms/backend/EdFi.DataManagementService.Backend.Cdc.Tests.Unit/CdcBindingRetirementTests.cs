@@ -6,6 +6,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
+using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.DocumentCache.Cdc;
 using FakeItEasy;
@@ -51,22 +52,16 @@ internal class Given_CdcBindingRetirement(Ddl.CdcProvider provider)
         _onCall = _ => { };
         _trace = [];
         _store = new(_root, TimeProvider.System, boundary => _onWrite(boundary));
-        var provisioner = A.Fake<ICdcManagedDatabaseProvisioner>();
-        A.CallTo(() => provisioner.CreateDatabase()).Returns(true);
-        A.CallTo(() => provisioner.ReadSourceFingerprintAsync(A<CancellationToken>._))
-            .Returns(_request.Binding.PhysicalSourceFingerprint);
-        _workflow = (
-            await new CdcManagedDatabaseProvisioning(_store).ProvisionAsync(
-                _request.TargetIdentity,
-                provisioner,
-                purpose: CdcWorkflowPurpose.InitialCdcProvisioning
-            )
-        ).WorkflowId;
+        await ProvisionAsync();
         var services = new ServiceCollection().AddDmsCdcControlPlane();
         services.Configure<CdcBindingStateStoreOptions>(options => options.RootPath = _root);
         _services = services.BuildServiceProvider();
         _realBindings = _services.GetRequiredService<ICdcBindingLifecycleService>();
         _bindings = A.Fake<ICdcBindingLifecycleService>(options => options.Strict());
+        A.CallTo(() => _bindings.ListBindingsAsync(A<string>._, A<CancellationToken>._))
+            .ReturnsLazily(
+                (string deployment, CancellationToken ct) => _realBindings.ListBindingsAsync(deployment, ct)
+            );
         A.CallTo(() => _bindings.ExactMatchBindingAsync(A<CdcBinding>._, A<CancellationToken>._))
             .ReturnsLazily(
                 (CdcBinding binding, CancellationToken ct) =>
@@ -189,6 +184,15 @@ internal class Given_CdcBindingRetirement(Ddl.CdcProvider provider)
                         Step(Enum.Parse<CdcRetirementStepKind>(kind.ToString())).Should().NotBeNull();
                         scope.Request.Should().BeSameAs(_request);
                         scope.Inventory.Should().BeEquivalentTo(_scope.Inventory);
+                        if (scope.RequireAbsence && _artifacts.Contains(kind))
+                        {
+                            return new CdcTransportResult<CdcGovernedArtifact>.Unavailable(
+                                new(
+                                    CdcDeploymentComponent.ProviderSetup,
+                                    CdcDeploymentFailure.ValidationFailed
+                                )
+                            );
+                        }
                         bool deleted = _artifacts.Remove(kind);
                         Trace(kind + "-deleted");
                         return Observed(
@@ -232,6 +236,21 @@ internal class Given_CdcBindingRetirement(Ddl.CdcProvider provider)
     {
         _services.Dispose();
         Directory.Delete(_root, true);
+    }
+
+    private async Task ProvisionAsync()
+    {
+        var provisioner = A.Fake<ICdcManagedDatabaseProvisioner>();
+        A.CallTo(() => provisioner.CreateDatabase()).Returns(true);
+        A.CallTo(() => provisioner.ReadSourceFingerprintAsync(A<CancellationToken>._))
+            .Returns(_request.Binding.PhysicalSourceFingerprint);
+        _workflow = (
+            await new CdcManagedDatabaseProvisioning(_store).ProvisionAsync(
+                _request.TargetIdentity,
+                provisioner,
+                purpose: CdcWorkflowPurpose.InitialCdcProvisioning
+            )
+        ).WorkflowId;
     }
 
     private void ResetController() =>
@@ -309,6 +328,392 @@ internal class Given_CdcBindingRetirement(Ddl.CdcProvider provider)
             "private-worker",
             _stopped ? [] : [new(0, CdcConnectorRuntimeState.Running, "private-worker")]
         );
+
+    private async Task PrepareUnreservedAsync(bool possible = true)
+    {
+        // Start another owned fixture database, then interrupt the real reservation write sequence.
+        Directory.Delete(_root, true);
+        await ProvisionAsync();
+        _exists = _offsets = _jobs = false;
+        _artifacts.Clear();
+        if (possible)
+        {
+            await using var session = await Acquire();
+            _onWrite = boundary =>
+            {
+                if (boundary == CdcWorkflowWriteBoundary.AfterAtomicReplacement)
+                {
+                    throw new IOException("interrupted after durable source exposure");
+                }
+            };
+            try
+            {
+                Func<Task> reserve = () =>
+                    session.RecordIntentAsync(
+                        _request.TargetIdentity,
+                        _workflow,
+                        Guid.NewGuid(),
+                        CdcWorkflowEffect.ReserveBinding,
+                        [],
+                        CancellationToken.None
+                    );
+                (await reserve.Should().ThrowAsync<CdcWorkflowStateException>())
+                    .Which.Failure.Should()
+                    .Be(CdcWorkflowStateFailure.Unavailable);
+            }
+            finally
+            {
+                _onWrite = _ => { };
+            }
+        }
+        Journal().Operations.Should().NotContain(o => o.Effect == CdcWorkflowEffect.ReserveBinding);
+        File.Exists(BindingPath).Should().BeFalse();
+        await using var verification = await Acquire();
+        var history = await verification.ReadSourcePublicationHistoryAsync(
+            _request.TargetIdentity,
+            _request.Binding.PhysicalSourceFingerprint,
+            CancellationToken.None
+        );
+        history
+            .Transitions[^1]
+            .Status.Should()
+            .Be(
+                possible
+                    ? DocumentCacheDownstreamPublicationStatus.Possible
+                    : DocumentCacheDownstreamPublicationStatus.InternalOnly
+            );
+    }
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task It_retires_unreserved_source_without_reversing_exposure(bool possible)
+    {
+        await PrepareUnreservedAsync(possible);
+        string historyPath = Directory
+            .GetFiles(Path.Combine(_root, "source-history"), "*.json", SearchOption.AllDirectories)
+            .Single();
+        string originalHistory = await File.ReadAllTextAsync(historyPath);
+        var result = await Run();
+        result.Succeeded.Should().BeTrue();
+        Journal().Operations.Last().Completions.Should().ContainSingle();
+        Journal()
+            .Operations.Last()
+            .Retirement.Single()
+            .Steps.Should()
+            .OnlyContain(s => s.VerifiedAt.Length == 1);
+        (await File.ReadAllTextAsync(historyPath)).Should().Be(originalHistory);
+        File.Exists(BindingPath).Should().BeFalse();
+        Journal().Operations.Should().NotContain(o => o.Effect == CdcWorkflowEffect.ReserveBinding);
+        _trace
+            .Should()
+            .Contain("offsets")
+            .And.Contain("PublicTopic")
+            .And.NotContain("state-delete")
+            .And.NotContain("stop")
+            .And.NotContain("offset-delete")
+            .And.NotContain("connector-delete");
+        A.CallTo(() =>
+                _bindings.DeleteStateAfterVerifiedCleanupAsync(A<CdcCleanupProof>._, A<CancellationToken>._)
+            )
+            .MustNotHaveHappened();
+        var runtime = A.Fake<ICdcProjectionRuntime>(o => o.Strict());
+        (
+            await new CdcInitialEnablement(_store, _bindings, TimeProvider.System).ActivateAsync(
+                _request,
+                runtime
+            )
+        )
+            .State.Should()
+            .Be(CdcTransportEvidenceState.Unavailable);
+        Fake.GetCalls(runtime).Should().BeEmpty();
+        // Completion is resumable, but still requires fresh live absence evidence.
+        _trace.Clear();
+        (await Run()).Succeeded.Should().BeTrue();
+        _trace.Should().Contain("offsets").And.Contain("PublicTopic");
+        (await File.ReadAllTextAsync(historyPath)).Should().Be(originalHistory);
+        if (possible)
+        {
+            var history = new CdcDownstreamPublicationHistoryProvider(
+                _store,
+                _request.Binding.DeploymentKey,
+                _request.Binding.Provider,
+                TimeProvider.System,
+                TimeSpan.FromSeconds(1)
+            );
+            var key = DocumentCacheTargetKey.Create(string.Empty, 1);
+            var fingerprint = new DocumentCachePhysicalSourceFingerprint(
+                _request.Binding.PhysicalSourceFingerprint
+            );
+            var command = new DocumentCacheAdministrativeCommandRunnerRequest(
+                DocumentCacheAdministrativeCommand.OfflineActivation,
+                DocumentCacheAdministrativeTargetKey.FromTargetKey(key)
+            );
+            var administration = await history.ExecuteAsync(
+                command,
+                async () =>
+                {
+                    var observation = await history.ObserveAsync(key, fingerprint);
+                    observation.Status.Should().Be(DocumentCacheDownstreamPublicationStatus.Possible);
+                    var proof = DocumentCacheDownstreamPublicationHistoryProofEvaluator.Evaluate(
+                        key,
+                        fingerprint,
+                        observation
+                    );
+                    return new(command.Command, command.TargetKey, proof.Classification);
+                },
+                CancellationToken.None
+            );
+            administration
+                .Classification.Should()
+                .Be(DocumentCacheAdministrativeCommandClassification.DownstreamHistoryPresentOrUnknown);
+        }
+    }
+
+    [Test]
+    public async Task It_holds_unreserved_possible_cleanup_session_through_absence_checks()
+    {
+        await PrepareUnreservedAsync();
+        A.CallTo(() => _connect.ReadConfigurationAsync(_request, A<CancellationToken>._))
+            .ReturnsLazily(async () =>
+            {
+                Journal().Operations.Last().Effect.Should().Be(CdcWorkflowEffect.Retire);
+                Func<Task> competing = async () =>
+                {
+                    await using var session = await _store.AcquireAsync(
+                        TimeSpan.FromMilliseconds(40),
+                        TimeSpan.FromMilliseconds(5),
+                        CancellationToken.None
+                    );
+                };
+                (await competing.Should().ThrowAsync<CdcWorkflowStateException>())
+                    .Which.Failure.Should()
+                    .Be(CdcWorkflowStateFailure.LockTimeout);
+                return (CdcTransportResult<IReadOnlyDictionary<string, string>>)
+                    new CdcTransportResult<IReadOnlyDictionary<string, string>>.Absent();
+            });
+        (await Run()).Succeeded.Should().BeTrue();
+        await using var released = await Acquire();
+    }
+
+    [TestCase("connector")]
+    [TestCase("offsets")]
+    [TestCase("topic")]
+    [TestCase("provider")]
+    [TestCase("unavailable")]
+    public async Task It_rejects_unreserved_possible_cleanup_without_authoritative_absence(string failure)
+    {
+        await PrepareUnreservedAsync();
+        switch (failure)
+        {
+            case "connector":
+                _exists = true;
+                break;
+            case "offsets":
+                _offsets = true;
+                break;
+            case "topic":
+                _artifacts.Add(CdcGovernedArtifactKind.PublicTopic);
+                break;
+            case "provider":
+                _artifacts.Add(
+                    provider == Ddl.CdcProvider.Postgresql
+                        ? CdcGovernedArtifactKind.PostgresqlLogicalSlot
+                        : CdcGovernedArtifactKind.SqlServerCaptureInstanceDocument
+                );
+                break;
+            default:
+                A.CallTo(() => _connect.ReadConfigurationAsync(_request, A<CancellationToken>._))
+                    .Returns(
+                        new CdcTransportResult<IReadOnlyDictionary<string, string>>.Unavailable(
+                            new(CdcDeploymentComponent.Connect, CdcDeploymentFailure.Unavailable)
+                        )
+                    );
+                break;
+        }
+        var artifacts = _artifacts.ToArray();
+        (await Run()).Succeeded.Should().BeFalse();
+        Journal().Operations.Last().Effect.Should().Be(CdcWorkflowEffect.Retire);
+        Journal().Operations.Last().Completions.Should().BeEmpty();
+        _artifacts.Should().BeEquivalentTo(artifacts);
+        _trace
+            .Should()
+            .NotContain("state-delete")
+            .And.NotContain("stop")
+            .And.NotContain("offset-delete")
+            .And.NotContain("connector-delete");
+        await using var session = await Acquire();
+        (
+            await session.ReadSourcePublicationHistoryAsync(
+                _request.TargetIdentity,
+                _request.Binding.PhysicalSourceFingerprint,
+                CancellationToken.None
+            )
+        )
+            .Transitions[^1]
+            .Status.Should()
+            .Be(DocumentCacheDownstreamPublicationStatus.Possible);
+    }
+
+    [TestCase("binding")]
+    [TestCase("alias")]
+    [TestCase("generation")]
+    [TestCase("incident")]
+    [TestCase("receipt")]
+    [TestCase("source")]
+    [TestCase("missing-history")]
+    [TestCase("corrupt-history")]
+    [TestCase("active")]
+    [TestCase("historical")]
+    [TestCase("unavailable-inventory")]
+    public async Task It_rejects_unreserved_possible_cleanup_with_contradictory_provenance(string failure)
+    {
+        await PrepareUnreservedAsync();
+        if (failure is "binding" or "alias" or "generation")
+        {
+            var binding = failure switch
+            {
+                "alias" => CdcConnectorTemplateTestData.BuildBinding(
+                    provider,
+                    tenantKey: "alias",
+                    dataStoreId: "2",
+                    instanceKey: "alias"
+                ),
+                "generation" => CdcConnectorTemplateTestData.BuildBinding(
+                    provider,
+                    bindingGeneration: _request.Binding.Generation + 1
+                ),
+                _ => _request.Binding,
+            };
+            (await _realBindings.CreateBindingIfAbsentAsync(binding))
+                .Status.Should()
+                .Be(CdcControlPlaneOperationStatus.Succeeded);
+        }
+        else if (failure == "unavailable-inventory")
+        {
+            A.CallTo(() => _bindings.ListBindingsAsync(A<string>._, A<CancellationToken>._))
+                .ThrowsAsync(new IOException("unavailable private inventory"));
+        }
+        else if (failure == "incident")
+        {
+            (await _realBindings.CreateBindingIfAbsentAsync(_request.Binding))
+                .Status.Should()
+                .Be(CdcControlPlaneOperationStatus.Succeeded);
+            var incident = new CdcIncident(
+                1,
+                CdcIncidentType.SourceHistoryContinuityLost,
+                DateTimeOffset.UtcNow,
+                _request.Binding.ToCompleteBindingIdentity(),
+                CdcIncidentFailureCategory.ConnectOffsetMissing,
+                new(
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    [CdcIncidentUnavailableFact.ConnectOffset]
+                )
+            );
+            (await _realBindings.LatchSourceHistoryLossAsync(incident))
+                .Status.Should()
+                .Be(CdcControlPlaneOperationStatus.Succeeded);
+            File.Delete(BindingPath);
+        }
+        else
+        {
+            string path = Directory
+                .GetFiles(Path.Combine(_root, "source-history"), "*.json", SearchOption.AllDirectories)
+                .Single();
+            if (failure == "missing-history")
+            {
+                File.Delete(path);
+            }
+            else if (failure == "corrupt-history")
+            {
+                await File.WriteAllTextAsync(path, "{");
+            }
+            else
+            {
+                var json = JsonNode.Parse(await File.ReadAllTextAsync(path))!.AsObject();
+                if (failure == "receipt")
+                {
+                    json["creationReceipt"]!["receiptId"] = Guid.NewGuid();
+                }
+                else if (failure is "active" or "historical")
+                {
+                    json["transitions"]!.AsArray()[^1]!["status"] = failure;
+                }
+                else
+                {
+                    json["physicalSourceFingerprint"] = new string('f', 64);
+                }
+                await File.WriteAllTextAsync(path, json.ToJsonString());
+            }
+        }
+        (await Run()).Succeeded.Should().BeFalse();
+        _trace.Should().BeEmpty();
+        Journal().Operations.Should().NotContain(o => o.Effect == CdcWorkflowEffect.Retire);
+        await using var session = await Acquire();
+    }
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task It_resumes_unreserved_possible_cleanup_after_interrupted_verification(bool cancellation)
+    {
+        await PrepareUnreservedAsync();
+        using var caller = new CancellationTokenSource();
+        _onWrite = boundary =>
+        {
+            if (
+                boundary == CdcWorkflowWriteBoundary.AfterAtomicReplacement
+                && Journal().Operations.Last().Retirement is [{ Steps.Length: > 0 } retirement]
+                && retirement.Steps.Last()
+                    is { Kind: CdcRetirementStepKind.PublicTopic, VerifiedAt.Length: 1 }
+            )
+            {
+                if (cancellation)
+                {
+                    caller.Cancel();
+                    caller.Token.ThrowIfCancellationRequested();
+                }
+                throw new IOException("interrupted verified cleanup");
+            }
+        };
+        if (cancellation)
+        {
+            Func<Task> run = () => Run(caller.Token);
+            await run.Should().ThrowAsync<OperationCanceledException>();
+        }
+        else
+        {
+            (await Run()).Succeeded.Should().BeFalse();
+        }
+        Guid operation = Journal().Operations.Last().OperationId;
+        Journal().Operations.Last().Completions.Should().BeEmpty();
+        _onWrite = _ => { };
+        _trace.Clear();
+        var result = await Run();
+        result.Succeeded.Should().BeTrue();
+        result.OperationId.Should().Be(operation);
+        _trace.Should().Contain("offsets").And.Contain("PublicTopic");
+        await using var session = await Acquire();
+        (
+            await session.ReadSourcePublicationHistoryAsync(
+                _request.TargetIdentity,
+                _request.Binding.PhysicalSourceFingerprint,
+                CancellationToken.None
+            )
+        )
+            .Transitions[^1]
+            .Status.Should()
+            .Be(DocumentCacheDownstreamPublicationStatus.Possible);
+    }
 
     [Test]
     public async Task It_retires_in_order_and_retains_exposure_history_and_journal()
