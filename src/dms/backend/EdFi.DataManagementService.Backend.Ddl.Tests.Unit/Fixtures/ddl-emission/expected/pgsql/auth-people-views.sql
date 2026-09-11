@@ -57,6 +57,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StaffEducationOrganizationAss
     "NewStaff_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_StaffEducationOrganizationAs_21269a4e1f" PRIMARY KEY ("ChangeVersion")
 );
@@ -69,6 +70,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StaffEducationOrganizationEmp
     "NewStaff_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_StaffEducationOrganizationEm_6b655adbbd" PRIMARY KEY ("ChangeVersion")
 );
@@ -81,6 +83,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentContactAssociation"
     "NewContact_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_StudentContactAssociation" PRIMARY KEY ("ChangeVersion")
 );
@@ -93,6 +96,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentEducationOrganizationR
     "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_StudentEducationOrganization_1f44fed0a1" PRIMARY KEY ("ChangeVersion")
 );
@@ -105,6 +109,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentSchoolAssociation"
     "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_StudentSchoolAssociation" PRIMARY KEY ("ChangeVersion")
 );

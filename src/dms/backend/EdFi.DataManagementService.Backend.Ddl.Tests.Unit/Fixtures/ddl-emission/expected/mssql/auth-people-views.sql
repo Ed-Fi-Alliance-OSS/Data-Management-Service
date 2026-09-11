@@ -67,6 +67,7 @@ CREATE TABLE [tracked_changes_edfi].[StaffEducationOrganizationAssignmentAssocia
     [NewStaff_DocumentId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_StaffEducationOrganizationAssignmentAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_StaffEducationOrganizationAssignmentAssociation] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -80,6 +81,7 @@ CREATE TABLE [tracked_changes_edfi].[StaffEducationOrganizationEmploymentAssocia
     [NewStaff_DocumentId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_StaffEducationOrganizationEmploymentAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_StaffEducationOrganizationEmploymentAssociation] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -93,6 +95,7 @@ CREATE TABLE [tracked_changes_edfi].[StudentContactAssociation]
     [NewContact_DocumentId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_StudentContactAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_StudentContactAssociation] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -106,6 +109,7 @@ CREATE TABLE [tracked_changes_edfi].[StudentEducationOrganizationResponsibilityA
     [NewStudent_DocumentId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_StudentEducationOrganizationResponsibilityAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_StudentEducationOrganizationResponsibilityAssociation] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -119,6 +123,7 @@ CREATE TABLE [tracked_changes_edfi].[StudentSchoolAssociation]
     [NewStudent_DocumentId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_StudentSchoolAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_StudentSchoolAssociation] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );

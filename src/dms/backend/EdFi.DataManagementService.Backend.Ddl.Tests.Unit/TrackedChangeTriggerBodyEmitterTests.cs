@@ -74,10 +74,11 @@ public class Given_TrackedChangeTriggerBodyEmitter_Building_A_Plan
     }
 
     [Test]
-    public void It_should_carry_the_id_and_change_version_system_columns()
+    public void It_should_carry_the_id_change_version_and_document_id_system_columns()
     {
         _plan.IdColumn.Should().Be(new DbColumnName("Id"));
         _plan.ChangeVersionColumn.Should().Be(new DbColumnName("ChangeVersion"));
+        _plan.DocumentIdColumn.Should().Be(new DbColumnName("DocumentId"));
     }
 }
 
@@ -137,6 +138,51 @@ public class Given_TrackedChangeTriggerBodyEmitter_With_Invalid_Inventory
         var act = () => TrackedChangeTriggerBodyEmitter.BuildPlan(tableInfoWithoutPersonJoin, sourceModel);
 
         act.Should().Throw<InvalidOperationException>().WithMessage("*Student*");
+    }
+
+    [Test]
+    public void It_should_throw_when_the_person_seek_binding_column_is_absent_from_the_source_table()
+    {
+        var tableInfo = TrackedChangeEmitterFixture.BuildTrackedTable(
+            overrideSourceBindingColumn: new DbColumnName("NoSuchBindingColumn")
+        );
+        var sourceModel = TrackedChangeEmitterFixture.BuildSourceTableModel();
+
+        var act = () => TrackedChangeTriggerBodyEmitter.BuildPlan(tableInfo, sourceModel);
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*NoSuchBindingColumn*");
+    }
+
+    [Test]
+    public void It_should_throw_when_the_person_seek_metadata_is_unset()
+    {
+        var tableInfo = TrackedChangeEmitterFixture.BuildTrackedTable();
+        var unsetSeek = tableInfo with
+        {
+            PersonJoins = [tableInfo.PersonJoins[0] with { PersonIdentityColumn = default }],
+        };
+        var sourceModel = TrackedChangeEmitterFixture.BuildSourceTableModel();
+
+        var act = () => TrackedChangeTriggerBodyEmitter.BuildPlan(unsetSeek, sourceModel);
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*Student*");
+    }
+
+    [Test]
+    public void It_should_throw_when_the_document_id_system_column_is_missing()
+    {
+        var tableInfo = TrackedChangeEmitterFixture.BuildTrackedTable();
+        var tableInfoWithoutDocumentId = tableInfo with
+        {
+            SystemColumns = tableInfo
+                .SystemColumns.Where(column => column.Role != TrackedChangeSystemColumnRole.DocumentId)
+                .ToList(),
+        };
+        var sourceModel = TrackedChangeEmitterFixture.BuildSourceTableModel();
+
+        var act = () => TrackedChangeTriggerBodyEmitter.BuildPlan(tableInfoWithoutDocumentId, sourceModel);
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*DocumentId*");
     }
 
     [Test]
@@ -211,26 +257,40 @@ public class Given_TrackedChangeTriggerBodyEmitter_Rendering_Pgsql
     }
 
     [Test]
-    public void It_should_join_descriptors_and_person_chain_for_the_old_image()
+    public void It_should_bind_the_document_id_system_column_to_the_old_row_in_the_tombstone()
+    {
+        // Column list: Id, ChangeVersion, DocumentId (system-column order); DocumentId last, no comma.
+        _tombstone.Should().Contain("\"Id\",\n    \"ChangeVersion\",\n    \"DocumentId\"\n)");
+        // SELECT list: the DocumentId comes from the same key column the statement joins dms.Document on.
+        _tombstone.Should().Contain("doc.\"ContentVersion\",\n    OLD.\"DocumentId\"\nFROM");
+    }
+
+    [Test]
+    public void It_should_bind_the_document_id_system_column_to_the_new_row_in_the_key_change()
+    {
+        _keyChange.Should().Contain("\"Id\",\n    \"ChangeVersion\",\n    \"DocumentId\"\n)");
+        _keyChange.Should().Contain("_stampedContentVersion,\n    NEW.\"DocumentId\"\nFROM");
+    }
+
+    [Test]
+    public void It_should_join_descriptors_and_seek_the_person_for_the_old_image()
     {
         _tombstone
             .Should()
             .Contain(
                 "INNER JOIN \"dms\".\"Descriptor\" oldDj0 ON oldDj0.\"DocumentId\" = OLD.\"GradeTypeDescriptor_DescriptorId\""
             );
+        // One natural-key seek on the person root; no hop through the live association (DMS-1193 Task 44).
         _tombstone
             .Should()
             .Contain(
-                "INNER JOIN \"edfi\".\"StudentSectionAssociation\" oldPj0s0 ON oldPj0s0.\"DocumentId\" = OLD.\"StudentSectionAssociation_DocumentId\""
+                "INNER JOIN \"edfi\".\"Student\" oldPj0 ON oldPj0.\"StudentUniqueId\" = OLD.\"StudentSectionAssociation_StudentUniqueId\""
             );
-        _tombstone
-            .Should()
-            .Contain(
-                "INNER JOIN \"edfi\".\"Student\" oldPj0s1 ON oldPj0s1.\"DocumentId\" = oldPj0s0.\"Student_DocumentId\""
-            );
+        _tombstone.Should().NotContain("\"StudentSectionAssociation\" oldPj0s0");
+        _tombstone.Should().NotContain("oldPj0s1");
         _tombstone.Should().Contain("oldDj0.\"Namespace\"");
         _tombstone.Should().Contain("oldDj0.\"CodeValue\"");
-        _tombstone.Should().Contain("oldPj0s1.\"DocumentId\"");
+        _tombstone.Should().Contain("oldPj0.\"DocumentId\"");
     }
 
     [Test]
@@ -241,7 +301,12 @@ public class Given_TrackedChangeTriggerBodyEmitter_Rendering_Pgsql
         _keyChange.Should().Contain("OLD.\"BeginDate\"");
         _keyChange.Should().Contain("NEW.\"BeginDate\"");
         _keyChange.Should().Contain("newDj0.\"Namespace\"");
-        _keyChange.Should().Contain("newPj0s1.\"DocumentId\"");
+        _keyChange.Should().Contain("newPj0.\"DocumentId\"");
+        _keyChange
+            .Should()
+            .Contain(
+                "INNER JOIN \"edfi\".\"Student\" newPj0 ON newPj0.\"StudentUniqueId\" = NEW.\"StudentSectionAssociation_StudentUniqueId\""
+            );
         _keyChange.Should().Contain("_stampedContentVersion");
         _keyChange.Should().Contain("WHERE doc.\"DocumentId\" = NEW.\"DocumentId\"");
         _keyChange
@@ -251,7 +316,7 @@ public class Given_TrackedChangeTriggerBodyEmitter_Rendering_Pgsql
             );
         _keyChange.Should().Contain("oldDj0.\"Namespace\"");
         _keyChange.Should().Contain("oldDj0.\"CodeValue\"");
-        _keyChange.Should().Contain("oldPj0s1.\"DocumentId\"");
+        _keyChange.Should().Contain("oldPj0.\"DocumentId\"");
         _keyChange
             .Should()
             .Contain(
@@ -260,13 +325,10 @@ public class Given_TrackedChangeTriggerBodyEmitter_Rendering_Pgsql
         _keyChange
             .Should()
             .Contain(
-                "INNER JOIN \"edfi\".\"StudentSectionAssociation\" oldPj0s0 ON oldPj0s0.\"DocumentId\" = OLD.\"StudentSectionAssociation_DocumentId\""
+                "INNER JOIN \"edfi\".\"Student\" oldPj0 ON oldPj0.\"StudentUniqueId\" = OLD.\"StudentSectionAssociation_StudentUniqueId\""
             );
-        _keyChange
-            .Should()
-            .Contain(
-                "INNER JOIN \"edfi\".\"Student\" oldPj0s1 ON oldPj0s1.\"DocumentId\" = oldPj0s0.\"Student_DocumentId\""
-            );
+        _keyChange.Should().NotContain("\"StudentSectionAssociation\" oldPj0s0");
+        _keyChange.Should().NotContain("\"StudentSectionAssociation\" newPj0s0");
     }
 }
 
@@ -324,19 +386,29 @@ public class Given_TrackedChangeTriggerBodyEmitter_Rendering_Mssql
         _tombstone
             .Should()
             .Contain(
-                "INNER JOIN [edfi].[StudentSectionAssociation] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[StudentSectionAssociation_DocumentId]"
+                "INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[StudentSectionAssociation_StudentUniqueId]"
             );
-        _tombstone
-            .Should()
-            .Contain(
-                "INNER JOIN [edfi].[Student] oldPj0s1 ON oldPj0s1.[DocumentId] = oldPj0s0.[Student_DocumentId]"
-            );
+        _tombstone.Should().NotContain("[StudentSectionAssociation] oldPj0s0");
         _tombstone.Should().Contain("oldDj0.[Namespace]");
         _tombstone.Should().Contain("doc.[DocumentUuid]");
         _tombstone.Should().Contain("doc.[ContentVersion]");
-        _tombstone.Should().Contain("oldPj0s1.[DocumentId]");
+        _tombstone.Should().Contain("oldPj0.[DocumentId]");
         // The statement terminator must be attached to the last content line, never on its own line.
         _tombstone.Split('\n').Should().NotContain(l => l.Trim() == ";");
+    }
+
+    [Test]
+    public void It_should_bind_the_document_id_system_column_to_the_deleted_row_in_the_tombstone()
+    {
+        _tombstone.Should().Contain("[Id],\n    [ChangeVersion],\n    [DocumentId]\n)");
+        _tombstone.Should().Contain("doc.[ContentVersion],\n    del.[DocumentId]\nFROM deleted del");
+    }
+
+    [Test]
+    public void It_should_bind_the_document_id_system_column_to_the_inserted_row_in_the_key_change()
+    {
+        _keyChange.Should().Contain("[Id],\n    [ChangeVersion],\n    [DocumentId]\n)");
+        _keyChange.Should().Contain("doc.[ContentVersion],\n    i.[DocumentId]\nFROM @changedDocs cd");
     }
 
     [Test]
@@ -359,13 +431,9 @@ public class Given_TrackedChangeTriggerBodyEmitter_Rendering_Mssql
         _keyChange
             .Should()
             .Contain(
-                "INNER JOIN [edfi].[StudentSectionAssociation] newPj0s0 ON newPj0s0.[DocumentId] = i.[StudentSectionAssociation_DocumentId]"
+                "INNER JOIN [edfi].[Student] newPj0 ON newPj0.[StudentUniqueId] = i.[StudentSectionAssociation_StudentUniqueId]"
             );
-        _keyChange
-            .Should()
-            .Contain(
-                "INNER JOIN [edfi].[Student] newPj0s1 ON newPj0s1.[DocumentId] = newPj0s0.[Student_DocumentId]"
-            );
+        _keyChange.Should().NotContain("[StudentSectionAssociation] newPj0s0");
         _keyChange.Should().Contain("doc.[DocumentUuid]");
         _keyChange.Should().NotContain("idc.[ContentVersion]");
         _keyChange
@@ -376,16 +444,12 @@ public class Given_TrackedChangeTriggerBodyEmitter_Rendering_Mssql
         _keyChange
             .Should()
             .Contain(
-                "INNER JOIN [edfi].[StudentSectionAssociation] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[StudentSectionAssociation_DocumentId]"
+                "INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[StudentSectionAssociation_StudentUniqueId]"
             );
-        _keyChange
-            .Should()
-            .Contain(
-                "INNER JOIN [edfi].[Student] oldPj0s1 ON oldPj0s1.[DocumentId] = oldPj0s0.[Student_DocumentId]"
-            );
+        _keyChange.Should().NotContain("[StudentSectionAssociation] oldPj0s0");
         _keyChange.Should().Contain("oldDj0.[Namespace]");
         _keyChange.Should().Contain("oldDj0.[CodeValue]");
-        _keyChange.Should().Contain("oldPj0s1.[DocumentId]");
+        _keyChange.Should().Contain("oldPj0.[DocumentId]");
     }
 }
 
@@ -432,7 +496,7 @@ public class Given_TrackedChangeTriggerBodyEmitter_Rendering_Nullable_Joins
     }
 
     [Test]
-    public void It_should_render_nullable_person_join_chains_as_left_joins()
+    public void It_should_render_nullable_person_seeks_as_left_joins()
     {
         var pgsqlDialect = SqlDialectFactory.Create(SqlDialect.Pgsql);
         var mssqlDialect = SqlDialectFactory.Create(SqlDialect.Mssql);
@@ -447,43 +511,25 @@ public class Given_TrackedChangeTriggerBodyEmitter_Rendering_Nullable_Joins
         pgsql
             .Should()
             .Contain(
-                "LEFT JOIN \"edfi\".\"StudentSectionAssociation\" oldPj0s0 ON oldPj0s0.\"DocumentId\" = OLD.\"StudentSectionAssociation_DocumentId\""
+                "LEFT JOIN \"edfi\".\"Student\" oldPj0 ON oldPj0.\"StudentUniqueId\" = OLD.\"StudentSectionAssociation_StudentUniqueId\""
             );
         pgsql
             .Should()
             .Contain(
-                "LEFT JOIN \"edfi\".\"Student\" oldPj0s1 ON oldPj0s1.\"DocumentId\" = oldPj0s0.\"Student_DocumentId\""
-            );
-        pgsql
-            .Should()
-            .Contain(
-                "LEFT JOIN \"edfi\".\"StudentSectionAssociation\" newPj0s0 ON newPj0s0.\"DocumentId\" = NEW.\"StudentSectionAssociation_DocumentId\""
-            );
-        pgsql
-            .Should()
-            .Contain(
-                "LEFT JOIN \"edfi\".\"Student\" newPj0s1 ON newPj0s1.\"DocumentId\" = newPj0s0.\"Student_DocumentId\""
+                "LEFT JOIN \"edfi\".\"Student\" newPj0 ON newPj0.\"StudentUniqueId\" = NEW.\"StudentSectionAssociation_StudentUniqueId\""
             );
         mssql
             .Should()
             .Contain(
-                "LEFT JOIN [edfi].[StudentSectionAssociation] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[StudentSectionAssociation_DocumentId]"
+                "LEFT JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[StudentSectionAssociation_StudentUniqueId]"
             );
         mssql
             .Should()
             .Contain(
-                "LEFT JOIN [edfi].[Student] oldPj0s1 ON oldPj0s1.[DocumentId] = oldPj0s0.[Student_DocumentId]"
+                "LEFT JOIN [edfi].[Student] newPj0 ON newPj0.[StudentUniqueId] = i.[StudentSectionAssociation_StudentUniqueId]"
             );
-        mssql
-            .Should()
-            .Contain(
-                "LEFT JOIN [edfi].[StudentSectionAssociation] newPj0s0 ON newPj0s0.[DocumentId] = i.[StudentSectionAssociation_DocumentId]"
-            );
-        mssql
-            .Should()
-            .Contain(
-                "LEFT JOIN [edfi].[Student] newPj0s1 ON newPj0s1.[DocumentId] = newPj0s0.[Student_DocumentId]"
-            );
+        pgsql.Should().NotContain("Pj0s");
+        mssql.Should().NotContain("Pj0s");
     }
 
     private static string RenderPgsqlKeyChange(ISqlDialect dialect, TrackedChangeInsertPlan plan)
@@ -631,34 +677,44 @@ public class Given_TrackedChangeTriggerBodyEmitter_With_Self_Person_DocumentId
     }
 
     [Test]
-    public void It_should_resolve_self_person_document_id_columns_to_the_source_document_id_column()
+    public void It_should_resolve_no_person_value_column_for_the_self_person_table()
     {
-        var value = _plan.Values.Single(value =>
-            value.Column.OldColumnName == new DbColumnName("OldStudent_DocumentId")
-        );
-
-        value.Kind.Should().Be(TrackedChangeValueSourceKind.DirectColumn);
-        value.SourceColumn.Should().Be(new DbColumnName("DocumentId"));
-        value.JoinIndex.Should().Be(-1);
+        // The Student tombstone tracks only its identity scalar; the self person path is served by the
+        // DocumentId system column and materializes no PersonDocumentId value column.
+        _plan.Values.Should().ContainSingle();
+        _plan.Values[0].Kind.Should().Be(TrackedChangeValueSourceKind.DirectColumn);
+        _plan.Values[0].SourceColumn.Should().Be(new DbColumnName("StudentUniqueId"));
+        _plan
+            .Values.Should()
+            .NotContain(value => value.Column.Role == TrackedChangeColumnRole.PersonDocumentId);
+        _plan.DocumentIdColumn.Should().Be(new DbColumnName("DocumentId"));
     }
 
     [Test]
-    public void It_should_render_pgsql_self_person_document_id_values_from_row_images()
+    public void It_should_render_pgsql_self_person_rows_from_the_document_id_system_column_only()
     {
-        _pgsqlTombstone.Should().Contain("OLD.\"DocumentId\",");
-        _pgsqlKeyChange.Should().Contain("OLD.\"DocumentId\",");
-        _pgsqlKeyChange.Should().Contain("NEW.\"DocumentId\",");
+        _pgsqlTombstone.Should().NotContain("OldStudent_DocumentId");
+        _pgsqlTombstone.Should().Contain("\"ChangeVersion\",\n    \"DocumentId\"\n)");
+        _pgsqlTombstone.Should().Contain("doc.\"ContentVersion\",\n    OLD.\"DocumentId\"\nFROM");
         _pgsqlTombstone.Should().NotContain("oldPj");
+
+        _pgsqlKeyChange.Should().NotContain("OldStudent_DocumentId");
+        _pgsqlKeyChange.Should().NotContain("NewStudent_DocumentId");
+        _pgsqlKeyChange.Should().Contain("_stampedContentVersion,\n    NEW.\"DocumentId\"\nFROM");
         _pgsqlKeyChange.Should().NotContain("newPj");
     }
 
     [Test]
-    public void It_should_render_mssql_self_person_document_id_values_from_row_images()
+    public void It_should_render_mssql_self_person_rows_from_the_document_id_system_column_only()
     {
-        _mssqlTombstone.Should().Contain("del.[DocumentId],");
-        _mssqlKeyChange.Should().Contain("del.[DocumentId],");
-        _mssqlKeyChange.Should().Contain("i.[DocumentId],");
+        _mssqlTombstone.Should().NotContain("OldStudent_DocumentId");
+        _mssqlTombstone.Should().Contain("[ChangeVersion],\n    [DocumentId]\n)");
+        _mssqlTombstone.Should().Contain("doc.[ContentVersion],\n    del.[DocumentId]\nFROM deleted del");
         _mssqlTombstone.Should().NotContain("oldPj");
+
+        _mssqlKeyChange.Should().NotContain("OldStudent_DocumentId");
+        _mssqlKeyChange.Should().NotContain("NewStudent_DocumentId");
+        _mssqlKeyChange.Should().Contain("doc.[ContentVersion],\n    i.[DocumentId]\nFROM @changedDocs cd");
         _mssqlKeyChange.Should().NotContain("newPj");
     }
 }
@@ -734,6 +790,17 @@ internal static class TrackedChangeEmitterFixture
                 SourceJsonPath: null,
                 TargetResource: null
             ),
+            new DbColumnModel(
+                new DbColumnName("StudentSectionAssociation_StudentUniqueId"),
+                ColumnKind.Scalar,
+                new RelationalScalarType(ScalarKind.String, 32),
+                IsNullable: false,
+                SourceJsonPath: new JsonPathExpression(
+                    "$.studentSectionAssociationReference.studentUniqueId",
+                    []
+                ),
+                TargetResource: null
+            ),
         };
 
         if (addDuplicateBeginDate)
@@ -801,23 +868,23 @@ internal static class TrackedChangeEmitterFixture
     }
 
     /// <summary>
-    /// Builds a TrackedChangeTableInfo for a top-level Student resource with a self person DocumentId
-    /// value column and no person joins.
+    /// Builds a TrackedChangeTableInfo for a top-level Student resource: the identity scalar only, no
+    /// person value column and no person joins (the self person path is the DocumentId system column).
     /// </summary>
     internal static TrackedChangeTableInfo BuildSelfPersonTrackedTable()
     {
         var valueColumns = new List<TrackedChangeColumnInfo>
         {
             new TrackedChangeColumnInfo(
-                OldColumnName: new DbColumnName("OldStudent_DocumentId"),
-                NewColumnName: new DbColumnName("NewStudent_DocumentId"),
+                OldColumnName: new DbColumnName("OldStudentUniqueId"),
+                NewColumnName: new DbColumnName("NewStudentUniqueId"),
                 SourceJsonPath: "$.studentUniqueId",
-                CanonicalStorageColumn: new DbColumnName("DocumentId"),
+                CanonicalStorageColumn: null,
                 IsOldColumnNullable: false,
                 IsNewColumnNullable: true,
-                ScalarType: new RelationalScalarType(ScalarKind.Int64),
-                Role: TrackedChangeColumnRole.PersonDocumentId,
-                Origin: TrackedChangeColumnOrigin.SecurableElement
+                ScalarType: new RelationalScalarType(ScalarKind.String, 32),
+                Role: TrackedChangeColumnRole.Scalar,
+                Origin: TrackedChangeColumnOrigin.Identity
             ),
         };
 
@@ -836,6 +903,13 @@ internal static class TrackedChangeEmitterFixture
                 new RelationalScalarType(ScalarKind.Int64),
                 IsNullable: false,
                 IsPrimaryKey: true
+            ),
+            new TrackedChangeSystemColumnInfo(
+                TrackedChangeSystemColumnRole.DocumentId,
+                new DbColumnName("DocumentId"),
+                new RelationalScalarType(ScalarKind.Int64),
+                IsNullable: false,
+                IsPrimaryKey: false
             ),
             new TrackedChangeSystemColumnInfo(
                 TrackedChangeSystemColumnRole.CreatedAt,
@@ -882,7 +956,8 @@ internal static class TrackedChangeEmitterFixture
         bool useInvalidPersonJoinPath = false,
         DbColumnName? overrideCanonicalStorageColumn = null,
         bool nullableDescriptorJoin = false,
-        bool nullablePersonJoin = false
+        bool nullablePersonJoin = false,
+        DbColumnName? overrideSourceBindingColumn = null
     )
     {
         var descriptorJoinName = overrideDescriptorJoinName ?? "GradeTypeDescriptor";
@@ -974,6 +1049,13 @@ internal static class TrackedChangeEmitterFixture
                 IsPrimaryKey: true
             ),
             new TrackedChangeSystemColumnInfo(
+                TrackedChangeSystemColumnRole.DocumentId,
+                new DbColumnName("DocumentId"),
+                new RelationalScalarType(ScalarKind.Int64),
+                IsNullable: false,
+                IsPrimaryKey: false
+            ),
+            new TrackedChangeSystemColumnInfo(
                 TrackedChangeSystemColumnRole.CreatedAt,
                 new DbColumnName("CreatedAt"),
                 ScalarType: null,
@@ -1023,7 +1105,11 @@ internal static class TrackedChangeEmitterFixture
             new TrackedChangePersonJoinInfo(
                 PersonJoinName: "Student",
                 PersonKind: SecurableElementKind.Student,
-                JoinPath: personJoinPath
+                JoinPath: personJoinPath,
+                PersonTable: StudentTable,
+                PersonIdentityColumn: new DbColumnName("StudentUniqueId"),
+                SourceBindingColumn: overrideSourceBindingColumn
+                    ?? new DbColumnName("StudentSectionAssociation_StudentUniqueId")
             ),
         };
 
@@ -1134,6 +1220,13 @@ internal static class TrackedChangeEmitterFixture
                 new RelationalScalarType(ScalarKind.Int64),
                 IsNullable: false,
                 IsPrimaryKey: true
+            ),
+            new TrackedChangeSystemColumnInfo(
+                TrackedChangeSystemColumnRole.DocumentId,
+                new DbColumnName("DocumentId"),
+                new RelationalScalarType(ScalarKind.Int64),
+                IsNullable: false,
+                IsPrimaryKey: false
             ),
             new TrackedChangeSystemColumnInfo(
                 TrackedChangeSystemColumnRole.CreatedAt,

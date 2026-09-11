@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
@@ -117,7 +118,18 @@ internal static class ProposedCustomViewAuthorizationCommand
                 );
             }
 
-            parameters.Add(new RelationalParameter($"@{parameter.ParameterName}", basisValue));
+            // The compiled check's first use of the parameter is "@p IS NULL", from which PostgreSQL cannot infer
+            // a null parameter's type (42P08 "could not determine data type of parameter"). The bound column is
+            // the root's reference DocumentId (or DescriptorId) column, always a bigint, so type it explicitly:
+            // a body that omits the basis reference then reaches the ProposedBasisValueMissing branch (a 403
+            // element-required denial) instead of failing the write.
+            parameters.Add(
+                new RelationalParameter(
+                    $"@{parameter.ParameterName}",
+                    basisValue,
+                    static dbParameter => dbParameter.DbType = DbType.Int64
+                )
+            );
         }
 
         return parameters;

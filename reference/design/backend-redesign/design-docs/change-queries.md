@@ -751,7 +751,7 @@ The `ReadChanges` action has to be configured with the equivalent authorization 
 | RelationshipsWithStudentsOnlyThroughResponsibility | RelationshipsWithStudentsOnlyThroughResponsibilityIncludingDeletes   |
 | RelationshipsWithEdOrgsOnlyInverted                | RelationshipsWithEdOrgsOnlyInverted                                  |
 | RelationshipsWithEdOrgsAndPeopleInverted           | Not supported                                                        |
-| Custom view-based strategies                       | Custom view-based strategies (unchanged)                             |
+| Custom view-based strategies                       | Custom view-based strategies (see `Custom view-based strategies` below) |
 
 The OwnershipBased strategy is explicitly unsupported as documented in [OwnershipBasedAuthorizationFilterDefinitionsFactory](https://github.com/Ed-Fi-Alliance-OSS/Ed-Fi-ODS/blob/10e54ef6a417b036d27a9d23391500069ba52794/Application/EdFi.Ods.Api/Security/AuthorizationStrategies/OwnershipBased/OwnershipBasedAuthorizationFilterDefinitionsFactory.cs#L76).
 
@@ -1139,10 +1139,8 @@ We will use the rewrite to make these improvements over ODS:
 - Concrete abstract resources, such as School, will now get their own `tracked_changes*` table to support SecurableElement overrides.
 
 ### Out of scope
-The next features are deferred after DMS v1.0
-- Support for DB snapshots
-- Support for the custom view-based authorization strategy in the tracked-changes endpoints
-- Allow disabling the feature
+The next features are deferred:
+- Allow disabling the ChangeQueries feature
 
 ### Database Model
 
@@ -1152,7 +1150,7 @@ Change Query database semantics are compiled into the shared `DerivedRelationalM
 
 The derived model must include SQL-free inventory for:
 
-- `TrackedChangeTableInfo` entries for per-resource tracked-change tables and the shared descriptor tracked-change table, including the standard `Id`, `ChangeVersion`, `CreatedAt`, and routing-only descriptor `Discriminator` system columns.
+- `TrackedChangeTableInfo` entries for per-resource tracked-change tables and the shared descriptor tracked-change table, including the standard `Id`, `ChangeVersion`, `DocumentId`, `CreatedAt`, and routing-only descriptor `Discriminator` system columns.
 - `TrackedChangeColumnInfo` entries for each tracked old/new value in `ValueColumnsInTableOrder`, including the source JsonPath, canonical storage column when key unification applies, separate old/new nullability, scalar type, and column role.
 - `TrackedChangeDescriptorJoinInfo` entries for descriptor reference paths that must be materialized as `Namespace` and `CodeValue`.
 - `TrackedChangePersonJoinInfo` entries for Student, Contact, and Staff `SecurableElements` paths that must materialize the person resource `DocumentId`.
@@ -1172,6 +1170,7 @@ Tracked-change system columns are fixed by role, not by ApiSchema value metadata
 
 - `Id` stores `dms.Document.DocumentUuid` as PostgreSQL `uuid` / SQL Server `uniqueidentifier`.
 - `ChangeVersion` stores the bumped `dms.Document.ContentVersion` as `bigint`.
+- `DocumentId` stores the tracked document's `dms.Document.DocumentId` as `bigint NOT NULL`, read from the row being deleted or changed (the `OLD` row in PostgreSQL, the `deleted` row in SQL Server). It has no `Old`/`New` pairing because a document's DocumentId never changes, so it carries no prefix. It is present on every tracked-change table, including the shared descriptor table. Custom view-based `ReadChanges` authorization reads it for a self-basis and for tombstone-aware views; see "Custom view-based strategies" below.
 - `CreatedAt` stores the tracked row insert timestamp as PostgreSQL `timestamp with time zone DEFAULT now()` / SQL Server `datetime2(7) DEFAULT sysutcdatetime()`.
 - `Discriminator` is present only for shared descriptor tracked-change tables and uses PostgreSQL `varchar(128)` / SQL Server `nvarchar(128)`. It routes historical rows to the requested descriptor endpoint; it is not used to identify or type-check a live descriptor.
 
@@ -1188,17 +1187,17 @@ this identity collation unless another explicit contract applies.
 
 Each `TrackedChangeColumnInfo` carries `IsOldColumnNullable` and `IsNewColumnNullable` separately because tombstones populate only old values. `IsOldColumnNullable` follows the tracked source value's nullability. `IsNewColumnNullable` is normally `true` because delete tombstones leave `New*` columns null; key-change rows populate the new values when present.
 
-If a path is a descriptor reference, the inventory will include two columns: the descriptor's `Namespace` and `CodeValue`. The corresponding `TrackedChangeDescriptorJoinInfo` describes the join to `dms.Descriptor` that trigger emitters use for old and new row images and identifies the qualified descriptor resource. The two `TrackedChangeColumnInfo` entries reference that table-level join by `DescriptorJoinName`; they do not duplicate the join definition. When runtime Change Query planning must resolve those stored values back to a live descriptor, it gets the descriptor's compile-time `ResourceKeyId` from `MappingSet.ResourceKeyIdByResource`; it never maps `Discriminator` to a resource key.
+If a path is a descriptor reference, the inventory will include two columns: the descriptor's `Namespace` and `CodeValue`. The corresponding `TrackedChangeDescriptorJoinInfo` describes the join to `dms.Descriptor` that trigger emitters use for the old and new rows and identifies the qualified descriptor resource. The two `TrackedChangeColumnInfo` entries reference that table-level join by `DescriptorJoinName`; they do not duplicate the join definition. When runtime Change Query planning must resolve those stored values back to a live descriptor, it gets the descriptor's compile-time `ResourceKeyId` from `MappingSet.ResourceKeyIdByResource`; it never maps `Discriminator` to a resource key.
 
 If a path is backed by a column that participates in key unification, include the canonical storage column instead of the generated alias column. This is both a de-duplication rule and an ODS compatibility rule: tracked-change rows record the shared stored identity value, not each presence-gated binding-site value.
 
 If the same canonical column has been included multiple times (because of key unification) only include it once.
 
-For people `SecurableElements` paths, we will also store the Student, Contact, or Staff `DocumentId`. The corresponding `TrackedChangePersonJoinInfo` describes the resource-table join path needed to reach the person resource for old and new row images. The `TrackedChangeColumnInfo` entry references that table-level join by `PersonJoinName`; it does not duplicate the join definition.
+For people `SecurableElements` paths, we will also store the Student, Contact, or Staff `DocumentId`. The corresponding `TrackedChangePersonJoinInfo` still records the resource-table chain from the subject to the person resource, which names the column (`OldStudentSectionAssociation_Student_DocumentId`) and lets the `ReadChanges` planner match a securable path to its column, but the trigger does not walk that chain. Every root-level reference stores binding columns for all of the referenced resource's flattened identity parts (see [flattening-reconstitution.md](flattening-reconstitution.md)), so the person's unique id is always on the subject row, and the join info also carries a **natural-key seek**: the person table's identity column paired with the subject binding column the securable path resolves to. The trigger emits one join per person column, `edfi.Student p ON p.StudentUniqueId = del.StudentSectionAssociation_StudentUniqueId`, against the old row for `Old*` values and the new row for `New*` values, for deletes and key changes alike. It seeks the person's `UX_<Person>_RefKey` index. The `TrackedChangeColumnInfo` entry references the join by `PersonJoinName`; it does not duplicate the join definition. Seeking with the row's own values rather than hopping live intermediates is what keeps the old person correct under cascading key changes; see "KeyChanges are always authorized based on the old values" below.
 
 Some `SecurableElements` paths might result in nullable `Old*` and `New*` value columns because of overrides, such as the `StudentAssessment` override.
 
-Apart from people `SecurableElements`, we do not need to store surrogate keys, such as DocumentIds or DescriptorIds.
+Apart from people `SecurableElements` and the row's own `DocumentId` system column, we do not need to store surrogate keys, such as DocumentIds or DescriptorIds.
 
 The inventory will also contain a `TrackedChangeTableInfo` for each concrete abstract resource to support SecurableElement overrides, such as `OrganizationDepartment`.
 
@@ -1207,37 +1206,36 @@ MSSQL table definition example for the Grade resource:
 ```sql
 CREATE TABLE [tracked_changes_edfi].[Grade]
 (
-    [OldStudentSectionAssociation_BeginDate] date NOT NULL,
-    [OldGradeTypeDescriptor_Namespace] nvarchar(255) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
-    [OldGradeTypeDescriptor_CodeValue] nvarchar(50) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
-    [OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace] nvarchar(255) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
-    [OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue] nvarchar(50) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
-    [OldGradingPeriodGradingPeriod_GradingPeriodName] nvarchar(60) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
-    [OldSchoolYear_Unified] integer NOT NULL,
-    [OldStudentSectionAssociation_LocalCourseCode] nvarchar(60) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [OldGradeTypeDescriptor_Namespace] nvarchar(255) NOT NULL,
+    [NewGradeTypeDescriptor_Namespace] nvarchar(255) NULL,
+    [OldGradeTypeDescriptor_CodeValue] nvarchar(50) NOT NULL,
+    [NewGradeTypeDescriptor_CodeValue] nvarchar(50) NULL,
+    [OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace] nvarchar(255) NOT NULL,
+    [NewGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace] nvarchar(255) NULL,
+    [OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue] nvarchar(50) NOT NULL,
+    [NewGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue] nvarchar(50) NULL,
+    [OldGradingPeriodGradingPeriod_GradingPeriodName] nvarchar(60) NOT NULL,
+    [NewGradingPeriodGradingPeriod_GradingPeriodName] nvarchar(60) NULL,
     [OldSchoolId_Unified] bigint NOT NULL,
-    [OldStudentSectionAssociation_SectionIdentifier] nvarchar(255) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
-    [OldStudentSectionAssociation_SessionName] nvarchar(60) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
-    [OldStudentSectionAssociation_StudentUniqueId] nvarchar(32) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
-    [OldStudentSectionAssociation_Student_DocumentId] bigint NOT NULL,
-    
-    [NewStudentSectionAssociation_BeginDate] date NULL,
-    [NewGradeTypeDescriptor_Namespace] nvarchar(255) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
-    [NewGradeTypeDescriptor_CodeValue] nvarchar(50) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
-    [NewGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace] nvarchar(255) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
-    [NewGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue] nvarchar(50) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
-    [NewGradingPeriodGradingPeriod_GradingPeriodName] nvarchar(60) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
-    [NewSchoolYear_Unified] integer NULL,
-    [NewStudentSectionAssociation_LocalCourseCode] nvarchar(60) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
     [NewSchoolId_Unified] bigint NULL,
-    [NewStudentSectionAssociation_SectionIdentifier] nvarchar(255) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
-    [NewStudentSectionAssociation_SessionName] nvarchar(60) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
-    [NewStudentSectionAssociation_StudentUniqueId] nvarchar(32) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    [OldSchoolYear_Unified] int NOT NULL,
+    [NewSchoolYear_Unified] int NULL,
+    [OldStudentSectionAssociation_BeginDate] date NOT NULL,
+    [NewStudentSectionAssociation_BeginDate] date NULL,
+    [OldStudentSectionAssociation_LocalCourseCode] nvarchar(60) NOT NULL,
+    [NewStudentSectionAssociation_LocalCourseCode] nvarchar(60) NULL,
+    [OldStudentSectionAssociation_SectionIdentifier] nvarchar(255) NOT NULL,
+    [NewStudentSectionAssociation_SectionIdentifier] nvarchar(255) NULL,
+    [OldStudentSectionAssociation_SessionName] nvarchar(60) NOT NULL,
+    [NewStudentSectionAssociation_SessionName] nvarchar(60) NULL,
+    [OldStudentSectionAssociation_StudentUniqueId] nvarchar(32) NOT NULL,
+    [NewStudentSectionAssociation_StudentUniqueId] nvarchar(32) NULL,
+    [OldStudentSectionAssociation_Student_DocumentId] bigint NOT NULL,
     [NewStudentSectionAssociation_Student_DocumentId] bigint NULL,
-
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
-    [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Grade_CreatedAt] DEFAULT (sysutcdatetime()),
+    [DocumentId] bigint NOT NULL,
+    [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_Grade_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_Grade] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
 ```
@@ -1249,19 +1247,17 @@ MSSQL table definition example for the shared `tracked_changes_edfi.Descriptor`:
 ```sql
 CREATE TABLE [tracked_changes_edfi].[Descriptor]
 (
-  	[Discriminator] nvarchar(128) NOT NULL,
-
-    [OldNamespace] nvarchar(255) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
-    [OldCodeValue] nvarchar(50) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
-
-    [NewNamespace] nvarchar(255) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
-    [NewCodeValue] nvarchar(50) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
-
+    [OldNamespace] nvarchar(255) NOT NULL,
+    [NewNamespace] nvarchar(255) NULL,
+    [OldCodeValue] nvarchar(50) NOT NULL,
+    [NewCodeValue] nvarchar(50) NULL,
+    [Discriminator] nvarchar(128) NOT NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
-    [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Descriptor_CreatedAt] DEFAULT (sysutcdatetime()),
+    [DocumentId] bigint NOT NULL,
+    [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_Descriptor_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_Descriptor] PRIMARY KEY CLUSTERED ([ChangeVersion])
-)
+);
 ```
 
 ##### Operational considerations: tracked-change table volume
@@ -1367,7 +1363,7 @@ This is a Change Queries-specific exception to the generic trigger guidance in [
 
 Descriptor paths use the table-level `TrackedChangeDescriptorJoinInfo` entries to join with `dms.Descriptor` and store the descriptor's `Namespace` and `CodeValue`. Value columns identify the needed descriptor join by `DescriptorJoinName`.
 
-People `SecurableElements` paths use table-level `TrackedChangePersonJoinInfo` entries to join until they reach the people resource and store the person `DocumentId`. Value columns identify the needed person join by `PersonJoinName`. The derivation pass can use the same resolution rules as `ResolveSecurableElementColumnPath`; see [auth.md](auth.md) for more information.
+People `SecurableElements` paths use table-level `TrackedChangePersonJoinInfo` entries to seek the people resource by the unique id already present on the row and store the person `DocumentId`. Value columns identify the needed person join by `PersonJoinName`. The derivation pass uses the same chain resolution as `ResolveSecurableElementColumnPath` to name the column; see [auth.md](auth.md) for more information.
 
 <details>
   <summary>MSSQL trigger definition excerpt for the Grade resource: (Click to expand)</summary>
@@ -1452,153 +1448,129 @@ BEGIN
     BEGIN
         -- Store tombstone
         INSERT INTO [tracked_changes_edfi].[Grade] (
-            [OldStudentSectionAssociation_BeginDate],
             [OldGradeTypeDescriptor_Namespace],
             [OldGradeTypeDescriptor_CodeValue],
             [OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace],
             [OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue],
             [OldGradingPeriodGradingPeriod_GradingPeriodName],
-            [OldSchoolYear_Unified],
-            [OldStudentSectionAssociation_LocalCourseCode],
             [OldSchoolId_Unified],
+            [OldSchoolYear_Unified],
+            [OldStudentSectionAssociation_BeginDate],
+            [OldStudentSectionAssociation_LocalCourseCode],
             [OldStudentSectionAssociation_SectionIdentifier],
             [OldStudentSectionAssociation_SessionName],
             [OldStudentSectionAssociation_StudentUniqueId],
             [OldStudentSectionAssociation_Student_DocumentId],
-            [NewStudentSectionAssociation_BeginDate],
-            [NewGradeTypeDescriptor_Namespace],
-            [NewGradeTypeDescriptor_CodeValue],
-            [NewGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace],
-            [NewGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue],
-            [NewGradingPeriodGradingPeriod_GradingPeriodName],
-            [NewSchoolYear_Unified],
-            [NewStudentSectionAssociation_LocalCourseCode],
-            [NewSchoolId_Unified],
-            [NewStudentSectionAssociation_SectionIdentifier],
-            [NewStudentSectionAssociation_SessionName],
-            [NewStudentSectionAssociation_StudentUniqueId],
-            [NewStudentSectionAssociation_Student_DocumentId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
-            del.[StudentSectionAssociation_BeginDate],
-            oldGradeTypeDescriptor.[Namespace],
-            oldGradeTypeDescriptor.[CodeValue],
-            oldGradingPeriodDescriptor.[Namespace],
-            oldGradingPeriodDescriptor.[CodeValue],
+            oldDj0.[Namespace],
+            oldDj0.[CodeValue],
+            oldDj1.[Namespace],
+            oldDj1.[CodeValue],
             del.[GradingPeriodGradingPeriod_GradingPeriodName],
-            del.[SchoolYear_Unified],
-            del.[StudentSectionAssociation_LocalCourseCode],
             del.[SchoolId_Unified],
+            del.[SchoolYear_Unified],
+            del.[StudentSectionAssociation_BeginDate],
+            del.[StudentSectionAssociation_LocalCourseCode],
             del.[StudentSectionAssociation_SectionIdentifier],
             del.[StudentSectionAssociation_SessionName],
             del.[StudentSectionAssociation_StudentUniqueId],
-            oldStudent.[DocumentId],
-            NULL,
-            NULL,
-            NULL,
-            NULL,
-            NULL,
-            NULL,
-            NULL,
-            NULL,
-            NULL,
-            NULL,
-            NULL,
-            NULL,
-            NULL,
+            oldPj0.[DocumentId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
-        INNER JOIN [dms].[Descriptor] oldGradeTypeDescriptor ON oldGradeTypeDescriptor.[DocumentId] = del.[GradeTypeDescriptor_DescriptorId]
-        INNER JOIN [dms].[Descriptor] oldGradingPeriodDescriptor ON oldGradingPeriodDescriptor.[DocumentId] = del.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId]
-        INNER JOIN [edfi].[StudentSectionAssociation] oldStudentSectionAssociation ON oldStudentSectionAssociation.[DocumentId] = del.[StudentSectionAssociation_DocumentId]
-        INNER JOIN [edfi].[Student] oldStudent ON oldStudent.[DocumentId] = oldStudentSectionAssociation.[Student_DocumentId];
+        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[GradeTypeDescriptor_DescriptorId]
+        INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DocumentId] = del.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId]
+        INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[StudentSectionAssociation_StudentUniqueId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
         DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
         INSERT INTO @changedDocs ([DocumentId])
         SELECT i.[DocumentId]
-        FROM inserted i
-        INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
         -- Generated null-safe value-diff predicates continue for every identity projection column.
         WHERE (i.[GradeTypeDescriptor_DescriptorId] <> d.[GradeTypeDescriptor_DescriptorId] OR (i.[GradeTypeDescriptor_DescriptorId] IS NULL AND d.[GradeTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[GradeTypeDescriptor_DescriptorId] IS NOT NULL AND d.[GradeTypeDescriptor_DescriptorId] IS NULL));
-
-        -- Store key change
-        INSERT INTO [tracked_changes_edfi].[Grade] (
-            [OldStudentSectionAssociation_BeginDate],
-            [OldGradeTypeDescriptor_Namespace],
-            [OldGradeTypeDescriptor_CodeValue],
-            [OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace],
-            [OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue],
-            [OldGradingPeriodGradingPeriod_GradingPeriodName],
-            [OldSchoolYear_Unified],
-            [OldStudentSectionAssociation_LocalCourseCode],
-            [OldSchoolId_Unified],
-            [OldStudentSectionAssociation_SectionIdentifier],
-            [OldStudentSectionAssociation_SessionName],
-            [OldStudentSectionAssociation_StudentUniqueId],
-            [OldStudentSectionAssociation_Student_DocumentId],
-            [NewStudentSectionAssociation_BeginDate],
-            [NewGradeTypeDescriptor_Namespace],
-            [NewGradeTypeDescriptor_CodeValue],
-            [NewGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace],
-            [NewGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue],
-            [NewGradingPeriodGradingPeriod_GradingPeriodName],
-            [NewSchoolYear_Unified],
-            [NewStudentSectionAssociation_LocalCourseCode],
-            [NewSchoolId_Unified],
-            [NewStudentSectionAssociation_SectionIdentifier],
-            [NewStudentSectionAssociation_SessionName],
-            [NewStudentSectionAssociation_StudentUniqueId],
-            [NewStudentSectionAssociation_Student_DocumentId],
-            [Id],
-            [ChangeVersion]
-        )
-        SELECT
-            del.[StudentSectionAssociation_BeginDate],
-            oldGradeTypeDescriptor.[Namespace],
-            oldGradeTypeDescriptor.[CodeValue],
-            oldGradingPeriodDescriptor.[Namespace],
-            oldGradingPeriodDescriptor.[CodeValue],
-            del.[GradingPeriodGradingPeriod_GradingPeriodName],
-            del.[SchoolYear_Unified],
-            del.[StudentSectionAssociation_LocalCourseCode],
-            del.[SchoolId_Unified],
-            del.[StudentSectionAssociation_SectionIdentifier],
-            del.[StudentSectionAssociation_SessionName],
-            del.[StudentSectionAssociation_StudentUniqueId],
-            oldStudent.[DocumentId],
-            i.[StudentSectionAssociation_BeginDate],
-            newGradeTypeDescriptor.[Namespace],
-            newGradeTypeDescriptor.[CodeValue],
-            newGradingPeriodDescriptor.[Namespace],
-            newGradingPeriodDescriptor.[CodeValue],
-            i.[GradingPeriodGradingPeriod_GradingPeriodName],
-            i.[SchoolYear_Unified],
-            i.[StudentSectionAssociation_LocalCourseCode],
-            i.[SchoolId_Unified],
-            i.[StudentSectionAssociation_SectionIdentifier],
-            i.[StudentSectionAssociation_SessionName],
-            i.[StudentSectionAssociation_StudentUniqueId],
-            newStudent.[DocumentId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
-        FROM @changedDocs cd
-        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Descriptor] oldGradeTypeDescriptor ON oldGradeTypeDescriptor.[DocumentId] = del.[GradeTypeDescriptor_DescriptorId]
-        INNER JOIN [dms].[Descriptor] oldGradingPeriodDescriptor ON oldGradingPeriodDescriptor.[DocumentId] = del.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId]
-        INNER JOIN [edfi].[StudentSectionAssociation] oldStudentSectionAssociation ON oldStudentSectionAssociation.[DocumentId] = del.[StudentSectionAssociation_DocumentId]
-        INNER JOIN [edfi].[Student] oldStudent ON oldStudent.[DocumentId] = oldStudentSectionAssociation.[Student_DocumentId]
-        INNER JOIN [dms].[Descriptor] newGradeTypeDescriptor ON newGradeTypeDescriptor.[DocumentId] = i.[GradeTypeDescriptor_DescriptorId]
-        INNER JOIN [dms].[Descriptor] newGradingPeriodDescriptor ON newGradingPeriodDescriptor.[DocumentId] = i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId]
-        INNER JOIN [edfi].[StudentSectionAssociation] newStudentSectionAssociation ON newStudentSectionAssociation.[DocumentId] = i.[StudentSectionAssociation_DocumentId]
-        INNER JOIN [edfi].[Student] newStudent ON newStudent.[DocumentId] = newStudentSectionAssociation.[Student_DocumentId];
+        IF EXISTS (SELECT 1 FROM @changedDocs)
+        BEGIN
+            -- Store key change
+            INSERT INTO [tracked_changes_edfi].[Grade] (
+                [OldGradeTypeDescriptor_Namespace],
+                [OldGradeTypeDescriptor_CodeValue],
+                [OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace],
+                [OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue],
+                [OldGradingPeriodGradingPeriod_GradingPeriodName],
+                [OldSchoolId_Unified],
+                [OldSchoolYear_Unified],
+                [OldStudentSectionAssociation_BeginDate],
+                [OldStudentSectionAssociation_LocalCourseCode],
+                [OldStudentSectionAssociation_SectionIdentifier],
+                [OldStudentSectionAssociation_SessionName],
+                [OldStudentSectionAssociation_StudentUniqueId],
+                [OldStudentSectionAssociation_Student_DocumentId],
+                [NewGradeTypeDescriptor_Namespace],
+                [NewGradeTypeDescriptor_CodeValue],
+                [NewGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace],
+                [NewGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue],
+                [NewGradingPeriodGradingPeriod_GradingPeriodName],
+                [NewSchoolId_Unified],
+                [NewSchoolYear_Unified],
+                [NewStudentSectionAssociation_BeginDate],
+                [NewStudentSectionAssociation_LocalCourseCode],
+                [NewStudentSectionAssociation_SectionIdentifier],
+                [NewStudentSectionAssociation_SessionName],
+                [NewStudentSectionAssociation_StudentUniqueId],
+                [NewStudentSectionAssociation_Student_DocumentId],
+                [Id],
+                [ChangeVersion],
+                [DocumentId]
+            )
+            SELECT
+                oldDj0.[Namespace],
+                oldDj0.[CodeValue],
+                oldDj1.[Namespace],
+                oldDj1.[CodeValue],
+                del.[GradingPeriodGradingPeriod_GradingPeriodName],
+                del.[SchoolId_Unified],
+                del.[SchoolYear_Unified],
+                del.[StudentSectionAssociation_BeginDate],
+                del.[StudentSectionAssociation_LocalCourseCode],
+                del.[StudentSectionAssociation_SectionIdentifier],
+                del.[StudentSectionAssociation_SessionName],
+                del.[StudentSectionAssociation_StudentUniqueId],
+                oldPj0.[DocumentId],
+                newDj0.[Namespace],
+                newDj0.[CodeValue],
+                newDj1.[Namespace],
+                newDj1.[CodeValue],
+                i.[GradingPeriodGradingPeriod_GradingPeriodName],
+                i.[SchoolId_Unified],
+                i.[SchoolYear_Unified],
+                i.[StudentSectionAssociation_BeginDate],
+                i.[StudentSectionAssociation_LocalCourseCode],
+                i.[StudentSectionAssociation_SectionIdentifier],
+                i.[StudentSectionAssociation_SessionName],
+                i.[StudentSectionAssociation_StudentUniqueId],
+                newPj0.[DocumentId],
+                doc.[DocumentUuid],
+                doc.[ContentVersion],
+                i.[DocumentId]
+            FROM @changedDocs cd
+            INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
+            INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
+            INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
+            INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[GradeTypeDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DocumentId] = del.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId]
+            INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[StudentSectionAssociation_StudentUniqueId]
+            INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[GradeTypeDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] newDj1 ON newDj1.[DocumentId] = i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId]
+            INNER JOIN [edfi].[Student] newPj0 ON newPj0.[StudentUniqueId] = i.[StudentSectionAssociation_StudentUniqueId];
+        END
     END
 END;
 ```
@@ -1635,7 +1607,7 @@ DMS retains the distinct `ReadChanges` action introduced by ODS. Requests to `/d
 
 #### Strategies
 
-DMS will support the same authorization strategies as ODS, with the exception of custom view-based strategies which will be deferred until DMS v1.1. 
+DMS supports the same authorization strategies as ODS.
 
 Meaning that the next strategies have to be implemented for the `/deletes` and `/keyChanges` endpoints:
 `NoFurtherAuthorizationRequired`                                      
@@ -1718,17 +1690,11 @@ The views are only emitted when all five PrimaryAssociation resources exist in t
 DMS deliberately preserves the three ODS authorization peculiarities described in the ODS section of this document.
 
 ##### KeyChanges are always authorized based on the old values
-This peculiarity will be honored in DMS, except for one known edge case: cascading key changes.
+This peculiarity is honored in DMS. One design detail exists specifically to keep it true under cascading key changes that reach a person through an intermediate resource.
 
-Let's assume that `StudentAssessmentRegistration` references `StudentSchoolAssociation` **as part of its identity**. Then someone changes the `StudentSchoolAssociation` student from A to B, so the cascading key change reaches the `StudentAssessmentRegistration`. The `_Stamp` trigger gets the Student's DocumentId by joining `StudentSchoolAssociation`; but at this point `StudentSchoolAssociation` only has the new value, so the `_Stamp` trigger will store the **new** Student's DocumentId in the old-value person DocumentId column.
+`Grade` references `StudentSectionAssociation` **as part of its identity**, and `StudentSectionAssociation` allows identity updates. So when someone changes a `StudentSectionAssociation` student from A to B, the cascading key change reaches every `Grade` of that association. If the `Grade` trigger obtained the Student's DocumentId by hopping the live `StudentSectionAssociation` row through `StudentSectionAssociation_DocumentId`, it would find the already-updated association and store the **new** Student's DocumentId in `OldStudentSectionAssociation_Student_DocumentId`. The key-change row would report the correct old and new unique ids, because those are denormalized onto the `Grade` row and read from the old row, but the authorization check would run against the wrong person, and a token with access to student A but not B would never see the key change. ODS avoids the issue by authorizing against `OldStudentUSI`, which comes straight from the deleted row.
 
-Note that `OldStudentUniqueId_Unified` stores the correct value, since the unique id gets denormalized into the `StudentSchoolAssociation` table, meaning that the /keyChanges endpoint returns the correct old and new values, but the authorization check is done against the old-value person DocumentId column, which in this case has the new value.
-
-This behavior is acceptable in the meantime as the scenario doesn't appear in the data standard (remember that `StudentAssessmentRegistration` does not reference `StudentSchoolAssociation` as part of its identity). However, there could be an extension that exposes this behavior.
-
-Some changes that could mitigate this discrepancy are:
-- Denormalizing people's Document IDs the same way we denormalize unique IDs.
-- Joining directly with Student using its unique ID (undesirable due to the performance degradation of joining using a varchar)
+DMS avoids the issue the same way. The person `DocumentId` columns are populated by seeking the person table with the unique id stored on the row itself (`OldStudentSectionAssociation_StudentUniqueId` for Grade), never by hopping intermediates. `Grade` is the only resource in Data Standard 5.2 and 6.1 that reaches a person through an identity reference to a resource that allows identity updates, but `StudentSchoolAssociation` also allows identity updates, so an extension that references it or `StudentSectionAssociation` as part of its identity gets the same protection.
 
 #### Descriptor authorization
 
@@ -1750,6 +1716,136 @@ Each concrete abstract resource (e.g. `School`, `LocalEducationAgency`, `Organiz
 This carries a direct authorization payoff: the ODS-era `OrganizationDepartment` limitation no longer applies. In ODS, `OrganizationDepartment.ReadChanges` could not honor its `ParentEducationOrganizationId` securable-element override because tombstones lived in the abstract `tracked_changes_edfi.EducationOrganization` table, which only stored `EducationOrganizationId`. In DMS, `OrganizationDepartment`'s own tracked-change table stores both the abstract identity and any override-specified columns, so any relationship-based `ReadChanges` strategy works without falling back to `NoFurtherAuthorizationRequired`.
 
 Other concrete abstract resources with SecurableElement overrides — including any introduced via extensions — get the same benefit automatically.
+
+#### Custom view-based strategies
+
+Custom view-based strategies (`SchoolWithAlternativeType`, `StudentWithCTECourseEnrollments`, ...) apply to `/deletes` and `/keyChanges` as they do to the live read paths. Two terms are used throughout. The **subject** is the resource whose endpoint is being authorized, for example `StudentSchoolAssociation` when serving `/studentSchoolAssociations/deletes`. The **basis** is the resource the view is about, taken from the `{BasisResource}With{SomeDescription}` strategy name: `SchoolWithAlternativeType` has `School` as its basis, and `auth.SchoolWithAlternativeType` returns the `DocumentId` of every School that satisfies the rule. Authorizing a tombstone means finding the basis row it referenced and checking whether that row is in the view. See "Custom view-based authorization strategy" in [auth.md](auth.md) for the rules shared with the live paths.
+
+##### The problem
+
+Custom views in DMS return the **DocumentId** of the basis resource. On live resource endpoints this is easy to use because the live row stores a `..._DocumentId` FK for every reference, so DMS can follow the FK chain to the basis and check `basis.DocumentId IN (SELECT DocumentId FROM auth.SchoolWithAlternativeType)`.
+
+A tracked-change row does not have those FKs. Before this design it stored:
+
+- the **identifying values** of the deleted or key-changed row (`OldSchoolId_Unified`, `OldStudentUniqueId_Unified`, ...), copied from the deleted or key-changed row;
+- the **Namespace and CodeValue** of descriptor-valued identity parts;
+- the **DocumentId of Student, Contact, and Staff** for the person securable elements (`OldStudent_DocumentId`, `OldStudentSectionAssociation_Student_DocumentId`, ...), which the trigger obtains by joining the person resource at delete/key-change time;
+- `Id` (the `DocumentUuid`) and `ChangeVersion`.
+
+It did **not** store the DocumentId of any other referenced resource, nor the DocumentId of the row itself. So for a `StudentSchoolAssociation` tombstone authorized with `SchoolWithAlternativeType`, DMS had `OldSchoolId_Unified = 255901001` on one side and a list of School DocumentIds on the other, and nothing to compare.
+
+ODS does not have this problem because its custom views return the same values the tombstone keeps. ODS joins `tracked_changes_edfi.X c` to `auth.{View} rba` on every primary-key property of the basis (`c.OldSchoolId = rba.SchoolId`, `c.OldStudentUSI = rba.StudentUSI`, `c.OldGradeTypeDescriptorId = rba.GradeTypeDescriptorId`), and rejects the configuration with a security-configuration 500 when any of those properties is not identifying on the subject. Because those values are always present in the tombstone, ODS also allows an author to write a view that unions tombstone tables, in the same style as the built-in `*IncludingDeletes` views, so that a tombstone stays authorized even after the basis resource it named has been deleted.
+
+##### Design
+
+The design rests on two facts about tombstones. First, the subject's identity flattens every identifying value of every resource it reaches through identity references, so the tombstone's `Old*` columns already hold the natural key of any basis reachable that way: a Grade tombstone carries the local course code, school, school year, and session name that identify its CourseOffering. Second, a tombstone must be authorizable from its own contents plus the basis row, never through intermediate rows, because intermediates go on living, and being deleted or re-keyed, after the tombstone was written. So DMS seeks the live basis row by natural key at query time, and the only schema change is a `DocumentId` column on every tracked-change table.
+
+**The `DocumentId` system column.** Every tracked-change table (the per-resource tables and the shared `tracked_changes_edfi.Descriptor`) gets `DocumentId bigint NOT NULL`, holding the tracked document's own `dms.Document.DocumentId`, read from the deleted or changed row with no join. It is named without an `Old` prefix and modeled as a system column beside `Id` and `ChangeVersion`, fixed by role rather than derived from an ApiSchema path: the prefix marks a value a key change can pair with a `New` counterpart, and a document's DocumentId never changes. The column serves the self basis (`SchoolWithAlternativeType` on `/schools/keyChanges` or `/schools/deletes` checks `c.DocumentId IN (SELECT DocumentId FROM auth.SchoolWithAlternativeType)`) and is what the tombstone probe below returns. A stored-DocumentId check authorizes by the document's **current** view membership: the DocumentId is stable across key changes, so a Section renamed into the view's key set reports its key change, old key included, and one renamed out of it is denied whatever its old key was. This is the rule ODS applies to its surrogate-keyed bases, whose join is `c.OldStudentUSI = rba.StudentUSI` or `c.OldDescriptorId = rba.DescriptorId` and whose surrogate survives a unique-id or code-value change; DMS applies it to every basis whose DocumentId the tombstone stores. For a natural-key self basis ODS joins on the old natural key, which a live-table view no longer contains after a rename or a delete, so on ODS such a view never authorizes a self key change or delete at all, and a migrated view can only gain rows on DMS (see "Migration from ODS" below). It also replaced the person self column (`OldStudent_DocumentId` on the Student tombstone), which stored the same value under a person-specific name. It is the one part of the design that cannot be retrofitted: a delete tombstone written without it has lost its DocumentId for good, since the document row is gone and nothing else recorded the value. No index is emitted for it.
+
+**Live seek by natural key.** For every basis other than the subject itself or a person, the `/deletes` and `/keyChanges` queries seek the live basis root table by the tombstone's old identifying values and check the found row's `DocumentId` against the view:
+
+```sql
+-- /studentSchoolAssociations/deletes with SchoolWithAlternativeType
+AND EXISTS (
+  SELECT 1
+  FROM edfi.School b
+  WHERE b.SchoolId = c.OldSchoolId_Unified   -- seeks UX_School_RefKey (identity columns lead, DocumentId trails)
+    AND b.DocumentId IN (SELECT DocumentId FROM auth.SchoolWithAlternativeType)
+)
+```
+
+Transitive bases work the same way: `CourseOfferingWithX` on `/grades/deletes` seeks `edfi.CourseOffering` by `OldStudentSectionAssociation_LocalCourseCode`, `OldSchoolId_Unified`, `OldSchoolYear_Unified`, and `OldStudentSectionAssociation_SessionName`. Descriptor-valued identity parts of the basis key are matched through `dms.Descriptor` on the tombstone's old `Namespace` and `CodeValue`, and a basis that is itself a descriptor is sought in `dms.Descriptor` the same way; an abstract basis such as `EducationOrganization` is sought through its union view. Person bases read the person `DocumentId` columns the tombstone already stores, and the self basis reads the system column; a person reference that is not a securable element of the subject has no such column and is treated like any other basis, so it is sought live by the unique id when the reference is identifying and otherwise fails under the first-hop rule (ODS applies its identifying-only rule to `StaffUSI` alike). Because every seek key is a value stored on the row, seek bases have exact old-value semantics: a deleted basis is denied, since the seek finds nothing whatever the view returns, and a re-keyed basis is denied too, as in ODS for a natural-key basis. Stored-DocumentId bases (self and person) follow the current-membership rule described above instead, as in ODS for a surrogate-keyed basis. No new index is needed: the seek lands on the basis table's `*_RefKey` index, which already exists for every referenced resource and leads with the identity columns (see "`*_RefKey` index ordering for `/deletes`" below).
+
+The planning cost lives in metadata, not in SQL. To pair each basis key column with the tombstone column holding its value, the planner walks the reference identity bindings from the subject to the basis (Grade's binding to StudentSectionAssociation, the association's to Section, Section's to CourseOffering) rather than relying on column names, which are not reliable under key unification and role names. This happens once per resource and strategy; see "Plan shape and SQL" below.
+
+**Tombstone probe, opt-in per view.** With the live seek alone, tombstone-aware custom views in the `*IncludingDeletes` style, which ODS allows, would be impossible for any basis other than a person or the subject itself. So a strategy whose name ends with `IncludingDeletes` (for example `SchoolWithAlternativeTypeIncludingDeletes`) resolves the basis DocumentId as "live basis by natural key, or else basis tombstone by old natural key": the live seek is unioned with a probe of the basis tracked-change table on the same old values, returning that table's `DocumentId` column. An author then unions a tombstone arm (`SELECT DocumentId FROM tracked_changes_edfi.School WHERE ...`) with the view's live rows, and a tombstone stays authorized after the basis it named was deleted. The probe matches key-change rows as well as delete tombstones, so a suffixed view also resolves a basis that was re-keyed after the tombstone was written, and authorizes it by the document's current membership: a Section renamed from an excluded identifier to an accepted one authorizes the Grade tombstones that still name the excluded key, where the live seek without the suffix denies them. The view returns DocumentIds, so membership is per document, never per historical key; an author opting into the suffix accepts that a document's live row and every tracked-change row of it authorize together. The SQL is shown under "Plan shape and SQL" below. The suffix sits inside the `{Description}` part of the naming convention, so basis parsing is unchanged, and it reads the same way as the built-in `*IncludingDeletes` strategies. It is a DMS-only convention: in ODS a custom view's name carries no meaning beyond its basis, and a tombstone arm simply works because ODS joins on natural keys the tombstone always has. Here it is an explicit opt-in to extra work.
+
+DMS emits no index for the probe. Tracked-change tables stay indexed on `ChangeVersion` only, so the probe hash-joins over the basis tombstone table unless the implementer adds a natural-key index on the tombstone tables of the basis resources their suffixed views use (for example on `tracked_changes_edfi.School (OldSchoolId)`), typically one or two small tables rather than every tracked-change table in the deployment. Deployments that never configure a suffixed view pay nothing for the probe at read time and nothing on write.
+
+**Person columns.** Independently of the custom-view work, the person `DocumentId` columns (`OldStudentSectionAssociation_Student_DocumentId`, ...) are populated by seeking the person table with the unique id stored on the row rather than by hopping live intermediates, which recorded the wrong person under a cascading key change (see "Triggers that populate the `tracked_changes*` tables" above). Person-basis custom views read those columns, so they depend on the fix.
+
+##### Alternatives considered
+
+**Storing the DocumentId of every identity reference on the tombstone.** The tracked-change table would get an `Old<Chain>_DocumentId` / `New<Chain>_DocumentId` pair for every resource reachable from the subject root through identity references, direct or transitive (`OldStudentSectionAssociation_Section_DocumentId`, ...), and an `Old<Path>_DescriptorId` beside each descriptor's `Namespace`/`CodeValue`, generalizing what the person columns do. The check would be a plain `c.OldSchool_DocumentId IN (SELECT DocumentId FROM auth.SchoolWithAlternativeType)` with no live seek, and tombstone-aware views would work without a suffix. It was not selected because of the significant additional storage it incurs on the database: Grade's identity closure has about ten resources, which means roughly twenty new `bigint` columns on every Grade tombstone and a similar order for every other deep-identity resource, plus the extra seeks in every delete and key-change trigger to fill them. It would also have put every basis under the current-membership rule, where ODS applies it to surrogate-keyed bases only; the live seek keeps ODS's natural-key semantics for the bases whose DocumentId the tombstone does not store.
+
+**Hopping through intermediates by DocumentId at query time.** Store only the DocumentId of each direct identity reference and reach a transitive basis by hopping from it to the live intermediate row and following its `_DocumentId` FKs, as the live GET-many check does. This fails because the hop reads the intermediate's **current** state, while the tombstone recorded which intermediate the row pointed at when it was written. Deleted intermediates are the common case: Ed-Fi never cascades deletes, so removing a student from a section deletes the Grades first and the StudentSectionAssociation second, after which `/grades/deletes` under `SectionWithX` hops into a row that no longer exists and denies a Section that is alive and in the view. Re-pointed intermediates are the other case: once the association moves from Section X to Section Y, the hop authorizes the old Grade tombstone against Y where old-value semantics require X. Falling back to the intermediate's tombstone does not rescue the idea, because the fallback is then needed for every view (a `UNION` per hop, an index on every tracked-change table's `DocumentId`, and a temporal rule for choosing among several key-change rows of the same intermediate), which is more machinery than the binding walk it was meant to avoid. The lesson carried into the design is the second fact above: a tombstone must be authorizable from its own contents plus the basis row, never through intermediates.
+
+##### Migration from ODS
+
+ODS custom views return the basis resource's natural-key columns and are joined to the tombstone's `Old*` columns. DMS custom views return the basis resource's `DocumentId` and are probed with a membership predicate, on the live read paths and on `ReadChanges` alike. For an author moving a view over:
+
+- A view over live tables needs no change beyond returning `DocumentId` (see "Custom view-based authorization strategy" in [auth.md](auth.md)). On `/deletes` and `/keyChanges` DMS seeks the live basis row by the tombstone's old natural-key values and checks its `DocumentId` against the view, so a basis row that has since been deleted is denied, as it is in ODS.
+- A view whose basis is the subject itself or a person authorizes by the document's current membership, the rule ODS applies to its `StudentUSI` and `DescriptorId` bases. An ODS natural-key self basis over live tables (`SectionWithX` on `/sections/keyChanges`) returns nothing on ODS, because the old key is gone from the live table, so the migrated view can only gain rows: a document renamed into the view now reports its key change, old key included, exactly as ODS reports a renamed Student's old unique id under a `StudentWithX` view.
+- An ODS custom view that unions tombstone tables in the `*IncludingDeletes` style keeps its deleted-basis behavior on DMS only if it is renamed with the `IncludingDeletes` suffix (for example `auth.SchoolWithAlternativeTypeIncludingDeletes`) and its tombstone arm returns `DocumentId` from the `tracked_changes_*` table (for example `UNION SELECT DocumentId FROM tracked_changes_edfi.School WHERE ...`). The suffix is what makes DMS probe the basis tombstone table; without it the view silently degrades to live-only behavior and the deleted basis is denied. The suffixed view can be configured on `ReadChanges` alone, the way the built-in `*IncludingDeletes` strategies pair with their live counterparts; on the live Read paths the suffix carries no meaning.
+- Tombstones store only identifying and securable values, so the tombstone arm can filter on those only (the School tombstone has no descriptor column, for instance). Whether a rule can be evaluated for a deleted basis row depends on the data the author has; the tombstone arm may deliberately be wider than the live arm.
+- No index is emitted for the probe; authors who opt in are expected to index the tombstone tables of their basis resources themselves, as described under "Design" above.
+
+##### Strategy recognition
+
+`ReadChangesAuthorizationPlanner` splits the configured strategies into `NamespaceBased`, `NoFurtherAuthorizationRequired`, and relationship strategies. A name outside the table is first handed to the shared custom-view resolution in `RelationshipAuthorizationStrategyClassifier`, which yields one of three outcomes, each reusing what the live read paths already produce:
+
+- Not in the `{Basis}With{Description}` convention: the existing unavailable-strategy 500, unchanged.
+- In the convention but no resource is named by the prefix: a security-configuration 500 with the existing `UnknownCustomViewBasisResource` failure kind and the same diagnostic shape as the live paths, including the target resource name.
+- Resolved: a `SupportedCustomViewAuthorizationStrategy` (configured strategy, CMS local order, basis resource), the record the live page and single-record planners consume.
+
+Basis precedence is unchanged: the longest matching resource name wins, then the standard project, then extension projects in endpoint order.
+
+The `IncludingDeletes` suffix is detected with an ordinal `EndsWith` on the full strategy name and carried as a boolean on the `ReadChanges` custom-view check. The view name stays the full strategy name (`auth.SchoolWithAlternativeTypeIncludingDeletes`), and basis parsing is untouched because the suffix lives inside the description part. On the live Read paths the suffix has no meaning. On `ReadChanges` it is a no-op for person and self bases, whose checks read a stored DocumentId and never seek, so it only changes behavior for other bases, and for those it changes rename semantics as well as delete semantics (see the tombstone probe under "Design").
+
+`RelationalChangeQueryRepository.QueryTrackedChanges` validates the resolved views per request with the existing `CustomViewAuthorizationValidator` before emitting SQL, under the same rule as the live paths: when planning fails, only the views configured ahead of the earliest failure are validated, so an earlier missing view reports itself rather than being masked. The validated view is the full, possibly suffixed, name. Names the `ReadChanges` planner cannot serve (outside the convention, or a live relationship strategy without a `ReadChanges` counterpart) are reported through the existing unavailable-strategy failure, which the handler renders with the canonical unknown-strategy message listing only those names; a resolved custom view is never listed there.
+
+##### Plan shape and SQL
+
+Both endpoints already build `FROM tracked_changes_x.Y c WHERE ...` and splice `TrackedChangeAuthorizationSql.Predicates` into that WHERE, the deletes query as a filtered subquery and the keyChanges query inside its `FilteredChanges` CTE. Each custom view becomes one more predicate in that list, correlated on `c`. Every predicate reads `Old*` columns and the `DocumentId` system column only, on both endpoints, matching ODS's old-value rule.
+
+The plan carries a `ReadChangesCustomViewCheckSpec` carrying the configured strategy, its CMS local order, the view name, the probe flag, and a basis resolution with three shapes:
+
+- **Stored DocumentId.** A self basis reads the `DocumentId` system column. A person basis reads the existing person `Old*_DocumentId` column, chosen by matching the resolved path against the person join chains as the relationship planner does today; when the resolved path is not a securable person path, no such column exists and the basis falls through to the live seek below. The predicate is `c.X IN (SELECT DocumentId FROM auth.View)`, so the basis is authorized by its current membership.
+- **Live seek.** For every other basis. The planner resolves the path with `SecurableElementColumnPathResolver` under the same preferred-path rule as the live page planner, then walks each hop's `DocumentReferenceBinding.IdentityBindings` from the basis back to the subject root to pair each basis identity column with the canonical tombstone column holding its old value. Descriptor identity parts pair the basis FK column with a `dms.Descriptor` row matched on the tombstone's old `Namespace` and `CodeValue`, reusing the shape of `BuildDescriptorIdentityJoin`. An abstract basis seeks the abstract union view by its identity column. A first hop whose values are not on the tombstone fails planning; see the error section below.
+- **Live seek plus tombstone probe.** When the strategy name carries the suffix, the live seek is unioned with one arm per basis tracked-change table. Each arm seeks that table's `Old*` identity columns with the same paired values and returns its `DocumentId`. Descriptor parts compare old `Namespace` and `CodeValue` directly, with no descriptor join. An abstract basis gets one arm per concrete member table, derived from the union view's arms.
+- **Descriptor basis.** When the basis resource is itself a descriptor, the check seeks `dms.Descriptor` on the tombstone's old `Namespace` and `CodeValue`, restricted to that descriptor's discriminator, and tests the matched row's `DocumentId` against the view. With the suffix, the same union shape adds one arm over the shared `tracked_changes_edfi.Descriptor` table, filtered by the same discriminator and returning the tombstone's `DocumentId`.
+
+```sql
+-- /studentSchoolAssociations/deletes with SchoolWithAlternativeTypeIncludingDeletes
+AND EXISTS (
+  SELECT 1 FROM (
+    SELECT b.DocumentId FROM edfi.School b                 WHERE b.SchoolId    = c.OldSchoolId_Unified
+    UNION
+    SELECT t.DocumentId FROM tracked_changes_edfi.School t WHERE t.OldSchoolId = c.OldSchoolId_Unified
+  ) basis
+  WHERE basis.DocumentId IN (SELECT DocumentId FROM auth.SchoolWithAlternativeTypeIncludingDeletes)
+)
+```
+
+`TrackedChangeAuthorizationSqlEmitter` appends custom-view predicates as separate AND terms after the namespace predicate and the relationship OR-group, in CMS order, which is the composition rule in [auth.md](auth.md); the predicate list is `[namespace, relationship OR-group, custom views...]`, so requests without custom views render the same SQL as before. Custom views bind no claim parameters; the only parameters they add are descriptor discriminator values (`@CustomViewDescriptorDiscriminator{n}` and its `Qualified` twin, numbered across the plan's custom views and distinct from the planner's `@DescriptorDiscriminator{n}`), so they enter the existing SQL Server parameter-cap check without a new rule. A null old value on a nullable securable first hop never matches, so the row is denied without special casing, the same outcome the relationship strategies produce.
+
+The first hop of the path may be an identity reference or any securable element the tombstone stores; later hops are identity-only. This is what the shared resolver already returns, and it is wider than the ODS rule, which admits identifying properties only. The difference is deliberate: DMS tombstones store securable values that ODS tombstones lack (ODS stores model-declared authorization columns such as `DisciplineAction.OldResponsibilitySchoolId`, but not C#-level overrides such as StudentAssessment's reported school), and the built-in relationship strategies already authorize those tombstones from those columns, so restricting custom views to identity references would protect nothing. In Data Standard 5.2 and 6.1 the non-identity securable elements are the EdOrg paths on `disciplineActions` (responsibility school), `organizationDepartments` (parent EdOrg), and `studentAssessments` (reported school, nullable), plus the Namespace paths on namespace-secured resources; none are person paths.
+
+##### Write side
+
+The `DocumentId` system column is `TrackedChangeSystemColumnRole.DocumentId`, `bigint NOT NULL`, emitted on every tracked-change table after `Id` and `ChangeVersion`. The trigger fills it from the deleted or changed row's DocumentId, which it already has as the key it joins `dms.Document` on. No index is emitted. The relational-model manifests and the DDL fixture outputs changed shape and were regenerated. Because the physical schema and the trigger bodies changed, `RelationalMappingVersion` (`SchemaHashConstants`) is bumped manually before the release that ships this work.
+
+The zero-hop self person path, which used to materialize `OldStudent_DocumentId` on the Student tombstone with canonical column `DocumentId` and a dedicated scalar branch in the trigger, was removed. The `ReadChanges` planner resolves the self person path to the system column instead, so `/students/deletes` under a people strategy checks `c.DocumentId IN (view)`. The built-in `*IncludingDeletes` views are untouched because they read the association tombstones' person columns, not the person's own tombstone.
+
+The person `DocumentId` columns are populated by the natural-key seek described in the tracked-change inventory section instead of by hopping live intermediates, which fixed the Grade cascading key-change defect (see "Person columns" under "Design" above). The seek applies to deletes as well as key changes: hopping is correct on a delete because nothing cascades, but the seek gives the same answer with one join instead of one per intermediate, and keeping both would mean two join shapes for one column.
+
+##### Error behavior
+
+- A strategy name outside the convention, or a known relationship strategy the `ReadChanges` table does not support: the existing unavailable-strategy security-configuration 500.
+- Unknown basis: `UnknownCustomViewBasisResource`, 500, same diagnostic as the live paths.
+- No root-table path from subject to basis, including a basis reachable only through a collection or extension table: `NoCustomViewJoinPath`, 500, existing hint.
+- The first hop resolves but its values are not on the tombstone: the failure kind `CustomViewBasisNotIdentifyingOrSecurable`, 500. This is the ODS "Non-identifying properties" `SecurityConfigurationException` carried over and narrowed by the securable allowance. It is reachable in Data Standard 5.2 and 6.1 through any optional non-identity, non-securable root reference: `LocationWithX` on `/sections/deletes` (Section's location reference), `CourseWithX` on `/courseOfferings/deletes`, `CalendarWithX` on `/studentSchoolAssociations/deletes`, and, for a person basis, `StaffWithX` on `/sectionAttendanceTakenEvents/deletes` or `/courseTranscripts/deletes` (the staff and responsible-teacher references are neither identifying nor securable). The same view keeps working on the live read paths, as in ODS. The hint mirrors the ODS text:
+
+  > The reference 'locationReference' on 'Ed-Fi.Section' leads to custom view basis 'Ed-Fi.Location' but is neither an identifying property nor a securable element of the subject. This is not supported by Change Queries, which only track deleted/changed values of identifying and securable properties. Should a different authorization strategy be used?
+
+  The same failure kind covers a descriptor basis reached through identity references whose descriptor property is not identifying on the resource that carries it, for example `SchoolTypeDescriptorWithX` on `/studentSchoolAssociations/deletes` or `/academicWeeks/deletes` (`schoolTypeDescriptor` is not part of School's identity, so the subject's tombstone never stores it). The shared path resolver admits that path because the live reads follow the FK on School; the `ReadChanges` planner reports it rather than planning a seek nothing can satisfy. The hint names the intermediate resource and property:
+
+  > The descriptor property 'schoolTypeDescriptor' on 'Ed-Fi.School', reached from 'Ed-Fi.StudentSchoolAssociation' through 'schoolReference', leads to custom view basis 'Ed-Fi.SchoolTypeDescriptor' but is not an identifying property of 'Ed-Fi.School', so the subject's tombstone does not store its value. This is not supported by Change Queries, which only track deleted/changed values of identifying and securable properties. Should a different authorization strategy be used?
+
+- A view that is missing or lacks a `DocumentId` column: the existing per-request validator's `urn:ed-fi:api:system` 500, with the ahead-of-earliest-failure ordering. Tombstone probe arms are DMS-owned tables and need no validation.
+- Ordering corner case, recorded rather than aligned: `NamespaceBased` configured for a client with no namespace prefixes returns its 403 (`NamespaceNoPrefixesConfigured`) before any custom view is validated, whatever the configured order. The live paths validate a custom view configured ahead of `NamespaceBased` first, so there a missing view surfaces as its 500. The difference is observable only for a client that has no prefixes and a broken view at the same time.
+- Null old values are never an error; the row is excluded.
+- Custom views bind no claim parameters, so the zero-claim fail-closed rule stays with the relationship OR-group.
 
 ### Change Query route source of truth
 
@@ -2174,15 +2270,6 @@ The rule does not affect `/deletes`, `/keyChanges`, `/availableChangeVersions`, 
 GET-by-id, or writes. The change-query endpoints page traditionally over the tracked-change tables
 and do not accept cursor parameters at all.
 
-### Snapshot support is deferred
-
-Snapshot support is deferred and will not be available for DMS v1.0; as such, the `/deletes`, `/keyChanges`, `/availableChangeVersions`, and live resource and descriptors endpoints will not support the `Use-Snapshot` header.
-
-**Scope of this section.** This section is normative for DMS v1.0 only. The post-v1.0 snapshot and read-replica contract — header parsing, target selection, ProblemDetails, OpenAPI surface, and rollout — is owned by `epics/10-update-tracking-change-queries/29-snapshot-support.md` (DMS-1190) and the follow-on stories it spawns. That proposal supersedes this section and § "Snapshot ProblemDetails Are Deferred" below for any release in which those stories have shipped; until then this section is the shipped behavior. Where the two disagree about post-v1.0 behavior, 29-snapshot-support.md governs, and this section is to be replaced rather than amended when the rollout lands.
-
-**DMS v1.0 behavior on receipt of `Use-Snapshot`.** DMS silently ignores the `Use-Snapshot` request header on Change Query and live resource/descriptor GET-many requests. The header has no effect; the request is processed against current data without snapshot isolation. No `Warning` header is set and no error ProblemDetails is emitted.
-
-**Operator guidance — Ed-Fi API Publisher reading from a DMS v1.0 source.** The Ed-Fi API Publisher sends `Use-Snapshot: true` by default when probing snapshot support against a source whose API major version is at least 7 (see `EdFi.Tools.ApiPublisher.Connections.Api/Processing/Source/Isolation/EdFiApiSourceIsolationApplicator.cs`). Because DMS v1.0 silently ignores that header, reads from a DMS v1.0 source are not snapshot-isolated: concurrent writes against the source may be visible mid-publish and can produce inconsistent published data. Operators publishing from a DMS v1.0 source should either accept that risk or run the Publisher with `--ignoreIsolation=true`, which is the explicit acknowledgment that source isolation is unavailable. Snapshot support in DMS is targeted for a later release.
 
 ### Model and DDL verification
 
@@ -2291,20 +2378,3 @@ If DMS keeps a runtime feature flag for Change Queries, requests to Change Queri
 **Error**: *(empty)*
 
 > Note: This ProblemDetail does not apply yet as the support to disable the feature will be deferred.
-
-#### 4. Snapshot ProblemDetails Are Deferred
-
-Snapshot support is deferred for DMS v1.0. The `Use-Snapshot` header is therefore not part of the DMS v1.0 Change Queries contract, and DMS v1.0 should not emit ODS snapshot-specific ProblemDetails for Change Queries.
-
-As with § "Snapshot support is deferred", this subsection is normative for DMS v1.0 only, where its whole content is the prohibition above: DMS v1.0 emits none of these responses.
-
-The table below is historical context — the ODS shapes that motivated deferral and were recorded so the contract would not be lost. It is not the post-v1.0 DMS contract and must not be implemented from. `29-snapshot-support.md` § Snapshot ProblemDetails and § Response precedence are authoritative for the rollout, and they differ from this table in three respects: the `405` applies to non-`GET` requests on the resource and descriptor surface the header contract governs — including invalid route shapes such as a collection `DELETE`, a collection `PUT`, or an item `POST`, and excluding surfaces outside that contract such as `OPTIONS`, OAuth token issuance, discovery, and CMS or management endpoints — a successfully parsed `true` is required rather than mere header presence, and only bounded connection-acquisition failures may translate to the `404` — provider data-source and connection construction, connection-string parsing, and the open call, at the read-path seams that document enumerates — while query, mapping, provisioning, and application defects keep their existing contracts. Implementers building snapshot support use that document and not this one.
-
-Recorded ODS shapes, for reference only:
-
-| Scenario | Type | Title | Status | Detail |
-|---|---|---|---|---|
-| `Use-Snapshot: true` is supplied on a non-`GET` request | `urn:ed-fi:api:snapshots:method-not-allowed` | `Method Not Allowed with Snapshots` | `405` | `An attempt was made to modify data in a Snapshot, but this data is read-only.` |
-| `Use-Snapshot: true` is supplied but no snapshot connection string is configured, or the snapshot database cannot be reached | `urn:ed-fi:api:not-found` | `Not Found` | `404` | `Snapshot not found.` |
-
-In the ODS shapes above, the `405` case carries an `Allow: GET` header. The post-v1.0 DMS contract retains that header; see `29-snapshot-support.md` for its exact scope.

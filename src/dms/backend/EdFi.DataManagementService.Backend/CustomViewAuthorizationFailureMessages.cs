@@ -36,4 +36,26 @@ internal static class CustomViewAuthorizationFailureMessages
             + $"{joinPathSentence} "
             + "Should a different authorization strategy be used?";
     }
+
+    /// <summary>
+    /// The message for a custom-view planning failure whose planner hint is already a complete, operator-facing
+    /// explanation — <see cref="RelationshipAuthorizationFailureKind.CustomViewBasisNotIdentifyingOrSecurable"/>
+    /// carries the ODS "Non-identifying properties" text, closing question included. The hint is appended to
+    /// the same resource/strategy/view prefix <see cref="NoJoinPath"/> uses.
+    /// </summary>
+    public static string FromPlannerHint(
+        RelationshipAuthorizationFailureMetadata failure,
+        string operationLabel
+    )
+    {
+        ArgumentNullException.ThrowIfNull(failure);
+
+        var hintSentence = string.IsNullOrWhiteSpace(failure.Hint)
+            ? "The custom view could not be planned for this operation. Should a different authorization strategy be used?"
+            : failure.Hint.Trim();
+
+        return $"Relational {operationLabel} authorization metadata is invalid for resource '{RelationalWriteSupport.FormatResource(failure.Resource)}'. "
+            + $"Strategy '{failure.ConfiguredStrategy?.StrategyName}' uses custom auth view '{failure.Location?.AuthorizationObjectName ?? "<unknown>"}'. "
+            + hintSentence;
+    }
 }

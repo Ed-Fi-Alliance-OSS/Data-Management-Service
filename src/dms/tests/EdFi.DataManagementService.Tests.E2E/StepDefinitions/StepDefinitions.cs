@@ -1150,61 +1150,142 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             await UploadClaimSetToCms(endpointName, claimSetName, [authorizationStrategyName]);
         }
 
+        // Multi-resource upload: one claim set whose resource claims each carry their own strategy list,
+        // optionally with a distinct list for the ReadChanges action (the ODS test harness configures the
+        // *IncludingDeletes relationship variants there). Strategy lists are comma-separated; a blank or
+        // absent readChangesAuthorizationStrategies cell reuses the CRUD list.
+        [Given("a claim set {string} is uploaded to CMS with these resource claims")]
+        public async Task GivenAClaimSetIsUploadedToCmsWithTheseResourceClaims(
+            string claimSetName,
+            DataTable dataTable
+        )
+        {
+            bool hasReadChangesColumn = dataTable.Header.Contains("readChangesAuthorizationStrategies");
+
+            List<CmsResourceClaimSpec> resourceClaims = [];
+
+            foreach (DataTableRow row in dataTable.Rows)
+            {
+                string? readChangesCell = hasReadChangesColumn
+                    ? row["readChangesAuthorizationStrategies"]
+                    : null;
+
+                resourceClaims.Add(
+                    new CmsResourceClaimSpec(
+                        row["resource"],
+                        SplitStrategyNames(row["authorizationStrategies"]),
+                        string.IsNullOrWhiteSpace(readChangesCell)
+                            ? null
+                            : SplitStrategyNames(readChangesCell)
+                    )
+                );
+            }
+
+            await UploadClaimSetToCms(claimSetName, resourceClaims);
+        }
+
+        private static IReadOnlyCollection<string> SplitStrategyNames(string cell) =>
+            cell.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        /// <summary>
+        /// One resource claim of an uploaded claim set: the endpoint (resource name, or a
+        /// <c>domains/...</c> claim), the strategies for Create/Read/Update/Delete, and the strategies for
+        /// ReadChanges when they differ (<see langword="null"/> reuses the CRUD list).
+        /// </summary>
+        private sealed record CmsResourceClaimSpec(
+            string EndpointName,
+            IReadOnlyCollection<string> CrudStrategyNames,
+            IReadOnlyCollection<string>? ReadChangesStrategyNames
+        );
+
         private async Task UploadClaimSetToCms(
             string endpointName,
             string claimSetName,
             IReadOnlyCollection<string> authorizationStrategyNames
         )
         {
-            JsonObject BuildAction(string actionName) =>
+            await UploadClaimSetToCms(
+                claimSetName,
+                [new CmsResourceClaimSpec(endpointName, authorizationStrategyNames, null)]
+            );
+        }
+
+        private async Task UploadClaimSetToCms(
+            string claimSetName,
+            IReadOnlyList<CmsResourceClaimSpec> resourceClaims
+        )
+        {
+            static JsonObject BuildAction(string actionName, IReadOnlyCollection<string> strategyNames) =>
                 new()
                 {
                     ["name"] = actionName,
                     ["authorizationStrategyOverrides"] = new JsonArray([
-                        .. authorizationStrategyNames.Select(name => new JsonObject { ["name"] = name }),
+                        .. strategyNames.Select(name => new JsonObject { ["name"] = name }),
                     ]),
                 };
 
-            string claimName = endpointName.StartsWith("domains/", StringComparison.Ordinal)
-                ? $"http://ed-fi.org/identity/claims/{endpointName}"
-                : $"http://ed-fi.org/identity/claims/ed-fi/{endpointName}";
+            static bool IsDomainClaim(string endpointName) =>
+                endpointName.StartsWith("domains/", StringComparison.Ordinal);
 
-            JsonObject claimNode = new()
+            JsonObject BuildClaimNode(CmsResourceClaimSpec resourceClaim)
             {
-                ["name"] = claimName,
-                ["claimSets"] = new JsonArray(
+                string claimName = IsDomainClaim(resourceClaim.EndpointName)
+                    ? $"http://ed-fi.org/identity/claims/{resourceClaim.EndpointName}"
+                    : $"http://ed-fi.org/identity/claims/ed-fi/{resourceClaim.EndpointName}";
+
+                return new JsonObject
+                {
+                    ["name"] = claimName,
+                    ["claimSets"] = new JsonArray(
+                        new JsonObject
+                        {
+                            ["name"] = claimSetName,
+                            ["actions"] = new JsonArray(
+                                BuildAction("Create", resourceClaim.CrudStrategyNames),
+                                BuildAction("Read", resourceClaim.CrudStrategyNames),
+                                BuildAction("Update", resourceClaim.CrudStrategyNames),
+                                BuildAction("Delete", resourceClaim.CrudStrategyNames),
+                                // ReadChanges authorizes the /deletes and /keyChanges Change Query
+                                // endpoints. Granting it the same strategy as CRUD lets scenarios
+                                // exercise ReadChanges authorization (relationship/namespace filtering,
+                                // unsupported-strategy 500, no-prefixes 403) through this upload step.
+                                BuildAction(
+                                    "ReadChanges",
+                                    resourceClaim.ReadChangesStrategyNames ?? resourceClaim.CrudStrategyNames
+                                )
+                            ),
+                        }
+                    ),
+                };
+            }
+
+            // Domain claims are hierarchy roots of their own; resource claims share one edFi root.
+            JsonArray claimsHierarchy = new([
+                .. resourceClaims.Where(claim => IsDomainClaim(claim.EndpointName)).Select(BuildClaimNode),
+            ]);
+
+            var resourceLevelClaims = resourceClaims
+                .Where(claim => !IsDomainClaim(claim.EndpointName))
+                .Select(BuildClaimNode)
+                .ToArray();
+
+            if (resourceLevelClaims.Length > 0)
+            {
+                claimsHierarchy.Add(
                     new JsonObject
                     {
-                        ["name"] = claimSetName,
-                        ["actions"] = new JsonArray(
-                            BuildAction("Create"),
-                            BuildAction("Read"),
-                            BuildAction("Update"),
-                            BuildAction("Delete"),
-                            // ReadChanges authorizes the /deletes and /keyChanges Change Query
-                            // endpoints. Granting it the same strategy as CRUD lets scenarios
-                            // exercise ReadChanges authorization (relationship/namespace filtering,
-                            // unsupported-strategy 500, no-prefixes 403) through this upload step.
-                            BuildAction("ReadChanges")
-                        ),
+                        ["name"] = "http://ed-fi.org/identity/claims/domains/edFi",
+                        ["claims"] = new JsonArray(resourceLevelClaims),
                     }
-                ),
-            };
-
-            JsonObject claimsHierarchyNode = endpointName.StartsWith("domains/", StringComparison.Ordinal)
-                ? claimNode
-                : new JsonObject
-                {
-                    ["name"] = "http://ed-fi.org/identity/claims/domains/edFi",
-                    ["claims"] = new JsonArray(claimNode),
-                };
+                );
+            }
 
             string claimsJson = new JsonObject
             {
                 ["claimSets"] = new JsonArray(
                     new JsonObject { ["claimSetName"] = claimSetName, ["isSystemReserved"] = false }
                 ),
-                ["claimsHierarchy"] = new JsonArray(claimsHierarchyNode),
+                ["claimsHierarchy"] = claimsHierarchy,
             }.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
 
             // Call the CMS endpoint to upload the claim set
@@ -1668,6 +1749,13 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             JsonNode responseJson = JsonNode.Parse(body)!;
 
             CorrelationIdValue(responseJson).Should().NotBeNullOrWhiteSpace();
+        }
+
+        [Then("the response body should contain {string}")]
+        public async Task ThenTheResponseBodyShouldContain(string text)
+        {
+            string body = await _apiResponse.TextAsync();
+            body.Should().Contain(text);
         }
 
         [Then("the response body should not contain {string}")]

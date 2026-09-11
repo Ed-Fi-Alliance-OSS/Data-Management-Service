@@ -1471,7 +1471,6 @@ public class Given_RelationalAuthorizationPlanner
     /// </summary>
     [TestCase(RelationshipAuthorizationFailureKind.UnknownCustomViewBasisResource)]
     [TestCase(RelationshipAuthorizationFailureKind.NoCustomViewJoinPath)]
-    [TestCase(RelationshipAuthorizationFailureKind.MissingProposedCustomViewRootBinding)]
     public void It_does_not_let_the_ownership_cap_displace_a_custom_view_configuration_failure(
         RelationshipAuthorizationFailureKind failureKind
     )

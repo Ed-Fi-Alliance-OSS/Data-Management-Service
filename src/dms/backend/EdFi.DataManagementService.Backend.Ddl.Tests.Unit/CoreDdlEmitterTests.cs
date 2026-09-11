@@ -2628,6 +2628,13 @@ internal static class SharedDescriptorTrackedChangeFixture
                     IsPrimaryKey: true
                 ),
                 new TrackedChangeSystemColumnInfo(
+                    TrackedChangeSystemColumnRole.DocumentId,
+                    new DbColumnName("DocumentId"),
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    IsPrimaryKey: false
+                ),
+                new TrackedChangeSystemColumnInfo(
                     TrackedChangeSystemColumnRole.CreatedAt,
                     new DbColumnName("CreatedAt"),
                     null,
@@ -2665,6 +2672,15 @@ public class Given_CoreDdlEmitter_With_SharedDescriptor_TrackedChange_Pgsql
         _ddl.Should().Contain("OLD.\"Discriminator\"");
         _ddl.Should().Contain("OLD.\"Namespace\"");
         _ddl.Should().Contain("OLD.\"CodeValue\"");
+    }
+
+    [Test]
+    public void It_should_read_the_document_id_system_column_from_the_old_image()
+    {
+        // Column list ends with Id, ChangeVersion, DocumentId; the DocumentId value is the OLD row's key.
+        _ddl.Should()
+            .Contain("\"Id\",\n            \"ChangeVersion\",\n            \"DocumentId\"\n        )");
+        _ddl.Should().Contain("doc.\"ContentVersion\",\n            OLD.\"DocumentId\"\n        FROM");
     }
 
     [Test]
@@ -2736,6 +2752,14 @@ public class Given_CoreDdlEmitter_With_SharedDescriptor_TrackedChange_Mssql
         _ddl.Should().Contain("del.[Discriminator]");
         _ddl.Should().Contain("del.[Namespace]");
         _ddl.Should().Contain("del.[CodeValue]");
+    }
+
+    [Test]
+    public void It_should_read_the_document_id_system_column_from_the_deleted_row()
+    {
+        _ddl.Should().Contain("[Id],\n            [ChangeVersion],\n            [DocumentId]\n        )");
+        _ddl.Should()
+            .Contain("doc.[ContentVersion],\n            del.[DocumentId]\n        FROM deleted del");
     }
 
     [Test]

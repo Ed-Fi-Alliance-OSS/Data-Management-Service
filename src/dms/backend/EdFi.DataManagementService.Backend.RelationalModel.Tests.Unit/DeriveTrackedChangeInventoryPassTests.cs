@@ -149,7 +149,7 @@ public class Given_Regular_Resources_For_Tracked_Change_Derivation
     }
 
     /// <summary>
-    /// It should expose Id, ChangeVersion, and CreatedAt system columns with no Discriminator.
+    /// It should expose Id, ChangeVersion, DocumentId, and CreatedAt system columns with no Discriminator.
     /// </summary>
     [Test]
     public void It_should_expose_the_non_descriptor_system_columns()
@@ -162,6 +162,7 @@ public class Given_Regular_Resources_For_Tracked_Change_Derivation
             .Equal(
                 TrackedChangeSystemColumnRole.Id,
                 TrackedChangeSystemColumnRole.ChangeVersion,
+                TrackedChangeSystemColumnRole.DocumentId,
                 TrackedChangeSystemColumnRole.CreatedAt
             );
 
@@ -195,6 +196,15 @@ public class Given_Regular_Resources_For_Tracked_Change_Derivation
         changeVersion.ScalarType!.Kind.Should().Be(ScalarKind.Int64);
         changeVersion.IsNullable.Should().BeFalse();
         changeVersion.IsPrimaryKey.Should().BeTrue();
+
+        var documentId = TrackedChangeDerivationTestHelpers.SystemColumnByRole(
+            enrollment,
+            TrackedChangeSystemColumnRole.DocumentId
+        );
+        documentId.ColumnName.Value.Should().Be("DocumentId");
+        documentId.ScalarType!.Kind.Should().Be(ScalarKind.Int64);
+        documentId.IsNullable.Should().BeFalse();
+        documentId.IsPrimaryKey.Should().BeFalse();
 
         var createdAt = TrackedChangeDerivationTestHelpers.SystemColumnByRole(
             enrollment,
@@ -299,31 +309,31 @@ public class Given_Top_Level_Person_Resources_For_Tracked_Change_Derivation
     }
 
     /// <summary>
-    /// It should derive an authorization-only self person DocumentId value column for each core top-level
-    /// person resource.
+    /// It should not materialize a self person DocumentId value column: the zero-hop self person path is
+    /// served by the <c>DocumentId</c> system column instead.
     /// </summary>
-    [TestCase("Student", "OldStudent_DocumentId", "NewStudent_DocumentId", "$.studentUniqueId")]
-    [TestCase("Staff", "OldStaff_DocumentId", "NewStaff_DocumentId", "$.staffUniqueId")]
-    [TestCase("Contact", "OldContact_DocumentId", "NewContact_DocumentId", "$.contactUniqueId")]
-    public void It_should_derive_self_person_document_id_columns(
+    [TestCase("Student", "OldStudent_DocumentId")]
+    [TestCase("Staff", "OldStaff_DocumentId")]
+    [TestCase("Contact", "OldContact_DocumentId")]
+    public void It_should_not_derive_a_self_person_document_id_value_column(
         string sourceTableName,
-        string oldColumnName,
-        string newColumnName,
-        string sourcePath
+        string removedOldColumnName
     )
     {
         var table = TrackedChangeDerivationTestHelpers.TableBySourceName(_set, sourceTableName);
-        var column = TrackedChangeDerivationTestHelpers.ValueColumnByOldName(table, oldColumnName);
 
-        column.NewColumnName.Value.Should().Be(newColumnName);
-        column.Role.Should().Be(TrackedChangeColumnRole.PersonDocumentId);
-        column.Origin.Should().Be(TrackedChangeColumnOrigin.SecurableElement);
-        column.SourceJsonPath.Should().Be(sourcePath);
-        column.CanonicalStorageColumn.Should().Be(new DbColumnName("DocumentId"));
-        column.PersonJoinName.Should().BeNull();
-        column.ScalarType.Kind.Should().Be(ScalarKind.Int64);
-        column.IsOldColumnNullable.Should().BeFalse();
-        column.IsNewColumnNullable.Should().BeTrue();
+        table
+            .ValueColumnsInTableOrder.Should()
+            .NotContain(column => column.OldColumnName.Value == removedOldColumnName);
+        table
+            .ValueColumnsInTableOrder.Should()
+            .NotContain(column => column.Role == TrackedChangeColumnRole.PersonDocumentId);
+
+        var documentId = TrackedChangeDerivationTestHelpers.SystemColumnByRole(
+            table,
+            TrackedChangeSystemColumnRole.DocumentId
+        );
+        documentId.ColumnName.Value.Should().Be("DocumentId");
     }
 
     /// <summary>
@@ -408,6 +418,37 @@ public class Given_Descriptor_Resources_For_Tracked_Change_Derivation
         discriminator.ScalarType.MaxLength.Should().Be(128);
         discriminator.IsNullable.Should().BeFalse();
         discriminator.IsPrimaryKey.Should().BeFalse();
+    }
+
+    /// <summary>
+    /// It should place the DocumentId system column between ChangeVersion and CreatedAt on the shared
+    /// descriptor table, after the Discriminator.
+    /// </summary>
+    [Test]
+    public void It_should_order_the_shared_descriptor_system_columns_with_document_id()
+    {
+        var descriptor = _set.TrackedChangeTablesInNameOrder.Single(table =>
+            table.Kind == TrackedChangeTableKind.SharedDescriptor
+        );
+
+        descriptor
+            .SystemColumns.Select(column => column.Role)
+            .Should()
+            .Equal(
+                TrackedChangeSystemColumnRole.Discriminator,
+                TrackedChangeSystemColumnRole.Id,
+                TrackedChangeSystemColumnRole.ChangeVersion,
+                TrackedChangeSystemColumnRole.DocumentId,
+                TrackedChangeSystemColumnRole.CreatedAt
+            );
+
+        var documentId = TrackedChangeDerivationTestHelpers.SystemColumnByRole(
+            descriptor,
+            TrackedChangeSystemColumnRole.DocumentId
+        );
+        documentId.ScalarType!.Kind.Should().Be(ScalarKind.Int64);
+        documentId.IsNullable.Should().BeFalse();
+        documentId.IsPrimaryKey.Should().BeFalse();
     }
 
     /// <summary>
@@ -707,10 +748,10 @@ public class Given_Deterministic_Tracked_Change_Derivation
 }
 
 /// <summary>
-/// Test fixture for person securable chains whose optional hop is after the first reference.
+/// Test fixture for person securable chains whose optional hop is the subject's own reference to the intermediate. (The intermediate's hop to the person is an identity reference, hence always required; the securable path carries the person unique id only through identity parts.)
 /// </summary>
 [TestFixture]
-public class Given_A_Transitive_Person_Securable_With_Optional_Middle_Hop_For_Tracked_Change_Derivation
+public class Given_A_Transitive_Person_Securable_With_Optional_First_Hop_For_Tracked_Change_Derivation
 {
     private TrackedChangeTableInfo _enrollment = default!;
 
@@ -744,6 +785,50 @@ public class Given_A_Transitive_Person_Securable_With_Optional_Middle_Hop_For_Tr
 
         personColumn.PersonJoinName.Should().Be(join.PersonJoinName);
         personColumn.IsOldColumnNullable.Should().BeTrue();
+    }
+
+    /// <summary>
+    /// It should seek the person through the subject root's binding column for the transitive path: the
+    /// StudentProgram reference stores the student unique id on Enrollment, so the trigger joins
+    /// <c>edfi.Student</c> on it directly instead of hopping through the live StudentProgram row.
+    /// </summary>
+    [Test]
+    public void It_should_seek_the_person_through_the_root_binding_column_of_a_transitive_path()
+    {
+        var join = _enrollment.PersonJoins.Single();
+
+        join.PersonTable.Should().Be(new DbTableName(new DbSchemaName("edfi"), "Student"));
+        join.PersonIdentityColumn.Should().Be(new DbColumnName("StudentUniqueId"));
+        join.SourceBindingColumn.Should().Be(new DbColumnName("StudentProgram_StudentUniqueId"));
+    }
+}
+
+/// <summary>
+/// Test fixture for a person securable path whose carried value is not the person's natural key, so no
+/// root binding column can seek the person.
+/// </summary>
+[TestFixture]
+public class Given_A_Person_Securable_Path_That_Does_Not_Carry_The_Person_Natural_Key
+{
+    /// <summary>
+    /// It should fail loudly: the seek needs the subject root to carry the person unique id through the
+    /// chain of identity bindings; a declared path ending elsewhere (here the program id) cannot authorize
+    /// the person and must not be silently dropped or mis-joined.
+    /// </summary>
+    [Test]
+    public void It_should_throw_when_the_person_path_does_not_bind_the_person_identity()
+    {
+        var act = () =>
+            TrackedChangeDerivationTestHelpers.BuildSet(
+                TransitivePersonSecurableSchemaBuilder.BuildProjectSchema(
+                    carryProgramIdInsteadOfStudentId: true
+                )
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*Enrollment*")
+            .WithMessage("*$.studentProgramReference.programId*");
     }
 }
 
@@ -782,7 +867,12 @@ public class Given_An_Unresolvable_Securable_Path_For_Tracked_Change_Derivation
 
 internal static class TransitivePersonSecurableSchemaBuilder
 {
-    internal static JsonObject BuildProjectSchema()
+    /// <param name="carryProgramIdInsteadOfStudentId">
+    /// When true, Enrollment's Student securable path is <c>$.studentProgramReference.programId</c>: the
+    /// chain still reaches Student through StudentProgram's own declared securable, but the value Enrollment
+    /// carries is the program id, not the student unique id, so no root binding column can seek the person.
+    /// </param>
+    internal static JsonObject BuildProjectSchema(bool carryProgramIdInsteadOfStudentId = false)
     {
         return new JsonObject
         {
@@ -791,14 +881,14 @@ internal static class TransitivePersonSecurableSchemaBuilder
             ["projectVersion"] = "1.0.0",
             ["resourceSchemas"] = new JsonObject
             {
-                ["enrollments"] = BuildEnrollmentSchema(),
+                ["enrollments"] = BuildEnrollmentSchema(carryProgramIdInsteadOfStudentId),
                 ["studentPrograms"] = BuildStudentProgramSchema(),
                 ["students"] = BuildStudentSchema(),
             },
         };
     }
 
-    private static JsonObject BuildEnrollmentSchema()
+    private static JsonObject BuildEnrollmentSchema(bool carryProgramIdInsteadOfStudentId)
     {
         var jsonSchemaForInsert = new JsonObject
         {
@@ -812,11 +902,18 @@ internal static class TransitivePersonSecurableSchemaBuilder
                     ["properties"] = new JsonObject
                     {
                         ["programId"] = new JsonObject { ["type"] = "string", ["maxLength"] = 50 },
+                        ["studentUniqueId"] = new JsonObject { ["type"] = "string", ["maxLength"] = 32 },
                     },
                 },
             },
-            ["required"] = new JsonArray("enrollmentId", "studentProgramReference"),
+            ["required"] = new JsonArray("enrollmentId"),
         };
+
+        // Mirrors the real Ed-Fi shape (Grade -> StudentSectionAssociation -> Student): the intermediate's
+        // identity includes the student unique id, so the subject root stores it as a binding column.
+        var studentSecurablePath = carryProgramIdInsteadOfStudentId
+            ? "$.studentProgramReference.programId"
+            : "$.studentProgramReference.studentUniqueId";
 
         return new JsonObject
         {
@@ -826,10 +923,7 @@ internal static class TransitivePersonSecurableSchemaBuilder
             ["allowIdentityUpdates"] = false,
             ["arrayUniquenessConstraints"] = new JsonArray(),
             ["identityJsonPaths"] = new JsonArray { "$.enrollmentId" },
-            ["securableElements"] = new JsonObject
-            {
-                ["Student"] = new JsonArray { "$.studentProgramReference.programId" },
-            },
+            ["securableElements"] = new JsonObject { ["Student"] = new JsonArray { studentSecurablePath } },
             ["documentPathsMapping"] = new JsonObject
             {
                 ["EnrollmentId"] = new JsonObject { ["isReference"] = false, ["path"] = "$.enrollmentId" },
@@ -837,7 +931,7 @@ internal static class TransitivePersonSecurableSchemaBuilder
                 {
                     ["isReference"] = true,
                     ["isDescriptor"] = false,
-                    ["isRequired"] = true,
+                    ["isRequired"] = false,
                     ["projectName"] = "Ed-Fi",
                     ["resourceName"] = "StudentProgram",
                     ["referenceJsonPaths"] = new JsonArray
@@ -846,6 +940,11 @@ internal static class TransitivePersonSecurableSchemaBuilder
                         {
                             ["identityJsonPath"] = "$.programId",
                             ["referenceJsonPath"] = "$.studentProgramReference.programId",
+                        },
+                        new JsonObject
+                        {
+                            ["identityJsonPath"] = "$.studentReference.studentUniqueId",
+                            ["referenceJsonPath"] = "$.studentProgramReference.studentUniqueId",
                         },
                     },
                 },
@@ -871,7 +970,7 @@ internal static class TransitivePersonSecurableSchemaBuilder
                     },
                 },
             },
-            ["required"] = new JsonArray("programId"),
+            ["required"] = new JsonArray("programId", "studentReference"),
         };
 
         return new JsonObject
@@ -881,7 +980,7 @@ internal static class TransitivePersonSecurableSchemaBuilder
             ["isResourceExtension"] = false,
             ["allowIdentityUpdates"] = false,
             ["arrayUniquenessConstraints"] = new JsonArray(),
-            ["identityJsonPaths"] = new JsonArray { "$.programId" },
+            ["identityJsonPaths"] = new JsonArray { "$.programId", "$.studentReference.studentUniqueId" },
             ["securableElements"] = new JsonObject
             {
                 ["Student"] = new JsonArray { "$.studentReference.studentUniqueId" },
@@ -893,7 +992,7 @@ internal static class TransitivePersonSecurableSchemaBuilder
                 {
                     ["isReference"] = true,
                     ["isDescriptor"] = false,
-                    ["isRequired"] = false,
+                    ["isRequired"] = true,
                     ["projectName"] = "Ed-Fi",
                     ["resourceName"] = "Student",
                     ["referenceJsonPaths"] = new JsonArray
@@ -1147,6 +1246,69 @@ public class Given_The_Authoritative_Schema_Set_For_Tracked_Change_Derivation
     }
 
     /// <summary>
+    /// It should resolve every person join to a natural-key seek: the person root table, the person's
+    /// unique-id column, and the subject root column that carries that unique id (DMS-1193 Task 44).
+    /// </summary>
+    [TestCase(
+        "Grade",
+        "StudentSectionAssociation_Student",
+        "Student",
+        "StudentUniqueId",
+        "StudentSectionAssociation_StudentUniqueId"
+    )]
+    [TestCase("StudentSchoolAssociation", "Student", "Student", "StudentUniqueId", "Student_StudentUniqueId")]
+    [TestCase(
+        "StudentContactAssociation",
+        "Contact",
+        "Contact",
+        "ContactUniqueId",
+        "Contact_ContactUniqueId"
+    )]
+    [TestCase(
+        "StudentContactAssociation",
+        "Student",
+        "Student",
+        "StudentUniqueId",
+        "Student_StudentUniqueId"
+    )]
+    [TestCase("StaffSchoolAssociation", "Staff", "Staff", "StaffUniqueId", "Staff_StaffUniqueId")]
+    public void It_should_resolve_person_joins_to_a_natural_key_seek(
+        string sourceTableName,
+        string personJoinName,
+        string personTableName,
+        string personIdentityColumn,
+        string sourceBindingColumn
+    )
+    {
+        var table = TrackedChangeDerivationTestHelpers.TableBySourceName(_set, sourceTableName);
+        var join = table.PersonJoins.Single(j => j.PersonJoinName == personJoinName);
+
+        join.PersonTable.Should().Be(new DbTableName(new DbSchemaName("edfi"), personTableName));
+        join.PersonIdentityColumn.Should().Be(new DbColumnName(personIdentityColumn));
+        join.SourceBindingColumn.Should().Be(new DbColumnName(sourceBindingColumn));
+    }
+
+    /// <summary>
+    /// It should keep the Grade person join's name and chain unchanged: the chain still names the column and
+    /// drives ReadChanges planner matching, only the trigger stops walking it.
+    /// </summary>
+    [Test]
+    public void It_should_keep_the_grade_person_join_chain_unchanged()
+    {
+        var grade = TrackedChangeDerivationTestHelpers.TableBySourceName(_set, "Grade");
+        var join = grade.PersonJoins.Single();
+
+        join.PersonJoinName.Should().Be("StudentSectionAssociation_Student");
+        join.PersonKind.Should().Be(SecurableElementKind.Student);
+        join.JoinPath.Select(step => step.SourceColumnName.Value)
+            .Should()
+            .Equal("StudentSectionAssociation_DocumentId", "Student_DocumentId");
+        join.JoinPath.Select(step => step.TargetTable!.Value.Name)
+            .Should()
+            .Equal("StudentSectionAssociation", "Student");
+    }
+
+    /// <summary>
     /// It should record the canonical storage column on a key-unified tracked value column, and leave it
     /// null for a column that does not participate in key unification.
     /// </summary>
@@ -1185,6 +1347,91 @@ public class Given_The_Authoritative_Schema_Set_For_Tracked_Change_Derivation
 
         var codeValue = TrackedChangeDerivationTestHelpers.ValueColumnByOldName(descriptor, "OldCodeValue");
         codeValue.Origin.Should().Be(TrackedChangeColumnOrigin.Identity);
+    }
+
+    /// <summary>
+    /// It should give every derived tracked-change table (resource, concrete-abstract, shared descriptor)
+    /// exactly one DocumentId system column, placed after ChangeVersion and before CreatedAt.
+    /// </summary>
+    [Test]
+    public void It_should_add_the_document_id_system_column_to_every_tracked_change_table()
+    {
+        foreach (var table in _set.TrackedChangeTablesInNameOrder)
+        {
+            var roles = table.SystemColumns.Select(column => column.Role).ToList();
+            roles
+                .Count(role => role == TrackedChangeSystemColumnRole.DocumentId)
+                .Should()
+                .Be(1, $"table {table.Table.Name} must carry exactly one DocumentId system column");
+            roles
+                .IndexOf(TrackedChangeSystemColumnRole.DocumentId)
+                .Should()
+                .Be(
+                    roles.IndexOf(TrackedChangeSystemColumnRole.ChangeVersion) + 1,
+                    $"table {table.Table.Name} must place DocumentId directly after ChangeVersion"
+                );
+            roles
+                .IndexOf(TrackedChangeSystemColumnRole.CreatedAt)
+                .Should()
+                .Be(
+                    roles.IndexOf(TrackedChangeSystemColumnRole.DocumentId) + 1,
+                    $"table {table.Table.Name} must place CreatedAt directly after DocumentId"
+                );
+
+            var documentId = TrackedChangeDerivationTestHelpers.SystemColumnByRole(
+                table,
+                TrackedChangeSystemColumnRole.DocumentId
+            );
+            documentId.ColumnName.Value.Should().Be("DocumentId");
+            documentId.ScalarType!.Kind.Should().Be(ScalarKind.Int64);
+            documentId.IsNullable.Should().BeFalse();
+            documentId.IsPrimaryKey.Should().BeFalse();
+        }
+    }
+
+    /// <summary>
+    /// It should keep Grade's value columns unchanged: the DocumentId system column adds no value column and
+    /// removes none on a non-person resource.
+    /// </summary>
+    [Test]
+    public void It_should_keep_the_grade_value_columns_unchanged()
+    {
+        var grade = TrackedChangeDerivationTestHelpers.TableBySourceName(_set, "Grade");
+
+        grade
+            .ValueColumnsInTableOrder.Select(column => column.OldColumnName.Value)
+            .Should()
+            .Equal(
+                "OldGradeTypeDescriptor_Namespace",
+                "OldGradeTypeDescriptor_CodeValue",
+                "OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace",
+                "OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue",
+                "OldGradingPeriodGradingPeriod_GradingPeriodName",
+                "OldSchoolId_Unified",
+                "OldSchoolYear_Unified",
+                "OldStudentSectionAssociation_BeginDate",
+                "OldStudentSectionAssociation_LocalCourseCode",
+                "OldStudentSectionAssociation_SectionIdentifier",
+                "OldStudentSectionAssociation_SessionName",
+                "OldStudentSectionAssociation_StudentUniqueId",
+                "OldStudentSectionAssociation_Student_DocumentId"
+            );
+    }
+
+    /// <summary>
+    /// It should drop the self person DocumentId value column from the Student tombstone, leaving only the
+    /// identity scalar; the DocumentId system column now serves the self person path.
+    /// </summary>
+    [Test]
+    public void It_should_drop_the_self_person_value_column_from_the_student_table()
+    {
+        var student = TrackedChangeDerivationTestHelpers.TableBySourceName(_set, "Student");
+
+        student
+            .ValueColumnsInTableOrder.Select(column => column.OldColumnName.Value)
+            .Should()
+            .Equal("OldStudentUniqueId");
+        student.PersonJoins.Should().BeEmpty();
     }
 
     /// <summary>

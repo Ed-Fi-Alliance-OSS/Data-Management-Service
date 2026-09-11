@@ -99,7 +99,8 @@ internal static class RelationalReadGuardrails
                             ? null
                             : [failure.ConfiguredStrategy.RawConfiguredIndex],
                         TargetResourceFullName: failure.FailureKind
-                        is RelationshipAuthorizationFailureKind.UnknownCustomViewBasisResource
+                            is RelationshipAuthorizationFailureKind.UnknownCustomViewBasisResource
+                                or RelationshipAuthorizationFailureKind.CustomViewBasisNotIdentifyingOrSecurable
                             ? RelationalWriteSupport.FormatResource(failure.Resource)
                             : null
                     )
@@ -125,6 +126,66 @@ internal static class RelationalReadGuardrails
                 )),
         ];
     }
+
+    /// <summary>
+    /// Maps the ReadChanges custom-view planning failures of one request
+    /// (<see cref="ReadChangesAuthorizationPlanOutcome.CustomViewSecurityConfiguration"/>) to the change-query
+    /// security-configuration failure. The change-query failure carries no diagnostics, so every failure must
+    /// surface in <c>Errors</c>: unknown-basis failures collapse into the canonical unknown-strategy message at
+    /// their first position (their names also fill <c>UnavailableStrategyNames</c>, as the live paths report
+    /// them), a missing join path keeps its live-path wording, and every other kind — the
+    /// <see cref="RelationshipAuthorizationFailureKind.CustomViewBasisNotIdentifyingOrSecurable"/> rule — renders
+    /// the planner's hint. Messages keep CMS local order.
+    /// </summary>
+    public static ChangeQueryAuthorizationFailure.SecurityConfiguration BuildChangeQueryCustomViewSecurityConfigurationFailure(
+        IReadOnlyList<RelationshipAuthorizationFailureMetadata> failures
+    )
+    {
+        ArgumentNullException.ThrowIfNull(failures);
+
+        const string operationLabel = "change query";
+
+        string[] unknownBasisStrategyNames =
+        [
+            .. failures
+                .Where(IsUnknownCustomViewBasisFailure)
+                .Select(static failure => failure.ConfiguredStrategy?.StrategyName)
+                .OfType<string>()
+                .Distinct(StringComparer.Ordinal),
+        ];
+
+        List<string> errors = [];
+        var unknownBasisMessageAdded = false;
+
+        foreach (RelationshipAuthorizationFailureMetadata failure in failures)
+        {
+            if (IsUnknownCustomViewBasisFailure(failure) && unknownBasisStrategyNames.Length > 0)
+            {
+                if (!unknownBasisMessageAdded)
+                {
+                    errors.Add(
+                        SecurityConfigurationFailureMessages.UnknownAuthorizationStrategies(
+                            unknownBasisStrategyNames
+                        )
+                    );
+                    unknownBasisMessageAdded = true;
+                }
+
+                continue;
+            }
+
+            errors.Add(
+                failure.FailureKind is RelationshipAuthorizationFailureKind.NoCustomViewJoinPath
+                    ? CustomViewAuthorizationFailureMessages.NoJoinPath(failure, operationLabel)
+                    : CustomViewAuthorizationFailureMessages.FromPlannerHint(failure, operationLabel)
+            );
+        }
+
+        return new ChangeQueryAuthorizationFailure.SecurityConfiguration(unknownBasisStrategyNames, errors);
+    }
+
+    private static bool IsUnknownCustomViewBasisFailure(RelationshipAuthorizationFailureMetadata failure) =>
+        failure.FailureKind is RelationshipAuthorizationFailureKind.UnknownCustomViewBasisResource;
 
     public static SecurityConfigurationFailureDiagnostic[] BuildNoUsableRootColumnDiagnostics(
         QualifiedResourceName resource

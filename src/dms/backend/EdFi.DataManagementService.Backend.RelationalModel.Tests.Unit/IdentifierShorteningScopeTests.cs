@@ -299,6 +299,9 @@ public class Given_Tracked_Change_Table_And_Columns_Shortening
                 ["LongTrackedTable"] = "ShortTable",
                 ["OldLongValueColumn"] = "OldShort",
                 ["NewLongValueColumn"] = "NewShort",
+                ["LongPersonTable"] = "ShortPerson",
+                ["LongPersonIdentityColumn"] = "ShortIdentity",
+                ["LongSourceBindingColumn"] = "ShortBinding",
             }
         );
 
@@ -328,6 +331,20 @@ public class Given_Tracked_Change_Table_And_Columns_Shortening
 
         column.OldColumnName.Value.Should().Be("OldShort");
         column.NewColumnName.Value.Should().Be("NewShort");
+    }
+
+    /// <summary>
+    /// It should shorten the person join's natural-key seek identifiers (person table, person identity
+    /// column, and subject binding column) alongside its join path.
+    /// </summary>
+    [Test]
+    public void It_should_shorten_the_person_join_seek_identifiers()
+    {
+        var join = _result.TrackedChangeTablesInNameOrder.Single().PersonJoins.Single();
+
+        join.PersonTable.Name.Should().Be("ShortPerson");
+        join.PersonIdentityColumn.Value.Should().Be("ShortIdentity");
+        join.SourceBindingColumn.Value.Should().Be("ShortBinding");
     }
 }
 
@@ -554,7 +571,8 @@ file static class TrackedChangeShorteningFixtures
 
     internal static TrackedChangeTableInfo Table(
         string tableName,
-        IReadOnlyList<TrackedChangeColumnInfo> valueColumns
+        IReadOnlyList<TrackedChangeColumnInfo> valueColumns,
+        IReadOnlyList<TrackedChangePersonJoinInfo>? personJoins = null
     )
     {
         return new TrackedChangeTableInfo(
@@ -565,9 +583,26 @@ file static class TrackedChangeShorteningFixtures
             SystemColumns: [],
             PrimaryKeyColumns: [new DbColumnName("ChangeVersion")],
             DescriptorJoins: [],
-            PersonJoins: []
+            PersonJoins: personJoins ?? []
         );
     }
+
+    internal static TrackedChangePersonJoinInfo PersonJoin() =>
+        new(
+            "Student",
+            SecurableElementKind.Student,
+            [
+                new ColumnPathStep(
+                    new DbTableName(SourceSchema, "School"),
+                    new DbColumnName("Student_DocumentId"),
+                    new DbTableName(SourceSchema, "LongPersonTable"),
+                    new DbColumnName("DocumentId")
+                ),
+            ],
+            new DbTableName(SourceSchema, "LongPersonTable"),
+            new DbColumnName("LongPersonIdentityColumn"),
+            new DbColumnName("LongSourceBindingColumn")
+        );
 }
 
 file sealed class TrackedChangeShorteningFixturePass : IRelationalModelSetPass
@@ -580,7 +615,8 @@ file sealed class TrackedChangeShorteningFixturePass : IRelationalModelSetPass
         context.TrackedChangeInventory.Add(
             TrackedChangeShorteningFixtures.Table(
                 "LongTrackedTable",
-                [TrackedChangeShorteningFixtures.ValueColumn("OldLongValueColumn", "NewLongValueColumn")]
+                [TrackedChangeShorteningFixtures.ValueColumn("OldLongValueColumn", "NewLongValueColumn")],
+                [TrackedChangeShorteningFixtures.PersonJoin()]
             )
         );
     }

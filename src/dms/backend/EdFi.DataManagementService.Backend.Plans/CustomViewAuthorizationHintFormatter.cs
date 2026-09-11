@@ -5,6 +5,7 @@
 
 using System.Globalization;
 using System.Text;
+using EdFi.DataManagementService.Backend.External;
 
 namespace EdFi.DataManagementService.Backend.Plans;
 
@@ -25,7 +26,73 @@ namespace EdFi.DataManagementService.Backend.Plans;
 /// </remarks>
 public static class CustomViewAuthorizationHintFormatter
 {
-    private const string WithToken = "With";
+    /// <summary>
+    /// The tokens rendered in lowercase inside the display text: the articles, conjunctions, and
+    /// prepositions ODS's <c>CustomAuthorizationViewHintProvider</c> lowercases, kept identical so a client
+    /// migrating from ODS sees the same hint sentence for the same strategy name.
+    /// </summary>
+    private static readonly HashSet<string> LowercaseDisplayTokens = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "a",
+        "about",
+        "above",
+        "across",
+        "after",
+        "against",
+        "along",
+        "among",
+        "an",
+        "and",
+        "around",
+        "as",
+        "at",
+        "before",
+        "behind",
+        "below",
+        "beneath",
+        "beside",
+        "between",
+        "beyond",
+        "by",
+        "despite",
+        "down",
+        "during",
+        "except",
+        "for",
+        "from",
+        "in",
+        "inside",
+        "into",
+        "like",
+        "near",
+        "of",
+        "off",
+        "on",
+        "onto",
+        "opposite",
+        "or",
+        "out",
+        "outside",
+        "over",
+        "past",
+        "round",
+        "since",
+        "than",
+        "the",
+        "through",
+        "to",
+        "towards",
+        "under",
+        "underneath",
+        "unlike",
+        "until",
+        "up",
+        "upon",
+        "via",
+        "with",
+        "within",
+        "without",
+    };
 
     /// <summary>
     /// Formats the hint sentence for <paramref name="strategyName"/>.
@@ -39,13 +106,16 @@ public static class CustomViewAuthorizationHintFormatter
 
     /// <summary>
     /// Converts a <c>{BasisResource}With{SomeDescription}</c> strategy name into its display text by
-    /// splitting on camel-case boundaries and lowercasing the <c>With</c> separator:
-    /// <c>StudentWithCTECourseEnrollments</c> becomes <c>Student with CTE Course Enrollments</c>.
+    /// splitting on camel-case boundaries and lowercasing the <c>With</c> separator and the other
+    /// articles, conjunctions, and prepositions ODS lowercases:
+    /// <c>StudentWithCTECourseEnrollments</c> becomes <c>Student with CTE Course Enrollments</c> and
+    /// <c>EducationOrganizationWithACategoryContainingAnSWord</c> becomes
+    /// <c>Education Organization with a Category Containing an S Word</c>.
     /// </summary>
     /// <remarks>
-    /// Acronym runs survive as single words (<c>CTE</c>, not <c>C T E</c>). Every token that is exactly
-    /// <c>With</c> is lowercased, not only the convention's separator, so a description that itself contains
-    /// <c>With</c> still reads as prose.
+    /// Acronym runs survive as single words (<c>CTE</c>, not <c>C T E</c>). Every token found in
+    /// <see cref="LowercaseDisplayTokens"/> is lowercased wherever it appears, so a description that itself
+    /// contains <c>With</c>, <c>A</c>, or <c>Of</c> still reads as prose, exactly as it does in ODS.
     /// </remarks>
     public static string FormatDisplayText(string strategyName)
     {
@@ -56,9 +126,7 @@ public static class CustomViewAuthorizationHintFormatter
         return string.Join(
             ' ',
             tokens.Select(static token =>
-                string.Equals(token, WithToken, StringComparison.Ordinal)
-                    ? token.ToLower(CultureInfo.InvariantCulture)
-                    : token
+                LowercaseDisplayTokens.Contains(token) ? token.ToLower(CultureInfo.InvariantCulture) : token
             )
         );
     }
@@ -112,6 +180,56 @@ public static class CustomViewAuthorizationHintFormatter
         // Closing an acronym run: the current uppercase letter starts the next word when a lowercase
         // letter follows it.
         return char.IsUpper(previousCharacter) && index + 1 < value.Length && char.IsLower(value[index + 1]);
+    }
+
+    /// <summary>
+    /// Formats the security-configuration hint for
+    /// <see cref="RelationshipAuthorizationFailureKind.CustomViewBasisNotIdentifyingOrSecurable"/>: the
+    /// ReadChanges custom-view path from <paramref name="subjectResource"/> to <paramref name="basisResource"/>
+    /// leaves the subject through <paramref name="firstHopReferenceName"/>, a reference that is neither part of
+    /// the subject's identity nor one of its securable elements, so its old values are not on the tombstone.
+    /// Mirrors the ODS "Non-identifying properties" <c>SecurityConfigurationException</c> wording
+    /// (change-queries.md §"Design: error behavior").
+    /// </summary>
+    public static string FormatBasisNotIdentifyingOrSecurable(
+        string firstHopReferenceName,
+        QualifiedResourceName subjectResource,
+        QualifiedResourceName basisResource
+    )
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(firstHopReferenceName);
+
+        return $"The reference '{firstHopReferenceName}' on '{subjectResource.ProjectName}.{subjectResource.ResourceName}' "
+            + $"leads to custom view basis '{basisResource.ProjectName}.{basisResource.ResourceName}' but is neither an "
+            + "identifying property nor a securable element of the subject. This is not supported by Change Queries, "
+            + "which only track deleted/changed values of identifying and securable properties. "
+            + "Should a different authorization strategy be used?";
+    }
+
+    /// <summary>
+    /// <c>ReadChanges</c> only: the basis is a descriptor reached through one or more identity references, and
+    /// the descriptor property is not part of the identity of the resource that carries it, so no tombstone
+    /// column holds its value. The same ODS "Non-identifying properties" rule as
+    /// <see cref="FormatBasisNotIdentifyingOrSecurable"/>, located at the intermediate resource.
+    /// </summary>
+    public static string FormatDescriptorBasisNotIdentifyingOnIntermediate(
+        string descriptorPropertyName,
+        QualifiedResourceName intermediateResource,
+        string firstHopReferenceName,
+        QualifiedResourceName subjectResource,
+        QualifiedResourceName basisResource
+    )
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(descriptorPropertyName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(firstHopReferenceName);
+
+        string intermediate = $"{intermediateResource.ProjectName}.{intermediateResource.ResourceName}";
+        return $"The descriptor property '{descriptorPropertyName}' on '{intermediate}', reached from "
+            + $"'{subjectResource.ProjectName}.{subjectResource.ResourceName}' through '{firstHopReferenceName}', "
+            + $"leads to custom view basis '{basisResource.ProjectName}.{basisResource.ResourceName}' but is not an "
+            + $"identifying property of '{intermediate}', so the subject's tombstone does not store its value. "
+            + "This is not supported by Change Queries, which only track deleted/changed values of identifying and "
+            + "securable properties. Should a different authorization strategy be used?";
     }
 
     private static string SelectArticle(string displayText) =>

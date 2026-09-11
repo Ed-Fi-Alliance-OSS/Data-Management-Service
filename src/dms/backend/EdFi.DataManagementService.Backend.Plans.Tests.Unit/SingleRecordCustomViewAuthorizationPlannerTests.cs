@@ -543,7 +543,7 @@ public class Given_SingleRecordCustomViewAuthorizationPlanner
         checks.Should().HaveCount(2);
         checks[0].PathToBasisResource[^1].TargetTable.Should().Be(new DbTableName(DmsSchema, "Descriptor"));
         checks[0].ReadableSecurableElements.Should().Equal("TransportationTypeDescriptor");
-        checks[0].FailureHint.Should().Be("You may need a Transportation Type Descriptor with A Bus.");
+        checks[0].FailureHint.Should().Be("You may need a Transportation Type Descriptor with a Bus.");
         checks[1]
             .CheckTarget.Should()
             .BeOfType<CustomViewAuthorizationCheckTarget.Proposed>()
@@ -655,8 +655,10 @@ public class Given_SingleRecordCustomViewAuthorizationPlanner
     }
 
     [Test]
-    public void It_should_fail_closed_for_a_write_whose_basis_is_reached_only_through_a_child_collection()
+    public void It_should_report_no_join_path_for_a_write_whose_basis_is_reached_only_through_a_child_collection()
     {
+        // ODS matches basis identifier properties by name on the subject root entity only, so a route
+        // through a child collection table is no join path at all, for every operation.
         var (mappingSet, subject) = ChildCollectionBasisFixture();
 
         var outcome = SingleRecordCustomViewAuthorizationPlanner.Plan(
@@ -674,54 +676,36 @@ public class Given_SingleRecordCustomViewAuthorizationPlanner
         securityConfiguration
             .Failures[0]
             .FailureKind.Should()
-            .Be(RelationshipAuthorizationFailureKind.MissingProposedCustomViewRootBinding);
-    }
-
-    [Test]
-    public void It_should_locate_the_child_path_failure_on_the_terminal_steps_own_table()
-    {
-        // A 3-hop basis path: Section.DocumentId -> SectionStudent -> StudentSchoolAssociation -> Student.
-        // The reported location must be a table/column pair from the same step; pairing the first hop's
-        // table with the terminal hop's column would name a column that table does not have.
-        var (mappingSet, subject) = ChildCollectionIntermediateBasisFixture();
-
-        var outcome = SingleRecordCustomViewAuthorizationPlanner.Plan(
-            mappingSet,
-            subject,
-            [Strategy("StudentWithCTECourseEnrollments", "Student")],
-            NamespaceAuthorizationOperation.Update
-        );
-
-        var securityConfiguration = outcome
-            .Should()
-            .BeOfType<SingleRecordCustomViewAuthorizationPlanOutcome.SecurityConfiguration>()
-            .Subject;
+            .Be(RelationshipAuthorizationFailureKind.NoCustomViewJoinPath);
         securityConfiguration
             .Failures[0]
-            .FailureKind.Should()
-            .Be(RelationshipAuthorizationFailureKind.MissingProposedCustomViewRootBinding);
-        var location = securityConfiguration.Failures[0].Location!;
-        location.Table.Should().Be(Table("StudentSchoolAssociation"));
-        location.Column.Should().Be(Col("Student_DocumentId"));
+            .Location!.AuthorizationObjectName.Should()
+            .Be("auth.StudentWithCTECourseEnrollments");
     }
 
     [Test]
-    public void It_should_still_plan_a_stored_only_check_for_a_child_collection_basis_path()
+    public void It_should_report_no_join_path_for_a_read_whose_basis_is_reached_only_through_a_child_collection()
     {
-        // A stored check can walk the child hop: the root DocumentId is known. Only a proposed check cannot,
-        // so GET-by-id and DELETE keep working where a write fails closed.
+        // Reads are no different from writes here: ODS never authorizes through collection items, so a
+        // stored check must not walk a child-table route either.
         var (mappingSet, subject) = ChildCollectionBasisFixture();
 
-        var checks = PlannedChecks(
+        var outcome = SingleRecordCustomViewAuthorizationPlanner.Plan(
             mappingSet,
             subject,
             [Strategy("StudentWithCTECourseEnrollments", "Student")],
             NamespaceAuthorizationOperation.ReadSingle
         );
 
-        checks.Should().ContainSingle();
-        checks[0].ValueSource.Should().Be(CustomViewAuthorizationCheckValueSource.Stored);
-        checks[0].PathToBasisResource.Should().HaveCount(2);
+        var securityConfiguration = outcome
+            .Should()
+            .BeOfType<SingleRecordCustomViewAuthorizationPlanOutcome.SecurityConfiguration>()
+            .Subject;
+        securityConfiguration.PlannedChecks.Should().BeEmpty();
+        securityConfiguration
+            .Failures[0]
+            .FailureKind.Should()
+            .Be(RelationshipAuthorizationFailureKind.NoCustomViewJoinPath);
     }
 
     /// <summary>
@@ -790,67 +774,6 @@ public class Given_SingleRecordCustomViewAuthorizationPlanner
         var student = CreateConcrete(2, "Student", CreateModel("Student", studentRoot));
 
         return (CreateMappingSet(subject, student), subject);
-    }
-
-    /// <summary>
-    /// A subject whose only route to Student crosses a child collection table and then an intermediate
-    /// resource: Section.DocumentId -> SectionStudent -> StudentSchoolAssociation -> Student.
-    /// </summary>
-    private static (
-        MappingSet MappingSet,
-        ConcreteResourceModel Subject
-    ) ChildCollectionIntermediateBasisFixture()
-    {
-        var studentRoot = CreateRootTable(Table("Student"));
-        var associationRoot = CreateRootTable(
-            Table("StudentSchoolAssociation"),
-            [DocumentFkColumn("Student_DocumentId", "Student")]
-        );
-        var associationBinding = new DocumentReferenceBinding(
-            true,
-            Path("$.studentReference"),
-            associationRoot.Table,
-            Col("Student_DocumentId"),
-            new QualifiedResourceName("Ed-Fi", "Student"),
-            [IdentityBinding("$.studentReference.studentUniqueId", "Student_StudentUniqueId")],
-            IsRequired: true
-        );
-        var association = CreateConcrete(
-            3,
-            "StudentSchoolAssociation",
-            CreateModel("StudentSchoolAssociation", associationRoot, [associationBinding])
-        );
-
-        var subjectRoot = CreateRootTable(Table("Section"));
-        var childTable = CreateChildTable(
-            Table("SectionStudent"),
-            [
-                new DbColumnModel(Col("DocumentId"), ColumnKind.Scalar, null, false, null, null),
-                DocumentFkColumn("StudentSchoolAssociation_DocumentId", "StudentSchoolAssociation"),
-            ]
-        );
-        var childBinding = new DocumentReferenceBinding(
-            true,
-            Path("$.students[*].studentSchoolAssociationReference"),
-            childTable.Table,
-            Col("StudentSchoolAssociation_DocumentId"),
-            new QualifiedResourceName("Ed-Fi", "StudentSchoolAssociation"),
-            [
-                IdentityBinding(
-                    "$.students[*].studentSchoolAssociationReference.studentUniqueId",
-                    "StudentSchoolAssociation_StudentUniqueId"
-                ),
-            ],
-            IsRequired: true
-        );
-        var subject = CreateConcrete(
-            1,
-            "Section",
-            CreateModel("Section", subjectRoot, [childBinding], tables: [subjectRoot, childTable])
-        );
-        var student = CreateConcrete(2, "Student", CreateModel("Student", studentRoot));
-
-        return (CreateMappingSet(subject, student, association), subject);
     }
 
     private static IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> PlannedChecks(

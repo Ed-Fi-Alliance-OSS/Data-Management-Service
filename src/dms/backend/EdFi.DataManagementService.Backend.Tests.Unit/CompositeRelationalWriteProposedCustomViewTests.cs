@@ -15,6 +15,7 @@ using EdFi.DataManagementService.Backend.Tests.Unit.Composite;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
+using Microsoft.Data.SqlClient;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Tests.Unit;
@@ -75,6 +76,31 @@ public class Given_The_Composite_Relational_Write_Proposed_Custom_View_Authoriza
         // 255901 is the merged SchoolId, not the stored target's DocumentId: a proposed check authorizes the
         // value that will be persisted.
         session.Commands[0].Parameters.Should().Contain(parameter => Equals(parameter.Value, 255901));
+    }
+
+    [Test]
+    public async Task It_types_the_proposed_basis_value_parameter_as_bigint_so_a_missing_value_still_binds()
+    {
+        var request = CreateRequest(CreateStoredAndProposedPlan("SchoolWithATag", storedIndex: 0));
+        var session = new ScriptedWriteSession(CreateReader(CreateAuthorizedTable()));
+
+        await CreateSut()
+            .ResolveAsync(
+                request,
+                CreateMergeResultWithMissingSchoolId(request),
+                RelationalWriteSecondCommandMode.AuthorizationOnly,
+                session
+            );
+
+        // The compiled check's first use of the parameter is "@p IS NULL". PostgreSQL cannot infer the type of
+        // a null parameter from that (42P08 "could not determine data type of parameter"), so the basis value
+        // must carry its type explicitly; the bound column is always a bigint DocumentId/DescriptorId.
+        var parameter = session.Commands[0].Parameters.Should().ContainSingle(p => p.Value == null).Subject;
+        parameter.ConfigureParameter.Should().NotBeNull();
+
+        var dbParameter = new SqlParameter();
+        parameter.ConfigureParameter!(dbParameter);
+        dbParameter.DbType.Should().Be(DbType.Int64);
     }
 
     [Test]
@@ -1216,6 +1242,31 @@ public class Given_The_Composite_Relational_Write_Proposed_Custom_View_Authoriza
             currentName: "uri://ed-fi.org/Survey",
             mergedName: "uri://ed-fi.org/Survey"
         );
+
+    /// <summary>A root row whose basis column (SchoolId) is unset, as when the request body omits the reference.</summary>
+    private static RelationalWriteMergeResult CreateMergeResultWithMissingSchoolId(
+        RelationalWriteExecutorRequest request
+    )
+    {
+        FlattenedWriteValue[] values =
+        [
+            new FlattenedWriteValue.Literal(345L),
+            new FlattenedWriteValue.Literal(DBNull.Value),
+            new FlattenedWriteValue.Literal("uri://ed-fi.org/Survey"),
+        ];
+        RelationalWriteMergedTableRow row = new(values, values);
+
+        return new(
+            [
+                new RelationalWriteMergedTableState(
+                    request.WritePlan.TablePlansInDependencyOrder[0],
+                    [row],
+                    [row]
+                ),
+            ],
+            supportsGuardedNoOp: true
+        );
+    }
 
     private static FakeDbException CreateAuth1Failure() => new("custom view denial", "P0001");
 

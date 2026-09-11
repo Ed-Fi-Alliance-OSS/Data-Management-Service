@@ -768,6 +768,7 @@ CREATE TABLE [tracked_changes_edfi].[School]
     [NewSchoolId] int NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_School_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_School] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -915,12 +916,14 @@ BEGIN
         INSERT INTO [tracked_changes_edfi].[School] (
             [OldSchoolId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[SchoolId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -937,13 +940,15 @@ BEGIN
                 [OldSchoolId],
                 [NewSchoolId],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[SchoolId],
                 i.[SchoolId],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]

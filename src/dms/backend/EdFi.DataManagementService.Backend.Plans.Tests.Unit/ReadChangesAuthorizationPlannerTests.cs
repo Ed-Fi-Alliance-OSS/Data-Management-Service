@@ -16,13 +16,13 @@ namespace EdFi.DataManagementService.Backend.Plans.Tests.Unit;
 public class ReadChangesAuthorizationPlannerTests
 {
     // Covers the unsupported-strategy AC: OwnershipBased, RelationshipsWithPeopleOnly,
-    // RelationshipsWithEdOrgsAndPeopleInverted, the live-only RelationshipsWithEdOrgsAndPeople, and a
-    // custom view-based name (deferred from v1) — all map to a 500 security-configuration outcome.
+    // RelationshipsWithEdOrgsAndPeopleInverted, and the live-only RelationshipsWithEdOrgsAndPeople — all
+    // map to a 500 security-configuration outcome. Custom view-based names are recognized since DMS-1193
+    // and covered by the custom-view section below.
     [TestCase("OwnershipBased")]
     [TestCase("RelationshipsWithPeopleOnly")]
     [TestCase("RelationshipsWithEdOrgsAndPeopleInverted")]
     [TestCase("RelationshipsWithEdOrgsAndPeople")]
-    [TestCase("SchoolWithStudents")]
     public void It_returns_security_configuration_for_unsupported_strategy(string strategyName)
     {
         var outcome = Plan(
@@ -140,6 +140,8 @@ public class ReadChangesAuthorizationPlannerTests
     [Test]
     public void It_resolves_top_level_student_self_document_id_for_including_deletes_relationships()
     {
+        // The person resource's own tombstone carries no self person value column; the self path
+        // resolves to the DocumentId system column (DMS-1193).
         var outcome = Plan(
             TopLevelStudentResource(),
             TopLevelStudentTrackedTable(),
@@ -152,9 +154,92 @@ public class ReadChangesAuthorizationPlannerTests
             .BeOfType<ReadChangesAuthorizationPlanOutcome.Plan>()
             .Subject.AuthorizationPlan.RelationshipChecks.Single()
             .Subjects.Single();
-        subject.TrackedOldColumn.Value.Should().Be("OldStudent_DocumentId");
+        subject.TrackedOldColumn.Value.Should().Be("DocumentId");
         subject.AuthView.Name.Should().Be("EducationOrganizationIdToStudentDocumentIdIncludingDeletes");
         subject.AuthViewSubjectColumn.Value.Should().Be("Student_DocumentId");
+    }
+
+    [Test]
+    public void It_resolves_top_level_student_self_document_id_for_students_only_including_deletes()
+    {
+        var outcome = Plan(
+            TopLevelStudentResource(),
+            TopLevelStudentTrackedTable(),
+            new RelationalAuthorizationContext([1L], []),
+            "RelationshipsWithStudentsOnlyIncludingDeletes"
+        );
+
+        var subject = outcome
+            .Should()
+            .BeOfType<ReadChangesAuthorizationPlanOutcome.Plan>()
+            .Subject.AuthorizationPlan.RelationshipChecks.Single()
+            .Subjects.Single();
+        subject.TrackedOldColumn.Value.Should().Be("DocumentId");
+        subject.AuthView.Name.Should().Be("EducationOrganizationIdToStudentDocumentIdIncludingDeletes");
+    }
+
+    [TestCase(
+        "Contact",
+        "$.contactUniqueId",
+        "ContactUniqueId",
+        "EducationOrganizationIdToContactDocumentIdIncludingDeletes",
+        "Contact_DocumentId"
+    )]
+    [TestCase(
+        "Staff",
+        "$.staffUniqueId",
+        "StaffUniqueId",
+        "EducationOrganizationIdToStaffDocumentIdIncludingDeletes",
+        "Staff_DocumentId"
+    )]
+    public void It_resolves_top_level_contact_and_staff_self_document_id_for_including_deletes_relationships(
+        string personResourceName,
+        string selfPath,
+        string uniqueIdColumn,
+        string expectedAuthView,
+        string expectedSubjectColumn
+    )
+    {
+        var outcome = Plan(
+            TopLevelPersonResource(personResourceName, selfPath, uniqueIdColumn),
+            TopLevelPersonTrackedTable(personResourceName, selfPath, uniqueIdColumn),
+            new RelationalAuthorizationContext([1L], []),
+            "RelationshipsWithEdOrgsAndPeopleIncludingDeletes"
+        );
+
+        var subject = outcome
+            .Should()
+            .BeOfType<ReadChangesAuthorizationPlanOutcome.Plan>()
+            .Subject.AuthorizationPlan.RelationshipChecks.Single()
+            .Subjects.Single();
+        subject.TrackedOldColumn.Value.Should().Be("DocumentId");
+        subject.AuthView.Name.Should().Be(expectedAuthView);
+        subject.AuthViewSubjectColumn.Value.Should().Be(expectedSubjectColumn);
+    }
+
+    [Test]
+    public void It_returns_security_configuration_when_a_self_person_table_lacks_the_document_id_system_column()
+    {
+        var trackedTable = TopLevelStudentTrackedTable();
+        var withoutDocumentId = trackedTable with
+        {
+            SystemColumns = trackedTable
+                .SystemColumns.Where(column => column.Role != TrackedChangeSystemColumnRole.DocumentId)
+                .ToList(),
+        };
+
+        var outcome = Plan(
+            TopLevelStudentResource(),
+            withoutDocumentId,
+            new RelationalAuthorizationContext([1L], []),
+            "RelationshipsWithEdOrgsAndPeopleIncludingDeletes"
+        );
+
+        outcome
+            .Should()
+            .BeOfType<ReadChangesAuthorizationPlanOutcome.SecurityConfiguration>()
+            .Subject.UnavailableStrategyNames.Should()
+            .Contain("RelationshipsWithEdOrgsAndPeopleIncludingDeletes");
     }
 
     [Test]
@@ -181,7 +266,7 @@ public class ReadChangesAuthorizationPlannerTests
             .BeOfType<ReadChangesAuthorizationPlanOutcome.Plan>()
             .Subject.AuthorizationPlan.RelationshipChecks.Single()
             .Subjects.Single();
-        subject.TrackedOldColumn.Value.Should().Be("OldStudent_DocumentId");
+        subject.TrackedOldColumn.Value.Should().Be("DocumentId");
         subject.AuthView.Name.Should().Be("EducationOrganizationIdToStudentDocumentIdIncludingDeletes");
         subject.AuthViewSubjectColumn.Value.Should().Be("Student_DocumentId");
     }
@@ -321,6 +406,709 @@ public class ReadChangesAuthorizationPlannerTests
         plan.NamespaceCheck!.TrackedOldNamespaceColumn.Value.Should().Be("OldNamespace");
         plan.NamespaceParameterization.Should().NotBeNull();
     }
+
+    // ---- Custom view-based strategies (DMS-1193) ----------------------------------------------
+
+    [Test]
+    public void It_plans_a_self_basis_custom_view_against_the_document_id_system_column()
+    {
+        // The plan carries no endpoint: /schools/deletes and /schools/keyChanges share this shape.
+        var outcome = PlanDs52("School", "SchoolWithAlternativeType");
+
+        var plan = outcome
+            .Should()
+            .BeOfType<ReadChangesAuthorizationPlanOutcome.Plan>()
+            .Subject.AuthorizationPlan;
+        plan.RelationshipChecks.Should().BeEmpty();
+        plan.NamespaceCheck.Should().BeNull();
+        plan.ClaimParameterization.Should().BeNull();
+        var check = plan.CustomViewChecks.Should().ContainSingle().Subject;
+        check.ConfiguredStrategy.StrategyName.Should().Be("SchoolWithAlternativeType");
+        check.AuthorizationLocalOrder.Should().Be(0);
+        check.BasisResource.Should().Be(new QualifiedResourceName("Ed-Fi", "School"));
+        check.View.Should().Be(new DbTableName(new DbSchemaName("auth"), "SchoolWithAlternativeType"));
+        check.ProbeBasisTombstones.Should().BeFalse();
+        check
+            .Basis.Should()
+            .BeOfType<ReadChangesCustomViewBasis.StoredDocumentId>()
+            .Which.TrackedColumn.Value.Should()
+            .Be("DocumentId");
+    }
+
+    [TestCase("StudentSchoolAssociation", "OldStudent_DocumentId")]
+    [TestCase("Grade", "OldStudentSectionAssociation_Student_DocumentId")]
+    [TestCase("Student", "DocumentId")]
+    public void It_plans_a_person_basis_custom_view_against_the_stored_person_document_id(
+        string resourceName,
+        string expectedTrackedColumn
+    )
+    {
+        var outcome = PlanDs52(resourceName, "StudentWithCTECourseEnrollments");
+
+        var check = outcome
+            .Should()
+            .BeOfType<ReadChangesAuthorizationPlanOutcome.Plan>()
+            .Subject.AuthorizationPlan.CustomViewChecks.Should()
+            .ContainSingle()
+            .Subject;
+        check.BasisResource.Should().Be(new QualifiedResourceName("Ed-Fi", "Student"));
+        check.View.Should().Be(new DbTableName(new DbSchemaName("auth"), "StudentWithCTECourseEnrollments"));
+        check.ProbeBasisTombstones.Should().BeFalse();
+        check
+            .Basis.Should()
+            .BeOfType<ReadChangesCustomViewBasis.StoredDocumentId>()
+            .Which.TrackedColumn.Value.Should()
+            .Be(expectedTrackedColumn);
+    }
+
+    [Test]
+    public void It_carries_the_including_deletes_suffix_as_the_probe_flag_and_keeps_the_full_view_name()
+    {
+        var outcome = PlanDs52("StudentSchoolAssociation", "StudentWithCTECourseEnrollmentsIncludingDeletes");
+
+        var check = outcome
+            .Should()
+            .BeOfType<ReadChangesAuthorizationPlanOutcome.Plan>()
+            .Subject.AuthorizationPlan.CustomViewChecks.Should()
+            .ContainSingle()
+            .Subject;
+        check.BasisResource.Should().Be(new QualifiedResourceName("Ed-Fi", "Student"));
+        check
+            .View.Should()
+            .Be(new DbTableName(new DbSchemaName("auth"), "StudentWithCTECourseEnrollmentsIncludingDeletes"));
+        check.ProbeBasisTombstones.Should().BeTrue();
+        check
+            .Basis.Should()
+            .BeOfType<ReadChangesCustomViewBasis.StoredDocumentId>()
+            .Which.TrackedColumn.Value.Should()
+            .Be("OldStudent_DocumentId");
+    }
+
+    [Test]
+    public void It_returns_custom_view_security_configuration_for_an_unknown_basis_resource()
+    {
+        var outcome = Plan(
+            EdOrgResource(),
+            EdOrgTrackedTable(),
+            new RelationalAuthorizationContext([1L], []),
+            "FooWithBar"
+        );
+
+        var failure = outcome
+            .Should()
+            .BeOfType<ReadChangesAuthorizationPlanOutcome.CustomViewSecurityConfiguration>()
+            .Subject;
+        failure.PlannedChecks.Should().BeEmpty();
+        var metadata = failure.Failures.Should().ContainSingle().Subject;
+        metadata.FailureKind.Should().Be(RelationshipAuthorizationFailureKind.UnknownCustomViewBasisResource);
+        metadata.Resource.Should().Be(_schoolResource);
+        metadata.ConfiguredStrategy.Should().Be(new ConfiguredAuthorizationStrategy("FooWithBar", 0));
+        metadata.RelationshipLocalOrder.Should().Be(0);
+        metadata
+            .Location.Should()
+            .BeEquivalentTo(new RelationshipAuthorizationFailureLocation(AuthorizationObjectName: "Foo"));
+        metadata.Hint.Should().Contain("{BasisResource}With...");
+    }
+
+    [Test]
+    public void It_keeps_the_unavailable_strategy_outcome_for_names_outside_the_custom_view_convention()
+    {
+        var outcome = Plan(
+            EdOrgResource(),
+            EdOrgTrackedTable(),
+            new RelationalAuthorizationContext([1L], []),
+            "Foo"
+        );
+
+        outcome
+            .Should()
+            .BeOfType<ReadChangesAuthorizationPlanOutcome.SecurityConfiguration>()
+            .Subject.UnavailableStrategyNames.Should()
+            .Equal("Foo");
+    }
+
+    [Test]
+    public void It_returns_no_custom_view_join_path_when_the_basis_is_unreachable_from_the_subject_root()
+    {
+        // School's root table carries no reference that reaches Grade.
+        var outcome = PlanDs52("School", "GradeWithSomething");
+
+        var failure = outcome
+            .Should()
+            .BeOfType<ReadChangesAuthorizationPlanOutcome.CustomViewSecurityConfiguration>()
+            .Subject;
+        failure.PlannedChecks.Should().BeEmpty();
+        var metadata = failure.Failures.Should().ContainSingle().Subject;
+        metadata.FailureKind.Should().Be(RelationshipAuthorizationFailureKind.NoCustomViewJoinPath);
+        metadata.ConfiguredStrategy!.StrategyName.Should().Be("GradeWithSomething");
+        metadata.RelationshipLocalOrder.Should().Be(0);
+        metadata
+            .Location.Should()
+            .BeEquivalentTo(
+                new RelationshipAuthorizationFailureLocation(
+                    AuthorizationObjectName: "auth.GradeWithSomething"
+                )
+            );
+        metadata.Hint.Should().Contain("'Ed-Fi.School'").And.Contain("'Ed-Fi.Grade'");
+    }
+
+    [Test]
+    public void It_carries_planned_checks_configured_ahead_of_a_later_unknown_basis()
+    {
+        var outcome = PlanDs52("School", "SchoolWithAlternativeType", "FooWithBar");
+
+        var failure = outcome
+            .Should()
+            .BeOfType<ReadChangesAuthorizationPlanOutcome.CustomViewSecurityConfiguration>()
+            .Subject;
+        var metadata = failure.Failures.Should().ContainSingle().Subject;
+        metadata.FailureKind.Should().Be(RelationshipAuthorizationFailureKind.UnknownCustomViewBasisResource);
+        metadata.ConfiguredStrategy.Should().Be(new ConfiguredAuthorizationStrategy("FooWithBar", 1));
+        metadata.RelationshipLocalOrder.Should().Be(1);
+        var planned = failure.PlannedChecks.Should().ContainSingle().Subject;
+        planned.ConfiguredStrategy.StrategyName.Should().Be("SchoolWithAlternativeType");
+        planned.AuthorizationLocalOrder.Should().Be(0);
+    }
+
+    [Test]
+    public void It_plans_custom_views_alongside_relationship_and_namespace_checks_in_configured_order()
+    {
+        var outcome = Plan(
+            CreateMappingSetWithResources(_schoolResource),
+            NamespaceSecuredEdOrgResource(),
+            NamespaceSecuredEdOrgTrackedTable(),
+            new RelationalAuthorizationContext([1L], ["uri://ed-fi.org/"]),
+            "SchoolWithAlternativeType",
+            AuthorizationStrategyNameConstants.NamespaceBased,
+            AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
+            "SchoolWithCharter"
+        );
+
+        var plan = outcome
+            .Should()
+            .BeOfType<ReadChangesAuthorizationPlanOutcome.Plan>()
+            .Subject.AuthorizationPlan;
+        plan.RelationshipChecks.Should()
+            .ContainSingle()
+            .Which.ConfiguredStrategy.StrategyName.Should()
+            .Be(AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly);
+        plan.ClaimParameterization.Should().NotBeNull();
+        plan.NamespaceCheck!.TrackedOldNamespaceColumn.Value.Should().Be("OldNamespace");
+        plan.NamespaceParameterization.Should().NotBeNull();
+        plan.CustomViewChecks.Select(static check => check.ConfiguredStrategy.StrategyName)
+            .Should()
+            .Equal("SchoolWithAlternativeType", "SchoolWithCharter");
+        plan.CustomViewChecks.Select(static check => check.AuthorizationLocalOrder).Should().Equal(0, 3);
+        plan.CustomViewChecks.Should().BeInAscendingOrder(static check => check.AuthorizationLocalOrder);
+        plan.CustomViewChecks.Should()
+            .AllSatisfy(check =>
+                check
+                    .Basis.Should()
+                    .BeOfType<ReadChangesCustomViewBasis.StoredDocumentId>()
+                    .Which.TrackedColumn.Value.Should()
+                    .Be("DocumentId")
+            );
+    }
+
+    [Test]
+    public void It_prefers_the_standard_edfi_basis_resource_through_the_shared_custom_view_resolution()
+    {
+        // Same arrangement as RelationshipAuthorizationStrategyClassifierTests
+        // .It_prefers_the_standard_edfi_basis_resource_when_custom_view_homographs_exist: the extension
+        // homograph is listed first, so a planner that reparsed the name itself would pick Sample.School
+        // (not the subject) and fail; resolving through the classifier lands on the Ed-Fi self basis.
+        var outcome = Plan(
+            CreateMappingSetWithResources(new("Sample", "School"), new("Ed-Fi", "School")),
+            EdOrgResource(),
+            EdOrgTrackedTable(),
+            new RelationalAuthorizationContext([1L], []),
+            "SchoolWithSomething"
+        );
+
+        var check = outcome
+            .Should()
+            .BeOfType<ReadChangesAuthorizationPlanOutcome.Plan>()
+            .Subject.AuthorizationPlan.CustomViewChecks.Should()
+            .ContainSingle()
+            .Subject;
+        check.BasisResource.Should().Be(new QualifiedResourceName("Ed-Fi", "School"));
+        check
+            .Basis.Should()
+            .BeOfType<ReadChangesCustomViewBasis.StoredDocumentId>()
+            .Which.TrackedColumn.Value.Should()
+            .Be("DocumentId");
+    }
+
+    // ---- Custom view-based strategies: live seek and tombstone probe (DMS-1193, Task 46) --------------
+
+    [Test]
+    public void It_plans_a_direct_basis_custom_view_as_a_live_seek_paired_on_the_tracked_old_key()
+    {
+        // StudentSchoolAssociation -> School: one identity reference, one key part, no probe without the suffix.
+        var outcome = PlanDs52("StudentSchoolAssociation", "SchoolWithAlternativeType");
+
+        var check = SingleCustomViewCheck(outcome);
+        check.BasisResource.Should().Be(new QualifiedResourceName("Ed-Fi", "School"));
+        check.ProbeBasisTombstones.Should().BeFalse();
+        check
+            .Basis.Should()
+            .BeEquivalentTo(
+                new ReadChangesCustomViewBasis.LiveSeek(
+                    new DbTableName(_edfiSchema, "School"),
+                    _documentId,
+                    [KeyPair("SchoolId", "OldSchoolId_Unified")],
+                    [],
+                    []
+                )
+            );
+    }
+
+    [Test]
+    public void It_pairs_a_transitive_basis_through_each_hops_identity_bindings_to_the_subjects_canonical_columns()
+    {
+        // Grade -> StudentSectionAssociation -> Section -> CourseOffering. CourseOffering's schoolId reaches the
+        // subject twice (via Section's school and session references) and lands on the one unified column, so
+        // the pair is recorded once.
+        var outcome = PlanDs52("Grade", "CourseOfferingWithX");
+
+        var check = SingleCustomViewCheck(outcome);
+        check.BasisResource.Should().Be(new QualifiedResourceName("Ed-Fi", "CourseOffering"));
+        check
+            .Basis.Should()
+            .BeEquivalentTo(
+                new ReadChangesCustomViewBasis.LiveSeek(
+                    new DbTableName(_edfiSchema, "CourseOffering"),
+                    _documentId,
+                    [
+                        KeyPair("LocalCourseCode", "OldStudentSectionAssociation_LocalCourseCode"),
+                        KeyPair("SchoolId_Unified", "OldSchoolId_Unified"),
+                        KeyPair("Session_SchoolYear", "OldSchoolYear_Unified"),
+                        KeyPair("Session_SessionName", "OldStudentSectionAssociation_SessionName"),
+                    ],
+                    [],
+                    []
+                ),
+                options => options.WithStrictOrdering()
+            );
+    }
+
+    [Test]
+    public void It_pairs_a_descriptor_identity_part_with_the_tombstones_old_namespace_and_code_value()
+    {
+        // GradingPeriod's identity is gradingPeriodDescriptor + gradingPeriodName + schoolId + schoolYear.
+        var outcome = PlanDs52("Grade", "GradingPeriodWithX");
+
+        var check = SingleCustomViewCheck(outcome);
+        check
+            .Basis.Should()
+            .BeEquivalentTo(
+                new ReadChangesCustomViewBasis.LiveSeek(
+                    new DbTableName(_edfiSchema, "GradingPeriod"),
+                    _documentId,
+                    [
+                        KeyPair("GradingPeriodName", "OldGradingPeriodGradingPeriod_GradingPeriodName"),
+                        KeyPair("School_SchoolId", "OldSchoolId_Unified"),
+                        KeyPair("SchoolYear_SchoolYear", "OldSchoolYear_Unified"),
+                    ],
+                    [
+                        new ReadChangesCustomViewDescriptorKeyPair(
+                            new DbColumnName("GradingPeriodDescriptor_DescriptorId"),
+                            new DbColumnName(
+                                "OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace"
+                            ),
+                            new DbColumnName(
+                                "OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue"
+                            ),
+                            new QualifiedResourceName("Ed-Fi", "GradingPeriodDescriptor")
+                        ),
+                    ],
+                    []
+                ),
+                options => options.WithStrictOrdering()
+            );
+    }
+
+    [Test]
+    public void It_probes_a_descriptor_identity_part_by_comparing_old_namespace_and_code_value_directly()
+    {
+        var outcome = PlanDs52("Grade", "GradingPeriodWithXIncludingDeletes");
+
+        var check = SingleCustomViewCheck(outcome);
+        check.ProbeBasisTombstones.Should().BeTrue();
+        var seek = check.Basis.Should().BeOfType<ReadChangesCustomViewBasis.LiveSeek>().Subject;
+        seek.ProbeArms.Should()
+            .ContainSingle()
+            .Which.Should()
+            .BeEquivalentTo(
+                new ReadChangesCustomViewProbeArm(
+                    new DbTableName(_trackedSchema, "GradingPeriod"),
+                    _documentId,
+                    [
+                        KeyPair("OldGradingPeriodName", "OldGradingPeriodGradingPeriod_GradingPeriodName"),
+                        KeyPair("OldSchool_SchoolId", "OldSchoolId_Unified"),
+                        KeyPair("OldSchoolYear_SchoolYear", "OldSchoolYear_Unified"),
+                    ],
+                    [
+                        new ReadChangesCustomViewProbeDescriptorKeyPair(
+                            new DbColumnName("OldGradingPeriodDescriptor_Namespace"),
+                            new DbColumnName("OldGradingPeriodDescriptor_CodeValue"),
+                            new DbColumnName(
+                                "OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace"
+                            ),
+                            new DbColumnName(
+                                "OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue"
+                            )
+                        ),
+                    ]
+                ),
+                options => options.WithStrictOrdering()
+            );
+    }
+
+    [Test]
+    public void It_seeks_an_abstract_basis_through_the_union_view_identity_column()
+    {
+        // ReportCard references the abstract EducationOrganization directly by identity.
+        var outcome = PlanDs52("ReportCard", "EducationOrganizationWithX");
+
+        var check = SingleCustomViewCheck(outcome);
+        check.BasisResource.Should().Be(new QualifiedResourceName("Ed-Fi", "EducationOrganization"));
+        check
+            .Basis.Should()
+            .BeEquivalentTo(
+                new ReadChangesCustomViewBasis.LiveSeek(
+                    new DbTableName(_edfiSchema, "EducationOrganization_View"),
+                    _documentId,
+                    [KeyPair("EducationOrganizationId", "OldEducationOrganization_EducationOrganizationId")],
+                    [],
+                    []
+                )
+            );
+    }
+
+    [Test]
+    public void It_probes_an_abstract_basis_with_one_arm_per_concrete_member_tracked_change_table()
+    {
+        var outcome = PlanDs52("ReportCard", "EducationOrganizationWithXIncludingDeletes");
+
+        var seek = SingleCustomViewCheck(outcome)
+            .Basis.Should()
+            .BeOfType<ReadChangesCustomViewBasis.LiveSeek>()
+            .Subject;
+        // DS 5.2 has nine concrete EducationOrganization members, in union-arm order.
+        seek.ProbeArms.Should().HaveCount(9);
+        seek.ProbeArms.Select(static arm => arm.BasisTrackedChangeTable.Name)
+            .Should()
+            .Equal(
+                "CommunityOrganization",
+                "CommunityProvider",
+                "EducationOrganizationNetwork",
+                "EducationServiceCenter",
+                "LocalEducationAgency",
+                "OrganizationDepartment",
+                "PostSecondaryInstitution",
+                "School",
+                "StateEducationAgency"
+            );
+        seek.ProbeArms.Should()
+            .AllSatisfy(arm =>
+            {
+                arm.BasisTrackedChangeTable.Schema.Should().Be(_trackedSchema);
+                arm.BasisDocumentIdColumn.Should().Be(_documentId);
+                arm.DescriptorKeyPairs.Should().BeEmpty();
+            });
+        seek.ProbeArms[7]
+            .Should()
+            .BeEquivalentTo(
+                new ReadChangesCustomViewProbeArm(
+                    new DbTableName(_trackedSchema, "School"),
+                    _documentId,
+                    [KeyPair("OldSchoolId", "OldEducationOrganization_EducationOrganizationId")],
+                    []
+                )
+            );
+        seek.ProbeArms[4]
+            .KeyPairs.Should()
+            .Equal(KeyPair("OldLocalEducationAgencyId", "OldEducationOrganization_EducationOrganizationId"));
+    }
+
+    [Test]
+    public void It_accepts_a_securable_non_identity_first_hop_whose_value_the_tombstone_stores()
+    {
+        // StudentAssessment's reportedSchoolReference is optional and not part of the identity, but it is an
+        // EducationOrganization securable element, so the (nullable) old value is on the tombstone.
+        var outcome = PlanDs52("StudentAssessment", "SchoolWithAlternativeType");
+
+        var check = SingleCustomViewCheck(outcome);
+        check
+            .Basis.Should()
+            .BeEquivalentTo(
+                new ReadChangesCustomViewBasis.LiveSeek(
+                    new DbTableName(_edfiSchema, "School"),
+                    _documentId,
+                    [KeyPair("SchoolId", "OldReportedSchool_SchoolId")],
+                    [],
+                    []
+                )
+            );
+    }
+
+    [Test]
+    public void It_adds_a_basis_tombstone_probe_arm_when_the_strategy_name_carries_the_suffix()
+    {
+        var outcome = PlanDs52("StudentSchoolAssociation", "SchoolWithAlternativeTypeIncludingDeletes");
+
+        var check = SingleCustomViewCheck(outcome);
+        check.ProbeBasisTombstones.Should().BeTrue();
+        check
+            .View.Should()
+            .Be(new DbTableName(new DbSchemaName("auth"), "SchoolWithAlternativeTypeIncludingDeletes"));
+        check
+            .Basis.Should()
+            .BeEquivalentTo(
+                new ReadChangesCustomViewBasis.LiveSeek(
+                    new DbTableName(_edfiSchema, "School"),
+                    _documentId,
+                    [KeyPair("SchoolId", "OldSchoolId_Unified")],
+                    [],
+                    [
+                        new ReadChangesCustomViewProbeArm(
+                            new DbTableName(_trackedSchema, "School"),
+                            _documentId,
+                            [KeyPair("OldSchoolId", "OldSchoolId_Unified")],
+                            []
+                        ),
+                    ]
+                )
+            );
+    }
+
+    [TestCase("Section", "LocationWithX", "locationReference", "$.locationReference", "Location")]
+    [TestCase("CourseOffering", "CourseWithX", "courseReference", "$.courseReference", "Course")]
+    [TestCase(
+        "StudentSchoolAssociation",
+        "CalendarWithX",
+        "calendarReference",
+        "$.calendarReference",
+        "Calendar"
+    )]
+    [TestCase("SectionAttendanceTakenEvent", "StaffWithX", "staffReference", "$.staffReference", "Staff")]
+    [TestCase(
+        "CourseTranscript",
+        "StaffWithX",
+        "responsibleTeacherStaffReference",
+        "$.responsibleTeacherStaffReference",
+        "Staff"
+    )]
+    public void It_fails_when_the_first_hop_is_neither_identifying_nor_securable(
+        string resourceName,
+        string strategyName,
+        string expectedReferenceName,
+        string expectedReferenceJsonPath,
+        string basisName
+    )
+    {
+        // The reference resolves on the live paths, but a tombstone only stores identifying and securable
+        // values, so nothing holds the basis key: the ODS "Non-identifying properties" rule, ReadChanges-only.
+        var outcome = PlanDs52(resourceName, strategyName);
+
+        var failure = outcome
+            .Should()
+            .BeOfType<ReadChangesAuthorizationPlanOutcome.CustomViewSecurityConfiguration>()
+            .Subject;
+        failure.PlannedChecks.Should().BeEmpty();
+        var metadata = failure.Failures.Should().ContainSingle().Subject;
+        metadata
+            .FailureKind.Should()
+            .Be(RelationshipAuthorizationFailureKind.CustomViewBasisNotIdentifyingOrSecurable);
+        metadata.Resource.Should().Be(new QualifiedResourceName("Ed-Fi", resourceName));
+        metadata.ConfiguredStrategy.Should().Be(new ConfiguredAuthorizationStrategy(strategyName, 0));
+        metadata.RelationshipLocalOrder.Should().Be(0);
+        metadata
+            .Location.Should()
+            .BeEquivalentTo(
+                new RelationshipAuthorizationFailureLocation(
+                    JsonPath: expectedReferenceJsonPath,
+                    ReadableName: expectedReferenceName,
+                    AuthorizationObjectName: $"auth.{strategyName}"
+                )
+            );
+        metadata
+            .Hint.Should()
+            .Be(
+                $"The reference '{expectedReferenceName}' on 'Ed-Fi.{resourceName}' leads to custom view basis 'Ed-Fi.{basisName}' "
+                    + "but is neither an identifying property nor a securable element of the subject. This is not supported by "
+                    + "Change Queries, which only track deleted/changed values of identifying and securable properties. "
+                    + "Should a different authorization strategy be used?"
+            );
+    }
+
+    [TestCase("StudentSchoolAssociation", "schoolReference", "$.schoolReference")]
+    [TestCase("AcademicWeek", "schoolReference", "$.schoolReference")]
+    public void It_fails_when_a_descriptor_basis_is_not_identifying_on_the_intermediate_resource(
+        string resourceName,
+        string expectedReferenceName,
+        string expectedReferenceJsonPath
+    )
+    {
+        // The live paths reach SchoolTypeDescriptor through the FK on School, but schoolTypeDescriptor is not
+        // part of School's identity, so the subject's tombstone never stores it. The planner must report the
+        // ODS "Non-identifying properties" rule as a typed failure instead of throwing.
+        var outcome = PlanDs52(resourceName, "SchoolTypeDescriptorWithX");
+
+        var failure = outcome
+            .Should()
+            .BeOfType<ReadChangesAuthorizationPlanOutcome.CustomViewSecurityConfiguration>()
+            .Subject;
+        failure.PlannedChecks.Should().BeEmpty();
+        var metadata = failure.Failures.Should().ContainSingle().Subject;
+        metadata
+            .FailureKind.Should()
+            .Be(RelationshipAuthorizationFailureKind.CustomViewBasisNotIdentifyingOrSecurable);
+        metadata.Resource.Should().Be(new QualifiedResourceName("Ed-Fi", resourceName));
+        metadata
+            .ConfiguredStrategy.Should()
+            .Be(new ConfiguredAuthorizationStrategy("SchoolTypeDescriptorWithX", 0));
+        metadata.RelationshipLocalOrder.Should().Be(0);
+        metadata
+            .Location.Should()
+            .BeEquivalentTo(
+                new RelationshipAuthorizationFailureLocation(
+                    JsonPath: expectedReferenceJsonPath,
+                    ReadableName: expectedReferenceName,
+                    AuthorizationObjectName: "auth.SchoolTypeDescriptorWithX"
+                )
+            );
+        metadata
+            .Hint.Should()
+            .Be(
+                $"The descriptor property 'schoolTypeDescriptor' on 'Ed-Fi.School', reached from 'Ed-Fi.{resourceName}' "
+                    + "through 'schoolReference', leads to custom view basis 'Ed-Fi.SchoolTypeDescriptor' but is not an "
+                    + "identifying property of 'Ed-Fi.School', so the subject's tombstone does not store its value. This is "
+                    + "not supported by Change Queries, which only track deleted/changed values of identifying and securable "
+                    + "properties. Should a different authorization strategy be used?"
+            );
+    }
+
+    [Test]
+    public void It_applies_the_first_hop_rule_to_the_path_the_live_planner_prefers_for_an_abstract_basis()
+    {
+        // auth.md ranks StudentSchoolAssociation -> GraduationPlan -> EducationOrganization ahead of the
+        // direct School union-arm route. ReadChanges follows the same preferred path, and its first hop
+        // (graduationPlanReference) is neither identifying nor securable, so the view fails here even though
+        // School's id is on the tombstone. Authorizing through a different path than the live reads would
+        // make the same view admit different rows on the two surfaces.
+        var outcome = PlanDs52("StudentSchoolAssociation", "EducationOrganizationWithX");
+
+        var metadata = outcome
+            .Should()
+            .BeOfType<ReadChangesAuthorizationPlanOutcome.CustomViewSecurityConfiguration>()
+            .Subject.Failures.Should()
+            .ContainSingle()
+            .Subject;
+        metadata
+            .FailureKind.Should()
+            .Be(RelationshipAuthorizationFailureKind.CustomViewBasisNotIdentifyingOrSecurable);
+        metadata.Location!.ReadableName.Should().Be("graduationPlanReference");
+        metadata
+            .Hint.Should()
+            .Contain("'Ed-Fi.StudentSchoolAssociation'")
+            .And.Contain("'Ed-Fi.EducationOrganization'");
+    }
+
+    [Test]
+    public void It_plans_a_descriptor_basis_as_a_seek_of_the_shared_descriptor_table_on_old_namespace_and_code_value()
+    {
+        // The tombstone stores the descriptor's old Namespace/CodeValue, never its DocumentId, so the check
+        // seeks dms.Descriptor (discriminated by the descriptor resource) rather than reading a stored id.
+        var outcome = PlanDs52("Grade", "GradeTypeDescriptorWithX");
+
+        var check = SingleCustomViewCheck(outcome);
+        check.BasisResource.Should().Be(new QualifiedResourceName("Ed-Fi", "GradeTypeDescriptor"));
+        check.ProbeBasisTombstones.Should().BeFalse();
+        check
+            .Basis.Should()
+            .BeEquivalentTo(
+                new ReadChangesCustomViewBasis.DescriptorSeek(
+                    new QualifiedResourceName("Ed-Fi", "GradeTypeDescriptor"),
+                    new DbColumnName("OldGradeTypeDescriptor_Namespace"),
+                    new DbColumnName("OldGradeTypeDescriptor_CodeValue"),
+                    null
+                )
+            );
+    }
+
+    [Test]
+    public void It_probes_the_shared_descriptor_tombstone_table_for_a_suffixed_descriptor_basis()
+    {
+        // Grade's gradingPeriodReference carries the GradingPeriodDescriptor identity part; the probe reads
+        // the one shared descriptor tracked-change table, discriminated the same way as the live seek.
+        var outcome = PlanDs52("Grade", "GradingPeriodDescriptorWithXIncludingDeletes");
+
+        var check = SingleCustomViewCheck(outcome);
+        check.ProbeBasisTombstones.Should().BeTrue();
+        check
+            .Basis.Should()
+            .BeEquivalentTo(
+                new ReadChangesCustomViewBasis.DescriptorSeek(
+                    new QualifiedResourceName("Ed-Fi", "GradingPeriodDescriptor"),
+                    new DbColumnName("OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace"),
+                    new DbColumnName("OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue"),
+                    new ReadChangesCustomViewDescriptorProbeArm(
+                        new DbTableName(_trackedSchema, "Descriptor"),
+                        _documentId,
+                        new DbColumnName("Discriminator"),
+                        new DbColumnName("OldNamespace"),
+                        new DbColumnName("OldCodeValue")
+                    )
+                )
+            );
+    }
+
+    [Test]
+    public void It_fails_a_non_identifying_descriptor_basis_with_the_first_hop_rule()
+    {
+        // performanceBaseConversionDescriptor is optional on Grade and not part of its identity, so the
+        // tombstone has no Namespace/CodeValue for it: ODS's "Non-identifying properties" outcome.
+        var outcome = PlanDs52("Grade", "PerformanceBaseConversionDescriptorWithX");
+
+        var metadata = outcome
+            .Should()
+            .BeOfType<ReadChangesAuthorizationPlanOutcome.CustomViewSecurityConfiguration>()
+            .Subject.Failures.Should()
+            .ContainSingle()
+            .Subject;
+        metadata
+            .FailureKind.Should()
+            .Be(RelationshipAuthorizationFailureKind.CustomViewBasisNotIdentifyingOrSecurable);
+        metadata
+            .Location.Should()
+            .BeEquivalentTo(
+                new RelationshipAuthorizationFailureLocation(
+                    JsonPath: "$.performanceBaseConversionDescriptor",
+                    ReadableName: "performanceBaseConversionDescriptor",
+                    AuthorizationObjectName: "auth.PerformanceBaseConversionDescriptorWithX"
+                )
+            );
+        metadata
+            .Hint.Should()
+            .StartWith(
+                "The reference 'performanceBaseConversionDescriptor' on 'Ed-Fi.Grade' leads to custom view basis 'Ed-Fi.PerformanceBaseConversionDescriptor'"
+            );
+    }
+
+    private static ReadChangesCustomViewCheckSpec SingleCustomViewCheck(
+        ReadChangesAuthorizationPlanOutcome outcome
+    ) =>
+        outcome
+            .Should()
+            .BeOfType<ReadChangesAuthorizationPlanOutcome.Plan>()
+            .Subject.AuthorizationPlan.CustomViewChecks.Should()
+            .ContainSingle()
+            .Subject;
+
+    private static ReadChangesCustomViewKeyPair KeyPair(string basisColumn, string trackedOldColumn) =>
+        new(new DbColumnName(basisColumn), new DbColumnName(trackedOldColumn));
 
     // ---- Test wrapper -------------------------------------------------------
 
@@ -623,27 +1411,38 @@ public class ReadChangesAuthorizationPlannerTests
     /// <summary>
     /// A top-level Student resource whose Student securable path is the resource's own identity path.
     /// </summary>
-    private static ConcreteResourceModel TopLevelStudentResource()
+    private static ConcreteResourceModel TopLevelStudentResource() =>
+        TopLevelPersonResource("Student", "$.studentUniqueId", "StudentUniqueId");
+
+    /// <summary>
+    /// A top-level person resource (Student, Contact, or Staff) whose person securable path is the
+    /// resource's own unique-id identity path.
+    /// </summary>
+    private static ConcreteResourceModel TopLevelPersonResource(
+        string personResourceName,
+        string selfPath,
+        string uniqueIdColumn
+    )
     {
-        var studentResource = new QualifiedResourceName("Ed-Fi", "Student");
+        var personResource = new QualifiedResourceName("Ed-Fi", personResourceName);
         var root = new DbTableModel(
-            new DbTableName(_edfiSchema, "Student"),
+            new DbTableName(_edfiSchema, personResourceName),
             Path("$"),
-            new TableKey("PK_Student", [new DbKeyColumn(_documentId, ColumnKind.Scalar)]),
+            new TableKey($"PK_{personResourceName}", [new DbKeyColumn(_documentId, ColumnKind.Scalar)]),
             [
                 new DbColumnModel(
-                    new DbColumnName("StudentUniqueId"),
+                    new DbColumnName(uniqueIdColumn),
                     ColumnKind.Scalar,
                     new RelationalScalarType(ScalarKind.String, 32),
                     false,
-                    Path("$.studentUniqueId"),
+                    Path(selfPath),
                     null
                 ),
             ],
             []
         );
         var model = new RelationalResourceModel(
-            studentResource,
+            personResource,
             _edfiSchema,
             ResourceStorageKind.RelationalTables,
             root,
@@ -651,13 +1450,20 @@ public class ReadChangesAuthorizationPlannerTests
             [],
             []
         );
+        var securableElements = personResourceName switch
+        {
+            "Student" => new ResourceSecurableElements([], [], [selfPath], [], []),
+            "Contact" => new ResourceSecurableElements([], [], [], [selfPath], []),
+            "Staff" => new ResourceSecurableElements([], [], [], [], [selfPath]),
+            _ => throw new ArgumentOutOfRangeException(nameof(personResourceName), personResourceName, null),
+        };
         return new ConcreteResourceModel(
-            new ResourceKeyEntry(8, studentResource, "1.0", false),
+            new ResourceKeyEntry(8, personResource, "1.0", false),
             ResourceStorageKind.RelationalTables,
             model
         )
         {
-            SecurableElements = new ResourceSecurableElements([], [], ["$.studentUniqueId"], [], []),
+            SecurableElements = securableElements,
         };
     }
 
@@ -807,6 +1613,13 @@ public class ReadChangesAuthorizationPlannerTests
                     IsPrimaryKey: false
                 ),
                 new TrackedChangeSystemColumnInfo(
+                    TrackedChangeSystemColumnRole.DocumentId,
+                    new DbColumnName("DocumentId"),
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    IsPrimaryKey: false
+                ),
+                new TrackedChangeSystemColumnInfo(
                     TrackedChangeSystemColumnRole.CreatedAt,
                     new DbColumnName("CreatedAt"),
                     new RelationalScalarType(ScalarKind.Int64),
@@ -861,6 +1674,13 @@ public class ReadChangesAuthorizationPlannerTests
                     IsPrimaryKey: false
                 ),
                 new TrackedChangeSystemColumnInfo(
+                    TrackedChangeSystemColumnRole.DocumentId,
+                    new DbColumnName("DocumentId"),
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    IsPrimaryKey: false
+                ),
+                new TrackedChangeSystemColumnInfo(
                     TrackedChangeSystemColumnRole.CreatedAt,
                     new DbColumnName("CreatedAt"),
                     new RelationalScalarType(ScalarKind.Int64),
@@ -870,30 +1690,51 @@ public class ReadChangesAuthorizationPlannerTests
             ],
             PrimaryKeyColumns: [],
             DescriptorJoins: [],
-            PersonJoins: [new TrackedChangePersonJoinInfo("Student", SecurableElementKind.Student, [])]
+            PersonJoins:
+            [
+                new TrackedChangePersonJoinInfo(
+                    "Student",
+                    SecurableElementKind.Student,
+                    [],
+                    new DbTableName(_edfiSchema, "Student"),
+                    new DbColumnName("StudentUniqueId"),
+                    new DbColumnName("Student_StudentUniqueId")
+                ),
+            ]
         );
 
     /// <summary>
-    /// A tracked-change table carrying a direct self <c>OldStudent_DocumentId</c> person column for a
-    /// top-level Student resource.
+    /// A tracked-change table for a top-level Student resource: the identity scalar only, no person value
+    /// column (the self person path is served by the <c>DocumentId</c> system column).
     /// </summary>
     private static TrackedChangeTableInfo TopLevelStudentTrackedTable() =>
+        TopLevelPersonTrackedTable("Student", "$.studentUniqueId", "StudentUniqueId");
+
+    /// <summary>
+    /// A tracked-change table for a top-level person resource (Student, Contact, or Staff) in the
+    /// DMS-1193 shape: identity scalar value column, no person joins, DocumentId system column.
+    /// </summary>
+    private static TrackedChangeTableInfo TopLevelPersonTrackedTable(
+        string personResourceName,
+        string selfPath,
+        string uniqueIdColumn
+    ) =>
         new(
-            Table: new DbTableName(_trackedSchema, "Student"),
+            Table: new DbTableName(_trackedSchema, personResourceName),
             Kind: TrackedChangeTableKind.Resource,
-            SourceTable: new DbTableName(_edfiSchema, "Student"),
+            SourceTable: new DbTableName(_edfiSchema, personResourceName),
             ValueColumnsInTableOrder:
             [
                 new TrackedChangeColumnInfo(
-                    OldColumnName: new DbColumnName("OldStudent_DocumentId"),
-                    NewColumnName: new DbColumnName("NewStudent_DocumentId"),
-                    SourceJsonPath: "$.studentUniqueId",
-                    CanonicalStorageColumn: new DbColumnName("DocumentId"),
+                    OldColumnName: new DbColumnName($"Old{uniqueIdColumn}"),
+                    NewColumnName: new DbColumnName($"New{uniqueIdColumn}"),
+                    SourceJsonPath: selfPath,
+                    CanonicalStorageColumn: null,
                     IsOldColumnNullable: false,
                     IsNewColumnNullable: true,
-                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
-                    Role: TrackedChangeColumnRole.PersonDocumentId,
-                    Origin: TrackedChangeColumnOrigin.SecurableElement
+                    ScalarType: new RelationalScalarType(ScalarKind.String, 32),
+                    Role: TrackedChangeColumnRole.Scalar,
+                    Origin: TrackedChangeColumnOrigin.Identity
                 ),
             ],
             SystemColumns: NamespaceSystemColumns(),
@@ -929,7 +1770,17 @@ public class ReadChangesAuthorizationPlannerTests
             SystemColumns: NamespaceSystemColumns(),
             PrimaryKeyColumns: [],
             DescriptorJoins: [],
-            PersonJoins: [new TrackedChangePersonJoinInfo("PrimaryStudent", SecurableElementKind.Student, [])]
+            PersonJoins:
+            [
+                new TrackedChangePersonJoinInfo(
+                    "PrimaryStudent",
+                    SecurableElementKind.Student,
+                    [],
+                    new DbTableName(_edfiSchema, "Student"),
+                    new DbColumnName("StudentUniqueId"),
+                    new DbColumnName("PrimaryStudentUniqueId")
+                ),
+            ]
         );
 
     /// <summary>
@@ -1008,6 +1859,13 @@ public class ReadChangesAuthorizationPlannerTests
                 IsPrimaryKey: false
             ),
             new TrackedChangeSystemColumnInfo(
+                TrackedChangeSystemColumnRole.DocumentId,
+                new DbColumnName("DocumentId"),
+                new RelationalScalarType(ScalarKind.Int64),
+                IsNullable: false,
+                IsPrimaryKey: false
+            ),
+            new TrackedChangeSystemColumnInfo(
                 TrackedChangeSystemColumnRole.CreatedAt,
                 new DbColumnName("CreatedAt"),
                 new RelationalScalarType(ScalarKind.Int64),
@@ -1050,6 +1908,204 @@ public class ReadChangesAuthorizationPlannerTests
         );
 
     private static JsonPathExpression Path(string canonical) => new(canonical, []);
+
+    // ---- Custom-view fixtures (DMS-1193) -----------------------------------------------------------
+
+    private static readonly Lazy<(DerivedRelationalModelSet ModelSet, MappingSet MappingSet)> _ds52 = new(
+        static () => Ds52FixtureHelper.BuildAndCompile(),
+        LazyThreadSafetyMode.ExecutionAndPublication
+    );
+
+    /// <summary>
+    /// Plans the named Ed-Fi resource of the authoritative DS 5.2 fixture with its derived tracked-change
+    /// table and one claim EdOrg id.
+    /// </summary>
+    private static ReadChangesAuthorizationPlanOutcome PlanDs52(
+        string resourceName,
+        params string[] strategyNames
+    )
+    {
+        (DerivedRelationalModelSet modelSet, MappingSet mappingSet) = _ds52.Value;
+        var resourceKey = new QualifiedResourceName("Ed-Fi", resourceName);
+        ConcreteResourceModel resource = modelSet.ConcreteResourcesInNameOrder.Single(r =>
+            r.ResourceKey.Resource == resourceKey
+        );
+        TrackedChangeTableInfo trackedChangeTable = modelSet.TrackedChangeTablesInNameOrder.Single(t =>
+            t.SourceTable == resource.RelationalModel.Root.Table
+        );
+
+        return Plan(
+            mappingSet,
+            resource,
+            trackedChangeTable,
+            new RelationalAuthorizationContext([1L], []),
+            strategyNames
+        );
+    }
+
+    /// <summary>
+    /// A mapping set whose effective schema lists the given resources (in that order) so custom-view
+    /// basis names resolve; mirrors <c>RelationshipAuthorizationStrategyClassifierTests.CreateMappingSet</c>,
+    /// including one project schema per distinct project in endpoint order.
+    /// </summary>
+    private static MappingSet CreateMappingSetWithResources(params QualifiedResourceName[] resources)
+    {
+        List<ProjectSchemaInfo> projectSchemasInEndpointOrder = [];
+        List<SchemaComponentInfo> schemaComponentsInEndpointOrder = [];
+        HashSet<string> seenProjectNames = [];
+
+        foreach (var resource in resources)
+        {
+            if (!seenProjectNames.Add(resource.ProjectName))
+            {
+                continue;
+            }
+
+            var isExtensionProject = !string.Equals(resource.ProjectName, "Ed-Fi", StringComparison.Ordinal);
+            var endpointName = isExtensionProject ? resource.ProjectName.ToLowerInvariant() : "ed-fi";
+
+            projectSchemasInEndpointOrder.Add(
+                new ProjectSchemaInfo(
+                    endpointName,
+                    resource.ProjectName,
+                    "1.0.0",
+                    isExtensionProject,
+                    new DbSchemaName(endpointName.Replace('-', '_'))
+                )
+            );
+            schemaComponentsInEndpointOrder.Add(
+                new SchemaComponentInfo(
+                    endpointName,
+                    resource.ProjectName,
+                    "1.0.0",
+                    isExtensionProject,
+                    $"{endpointName}-hash"
+                )
+            );
+        }
+
+        IReadOnlyList<ResourceKeyEntry> resourceKeysInIdOrder =
+        [
+            .. resources.Select(
+                static (resource, index) =>
+                    new ResourceKeyEntry(
+                        ResourceKeyId: (short)(index + 1),
+                        Resource: resource,
+                        ResourceVersion: "1.0.0",
+                        IsAbstractResource: false
+                    )
+            ),
+        ];
+
+        return new MappingSet(
+            Key: new MappingSetKey("schema-hash", SqlDialect.Pgsql, "v1"),
+            Model: new DerivedRelationalModelSet(
+                EffectiveSchema: new EffectiveSchemaInfo(
+                    ApiSchemaFormatVersion: "1.0",
+                    RelationalMappingVersion: "v1",
+                    EffectiveSchemaHash: "schema-hash",
+                    ResourceKeyCount: (short)resourceKeysInIdOrder.Count,
+                    ResourceKeySeedHash: [1, 2, 3],
+                    SchemaComponentsInEndpointOrder: schemaComponentsInEndpointOrder,
+                    ResourceKeysInIdOrder: resourceKeysInIdOrder
+                ),
+                Dialect: SqlDialect.Pgsql,
+                ProjectSchemasInEndpointOrder: projectSchemasInEndpointOrder,
+                ConcreteResourcesInNameOrder: [],
+                AbstractIdentityTablesInNameOrder: [],
+                AbstractUnionViewsInNameOrder: [],
+                IndexesInCreateOrder: [],
+                TriggersInCreateOrder: []
+            ),
+            WritePlansByResource: new Dictionary<QualifiedResourceName, ResourceWritePlan>(),
+            ReadPlansByResource: new Dictionary<QualifiedResourceName, ResourceReadPlan>(),
+            ResourceKeyIdByResource: new Dictionary<QualifiedResourceName, short>(),
+            ResourceKeyById: new Dictionary<short, ResourceKeyEntry>(),
+            SecurableElementColumnPathsByResource: new Dictionary<
+                QualifiedResourceName,
+                IReadOnlyList<ResolvedSecurableElementPath>
+            >()
+        );
+    }
+
+    /// <summary>
+    /// <see cref="EdOrgResource"/> with an additional root <c>Namespace</c> column declared as a Namespace
+    /// securable, so one resource can carry a relationship, a namespace, and a custom-view check at once.
+    /// </summary>
+    private static ConcreteResourceModel NamespaceSecuredEdOrgResource()
+    {
+        var root = RootTable(
+            "School",
+            [
+                new DbColumnModel(
+                    new DbColumnName("SchoolId_Unified"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    Path("$.schoolReference.schoolId"),
+                    null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("Namespace"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, 255),
+                    false,
+                    Path("$.namespace"),
+                    null
+                ),
+            ]
+        );
+        var model = new RelationalResourceModel(
+            _schoolResource,
+            _edfiSchema,
+            ResourceStorageKind.RelationalTables,
+            root,
+            [root],
+            [],
+            []
+        );
+        return new ConcreteResourceModel(
+            new ResourceKeyEntry(1, _schoolResource, "1.0", false),
+            ResourceStorageKind.RelationalTables,
+            model
+        )
+        {
+            SecurableElements = new ResourceSecurableElements(
+                [new EdOrgSecurableElement("$.schoolReference.schoolId", "SchoolId")],
+                ["$.namespace"],
+                [],
+                [],
+                []
+            ),
+        };
+    }
+
+    /// <summary>
+    /// <see cref="EdOrgTrackedTable"/> plus the <c>OldNamespace</c> column mirroring the Namespace
+    /// securable on <see cref="NamespaceSecuredEdOrgResource"/>.
+    /// </summary>
+    private static TrackedChangeTableInfo NamespaceSecuredEdOrgTrackedTable()
+    {
+        var edOrgTable = EdOrgTrackedTable();
+        return edOrgTable with
+        {
+            ValueColumnsInTableOrder =
+            [
+                .. edOrgTable.ValueColumnsInTableOrder,
+                new TrackedChangeColumnInfo(
+                    OldColumnName: new DbColumnName("OldNamespace"),
+                    NewColumnName: new DbColumnName("NewNamespace"),
+                    SourceJsonPath: "$.namespace",
+                    CanonicalStorageColumn: new DbColumnName("Namespace"),
+                    IsOldColumnNullable: false,
+                    IsNewColumnNullable: true,
+                    ScalarType: new RelationalScalarType(ScalarKind.String, 255),
+                    Role: TrackedChangeColumnRole.Scalar,
+                    Origin: TrackedChangeColumnOrigin.SecurableElement
+                ),
+            ],
+        };
+    }
 
     /// <summary>
     /// Change queries are out of scope for DMS-1060, and their planner keeps its own allow-list rather than
