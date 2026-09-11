@@ -465,29 +465,38 @@ public sealed class CdcCommandRunner(IApiSchemaFileLoader loader, EffectiveSchem
         {
             throw new ArgumentException("CDC command input is invalid.");
         }
-        var info = new FileInfo(invocation.AcknowledgementPath);
-        if (info.Length > 1024 * 1024)
+        try
         {
+            var info = new FileInfo(invocation.AcknowledgementPath);
+            if (info.Length > 1024 * 1024)
+            {
+                throw new ArgumentException("CDC command input is invalid.");
+            }
+            await using var file = info.OpenRead();
+            var options = new JsonSerializerOptions(CdcCommandHost.JsonOptions)
+            {
+                UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
+                RespectRequiredConstructorParameters = true,
+                AllowDuplicateProperties = false,
+            };
+            var input =
+                await JsonSerializer.DeserializeAsync<CdcCommandAcknowledgement>(file, options, token)
+                ?? throw new ArgumentException("CDC command input is invalid.");
+            if (
+                input.BindingIdentity != request.Binding.ToCompleteBindingIdentity()
+                || input.PreviousMaxRecordBytes != request.ConnectorPolicy.MaxRecordBytes
+            )
+            {
+                throw new ArgumentException("CDC command input is invalid.");
+            }
+            return input;
+        }
+        catch (Exception exception) when (exception is FileNotFoundException or DirectoryNotFoundException)
+        {
+            // Classify missing input at the actual file-access boundary, including disappearance
+            // after metadata inspection. Do not retain a path-bearing exception in diagnostics.
             throw new ArgumentException("CDC command input is invalid.");
         }
-        await using var file = info.OpenRead();
-        var options = new JsonSerializerOptions(CdcCommandHost.JsonOptions)
-        {
-            UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
-            RespectRequiredConstructorParameters = true,
-            AllowDuplicateProperties = false,
-        };
-        var input =
-            await JsonSerializer.DeserializeAsync<CdcCommandAcknowledgement>(file, options, token)
-            ?? throw new ArgumentException("CDC command input is invalid.");
-        if (
-            input.BindingIdentity != request.Binding.ToCompleteBindingIdentity()
-            || input.PreviousMaxRecordBytes != request.ConnectorPolicy.MaxRecordBytes
-        )
-        {
-            throw new ArgumentException("CDC command input is invalid.");
-        }
-        return input;
     }
 
     [System.Diagnostics.CodeAnalysis.SuppressMessage(

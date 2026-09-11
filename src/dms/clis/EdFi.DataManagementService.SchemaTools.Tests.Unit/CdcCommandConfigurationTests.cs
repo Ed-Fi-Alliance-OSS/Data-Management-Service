@@ -301,6 +301,111 @@ public partial class Given_Cdc_command_configuration(string providerToken, CoreP
         await withoutConfirmation.Should().ThrowAsync<ArgumentException>();
     }
 
+    [TestCase("missing-file")]
+    [TestCase("missing-parent")]
+    [TestCase("oversized")]
+    [TestCase("malformed")]
+    public async Task It_reports_unreadable_acknowledgement_as_invalid_input_through_the_command_host(
+        string scenario
+    )
+    {
+        const string sentinel = "private-acknowledgement-sentinel";
+        string path =
+            scenario == "missing-parent"
+                ? Path.Combine(_root, sentinel, "missing", "acknowledgement.json")
+                : Path.Combine(_root, sentinel + ".json");
+        if (scenario == "oversized")
+        {
+            await File.WriteAllTextAsync(path, sentinel + new string(' ', 1024 * 1024));
+        }
+        if (scenario == "malformed")
+        {
+            await File.WriteAllTextAsync(path, sentinel);
+        }
+        string settingsPath = Path.Combine(_root, "settings.txt");
+        await File.WriteAllTextAsync(
+            settingsPath,
+            JsonSerializer.Serialize(_settings.AsEnumerable().ToDictionary(p => p.Key, p => p.Value))
+        );
+        var runner = new CdcCommandRunner(
+            new ApiSchemaFileLoader(
+                new ApiSchemaInputNormalizer(NullLogger<ApiSchemaInputNormalizer>.Instance),
+                NullLogger<ApiSchemaFileLoader>.Instance
+            ),
+            SchemaBuilder()
+        );
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+        int exitCode = await CdcCommandHost.InvokeAsync(
+            [
+                "cdc",
+                "increase-record-size",
+                "--settings",
+                settingsPath,
+                "--state-path",
+                _root,
+                "--acknowledgement",
+                path,
+                "--confirm-consumer-capacity",
+                "--json",
+            ],
+            runner,
+            output,
+            error
+        );
+        exitCode.Should().Be(2);
+        using var result = JsonDocument.Parse(output.ToString());
+        result.RootElement.GetProperty("exitCode").GetInt32().Should().Be(2);
+        result.RootElement.GetProperty("succeeded").GetBoolean().Should().BeFalse();
+        var diagnostic = result
+            .RootElement.GetProperty("diagnostics")
+            .EnumerateArray()
+            .Should()
+            .ContainSingle()
+            .Subject;
+        diagnostic.GetProperty("component").GetString().Should().Be("Request");
+        diagnostic.GetProperty("failure").GetString().Should().Be("InvalidInput");
+        (output.ToString() + error)
+            .Should()
+            .NotContain(sentinel)
+            .And.NotContain(path)
+            .And.NotContain("Projection")
+            .And.NotContain("FileNotFoundException")
+            .And.NotContain("DirectoryNotFoundException");
+    }
+
+    [Test]
+    public async Task It_propagates_cancellation_while_reading_acknowledgement_input()
+    {
+        var request = await RequestAsync();
+        string path = Path.Combine(_root, "acknowledgement-input.txt");
+        await File.WriteAllTextAsync(
+            path,
+            JsonSerializer.Serialize(
+                new CdcCommandAcknowledgement(
+                    Guid.NewGuid(),
+                    request.Binding.ToCompleteBindingIdentity(),
+                    request.ConnectorPolicy.MaxRecordBytes,
+                    20000000,
+                    33554432,
+                    "operator",
+                    true,
+                    []
+                ),
+                CdcCommandHost.JsonOptions
+            )
+        );
+        using var cancellation = new CancellationTokenSource();
+        await cancellation.CancelAsync();
+        Func<Task> act = () =>
+            CdcCommandRunner.ReadAcknowledgementAsync(
+                new(CdcCommandOperation.IncreaseRecordSize, "", _root, 1, 0, false, path, true),
+                request,
+                cancellation.Token
+            );
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
     [TestCase("extra")]
     [TestCase("duplicate")]
     [TestCase("different-source")]
