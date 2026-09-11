@@ -54,6 +54,7 @@ services:
       Cors__SwaggerUIOrigin: ${DMS_SWAGGER_UI_URL:-http://localhost:8082}
       AppSettings__EnableManagementEndpoints: ${DMS_ENABLE_MANAGEMENT_ENDPOINTS:-false}
       AppSettings__EnableClaimsetReload: ${DMS_ENABLE_CLAIMSET_RELOAD:-false}
+      AppSettings__ManagementEndpoints__RequiredRole: ${DMS_MANAGEMENT_REQUIRED_ROLE:-}
       CacheSettings__ClaimSetsCacheExpirationSeconds: ${DMS_CLAIMSETS_CACHE_EXPIRATION_SECONDS:-600}
       CacheSettings__ApplicationContextCacheExpirationSeconds: ${DMS_APPLICATION_CONTEXT_CACHE_EXPIRATION_SECONDS:-600}
       CacheSettings__TokenCacheExpirationSeconds: ${DMS_TOKEN_CACHE_EXPIRATION_SECONDS:-1500}

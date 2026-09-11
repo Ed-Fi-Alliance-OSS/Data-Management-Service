@@ -3,11 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Security.Claims;
 using EdFi.DataManagementService.Core.Configuration;
-using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Security;
-using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -52,9 +49,6 @@ internal sealed class DocumentCacheStatusAuthorizationService(
     ILogger<DocumentCacheStatusAuthorizationService> logger
 ) : IDocumentCacheStatusAuthorizationService
 {
-    private const string MissingAuthorizationHeaderMessage = "Authorization header is missing.";
-    private const string InvalidTokenMessage = "Invalid token";
-    private const string InsufficientPermissionsMessage = "Insufficient permissions";
     private const string InvalidRequiredRoleMessage = "DocumentCache status endpoint role is not configured.";
 
     private readonly JwtAuthenticationOptions _jwtAuthenticationOptions = jwtAuthenticationOptions.Value;
@@ -64,59 +58,25 @@ internal sealed class DocumentCacheStatusAuthorizationService(
         CancellationToken cancellationToken = default
     )
     {
-        if (authorizationHeader is null)
-        {
-            logger.LogDebug("DocumentCache status authorization failed: missing Authorization header");
-            return DocumentCacheStatusAuthorizationResult.Unauthorized(MissingAuthorizationHeaderMessage);
-        }
-
-        AuthorizationHeaderResult headerResult = AuthorizationHeaderParser.Parse(authorizationHeader);
-        if (!headerResult.IsValid)
-        {
-            logger.LogDebug(
-                "DocumentCache status authorization failed: {ErrorDetail}",
-                headerResult.ErrorDetail
-            );
-            return DocumentCacheStatusAuthorizationResult.Unauthorized(headerResult.ErrorDetail!);
-        }
-
-        var (principal, _) = await jwtValidationService.ValidateAndExtractClientAuthorizationsAsync(
-            headerResult.Token!,
+        EndpointRoleAuthorizationResult result = await EndpointRoleAuthorizer.AuthorizeAsync(
+            jwtValidationService,
+            logger,
+            "DocumentCache status",
+            authorizationHeader,
+            documentCacheOptions.Value.Status.RequiredRole,
+            _jwtAuthenticationOptions.RoleClaimType,
             cancellationToken
         );
 
-        if (principal is null)
+        return result.Outcome switch
         {
-            logger.LogWarning("DocumentCache status authorization failed: token validation failed");
-            return DocumentCacheStatusAuthorizationResult.Unauthorized(InvalidTokenMessage);
-        }
-
-        if (!documentCacheOptions.Value.Status.TryGetRequiredRoleForEndpointMapping(out string? requiredRole))
-        {
-            logger.LogWarning("DocumentCache status authorization failed: RequiredRole is not valid");
-            return DocumentCacheStatusAuthorizationResult.Forbidden(InvalidRequiredRoleMessage);
-        }
-
-        if (!HasExactRequiredRoleClaim(principal, _jwtAuthenticationOptions.RoleClaimType, requiredRole))
-        {
-            logger.LogWarning(
-                "DocumentCache status authorization failed: token missing exact required role claim under configured claim type {RoleClaimType}",
-                LoggingSanitizer.SanitizeForLogging(_jwtAuthenticationOptions.RoleClaimType)
-            );
-            return DocumentCacheStatusAuthorizationResult.Forbidden(InsufficientPermissionsMessage);
-        }
-
-        logger.LogDebug("DocumentCache status authorization succeeded");
-        return DocumentCacheStatusAuthorizationResult.Authorized();
+            EndpointRoleAuthorizationOutcome.Authorized =>
+                DocumentCacheStatusAuthorizationResult.Authorized(),
+            EndpointRoleAuthorizationOutcome.Unauthorized =>
+                DocumentCacheStatusAuthorizationResult.Unauthorized(result.Message!),
+            EndpointRoleAuthorizationOutcome.RequiredRoleNotConfigured =>
+                DocumentCacheStatusAuthorizationResult.Forbidden(InvalidRequiredRoleMessage),
+            _ => DocumentCacheStatusAuthorizationResult.Forbidden(result.Message!),
+        };
     }
-
-    private static bool HasExactRequiredRoleClaim(
-        ClaimsPrincipal principal,
-        string roleClaimType,
-        string requiredRole
-    ) =>
-        principal.Claims.Any(claim =>
-            string.Equals(claim.Type, roleClaimType, StringComparison.Ordinal)
-            && string.Equals(claim.Value, requiredRole, StringComparison.Ordinal)
-        );
 }

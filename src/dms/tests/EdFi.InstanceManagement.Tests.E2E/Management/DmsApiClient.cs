@@ -278,11 +278,11 @@ public class DmsApiClient : IDisposable
     /// </summary>
     public async Task<HttpResponseMessage> GetViewClaimsetsAsync(string? tenant = null)
     {
-        var url = tenant != null ? $"/management/{tenant}/view-claimsets" : "/management/view-claimsets";
+        var url = tenant is not null ? $"/management/{tenant}/view-claimsets" : "/management/view-claimsets";
 
-        var fullUrl = $"{_baseUrl}{url}";
-        var response = await _sharedHttpClient.GetAsync(fullUrl);
-        return response;
+        // The management endpoints require a bearer carrying the configured management role, so this
+        // must use the authenticated client. _sharedHttpClient sends no Authorization header.
+        return await _httpClient.GetAsync(url);
     }
 
     /// <summary>
@@ -290,11 +290,11 @@ public class DmsApiClient : IDisposable
     /// </summary>
     public async Task<HttpResponseMessage> PostReloadClaimsetsAsync(string? tenant = null)
     {
-        var url = tenant != null ? $"/management/{tenant}/reload-claimsets" : "/management/reload-claimsets";
+        var url = tenant is not null
+            ? $"/management/{tenant}/reload-claimsets"
+            : "/management/reload-claimsets";
 
-        var fullUrl = $"{_baseUrl}{url}";
-        var response = await _sharedHttpClient.PostAsync(fullUrl, null);
-        return response;
+        return await _httpClient.PostAsync(url, null);
     }
 
     protected virtual void Dispose(bool disposing)

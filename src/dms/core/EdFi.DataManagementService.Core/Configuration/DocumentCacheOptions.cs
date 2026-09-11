@@ -68,7 +68,7 @@ public sealed class DocumentCacheAdministrationOptions
 
 public sealed class DocumentCacheStatusOptions
 {
-    public const int MaximumRequiredRoleLength = 256;
+    public const int MaximumRequiredRoleLength = EndpointRequiredRole.MaximumLength;
 
     public static readonly TimeSpan DefaultStatusObservationTimeout = TimeSpan.FromSeconds(5);
 
@@ -95,24 +95,8 @@ public sealed class DocumentCacheStatusOptions
         return false;
     }
 
-    public static bool IsValidRequiredRoleForEndpointMapping([NotNullWhen(true)] string? requiredRole)
-    {
-        if (requiredRole is null || requiredRole.Length == 0)
-        {
-            return false;
-        }
-
-        if (requiredRole.Length > MaximumRequiredRoleLength)
-        {
-            return false;
-        }
-
-        return !requiredRole.Any(IsInvalidRequiredRoleCharacter);
-    }
-
-    private static bool IsInvalidRequiredRoleCharacter(char character) =>
-        character is <= '\u001f' or '\u007f' or ' ' or ',' or ';' or '"' or '\'' or '[' or ']' or '{' or '}'
-        || char.IsWhiteSpace(character);
+    public static bool IsValidRequiredRoleForEndpointMapping([NotNullWhen(true)] string? requiredRole) =>
+        EndpointRequiredRole.IsValid(requiredRole);
 }
 
 public sealed class DocumentCacheTargetKey : IEquatable<DocumentCacheTargetKey>

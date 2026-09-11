@@ -64,6 +64,9 @@ public static class WebApplicationBuilderExtensions
             .Services.Configure<ReverseProxySettings>(
                 webAppBuilder.Configuration.GetSection("AppSettings:ReverseProxy")
             )
+            .Configure<ManagementEndpointsOptions>(
+                webAppBuilder.Configuration.GetSection(ManagementEndpointsOptions.SectionName)
+            )
             .Configure<ConfigurationServiceSettings>(
                 webAppBuilder.Configuration.GetSection("ConfigurationServiceSettings")
             )
