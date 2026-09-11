@@ -682,3 +682,127 @@ public sealed class Given_Representation_Restamp_E2E_Harness_Cleanup
         restartRan.Should().BeTrue();
     }
 }
+
+[TestFixture]
+public sealed class Given_Representation_Restamp_E2E_Harness_Phase_Budgets
+{
+    private const string TargetDescription = "'':1";
+
+    [Test]
+    public async Task It_names_the_phase_elapsed_and_budget_when_a_phase_times_out()
+    {
+        TimeSpan budget = TimeSpan.FromMilliseconds(25);
+
+        Func<Task> act = async () =>
+            await RepresentationRestampE2EHarness.RunPhaseAsync(
+                RepresentationRestampE2EHarness.OrdinaryDrainPhase,
+                budget,
+                TargetDescription,
+                async cancellationToken =>
+                {
+                    await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+                    return 0;
+                }
+            );
+
+        TimeoutException exception = (await act.Should().ThrowAsync<TimeoutException>()).Which;
+        exception.Message.Should().Contain("phase 'OrdinaryDrain'");
+        exception.Message.Should().Contain($"budget {budget}");
+        exception.Message.Should().Contain($"for target {TargetDescription}.");
+        exception.Message.Should().MatchRegex(@"after \d\d:\d\d:\d\d");
+        exception.InnerException.Should().BeOfType<TaskCanceledException>();
+    }
+
+    [Test]
+    public async Task It_returns_the_phase_result_when_the_phase_completes()
+    {
+        int result = await RepresentationRestampE2EHarness.RunPhaseAsync(
+            RepresentationRestampE2EHarness.ProjectorSetupPhase,
+            TimeSpan.FromMinutes(1),
+            TargetDescription,
+            _ => Task.FromResult(42)
+        );
+
+        result.Should().Be(42);
+    }
+
+    [Test]
+    public async Task It_completes_a_result_free_phase()
+    {
+        var ran = false;
+
+        await RepresentationRestampE2EHarness.RunPhaseAsync(
+            RepresentationRestampE2EHarness.OrdinaryDrainPhase,
+            TimeSpan.FromMinutes(1),
+            TargetDescription,
+            _ =>
+            {
+                ran = true;
+                return Task.CompletedTask;
+            }
+        );
+
+        ran.Should().BeTrue();
+    }
+
+    [Test]
+    public async Task It_rethrows_cancellation_that_is_not_the_phase_budget()
+    {
+        using var externalSource = new CancellationTokenSource();
+        await externalSource.CancelAsync();
+
+        Func<Task> act = async () =>
+            await RepresentationRestampE2EHarness.RunPhaseAsync(
+                RepresentationRestampE2EHarness.OrdinaryDrainPhase,
+                TimeSpan.FromMinutes(1),
+                TargetDescription,
+                _ => Task.FromCanceled<int>(externalSource.Token)
+            );
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        await act.Should().NotThrowAsync<TimeoutException>();
+    }
+
+    [Test]
+    public async Task It_rethrows_non_cancellation_failures_unchanged()
+    {
+        var expected = new InvalidOperationException("provider failure");
+
+        Func<Task> act = async () =>
+            await RepresentationRestampE2EHarness.RunPhaseAsync(
+                RepresentationRestampE2EHarness.ProjectorSetupPhase,
+                TimeSpan.FromMinutes(1),
+                TargetDescription,
+                _ => Task.FromException<int>(expected)
+            );
+
+        InvalidOperationException exception = (
+            await act.Should().ThrowAsync<InvalidOperationException>()
+        ).Which;
+        exception.Should().BeSameAs(expected);
+    }
+
+    [Test]
+    public void It_formats_the_phase_timeout_message()
+    {
+        string message = RepresentationRestampE2EHarness.PhaseTimeoutMessage(
+            RepresentationRestampE2EHarness.ProjectorSetupPhase,
+            TimeSpan.FromSeconds(125),
+            TimeSpan.FromMinutes(2),
+            TargetDescription
+        );
+
+        message
+            .Should()
+            .Be(
+                "Timed out in representation-restamp phase 'ProjectorSetup' after 00:02:05 (budget 00:02:00) for target '':1."
+            );
+    }
+
+    [Test]
+    public void It_keeps_separate_two_minute_budgets_for_setup_and_drain()
+    {
+        RepresentationRestampE2EHarness.ProjectorSetupBudget.Should().Be(TimeSpan.FromMinutes(2));
+        RepresentationRestampE2EHarness.OrdinaryDrainBudget.Should().Be(TimeSpan.FromMinutes(2));
+    }
+}

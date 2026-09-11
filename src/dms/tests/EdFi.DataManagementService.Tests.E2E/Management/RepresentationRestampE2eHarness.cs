@@ -538,77 +538,176 @@ internal static class RepresentationRestampE2EHarness
         await providerOperations.SetLifecycleAsync(connection, lifecycleState, cancellationToken);
     }
 
+    /// <summary>
+    /// Phase names reported when a representation-restamp harness phase exceeds its budget. Setup
+    /// (service provider, effective schema bootstrap, runtime mapping-set compilation) and the drain
+    /// loop have separate budgets so a timeout says which one ran out instead of one undifferentiated
+    /// two-minute failure.
+    /// </summary>
+    internal const string ProjectorSetupPhase = "ProjectorSetup";
+    internal const string OrdinaryDrainPhase = "OrdinaryDrain";
+
+    internal static readonly TimeSpan ProjectorSetupBudget = TimeSpan.FromMinutes(2);
+    internal static readonly TimeSpan OrdinaryDrainBudget = TimeSpan.FromMinutes(2);
+
+    private sealed record ProjectionRuntime(
+        ServiceProvider ServiceProvider,
+        DocumentCacheProjectionTargetRuntimeContext Context
+    );
+
     private static async Task DrainOrdinaryProjectorAsync(DocumentCacheAdminCliTarget target)
     {
-        using var timeoutSource = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+        string targetDescription = TargetDescription(target);
+        ProjectionRuntime runtime = await RunPhaseAsync(
+            ProjectorSetupPhase,
+            ProjectorSetupBudget,
+            targetDescription,
+            cancellationToken => CreateProjectionRuntimeAsync(target, cancellationToken)
+        );
+        await using ServiceProvider serviceProvider = runtime.ServiceProvider;
+        await using DocumentCacheProjectionTargetRuntimeContext context = runtime.Context;
+        IDocumentCacheProjectionDrainPageProcessor processor =
+            serviceProvider.GetRequiredService<IDocumentCacheProjectionDrainPageProcessor>();
+
+        await RunPhaseAsync(
+            OrdinaryDrainPhase,
+            OrdinaryDrainBudget,
+            targetDescription,
+            async cancellationToken =>
+            {
+                while (true)
+                {
+                    DocumentCacheProjectionDrainPageResult result = await processor.ProcessPageAsync(
+                        new DocumentCacheProjectionDrainPageRequest(
+                            context,
+                            DocumentCacheProjectionDrainInvocationKind.Ordinary
+                        ),
+                        cancellationToken
+                    );
+                    if (result.Outcome == DocumentCacheProjectionDrainPageOutcome.NoEligibleWork)
+                    {
+                        return;
+                    }
+
+                    result.Outcome.Should().Be(DocumentCacheProjectionDrainPageOutcome.PageProcessed);
+                }
+            }
+        );
+    }
+
+    private static async Task<ProjectionRuntime> CreateProjectionRuntimeAsync(
+        DocumentCacheAdminCliTarget target,
+        CancellationToken cancellationToken
+    )
+    {
+        ServiceProvider serviceProvider = await CreateProjectionServiceProviderAsync(
+            target.ProviderToken,
+            target.AppSettingsDatastore,
+            target.ApiSchemaDirectory,
+            cancellationToken
+        );
         try
         {
-            await using ServiceProvider serviceProvider = await CreateProjectionServiceProviderAsync(
-                target.ProviderToken,
-                target.AppSettingsDatastore,
-                target.ApiSchemaDirectory,
-                timeoutSource.Token
-            );
-            DocumentCacheTargetExecutionContext executionContext = new(
-                DocumentCacheTargetKey.Create(target.TenantKey, target.DataStoreId),
-                new DocumentCacheTargetContextGeneration(1),
-                new DocumentCacheTargetEffectiveSettings(
-                    true,
-                    TimeSpan.FromMilliseconds(250),
-                    TimeSpan.FromMilliseconds(10),
-                    10,
-                    1,
-                    TimeSpan.FromSeconds(1),
-                    1000,
-                    TimeSpan.FromMinutes(1)
-                ),
-                new DocumentCacheTargetDataStoreMetadata(target.DataStoreId, target.AppSettingsDatastore),
-                new DocumentCacheTargetConnectionInput(target.ProviderToken, target.ConnectionString),
-                new DocumentCachePhysicalSourceFingerprint(
-                    "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-                ),
-                new DocumentCacheLifecycleObservation(DocumentCacheLifecycleState.Tracking, false),
-                new DocumentCacheInventoryValidationResult(
-                    DocumentCacheInventoryStatus.Satisfied,
-                    "Inventory satisfied."
-                ),
-                new DocumentCacheEnqueueTriggerValidationResult(
-                    DocumentCacheEnqueueTriggerStatus.Satisfied,
-                    "Enqueue trigger satisfied."
-                ),
-                DocumentCacheSqlServerPrerequisiteDetails.NotApplicable()
-            );
-            await using DocumentCacheProjectionTargetRuntimeContext context = await serviceProvider
+            DocumentCacheProjectionTargetRuntimeContext context = await serviceProvider
                 .GetRequiredService<IDocumentCacheProjectionTargetRuntimeContextFactory>()
-                .CreateAsync(executionContext, timeoutSource.Token);
-            IDocumentCacheProjectionDrainPageProcessor processor =
-                serviceProvider.GetRequiredService<IDocumentCacheProjectionDrainPageProcessor>();
-
-            while (true)
-            {
-                DocumentCacheProjectionDrainPageResult result = await processor.ProcessPageAsync(
-                    new DocumentCacheProjectionDrainPageRequest(
-                        context,
-                        DocumentCacheProjectionDrainInvocationKind.Ordinary
-                    ),
-                    timeoutSource.Token
-                );
-                if (result.Outcome == DocumentCacheProjectionDrainPageOutcome.NoEligibleWork)
-                {
-                    return;
-                }
-
-                result.Outcome.Should().Be(DocumentCacheProjectionDrainPageOutcome.PageProcessed);
-            }
+                .CreateAsync(CreateExecutionContext(target), cancellationToken);
+            return new ProjectionRuntime(serviceProvider, context);
         }
-        catch (OperationCanceledException exception) when (timeoutSource.IsCancellationRequested)
+        catch
+        {
+            await serviceProvider.DisposeAsync();
+            throw;
+        }
+    }
+
+    private static DocumentCacheTargetExecutionContext CreateExecutionContext(
+        DocumentCacheAdminCliTarget target
+    ) =>
+        new(
+            DocumentCacheTargetKey.Create(target.TenantKey, target.DataStoreId),
+            new DocumentCacheTargetContextGeneration(1),
+            new DocumentCacheTargetEffectiveSettings(
+                true,
+                TimeSpan.FromMilliseconds(250),
+                TimeSpan.FromMilliseconds(10),
+                10,
+                1,
+                TimeSpan.FromSeconds(1),
+                1000,
+                TimeSpan.FromMinutes(1)
+            ),
+            new DocumentCacheTargetDataStoreMetadata(target.DataStoreId, target.AppSettingsDatastore),
+            new DocumentCacheTargetConnectionInput(target.ProviderToken, target.ConnectionString),
+            new DocumentCachePhysicalSourceFingerprint(
+                "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+            ),
+            new DocumentCacheLifecycleObservation(DocumentCacheLifecycleState.Tracking, false),
+            new DocumentCacheInventoryValidationResult(
+                DocumentCacheInventoryStatus.Satisfied,
+                "Inventory satisfied."
+            ),
+            new DocumentCacheEnqueueTriggerValidationResult(
+                DocumentCacheEnqueueTriggerStatus.Satisfied,
+                "Enqueue trigger satisfied."
+            ),
+            DocumentCacheSqlServerPrerequisiteDetails.NotApplicable()
+        );
+
+    private static string TargetDescription(DocumentCacheAdminCliTarget target) =>
+        $"'{target.TenantKey}':{target.DataStoreId}";
+
+    /// <summary>
+    /// Runs one harness phase under its own budget. Only a cancellation caused by this phase's budget
+    /// becomes a <see cref="TimeoutException"/> that names the phase, the elapsed time, and the budget;
+    /// cancellation from another token and every other failure propagate unchanged.
+    /// </summary>
+    internal static async Task<T> RunPhaseAsync<T>(
+        string phaseName,
+        TimeSpan budget,
+        string targetDescription,
+        Func<CancellationToken, Task<T>> action
+    )
+    {
+        using var budgetSource = new CancellationTokenSource(budget);
+        var stopwatch = Stopwatch.StartNew();
+        try
+        {
+            return await action(budgetSource.Token);
+        }
+        catch (OperationCanceledException exception) when (budgetSource.IsCancellationRequested)
         {
             throw new TimeoutException(
-                $"Timed out draining the ordinary projector for target '{target.TenantKey}':{target.DataStoreId}.",
+                PhaseTimeoutMessage(phaseName, stopwatch.Elapsed, budget, targetDescription),
                 exception
             );
         }
     }
+
+    internal static async Task RunPhaseAsync(
+        string phaseName,
+        TimeSpan budget,
+        string targetDescription,
+        Func<CancellationToken, Task> action
+    ) =>
+        await RunPhaseAsync(
+            phaseName,
+            budget,
+            targetDescription,
+            async cancellationToken =>
+            {
+                await action(cancellationToken);
+                return true;
+            }
+        );
+
+    internal static string PhaseTimeoutMessage(
+        string phaseName,
+        TimeSpan elapsed,
+        TimeSpan budget,
+        string targetDescription
+    ) =>
+        $"Timed out in representation-restamp phase '{phaseName}' after {elapsed} (budget {budget}) "
+        + $"for target {targetDescription}.";
 
     internal static async Task<ServiceProvider> CreateProjectionServiceProviderAsync(
         RelationalProviderToken providerToken,
