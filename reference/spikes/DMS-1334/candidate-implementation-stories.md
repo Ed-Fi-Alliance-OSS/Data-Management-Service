@@ -89,7 +89,7 @@ Recent Admin API story outcomes affect these candidate stories as follows:
 - `ADMINAPI-1496` changes v3 refresh endpoints to `202 Accepted`. DMS-1441 should target `202 Accepted` refresh responses with `jobQueuedResult` and a `/v3/jobs/{jobId}` `Location`; this is no longer treated as an unresolved 201-to-202 design question, but the exact pinned OpenAPI/source revision still needs to be recorded before conformance sign-off.
 - `ADMINAPI-1493` tightens managed `name` validation. DMS-1439 must use the 46-character maximum, not the older 100-character limit, while retaining generated `databaseName` defense-in-depth validation against the 63-character portable limit.
 - `ADMINAPI-1489` adds `EnableDataStoreManagement`, default `true`. It gates managed data-store endpoints and create/delete dispatcher work only. Education-organization refresh jobs and schedules remain active when management is disabled.
-- `ADMINAPI-1488` and the pinned Admin API v3 contract must be reconciled before conformance sign-off. DMS-1441 owns all education-organization read routes required for parity: `GET /v3/dataStores/edOrgs`, `GET /v3/dataStores/{dataStoreId}/edOrgs`, and `GET /v3/tenants/{tenantName}/dataStores/edOrgs`.
+- `ADMINAPI-1488` removes the per-data-store education-organization GET route and confirms the unscoped all-data-store GET route was an unimplemented documentation error. DMS-1441 owns the tenant aggregate education-organization read route required for parity: `GET /v3/tenants/{tenantName}/dataStores/edOrgs`. The excluded GET routes must not be reintroduced unless product explicitly decides to diverge from Admin API.
 
 ### Ready-to-start gates
 
@@ -140,7 +140,7 @@ More stories would split endpoints, provider adapters, tables, workers, feature 
 | G13 snapshot persistence | DMS-1441 |
 | G14 refresh all/one | DMS-1441 consuming DMS-1437/DMS-1440 |
 | G15 tenant aggregate | DMS-1441 |
-| G16 per-store education-organization read | DMS-1441, backed by the same snapshot/query model as the aggregate. |
+| G16 per-store education-organization read | Excluded by `ADMINAPI-1488`; no DMS story unless product explicitly diverges. |
 | G17 authorization policies | Existing mechanism applied within DMS-1437/DMS-1439/DMS-1441; no separate story. |
 | G18 background tenant propagation | DMS-1437 |
 | G19 management feature flag | DMS-1439 |
@@ -148,6 +148,6 @@ More stories would split endpoints, provider adapters, tables, workers, feature 
 | G21 scheduled refresh | DMS-1437 durable schedule/job infrastructure; DMS-1441 tenant schedule and refresh behavior |
 | G22 snapshot cleanup on data-store deletion | DMS-1441 integrated with DMS-1439 |
 | G23 CMS/DMS project boundary | Existing structure is sufficient: DMS-1438/DMS-1440 stay in CMS and consume versioned DMS artifacts/database contracts as data; no cross-project reference is added. |
-| G24 original unscoped all-store read | DMS-1441, returning the current tenant's data-store education-organization aggregate payload. |
+| G24 original unscoped all-store read | Excluded as an Admin API documentation error; no DMS story unless product explicitly diverges. |
 
 Every candidate story maps to confirmed gaps, and every gap has an explicit implementation or reuse disposition. DMS-1437 and DMS-1440 can start now. DMS-1438, DMS-1439, and DMS-1441 are directly implementable only for the portions allowed by their ready-to-start gates; no developer or AI agent should invent the missing artifact contract, ticket provenance, or response contract to bypass those gates.

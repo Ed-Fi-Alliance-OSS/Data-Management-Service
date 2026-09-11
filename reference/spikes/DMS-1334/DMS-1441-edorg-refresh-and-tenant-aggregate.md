@@ -7,16 +7,16 @@
 Create the CMS education-organization refresh, snapshot, and read workflow required for Management API v3 parity.
 
 - Refresh endpoints: `POST /v3/dataStores/edOrgs/refresh` and `POST /v3/dataStores/{dataStoreId}/edOrgs/refresh`, returning `202 Accepted`, `jobQueuedResult`, and a job-status `Location`.
-- Read endpoints: `GET /v3/dataStores/edOrgs`, `GET /v3/dataStores/{dataStoreId}/edOrgs`, and `GET /v3/tenants/{tenantName}/dataStores/edOrgs`.
+- Read endpoint (if single tenant use tenantName “default”): `GET /v3/tenants/{tenantName}/dataStores/edOrgs`.
 - Persistence: tenant-scoped snapshots keyed by data store and education-organization ID, with transactional replacement and cleanup on ordinary or managed data-store deletion.
 - Execution: DMS-1437 manual and scheduled jobs call the DMS-1440 reader, preserve prior snapshots on failed target reads, and report partial refresh failure truthfully.
-- Aggregate behavior: read routes share one snapshot-backed query model and overlay DMS-1439 managed lifecycle metadata, including pending managed rows with no ordinary data-store link.
+- Aggregate behavior: the tenant read route uses a snapshot-backed query model and overlays DMS-1439 managed lifecycle metadata, including pending managed rows with no ordinary data-store link.
 
 ### Description
 
-CMS stores application education-organization IDs but cannot discover the organizations present in each configured data store, refresh a durable projection, expose refresh job status, or return the data-store and tenant education-organization reads required by Management API v3.
+CMS stores application education-organization IDs but cannot discover the organizations present in each configured data store, refresh a durable projection, expose refresh job status, or return the tenant education-organization read required by Management API v3.
 
-This story delivers tenant-scoped snapshots, mandatory manual refresh, the all-data-store read, the single-data-store read, the tenant aggregate route, and required scheduled refresh matching pinned Admin API behavior.
+This story delivers tenant-scoped snapshots, mandatory manual refresh, the tenant aggregate route, and required scheduled refresh matching pinned Admin API behavior.
 
 **Scope**
 
@@ -24,7 +24,7 @@ This story delivers tenant-scoped snapshots, mandatory manual refresh, the all-d
 - Add refresh-all and refresh-one endpoints that enqueue DMS-1437 jobs and return the v3 job response.
 - Add refresh job handlers that decrypt the existing ordinary data-store connection, call the CMS-owned DMS-1440 reader, and transactionally replace snapshots per successful target.
 - Add configurable scheduled refresh per tenant using DMS-1437's durable `Schedules` and `Jobs` persistence, the same refresh-all handler as manual refresh, and the same duplicate-suppression rules.
-- Add `GET /v3/dataStores/edOrgs`, `GET /v3/dataStores/{dataStoreId}/edOrgs`, and `GET /v3/tenants/{tenantName}/dataStores/edOrgs`; all three read from the same tenant-scoped snapshot/aggregate query model and merge ordinary data stores, snapshots, and DMS-1439 management metadata where the route shape requires it.
+- Add `GET /v3/tenants/{tenantName}/dataStores/edOrgs`; it reads from the tenant-scoped snapshot/aggregate query model and merges ordinary data stores, snapshots, and DMS-1439 management metadata where the route shape requires it.
 - Remove a data store's snapshot when its ordinary CMS catalog row is deleted, including deletion through DMS-1439 managed lifecycle.
 - Add truthful partial-failure, stale-snapshot, retry, authorization, observability, and tenant-isolation behavior.
 
@@ -32,8 +32,6 @@ This story delivers tenant-scoped snapshots, mandatory manual refresh, the all-d
 
 - `POST /v3/dataStores/edOrgs/refresh`
 - `POST /v3/dataStores/{dataStoreId}/edOrgs/refresh`
-- `GET /v3/dataStores/edOrgs`
-- `GET /v3/dataStores/{dataStoreId}/edOrgs`
 - `GET /v3/tenants/{tenantName}/dataStores/edOrgs`
 - `GET /v3/jobs/{jobId}` from DMS-1437
 
@@ -65,7 +63,9 @@ Exact message prose follows the pinned Admin API contract/source when it is norm
 
 Admin API v3 education-organization read response parity:
 
-`GET /v3/dataStores/edOrgs` and `GET /v3/tenants/{tenantName}/dataStores/edOrgs` return `tenantDetailsResponse` with `id`, `name`, and `dataStores`. `GET /v3/dataStores/{dataStoreId}/edOrgs` returns the pinned single-data-store education-organization response for that ordinary data store. Each data store item uses `id` for the ordinary data-store ID and `dataStoreManageId` for the managed lifecycle ID when available. Unmanaged ordinary stores have `dataStoreManageId`, `databaseTemplate`, and `databaseName` as `null`; pending managed rows with no ordinary link have `id` and `dataStoreType` as `null` and an empty `educationOrganizations` array.
+`GET /v3/tenants/{tenantName}/dataStores/edOrgs` returns `tenantDetailsResponse` with `id`, `name`, and `dataStores`. Each data store item uses `id` for the ordinary data-store ID and `dataStoreManageId` for the managed lifecycle ID when available. Unmanaged ordinary stores have `dataStoreManageId`, `databaseTemplate`, and `databaseName` as `null`; pending managed rows with no ordinary link have `id` and `dataStoreType` as `null` and an empty `educationOrganizations` array.
+
+Per `ADMINAPI-1488`, `GET /v3/dataStores/{dataStoreId}/edOrgs` returns `404` and the advertised unscoped `GET /v3/dataStores/edOrgs` route was an unimplemented documentation error. DMS-1441 does not implement either as a successful parity endpoint unless product explicitly decides to diverge from Admin API.
 
 ```json
 {
@@ -134,16 +134,16 @@ Each successful target refresh replaces that target's snapshot in one CMS transa
 - DMS-1440 CMS target-database education-organization reader.
 - The versioned DMS database contract and configured target-provider setting consumed by DMS-1440.
 - Existing CMS ordinary data-store repository, connection-string encryption/decryption, tenant context, and authorization policies.
-- Existing [`TenantResolutionMiddleware`](../../../src/config/frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore/Middleware/TenantResolutionMiddleware.cs). Ordinary `GET /v3/dataStores...` routes use the normal request tenant context; `/v3/tenants...` bypass means DMS-1441 must install path-derived tenant context itself for that route.
+- Existing [`TenantResolutionMiddleware`](../../../src/config/frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore/Middleware/TenantResolutionMiddleware.cs). The `/v3/tenants...` bypass means DMS-1441 must install path-derived tenant context itself for that route.
 - DMS-1439 for the complete v3 aggregate's management metadata, pending/unlinked lifecycle entries, and managed-delete cleanup integration. Snapshot persistence and refresh of ordinary unmanaged stores can be developed before DMS-1439 lands.
-- The final pinned Admin API/OpenAPI revision for the all-data-store, single-data-store, and tenant aggregate education-organization read response contracts.
+- The final pinned Admin API/OpenAPI revision for the tenant aggregate education-organization read response contract.
 
 **Blockers**
 
 - [DMS-1437](DMS-1437-durable-jobs-and-schedules.md) — must deliver durable manual/scheduled job enqueue, execution, status polling, and schedule dispatch.
 - [DMS-1440](DMS-1440-edorg-reader.md) — must deliver the CMS target-database education-organization reader.
 - [DMS-1439](DMS-1439-managed-data-store-lifecycle.md) — blocks the complete tenant aggregate and managed-delete snapshot cleanup. Snapshot persistence and refresh for ordinary unmanaged stores can proceed before DMS-1439 completes.
-- Contract gate — `ADMINAPI-1496` targets refresh endpoints returning `202 Accepted`; pin the exact OpenAPI/source revision before conformance implementation. The all-data-store, single-data-store, and tenant aggregate GET response contracts must also be pinned before conformance sign-off. Refinement must also confirm the canonical `{tenantName}` accepted in single-tenant mode; CMS currently has no equivalent named setting.
+- Contract gate — `ADMINAPI-1496` targets refresh endpoints returning `202 Accepted`; pin the exact OpenAPI/source revision before conformance implementation. The tenant aggregate GET response contract must also be pinned before conformance sign-off. In single-tenant mode, Admin API accepts only its default tenant name `default`, so CMS should support `/v3/tenants/default/dataStores/edOrgs` unless a future pinned contract changes that value.
 
 **Out of scope**
 
@@ -151,6 +151,7 @@ Each successful target refresh replaces that target's snapshot in one CMS transa
 - Real-time/event-driven synchronization or change-data capture.
 - A CMS-to-DMS HTTP client, service credential, or message broker.
 - Deleting or modifying target data-store domain data.
+- Successful `GET /v3/dataStores/edOrgs` or `GET /v3/dataStores/{dataStoreId}/edOrgs` responses; those routes are excluded from Admin API parity by `ADMINAPI-1488` unless product explicitly decides to diverge.
 
 **Risks and implementation considerations**
 
@@ -162,7 +163,7 @@ Each successful target refresh replaces that target's snapshot in one CMS transa
 **Non-binding implementation guidance**
 
 - Resolve tenant-scoped aggregate dependencies lazily after installing the path-derived tenant context. Resolving from the request service provider or from a nested scope are both acceptable if lifetime/disposal and tenant isolation tests pass.
-- A single-tenant schedule may use a null/internal sentinel tenant key, but that is a persistence choice and must not define the public `{tenantName}` contract.
+- A single-tenant schedule may use a null/internal sentinel tenant key, but that is a persistence choice and must not change the public `{tenantName}` contract. The single-tenant public route uses Admin API's default tenant name `default`.
 - Avoid tests coupled to exact `jobQueuedResult.message` prose unless the pinned OpenAPI/reference contract requires exact text.
 
 **Minimum persistence contract**
@@ -181,7 +182,7 @@ Provider migrations must use equivalent PostgreSQL and SQL Server types. Exact t
 | `refreshedAt` | UTC timestamp/date-time | Internal snapshot metadata. |
 | `sourceContractVersion` | bounded text/string | Internal diagnostics for compatibility. |
 
-Uniqueness must prevent duplicate `educationOrganizationId` within a tenant/data-store snapshot. Internal refresh/job metadata must not appear in `tenantDetailsResponse` or the single-data-store education-organization read response.
+Uniqueness must prevent duplicate `educationOrganizationId` within a tenant/data-store snapshot. Internal refresh/job metadata must not appear in `tenantDetailsResponse`.
 
 ### Acceptance Criteria
 
@@ -198,30 +199,29 @@ Uniqueness must prevent duplicate `educationOrganizationId` within a tenant/data
 11. A refresh-all job that has any target failure ends in `Error` after processing the selected targets, with a bounded sanitized summary. Successful target snapshots remain committed and are not rolled back by another target's failure.
 12. Concurrent or scheduled refresh attempts for the same tenant/target are deduplicated or serialized so no older completion can overwrite a newer snapshot.
 13. `EdOrgsRefreshIntervalInMins` configures required periodic refresh and must be positive. In multi-tenant mode, startup reconciliation creates/updates one stable active DMS-1437 schedule per current tenant repository record and disables (without deleting history) schedules for removed tenants. In single-tenant mode it maintains one schedule for the canonical single-tenant context. Each occurrence uses the same refresh-all handler, has no HTTP-context dependency, prevents target overlap, and remains active when `EnableDataStoreManagement=false`.
-14. `GET /v3/dataStores/edOrgs` uses read-only-or-admin and returns the current tenant's `tenantDetailsResponse` payload. It uses normal CMS tenant resolution, returns existing CMS `400` for missing/invalid tenant context when multi-tenancy is enabled, includes ordinary stores plus DMS-1439 pending/unlinked management rows when available, and never leaks another tenant's records.
-15. `GET /v3/dataStores/{dataStoreId}/edOrgs` uses read-only-or-admin and returns the pinned single-data-store education-organization response for one ordinary data store and its current snapshot. It returns `404` when the ordinary data store is absent, belongs to another tenant, or is only a pending managed row without an ordinary data-store ID.
-16. `GET /v3/tenants/{tenantName}/dataStores/edOrgs` uses read-only-or-admin and returns `tenantDetailsResponse`. In multi-tenant mode it first requires `Tenant`; missing returns existing CMS `400`. It compares header/path before lookup; mismatch returns existing `400` without existence disclosure. A matching pair is resolved with the non-tenant-scoped tenant repository; unknown returns `404`. Tenant-scoped aggregate dependencies are not resolved or called until `TenantContext.Multitenant` is installed, and scope disposal cannot leak context.
-17. In single-tenant mode no `Tenant` header is required and context remains `NotMultitenant`. `{tenantName}` must equal the canonical single-tenant value confirmed during contract refinement or return `404`; this story must not invent a new configuration property or default value without that product decision.
-18. Aggregate responses include every ordinary tenant data store with its snapshot. An unmanaged ordinary store has `dataStoreManageId`, `databaseTemplate`, and `databaseName` as `null`, status `Created`, and `dataStoreType` from the ordinary CMS data-store record. Data stores are ordered by numeric ID; embedded education organizations are ordered by numeric ID.
-19. When DMS-1439 is present, linked management metadata overlays the ordinary store. Pending or orphaned management records without a linked ordinary store are also present after ordinary stores, ordered by management ID, with `id` and `dataStoreType` as `null`, lifecycle status, nullable `databaseTemplate`/`databaseName` per the pinned contract, and an empty education-organization list.
-20. No response or log exposes ordinary/admin connection strings, decrypted secrets, internal job payload, or another tenant's snapshot.
-21. Education-organization IDs and parent IDs remain `int64` end to end.
-22. Deleting an unmanaged ordinary data store deletes its snapshot in the same CMS transaction. DMS-1439 managed deletion reaches the same cleanup when it removes the linked ordinary row; education-organization read routes never return orphaned snapshot rows after either path.
-23. CMS consumes DMS-1440 through its own backend abstraction and provider adapters. No CMS project references a DMS application/library project, internal startup task, request pipeline, or HTTP host.
+14. DMS-1441 does not implement successful `GET /v3/dataStores/edOrgs` or `GET /v3/dataStores/{dataStoreId}/edOrgs` Management API parity endpoints. The per-data-store route returns `404` for Admin API parity; the unscoped all-data-store route remains absent or `404` unless product explicitly pins a divergence.
+15. `GET /v3/tenants/{tenantName}/dataStores/edOrgs` uses read-only-or-admin and returns `tenantDetailsResponse`. In multi-tenant mode it first requires `Tenant`; missing returns existing CMS `400`. It compares header/path before lookup; mismatch returns existing `400` without existence disclosure. A matching pair is resolved with the non-tenant-scoped tenant repository; unknown returns `404`. Tenant-scoped aggregate dependencies are not resolved or called until `TenantContext.Multitenant` is installed, and scope disposal cannot leak context.
+16. In single-tenant mode no `Tenant` header is required and context remains `NotMultitenant`. `{tenantName}` must equal Admin API's default tenant name `default` or return `404`; the supported path is `/v3/tenants/default/dataStores/edOrgs`.
+17. Aggregate responses include every ordinary tenant data store with its snapshot. An unmanaged ordinary store has `dataStoreManageId`, `databaseTemplate`, and `databaseName` as `null`, status `Created`, and `dataStoreType` from the ordinary CMS data-store record. Data stores are ordered by numeric ID; embedded education organizations are ordered by numeric ID.
+18. When DMS-1439 is present, linked management metadata overlays the ordinary store. Pending or orphaned management records without a linked ordinary store are also present after ordinary stores, ordered by management ID, with `id` and `dataStoreType` as `null`, lifecycle status, nullable `databaseTemplate`/`databaseName` per the pinned contract, and an empty education-organization list.
+19. No response or log exposes ordinary/admin connection strings, decrypted secrets, internal job payload, or another tenant's snapshot.
+20. Education-organization IDs and parent IDs remain `int64` end to end.
+21. Deleting an unmanaged ordinary data store deletes its snapshot in the same CMS transaction. DMS-1439 managed deletion reaches the same cleanup when it removes the linked ordinary row; education-organization read routes never return orphaned snapshot rows after either path.
+22. CMS consumes DMS-1440 through its own backend abstraction and provider adapters. No CMS project references a DMS application/library project, internal startup task, request pipeline, or HTTP host.
 
 ### Tasks
 
 **Implementation**
 
-1. Pin the Admin API/OpenAPI revision that includes `ADMINAPI-1496` v3 refresh `202 Accepted` behavior and the final all-data-store, single-data-store, and tenant aggregate education-organization GET contracts before route/conformance work.
+1. Pin the Admin API/OpenAPI revision that includes `ADMINAPI-1496` v3 refresh `202 Accepted` behavior and the final tenant aggregate education-organization GET contract before route/conformance work.
 2. Add provider-equivalent snapshot persistence, replacement/delete transactions, deterministic aggregate reads, and concurrency guards.
 3. Add manual refresh enqueue routes and fenced/idempotent DMS-1437 handlers over DMS-1440, including contract-compliant operation-specific messages and truthful partial failure.
 4. Add tenant schedule reconciliation for multi- and single-tenant modes using DMS-1437, including tenant removal/history behavior.
-5. Add the all-data-store, single-data-store, and late-resolved tenant aggregate read endpoints, merge DMS-1439 metadata, and document refresh consistency, retained-stale-data, scheduling, and tenant-resolution behavior.
+5. Add the late-resolved tenant aggregate read endpoint, merge DMS-1439 metadata, and document refresh consistency, retained-stale-data, scheduling, tenant-resolution behavior, and excluded GET-route parity.
 
 **Verification**
 
-- Unit tests for route contracts, exact tenant error semantics, authorization, target-provider startup diagnostics, schedule reconciliation, interval validation, merge/default behavior, all-data-store and single-data-store read behavior, partial failure, database-contract mismatch retention, deduplication, deletion cleanup, and tenant setup.
+- Unit tests for route contracts, exact tenant error semantics, authorization, target-provider startup diagnostics, schedule reconciliation, interval validation, merge/default behavior, tenant aggregate read behavior, partial failure, database-contract mismatch retention, deduplication, deletion cleanup, and tenant setup.
 - PostgreSQL and SQL Server CMS integration tests for snapshot replacement/removal, ordinary and managed delete cleanup, tenant isolation, transactional failure, `int64` IDs, and concurrency.
-- API-level tests for both refresh routes, immediate polling, exact tenant `404`/header-mismatch `400` behavior, path-derived repository tenant context, normal tenant-context behavior for `/v3/dataStores...` reads, cross-tenant isolation, `/v3/jobs/{jobId}` `Location`, manual and scheduled job outcomes, all-data-store response shape, single-data-store response shape, tenant response shape, and managed/unmanaged/pending stores.
+- API-level tests for both refresh routes, immediate polling, exact tenant `404`/header-mismatch `400` behavior, unsupported GET-route absence/`404` behavior, path-derived repository tenant context, cross-tenant isolation, `/v3/jobs/{jobId}` `Location`, manual and scheduled job outcomes, tenant response shape, and managed/unmanaged/pending stores.
 - Live cross-provider validation against DMS stores containing representative education-organization hierarchies, plus one inaccessible store proving partial success is reported as `Error` and prior data is preserved.
