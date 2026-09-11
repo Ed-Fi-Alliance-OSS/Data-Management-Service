@@ -86,7 +86,7 @@ public sealed class CdcProviderSetupOrchestration
         ArgumentNullException.ThrowIfNull(runtime);
         var boundary = new OperationBoundary();
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(request.Timing.CallTimeout);
+        timeout.CancelAfter(request.Timing.WaitTimeout);
         var token = timeout.Token;
         try
         {
@@ -101,8 +101,10 @@ public sealed class CdcProviderSetupOrchestration
                 await SetupInSessionAsync(request, runtime, session, c => boundary.Component = c, token)
             );
         }
-        catch (OperationCanceledException)
-            when (!cancellationToken.IsCancellationRequested && timeout.IsCancellationRequested)
+        catch (OperationCanceledException exception)
+            when (!cancellationToken.IsCancellationRequested
+                && (timeout.IsCancellationRequested || exception.CancellationToken.IsCancellationRequested)
+            )
         {
             return Failure(boundary.Component, CdcDeploymentFailure.Timeout);
         }

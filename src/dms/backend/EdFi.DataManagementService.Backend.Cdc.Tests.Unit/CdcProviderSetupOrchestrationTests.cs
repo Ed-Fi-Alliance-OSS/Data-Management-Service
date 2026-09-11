@@ -462,9 +462,7 @@ internal class Given_CdcProviderSetupOrchestration(Ddl.CdcProvider provider)
         result.Diagnostic.Component.Should().Be(CdcDeploymentComponent.ProviderSetup);
     }
 
-    [Test]
-    public async Task It_bounds_provider_calls_and_releases_the_lock_on_timeout()
-    {
+    private void ConfigureTiming(int callMilliseconds, int waitMilliseconds) =>
         _request = new(
             _request.Binding,
             _request.DmsSettings,
@@ -475,22 +473,153 @@ internal class Given_CdcProviderSetupOrchestration(Ddl.CdcProvider provider)
             _request.WorkerPolicy,
             _request.ProviderConnectionProperties,
             _request.KafkaClientSecurityProperties,
-            new(TimeSpan.FromMilliseconds(500), TimeSpan.FromSeconds(2), TimeSpan.FromMilliseconds(10))
+            new(
+                TimeSpan.FromMilliseconds(callMilliseconds),
+                TimeSpan.FromMilliseconds(waitMilliseconds),
+                TimeSpan.FromMilliseconds(10)
+            )
         );
+
+    [Test]
+    public async Task It_allows_setup_and_live_reread_to_exceed_one_call_budget()
+    {
+        ConfigureTiming(800, 4000);
         A.CallTo(() => _provider.SetupAsync(A<Ddl.CdcProviderSetupRequest>._, A<CancellationToken>._))
             .ReturnsLazily(
                 async (Ddl.CdcProviderSetupRequest r, CancellationToken token) =>
                 {
-                    await Task.Delay(Timeout.InfiniteTimeSpan, token);
+                    ReadJournal()
+                        .Operations.Single(o => o.Effect == CdcWorkflowEffect.CreateProvider)
+                        .Completions.Should()
+                        .BeEmpty();
+                    await Task.Delay(500, token);
                     return ProviderResult(r);
                 }
             );
-        var result = (await RunAsync())
+
+        (await RunAsync()).State.Should().Be(CdcTransportEvidenceState.Observed);
+        _calls
+            .Select(r => r.Mode)
+            .Should()
+            .Equal(Ddl.CdcProviderSetupMode.InitialCreateOrExactMatch, Ddl.CdcProviderSetupMode.ValidateOnly);
+        var completion = ReadJournal()
+            .Operations.Single(o => o.Effect == CdcWorkflowEffect.CreateProvider)
+            .Completions.Should()
+            .ContainSingle()
+            .Which.Evidence.Should()
+            .BeOfType<CdcWorkflowCompletion.Provider>()
+            .Subject;
+        completion.InitialSlotProofs.Should().HaveCount(provider == Ddl.CdcProvider.Postgresql ? 1 : 0);
+        ReadJournal().WriterPublicationAuthorized.Should().BeFalse();
+        await using var session = await _store.AcquireAsync(
+            TimeSpan.FromSeconds(1),
+            TimeSpan.FromMilliseconds(10),
+            CancellationToken.None
+        );
+    }
+
+    [TestCase(Ddl.CdcProviderSetupMode.InitialCreateOrExactMatch)]
+    [TestCase(Ddl.CdcProviderSetupMode.ValidateOnly)]
+    public async Task It_bounds_provider_calls_and_releases_the_lock_on_timeout(
+        Ddl.CdcProviderSetupMode stalledMode
+    )
+    {
+        ConfigureTiming(500, 4000);
+        A.CallTo(() => _provider.SetupAsync(A<Ddl.CdcProviderSetupRequest>._, A<CancellationToken>._))
+            .ReturnsLazily(
+                async (Ddl.CdcProviderSetupRequest r, CancellationToken token) =>
+                {
+                    if (r.Mode == stalledMode)
+                    {
+                        await Task.Delay(Timeout.InfiniteTimeSpan, token);
+                    }
+                    return ProviderResult(r);
+                }
+            );
+        var result = (await RunAsync().WaitAsync(TimeSpan.FromSeconds(2)))
             .Should()
             .BeOfType<CdcTransportResult<CdcProviderSetupHandoff>.Unavailable>()
             .Subject;
         result.Diagnostic.Failure.Should().Be(CdcDeploymentFailure.Timeout);
         result.Diagnostic.Component.Should().Be(CdcDeploymentComponent.ProviderSetup);
+        ReadJournal()
+            .Operations.Single(o => o.Effect == CdcWorkflowEffect.CreateProvider)
+            .Completions.Should()
+            .BeEmpty();
+        _calls.Should().HaveCount(stalledMode == Ddl.CdcProviderSetupMode.ValidateOnly ? 1 : 0);
+        await using var session = await _store.AcquireAsync(
+            TimeSpan.FromSeconds(1),
+            TimeSpan.FromMilliseconds(10),
+            CancellationToken.None
+        );
+    }
+
+    [Test]
+    public async Task It_bounds_lock_acquisition_by_the_call_budget_without_provider_effects()
+    {
+        ConfigureTiming(150, 4000);
+        await using (
+            var held = await _store.AcquireAsync(
+                TimeSpan.FromSeconds(1),
+                TimeSpan.FromMilliseconds(10),
+                CancellationToken.None
+            )
+        )
+        {
+            var result = (await RunAsync().WaitAsync(TimeSpan.FromSeconds(2)))
+                .Should()
+                .BeOfType<CdcTransportResult<CdcProviderSetupHandoff>.Unavailable>()
+                .Subject;
+            result.Diagnostic.Failure.Should().Be(CdcDeploymentFailure.Timeout);
+            result.Diagnostic.Component.Should().Be(CdcDeploymentComponent.WorkflowState);
+            _calls.Should().BeEmpty();
+        }
+        (await RunAsync()).State.Should().Be(CdcTransportEvidenceState.Observed);
+    }
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task It_honors_the_original_workflow_or_earlier_enclosing_deadline(bool enclosingDeadline)
+    {
+        ConfigureTiming(1000, 1500);
+        using var cancellation = new CancellationTokenSource();
+        A.CallTo(() => _provider.SetupAsync(A<Ddl.CdcProviderSetupRequest>._, A<CancellationToken>._))
+            .ReturnsLazily(
+                async (Ddl.CdcProviderSetupRequest r, CancellationToken token) =>
+                {
+                    if (enclosingDeadline && r.Mode == Ddl.CdcProviderSetupMode.ValidateOnly)
+                    {
+                        cancellation.CancelAfter(TimeSpan.FromMilliseconds(100));
+                    }
+                    await Task.Delay(850, token);
+                    return ProviderResult(r);
+                }
+            );
+
+        if (enclosingDeadline)
+        {
+            Func<Task> run = () => _controller.SetupAsync(_request, _runtime, cancellation.Token);
+            await run.Should().ThrowAsync<OperationCanceledException>();
+        }
+        else
+        {
+            var result = (await RunAsync())
+                .Should()
+                .BeOfType<CdcTransportResult<CdcProviderSetupHandoff>.Unavailable>()
+                .Subject;
+            result.Diagnostic.Failure.Should().Be(CdcDeploymentFailure.Timeout);
+            result.Diagnostic.Component.Should().Be(CdcDeploymentComponent.ProviderSetup);
+        }
+        _calls
+            .Should()
+            .ContainSingle()
+            .Which.Mode.Should()
+            .Be(Ddl.CdcProviderSetupMode.InitialCreateOrExactMatch);
+        ReadJournal()
+            .Operations.Single(o => o.Effect == CdcWorkflowEffect.CreateProvider)
+            .Completions.Should()
+            .BeEmpty();
+        ReadJournal().WriterPublicationAuthorized.Should().BeFalse();
         await using var session = await _store.AcquireAsync(
             TimeSpan.FromSeconds(1),
             TimeSpan.FromMilliseconds(10),
