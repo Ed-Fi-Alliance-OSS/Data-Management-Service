@@ -288,10 +288,10 @@ public static class DdlProvisionCommand
                         Console.Error.WriteLine(exception.Message);
                         return 1;
                     }
-                    catch (Exception)
+                    catch (Exception exception)
                     {
                         Console.Error.WriteLine(
-                            "Managed provisioning failed. Inspect trusted workflow evidence; interrupted creation requires cleanup/reprovisioning."
+                            $"Managed provisioning failed. Inspect trusted workflow evidence; interrupted creation requires cleanup/reprovisioning. ({exception.GetType().Name})"
                         );
                         return 1;
                     }

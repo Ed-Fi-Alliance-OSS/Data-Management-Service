@@ -3,11 +3,16 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.CommandLine;
 using System.Text.Json;
 using EdFi.DataManagementService.Backend.Cdc;
 using EdFi.DataManagementService.Core.DocumentCache.Cdc;
+using EdFi.DataManagementService.Core.Startup;
+using EdFi.DataManagementService.SchemaTools.Commands;
+using EdFi.DataManagementService.SchemaTools.Provisioning;
 using FakeItEasy;
 using FluentAssertions;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace EdFi.DataManagementService.SchemaTools.Tests.Unit;
 
@@ -308,4 +313,116 @@ public class Given_Managed_Database_Provisioning
             .ThrowAsync<CdcWorkflowStateException>();
         A.CallTo(() => _provider.ReadSourceFingerprintAsync(A<CancellationToken>._)).MustNotHaveHappened();
     }
+}
+
+[TestFixture("pgsql")]
+[TestFixture("mssql")]
+[NonParallelizable]
+public class Given_Managed_Database_Provisioning_Command_Failure(string dialect)
+{
+    private const string Secret = "credential-sentinel";
+    private const string Database = "physical-database-sentinel";
+    private (int ExitCode, string Output, string Error) _failure;
+    private (int ExitCode, string Output, string Error) _retry;
+
+    [SetUp]
+    public void SetUp()
+    {
+        string connection = $"Database={Database};Password={Secret};{Secret}-{Database}=invalid";
+        IDatabaseProvisioner provider =
+            dialect == "pgsql"
+                ? new PgsqlDatabaseProvisioner(NullLogger.Instance)
+                : new MssqlDatabaseProvisioner(NullLogger.Instance);
+        // The real provider's parsing failure contains sensitive input before command sanitization.
+        var failure = FluentActions
+            .Invoking(() => provider.GetDatabaseName(connection))
+            .Should()
+            .Throw<ArgumentException>();
+        failure.Which.Message.Should().Contain(Secret).And.Contain(Database);
+
+        string root = Path.Combine(Path.GetTempPath(), "managed-command-" + Guid.NewGuid().ToString("N"));
+        using StringWriter output = new();
+        using StringWriter error = new();
+        TextWriter originalOutput = Console.Out;
+        TextWriter originalError = Console.Error;
+        try
+        {
+            Console.SetOut(output);
+            Console.SetError(error);
+            var command = DdlProvisionCommand.Create(
+                NullLogger.Instance,
+                new ApiSchemaFileLoader(
+                    new ApiSchemaInputNormalizer(NullLogger<ApiSchemaInputNormalizer>.Instance),
+                    NullLogger<ApiSchemaFileLoader>.Instance
+                ),
+                new EffectiveSchemaSetBuilder(
+                    new EffectiveSchemaHashProvider(NullLogger<EffectiveSchemaHashProvider>.Instance),
+                    new ResourceKeySeedProvider(NullLogger<ResourceKeySeedProvider>.Instance)
+                )
+            );
+            string[] arguments =
+            [
+                "--schema",
+                Path.Combine(TestContext.CurrentContext.TestDirectory, "Fixtures", "minimal-api-schema.json"),
+                "--connection-string",
+                connection,
+                "--dialect",
+                dialect,
+                "--create-database",
+                "--managed-state-path",
+                root,
+                "--data-store-id",
+                "42",
+                "--instance-key",
+                "datastore-42",
+            ];
+
+            int exitCode = command.Parse(arguments).Invoke();
+            _failure = (exitCode, output.ToString(), error.ToString());
+
+            // The failed CREATE attempt leaves intent; retry must keep the dedicated recovery diagnostic.
+            output.GetStringBuilder().Clear();
+            error.GetStringBuilder().Clear();
+            exitCode = command.Parse(arguments).Invoke();
+            _retry = (exitCode, output.ToString(), error.ToString());
+        }
+        finally
+        {
+            Console.SetOut(originalOutput);
+            Console.SetError(originalError);
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, true);
+            }
+        }
+    }
+
+    [Test]
+    public void It_preserves_the_failure_exit_code() => _failure.ExitCode.Should().Be(1);
+
+    [Test]
+    public void It_reports_only_the_exception_type_and_safe_guidance() =>
+        _failure
+            .Error.Should()
+            .Be(
+                "Managed provisioning failed. Inspect trusted workflow evidence; interrupted creation requires cleanup/reprovisioning. (ArgumentException)"
+                    + Environment.NewLine
+            );
+
+    [Test]
+    public void It_emits_no_success_output() => _failure.Output.Should().BeEmpty();
+
+    [Test]
+    public void It_excludes_credentials_and_physical_identifiers() =>
+        (_failure.Output + _failure.Error).Should().NotContain(Secret).And.NotContain(Database);
+
+    [Test]
+    public void It_preserves_the_recovery_exit_code() => _retry.ExitCode.Should().Be(1);
+
+    [Test]
+    public void It_preserves_the_dedicated_recovery_diagnostic() =>
+        _retry.Error.Should().Be(new CdcManagedProvisioningRecoveryException().Message + Environment.NewLine);
+
+    [Test]
+    public void It_emits_no_success_output_on_recovery() => _retry.Output.Should().BeEmpty();
 }
