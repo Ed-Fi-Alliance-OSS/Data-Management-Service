@@ -134,7 +134,8 @@ public sealed class CdcProviderSetupOrchestration
         LocalCdcWorkflowJournalStore.Session session,
         Action<CdcDeploymentComponent> setComponent,
         CancellationToken token,
-        bool observeProjection = true
+        bool observeProjection = true,
+        Func<CdcProviderSetupResult, Task>? observeProvider = null
     )
     {
         var binding = request.Binding;
@@ -278,7 +279,18 @@ public sealed class CdcProviderSetupOrchestration
             slotProof,
             !consumptionPossible && retained.Length == 1
         );
-        var result = await _provider.SetupAsync(setup, token);
+        var result = await ReadProviderAsync(request, setup, token);
+        if (observeProvider is not null)
+        {
+            // The established controller consumes terminal evidence before success/identity guards.
+            // Its containment uses caller cancellation, independently of this setup deadline.
+            Require(
+                retained.Length == 1
+                    && history.Transitions[^1].Status == DocumentCacheDownstreamPublicationStatus.Active
+            );
+            RequireCompleted(journal, CdcWorkflowEffect.EstablishConnector);
+            await observeProvider(result);
+        }
         token.ThrowIfCancellationRequested();
         ValidateResult(request, setup, result);
         if (retained.Length == 0)
@@ -287,7 +299,7 @@ public sealed class CdcProviderSetupOrchestration
             Require(setup.Provider != DdlProvider.Postgresql || slotProof is not null);
             // Re-read live capture after effects. A success response alone is not a completion receipt.
             setup = CopyRequest(request.ProviderSetup, DdlMode.ValidateOnly, slotProof, true);
-            result = await _provider.SetupAsync(setup, token);
+            result = await ReadProviderAsync(request, setup, token);
             token.ThrowIfCancellationRequested();
             ValidateResult(request, setup, result);
         }
@@ -334,6 +346,51 @@ public sealed class CdcProviderSetupOrchestration
         var template = _templates.Render(templateRequest);
         Require(template.Outcome == CdcConnectorTemplateOutcome.Rendered);
         return new(templateRequest, template, observedAt);
+    }
+
+    private async Task<CdcProviderSetupResult> ReadProviderAsync(
+        CdcDeploymentRequest request,
+        CdcProviderSetupRequest setup,
+        CancellationToken token
+    )
+    {
+        using var call = CancellationTokenSource.CreateLinkedTokenSource(token);
+        call.CancelAfter(request.Timing.CallTimeout);
+        var result = await _provider.SetupAsync(setup, call.Token).WaitAsync(call.Token);
+        call.Token.ThrowIfCancellationRequested();
+        return result;
+    }
+
+    internal static CdcProviderSetupObservationMapping MapRetainedProvider(
+        CdcDeploymentRequest request,
+        CdcProviderSetupResult provider,
+        CdcWorkflowCompletion.Provider retained,
+        string operation,
+        DateTimeOffset observedAt
+    )
+    {
+        var mapped = CdcProviderSetupResultMapper.MapValidateOnlyResult(
+            operation,
+            observedAt,
+            request.Binding,
+            provider
+        );
+        // Preserve authoritative absence and compare same-name identities against durable provenance.
+        if (
+            provider.Outcome == DdlOutcome.ExactMatch
+            && mapped.ProviderSetup.PhysicalSourceFingerprint == request.Binding.PhysicalSourceFingerprint
+            && !Identities(request, provider).SequenceEqual(retained.Artifacts)
+        )
+        {
+            mapped = mapped with
+            {
+                ProviderHistory = mapped.ProviderHistory with
+                {
+                    ProviderArtifactState = CdcProviderArtifactContinuityState.Recreated,
+                },
+            };
+        }
+        return mapped;
     }
 
     internal static CdcProviderSetupRequest CopyRequest(

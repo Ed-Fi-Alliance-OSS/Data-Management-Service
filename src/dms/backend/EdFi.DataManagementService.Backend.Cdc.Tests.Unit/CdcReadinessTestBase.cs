@@ -235,6 +235,35 @@ internal abstract class CdcReadinessTestBase(Ddl.CdcProvider provider) : CdcRegi
         await _positionServices.DisposeAsync();
     }
 
+    protected void ConfigureInitialProviderLoss(string failure)
+    {
+        if (failure == "provider-recreated")
+        {
+            _identity = new('b', 64);
+        }
+        if (failure == "provider-missing")
+        {
+            var healthy = _change;
+            _change = r =>
+                healthy(r) with
+                {
+                    Outcome = Ddl.CdcProviderSetupOutcome.Failed,
+                    ArtifactInventory = healthy(r)
+                        .ArtifactInventory.Select(a =>
+                            a with
+                            {
+                                State = a.ArtifactKind
+                                    is Ddl.CdcProviderArtifactKind.PostgresqlReplicationSlot
+                                        or Ddl.CdcProviderArtifactKind.SqlServerCaptureInstance
+                                    ? Ddl.CdcProviderArtifactState.Missing
+                                    : a.State,
+                            }
+                        )
+                        .ToArray(),
+                };
+        }
+    }
+
     protected void ResetReadiness() =>
         _readiness = new(
             _store,

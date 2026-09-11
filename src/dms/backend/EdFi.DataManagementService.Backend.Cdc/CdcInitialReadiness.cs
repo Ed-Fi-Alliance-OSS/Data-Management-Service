@@ -86,13 +86,17 @@ public sealed class CdcInitialReadiness
         CdcDeploymentRequest request,
         ICdcProjectionRuntime runtime,
         long lagThresholdMilliseconds,
-        CancellationToken cancellationToken = default
+        CancellationToken cancellationToken = default,
+        CancellationToken operationDeadline = default
     )
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(runtime);
         var boundary = new Boundary();
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken,
+            operationDeadline
+        );
         timeout.CancelAfter(request.Timing.WaitTimeout);
         var token = timeout.Token;
         bool disposed = false;
@@ -229,42 +233,41 @@ public sealed class CdcInitialReadiness
                                 && captured.Provider == request.Binding.Provider
                                 && captured.BarrierCapturedAt >= first.ProjectionObservedAt
                         );
-                        CdcProviderBarrierObservation barrier;
+                        CdcProviderBarrierObservation barrier = null!;
+                        CdcProviderSetupHandoff provider;
+                        CdcProviderSetupObservationMapping mapped;
+                        CdcSourceHistoryClassificationResult continuity;
                         CdcConnectOffsetEvidence rawOffset;
                         CdcConnectorOffsetObservation offset;
                         while (true)
                         {
                             await RequireSameWorkerAsync(request, worker, boundary, token);
                             await RequireRunningAsync(request, worker, operation, boundary, token);
-                            boundary.Component = CdcDeploymentComponent.Connect;
-                            rawOffset = Observed(
-                                await CallAsync(
-                                    request,
-                                    ct => _connect.ReadOffsetEvidenceAsync(request, ct),
-                                    token
-                                )
-                            );
-                            offset = CdcControllerObservations.Offset(
+                            (provider, mapped, continuity, rawOffset, offset) = await InspectProviderAsync(
                                 request,
+                                runtime,
+                                session,
                                 operation,
-                                rawOffset,
-                                established.SourcePartitionHash,
-                                _time.GetUtcNow()
+                                c => boundary.Component = c,
+                                token,
+                                cancellationToken,
+                                current =>
+                                    barrier = _positions.ObserveProviderBarrier(
+                                        new(
+                                            operation,
+                                            request.Binding,
+                                            first.ProjectionObservedAt,
+                                            captured,
+                                            current,
+                                            established.SourcePartitionHash
+                                        )
+                                    )
                             );
-                            boundary.Component = CdcDeploymentComponent.ProviderSetup;
-                            barrier = _positions.ObserveProviderBarrier(
-                                new(
-                                    operation,
-                                    request.Binding,
-                                    first.ProjectionObservedAt,
-                                    captured,
-                                    offset,
-                                    established.SourcePartitionHash
-                                )
-                            );
-                            // Invalid established offsets must reach the continuity classifier before
-                            // barrier validation can reject the admission pass.
-                            if (barrier.BarrierState != CdcProviderBarrierState.NotReached)
+                            // Continuity is observed even while a valid offset is behind the barrier.
+                            if (
+                                barrier.BarrierState != CdcProviderBarrierState.NotReached
+                                || continuity.Observation.Continuity != CdcSourceHistoryContinuity.Healthy
+                            )
                             {
                                 break;
                             }
@@ -283,125 +286,14 @@ public sealed class CdcInitialReadiness
                             );
                             await DelayAsync(request, token);
                         }
-                        var provider = await InspectProviderAsync(request, runtime, session, boundary, token);
-                        var mapped = CdcProviderSetupResultMapper.MapValidateOnlyResult(
-                            operation,
-                            provider.ObservedAt,
-                            request.Binding,
-                            provider.TemplateRequest.ProviderSetupEvidence.Result
-                        );
-                        var schemaHistory = new CdcSqlServerSchemaHistoryEvidence(
-                            CdcSqlServerSchemaHistoryEnablementPhase.BeforeInitialAdmission,
-                            CdcSqlServerSchemaHistoryState.NotApplicable
-                        );
-                        if (request.Binding.Provider == CoreProvider.SqlServer)
-                        {
-                            boundary.Component = CdcDeploymentComponent.Kafka;
-                            schemaHistory = schemaHistory with
-                            {
-                                State = Observed(
-                                    await CallAsync(
-                                        request,
-                                        ct => _kafka.InspectSchemaHistoryAsync(request, ct),
-                                        token
-                                    )
-                                ),
-                            };
-                        }
-                        boundary.Component = CdcDeploymentComponent.ProviderSetup;
-                        async Task<CdcSourceHistoryClassificationResult> ObserveContinuityAsync()
-                        {
-                            var classification = await CallAsync(
-                                request,
-                                ct =>
-                                    _positions.ObserveSourceHistoryAsync(
-                                        new(
-                                            operation,
-                                            request.Binding,
-                                            mapped.ProviderSetup,
-                                            offset,
-                                            mapped.ProviderHistory
-                                        )
-                                        {
-                                            ExpectedConnectSourcePartitionHash =
-                                                established.SourcePartitionHash,
-                                            SqlServerSchemaHistory =
-                                                request.Binding.Provider == CoreProvider.SqlServer
-                                                    ? schemaHistory
-                                                    : null,
-                                        },
-                                        ct
-                                    ),
-                                token
-                            );
-                            if (classification.Observation.Continuity == CdcSourceHistoryContinuity.Lost)
-                            {
-                                // Consume this classification, never a later healthy reobservation. The
-                                // caller token gives latch/stop independent budgets under this session.
-                                var terminal = new CdcSourceHistoryContainment(_bindings, _connect, _time);
-                                List<CdcDeploymentDiagnostic> diagnostics = [];
-                                await terminal.PersistAsync(
-                                    request,
-                                    classification,
-                                    exact.State!,
-                                    diagnostics,
-                                    _ => { },
-                                    cancellationToken
-                                );
-                                await terminal.StopAsync(request, diagnostics, _ => { }, cancellationToken);
-                                throw new EvidenceException(
-                                    diagnostics.FirstOrDefault()
-                                        ?? new(
-                                            CdcDeploymentComponent.ProviderSetup,
-                                            CdcDeploymentFailure.ValidationFailed
-                                        )
-                                );
-                            }
-                            return classification;
-                        }
-                        var continuity = await ObserveContinuityAsync();
                         if (
                             request.Binding.Provider == CoreProvider.Postgresql
                             && continuity.Observation.Continuity == CdcSourceHistoryContinuity.Unknown
                         )
                         {
-                            // The slot may have advanced after the first Connect offset read. Read
-                            // Connect again against that same slot sample before declaring a gap.
-                            boundary.Component = CdcDeploymentComponent.Connect;
-                            rawOffset = Observed(
-                                await CallAsync(
-                                    request,
-                                    ct => _connect.ReadOffsetEvidenceAsync(request, ct),
-                                    token
-                                )
-                            );
-                            offset = CdcControllerObservations.Offset(
-                                request,
-                                operation,
-                                rawOffset,
-                                established.SourcePartitionHash,
-                                _time.GetUtcNow()
-                            );
-                            boundary.Component = CdcDeploymentComponent.ProviderSetup;
-                            continuity = await ObserveContinuityAsync();
-                            if (continuity.Observation.Continuity == CdcSourceHistoryContinuity.Unknown)
-                            {
-                                // The refreshed offset may now exceed the earlier source WAL sample.
-                                // The next bounded admission pass collects both again.
-                                await DelayAsync(request, token);
-                                continue;
-                            }
-                            var refreshedBarrier = _positions.ObserveProviderBarrier(
-                                new(
-                                    operation,
-                                    request.Binding,
-                                    first.ProjectionObservedAt,
-                                    captured,
-                                    offset,
-                                    established.SourcePartitionHash
-                                )
-                            );
-                            Require(refreshedBarrier.BarrierState == CdcProviderBarrierState.Reached);
+                            // Fresh provider and offset evidence on the next bounded admission pass.
+                            await DelayAsync(request, token);
+                            continue;
                         }
                         Require(continuity.Observation.Continuity == CdcSourceHistoryContinuity.Healthy);
                         Require(
@@ -688,32 +580,163 @@ public sealed class CdcInitialReadiness
         return exact;
     }
 
-    private Task<CdcProviderSetupHandoff> InspectProviderAsync(
+    internal async Task<(
+        CdcProviderSetupHandoff Provider,
+        CdcProviderSetupObservationMapping Mapped,
+        CdcSourceHistoryClassificationResult Continuity,
+        CdcConnectOffsetEvidence RawOffset,
+        CdcConnectorOffsetObservation Offset
+    )> InspectProviderAsync(
         CdcDeploymentRequest request,
         ICdcProjectionRuntime runtime,
         LocalCdcWorkflowJournalStore.Session session,
-        Boundary boundary,
-        CancellationToken token
-    ) =>
-        CallAsync(
+        string operation,
+        Action<CdcDeploymentComponent> setComponent,
+        CancellationToken token,
+        CancellationToken caller,
+        Action<CdcConnectorOffsetObservation>? observeBarrier = null
+    )
+    {
+        var journal = await session.ReadAsync(request.TargetIdentity, token);
+        var established = (CdcWorkflowCompletion.Connector)
+            journal
+                .Operations.Single(o => o.Effect == CdcWorkflowEffect.EstablishConnector)
+                .Completions.Single()
+                .Evidence;
+        var retained = (CdcWorkflowCompletion.Provider)
+            journal
+                .Operations.Single(o => o.Effect == CdcWorkflowEffect.CreateProvider)
+                .Completions.Single()
+                .Evidence;
+        var exact = await ExactAsync(request, token);
+        CdcProviderSetupObservationMapping mapped = null!;
+        CdcSourceHistoryClassificationResult continuity = null!;
+        CdcConnectOffsetEvidence rawOffset = null!;
+        CdcConnectorOffsetObservation offset = null!;
+        var provider = await new CdcProviderSetupOrchestration(
+            _store,
+            _bindings,
+            _provider,
+            _templates,
+            _time
+        ).SetupInSessionAsync(
             request,
-            ct =>
-                new CdcProviderSetupOrchestration(
-                    _store,
-                    _bindings,
-                    _provider,
-                    _templates,
-                    _time
-                ).SetupInSessionAsync(
+            runtime,
+            session,
+            setComponent,
+            token,
+            observeProjection: false,
+            observeProvider: async result =>
+            {
+                mapped = CdcProviderSetupOrchestration.MapRetainedProvider(
                     request,
-                    runtime,
-                    session,
-                    c => boundary.Component = c,
-                    ct,
-                    observeProjection: false
-                ),
-            token
+                    result,
+                    retained,
+                    operation,
+                    _time.GetUtcNow()
+                );
+                var schemaHistory = new CdcSqlServerSchemaHistoryEvidence(
+                    CdcSqlServerSchemaHistoryEnablementPhase.BeforeInitialAdmission,
+                    CdcSqlServerSchemaHistoryState.NotApplicable
+                );
+                async Task<CdcSourceHistoryClassificationResult> ClassifyAsync(
+                    CdcConnectorOffsetObservation? current
+                )
+                {
+                    setComponent(CdcDeploymentComponent.ProviderSetup);
+                    var classification = await CallAsync(
+                        request,
+                        ct =>
+                            _positions.ObserveSourceHistoryAsync(
+                                new(
+                                    operation,
+                                    request.Binding,
+                                    mapped.ProviderSetup,
+                                    current,
+                                    mapped.ProviderHistory
+                                )
+                                {
+                                    ExpectedConnectSourcePartitionHash = established.SourcePartitionHash,
+                                    SqlServerSchemaHistory =
+                                        request.Binding.Provider == CoreProvider.SqlServer
+                                            ? schemaHistory
+                                            : null,
+                                },
+                                ct
+                            ),
+                        token
+                    );
+                    if (classification.Observation.Continuity == CdcSourceHistoryContinuity.Lost)
+                    {
+                        // Consume this exact classification under the held session. No full-status resample.
+                        var terminal = new CdcSourceHistoryContainment(_bindings, _connect, _time);
+                        List<CdcDeploymentDiagnostic> diagnostics = [];
+                        await terminal.PersistAsync(
+                            request,
+                            classification,
+                            exact.State!,
+                            diagnostics,
+                            _ => { },
+                            caller
+                        );
+                        await terminal.StopAsync(request, diagnostics, _ => { }, caller);
+                        throw new EvidenceException(
+                            diagnostics.FirstOrDefault()
+                                ?? new(
+                                    CdcDeploymentComponent.ProviderSetup,
+                                    CdcDeploymentFailure.ValidationFailed
+                                )
+                        );
+                    }
+                    return classification;
+                }
+                async Task ReadOffsetAsync()
+                {
+                    setComponent(CdcDeploymentComponent.Connect);
+                    rawOffset = Observed(
+                        await CallAsync(request, ct => _connect.ReadOffsetEvidenceAsync(request, ct), token)
+                    );
+                    offset = CdcControllerObservations.Offset(
+                        request,
+                        operation,
+                        rawOffset,
+                        established.SourcePartitionHash,
+                        _time.GetUtcNow()
+                    );
+                    observeBarrier?.Invoke(offset);
+                }
+                // Missing/recreated provider artifacts must survive even an unavailable offset endpoint.
+                await ClassifyAsync(null);
+                await ReadOffsetAsync();
+                continuity = await ClassifyAsync(offset);
+                if (request.Binding.Provider == CoreProvider.SqlServer)
+                {
+                    setComponent(CdcDeploymentComponent.Kafka);
+                    schemaHistory = schemaHistory with
+                    {
+                        State = Observed(
+                            await CallAsync(
+                                request,
+                                ct => _kafka.InspectSchemaHistoryAsync(request, ct),
+                                token
+                            )
+                        ),
+                    };
+                    continuity = await ClassifyAsync(offset);
+                }
+                if (
+                    request.Binding.Provider == CoreProvider.Postgresql
+                    && continuity.Observation.Continuity == CdcSourceHistoryContinuity.Unknown
+                )
+                {
+                    // Preserve the fresh Connect read against this same slot observation.
+                    await ReadOffsetAsync();
+                    continuity = await ClassifyAsync(offset);
+                }
+            }
         );
+        return (provider, mapped, continuity, rawOffset, offset);
+    }
 
     private async Task<CdcProjectionCorrelationObservation> ProjectionAsync(
         CdcDeploymentRequest request,
@@ -840,7 +863,7 @@ public sealed class CdcInitialReadiness
         "S3871",
         Justification = "Private control flow caught inside the controller."
     )]
-    private sealed class EvidenceException(CdcDeploymentDiagnostic diagnostic) : Exception
+    internal sealed class EvidenceException(CdcDeploymentDiagnostic diagnostic) : Exception
     {
         public CdcDeploymentDiagnostic Diagnostic { get; } = diagnostic;
     }

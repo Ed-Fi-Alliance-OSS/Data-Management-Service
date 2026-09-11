@@ -280,36 +280,14 @@ public sealed partial class CdcEstablishedValidation
             false
         );
         var provider = await CallAsync(request, ct => _provider.SetupAsync(setup, ct), token);
-        CdcProviderSetupObservationMapping MapProvider(CdcProviderSetupResult provider)
-        {
-            var mapped = CdcProviderSetupResultMapper.MapValidateOnlyResult(
+        CdcProviderSetupObservationMapping MapProvider(CdcProviderSetupResult result) =>
+            CdcProviderSetupOrchestration.MapRetainedProvider(
+                request,
+                result,
+                retained,
                 operation,
-                _time.GetUtcNow(),
-                request.Binding,
-                provider
+                _time.GetUtcNow()
             );
-            // Keep authoritative loss available to the classifier even when setup is not successful.
-            // Same-name artifact recreation cannot hide behind currently healthy retained ranges.
-            if (
-                provider.Outcome == Ddl.CdcProviderSetupOutcome.ExactMatch
-                && mapped.ProviderSetup.PhysicalSourceFingerprint == request.Binding.PhysicalSourceFingerprint
-            )
-            {
-                var identities = CdcProviderSetupOrchestration.Identities(request, provider);
-                if (!identities.SequenceEqual(retained.Artifacts))
-                {
-                    mapped = mapped with
-                    {
-                        ProviderHistory = mapped.ProviderHistory with
-                        {
-                            ProviderArtifactState = CdcProviderArtifactContinuityState.Recreated,
-                        },
-                    };
-                }
-            }
-
-            return mapped;
-        }
         var mapped = MapProvider(provider);
 
         partialInput = partialInput with { ProviderSetup = mapped.ProviderSetup };

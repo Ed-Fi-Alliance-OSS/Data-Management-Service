@@ -13,6 +13,7 @@ using EdFi.DataManagementService.Core.Startup;
 using EdFi.DataManagementService.SchemaTools.Cdc;
 using FakeItEasy;
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
 using Ddl = EdFi.DataManagementService.Backend.Ddl;
 
 namespace EdFi.DataManagementService.SchemaTools.Tests.Unit;
@@ -21,6 +22,7 @@ namespace EdFi.DataManagementService.SchemaTools.Tests.Unit;
 [TestFixture(Ddl.CdcProvider.SqlServer)]
 internal class Given_Cdc_command_enable_retry(Ddl.CdcProvider provider) : CdcReadinessTestBase(provider)
 {
+    private ICdcBindingLifecycleService _bindings = null!;
     private string _settingsPath = null!;
     private ICdcWorkerStartupTransport _infrastructure = null!;
     private string JournalPath =>
@@ -29,6 +31,7 @@ internal class Given_Cdc_command_enable_retry(Ddl.CdcProvider provider) : CdcRea
     [SetUp]
     public void SetupCommand()
     {
+        _bindings = _services.GetRequiredService<ICdcBindingLifecycleService>();
         // Reuse the qualified synthetic transport inventory, starting before provider intent.
         // Every interruption and subsequent retry below goes through the real command/coordinator.
         var journal = JsonNode.Parse(File.ReadAllText(JournalPath))!;
@@ -107,12 +110,274 @@ internal class Given_Cdc_command_enable_retry(Ddl.CdcProvider provider) : CdcRea
                     _infrastructure,
                     _metrics,
                     _positions
-                ),
+                )
+                {
+                    Bindings = _bindings,
+                },
         };
         return runner.RunAsync(
             new(CdcCommandOperation.Enable, _settingsPath, _root, 1, Target.Generation, false, "", false),
             TextWriter.Null,
             token
+        );
+    }
+
+    private async Task InterruptAfterEstablishmentAsync()
+    {
+        _onCall = name =>
+        {
+            if (name == "metrics")
+            {
+                throw new IOException("controlled initial interruption");
+            }
+        };
+        (await CommandAsync()).Succeeded.Should().BeFalse();
+        ReadJournal()
+            .Operations.Single(o => o.Effect == CdcWorkflowEffect.EstablishConnector)
+            .Completions.Should()
+            .ContainSingle();
+        _onCall = _ => { };
+        _trace.Clear();
+    }
+
+    private void ConfigureInitialStop()
+    {
+        A.CallTo(() => _connect.StopAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
+            .ReturnsLazily(() =>
+            {
+                Trace("stop");
+                _runtimeState = CdcConnectorRuntimeState.Stopped;
+                return Observed(new CdcTransportAcknowledgement());
+            });
+        A.CallTo(() => _connect.ReadStatusAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
+            .ReturnsLazily(() =>
+            {
+                var status = Status();
+                if (_runtimeState != CdcConnectorRuntimeState.Stopped)
+                {
+                    return Observed(status);
+                }
+                Trace("stopped-readback");
+                return Observed(
+                    new CdcConnectStatus(
+                        status.Runtime with
+                        {
+                            ConnectorState = CdcConnectorRuntimeState.Stopped,
+                            TaskCount = 0,
+                            RunningTaskCount = 0,
+                            SoleTaskState = CdcConnectorRuntimeState.Unknown,
+                        },
+                        status.WorkerId,
+                        []
+                    )
+                );
+            });
+    }
+
+    [TestCase("provider-missing")]
+    [TestCase("provider-recreated")]
+    public async Task It_contains_provider_loss_before_enable_retry_setup_rejects_it(string failure)
+    {
+        await InterruptAfterEstablishmentAsync();
+        var healthy = _change;
+        ConfigureInitialProviderLoss(failure);
+        ConfigureInitialStop();
+        (await CommandAsync()).Succeeded.Should().BeFalse();
+        var state = await _bindings.ExactMatchBindingAsync(_request.Binding);
+        state.State!.Incident.Should().NotBeNull();
+        state
+            .State.Incident!.FailureCategory.Should()
+            .Be(
+                failure == "provider-missing"
+                    ? CdcIncidentFailureCategory.ProviderArtifactMissing
+                    : CdcIncidentFailureCategory.ProviderArtifactRecreated
+            );
+        _trace.Should().Contain("stopped-readback");
+        _trace.IndexOf("stopped-readback").Should().BeLessThan(_trace.IndexOf("dispose"));
+        _trace.Should().NotContain("start").And.NotContain("barrier");
+        ReadJournal().WriterPublicationAuthorized.Should().BeFalse();
+        _change = healthy;
+        _identity = new('a', 64);
+        _runtimeState = CdcConnectorRuntimeState.Running;
+        _trace.Clear();
+        (await CommandAsync()).Succeeded.Should().BeFalse();
+        _trace.Should().NotContain("provider");
+        ReadJournal().WriterPublicationAuthorized.Should().BeFalse();
+    }
+
+    [Test]
+    public async Task It_contains_retained_history_loss_while_enable_waits_for_the_barrier()
+    {
+        await InterruptAfterEstablishmentAsync();
+        ShortTiming(300);
+        bool waiting = false;
+        var healthy = _change;
+        _change = result =>
+            waiting
+                ? healthy(result) with
+                {
+                    ProviderHistoryObservations = healthy(result)
+                        .ProviderHistoryObservations.Select(h =>
+                            h with
+                            {
+                                SafeObservedValues = h.SafeObservedValues.ToDictionary(
+                                    kv => kv.Key,
+                                    kv =>
+                                        kv.Key switch
+                                        {
+                                            "restart_lsn" or "confirmed_flush_lsn" => "0_11",
+                                            "retained_min_lsn" => "0x00000001000000020004",
+                                            _ => kv.Value,
+                                        }
+                                ),
+                            }
+                        )
+                        .ToArray(),
+                }
+                : healthy(result);
+        A.CallTo(() =>
+                _runtime.CaptureBarrierAsync(
+                    A<CdcDeploymentRequest>._,
+                    A<ICdcProviderSourcePositionAdapter>._,
+                    A<CancellationToken>._
+                )
+            )
+            .ReturnsLazily(() =>
+            {
+                Trace("barrier");
+                waiting = true;
+                return Provider == Ddl.CdcProvider.Postgresql
+                    ? CdcProviderBarrierCaptureResult.PostgresqlSuccess("0/20", DateTimeOffset.UtcNow)
+                    : CdcProviderBarrierCaptureResult.SqlServerSuccess(
+                        "00000001:00000002:0004",
+                        "00000001:00000002:0004",
+                        DateTimeOffset.UtcNow
+                    );
+            });
+        ConfigureInitialStop();
+        (await CommandAsync()).Succeeded.Should().BeFalse();
+        var state = await _bindings.ExactMatchBindingAsync(_request.Binding);
+        state.State!.Incident.Should().NotBeNull();
+        state.State.Incident!.FailureCategory.Should().Be(CdcIncidentFailureCategory.RetainedHistoryGap);
+        _trace.IndexOf("barrier").Should().BeLessThan(_trace.IndexOf("stop"));
+        _trace.IndexOf("stopped-readback").Should().BeLessThan(_trace.IndexOf("dispose"));
+        _trace.Should().NotContain("metrics");
+        ReadJournal().WriterPublicationAuthorized.Should().BeFalse();
+    }
+
+    [TestCase("command", false, true)]
+    [TestCase("workflow", false, true)]
+    [TestCase("command", true, true)]
+    [TestCase("command", false, false)]
+    [TestCase("workflow", false, false)]
+    public async Task It_contains_initial_loss_across_enclosing_deadlines_during_persistence(
+        string deadline,
+        bool cancelCaller,
+        bool observeLoss
+    )
+    {
+        await InterruptAfterEstablishmentAsync();
+        ShortTiming(250); // 1.25s workflow deadline; independent 250ms persistence calls.
+        var settings = JsonNode.Parse(await File.ReadAllTextAsync(_settingsPath))!;
+        settings["Cdc:Timing:WaitMilliseconds"] = deadline == "command" ? "900" : "5000";
+        settings["Cdc:Timing:CallMilliseconds"] = "250";
+        settings["Cdc:Timing:PollMilliseconds"] = "5";
+        await File.WriteAllTextAsync(_settingsPath, settings.ToJsonString());
+        var elapsed = System.Diagnostics.Stopwatch.StartNew();
+        var real = _bindings;
+        var delayed = A.Fake<ICdcBindingLifecycleService>();
+        A.CallTo(() => delayed.ExactMatchBindingAsync(A<CdcBinding>._, A<CancellationToken>._))
+            .ReturnsLazily(
+                (CdcBinding binding, CancellationToken ct) => real.ExactMatchBindingAsync(binding, ct)
+            );
+        using var caller = new CancellationTokenSource();
+        A.CallTo(() => delayed.LatchSourceHistoryLossAsync(A<CdcIncident>._, A<CancellationToken>._))
+            .ReturnsLazily(
+                async (CdcIncident incident, CancellationToken ct) =>
+                {
+                    Trace("persist");
+                    Func<Task> contend = async () =>
+                    {
+                        await using var other = await _store.AcquireAsync(
+                            TimeSpan.FromMilliseconds(15),
+                            TimeSpan.FromMilliseconds(1),
+                            default
+                        );
+                    };
+                    await contend.Should().ThrowAsync<CdcWorkflowStateException>();
+                    if (cancelCaller)
+                    {
+                        await caller.CancelAsync();
+                    }
+                    await Task.Delay(200, ct);
+                    return await real.LatchSourceHistoryLossAsync(incident, ct);
+                }
+            );
+        _bindings = delayed;
+        ConfigureInitialStop();
+        // Spend the original budget in ordinary barrier polling, then expose real lost offsets.
+        A.CallTo(() =>
+                _runtime.CaptureBarrierAsync(
+                    A<CdcDeploymentRequest>._,
+                    A<ICdcProviderSourcePositionAdapter>._,
+                    A<CancellationToken>._
+                )
+            )
+            .ReturnsLazily(() =>
+                Provider == Ddl.CdcProvider.Postgresql
+                    ? CdcProviderBarrierCaptureResult.PostgresqlSuccess("0/20", DateTimeOffset.UtcNow)
+                    : CdcProviderBarrierCaptureResult.SqlServerSuccess(
+                        "00000001:00000002:0004",
+                        "00000001:00000002:0004",
+                        DateTimeOffset.UtcNow
+                    )
+            );
+        _onCall = name =>
+        {
+            if (
+                observeLoss
+                && name == "offset"
+                && elapsed.ElapsedMilliseconds > (deadline == "command" ? 800 : 1150)
+            )
+            {
+                _offsetState = CdcConnectOffsetState.Missing;
+            }
+        };
+        elapsed.Restart();
+        if (cancelCaller)
+        {
+            await FluentActions
+                .Awaiting(() => CommandAsync(caller.Token))
+                .Should()
+                .ThrowAsync<OperationCanceledException>();
+        }
+        else
+        {
+            var result = await CommandAsync(caller.Token);
+            result.Succeeded.Should().BeFalse();
+            if (!observeLoss)
+            {
+                result.Diagnostics.Should().Contain(d => d.Failure == CdcDeploymentFailure.Timeout);
+                (await real.ExactMatchBindingAsync(_request.Binding)).State!.Incident.Should().BeNull();
+                _trace.Should().NotContain("persist").And.NotContain("stop");
+                elapsed
+                    .Elapsed.Should()
+                    .BeLessThan(TimeSpan.FromMilliseconds(deadline == "command" ? 1300 : 1650));
+                ReadJournal().WriterPublicationAuthorized.Should().BeFalse();
+                return;
+            }
+            _trace.Should().Contain("persist");
+            (await real.ExactMatchBindingAsync(_request.Binding)).State!.Incident.Should().NotBeNull();
+            _trace.Should().Contain("stopped-readback");
+            _trace.IndexOf("persist").Should().BeLessThan(_trace.IndexOf("stop"));
+            _trace.IndexOf("stopped-readback").Should().BeLessThan(_trace.IndexOf("dispose"));
+        }
+        _trace.Should().Contain("persist");
+        ReadJournal().WriterPublicationAuthorized.Should().BeFalse();
+        await using var released = await _store.AcquireAsync(
+            TimeSpan.FromSeconds(1),
+            TimeSpan.FromMilliseconds(1),
+            default
         );
     }
 

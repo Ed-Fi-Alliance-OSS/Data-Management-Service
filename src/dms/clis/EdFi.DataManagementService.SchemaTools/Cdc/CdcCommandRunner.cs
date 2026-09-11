@@ -269,7 +269,7 @@ public sealed class CdcCommandRunner(IApiSchemaFileLoader loader, EffectiveSchem
                                     positions
                                 )
                             )
-                            .EnableAsync(request, runtime, config.LagThreshold, ct)
+                            .EnableAsync(request, runtime, config.LagThreshold, token, ct)
                     );
                     return Result(true, publication, []);
                 case CdcCommandOperation.Validate:

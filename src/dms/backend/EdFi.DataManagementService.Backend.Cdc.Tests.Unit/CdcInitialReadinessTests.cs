@@ -93,6 +93,9 @@ internal class Given_CdcInitialReadiness(Ddl.CdcProvider provider) : CdcReadines
         ReadJournal().WriterPublicationAuthorized.Should().Be(expected == CdcTransportEvidenceState.Observed);
     }
 
+    [TestCase("behind-barrier", CdcIncidentFailureCategory.RetainedHistoryGap)]
+    [TestCase("provider-missing", CdcIncidentFailureCategory.ProviderArtifactMissing)]
+    [TestCase("provider-recreated", CdcIncidentFailureCategory.ProviderArtifactRecreated)]
     [TestCase("retained-gap", CdcIncidentFailureCategory.RetainedHistoryGap)]
     [TestCase("missing", CdcIncidentFailureCategory.ConnectOffsetMissing)]
     [TestCase("malformed", CdcIncidentFailureCategory.ConnectOffsetMalformed)]
@@ -110,7 +113,7 @@ internal class Given_CdcInitialReadiness(Ddl.CdcProvider provider) : CdcReadines
         var offset = LostOffset(failure, healthyOffset);
         A.CallTo(() => _connect.ReadOffsetEvidenceAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
             .Returns(Observed(offset));
-        if (failure == "retained-gap")
+        if (failure is "retained-gap" or "behind-barrier")
         {
             _change = result =>
                 healthyProvider(result) with
@@ -135,6 +138,26 @@ internal class Given_CdcInitialReadiness(Ddl.CdcProvider provider) : CdcReadines
                         .ToArray(),
                 };
         }
+        if (failure == "behind-barrier")
+        {
+            A.CallTo(() =>
+                    _runtime.CaptureBarrierAsync(
+                        A<CdcDeploymentRequest>._,
+                        A<ICdcProviderSourcePositionAdapter>._,
+                        A<CancellationToken>._
+                    )
+                )
+                .ReturnsLazily(() =>
+                    Provider == Ddl.CdcProvider.Postgresql
+                        ? CdcProviderBarrierCaptureResult.PostgresqlSuccess("0/20", DateTimeOffset.UtcNow)
+                        : CdcProviderBarrierCaptureResult.SqlServerSuccess(
+                            "00000001:00000002:0004",
+                            "00000001:00000002:0004",
+                            DateTimeOffset.UtcNow
+                        )
+                );
+        }
+        ConfigureInitialProviderLoss(failure);
         var bindings = _services.GetRequiredService<ICdcBindingLifecycleService>();
         bool stopped = false;
         ConfigureStoppedReadBack(() => stopped);
@@ -175,6 +198,7 @@ internal class Given_CdcInitialReadiness(Ddl.CdcProvider provider) : CdcReadines
 
         // Later healthy samples cannot erase the terminal generation seen in this invocation.
         _change = healthyProvider;
+        _identity = new('a', 64);
         stopped = false;
         A.CallTo(() => _connect.ReadOffsetEvidenceAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
             .Returns(Observed(healthyOffset));
@@ -730,6 +754,23 @@ internal class Given_CdcInitialReadiness(Ddl.CdcProvider provider) : CdcReadines
     [Test]
     public async Task It_does_not_substitute_running_or_low_lag_for_committed_barrier_progress()
     {
+        // A behind-barrier offset is healthy only while the provider still permits that resume point.
+        var healthy = _change;
+        _change = r =>
+            healthy(r) with
+            {
+                ProviderHistoryObservations = healthy(r)
+                    .ProviderHistoryObservations.Select(h =>
+                        h with
+                        {
+                            SafeObservedValues = h.SafeObservedValues.ToDictionary(
+                                kv => kv.Key,
+                                kv => kv.Key == "confirmed_flush_lsn" ? "0_1" : kv.Value
+                            ),
+                        }
+                    )
+                    .ToArray(),
+            };
         int reads = 0;
         A.CallTo(() => _connect.ReadOffsetEvidenceAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
             .ReturnsLazily(() =>

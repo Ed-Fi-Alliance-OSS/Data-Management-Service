@@ -24,18 +24,38 @@ public sealed class CdcInitialEnableWorkflow(
     ICdcProviderSourcePositionAdapter positions
 )
 {
+    internal ICdcBindingLifecycleService Bindings { get; init; } =
+        new CdcBindingLifecycleService(new LocalCdcBindingStateStore(stateRoot), TimeProvider.System);
+
     public async Task<CdcTransportResult<CdcWriterPublicationResult>> EnableAsync(
         CdcDeploymentRequest request,
         ICdcProjectionRuntime runtime,
         long lagThresholdMilliseconds,
-        CancellationToken cancellationToken = default
+        CancellationToken cancellationToken = default,
+        CancellationToken operationDeadline = default
     )
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(runtime);
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken,
+            operationDeadline
+        );
         timeout.CancelAfter(request.Timing.WaitTimeout);
         var token = timeout.Token;
+        var readiness = new CdcInitialReadiness(
+            new(stateRoot),
+            Bindings,
+            provider,
+            templates,
+            kafka,
+            connect,
+            worker,
+            metrics,
+            positions,
+            TimeProvider.System
+        );
+        bool established = false;
         try
         {
             CdcWorkflowJournal journal;
@@ -65,6 +85,23 @@ public sealed class CdcInitialEnableWorkflow(
                         ),
                     CdcWorkflowStateFailure.Contradictory
                 );
+                established = journal.Operations.Any(o =>
+                    o.Effect == CdcWorkflowEffect.EstablishConnector && o.Completions.Length == 1
+                );
+                if (established)
+                {
+                    // Retry consumes fresh terminal evidence under this session before setup guards
+                    // can discard it. Initial creation/offset establishment still use the original stages.
+                    await readiness.InspectProviderAsync(
+                        request,
+                        runtime,
+                        session,
+                        Guid.NewGuid().ToString("D"),
+                        _ => { },
+                        token,
+                        cancellationToken
+                    );
+                }
             }
 
             // Provider setup requires completed activation and performs fresh exact-binding, source,
@@ -73,13 +110,16 @@ public sealed class CdcInitialEnableWorkflow(
             {
                 Require(await new CdcInitialEnablement(stateRoot).ActivateAsync(request, runtime, token));
             }
-            Require(
-                await new CdcProviderSetupOrchestration(stateRoot, provider, templates).SetupAsync(
-                    request,
-                    runtime,
-                    token
-                )
-            );
+            if (!established)
+            {
+                Require(
+                    await new CdcProviderSetupOrchestration(stateRoot, provider, templates).SetupAsync(
+                        request,
+                        runtime,
+                        token
+                    )
+                );
+            }
 
             // Registration intent means consumption may have begun. The registration controller
             // validates retained topics/offsets and the original payload; no infrastructure repair
@@ -95,26 +135,32 @@ public sealed class CdcInitialEnableWorkflow(
                 Require(await new CdcWorkerStartup(provisioning, infrastructure).StartAsync(request, token));
                 Require(await provisioning.ProvisionBindingAsync(request, token));
             }
-            Require(
-                await new CdcConnectorRegistration(
-                    stateRoot,
-                    provider,
-                    templates,
-                    kafka,
-                    connect,
-                    worker
-                ).RegisterAsync(request, runtime, token)
+            if (!established)
+            {
+                // A completed establishment is revalidated by readiness. Re-entering registration
+                // would put another provider-success guard ahead of its continuity observation.
+                Require(
+                    await new CdcConnectorRegistration(
+                        stateRoot,
+                        provider,
+                        templates,
+                        kafka,
+                        connect,
+                        worker
+                    ).RegisterAsync(request, runtime, token)
+                );
+            }
+            return await readiness.PreparePublicationAsync(
+                request,
+                runtime,
+                lagThresholdMilliseconds,
+                cancellationToken,
+                token
             );
-            return await new CdcInitialReadiness(
-                stateRoot,
-                provider,
-                templates,
-                kafka,
-                connect,
-                worker,
-                metrics,
-                positions
-            ).PreparePublicationAsync(request, runtime, lagThresholdMilliseconds, token);
+        }
+        catch (CdcInitialReadiness.EvidenceException exception)
+        {
+            return new CdcTransportResult<CdcWriterPublicationResult>.Unavailable(exception.Diagnostic);
         }
         catch (EvidenceException exception)
         {
