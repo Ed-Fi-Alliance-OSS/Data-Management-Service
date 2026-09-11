@@ -646,15 +646,15 @@ public partial class Given_Cdc_command_configuration
         using var http = new ContainmentHandler(request.Binding.ConnectorName, trace)
         {
             AfterStatus = ct => Task.Delay(100, ct),
-            AfterStop = async ct =>
+            AfterStop = ct =>
             {
                 if (cancelCaller)
                 {
-                    await caller.CancelAsync();
+                    caller.Cancel();
                 }
                 // The command has less than one call budget left. Lose the HTTP response after
                 // accepting stop; the production adapter and controller must independently read back.
-                await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+                return Task.Delay(Timeout.InfiniteTimeSpan, ct);
             },
         };
         var runner = new CdcCommandRunner(A.Fake<IApiSchemaFileLoader>(), SchemaBuilder())

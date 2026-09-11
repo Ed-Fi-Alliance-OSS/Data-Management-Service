@@ -4,6 +4,7 @@
 # See the LICENSE and NOTICES files in the project root for more information.
 
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseDeclaredVarsMoreThanAssignments', '', Justification = 'Variables supply the dynamic scope of executable startup blocks extracted from the scripts under test.')]
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPositionalParameters', 'docker', Justification = 'Docker is a native CLI; the test stub causes false positives when Docker is unavailable during analysis.')]
 param()
 
 Describe 'CDC infrastructure startup' {
