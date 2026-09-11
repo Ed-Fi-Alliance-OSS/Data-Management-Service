@@ -29,7 +29,22 @@ internal sealed record RepresentationRestampE2EProviderSql(
     string SetLifecycle,
     string ReadCanonicalContentVersion,
     string ReadRequiredWorkVersion,
-    string IsProjected
+    string IsProjected,
+    string ReadResidualWork
+);
+
+/// <summary>
+/// One durable <c>dms.DocumentProjectionWork</c> row joined to its canonical document and, when
+/// present, its cache row. Read only for diagnostics: it tells a reader which rows kept a drain
+/// alive and whether they belong to the scenario under test.
+/// </summary>
+internal sealed record RepresentationRestampE2EResidualWorkRow(
+    long DocumentId,
+    Guid DocumentUuid,
+    long RequiredContentVersion,
+    long CanonicalContentVersion,
+    long? CacheContentVersion,
+    DateTimeOffset FirstEnqueuedAt
 );
 
 internal interface IRepresentationRestampE2EProviderOperations
@@ -61,6 +76,11 @@ internal interface IRepresentationRestampE2EProviderOperations
     Task<bool> IsProjectedAsync(
         DbConnection connection,
         Guid documentUuid,
+        CancellationToken cancellationToken
+    );
+
+    Task<IReadOnlyList<RepresentationRestampE2EResidualWorkRow>> ReadResidualWorkAsync(
+        DbConnection connection,
         CancellationToken cancellationToken
     );
 }
@@ -127,6 +147,50 @@ internal abstract class RepresentationRestampE2EProviderOperations(Representatio
         return Convert.ToBoolean(await command.ExecuteScalarAsync(cancellationToken));
     }
 
+    public async Task<IReadOnlyList<RepresentationRestampE2EResidualWorkRow>> ReadResidualWorkAsync(
+        DbConnection connection,
+        CancellationToken cancellationToken
+    )
+    {
+        await using DbCommand command = connection.CreateCommand();
+        command.CommandText = Sql.ReadResidualWork;
+        await using DbDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+        List<RepresentationRestampE2EResidualWorkRow> rows = [];
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            rows.Add(
+                new RepresentationRestampE2EResidualWorkRow(
+                    reader.GetInt64(0),
+                    reader.GetGuid(1),
+                    reader.GetInt64(2),
+                    reader.GetInt64(3),
+                    await reader.IsDBNullAsync(4, cancellationToken) ? null : reader.GetInt64(4),
+                    ToUtcTimestamp(reader.GetValue(5))
+                )
+            );
+        }
+
+        return rows;
+    }
+
+    private static DateTimeOffset ToUtcTimestamp(object value) =>
+        value switch
+        {
+            DateTimeOffset dateTimeOffset => dateTimeOffset.ToUniversalTime(),
+            DateTime dateTime => new DateTimeOffset(
+                dateTime.Kind == DateTimeKind.Unspecified
+                    ? DateTime.SpecifyKind(dateTime, DateTimeKind.Utc)
+                    : dateTime.ToUniversalTime()
+            ),
+            _ => DateTimeOffset
+                .Parse(
+                    Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture)
+                        ?? throw new InvalidOperationException("DocumentProjectionWork timestamp was null."),
+                    System.Globalization.CultureInfo.InvariantCulture
+                )
+                .ToUniversalTime(),
+        };
+
     private static DbCommand CreateDocumentCommand(
         DbConnection connection,
         string commandText,
@@ -182,6 +246,19 @@ internal sealed class PostgresqlRepresentationRestampE2EProviderOperations()
                       WHERE work."DocumentId" = document."DocumentId"
                   )
             );
+            """,
+            """
+            SELECT work."DocumentId",
+                   document."DocumentUuid",
+                   work."RequiredContentVersion",
+                   document."ContentVersion",
+                   cache."ContentVersion",
+                   work."FirstEnqueuedAt"
+            FROM dms."DocumentProjectionWork" AS work
+            INNER JOIN dms."Document" AS document ON document."DocumentId" = work."DocumentId"
+            LEFT JOIN dms."DocumentCache" AS cache ON cache."DocumentId" = work."DocumentId"
+            ORDER BY work."FirstEnqueuedAt", work."DocumentId"
+            LIMIT 50;
             """
         )
     )
@@ -227,6 +304,19 @@ internal sealed class MssqlRepresentationRestampE2EProviderOperations()
                 ) THEN 1 ELSE 0 END
                 AS bit
             );
+            """,
+            """
+            SELECT TOP (50)
+                   work.[DocumentId],
+                   document.[DocumentUuid],
+                   work.[RequiredContentVersion],
+                   document.[ContentVersion],
+                   cache.[ContentVersion],
+                   work.[FirstEnqueuedAt]
+            FROM [dms].[DocumentProjectionWork] AS work
+            INNER JOIN [dms].[Document] AS document ON document.[DocumentId] = work.[DocumentId]
+            LEFT JOIN [dms].[DocumentCache] AS cache ON cache.[DocumentId] = work.[DocumentId]
+            ORDER BY work.[FirstEnqueuedAt], work.[DocumentId];
             """
         )
     )
@@ -373,7 +463,7 @@ internal static class RepresentationRestampE2EHarness
                             },
                             async () =>
                             {
-                                await DrainOrdinaryProjectorAsync(target);
+                                await DrainOrdinaryProjectorAsync(target, documentUuid);
                                 projectionExpected = true;
                             }
                         );
@@ -555,9 +645,15 @@ internal static class RepresentationRestampE2EHarness
         DocumentCacheProjectionTargetRuntimeContext Context
     );
 
-    private static async Task DrainOrdinaryProjectorAsync(DocumentCacheAdminCliTarget target)
+    private static async Task DrainOrdinaryProjectorAsync(
+        DocumentCacheAdminCliTarget target,
+        Guid documentUuid
+    )
     {
         string targetDescription = TargetDescription(target);
+        IRepresentationRestampE2EProviderOperations providerOperations = ProviderOperationsFor(
+            target.ProviderToken
+        );
         ProjectionRuntime runtime = await RunPhaseAsync(
             ProjectorSetupPhase,
             ProjectorSetupBudget,
@@ -569,6 +665,17 @@ internal static class RepresentationRestampE2EHarness
         IDocumentCacheProjectionDrainPageProcessor processor =
             serviceProvider.GetRequiredService<IDocumentCacheProjectionDrainPageProcessor>();
 
+        IReadOnlyList<RepresentationRestampE2EResidualWorkRow> queuedBeforeDrain =
+            await ReadResidualWorkAsync(providerOperations, target.ConnectionString, CancellationToken.None);
+        Log.Information(
+            "Representation-restamp ordinary drain for target {Target} and document {DocumentUuid} starts with {QueuedRowCount} queued work row(s): {QueuedRows}",
+            targetDescription,
+            documentUuid,
+            queuedBeforeDrain.Count,
+            DescribeResidualWork(queuedBeforeDrain, documentUuid)
+        );
+
+        var tally = new RepresentationRestampDrainTally();
         await RunPhaseAsync(
             OrdinaryDrainPhase,
             OrdinaryDrainBudget,
@@ -584,15 +691,94 @@ internal static class RepresentationRestampE2EHarness
                         ),
                         cancellationToken
                     );
+                    tally.Record(result);
                     if (result.Outcome == DocumentCacheProjectionDrainPageOutcome.NoEligibleWork)
                     {
                         return;
                     }
 
-                    result.Outcome.Should().Be(DocumentCacheProjectionDrainPageOutcome.PageProcessed);
+                    result
+                        .Outcome.Should()
+                        .Be(DocumentCacheProjectionDrainPageOutcome.PageProcessed, tally.Describe());
                 }
-            }
+            },
+            () =>
+                DescribeDrainAsync(tally, context, providerOperations, target.ConnectionString, documentUuid)
         );
+    }
+
+    /// <summary>
+    /// Builds the drain diagnostics attached to a drain failure: the page tallies, the projector's own
+    /// per-document failure snapshot, and a fresh read of the work rows still queued. The residual read
+    /// gets its own short budget because the drain budget has already been spent when this runs.
+    /// </summary>
+    private static async Task<string> DescribeDrainAsync(
+        RepresentationRestampDrainTally tally,
+        DocumentCacheProjectionTargetRuntimeContext context,
+        IRepresentationRestampE2EProviderOperations providerOperations,
+        string connectionString,
+        Guid documentUuid
+    )
+    {
+        using var readBudget = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        IReadOnlyList<RepresentationRestampE2EResidualWorkRow> residualWork = await ReadResidualWorkAsync(
+            providerOperations,
+            connectionString,
+            readBudget.Token
+        );
+        return FormatDrainDiagnostics(
+            tally,
+            residualWork,
+            DescribeProjectorFailures(context.FailureBackoffState.CreateFailureDiagnosticsSnapshot()),
+            documentUuid
+        );
+    }
+
+    internal static string FormatDrainDiagnostics(
+        RepresentationRestampDrainTally tally,
+        IReadOnlyList<RepresentationRestampE2EResidualWorkRow> residualWork,
+        IReadOnlyList<string> projectorFailures,
+        Guid documentUuid
+    ) =>
+        $"{tally.Describe()} Residual work rows ({residualWork.Count}, own document {documentUuid}): "
+        + $"{DescribeResidualWork(residualWork, documentUuid)}. Projector failure diagnostics ({projectorFailures.Count}): "
+        + $"{(projectorFailures.Count == 0 ? "none" : string.Join("; ", projectorFailures))}.";
+
+    internal static string DescribeResidualWork(
+        IReadOnlyList<RepresentationRestampE2EResidualWorkRow> residualWork,
+        Guid documentUuid
+    ) =>
+        residualWork.Count == 0
+            ? "none"
+            : string.Join(
+                "; ",
+                residualWork.Select(row =>
+                    $"[{(row.DocumentUuid == documentUuid ? "own" : "foreign")} DocumentId={row.DocumentId} "
+                    + $"DocumentUuid={row.DocumentUuid} RequiredContentVersion={row.RequiredContentVersion} "
+                    + $"CanonicalContentVersion={row.CanonicalContentVersion} "
+                    + $"CacheContentVersion={(row.CacheContentVersion is null ? "absent" : row.CacheContentVersion.Value.ToString())} "
+                    + $"FirstEnqueuedAt={row.FirstEnqueuedAt:O}]"
+                )
+            );
+
+    internal static IReadOnlyList<string> DescribeProjectorFailures(
+        DocumentCacheProjectionFailureDiagnostics diagnostics
+    ) =>
+        diagnostics
+            .DocumentDiagnostics.Select(diagnostic =>
+                $"DocumentId={diagnostic.DocumentId} {diagnostic.Category}: {diagnostic.Message}"
+            )
+            .ToList();
+
+    private static async Task<IReadOnlyList<RepresentationRestampE2EResidualWorkRow>> ReadResidualWorkAsync(
+        IRepresentationRestampE2EProviderOperations providerOperations,
+        string connectionString,
+        CancellationToken cancellationToken
+    )
+    {
+        await using DbConnection connection = providerOperations.OpenConnection(connectionString);
+        await connection.OpenAsync(cancellationToken);
+        return await providerOperations.ReadResidualWorkAsync(connection, cancellationToken);
     }
 
     private static async Task<ProjectionRuntime> CreateProjectionRuntimeAsync(
@@ -665,7 +851,8 @@ internal static class RepresentationRestampE2EHarness
         string phaseName,
         TimeSpan budget,
         string targetDescription,
-        Func<CancellationToken, Task<T>> action
+        Func<CancellationToken, Task<T>> action,
+        Func<Task<string>>? describeTimeoutAsync = null
     )
     {
         using var budgetSource = new CancellationTokenSource(budget);
@@ -677,7 +864,13 @@ internal static class RepresentationRestampE2EHarness
         catch (OperationCanceledException exception) when (budgetSource.IsCancellationRequested)
         {
             throw new TimeoutException(
-                PhaseTimeoutMessage(phaseName, stopwatch.Elapsed, budget, targetDescription),
+                PhaseTimeoutMessage(
+                    phaseName,
+                    stopwatch.Elapsed,
+                    budget,
+                    targetDescription,
+                    await DescribeTimeoutAsync(describeTimeoutAsync)
+                ),
                 exception
             );
         }
@@ -687,7 +880,8 @@ internal static class RepresentationRestampE2EHarness
         string phaseName,
         TimeSpan budget,
         string targetDescription,
-        Func<CancellationToken, Task> action
+        Func<CancellationToken, Task> action,
+        Func<Task<string>>? describeTimeoutAsync = null
     ) =>
         await RunPhaseAsync(
             phaseName,
@@ -697,17 +891,41 @@ internal static class RepresentationRestampE2EHarness
             {
                 await action(cancellationToken);
                 return true;
-            }
+            },
+            describeTimeoutAsync
         );
+
+    /// <summary>
+    /// Diagnostics must never hide the timeout they describe: a failing describer is reported inline
+    /// instead of replacing the <see cref="TimeoutException"/>.
+    /// </summary>
+    private static async Task<string?> DescribeTimeoutAsync(Func<Task<string>>? describeTimeoutAsync)
+    {
+        if (describeTimeoutAsync is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            return await describeTimeoutAsync();
+        }
+        catch (Exception exception)
+        {
+            return $"Drain diagnostics unavailable: {exception.GetType().Name}: {exception.Message}";
+        }
+    }
 
     internal static string PhaseTimeoutMessage(
         string phaseName,
         TimeSpan elapsed,
         TimeSpan budget,
-        string targetDescription
+        string targetDescription,
+        string? detail = null
     ) =>
         $"Timed out in representation-restamp phase '{phaseName}' after {elapsed} (budget {budget}) "
-        + $"for target {targetDescription}.";
+        + $"for target {targetDescription}."
+        + (string.IsNullOrWhiteSpace(detail) ? string.Empty : $" {detail}");
 
     internal static async Task<ServiceProvider> CreateProjectionServiceProviderAsync(
         RelationalProviderToken providerToken,
@@ -1170,4 +1388,44 @@ internal static class RepresentationRestampE2EHarness
     }
 
     private sealed record ProcessResult(int ExitCode, string StandardOutput, string StandardError);
+}
+
+/// <summary>
+/// Running totals for one ordinary drain, kept by the harness so a drain failure can say how many
+/// pages ran and whether any of them acknowledged work. Consecutive pages without an acknowledgement
+/// are counted because a residual row the projector cannot acknowledge produces exactly that pattern.
+/// </summary>
+internal sealed class RepresentationRestampDrainTally
+{
+    public int Pages { get; private set; }
+
+    public int ProcessedItems { get; private set; }
+
+    public int AcknowledgedOrRemovedItems { get; private set; }
+
+    public int DocumentScopedFailures { get; private set; }
+
+    public int ConsecutivePagesWithoutAcknowledgement { get; private set; }
+
+    public DocumentCacheProjectionDrainPageOutcome? LastOutcome { get; private set; }
+
+    public void Record(DocumentCacheProjectionDrainPageResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+        Pages++;
+        ProcessedItems += result.ProcessedItemCount;
+        AcknowledgedOrRemovedItems += result.AcknowledgedOrRemovedItemCount;
+        DocumentScopedFailures += result.DocumentScopedFailureCount;
+        LastOutcome = result.Outcome;
+        ConsecutivePagesWithoutAcknowledgement =
+            result.Outcome == DocumentCacheProjectionDrainPageOutcome.PageProcessed
+            && result.AcknowledgedOrRemovedItemCount == 0
+                ? ConsecutivePagesWithoutAcknowledgement + 1
+                : 0;
+    }
+
+    public string Describe() =>
+        $"Drain pages={Pages} processed={ProcessedItems} acknowledgedOrRemoved={AcknowledgedOrRemovedItems} "
+        + $"documentScopedFailures={DocumentScopedFailures} consecutivePagesWithoutAcknowledgement={ConsecutivePagesWithoutAcknowledgement} "
+        + $"lastOutcome={(LastOutcome is null ? "none" : LastOutcome.Value.ToString())}.";
 }
