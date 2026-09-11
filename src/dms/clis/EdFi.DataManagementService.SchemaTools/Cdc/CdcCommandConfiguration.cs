@@ -75,12 +75,6 @@ public sealed class CdcCommandConfiguration(IConfigurationRoot settings)
                 .Build()
         );
 
-    public void Validate()
-    {
-        ValidateControllerSettings();
-        ValidateProjectionTarget();
-    }
-
     public void ValidateControllerSettings()
     {
         if (
