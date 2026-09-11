@@ -18,6 +18,7 @@ Describe 'CDC bootstrap wrapper phase contract' {
     BeforeAll {
         $script:sandbox = Join-Path $TestDrive 'wrapper'
         New-Item -ItemType Directory $script:sandbox | Out-Null
+        Copy-Item (Join-Path $script:composeRoot '*.yml') $script:sandbox
         foreach ($name in @('bootstrap-local-dms.ps1', 'bootstrap-published-dms.ps1', 'bootstrap-wrapper.psm1')) {
             Copy-Item (Join-Path $script:composeRoot $name) $script:sandbox
         }
@@ -36,6 +37,7 @@ function Resolve-DataStandardEnvironmentFile { param($DataStandardVersion, $Base
 function Resolve-DatabaseEngineEnvironmentFile { param($DatabaseEngine, $BaseEnvironmentFile, $DockerComposeRoot, $SkipMssqlCmsDatabaseValidation) return $BaseEnvironmentFile }
 function Resolve-CmsDatabaseTopologyEnvironmentFile { param($BaseEnvironmentFile, $DatabaseEngine, $SeparateConfigDatabase, $DockerComposeRoot) return $BaseEnvironmentFile }
 function Confirm-CmsDatabaseTopologyAgreement { param($EnvironmentFile, $DatabaseEngine) }
+function Get-EnvValue { param($EnvValues, $Name) return $EnvValues[$Name] }
 function ReadValuesFromEnvFile { param($EnvironmentFile)
     $values = @{}
     foreach ($line in Get-Content $EnvironmentFile) {
@@ -59,7 +61,7 @@ function New-BootstrapCdcHandoff { param($Settings, $StatePath, $EnvironmentFile
     if (Test-Path (Join-Path $PSScriptRoot 'retained.json')) { throw 'Replacement handoff' }
     $Settings.AppSettings = @{ Datastore = $Settings.Provider }
     $Settings.DataManagement = @{ DocumentCache = @{ Targets = @(@{ DataStoreId = 42 }) } }
-    $Settings.Cdc.Compose = @{ Project = $Project; EnvironmentFile = $EnvironmentFile; File = '/compose/kafka-cdc.yml'; BrokerSizeOverrideFile = (Join-Path $StatePath 'broker-size.json') }
+    $Settings.Cdc.Compose = @{ Project = $Project; EnvironmentFile = $EnvironmentFile; File = (Join-Path $PSScriptRoot 'kafka-cdc.yml'); BrokerSizeOverrideFile = (Join-Path $StatePath 'broker-size.json') }
     $Settings.Cdc.Worker = @{ Key = 'worker'; OffsetStorageTopic = 'shared-offsets' }
     $Settings.Cdc.ConnectEndpoint = 'http://localhost:8083/'
     $Settings.Cdc.WorkerMetricsEndpoint = 'http://localhost:9404/metrics'

@@ -919,6 +919,8 @@ function Invoke-BootstrapWrapper {
             if ($EnableKafkaCdc) {
                 $cdcHandoff = New-BootstrapCdcHandoff -Settings $cdcSettings -InputSettingsPath $CdcSettingsPath -StatePath $CdcBindingStatePath -EnvironmentFile $effectiveEnvFile -Project $cdcProject -DatabaseName $DataStoreDatabaseName -IdentityProvider $resolvedIdentityProvider
                 $cdcHandoff | Add-Member -NotePropertyName OriginalEnvironmentFile -NotePropertyValue $callerEnvFile -Force
+                $cdcHandoff | Add-Member -NotePropertyName EnableKafkaUI -NotePropertyValue ([bool]$EnableKafkaUI) -Force
+                $cdcHandoff | Add-Member -NotePropertyName EnableSwaggerUI -NotePropertyValue ([bool]$EnableSwaggerUI) -Force
                 if ($OriginalEnvironmentFile) {
                     $cdcHandoff.OriginalEnvironmentFile = $OriginalEnvironmentFile
                 }

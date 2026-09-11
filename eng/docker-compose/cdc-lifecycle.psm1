@@ -119,17 +119,79 @@ function Write-CdcDeployment {
     finally { if (Test-Path -LiteralPath $temporary) { [IO.File]::Delete($temporary) } }
 }
 
-function Get-CdcComposeEnvironmentHash {
+function Get-CdcComposeInput {
+    param([hashtable]$Handoff)
+    $compose = $Handoff.Settings.Cdc.Compose
+    $provider = $Handoff.Settings.AppSettings.Datastore
+    $flavor = if ($compose.Project -ceq 'dms-local') { 'local' } else { 'published' }
+    if ($provider -cnotin @('postgresql', 'mssql')) { throw 'CDC deployment provider is unsupported.' }
+    Import-Module (Join-Path $PSScriptRoot 'env-utility.psm1')
+    $environment = ReadValuesFromEnvFile $compose.EnvironmentFile
+    # The shipped managed lifecycle's selected provider/host files, including Keycloak for
+    # down -v (both start scripts include its volume then) and the worker's broker extension.
+    # Never discover inputs by enumerating unrelated Compose files in the checkout.
+    $files = @($compose.File, (Join-Path (Split-Path $compose.File -Parent) 'kafka-broker.yml'))
+    $files += @("$provider.yml", "$flavor-dms.yml", "$flavor-config.yml", 'keycloak.yml', 'bootstrap-dms.yml' |
+        ForEach-Object { Join-Path $PSScriptRoot $_ })
+    if ($provider -ceq 'mssql') { $files += Join-Path $PSScriptRoot 'mssql-cdc.yml' }
+    if ($provider -ceq 'postgresql' -and $env:POSTGRES_USE_TMPFS -ieq 'true') { $files += Join-Path $PSScriptRoot 'postgresql-tmpfs.yml' }
+    if ($flavor -ceq 'local' -and (Get-EnvValue -EnvValues $environment -Name 'DMS_ENABLE_DOTNET_DIAGNOSTICS') -ieq 'true') {
+        $files += Join-Path $PSScriptRoot 'local-dms-diagnostics.yml'
+    }
+    foreach ($option in @(@('EnableKafkaUI', 'kafka-ui.yml'), @('EnableSwaggerUI', 'swagger-ui.yml'))) {
+        if ($Handoff[$option[0]]) { $files += Join-Path $PSScriptRoot $option[1] }
+    }
     $names = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
-    foreach ($file in @(Get-ChildItem -LiteralPath $PSScriptRoot -Filter '*.yml')) {
-        foreach ($match in [regex]::Matches([IO.File]::ReadAllText($file.FullName), '\$\{([A-Z][A-Z0-9_]*)')) {
+    $inputs = @(foreach ($file in $files) {
+        @{ Path = $file; Hash = (Get-FileHash -LiteralPath $file -ErrorAction Stop).Hash }
+    })
+    # Retain process overrides and absence separately; Compose still reads the original
+    # effective env file. Include its keys/references for nested dotenv interpolation and
+    # the wrapper's settings derived from that same file. Escaped dollars are literals.
+    foreach ($file in @($files) + @($compose.EnvironmentFile)) {
+        $content = [IO.File]::ReadAllText($file).Replace('$$', '')
+        foreach ($match in [regex]::Matches($content, '\$\{?([a-zA-Z_][a-zA-Z0-9_]*)')) {
             $names.Add($match.Groups[1].Value) | Out-Null
         }
     }
-    foreach ($name in @('COMPOSE_PROFILES', 'COMPOSE_FILE', 'COMPOSE_PROJECT_NAME', 'DMS_DOCUMENTCACHE_COMPOSE_FILE')) { $names.Add($name) | Out-Null }
+    foreach ($name in $environment.Keys) { $names.Add($name) | Out-Null }
+    foreach ($name in @('COMPOSE_PROFILES', 'COMPOSE_FILE', 'COMPOSE_PROJECT_NAME', 'COMPOSE_ENV_FILES', 'COMPOSE_DISABLE_ENV_FILE',
+        'DMS_DOCUMENTCACHE_COMPOSE_FILE', 'POSTGRES_USE_TMPFS')) { $names.Add($name) | Out-Null }
+    foreach ($variable in @(Get-ChildItem Env:COMPOSE_*)) { $names.Add($variable.Name) | Out-Null }
     $values = [ordered]@{}
     foreach ($name in @($names | Sort-Object -CaseSensitive)) { $values[$name] = [Environment]::GetEnvironmentVariable($name) }
-    return [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes(($values | ConvertTo-Json -Compress))))
+    return @{
+        Version = 1; Project = $compose.Project; DatabaseEngine = $provider; IdentityProvider = $Handoff.IdentityProvider
+        EnvironmentFile = $compose.EnvironmentFile; ComposeFile = $compose.File
+        Files = $inputs; ProcessEnvironment = $values
+    }
+}
+
+function Get-CdcComposeInputHash {
+    param($Inputs)
+    return [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes(($Inputs | ConvertTo-Json -Depth 64 -Compress))))
+}
+
+function Set-CdcRetainedEnvironment {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Temporarily applies the already authorized private deployment inputs; callers restore them in finally.')]
+    param([hashtable]$Deployment, [hashtable]$Snapshot)
+    $values = $Deployment.ComposeInputs.ProcessEnvironment
+    # An unrelated shell must not inject new Compose control options either. Ordinary
+    # unrelated environment variables remain untouched and are not retained authority.
+    $names = @($values.Keys) + @(Get-ChildItem Env:COMPOSE_* | ForEach-Object { $_.Name })
+    foreach ($name in @($names | Select-Object -Unique)) {
+        $Snapshot[$name] = [Environment]::GetEnvironmentVariable($name)
+        if ($null -eq $values[$name]) { Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue }
+        else { [Environment]::SetEnvironmentVariable($name, $values[$name]) }
+    }
+}
+
+function Restore-CdcRetainedEnvironment {
+    param([hashtable]$Snapshot)
+    foreach ($name in $Snapshot.Keys) {
+        if ($null -eq $Snapshot[$name]) { Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue }
+        else { [Environment]::SetEnvironmentVariable($name, $Snapshot[$name]) }
+    }
 }
 
 function Get-CdcSettingsHash {
@@ -182,7 +244,22 @@ function Read-CdcDeployment {
         }
         else {
             if ((Get-FileHash -LiteralPath $value.EnvironmentFile).Hash -cne $value.EnvironmentHash) { throw 'Changed environment' }
-            if ($value.ComposeEnvironmentHash -cne (Get-CdcComposeEnvironmentHash)) { throw 'Changed Compose environment' }
+            if (-not $value.Contains('ComposeInputs') -or -not $value.Contains('ComposeInputsHash') -or
+                $value.ComposeInputsHash -cne (Get-CdcComposeInputHash $value.ComposeInputs)) { throw 'Missing or changed Compose inputs' }
+            $inputs = $value.ComposeInputs
+            if ($inputs.Version -ne 1 -or $inputs.Project -cne $Project -or $inputs.DatabaseEngine -cne $value.DatabaseEngine -or
+                ($value['IdentityProvider'] -cin @('keycloak', 'self-contained') -and $inputs.IdentityProvider -cne $value.IdentityProvider) -or $inputs.EnvironmentFile -cne $value.EnvironmentFile -or
+                $inputs.ComposeFile -cne $value.ComposeFile -or $inputs.ProcessEnvironment -isnot [Collections.IDictionary] -or
+                $inputs.Files -isnot [array] -or $inputs.Files.Count -eq 0 -or
+                -not $inputs.ProcessEnvironment.Contains('COMPOSE_PROFILES')) { throw 'Contradictory Compose inputs' }
+            foreach ($name in $inputs.ProcessEnvironment.Keys) {
+                if ($name -cnotmatch '^[a-zA-Z_][a-zA-Z0-9_]*$' -or
+                    ($null -ne $inputs.ProcessEnvironment[$name] -and $inputs.ProcessEnvironment[$name] -isnot [string])) { throw 'Invalid Compose input' }
+            }
+            foreach ($file in $inputs.Files) {
+                if (-not [IO.Path]::IsPathFullyQualified($file.Path) -or
+                    (Get-FileHash -LiteralPath $file.Path -ErrorAction Stop).Hash -cne $file.Hash) { throw 'Changed selected Compose file' }
+            }
             if (@(Get-ChildItem Env:DMS_CDC__*).Count -gt 0) { throw 'Overrides' }
         }
     }
@@ -307,7 +384,6 @@ function Register-CdcDeploymentHandoff {
     try {
         $deployment = if (Test-CdcDeployment $project) { Read-CdcDeployment $project } else {
             @{
-                ComposeEnvironmentHash = Get-CdcComposeEnvironmentHash
                 Version = 1; Project = $project; DatabaseEngine = $settings.AppSettings.Datastore
                 IdentityProvider = $Handoff.IdentityProvider
                 OriginalEnvironmentFile = $Handoff.OriginalEnvironmentFile
@@ -318,6 +394,13 @@ function Register-CdcDeploymentHandoff {
                 OffsetStorageTopic = $settings.Cdc.Worker.OffsetStorageTopic
                 Phase = 'Active'; Entries = @()
             }
+        }
+        if ($deployment.Entries.Count -eq 0) {
+            try {
+                $deployment.ComposeInputs = Get-CdcComposeInput $Handoff
+                $deployment.ComposeInputsHash = Get-CdcComposeInputHash $deployment.ComposeInputs
+            }
+            catch { throw 'CDC selected Compose inputs could not be retained. No deployment effects are authorized.' }
         }
         if ($deployment.IdentityProvider -cne $Handoff.IdentityProvider -or
             $deployment.Phase -ne 'Active' -or $deployment.DatabaseEngine -cne $settings.AppSettings.Datastore -or
@@ -494,6 +577,7 @@ function Invoke-CdcAdmittedHost {
     #>
     param([string]$Project, [string]$StartScript, [hashtable]$Parameters)
     $lock = Enter-CdcDeploymentLock $Project
+    $environmentSnapshot = @{}
     try {
         $deployment = Read-CdcDeployment $Project
         if ($deployment.Phase -ne 'Active') { throw 'CDC deployment was stopped during admission; DMS handoff is no longer authorized.' }
@@ -502,9 +586,10 @@ function Invoke-CdcAdmittedHost {
         }
         $Parameters = $Parameters + @{}
         $Parameters.IdentityProvider = $deployment.IdentityProvider
+        Set-CdcRetainedEnvironment $deployment $environmentSnapshot
         Invoke-CdcInfrastructure $StartScript $Parameters
     }
-    finally { $lock.Dispose() }
+    finally { Restore-CdcRetainedEnvironment $environmentSnapshot; $lock.Dispose() }
 }
 
 function Invoke-CdcDeploymentLifecycle {
@@ -514,6 +599,7 @@ function Invoke-CdcDeploymentLifecycle {
     #>
     param([string]$Project, [string]$StartScript, [hashtable]$Parameters)
     $lock = Enter-CdcDeploymentLock $Project
+    $environmentSnapshot = @{}
     try {
         $deployment = Read-CdcDeployment $Project
         # Explicit selection must agree; omitted values inherit the original selected environment.
@@ -537,6 +623,12 @@ function Invoke-CdcDeploymentLifecycle {
             Complete-CdcRuntimeCleanup $deployment -RemoveBootstrap:($Parameters['RemoveBootstrap'] -eq $true)
             return
         }
+        foreach ($option in @(@('EnableKafkaUI', 'kafka-ui.yml'), @('EnableSwaggerUI', 'swagger-ui.yml'))) {
+            if ($Parameters[$option[0]] -and (Join-Path $PSScriptRoot $option[1]) -cnotin @($deployment.ComposeInputs.Files | ForEach-Object { $_.Path })) {
+                throw 'CDC lifecycle requires the original optional service inputs; new services are not part of this retained deployment.'
+            }
+        }
+        Set-CdcRetainedEnvironment $deployment $environmentSnapshot
         if (-not $down -and -not $Parameters['InfraOnly']) { Get-CdcDmsComposeHandoff $deployment | Out-Null }
         if (-not $down -and ($Parameters['DbOnly'] -or $Parameters['DmsOnly'] -or $Parameters['DmsBaseUrl'] -or $Parameters['LoadSeedData'])) {
             throw 'Retained CDC startup uses the managed infrastructure/controller/DMS sequence; partial startup and seed flags are unsupported.'
@@ -623,7 +715,7 @@ function Invoke-CdcDeploymentLifecycle {
             }
         }
     }
-    finally { $lock.Dispose() }
+    finally { Restore-CdcRetainedEnvironment $environmentSnapshot; $lock.Dispose() }
 }
 
 Export-ModuleMember -Function Test-CdcBootstrapWorkspaceProtected, Get-CdcBootstrapRetryHandoff, Test-CdcDeployment, Test-CdcInfrastructureInvocation, Register-CdcDeploymentHandoff, Invoke-CdcDeploymentLifecycle, Invoke-CdcInfrastructure, Assert-CdcUnregisteredInfrastructure, Invoke-CdcAdmittedHost

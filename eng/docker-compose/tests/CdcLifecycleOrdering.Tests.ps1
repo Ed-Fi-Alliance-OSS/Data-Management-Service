@@ -12,6 +12,8 @@ Describe 'Managed CDC deployment lifecycle ordering' {
         New-Item -ItemType Directory $script:root | Out-Null
         Copy-Item (Join-Path $PSScriptRoot '../cdc-lifecycle.psm1') $script:root
         Copy-Item (Join-Path $PSScriptRoot '../*.psm1') $script:root
+        Copy-Item (Join-Path $PSScriptRoot '../*.yml') $script:root
+        Copy-Item (Join-Path $PSScriptRoot '../../schema-package-utility.psm1') $TestDrive
         @'
 function Resolve-BootstrapSchemaWorkspace { @{ CoreSchemaPath = '/staged/core.json'; ExtensionSchemaPaths = @() } }
 Export-ModuleMember -Function Resolve-BootstrapSchemaWorkspace
@@ -30,7 +32,7 @@ Export-ModuleMember -Function Resolve-BootstrapSchemaWorkspace
                 AppSettings = @{ Datastore = $provider }
                 DataManagement = @{ DocumentCache = @{ Targets = @(@{ DataStoreId = $id }) } }
                 Cdc = @{
-                    Compose = @{ Project = $project; EnvironmentFile = (Join-Path $script:root '.env.custom'); File = '/compose/kafka-cdc.yml'; BrokerSizeOverrideFile = (Join-Path $script:root 'shared/broker-size.json') }
+                    Compose = @{ Project = $project; EnvironmentFile = (Join-Path $script:root '.env.custom'); File = (Join-Path $script:root 'kafka-cdc.yml'); BrokerSizeOverrideFile = (Join-Path $script:root 'shared/broker-size.json') }
                     DeploymentKey = 'deployment'; DataStoreId = [string]$id; InstanceKey = "instance-$id"; Generation = 7
                     Worker = @{ Key = 'worker'; OffsetStorageTopic = 'shared-offsets' }
                     ConnectEndpoint = 'http://localhost:8083/'; WorkerMetricsEndpoint = 'http://localhost:9404/metrics'
@@ -41,7 +43,7 @@ Export-ModuleMember -Function Resolve-BootstrapSchemaWorkspace
             $settings | ConvertTo-Json -Depth 20 | Set-Content $settingsPath
             @{ services = @{ dms = @{ environment = @{ DataManagement__DocumentCache__Targets__0__DataStoreId = [string]$id; AppSettings__Datastore = $provider } } } } | ConvertTo-Json -Depth 10 | Set-Content $dmsPath
             foreach ($path in @($settingsPath, $dmsPath)) { [IO.File]::SetUnixFileMode($path, [IO.UnixFileMode]384) }
-            return @{ IdentityProvider = $identityProvider; Settings = $settings; SettingsPath = $settingsPath; DmsComposePath = $dmsPath }
+            return @{ IdentityProvider = $identityProvider; Settings = $settings; SettingsPath = $settingsPath; DmsComposePath = $dmsPath; EnableKafkaUI = $true; EnableSwaggerUI = $true }
         }
         function New-TestBootstrapHandoff {
             [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Creates isolated test bootstrap files only.')]
@@ -140,6 +142,214 @@ Export-ModuleMember -Function Resolve-BootstrapSchemaWorkspace
     }
     AfterAll {
         Get-Module -All | Where-Object { $_.Path -and $_.Path.StartsWith($script:root + '/') } | Remove-Module -Force
+    }
+
+    Context 'Retained Compose interpolation inputs' {
+        BeforeEach {
+            $script:savedInputs = @{}
+            foreach ($name in @('KAFKA_PORT', 'CDC_DATABASE_PASSWORD', 'DOCKER_LOG_MAX_FILE', 'DOCKER_LOG_MAX_SIZE',
+                'T74_NESTED', 'T74_UNRELATED', 'COMPOSE_PROFILES', 'COMPOSE_PARALLEL_LIMIT')) {
+                $script:savedInputs[$name] = [Environment]::GetEnvironmentVariable($name)
+                Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
+            }
+            Remove-Item (Join-Path $script:root '.cdc-deployments') -Recurse -Force
+            $env:KAFKA_PORT = '19092'
+            $env:CDC_DATABASE_PASSWORD = 'retained-$-sentinel'
+            $env:DOCKER_LOG_MAX_FILE = ''
+            $env:T74_NESTED = 'nested-original'
+            @'
+KAFKA_PORT=29092
+CDC_DATABASE_PASSWORD=env-file-sentinel
+DOCKER_LOG_MAX_SIZE=${T74_NESTED}
+'@ | Set-Content (Join-Path $script:root '.env.custom')
+            $script:inputChecks = 0
+        }
+        AfterEach {
+            foreach ($name in $script:savedInputs.Keys) {
+                if ($null -eq $script:savedInputs[$name]) { Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue }
+                else { [Environment]::SetEnvironmentVariable($name, $script:savedInputs[$name]) }
+            }
+            Copy-Item (Join-Path $PSScriptRoot '../*.yml') $script:root -Force
+            Remove-Item (Join-Path $script:root 'unrelated-t74.yml') -ErrorAction SilentlyContinue
+        }
+        BeforeAll {
+            function Assert-TestRetainedInput {
+                # Boolean assertions keep even sentinel credential values out of failure output.
+                ($env:KAFKA_PORT -ceq '19092') | Should -BeTrue
+                ($env:CDC_DATABASE_PASSWORD -ceq 'retained-$-sentinel') | Should -BeTrue
+                (Test-Path Env:DOCKER_LOG_MAX_FILE) | Should -BeTrue
+                ($env:DOCKER_LOG_MAX_FILE -ceq '') | Should -BeTrue
+                (Test-Path Env:DOCKER_LOG_MAX_SIZE) | Should -BeFalse
+                ($env:T74_NESTED -ceq 'nested-original') | Should -BeTrue
+                (Test-Path Env:COMPOSE_PROFILES) | Should -BeFalse
+                (Test-Path Env:COMPOSE_PARALLEL_LIMIT) | Should -BeFalse
+                $script:inputChecks++
+            }
+            function Set-TestChangedShell {
+                [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Changes only isolated test process inputs, restored by AfterEach.')]
+                param()
+                $env:KAFKA_PORT = '39092'
+                $env:CDC_DATABASE_PASSWORD = 'ambient-sentinel'
+                Remove-Item Env:DOCKER_LOG_MAX_FILE
+                $env:DOCKER_LOG_MAX_SIZE = ''
+                $env:T74_NESTED = 'nested-changed'
+                $env:COMPOSE_PROFILES = 'unrelated-profile'
+                $env:COMPOSE_PARALLEL_LIMIT = '1'
+                $env:T74_UNRELATED = 'unrelated'
+            }
+            function Assert-TestRestoredShell {
+                ($env:KAFKA_PORT -ceq '39092') | Should -BeTrue
+                ($env:CDC_DATABASE_PASSWORD -ceq 'ambient-sentinel') | Should -BeTrue
+                (Test-Path Env:DOCKER_LOG_MAX_FILE) | Should -BeFalse
+                (Test-Path Env:DOCKER_LOG_MAX_SIZE) | Should -BeTrue
+                ($env:DOCKER_LOG_MAX_SIZE -ceq '') | Should -BeTrue
+                ($env:T74_NESTED -ceq 'nested-changed') | Should -BeTrue
+                ($env:COMPOSE_PROFILES -ceq 'unrelated-profile') | Should -BeTrue
+                ($env:COMPOSE_PARALLEL_LIMIT -ceq '1') | Should -BeTrue
+                ($env:T74_UNRELATED -ceq 'unrelated') | Should -BeTrue
+            }
+        }
+
+        It 'uses original inputs for <project>/<provider> despite unrelated checkout and shell changes' -ForEach @(
+            @{ project = 'dms-local'; provider = 'postgresql' }, @{ project = 'dms-local'; provider = 'mssql' },
+            @{ project = 'dms-published'; provider = 'postgresql' }, @{ project = 'dms-published'; provider = 'mssql' }
+        ) {
+            Register-CdcDeploymentHandoff (New-TestHandoff -id 42 -project $project -provider $provider) (Join-Path $script:root 'state')
+            $script:live = @('connector-42')
+            'services: { unrelated: { image: "${T74_UNRELATED}" } }' | Set-Content (Join-Path $script:root 'unrelated-t74.yml')
+            $otherProvider = if ($provider -eq 'mssql') { 'postgresql' } else { 'mssql' }
+            $otherFlavor = if ($project -eq 'dms-local') { 'published' } else { 'local' }
+            foreach ($file in @("$otherProvider.yml", "$otherFlavor-dms.yml")) {
+                Add-Content (Join-Path $script:root $file) '# ${T74_UNRELATED}'
+            }
+            Set-TestChangedShell
+            Mock -ModuleName cdc-lifecycle Invoke-CdcLifecycleCommand {
+                Assert-TestRetainedInput
+                $Entry.ConnectorName = 'connector-42'
+                if ($Operation -eq 'retire') { $script:live = @() }
+            }
+            Mock -ModuleName cdc-lifecycle Invoke-CdcInfrastructure {
+                Assert-TestRetainedInput
+                ($Parameters.EnvironmentFile -ceq (Join-Path $script:root '.env.custom')) | Should -BeTrue
+            }
+            Invoke-TestLifecycle @{ d = $true } $project
+            Assert-TestRestoredShell
+            Invoke-TestLifecycle @{ d = $true; v = $true } $project
+            Assert-TestRestoredShell
+            $script:inputChecks | Should -Be 4
+            Test-CdcDeployment $project | Should -BeFalse
+        }
+
+        It 'reproduces original Compose interpolation through the actual retained infrastructure boundary' {
+            Register-CdcDeploymentHandoff (New-TestHandoff 42) (Join-Path $script:root 'state')
+            $script:live = @('connector-42')
+            Set-TestChangedShell
+            Mock -ModuleName cdc-lifecycle Invoke-CdcInfrastructure {
+                Assert-TestRetainedInput
+                $docker = (Get-Command docker -CommandType Application | Select-Object -First 1).Source
+                $model = & $docker compose -f (Join-Path $script:root 'kafka-cdc.yml') --env-file $Parameters.EnvironmentFile -p dms-local --profile cdc-managed-worker config --format json 2>$null |
+                    ConvertFrom-Json -AsHashtable
+                $LASTEXITCODE | Should -Be 0
+                ($model.services.kafka.environment.KAFKA_ADVERTISED_LISTENERS -clike '*:19092') | Should -BeTrue
+                # Compose escapes literal dollars in its round-trippable config output.
+                ($model.services.'kafka-cdc-worker'.environment.CDC_DATABASE_PASSWORD -ceq 'retained-$$-sentinel') | Should -BeTrue
+                ($model.services.kafka.logging.options.'max-size' -ceq 'nested-original') | Should -BeTrue
+                $script:workerRunning = $false
+            }
+            Invoke-TestLifecycle @{ d = $true }
+            Assert-TestRestoredShell
+            $script:inputChecks | Should -Be 1
+        }
+
+        It 'restores absent, empty and populated inputs after <boundary> failure' -ForEach @(
+            @{ boundary = 'controller' }, @{ boundary = 'infrastructure' }, @{ boundary = 'admitted-host' }
+        ) {
+            Register-CdcDeploymentHandoff (New-TestHandoff 42) (Join-Path $script:root 'state')
+            $script:live = @('connector-42')
+            Set-TestChangedShell
+            $script:failedBoundary = $boundary
+            Mock -ModuleName cdc-lifecycle Invoke-CdcLifecycleCommand {
+                Assert-TestRetainedInput
+                if ($script:failedBoundary -eq 'controller') { throw 'Controlled failure' }
+                $Entry.ConnectorName = 'connector-42'
+            }
+            Mock -ModuleName cdc-lifecycle Invoke-CdcInfrastructure {
+                Assert-TestRetainedInput
+                throw 'Controlled failure'
+            }
+            if ($boundary -eq 'admitted-host') {
+                { Invoke-CdcAdmittedHost -Project dms-local -StartScript '/unused' -Parameters @{} } | Should -Throw '*Controlled failure*'
+            }
+            else { { Invoke-TestLifecycle @{ d = $true } } | Should -Throw '*Controlled failure*' }
+            Assert-TestRestoredShell
+            $script:inputChecks | Should -BeGreaterThan 0
+            # Lock is also released on the failure path.
+            $lock = & (Get-Module cdc-lifecycle) { Enter-CdcDeploymentLock 'dms-local' }
+            $lock.Dispose()
+        }
+
+        It 'applies retained inputs to worker startup, guarded resume and admitted DMS' {
+            Register-CdcDeploymentHandoff (New-TestHandoff 42) (Join-Path $script:root 'state')
+            $script:live = @('connector-42')
+            Invoke-TestLifecycle @{ d = $true }
+            Set-TestChangedShell
+            Mock -ModuleName cdc-lifecycle Invoke-CdcLifecycleCommand {
+                Assert-TestRetainedInput
+                $Entry.ConnectorName = 'connector-42'
+            }
+            Mock -ModuleName cdc-lifecycle Invoke-CdcInfrastructure { Assert-TestRetainedInput }
+            Invoke-TestLifecycle @{}
+            Assert-TestRestoredShell
+            Invoke-CdcAdmittedHost -Project dms-local -StartScript '/unused' -Parameters @{}
+            Assert-TestRestoredShell
+            $script:inputChecks | Should -Be 5
+        }
+
+        It 'rejects <fault> before controller or infrastructure effects' -ForEach @(
+            @{ fault = 'changed-input' }, @{ fault = 'missing-inputs' }, @{ fault = 'missing-hash' },
+            @{ fault = 'legacy-hash-only' }, @{ fault = 'scope' }, @{ fault = 'selected-file' }
+        ) {
+            Register-CdcDeploymentHandoff (New-TestHandoff 42) (Join-Path $script:root 'state')
+            $path = Join-Path $script:root '.cdc-deployments/dms-local.json'
+            $deployment = Read-TestDeployment
+            switch ($fault) {
+                'changed-input' { $deployment.ComposeInputs.ProcessEnvironment.CDC_DATABASE_PASSWORD = 'tampered-sentinel' }
+                'missing-inputs' { $deployment.Remove('ComposeInputs') }
+                'missing-hash' { $deployment.Remove('ComposeInputsHash') }
+                'legacy-hash-only' {
+                    $deployment.Remove('ComposeInputs')
+                    $deployment.Remove('ComposeInputsHash')
+                    $deployment.ComposeEnvironmentHash = 'legacy-cannot-reconstruct-original-values'
+                }
+                'scope' {
+                    $deployment.ComposeInputs.Project = 'dms-published'
+                    $deployment.ComposeInputsHash = & (Get-Module cdc-lifecycle) { param($inputs) Get-CdcComposeInputHash $inputs } $deployment.ComposeInputs
+                }
+                'selected-file' { Add-Content (Join-Path $script:root 'kafka-cdc.yml') '# changed selected configuration' }
+            }
+            $deployment | ConvertTo-Json -Depth 64 -Compress | Set-Content $path
+            Set-TestChangedShell
+            { Invoke-TestLifecycle @{ d = $true; v = $true } } | Should -Throw '*inventory*'
+            Assert-TestRestoredShell
+            $script:trace.Count | Should -Be 0
+            (Get-Content $path -Raw).Contains('ambient-sentinel') | Should -BeFalse
+        }
+
+        It 'retains only selected optional service inputs and rejects uncaptured additions' {
+            $handoff = New-TestHandoff 42
+            $handoff.EnableKafkaUI = $handoff.EnableSwaggerUI = $false
+            Register-CdcDeploymentHandoff $handoff (Join-Path $script:root 'state')
+            $deployment = Read-TestDeployment
+            $paths = @($deployment.ComposeInputs.Files | ForEach-Object { [IO.Path]::GetFileName($_.Path) })
+            $paths | Should -Not -Contain 'kafka-ui.yml'
+            $paths | Should -Not -Contain 'swagger-ui.yml'
+            Add-Content (Join-Path $script:root 'kafka-ui.yml') '# unrelated optional service'
+            { Invoke-TestLifecycle @{ d = $true; EnableKafkaUI = $true } } | Should -Throw '*original optional service inputs*'
+            $script:trace.Count | Should -Be 0
+            $script:live = @('connector-42')
+            Invoke-TestLifecycle @{ d = $true; v = $true }
+            Test-CdcDeployment dms-local | Should -BeFalse
+        }
     }
 
     if ($env:DMS_T57_BRIDGE) {
