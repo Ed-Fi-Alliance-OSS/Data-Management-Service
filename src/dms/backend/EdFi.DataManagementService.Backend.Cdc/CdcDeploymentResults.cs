@@ -126,12 +126,28 @@ public abstract class CdcTransportResult<T>
         public override string ToString() => "Absent";
     }
 
-    public sealed class Unavailable(CdcDeploymentDiagnostic diagnostic) : CdcTransportResult<T>
+    public sealed class Unavailable : CdcTransportResult<T>
     {
+        public Unavailable(CdcDeploymentDiagnostic diagnostic)
+            : this([diagnostic ?? throw new ArgumentNullException(nameof(diagnostic))]) { }
+
+        private Unavailable(IReadOnlyList<CdcDeploymentDiagnostic> diagnostics)
+        {
+            ArgumentNullException.ThrowIfNull(diagnostics);
+            if (diagnostics.Count == 0 || diagnostics.Any(d => d is null))
+            {
+                throw new ArgumentException("At least one CDC diagnostic is required.", nameof(diagnostics));
+            }
+            Diagnostics = Array.AsReadOnly(diagnostics.ToArray());
+        }
+
+        // A named factory preserves existing target-typed single-diagnostic constructor calls.
+        public static Unavailable FromDiagnostics(IReadOnlyList<CdcDeploymentDiagnostic> diagnostics) =>
+            new(diagnostics);
+
         public override CdcTransportEvidenceState State => CdcTransportEvidenceState.Unavailable;
-        public override IReadOnlyList<CdcDeploymentDiagnostic> Diagnostics => [Diagnostic];
-        public CdcDeploymentDiagnostic Diagnostic { get; } =
-            diagnostic ?? throw new ArgumentNullException(nameof(diagnostic));
+        public override IReadOnlyList<CdcDeploymentDiagnostic> Diagnostics { get; }
+        public CdcDeploymentDiagnostic Diagnostic => Diagnostics[0];
 
         public override string ToString() => "Unavailable";
     }

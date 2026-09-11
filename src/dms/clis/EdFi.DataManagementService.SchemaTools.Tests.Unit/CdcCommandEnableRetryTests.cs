@@ -279,6 +279,64 @@ internal class Given_Cdc_command_enable_retry(Ddl.CdcProvider provider) : CdcRea
         );
     }
 
+    [TestCase("stop")]
+    [TestCase("readback")]
+    public async Task It_preserves_combined_initial_containment_failures_in_command_json(string failure)
+    {
+        await InterruptAfterEstablishmentAsync();
+        var real = _bindings;
+        var faulting = A.Fake<ICdcBindingLifecycleService>();
+        A.CallTo(() => faulting.ExactMatchBindingAsync(A<CdcBinding>._, A<CancellationToken>._))
+            .ReturnsLazily(
+                (CdcBinding binding, CancellationToken token) => real.ExactMatchBindingAsync(binding, token)
+            );
+        A.CallTo(() => faulting.LatchSourceHistoryLossAsync(A<CdcIncident>._, A<CancellationToken>._))
+            .Invokes(() => Trace("persist"))
+            .Throws(new IOException("private-incident-path Password=private-password"));
+        _bindings = faulting;
+        _offsetState = CdcConnectOffsetState.Missing;
+        ConfigureInitialStop();
+        A.CallTo(() => _connect.StopAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
+            .ReturnsLazily(() =>
+            {
+                Trace("stop");
+                _runtimeState = CdcConnectorRuntimeState.Stopped;
+                if (failure == "stop")
+                {
+                    throw new IOException("private-connect-response Host=private-source");
+                }
+                A.CallTo(() => _connect.ReadStatusAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
+                    .Invokes(() => Trace("failed-readback"))
+                    .Throws(new IOException("private-readback-response Host=private-source"));
+                return Observed(new CdcTransportAcknowledgement());
+            });
+
+        var result = await CommandAsync();
+        result.Succeeded.Should().BeFalse();
+        string json = JsonSerializer.Serialize(result, CdcCommandHost.JsonOptions);
+        json.Should().NotContain("private-").And.NotContain(_root);
+        using var document = JsonDocument.Parse(json);
+        document
+            .RootElement.GetProperty("diagnostics")
+            .EnumerateArray()
+            .Select(d => d.GetProperty("component").GetString())
+            .Should()
+            .Equal("WorkflowState", "Connect");
+        result.Diagnostics.Should().OnlyContain(d => d.Failure == CdcDeploymentFailure.Unavailable);
+        _trace.IndexOf("persist").Should().BeLessThan(_trace.IndexOf("stop"));
+        _trace
+            .IndexOf("stop")
+            .Should()
+            .BeLessThan(_trace.IndexOf(failure == "stop" ? "stopped-readback" : "failed-readback"));
+        ReadJournal().WriterPublicationAuthorized.Should().BeFalse();
+        (await real.ExactMatchBindingAsync(_request.Binding)).State!.Incident.Should().BeNull();
+        await using var released = await _store.AcquireAsync(
+            TimeSpan.FromMilliseconds(100),
+            TimeSpan.FromMilliseconds(5),
+            CancellationToken.None
+        );
+    }
+
     [Test]
     public async Task It_contains_retained_history_loss_while_enable_waits_for_the_barrier()
     {

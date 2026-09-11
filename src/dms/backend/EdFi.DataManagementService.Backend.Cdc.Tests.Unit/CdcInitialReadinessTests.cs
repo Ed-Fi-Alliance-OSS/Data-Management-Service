@@ -184,6 +184,16 @@ internal class Given_CdcInitialReadiness(Ddl.CdcProvider provider) : CdcReadines
 
         var result = await ReadyAsync();
         result.State.Should().Be(CdcTransportEvidenceState.Unavailable);
+        result
+            .Diagnostics.Should()
+            .ContainSingle()
+            .Which.Should()
+            .BeEquivalentTo(
+                new CdcDeploymentDiagnostic(
+                    CdcDeploymentComponent.ProviderSetup,
+                    CdcDeploymentFailure.ValidationFailed
+                )
+            );
         var state = await bindings.ExactMatchBindingAsync(_request.Binding);
         state.State!.Incident.Should().NotBeNull();
         state.State.Incident!.FailureCategory.Should().Be(expected);
@@ -237,12 +247,14 @@ internal class Given_CdcInitialReadiness(Ddl.CdcProvider provider) : CdcReadines
     [TestCase("persist")]
     [TestCase("stop")]
     [TestCase("readback")]
+    [TestCase("persist-stop")]
+    [TestCase("persist-readback")]
     public async Task It_attempts_shutdown_and_reports_initial_containment_failures(string failure)
     {
         ShortTiming();
         A.CallTo(() => _connect.ReadOffsetEvidenceAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
             .Returns(Observed(LostOffset("missing", Offsets())));
-        if (failure == "persist")
+        if (failure is "persist" or "persist-stop" or "persist-readback")
         {
             var real = _services.GetRequiredService<ICdcBindingLifecycleService>();
             var faulting = A.Fake<ICdcBindingLifecycleService>();
@@ -272,11 +284,11 @@ internal class Given_CdcInitialReadiness(Ddl.CdcProvider provider) : CdcReadines
             .ReturnsLazily(() =>
             {
                 stopRequested = true;
-                if (failure == "stop")
+                if (failure is "stop" or "persist-stop")
                 {
                     throw new IOException("private-stop-response");
                 }
-                if (failure == "readback")
+                if (failure is "readback" or "persist-readback")
                 {
                     A.CallTo(() =>
                             _connect.ReadStatusAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._)
@@ -292,14 +304,24 @@ internal class Given_CdcInitialReadiness(Ddl.CdcProvider provider) : CdcReadines
 
         var result = await ReadyAsync();
         result.State.Should().Be(CdcTransportEvidenceState.Unavailable);
-        result
-            .Diagnostics.Should()
-            .ContainSingle()
-            .Which.Component.Should()
-            .Be(failure == "persist" ? CdcDeploymentComponent.WorkflowState : CdcDeploymentComponent.Connect);
+        CdcDeploymentComponent[] expected = failure switch
+        {
+            "persist" => [CdcDeploymentComponent.WorkflowState],
+            "persist-stop" => [CdcDeploymentComponent.WorkflowState, CdcDeploymentComponent.Connect],
+            "persist-readback" =>
+            [
+                CdcDeploymentComponent.WorkflowState,
+                CdcDeploymentComponent.Connect,
+                CdcDeploymentComponent.Connect,
+            ],
+            "readback" => [CdcDeploymentComponent.Connect, CdcDeploymentComponent.Connect],
+            _ => [CdcDeploymentComponent.Connect],
+        };
+        result.Diagnostics.Select(d => d.Component).Should().Equal(expected);
+        result.Diagnostics.Should().OnlyContain(d => d.Failure == CdcDeploymentFailure.Unavailable);
         JsonSerializer.Serialize(result).Should().NotContain("private-");
         stopRequested.Should().BeTrue();
-        if (failure != "readback")
+        if (failure is not ("readback" or "persist-readback"))
         {
             _trace.Should().Contain("stopped-readback");
         }

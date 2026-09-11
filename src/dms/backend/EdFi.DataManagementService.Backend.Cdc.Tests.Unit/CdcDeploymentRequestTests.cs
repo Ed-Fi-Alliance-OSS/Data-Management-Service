@@ -271,6 +271,54 @@ public class Given_CdcDeploymentRequest_results
     }
 
     [Test]
+    public void It_preserves_single_diagnostic_construction_and_access()
+    {
+        var diagnostic = new CdcDeploymentDiagnostic(
+            CdcDeploymentComponent.Connect,
+            CdcDeploymentFailure.Timeout
+        );
+        var result = new CdcTransportResult<string>.Unavailable(diagnostic);
+        result.Diagnostic.Should().BeSameAs(diagnostic);
+        result.Diagnostics.Should().ContainSingle().Which.Should().BeSameAs(diagnostic);
+        result.State.Should().Be(CdcTransportEvidenceState.Unavailable);
+    }
+
+    [Test]
+    public void It_retains_and_serializes_all_sanitized_diagnostics()
+    {
+        var storage = CdcDeploymentDiagnostic.FromException(
+            CdcDeploymentComponent.WorkflowState,
+            new IOException("private-path Password=private-password")
+        );
+        var connect = CdcDeploymentDiagnostic.FromException(
+            CdcDeploymentComponent.Connect,
+            new HttpRequestException("private-response Host=private-source")
+        );
+        List<CdcDeploymentDiagnostic> diagnostics = [storage, connect];
+        var result = CdcTransportResult<string>.Unavailable.FromDiagnostics(diagnostics);
+        diagnostics.Clear();
+        result.Diagnostics.Should().Equal(storage, connect);
+        result.Diagnostic.Should().BeSameAs(storage);
+        result.State.Should().Be(CdcTransportEvidenceState.Unavailable);
+        string json = JsonSerializer.Serialize<CdcTransportResult<string>>(result);
+        json.Should().NotContain("private-");
+        using var document = JsonDocument.Parse(json);
+        document
+            .RootElement.GetProperty("Diagnostics")
+            .EnumerateArray()
+            .Select(d => d.GetProperty("Component").GetInt32())
+            .Should()
+            .Equal((int)CdcDeploymentComponent.WorkflowState, (int)CdcDeploymentComponent.Connect);
+    }
+
+    [Test]
+    public void It_rejects_an_empty_diagnostic_collection()
+    {
+        Action act = () => CdcTransportResult<string>.Unavailable.FromDiagnostics([]);
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Test]
     public void It_does_not_infer_absence_from_an_http_exception()
     {
         CdcDeploymentDiagnostic

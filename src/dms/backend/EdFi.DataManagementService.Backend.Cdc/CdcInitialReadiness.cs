@@ -508,7 +508,9 @@ public sealed class CdcInitialReadiness
         }
         catch (EvidenceException exception)
         {
-            return new CdcTransportResult<CdcWriterPublicationResult>.Unavailable(exception.Diagnostic);
+            return CdcTransportResult<CdcWriterPublicationResult>.Unavailable.FromDiagnostics(
+                exception.Diagnostics
+            );
         }
         catch (CdcWorkflowStateException exception)
         {
@@ -553,14 +555,14 @@ public sealed class CdcInitialReadiness
             (steps.Lag, CdcDeploymentComponent.Metrics),
         ];
         var failed = Array.Find(components, c => c.Evidence.State != CdcComponentState.Satisfied);
-        throw new EvidenceException(
+        throw new EvidenceException([
             new(
                 failed.Evidence is null ? CdcDeploymentComponent.WriterPublication : failed.Component,
                 admission.AdmissionState == CdcAdmissionState.Unknown
                     ? CdcDeploymentFailure.Unavailable
                     : CdcDeploymentFailure.ValidationFailed
-            )
-        );
+            ),
+        ]);
     }
 
     private async Task<CdcBindingLifecycleResult> ExactAsync(
@@ -750,8 +752,9 @@ public sealed class CdcInitialReadiness
         await terminal.PersistAsync(request, classification, bindingState, diagnostics, _ => { }, caller);
         await terminal.StopAsync(request, diagnostics, _ => { }, caller);
         throw new EvidenceException(
-            diagnostics.FirstOrDefault()
-                ?? new(CdcDeploymentComponent.ProviderSetup, CdcDeploymentFailure.ValidationFailed)
+            diagnostics.Count > 0
+                ? diagnostics
+                : [new(CdcDeploymentComponent.ProviderSetup, CdcDeploymentFailure.ValidationFailed)]
         );
     }
 
@@ -857,7 +860,7 @@ public sealed class CdcInitialReadiness
         {
             CdcTransportResult<T>.Observed value => value.Value,
             CdcTransportResult<T>.Unavailable unavailable => throw new EvidenceException(
-                unavailable.Diagnostic
+                unavailable.Diagnostics
             ),
             _ => throw new CdcWorkflowStateException(CdcWorkflowStateFailure.Contradictory),
         };
@@ -880,8 +883,8 @@ public sealed class CdcInitialReadiness
         "S3871",
         Justification = "Private control flow caught inside the controller."
     )]
-    internal sealed class EvidenceException(CdcDeploymentDiagnostic diagnostic) : Exception
+    internal sealed class EvidenceException(IReadOnlyList<CdcDeploymentDiagnostic> diagnostics) : Exception
     {
-        public CdcDeploymentDiagnostic Diagnostic { get; } = diagnostic;
+        public IReadOnlyList<CdcDeploymentDiagnostic> Diagnostics { get; } = diagnostics;
     }
 }

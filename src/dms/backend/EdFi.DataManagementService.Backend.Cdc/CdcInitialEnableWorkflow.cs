@@ -160,11 +160,15 @@ public sealed class CdcInitialEnableWorkflow(
         }
         catch (CdcInitialReadiness.EvidenceException exception)
         {
-            return new CdcTransportResult<CdcWriterPublicationResult>.Unavailable(exception.Diagnostic);
+            return CdcTransportResult<CdcWriterPublicationResult>.Unavailable.FromDiagnostics(
+                exception.Diagnostics
+            );
         }
         catch (EvidenceException exception)
         {
-            return new CdcTransportResult<CdcWriterPublicationResult>.Unavailable(exception.Diagnostics[0]);
+            return CdcTransportResult<CdcWriterPublicationResult>.Unavailable.FromDiagnostics(
+                exception.Diagnostics
+            );
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
