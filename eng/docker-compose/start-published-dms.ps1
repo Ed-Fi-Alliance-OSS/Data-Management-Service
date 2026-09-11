@@ -523,7 +523,7 @@ else {
         $upArgs += "--remove-orphans"
     }
 
-    if ($DmsOnly) { $upArgs += "--no-deps" }
+    if ($CdcDmsComposeFile) { $upArgs += "--no-deps" }
 
     function Wait-HttpEndpointHealthy {
         param(

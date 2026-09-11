@@ -70,7 +70,8 @@ Describe "DMS-1153 bootstrap entry-point and IDE workflow" {
 function Test-CdcInfrastructureInvocation { return $false }
 function Test-CdcDeployment { param($Project) return $false }
 function Assert-CdcUnregisteredInfrastructure { param($Project) }
-Export-ModuleMember -Function Test-CdcInfrastructureInvocation, Test-CdcDeployment, Assert-CdcUnregisteredInfrastructure
+function Test-CdcBootstrapWorkspaceProtected { param($BootstrapRoot) return $false }
+Export-ModuleMember -Function Test-CdcInfrastructureInvocation, Test-CdcDeployment, Assert-CdcUnregisteredInfrastructure, Test-CdcBootstrapWorkspaceProtected
 '@ | Set-Content -LiteralPath (Join-Path $Destination 'cdc-lifecycle.psm1')
             }
         }
@@ -510,6 +511,40 @@ $failureStatement
 
         if ($null -ne $script:repo -and (Test-Path -LiteralPath $script:repo.RepoRoot)) {
             Remove-Item -LiteralPath $script:repo.RepoRoot -Recurse -Force
+        }
+    }
+
+    Context "ordinary DmsOnly dependency startup" {
+        BeforeEach {
+            foreach ($fileName in @('start-local-dms.ps1', 'start-published-dms.ps1',
+                'bootstrap-manifest.psm1', 'bootstrap-claims-gate.psm1')) {
+                Copy-DockerComposeFile -FileName $fileName -Destination $script:repo.DockerComposeRoot
+            }
+            $script:dockerCommands = [Collections.Generic.List[string]]::new()
+            $recordedCommands = $script:dockerCommands
+            $stub = {
+                $recordedCommands.Add((@($args | ForEach-Object { $_ }) -join ' '))
+                $global:LASTEXITCODE = 0
+                if ($args[0] -eq 'network') { return 'existing-network' }
+            }.GetNewClosure()
+            Set-Item function:script:docker -Value $stub
+            Mock Invoke-WebRequest { @{ StatusCode = 200 } }
+        }
+        AfterEach { Remove-Item function:script:docker -Force -ErrorAction SilentlyContinue }
+
+        It 'allows dependencies and preserves peers for <flavor> DmsOnly (Swagger=<swagger>)' -ForEach @(
+            @{ flavor = 'local'; swagger = $false }, @{ flavor = 'published'; swagger = $false },
+            @{ flavor = 'local'; swagger = $true }, @{ flavor = 'published'; swagger = $true }
+        ) {
+            & (Join-Path $script:repo.DockerComposeRoot "start-$flavor-dms.ps1") `
+                -EnvironmentFile $script:repo.EnvFile -DmsOnly -EnableSwaggerUI:$swagger | Out-Null
+
+            $commands = @($script:dockerCommands | Where-Object { $_ -like 'compose *' })
+            $commands.Count | Should -Be 1
+            $services = if ($swagger) { 'dms swagger-ui' } else { 'dms' }
+            $commands[0] | Should -Match "-p dms-$flavor up --detach $services$"
+            $commands[0] | Should -Not -Match '--no-deps|--remove-orphans'
+            Should -Invoke Invoke-WebRequest -Times 1 -Exactly
         }
     }
 

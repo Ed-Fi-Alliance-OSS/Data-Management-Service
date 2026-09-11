@@ -1278,6 +1278,64 @@ Export-ModuleMember -Function *
     }
 }
 
+Describe 'Managed primitive DMS startup selection' {
+    BeforeAll {
+        function docker { }
+        function Wait-HttpEndpointHealthy { }
+        function Invoke-TestDmsStartup($flavor, $DmsOnly, $CdcDmsComposeFile, $EnableSwaggerUI) {
+            $path = Join-Path $PSScriptRoot "../start-$flavor-dms.ps1"
+            $ast = [Management.Automation.Language.Parser]::ParseFile($path, [ref]$null, [ref]$null)
+            # Execute production validation, argument construction and the DMS branch in order.
+            $nodes = $ast.FindAll({
+                param($n)
+                if ($n -is [Management.Automation.Language.AssignmentStatementAst]) {
+                    return $n.Extent.Text -eq '$upArgs = @("--detach")'
+                }
+                if ($n -isnot [Management.Automation.Language.IfStatementAst]) { return $false }
+                return $n.Extent.Text.StartsWith('if ($CdcDmsComposeFile)') -or
+                    $n.Extent.Text.StartsWith('if (-not $databaseOnlyStartup -and -not $DmsOnly)') -or
+                    ($n.Clauses[0].Item2.Statements.Extent.Text -contains '$upArgs += "--no-deps"') -or
+                    ($n.Extent.Text.StartsWith('if ($DmsOnly)') -and $n.Extent.Text.Contains('$dmsServices ='))
+            }, $true)
+            $nodes.Count | Should -Be 5
+            $files = @('-f', "$flavor-dms.yml")
+            $EnvironmentFile = '/selected/.env'
+            $databaseOnlyStartup = $false
+            $dmsUrl = 'http://localhost:8080'
+            & ([scriptblock]::Create(($nodes.Extent.Text -join "`n"))) | Out-Null
+        }
+    }
+    BeforeEach {
+        $script:commands = [Collections.Generic.List[string]]::new()
+        Mock docker { $script:commands.Add((@($args | ForEach-Object { $_ }) -join ' ')); $global:LASTEXITCODE = 0 }
+        Mock Wait-HttpEndpointHealthy { }
+        $script:handoff = Join-Path $TestDrive 'dms-override.json'
+        '{"services":{"dms":{}}}' | Set-Content $script:handoff
+    }
+    It 'isolates the validated <flavor> CDC handoff (Swagger=<swagger>)' -ForEach @(
+        @{ flavor = 'local'; swagger = $false }, @{ flavor = 'published'; swagger = $false },
+        @{ flavor = 'local'; swagger = $true }, @{ flavor = 'published'; swagger = $true }
+    ) {
+        Invoke-TestDmsStartup -flavor $flavor -DmsOnly $true -CdcDmsComposeFile $script:handoff -EnableSwaggerUI $swagger
+        $script:commands.Count | Should -Be 1
+        $services = if ($swagger) { 'dms swagger-ui' } else { 'dms' }
+        $script:commands[0] | Should -Match "-p dms-$flavor up --detach --no-deps $services$"
+        $script:commands[0] | Should -Match ([regex]::Escape("-f $script:handoff --env-file /selected/.env"))
+        $script:commands[0] | Should -Not -Match '--remove-orphans'
+        Should -Invoke Wait-HttpEndpointHealthy -Times 1 -Exactly
+    }
+    It 'rejects <fault> CDC handoff before <flavor> Docker startup' -ForEach @(
+        @{ flavor = 'local'; fault = 'missing-file' }, @{ flavor = 'published'; fault = 'missing-file' },
+        @{ flavor = 'local'; fault = 'without-DmsOnly' }, @{ flavor = 'published'; fault = 'without-DmsOnly' }
+    ) {
+        if ($fault -eq 'missing-file') { Remove-Item $script:handoff }
+        { Invoke-TestDmsStartup -flavor $flavor -DmsOnly ($fault -ne 'without-DmsOnly') -CdcDmsComposeFile $script:handoff -EnableSwaggerUI $false } |
+            Should -Throw '*CDC DMS settings handoff requires -DmsOnly and an existing Compose override*'
+        $script:commands.Count | Should -Be 0
+        Should -Invoke Wait-HttpEndpointHealthy -Times 0 -Exactly
+    }
+}
+
 Describe 'Managed primitive Docker shutdown selection' {
     BeforeAll {
         function docker { }

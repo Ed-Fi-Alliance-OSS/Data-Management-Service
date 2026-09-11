@@ -717,7 +717,7 @@ else {
         return $lines.ToArray()
     }
 
-    if ($DmsOnly) { $upArgs += "--no-deps" }
+    if ($CdcDmsComposeFile) { $upArgs += "--no-deps" }
 
     function Wait-HttpEndpointHealthy {
         param(
