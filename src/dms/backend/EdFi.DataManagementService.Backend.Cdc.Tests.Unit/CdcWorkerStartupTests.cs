@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Diagnostics;
 using EdFi.DataManagementService.Core.DocumentCache.Cdc;
 using FakeItEasy;
 using FluentAssertions;
@@ -59,7 +60,7 @@ internal sealed class Given_CdcWorkerStartup(bool retained)
             .Invokes(() => _effects.Add("worker"));
         _onCall = name =>
         {
-            if (name.StartsWith("topic:", StringComparison.Ordinal))
+            if (name == "topic")
             {
                 _effects.Add("offset");
             }
@@ -199,6 +200,157 @@ internal sealed class Given_CdcWorkerStartup(bool retained)
         _effects.Should().BeEmpty();
     }
 
+    [TestCase("broker-config")]
+    [TestCase("broker-up")]
+    [TestCase("worker-config")]
+    [TestCase("worker-up")]
+    public async Task It_bounds_real_compose_calls_and_releases_the_session(string boundary)
+    {
+        ShortTiming(200);
+        using var guard = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        ConfigureCompose(boundary, async token => await Task.Delay(Timeout.InfiniteTimeSpan, token));
+        var elapsed = Stopwatch.StartNew();
+        var result = await StartAsync(guard.Token);
+        elapsed.Elapsed.Should().BeLessThan(TimeSpan.FromMilliseconds(800));
+        result
+            .Diagnostics.Should()
+            .ContainSingle()
+            .Which.Should()
+            .BeEquivalentTo(
+                new CdcDeploymentDiagnostic(CdcDeploymentComponent.Worker, CdcDeploymentFailure.Timeout)
+            );
+        AssertComposePhases(boundary);
+        await AssertSessionReleasedAsync();
+    }
+
+    [Test]
+    public async Task It_preserves_actual_caller_cancellation_during_real_compose_startup()
+    {
+        using var caller = new CancellationTokenSource();
+        ConfigureCompose(
+            "broker-up",
+            async token =>
+            {
+                await caller.CancelAsync();
+                await Task.Delay(Timeout.InfiniteTimeSpan, token);
+            }
+        );
+        Func<Task> act = () => StartAsync(caller.Token);
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        AssertComposePhases("broker-up");
+        await AssertSessionReleasedAsync();
+    }
+
+    [Test]
+    public async Task It_honors_the_earlier_workflow_deadline_during_real_compose_startup()
+    {
+        _request = Given_CdcWorkerComposeStartup.WithTiming(
+            _request,
+            TimeSpan.FromSeconds(1),
+            TimeSpan.FromSeconds(1)
+        );
+        ConfigureCompose(
+            "worker-up",
+            async token => await Task.Delay(Timeout.InfiniteTimeSpan, token),
+            TimeSpan.FromMilliseconds(600)
+        );
+        using var guard = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var elapsed = Stopwatch.StartNew();
+        var result = await StartAsync(guard.Token);
+        elapsed.Elapsed.Should().BeLessThan(TimeSpan.FromMilliseconds(1400));
+        result
+            .Diagnostics.Should()
+            .ContainSingle()
+            .Which.Should()
+            .BeEquivalentTo(
+                new CdcDeploymentDiagnostic(CdcDeploymentComponent.Worker, CdcDeploymentFailure.Timeout)
+            );
+        AssertComposePhases("worker-up");
+        await AssertSessionReleasedAsync();
+    }
+
+    [Test]
+    public async Task It_completes_real_compose_startup_in_authorized_phase_order()
+    {
+        ConfigureCompose("", _ => Task.CompletedTask);
+        (await StartAsync(default)).State.Should().Be(CdcTransportEvidenceState.Observed);
+        _effects
+            .Where(e => e != "offset")
+            .Should()
+            .Equal("broker-config", "broker-up", "worker-config", "worker-up");
+        _effects.IndexOf("offset").Should().BeGreaterThan(_effects.IndexOf("broker-up"));
+        _effects.LastIndexOf("offset").Should().BeLessThan(_effects.IndexOf("worker-config"));
+        await AssertSessionReleasedAsync();
+    }
+
+    private void ConfigureCompose(
+        string boundary,
+        Func<CancellationToken, Task> stall,
+        TimeSpan brokerDelay = default
+    )
+    {
+        int configs = 0;
+        var docker = new Given_CdcWorkerComposeStartup.Docker(
+            async (args, token) =>
+            {
+                bool config = args.Contains("config");
+                string phase;
+                if (config)
+                {
+                    phase = ++configs == 1 ? "broker-config" : "worker-config";
+                }
+                else
+                {
+                    phase = args[^1] == "kafka" ? "broker-up" : "worker-up";
+                }
+                _effects.Add(phase);
+                if (phase == "broker-up" && brokerDelay > TimeSpan.Zero)
+                {
+                    await Task.Delay(brokerDelay, token);
+                }
+                if (phase == boundary)
+                {
+                    await stall(token);
+                }
+                return config ? Given_CdcWorkerComposeStartup.Configuration(_request) : "";
+            }
+        );
+        _startup = new(
+            new CdcKafkaProvisioning(
+                _root,
+                _kafka,
+                _runtime,
+                new CdcKafkaProducerInspection(_connect, _worker)
+            ),
+            new CdcComposeWorkerStartupTransport(
+                "/compose/kafka-cdc.yml",
+                "/configuration/selected.env",
+                "selected-project",
+                new HashSet<string> { "example/qualified@" + _request.WorkerPolicy.QualifiedImageDigest },
+                docker
+            )
+        );
+    }
+
+    private void AssertComposePhases(string boundary)
+    {
+        string[] phases = ["broker-config", "broker-up", "worker-config", "worker-up"];
+        _effects.Where(e => e != "offset").Should().Equal(phases.Take(Array.IndexOf(phases, boundary) + 1));
+        if (boundary.StartsWith("broker", StringComparison.Ordinal))
+        {
+            _effects.Should().NotContain("offset");
+        }
+    }
+
+    private async Task AssertSessionReleasedAsync()
+    {
+        await using var session = await _store.AcquireAsync(
+            TimeSpan.FromSeconds(1),
+            TimeSpan.FromMilliseconds(1),
+            default
+        );
+    }
+
     private Task<CdcTransportResult<CdcTransportAcknowledgement>> StartAsync(CancellationToken token) =>
         retained ? _startup.StartRetainedAsync(_request, token) : _startup.StartAsync(_request, token);
 }
@@ -219,32 +371,14 @@ public sealed class Given_CdcWorkerComposeStartup
     {
         _commands.Clear();
         _request = CdcDeploymentRequestTestData.Request();
-        _configuration = System.Text.Json.JsonSerializer.Serialize(
-            new
+        _configuration = Configuration(_request);
+        _docker = new Docker(
+            (args, _) =>
             {
-                services = new Dictionary<string, object>
-                {
-                    ["kafka"] = new { image = "broker" },
-                    ["kafka-cdc-worker"] = new
-                    {
-                        image = Image,
-                        profiles = new[] { "cdc-managed-worker" },
-                        environment = new
-                        {
-                            BOOTSTRAP_SERVERS = _request.ConnectorPolicy.KafkaBootstrapServers,
-                            OFFSET_STORAGE_TOPIC = "connect-offsets",
-                            GROUP_ID = "worker",
-                            CONNECT_CONNECTOR_CLIENT_CONFIG_OVERRIDE_POLICY = "All",
-                        },
-                    },
-                },
+                _commands.Add(string.Join(" ", args));
+                return Task.FromResult(args.Contains("config") ? _configuration : "");
             }
         );
-        _docker = new Docker(args =>
-        {
-            _commands.Add(string.Join(" ", args));
-            return args.Contains("config") ? _configuration : "";
-        });
         _transport = new(
             "/compose/kafka-cdc.yml",
             "/configuration/selected.env",
@@ -261,9 +395,9 @@ public sealed class Given_CdcWorkerComposeStartup
         await _transport.StartWorkerAsync(_request, CancellationToken.None);
         _commands.Should().HaveCount(4);
         _commands[0].Should().EndWith("--profile cdc-managed-worker config --format json");
-        _commands[1].Should().EndWith("up --detach --wait --wait-timeout 180 kafka");
+        _commands[1].Should().EndWith("up --detach --wait --wait-timeout 5 kafka");
         _commands[2].Should().Be(_commands[0]);
-        _commands[3].Should().EndWith("up --detach --no-deps --wait --wait-timeout 180 kafka-cdc-worker");
+        _commands[3].Should().EndWith("up --detach --no-deps --wait --wait-timeout 5 kafka-cdc-worker");
         _commands
             .Should()
             .OnlyContain(command =>
@@ -323,12 +457,144 @@ public sealed class Given_CdcWorkerComposeStartup
         }
     }
 
-    private sealed class Docker(Func<IReadOnlyList<string>, string> run) : ICdcWorkerDockerCommand
+    [TestCase(false, true)]
+    [TestCase(false, false)]
+    [TestCase(true, true)]
+    [TestCase(true, false)]
+    public async Task It_bounds_inspection_and_startup_without_a_caller_token(bool worker, bool inspection)
+    {
+        _request = WithTiming(_request, TimeSpan.FromMilliseconds(200), TimeSpan.FromSeconds(5));
+        using var guard = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+        var docker = new Docker(
+            async (args, token) =>
+            {
+                _commands.Add(string.Join(" ", args));
+                if (args.Contains("config") == inspection)
+                {
+                    using var guarded = CancellationTokenSource.CreateLinkedTokenSource(token, guard.Token);
+                    await Task.Delay(Timeout.InfiniteTimeSpan, guarded.Token);
+                }
+                return args.Contains("config") ? _configuration : "";
+            }
+        );
+        _transport = new(
+            "/compose/kafka-cdc.yml",
+            "/configuration/selected.env",
+            "selected-project",
+            new HashSet<string> { Image },
+            docker
+        );
+        Func<Task> act = () =>
+            worker
+                ? _transport.StartWorkerAsync(_request, CancellationToken.None)
+                : _transport.StartBrokerAsync(_request, CancellationToken.None);
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        guard.IsCancellationRequested.Should().BeFalse("the configured call budget must expire first");
+        _commands.Should().HaveCount(inspection ? 1 : 2);
+    }
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task It_shares_the_same_deadline_token_across_inspection_and_startup(bool worker)
+    {
+        _request = WithTiming(_request, TimeSpan.FromMilliseconds(500), TimeSpan.FromSeconds(5));
+        using var guard = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+        CancellationToken inspectionToken = default;
+        var docker = new Docker(
+            async (args, token) =>
+            {
+                if (args.Contains("config"))
+                {
+                    inspectionToken = token;
+                    await Task.Delay(TimeSpan.FromMilliseconds(300), token);
+                    return _configuration;
+                }
+                token.Should().Be(inspectionToken);
+                token.Should().NotBe(guard.Token);
+                await Task.Delay(Timeout.InfiniteTimeSpan, token);
+                return "";
+            }
+        );
+        _transport = new(
+            "/compose/kafka-cdc.yml",
+            "/configuration/selected.env",
+            "selected-project",
+            new HashSet<string> { Image },
+            docker
+        );
+        var elapsed = Stopwatch.StartNew();
+        Func<Task> act = () =>
+            worker
+                ? _transport.StartWorkerAsync(_request, guard.Token)
+                : _transport.StartBrokerAsync(_request, guard.Token);
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        elapsed.Elapsed.Should().BeLessThan(TimeSpan.FromMilliseconds(750));
+        guard.IsCancellationRequested.Should().BeFalse();
+    }
+
+    [TestCase(0.1, "1")]
+    [TestCase(1.1, "2")]
+    [TestCase(30, "30")]
+    [TestCase(180.1, "181")]
+    [TestCase(240, "240")]
+    [SetCulture("ar-SA")]
+    public async Task It_uses_the_rounded_configured_health_wait(double seconds, string expected)
+    {
+        _request = WithTiming(_request, TimeSpan.FromSeconds(seconds), TimeSpan.FromMinutes(5));
+        await _transport.StartBrokerAsync(_request, default);
+        await _transport.StartWorkerAsync(_request, default);
+        _commands[1].Should().EndWith($"--wait-timeout {expected} kafka");
+        _commands[3].Should().EndWith($"--wait-timeout {expected} kafka-cdc-worker");
+    }
+
+    internal static CdcDeploymentRequest WithTiming(
+        CdcDeploymentRequest request,
+        TimeSpan call,
+        TimeSpan wait
+    ) =>
+        new(
+            request.Binding,
+            request.DmsSettings,
+            request.ProviderSetup,
+            request.ConnectEndpoint,
+            request.WorkerMetricsEndpoint,
+            request.ConnectorPolicy,
+            request.WorkerPolicy,
+            request.ProviderConnectionProperties,
+            request.KafkaClientSecurityProperties,
+            new(call, wait, TimeSpan.FromMilliseconds(5))
+        );
+
+    internal static string Configuration(CdcDeploymentRequest request) =>
+        System.Text.Json.JsonSerializer.Serialize(
+            new
+            {
+                services = new Dictionary<string, object>
+                {
+                    ["kafka"] = new { image = "broker" },
+                    ["kafka-cdc-worker"] = new
+                    {
+                        image = "example/qualified@" + request.WorkerPolicy.QualifiedImageDigest,
+                        profiles = new[] { "cdc-managed-worker" },
+                        environment = new
+                        {
+                            BOOTSTRAP_SERVERS = request.ConnectorPolicy.KafkaBootstrapServers,
+                            OFFSET_STORAGE_TOPIC = "connect-offsets",
+                            GROUP_ID = "worker",
+                            CONNECT_CONNECTOR_CLIENT_CONFIG_OVERRIDE_POLICY = "All",
+                        },
+                    },
+                },
+            }
+        );
+
+    internal sealed class Docker(Func<IReadOnlyList<string>, CancellationToken, Task<string>> run)
+        : ICdcWorkerDockerCommand
     {
         public Task<string> RunAsync(IReadOnlyList<string> arguments, CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
-            return Task.FromResult(run(arguments));
+            return run(arguments, token);
         }
     }
 }

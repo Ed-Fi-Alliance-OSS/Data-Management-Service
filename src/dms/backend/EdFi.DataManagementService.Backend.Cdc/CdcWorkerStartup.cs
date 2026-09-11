@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Globalization;
 using System.Text.Json;
 using EdFi.DataManagementService.Core.DocumentCache.Cdc;
 
@@ -231,30 +232,36 @@ public sealed class CdcComposeWorkerStartupTransport : ICdcWorkerStartupTranspor
         _qualifiedImages = qualifiedImages.ToHashSet(StringComparer.Ordinal);
     }
 
-    public async Task StartBrokerAsync(CdcDeploymentRequest request, CancellationToken cancellationToken)
-    {
-        await ValidateComposeAsync(request, cancellationToken);
-        await _docker.RunAsync(
-            [.. ComposeArguments, "up", "--detach", "--wait", "--wait-timeout", "180", "kafka"],
-            cancellationToken
-        );
-    }
+    public Task StartBrokerAsync(CdcDeploymentRequest request, CancellationToken cancellationToken) =>
+        StartAsync(request, worker: false, cancellationToken);
 
-    public async Task StartWorkerAsync(CdcDeploymentRequest request, CancellationToken cancellationToken)
+    public Task StartWorkerAsync(CdcDeploymentRequest request, CancellationToken cancellationToken) =>
+        StartAsync(request, worker: true, cancellationToken);
+
+    private async Task StartAsync(
+        CdcDeploymentRequest request,
+        bool worker,
+        CancellationToken cancellationToken
+    )
     {
-        await ValidateComposeAsync(request, cancellationToken);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(request.Timing.CallTimeout);
+        await ValidateComposeAsync(request, timeout.Token);
+        string waitSeconds = Math.Max(1, (int)Math.Ceiling(request.Timing.CallTimeout.TotalSeconds))
+            .ToString(CultureInfo.InvariantCulture);
+        string[] dependencyOptions = worker ? ["--no-deps"] : [];
         await _docker.RunAsync(
             [
                 .. ComposeArguments,
                 "up",
                 "--detach",
-                "--no-deps",
+                .. dependencyOptions,
                 "--wait",
                 "--wait-timeout",
-                "180",
-                "kafka-cdc-worker",
+                waitSeconds,
+                worker ? "kafka-cdc-worker" : "kafka",
             ],
-            cancellationToken
+            timeout.Token
         );
     }
 
