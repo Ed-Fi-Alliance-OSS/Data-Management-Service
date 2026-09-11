@@ -174,6 +174,16 @@ public sealed class Given_Representation_Restamp_E2E_Harness
         RepresentationRestampE2EHarness.ProviderFor("mssql").Should().Be(RelationalProviderToken.SqlServer);
     }
 
+    [TestCase(DocumentCacheRepresentationRestampMode.Disabled, true)]
+    [TestCase(DocumentCacheRepresentationRestampMode.Tracking, false)]
+    public void It_requires_a_lifecycle_reset_only_for_the_disabled_mode(
+        DocumentCacheRepresentationRestampMode mode,
+        bool expected
+    )
+    {
+        RepresentationRestampE2EHarness.RequiresDisabledLifecycleReset(mode).Should().Be(expected);
+    }
+
     [Test]
     public void It_rejects_an_unsupported_database_engine()
     {

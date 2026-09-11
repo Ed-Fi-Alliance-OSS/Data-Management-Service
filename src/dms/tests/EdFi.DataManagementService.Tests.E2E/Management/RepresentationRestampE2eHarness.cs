@@ -266,11 +266,12 @@ internal static class RepresentationRestampE2EHarness
             async () =>
             {
                 var projectionExpected = false;
-                // Cleanup undoes only what actually happened: the container is restarted only after a
-                // stop that succeeded, and the lifecycle is reset only after it was really set to
-                // Disabled. A wrong container name fails on the copy below, before DMS is touched.
+                // Cleanup undoes only what this run could have changed: the container is restarted
+                // only after a stop that succeeded, and the Disabled lifecycle reset is armed once
+                // the write is about to be attempted. A wrong container name fails on the copy
+                // below, before DMS is touched, so neither cleanup runs.
                 var dmsStopped = false;
-                var lifecycleSetToDisabled = false;
+                var disabledLifecycleResetRequired = false;
                 IRepresentationRestampE2EProviderOperations providerOperations = ProviderOperationsFor(
                     ProviderFor(AppSettings.DatabaseEngine)
                 );
@@ -293,6 +294,11 @@ internal static class RepresentationRestampE2EHarness
                         );
                         providerOperations = ProviderOperationsFor(target.ProviderToken);
                         connectionString = target.ConnectionString;
+                        // Arm the reset before the write is attempted, not after it returns: a write
+                        // that fails partway can still have moved the lifecycle, and cleanup has to
+                        // try to restore Tracking either way. Safe to arm here because the provider
+                        // and connection now address the external target the reset will use.
+                        disabledLifecycleResetRequired = RequiresDisabledLifecycleReset(mode);
                         await SetLifecycleAsync(
                             providerOperations,
                             connectionString,
@@ -301,7 +307,6 @@ internal static class RepresentationRestampE2EHarness
                                 : DocumentCacheLifecycleState.Disabled,
                             CancellationToken.None
                         );
-                        lifecycleSetToDisabled = mode == DocumentCacheRepresentationRestampMode.Disabled;
                         await using DocumentCacheAdminTestConfigurationService configurationService =
                             DocumentCacheAdminTestConfigurationService.Start(
                                 target,
@@ -380,7 +385,7 @@ internal static class RepresentationRestampE2EHarness
                             $"cleanup after representation restamp ({mode}) for DMS container '{containerName}'",
                             async () =>
                             {
-                                if (lifecycleSetToDisabled)
+                                if (disabledLifecycleResetRequired)
                                 {
                                     await SetLifecycleAsync(
                                         providerOperations,
@@ -470,6 +475,14 @@ internal static class RepresentationRestampE2EHarness
             await drainOrdinaryProjectorAsync();
         }
     }
+
+    /// <summary>
+    /// Whether cleanup has to restore the Tracking lifecycle. True for a Disabled restamp, which is
+    /// the only mode that writes a different lifecycle. Callers arm this before attempting that
+    /// write rather than after it succeeds, so a write that fails partway is still reset.
+    /// </summary>
+    internal static bool RequiresDisabledLifecycleReset(DocumentCacheRepresentationRestampMode mode) =>
+        mode == DocumentCacheRepresentationRestampMode.Disabled;
 
     internal static RelationalProviderToken ProviderFor(string databaseEngine)
     {
