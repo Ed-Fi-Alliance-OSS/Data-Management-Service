@@ -81,3 +81,12 @@ public class ResourceClaimActionAuthStrategyQuery : PagingQuery
 {
     public string? ResourceName { get; set; }
 }
+
+public class ActionQuery : PagingQuery
+{
+    public int? Id { get; set; }
+
+    public string? Name { get; set; }
+}
+
+public class AuthorizationStrategyQuery : PagingQuery;
