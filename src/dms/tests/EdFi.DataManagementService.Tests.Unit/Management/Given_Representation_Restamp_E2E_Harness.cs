@@ -175,16 +175,6 @@ public sealed class Given_Representation_Restamp_E2E_Harness
         RepresentationRestampE2EHarness.ProviderFor("mssql").Should().Be(RelationalProviderToken.SqlServer);
     }
 
-    [TestCase(DocumentCacheRepresentationRestampMode.Disabled, true)]
-    [TestCase(DocumentCacheRepresentationRestampMode.Tracking, false)]
-    public void It_requires_a_lifecycle_reset_only_for_the_disabled_mode(
-        DocumentCacheRepresentationRestampMode mode,
-        bool expected
-    )
-    {
-        RepresentationRestampE2EHarness.RequiresDisabledLifecycleReset(mode).Should().Be(expected);
-    }
-
     [Test]
     public void It_rejects_an_unsupported_database_engine()
     {
@@ -254,6 +244,8 @@ public sealed class Given_Representation_Restamp_E2E_Harness
         operations.Sql.ReadResidualWork.Should().Contain("dms.\"DocumentProjectionWork\"");
         operations.Sql.ReadResidualWork.Should().Contain("LEFT JOIN dms.\"DocumentCache\"");
         operations.Sql.ReadResidualWork.Should().Contain("LIMIT 50");
+        operations.Sql.ReadDocumentCacheState.Should().Contain("dms.\"DocumentCacheState\"");
+        operations.Sql.ReadDocumentCacheState.Should().Contain("\"CacheAheadRecoveryRequired\"");
     }
 
     [Test]
@@ -275,6 +267,8 @@ public sealed class Given_Representation_Restamp_E2E_Harness
         operations.Sql.ReadResidualWork.Should().Contain("[dms].[DocumentProjectionWork]");
         operations.Sql.ReadResidualWork.Should().Contain("LEFT JOIN [dms].[DocumentCache]");
         operations.Sql.ReadResidualWork.Should().Contain("SELECT TOP (50)");
+        operations.Sql.ReadDocumentCacheState.Should().Contain("[dms].[DocumentCacheState]");
+        operations.Sql.ReadDocumentCacheState.Should().Contain("[CacheAheadRecoveryRequired]");
     }
 
     [Test]
@@ -987,5 +981,132 @@ public sealed class Given_Representation_Restamp_E2E_Harness_Drain_Diagnostics
             .Be(
                 "Timed out in representation-restamp phase 'OrdinaryDrain' after 00:00:01 (budget 00:00:02) for target '':1."
             );
+    }
+}
+
+[TestFixture]
+public sealed class Given_Representation_Restamp_E2E_Harness_Lifecycle_Restore
+{
+    private const string TargetDescription = "'':1";
+
+    [TestCase("Disabled", DocumentCacheLifecycleState.Disabled)]
+    [TestCase("Resetting", DocumentCacheLifecycleState.Resetting)]
+    [TestCase("Rebuilding", DocumentCacheLifecycleState.Rebuilding)]
+    [TestCase("Tracking", DocumentCacheLifecycleState.Tracking)]
+    public void It_parses_each_supported_lifecycle_state_strictly(
+        string lifecycleValue,
+        DocumentCacheLifecycleState expected
+    )
+    {
+        RepresentationRestampE2EDocumentCacheStateObservation observation =
+            RepresentationRestampE2EHarness.ParseDocumentCacheState(lifecycleValue, true, TargetDescription);
+
+        observation.LifecycleState.Should().Be(expected);
+        observation.CacheAheadRecoveryRequired.Should().BeTrue();
+    }
+
+    [TestCase("tracking")]
+    [TestCase("Paused")]
+    [TestCase("")]
+    [TestCase("1")]
+    public void It_rejects_an_unknown_or_blank_lifecycle_value_with_the_capture_phase_named(
+        string lifecycleValue
+    )
+    {
+        Action act = () =>
+            RepresentationRestampE2EHarness.ParseDocumentCacheState(lifecycleValue, false, TargetDescription);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*phase 'LifecycleCapture'*")
+            .WithMessage($"*for target {TargetDescription}*")
+            .WithMessage($"*unsupported value '{lifecycleValue}'*");
+    }
+
+    [Test]
+    public void It_rejects_a_missing_state_row_with_the_capture_phase_named()
+    {
+        Action act = () =>
+            RepresentationRestampE2EHarness.ParseDocumentCacheState(null, null, TargetDescription);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*phase 'LifecycleCapture'*")
+            .WithMessage("*no readable singleton row*");
+    }
+
+    [Test]
+    public void It_rejects_an_unreadable_latch_with_the_capture_phase_named()
+    {
+        Action act = () =>
+            RepresentationRestampE2EHarness.ParseDocumentCacheState(
+                "Tracking",
+                DBNull.Value,
+                TargetDescription
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*phase 'LifecycleCapture'*")
+            .WithMessage("*CacheAheadRecoveryRequired is unreadable*");
+    }
+
+    [Test]
+    public void It_reads_the_latch_from_a_database_boolean()
+    {
+        RepresentationRestampE2EHarness
+            .ParseDocumentCacheState("Disabled", false, TargetDescription)
+            .Should()
+            .Be(
+                new RepresentationRestampE2EDocumentCacheStateObservation(
+                    DocumentCacheLifecycleState.Disabled,
+                    false
+                )
+            );
+    }
+
+    [TestCase(DocumentCacheLifecycleState.Disabled, false)]
+    [TestCase(DocumentCacheLifecycleState.Tracking, false)]
+    [TestCase(DocumentCacheLifecycleState.Tracking, true)]
+    [TestCase(DocumentCacheLifecycleState.Rebuilding, true)]
+    public async Task It_restores_the_observed_lifecycle_and_latch_for_both_modes(
+        DocumentCacheLifecycleState lifecycleState,
+        bool cacheAheadRecoveryRequired
+    )
+    {
+        // The restore does not depend on the restamp mode: whatever was observed before the first
+        // mutation is written back, latch included, so a set latch is never clobbered to false.
+        List<(DocumentCacheLifecycleState LifecycleState, bool Latch)> writes = [];
+
+        await RepresentationRestampE2EHarness.RestoreDocumentCacheStateAsync(
+            new RepresentationRestampE2EDocumentCacheStateObservation(
+                lifecycleState,
+                cacheAheadRecoveryRequired
+            ),
+            (state, latch) =>
+            {
+                writes.Add((state, latch));
+                return Task.CompletedTask;
+            }
+        );
+
+        writes.Should().Equal((lifecycleState, cacheAheadRecoveryRequired));
+    }
+
+    [Test]
+    public async Task It_skips_restore_when_nothing_was_observed()
+    {
+        var wrote = false;
+
+        await RepresentationRestampE2EHarness.RestoreDocumentCacheStateAsync(
+            null,
+            (_, _) =>
+            {
+                wrote = true;
+                return Task.CompletedTask;
+            }
+        );
+
+        wrote.Should().BeFalse();
     }
 }

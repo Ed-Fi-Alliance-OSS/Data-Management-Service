@@ -30,7 +30,18 @@ internal sealed record RepresentationRestampE2EProviderSql(
     string ReadCanonicalContentVersion,
     string ReadRequiredWorkVersion,
     string IsProjected,
-    string ReadResidualWork
+    string ReadResidualWork,
+    string ReadDocumentCacheState
+);
+
+/// <summary>
+/// The <c>dms.DocumentCacheState</c> singleton as observed before a scenario mutates it. Both
+/// columns are captured so cleanup restores the exact pre-scenario state: <c>SetLifecycleAsync</c>
+/// also writes the cache-ahead latch, so restoring the lifecycle alone would clobber a set latch.
+/// </summary>
+internal sealed record RepresentationRestampE2EDocumentCacheStateObservation(
+    DocumentCacheLifecycleState LifecycleState,
+    bool CacheAheadRecoveryRequired
 );
 
 /// <summary>
@@ -58,6 +69,13 @@ internal interface IRepresentationRestampE2EProviderOperations
     Task SetLifecycleAsync(
         DbConnection connection,
         DocumentCacheLifecycleState lifecycleState,
+        CancellationToken cancellationToken,
+        bool cacheAheadRecoveryRequired = false
+    );
+
+    Task<RepresentationRestampE2EDocumentCacheStateObservation> ReadDocumentCacheStateAsync(
+        DbConnection connection,
+        string targetDescription,
         CancellationToken cancellationToken
     );
 
@@ -98,14 +116,36 @@ internal abstract class RepresentationRestampE2EProviderOperations(Representatio
     public async Task SetLifecycleAsync(
         DbConnection connection,
         DocumentCacheLifecycleState lifecycleState,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        bool cacheAheadRecoveryRequired = false
     )
     {
         await using DbCommand command = connection.CreateCommand();
         command.CommandText = Sql.SetLifecycle;
         AddParameter(command, "projectionLifecycleState", lifecycleState.ToString());
-        AddParameter(command, "cacheAheadRecoveryRequired", false);
+        AddParameter(command, "cacheAheadRecoveryRequired", cacheAheadRecoveryRequired);
         await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    public async Task<RepresentationRestampE2EDocumentCacheStateObservation> ReadDocumentCacheStateAsync(
+        DbConnection connection,
+        string targetDescription,
+        CancellationToken cancellationToken
+    )
+    {
+        await using DbCommand command = connection.CreateCommand();
+        command.CommandText = Sql.ReadDocumentCacheState;
+        await using DbDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return RepresentationRestampE2EHarness.ParseDocumentCacheState(null, null, targetDescription);
+        }
+
+        return RepresentationRestampE2EHarness.ParseDocumentCacheState(
+            reader.GetValue(0),
+            reader.GetValue(1),
+            targetDescription
+        );
     }
 
     public async Task<long> ReadCanonicalContentVersionAsync(
@@ -259,6 +299,11 @@ internal sealed class PostgresqlRepresentationRestampE2EProviderOperations()
             LEFT JOIN dms."DocumentCache" AS cache ON cache."DocumentId" = work."DocumentId"
             ORDER BY work."FirstEnqueuedAt", work."DocumentId"
             LIMIT 50;
+            """,
+            """
+            SELECT "ProjectionLifecycleState", "CacheAheadRecoveryRequired"
+            FROM dms."DocumentCacheState"
+            WHERE "StateId" = 1;
             """
         )
     )
@@ -317,6 +362,11 @@ internal sealed class MssqlRepresentationRestampE2EProviderOperations()
             INNER JOIN [dms].[Document] AS document ON document.[DocumentId] = work.[DocumentId]
             LEFT JOIN [dms].[DocumentCache] AS cache ON cache.[DocumentId] = work.[DocumentId]
             ORDER BY work.[FirstEnqueuedAt], work.[DocumentId];
+            """,
+            """
+            SELECT [ProjectionLifecycleState], [CacheAheadRecoveryRequired]
+            FROM [dms].[DocumentCacheState]
+            WHERE [StateId] = 1;
             """
         )
     )
@@ -356,12 +406,12 @@ internal static class RepresentationRestampE2EHarness
             async () =>
             {
                 var projectionExpected = false;
-                // Cleanup undoes only what this run could have changed: the container is restarted
-                // only after a stop that succeeded, and the Disabled lifecycle reset is armed once
-                // the write is about to be attempted. A wrong container name fails on the copy
-                // below, before DMS is touched, so neither cleanup runs.
+                // Cleanup undoes only what actually happened: the container is restarted only after a
+                // stop that succeeded, and DocumentCacheState is restored only after it was observed,
+                // which happens before any mutation. A wrong container name fails on the copy below,
+                // before DMS is touched; an unreadable state row fails before the lifecycle is changed.
                 var dmsStopped = false;
-                var disabledLifecycleResetRequired = false;
+                RepresentationRestampE2EDocumentCacheStateObservation? observedState = null;
                 IRepresentationRestampE2EProviderOperations providerOperations = ProviderOperationsFor(
                     ProviderFor(AppSettings.DatabaseEngine)
                 );
@@ -384,11 +434,17 @@ internal static class RepresentationRestampE2EHarness
                         );
                         providerOperations = ProviderOperationsFor(target.ProviderToken);
                         connectionString = target.ConnectionString;
-                        // Arm the reset before the write is attempted, not after it returns: a write
-                        // that fails partway can still have moved the lifecycle, and cleanup has to
-                        // try to restore Tracking either way. Safe to arm here because the provider
-                        // and connection now address the external target the reset will use.
-                        disabledLifecycleResetRequired = RequiresDisabledLifecycleReset(mode);
+                        // Capture the pre-scenario state before the first mutation so cleanup can put the
+                        // shared E2E database back exactly. Without this the first restamp scenario left
+                        // the database in Tracking for the rest of the run, every later write enqueued
+                        // work nobody drained, and a later Disabled restamp orphaned a work row that kept
+                        // the next Tracking drain spinning (DMS-1528).
+                        observedState = await ReadDocumentCacheStateAsync(
+                            providerOperations,
+                            connectionString,
+                            TargetDescription(target),
+                            CancellationToken.None
+                        );
                         await SetLifecycleAsync(
                             providerOperations,
                             connectionString,
@@ -468,23 +524,23 @@ internal static class RepresentationRestampE2EHarness
                             }
                         );
                     },
-                    // Nested so a failed lifecycle reset cannot skip the restart: the reset is the
+                    // Nested so a failed state restore cannot skip the restart: the restore is the
                     // inner action and the restart is its cleanup, which runs either way.
                     () =>
                         RunWithCleanupAsync(
                             $"cleanup after representation restamp ({mode}) for DMS container '{containerName}'",
-                            async () =>
-                            {
-                                if (disabledLifecycleResetRequired)
-                                {
-                                    await SetLifecycleAsync(
-                                        providerOperations,
-                                        connectionString,
-                                        DocumentCacheLifecycleState.Tracking,
-                                        CancellationToken.None
-                                    );
-                                }
-                            },
+                            () =>
+                                RestoreDocumentCacheStateAsync(
+                                    observedState,
+                                    (lifecycleState, cacheAheadRecoveryRequired) =>
+                                        SetLifecycleAsync(
+                                            providerOperations,
+                                            connectionString,
+                                            lifecycleState,
+                                            CancellationToken.None,
+                                            cacheAheadRecoveryRequired
+                                        )
+                                ),
                             async () =>
                             {
                                 if (!dmsStopped)
@@ -566,14 +622,6 @@ internal static class RepresentationRestampE2EHarness
         }
     }
 
-    /// <summary>
-    /// Whether cleanup has to restore the Tracking lifecycle. True for a Disabled restamp, which is
-    /// the only mode that writes a different lifecycle. Callers arm this before attempting that
-    /// write rather than after it succeeds, so a write that fails partway is still reset.
-    /// </summary>
-    internal static bool RequiresDisabledLifecycleReset(DocumentCacheRepresentationRestampMode mode) =>
-        mode == DocumentCacheRepresentationRestampMode.Disabled;
-
     internal static RelationalProviderToken ProviderFor(string databaseEngine)
     {
         if (string.Equals(databaseEngine, "mssql", StringComparison.OrdinalIgnoreCase))
@@ -620,13 +668,101 @@ internal static class RepresentationRestampE2EHarness
         IRepresentationRestampE2EProviderOperations providerOperations,
         string connectionString,
         DocumentCacheLifecycleState lifecycleState,
+        CancellationToken cancellationToken,
+        bool cacheAheadRecoveryRequired = false
+    )
+    {
+        await using DbConnection connection = providerOperations.OpenConnection(connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await providerOperations.SetLifecycleAsync(
+            connection,
+            lifecycleState,
+            cancellationToken,
+            cacheAheadRecoveryRequired
+        );
+    }
+
+    private static async Task<RepresentationRestampE2EDocumentCacheStateObservation> ReadDocumentCacheStateAsync(
+        IRepresentationRestampE2EProviderOperations providerOperations,
+        string connectionString,
+        string targetDescription,
         CancellationToken cancellationToken
     )
     {
         await using DbConnection connection = providerOperations.OpenConnection(connectionString);
         await connection.OpenAsync(cancellationToken);
-        await providerOperations.SetLifecycleAsync(connection, lifecycleState, cancellationToken);
+        return await providerOperations.ReadDocumentCacheStateAsync(
+            connection,
+            targetDescription,
+            cancellationToken
+        );
     }
+
+    /// <summary>
+    /// Interprets the <c>dms.DocumentCacheState</c> row strictly. A missing row, an unknown lifecycle
+    /// value, or an unreadable latch fails the <see cref="LifecycleCapturePhase"/> before anything is
+    /// mutated; guessing here would silently reintroduce the cross-scenario coupling this guards against.
+    /// </summary>
+    internal static RepresentationRestampE2EDocumentCacheStateObservation ParseDocumentCacheState(
+        object? lifecycleValue,
+        object? cacheAheadRecoveryRequiredValue,
+        string targetDescription
+    )
+    {
+        if (lifecycleValue is null || lifecycleValue is DBNull)
+        {
+            throw new InvalidOperationException(
+                $"Representation-restamp phase '{LifecycleCapturePhase}' failed for target {targetDescription}: "
+                    + "dms.DocumentCacheState has no readable singleton row (StateId = 1)."
+            );
+        }
+
+        string lifecycleText = Convert.ToString(
+            lifecycleValue,
+            System.Globalization.CultureInfo.InvariantCulture
+        )!;
+        // Enum.TryParse also accepts numeric text such as "1"; only the exact member name is a valid
+        // column value, matching the DDL CHECK constraint.
+        if (
+            !Enum.TryParse(lifecycleText, ignoreCase: false, out DocumentCacheLifecycleState lifecycleState)
+            || !Enum.IsDefined(lifecycleState)
+            || !string.Equals(lifecycleState.ToString(), lifecycleText, StringComparison.Ordinal)
+        )
+        {
+            throw new InvalidOperationException(
+                $"Representation-restamp phase '{LifecycleCapturePhase}' failed for target {targetDescription}: "
+                    + $"dms.DocumentCacheState.ProjectionLifecycleState has unsupported value '{lifecycleText}'."
+            );
+        }
+
+        if (cacheAheadRecoveryRequiredValue is null || cacheAheadRecoveryRequiredValue is DBNull)
+        {
+            throw new InvalidOperationException(
+                $"Representation-restamp phase '{LifecycleCapturePhase}' failed for target {targetDescription}: "
+                    + "dms.DocumentCacheState.CacheAheadRecoveryRequired is unreadable."
+            );
+        }
+
+        return new RepresentationRestampE2EDocumentCacheStateObservation(
+            lifecycleState,
+            Convert.ToBoolean(
+                cacheAheadRecoveryRequiredValue,
+                System.Globalization.CultureInfo.InvariantCulture
+            )
+        );
+    }
+
+    /// <summary>
+    /// Restores the observed <c>dms.DocumentCacheState</c> for both restamp modes. Nothing is written
+    /// when nothing was observed, because then nothing was mutated either.
+    /// </summary>
+    internal static Task RestoreDocumentCacheStateAsync(
+        RepresentationRestampE2EDocumentCacheStateObservation? observedState,
+        Func<DocumentCacheLifecycleState, bool, Task> setStateAsync
+    ) =>
+        observedState is null
+            ? Task.CompletedTask
+            : setStateAsync(observedState.LifecycleState, observedState.CacheAheadRecoveryRequired);
 
     /// <summary>
     /// Phase names reported when a representation-restamp harness phase exceeds its budget. Setup
@@ -636,6 +772,7 @@ internal static class RepresentationRestampE2EHarness
     /// </summary>
     internal const string ProjectorSetupPhase = "ProjectorSetup";
     internal const string OrdinaryDrainPhase = "OrdinaryDrain";
+    internal const string LifecycleCapturePhase = "LifecycleCapture";
 
     internal static readonly TimeSpan ProjectorSetupBudget = TimeSpan.FromMinutes(2);
     internal static readonly TimeSpan OrdinaryDrainBudget = TimeSpan.FromMinutes(2);
