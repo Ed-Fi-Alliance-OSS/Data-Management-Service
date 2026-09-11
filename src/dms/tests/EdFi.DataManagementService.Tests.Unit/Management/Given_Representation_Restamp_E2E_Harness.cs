@@ -1110,3 +1110,310 @@ public sealed class Given_Representation_Restamp_E2E_Harness_Lifecycle_Restore
         wrote.Should().BeFalse();
     }
 }
+
+[TestFixture]
+public sealed class Given_Representation_Restamp_E2E_Harness_Drain_Loop
+{
+    private const string TargetDescription = "'':1";
+    private const string Diagnostics = "Drain pages=1. Residual work rows (1): [foreign DocumentId=1].";
+
+    private static Func<CancellationToken, Task<DocumentCacheProjectionDrainPageResult>> Pages(
+        params DocumentCacheProjectionDrainPageResult[] results
+    )
+    {
+        var index = 0;
+        return _ =>
+        {
+            DocumentCacheProjectionDrainPageResult result = results[Math.Min(index, results.Length - 1)];
+            index++;
+            return Task.FromResult(result);
+        };
+    }
+
+    private static Func<CancellationToken, Task<bool>> OwnDocumentProjected(params bool[] answers)
+    {
+        var index = 0;
+        return _ =>
+        {
+            bool answer = answers[Math.Min(index, answers.Length - 1)];
+            index++;
+            return Task.FromResult(answer);
+        };
+    }
+
+    private static Task<string> DescribeDiagnostics() => Task.FromResult(Diagnostics);
+
+    private static Task Drain(
+        RepresentationRestampDrainTally tally,
+        Func<CancellationToken, Task<DocumentCacheProjectionDrainPageResult>> processPageAsync,
+        Func<CancellationToken, Task<bool>> isOwnDocumentProjectedAsync,
+        int maxConsecutivePagesWithoutAcknowledgement = 20,
+        Func<Task<string>>? describeDiagnosticsAsync = null
+    ) =>
+        RepresentationRestampE2EHarness.DrainUntilOwnWorkProjectedAsync(
+            tally,
+            processPageAsync,
+            isOwnDocumentProjectedAsync,
+            describeDiagnosticsAsync ?? DescribeDiagnostics,
+            TargetDescription,
+            maxConsecutivePagesWithoutAcknowledgement,
+            CancellationToken.None
+        );
+
+    [Test]
+    public void It_uses_a_fixed_named_stall_threshold_of_twenty_pages()
+    {
+        RepresentationRestampE2EHarness.MaxConsecutivePagesWithoutAcknowledgement.Should().Be(20);
+        RepresentationRestampE2EHarness.ResidualWorkReadBudget.Should().Be(TimeSpan.FromSeconds(15));
+    }
+
+    [Test]
+    public async Task It_completes_when_the_own_document_is_projected_even_if_foreign_work_remains()
+    {
+        // The page acknowledged the own row and left a foreign row behind; the drain must not wait
+        // for that foreign row.
+        var tally = new RepresentationRestampDrainTally();
+        var describeCalls = 0;
+
+        await Drain(
+            tally,
+            Pages(DocumentCacheProjectionDrainPageResult.PageProcessed(2, 1, 1, [1])),
+            OwnDocumentProjected(true),
+            describeDiagnosticsAsync: () =>
+            {
+                describeCalls++;
+                return DescribeDiagnostics();
+            }
+        );
+
+        tally.Pages.Should().Be(1);
+        describeCalls.Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_keeps_paging_until_the_own_document_is_projected()
+    {
+        var tally = new RepresentationRestampDrainTally();
+
+        await Drain(
+            tally,
+            Pages(
+                DocumentCacheProjectionDrainPageResult.PageProcessed(1, 1),
+                DocumentCacheProjectionDrainPageResult.PageProcessed(1, 1)
+            ),
+            OwnDocumentProjected(false, true)
+        );
+
+        tally.Pages.Should().Be(2);
+    }
+
+    [Test]
+    public async Task It_completes_on_no_eligible_work_when_the_own_document_is_projected()
+    {
+        var tally = new RepresentationRestampDrainTally();
+
+        await Drain(
+            tally,
+            Pages(DocumentCacheProjectionDrainPageResult.NoEligibleWork),
+            OwnDocumentProjected(true)
+        );
+
+        tally.LastOutcome.Should().Be(DocumentCacheProjectionDrainPageOutcome.NoEligibleWork);
+    }
+
+    [Test]
+    public async Task It_fails_with_diagnostics_on_no_eligible_work_when_the_own_document_is_not_projected()
+    {
+        Func<Task> act = () =>
+            Drain(
+                new RepresentationRestampDrainTally(),
+                Pages(
+                    DocumentCacheProjectionDrainPageResult.NoEligibleWorkWithRetry(
+                        DateTimeOffset.UtcNow.AddSeconds(1)
+                    )
+                ),
+                OwnDocumentProjected(false)
+            );
+
+        InvalidOperationException exception = (
+            await act.Should().ThrowAsync<InvalidOperationException>()
+        ).Which;
+        exception
+            .Message.Should()
+            .StartWith(
+                $"Representation-restamp phase 'OrdinaryDrain' failed for target {TargetDescription}: "
+            );
+        exception
+            .Message.Should()
+            .Contain("reported NoEligibleWork but the Tracking restamp's own document is not projected");
+        exception.Message.Should().EndWith(Diagnostics);
+    }
+
+    [Test]
+    public async Task It_fails_fast_after_the_stall_threshold_without_acknowledgements()
+    {
+        var tally = new RepresentationRestampDrainTally();
+
+        Func<Task> act = () =>
+            Drain(
+                tally,
+                Pages(DocumentCacheProjectionDrainPageResult.PageProcessed(1)),
+                OwnDocumentProjected(false),
+                maxConsecutivePagesWithoutAcknowledgement: 3
+            );
+
+        InvalidOperationException exception = (
+            await act.Should().ThrowAsync<InvalidOperationException>()
+        ).Which;
+        exception.Message.Should().Contain("made no progress: 3 consecutive page(s) acknowledged no work");
+        exception.Message.Should().EndWith(Diagnostics);
+        tally.Pages.Should().Be(3);
+    }
+
+    [Test]
+    public async Task It_resets_the_stall_count_when_a_page_acknowledges_work()
+    {
+        // Two idle pages, one page that acknowledges foreign work, then two more idle pages: the
+        // threshold of three is never reached consecutively, so the own-document check decides.
+        var tally = new RepresentationRestampDrainTally();
+
+        await Drain(
+            tally,
+            Pages(
+                DocumentCacheProjectionDrainPageResult.PageProcessed(1),
+                DocumentCacheProjectionDrainPageResult.PageProcessed(1),
+                DocumentCacheProjectionDrainPageResult.PageProcessed(1, 1),
+                DocumentCacheProjectionDrainPageResult.PageProcessed(1),
+                DocumentCacheProjectionDrainPageResult.PageProcessed(1)
+            ),
+            OwnDocumentProjected(false, false, false, false, true),
+            maxConsecutivePagesWithoutAcknowledgement: 3
+        );
+
+        tally.Pages.Should().Be(5);
+    }
+
+    private static IEnumerable<TestCaseData> NonPageOutcomes()
+    {
+        yield return new TestCaseData(
+            DocumentCacheProjectionDrainPageResult.TargetBackoff(
+                new DateTimeOffset(2026, 9, 11, 16, 0, 0, TimeSpan.Zero)
+            )
+        ).SetName("It_fails_naming_a_non_page_outcome(TargetBackoff)");
+        yield return new TestCaseData(DocumentCacheProjectionDrainPageResult.LifecycleFenced).SetName(
+            "It_fails_naming_a_non_page_outcome(LifecycleFenced)"
+        );
+        yield return new TestCaseData(DocumentCacheProjectionDrainPageResult.TargetPaused(1)).SetName(
+            "It_fails_naming_a_non_page_outcome(TargetPaused)"
+        );
+        yield return new TestCaseData(
+            DocumentCacheProjectionDrainPageResult.AdministrativeFailureResult(
+                0,
+                0,
+                0,
+                [],
+                new DocumentCacheAdministrativeDrainFailure(
+                    DocumentCacheAdministrativeCommandStatus.RejectedNoMutation,
+                    DocumentCacheAdministrativeCommandClassification.TargetNotConfigured,
+                    DocumentCacheAdministrativeDiagnosticCategory.TargetNotConfigured,
+                    "target not configured",
+                    retryable: false
+                )
+            )
+        ).SetName("It_fails_naming_a_non_page_outcome(AdministrativeFailure)");
+    }
+
+    [TestCaseSource(nameof(NonPageOutcomes))]
+    public async Task It_fails_naming_a_non_page_outcome(DocumentCacheProjectionDrainPageResult result)
+    {
+        var ownDocumentChecks = 0;
+
+        Func<Task> act = () =>
+            Drain(
+                new RepresentationRestampDrainTally(),
+                Pages(result),
+                _ =>
+                {
+                    ownDocumentChecks++;
+                    return Task.FromResult(true);
+                }
+            );
+
+        InvalidOperationException exception = (
+            await act.Should().ThrowAsync<InvalidOperationException>()
+        ).Which;
+        exception
+            .Message.Should()
+            .Contain($"ended with outcome '{result.Outcome}' instead of PageProcessed or NoEligibleWork");
+        exception.Message.Should().EndWith(Diagnostics);
+        ownDocumentChecks.Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_reports_a_failing_describer_inside_the_drain_failure()
+    {
+        Func<Task> act = () =>
+            Drain(
+                new RepresentationRestampDrainTally(),
+                Pages(DocumentCacheProjectionDrainPageResult.LifecycleFenced),
+                OwnDocumentProjected(true),
+                describeDiagnosticsAsync: () =>
+                    Task.FromException<string>(new TimeoutException("residual read timed out"))
+            );
+
+        InvalidOperationException exception = (
+            await act.Should().ThrowAsync<InvalidOperationException>()
+        ).Which;
+        exception.Message.Should().Contain("ended with outcome 'LifecycleFenced'");
+        exception
+            .Message.Should()
+            .EndWith("Drain diagnostics unavailable: TimeoutException: residual read timed out");
+    }
+
+    [Test]
+    public async Task It_reports_the_drain_phase_when_the_budget_expires_mid_page()
+    {
+        var tally = new RepresentationRestampDrainTally();
+
+        Func<Task> act = () =>
+            RepresentationRestampE2EHarness.RunPhaseAsync(
+                RepresentationRestampE2EHarness.OrdinaryDrainPhase,
+                TimeSpan.FromMilliseconds(25),
+                TargetDescription,
+                cancellationToken =>
+                    RepresentationRestampE2EHarness.DrainUntilOwnWorkProjectedAsync(
+                        tally,
+                        async token =>
+                        {
+                            await Task.Delay(Timeout.InfiniteTimeSpan, token);
+                            return DocumentCacheProjectionDrainPageResult.NoEligibleWork;
+                        },
+                        OwnDocumentProjected(false),
+                        DescribeDiagnostics,
+                        TargetDescription,
+                        20,
+                        cancellationToken
+                    ),
+                DescribeDiagnostics
+            );
+
+        TimeoutException exception = (await act.Should().ThrowAsync<TimeoutException>()).Which;
+        exception.Message.Should().Contain("phase 'OrdinaryDrain'");
+        exception.Message.Should().EndWith($"for target {TargetDescription}. {Diagnostics}");
+        tally.Pages.Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_rejects_a_non_positive_stall_threshold()
+    {
+        Func<Task> act = () =>
+            Drain(
+                new RepresentationRestampDrainTally(),
+                Pages(DocumentCacheProjectionDrainPageResult.NoEligibleWork),
+                OwnDocumentProjected(true),
+                maxConsecutivePagesWithoutAcknowledgement: 0
+            );
+
+        await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
+    }
+}

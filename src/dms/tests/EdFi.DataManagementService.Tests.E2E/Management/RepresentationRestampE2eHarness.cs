@@ -777,6 +777,21 @@ internal static class RepresentationRestampE2EHarness
     internal static readonly TimeSpan ProjectorSetupBudget = TimeSpan.FromMinutes(2);
     internal static readonly TimeSpan OrdinaryDrainBudget = TimeSpan.FromMinutes(2);
 
+    /// <summary>
+    /// Diagnostic reads of the queued work rows are bounded separately from the phase budgets: the
+    /// pre-drain snapshot must not eat into the drain, and the failure snapshot runs after the drain
+    /// budget is already spent.
+    /// </summary>
+    internal static readonly TimeSpan ResidualWorkReadBudget = TimeSpan.FromSeconds(15);
+
+    /// <summary>
+    /// A residual row the projector cannot acknowledge (for example a WorkVersionMismatch anomaly left
+    /// by a Disabled restamp) makes every page report PageProcessed with nothing acknowledged. The drain
+    /// stops after this many such pages in a row and reports the residual rows instead of spinning
+    /// until the budget expires.
+    /// </summary>
+    internal const int MaxConsecutivePagesWithoutAcknowledgement = 20;
+
     private sealed record ProjectionRuntime(
         ServiceProvider ServiceProvider,
         DocumentCacheProjectionTargetRuntimeContext Context
@@ -803,7 +818,7 @@ internal static class RepresentationRestampE2EHarness
             serviceProvider.GetRequiredService<IDocumentCacheProjectionDrainPageProcessor>();
 
         IReadOnlyList<RepresentationRestampE2EResidualWorkRow> queuedBeforeDrain =
-            await ReadResidualWorkAsync(providerOperations, target.ConnectionString, CancellationToken.None);
+            await ReadResidualWorkBoundedAsync(providerOperations, target.ConnectionString);
         Log.Information(
             "Representation-restamp ordinary drain for target {Target} and document {DocumentUuid} starts with {QueuedRowCount} queued work row(s): {QueuedRows}",
             targetDescription,
@@ -813,35 +828,141 @@ internal static class RepresentationRestampE2EHarness
         );
 
         var tally = new RepresentationRestampDrainTally();
+        Func<Task<string>> describeDiagnosticsAsync = () =>
+            DescribeDrainAsync(tally, context, providerOperations, target.ConnectionString, documentUuid);
         await RunPhaseAsync(
             OrdinaryDrainPhase,
             OrdinaryDrainBudget,
             targetDescription,
-            async cancellationToken =>
-            {
-                while (true)
-                {
-                    DocumentCacheProjectionDrainPageResult result = await processor.ProcessPageAsync(
-                        new DocumentCacheProjectionDrainPageRequest(
-                            context,
-                            DocumentCacheProjectionDrainInvocationKind.Ordinary
+            cancellationToken =>
+                DrainUntilOwnWorkProjectedAsync(
+                    tally,
+                    token =>
+                        processor.ProcessPageAsync(
+                            new DocumentCacheProjectionDrainPageRequest(
+                                context,
+                                DocumentCacheProjectionDrainInvocationKind.Ordinary
+                            ),
+                            token
                         ),
-                        cancellationToken
-                    );
-                    tally.Record(result);
-                    if (result.Outcome == DocumentCacheProjectionDrainPageOutcome.NoEligibleWork)
+                    token =>
+                        IsProjectedAsync(providerOperations, target.ConnectionString, documentUuid, token),
+                    describeDiagnosticsAsync,
+                    targetDescription,
+                    MaxConsecutivePagesWithoutAcknowledgement,
+                    cancellationToken
+                ),
+            describeDiagnosticsAsync
+        );
+        Log.Information(
+            "Representation-restamp ordinary drain for target {Target} projected document {DocumentUuid}. {Tally}",
+            targetDescription,
+            documentUuid,
+            tally.Describe()
+        );
+    }
+
+    /// <summary>
+    /// The ordinary drain loop, isolated from other scenarios' work. The scenario's obligation is that
+    /// its own Tracking restamp work gets projected, so the drain completes as soon as the own document
+    /// is projected and merely reports any foreign rows still queued. NoEligibleWork without the own
+    /// document projected, any outcome other than PageProcessed, and a run of pages that acknowledge
+    /// nothing all fail with the drain diagnostics instead of waiting for the budget.
+    /// </summary>
+    internal static async Task DrainUntilOwnWorkProjectedAsync(
+        RepresentationRestampDrainTally tally,
+        Func<CancellationToken, Task<DocumentCacheProjectionDrainPageResult>> processPageAsync,
+        Func<CancellationToken, Task<bool>> isOwnDocumentProjectedAsync,
+        Func<Task<string>> describeDiagnosticsAsync,
+        string targetDescription,
+        int maxConsecutivePagesWithoutAcknowledgement,
+        CancellationToken cancellationToken
+    )
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxConsecutivePagesWithoutAcknowledgement);
+        while (true)
+        {
+            DocumentCacheProjectionDrainPageResult result = await processPageAsync(cancellationToken);
+            tally.Record(result);
+            switch (result.Outcome)
+            {
+                case DocumentCacheProjectionDrainPageOutcome.PageProcessed:
+                    if (await isOwnDocumentProjectedAsync(cancellationToken))
                     {
                         return;
                     }
 
-                    result
-                        .Outcome.Should()
-                        .Be(DocumentCacheProjectionDrainPageOutcome.PageProcessed, tally.Describe());
-                }
-            },
-            () =>
-                DescribeDrainAsync(tally, context, providerOperations, target.ConnectionString, documentUuid)
-        );
+                    if (
+                        tally.ConsecutivePagesWithoutAcknowledgement
+                        >= maxConsecutivePagesWithoutAcknowledgement
+                    )
+                    {
+                        throw new InvalidOperationException(
+                            await DrainFailureMessageAsync(
+                                targetDescription,
+                                $"made no progress: {maxConsecutivePagesWithoutAcknowledgement} consecutive page(s) acknowledged no work while the own document is still not projected",
+                                describeDiagnosticsAsync
+                            )
+                        );
+                    }
+
+                    continue;
+
+                case DocumentCacheProjectionDrainPageOutcome.NoEligibleWork:
+                    if (await isOwnDocumentProjectedAsync(cancellationToken))
+                    {
+                        return;
+                    }
+
+                    throw new InvalidOperationException(
+                        await DrainFailureMessageAsync(
+                            targetDescription,
+                            "reported NoEligibleWork but the Tracking restamp's own document is not projected, so its enqueued work was never acknowledged",
+                            describeDiagnosticsAsync
+                        )
+                    );
+
+                default:
+                    throw new InvalidOperationException(
+                        await DrainFailureMessageAsync(
+                            targetDescription,
+                            $"ended with outcome '{result.Outcome}' instead of PageProcessed or NoEligibleWork",
+                            describeDiagnosticsAsync
+                        )
+                    );
+            }
+        }
+    }
+
+    private static async Task<string> DrainFailureMessageAsync(
+        string targetDescription,
+        string reason,
+        Func<Task<string>> describeDiagnosticsAsync
+    ) =>
+        $"Representation-restamp phase '{OrdinaryDrainPhase}' failed for target {targetDescription}: "
+        + $"the ordinary drain {reason}. {await DescribeSafelyAsync(describeDiagnosticsAsync)}";
+
+    private static async Task<bool> IsProjectedAsync(
+        IRepresentationRestampE2EProviderOperations providerOperations,
+        string connectionString,
+        Guid documentUuid,
+        CancellationToken cancellationToken
+    )
+    {
+        await using DbConnection connection = providerOperations.OpenConnection(connectionString);
+        await connection.OpenAsync(cancellationToken);
+        return await providerOperations.IsProjectedAsync(connection, documentUuid, cancellationToken);
+    }
+
+    private static async Task<
+        IReadOnlyList<RepresentationRestampE2EResidualWorkRow>
+    > ReadResidualWorkBoundedAsync(
+        IRepresentationRestampE2EProviderOperations providerOperations,
+        string connectionString
+    )
+    {
+        using var readBudget = new CancellationTokenSource(ResidualWorkReadBudget);
+        return await ReadResidualWorkAsync(providerOperations, connectionString, readBudget.Token);
     }
 
     /// <summary>
@@ -857,12 +978,8 @@ internal static class RepresentationRestampE2EHarness
         Guid documentUuid
     )
     {
-        using var readBudget = new CancellationTokenSource(TimeSpan.FromSeconds(15));
-        IReadOnlyList<RepresentationRestampE2EResidualWorkRow> residualWork = await ReadResidualWorkAsync(
-            providerOperations,
-            connectionString,
-            readBudget.Token
-        );
+        IReadOnlyList<RepresentationRestampE2EResidualWorkRow> residualWork =
+            await ReadResidualWorkBoundedAsync(providerOperations, connectionString);
         return FormatDrainDiagnostics(
             tally,
             residualWork,
@@ -1006,7 +1123,7 @@ internal static class RepresentationRestampE2EHarness
                     stopwatch.Elapsed,
                     budget,
                     targetDescription,
-                    await DescribeTimeoutAsync(describeTimeoutAsync)
+                    await DescribeSafelyAsync(describeTimeoutAsync)
                 ),
                 exception
             );
@@ -1033,19 +1150,19 @@ internal static class RepresentationRestampE2EHarness
         );
 
     /// <summary>
-    /// Diagnostics must never hide the timeout they describe: a failing describer is reported inline
-    /// instead of replacing the <see cref="TimeoutException"/>.
+    /// Diagnostics must never hide the failure they describe: a failing describer is reported inline
+    /// instead of replacing the timeout or drain failure.
     /// </summary>
-    private static async Task<string?> DescribeTimeoutAsync(Func<Task<string>>? describeTimeoutAsync)
+    private static async Task<string?> DescribeSafelyAsync(Func<Task<string>>? describeAsync)
     {
-        if (describeTimeoutAsync is null)
+        if (describeAsync is null)
         {
             return null;
         }
 
         try
         {
-            return await describeTimeoutAsync();
+            return await describeAsync();
         }
         catch (Exception exception)
         {
