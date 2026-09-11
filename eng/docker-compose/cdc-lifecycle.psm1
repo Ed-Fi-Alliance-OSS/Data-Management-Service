@@ -712,6 +712,7 @@ function Invoke-CdcDeploymentLifecycle {
                 EnvironmentFile = $deployment.EnvironmentFile; DatabaseEngine = $deployment.DatabaseEngine
                 IdentityProvider = $deployment.IdentityProvider
                 SeparateConfigDatabase = $true; DmsOnly = $true; CdcDmsComposeFile = $merged
+                EnableSwaggerUI = [bool]$Parameters['EnableSwaggerUI']
             }
         }
     }

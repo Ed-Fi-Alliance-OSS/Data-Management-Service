@@ -664,6 +664,60 @@ Export-ModuleMember -Function Resolve-DmsSchemaTool
             -not $Parameters.ContainsKey('CdcBrokerSizeOverrideFile') -and $Parameters.SuppressWriterGuidance
         }
     }
+    It 'preserves the managed <project> Swagger handoff for <scenario>' -ForEach @(
+        foreach ($project in @('dms-local', 'dms-published')) {
+            foreach ($scenario in @('enabled', 'omitted', 'infra-only', 'controller-failure', 'unsupported')) {
+                @{ project = $project; scenario = $scenario }
+            }
+        }
+    ) {
+        Remove-Item (Join-Path $script:root '.cdc-deployments') -Recurse -Force
+        foreach ($id in @(42, 43)) {
+            $handoff = New-TestHandoff -id $id -project $project
+            $handoff.EnableSwaggerUI = $scenario -ne 'unsupported'
+            Register-CdcDeploymentHandoff -Handoff $handoff -StatePath (Join-Path $script:root "custom-state-$id")
+        }
+        Invoke-TestLifecycle -parameters @{ d = $true } -project $project
+        (Read-TestDeployment $project).Phase | Should -Be 'Stopped'
+        $script:trace.Clear()
+        $parameters = @{}
+        if ($scenario -ne 'omitted') { $parameters.EnableSwaggerUI = $true }
+        if ($scenario -eq 'infra-only') { $parameters.InfraOnly = $true }
+        if ($scenario -eq 'controller-failure') { $script:failure = 'start:43' }
+
+        if ($scenario -eq 'unsupported') {
+            { Invoke-TestLifecycle -parameters $parameters -project $project } | Should -Throw '*original optional service inputs*'
+            $script:trace.Count | Should -Be 0
+            (Read-TestDeployment $project).Phase | Should -Be 'Stopped'
+        }
+        else {
+            if ($scenario -eq 'controller-failure') {
+                { Invoke-TestLifecycle -parameters $parameters -project $project } | Should -Throw '*Controller rejected*'
+                (Read-TestDeployment $project).Phase | Should -Be 'Transition'
+            }
+            else {
+                Invoke-TestLifecycle -parameters $parameters -project $project
+                (Read-TestDeployment $project).Phase | Should -Be 'Active'
+            }
+            $expected = @('infra', 'start-worker:42', 'rest:connectors', 'rest:connectors/connector-42/status', 'rest:connectors/connector-43/status', 'start:42', 'start:43')
+            if ($scenario -in @('enabled', 'omitted')) { $expected += 'dms' }
+            $script:trace | Should -Be $expected
+            Should -Invoke -ModuleName cdc-lifecycle Invoke-CdcInfrastructure -Times 1 -Exactly -ParameterFilter {
+                $Parameters.InfraOnly -and -not $Parameters.DmsOnly
+            }
+        }
+
+        if ($scenario -in @('enabled', 'omitted')) {
+            Should -Invoke -ModuleName cdc-lifecycle Invoke-CdcInfrastructure -Times 1 -Exactly -ParameterFilter {
+                $Parameters.DmsOnly -and -not $Parameters.InfraOnly -and $Parameters.CdcDmsComposeFile -and
+                $StartScript -eq "/compose/start-$project.ps1" -and
+                [bool]$Parameters.EnableSwaggerUI -eq ($scenario -eq 'enabled')
+            }
+        }
+        else {
+            Should -Invoke -ModuleName cdc-lifecycle Invoke-CdcInfrastructure -Times 0 -Exactly -ParameterFilter { $Parameters.DmsOnly }
+        }
+    }
     It 'keeps the raised broker override out of stopped <flavor>/<provider> <operation> preparation' -ForEach @(
         foreach ($flavor in @('local', 'published')) {
             foreach ($provider in @('postgresql', 'mssql')) {
