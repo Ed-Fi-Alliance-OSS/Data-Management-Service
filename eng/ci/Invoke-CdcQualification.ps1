@@ -158,7 +158,10 @@ catch {
 }
 finally {
     $reports | ConvertTo-Json -Depth 10 -AsArray | Set-Content (Join-Path $destination 'qualification.json')
-    foreach ($name in $savedEnvironment.Keys) { [Environment]::SetEnvironmentVariable($name, $savedEnvironment[$name]) }
+    foreach ($name in $savedEnvironment.Keys) {
+        if ($null -eq $savedEnvironment[$name]) { Remove-Item "Env:$name" -ErrorAction SilentlyContinue }
+        else { [Environment]::SetEnvironmentVariable($name, $savedEnvironment[$name]) }
+    }
     Set-Location $oldLocation
     Write-Output "Private local diagnostic logs: $raw (never upload this directory)."
 }
