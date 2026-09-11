@@ -1745,10 +1745,10 @@ public static class CdcConnectOffsetStorePolicyObservationValidator
             observation.PolicyState == CdcConnectOffsetStorePolicyState.Satisfied,
             diagnostics
         );
-        ValidateAclState(observation.AclState, diagnostics);
+        ValidateItemState(observation.AclState, "$.aclState", "aclState", diagnostics);
         if (observation.TopicState is { } topicState)
         {
-            ValidateAclState(topicState, diagnostics);
+            ValidateItemState(topicState, "$.topicState", "topicState", diagnostics);
         }
         ValidatePolicyStateConsistency(observation, diagnostics);
 
@@ -1831,16 +1831,18 @@ public static class CdcConnectOffsetStorePolicyObservationValidator
         }
     }
 
-    private static void ValidateAclState(
-        CdcConnectOffsetStoreItemState aclState,
+    private static void ValidateItemState(
+        CdcConnectOffsetStoreItemState state,
+        string path,
+        string fieldName,
         CdcDiagnosticCollector diagnostics
     )
     {
-        if (!Enum.IsDefined(aclState))
+        if (!Enum.IsDefined(state))
         {
             diagnostics.InvalidEnumValue(
-                "$.aclState",
-                "CDC Connect offset-store observation aclState is unsupported."
+                path,
+                $"CDC Connect offset-store observation {fieldName} is unsupported."
             );
         }
     }
