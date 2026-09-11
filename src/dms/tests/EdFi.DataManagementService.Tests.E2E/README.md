@@ -155,6 +155,12 @@ variables — **names only; never commit or echo credential values**) are:
 - `AppSettings__DataStoreDatabaseName` — the provisioned E2E database (default `edfi_datamanagementservice_e2e`).
 - `AppSettings__DataStoreAdminConnectionString` — host-side admin connection used to reset the database between feature files.
 - `AppSettings__DataStoreConnectionString` — the data-store connection the registered application uses.
+- `AppSettings__DmsContainerName` — the running DMS container the representation-restamp scenarios
+  copy the API schema out of and stop/start (default `ed-fi-api`, the local-image name). Leave it
+  unset for the setup paths above; `build-dms.ps1 E2ETest` sets it from the image mode, which is
+  `dms-published-dms-1` under `-UsePublishedImage`. A name with no matching container fails the
+  scenario immediately on `docker cp`, reporting the operation, the name, the exit code, and both
+  Docker streams.
 
 If the engine or database name does not match the provisioned stack, the run fails fast at
 setup (an engine/schema mismatch surfaces as an `EffectiveSchemaHash` mismatch and all
@@ -271,6 +277,9 @@ Playwright setup/teardown.
 - **Container names/ports.** DMS `ed-fi-api` (`8080`), Configuration Service
   `ed-fi-api-config-service` (`8081`), PostgreSQL `dms-postgresql` (`5435`), SQL Server
   `dms-mssql` (`1435`), Swagger UI `ed-fi-api-swagger-ui` (`8082`), Keycloak `dms-keycloak`.
+  Those are the local-image names. Only `local-dms.yml` sets `container_name`, so under
+  `-UsePublishedImage` Compose names the DMS container after the project and service instead:
+  `dms-published-dms-1`.
 - **Custom database names.** If you override `E2E_DATABASE_NAME` (or the connection strings),
   keep the setup, provisioning, and test-process values aligned to the same database, or the
   reset/provision step targets a different database than the test run.

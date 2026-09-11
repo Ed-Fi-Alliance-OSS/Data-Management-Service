@@ -179,6 +179,7 @@ Describe "Invoke-WithE2ETestProcessContext restores prior environment state exac
             "AppSettings__DataStoreAdminConnectionString"
             "AppSettings__DataStoreConnectionString"
             "AppSettings__DataStoreSnapshotConnectionString"
+            "AppSettings__DmsContainerName"
             "DMS_E2E_ENVIRONMENT_FILE"
             "NODE_OPTIONS"
         )
@@ -187,6 +188,8 @@ Describe "Invoke-WithE2ETestProcessContext restores prior environment state exac
             EnvironmentFile                   = "/repo/eng/docker-compose/.derived/.env.e2e.document-cache.e2e.mssql"
             DataStoreDatabaseName             = "edfi_datamanagementservice_e2e"
             DatabaseEngine                    = "mssql"
+            # The published-image name, which is the one the restamp harness cannot guess (DMS-1527).
+            DmsContainerName                  = "dms-published-dms-1"
             DataStoreAdminConnectionString    = "Server=127.0.0.1,1435;Database=edfi_datamanagementservice_e2e;User Id=sa;Password=secret;TrustServerCertificate=true;"
             DataStoreConnectionString         = "Server=dms-mssql,1433;Database=edfi_datamanagementservice_e2e;User Id=sa;Password=secret;TrustServerCertificate=true;"
             DataStoreSnapshotConnectionString = "Server=dms-mssql,1433;Database=edfi_datamanagementservice_e2e_snapshot;User Id=sa;Password=secret;TrustServerCertificate=true;"
@@ -221,6 +224,7 @@ Describe "Invoke-WithE2ETestProcessContext restores prior environment state exac
         Remove-Item Env:AppSettings__DataStoreAdminConnectionString -ErrorAction SilentlyContinue
         Remove-Item Env:AppSettings__DataStoreConnectionString -ErrorAction SilentlyContinue
         Remove-Item Env:AppSettings__DataStoreSnapshotConnectionString -ErrorAction SilentlyContinue
+        Remove-Item Env:AppSettings__DmsContainerName -ErrorAction SilentlyContinue
         Remove-Item Env:DMS_E2E_ENVIRONMENT_FILE -ErrorAction SilentlyContinue
 
         $observed = $null
@@ -230,6 +234,7 @@ Describe "Invoke-WithE2ETestProcessContext restores prior environment state exac
                     Admin           = $env:AppSettings__DataStoreAdminConnectionString
                     Registration    = $env:AppSettings__DataStoreConnectionString
                     Snapshot        = $env:AppSettings__DataStoreSnapshotConnectionString
+                    ContainerName   = $env:AppSettings__DmsContainerName
                     EnvironmentFile = $env:DMS_E2E_ENVIRONMENT_FILE
                 }
                 throw "boom"
@@ -239,13 +244,49 @@ Describe "Invoke-WithE2ETestProcessContext restores prior environment state exac
         $script:observed.Admin | Should -Be $script:testSettings.DataStoreAdminConnectionString
         $script:observed.Registration | Should -Be $script:testSettings.DataStoreConnectionString
         $script:observed.Snapshot | Should -Be $script:testSettings.DataStoreSnapshotConnectionString
+        $script:observed.ContainerName | Should -Be "dms-published-dms-1"
         $script:observed.EnvironmentFile | Should -Be $script:testSettings.EnvironmentFile
 
         (Test-Path Env:AppSettings__DatabaseEngine) | Should -BeFalse
         (Test-Path Env:AppSettings__DataStoreAdminConnectionString) | Should -BeFalse
         (Test-Path Env:AppSettings__DataStoreConnectionString) | Should -BeFalse
         (Test-Path Env:AppSettings__DataStoreSnapshotConnectionString) | Should -BeFalse
+        (Test-Path Env:AppSettings__DmsContainerName) | Should -BeFalse
         (Test-Path Env:DMS_E2E_ENVIRONMENT_FILE) | Should -BeFalse
+    }
+
+    It "restores AppSettings__DmsContainerName to its prior <Label> state after the action throws" -ForEach @(
+        @{ Label = "absent"; Setup = { Remove-Item Env:AppSettings__DmsContainerName -ErrorAction SilentlyContinue }; ExpectExists = $false; ExpectValue = $null }
+        @{ Label = "empty"; Setup = { $env:AppSettings__DmsContainerName = "" }; ExpectExists = $true; ExpectValue = "" }
+        @{ Label = "whitespace"; Setup = { $env:AppSettings__DmsContainerName = "   " }; ExpectExists = $true; ExpectValue = "   " }
+        @{ Label = "nonempty"; Setup = { $env:AppSettings__DmsContainerName = "ed-fi-api" }; ExpectExists = $true; ExpectValue = "ed-fi-api" }
+    ) {
+        & $Setup
+
+        { Invoke-WithE2ETestProcessContext -E2ETestSettings $script:testSettings -Action { throw "boom" } } |
+            Should -Throw
+
+        (Test-Path Env:AppSettings__DmsContainerName) | Should -Be $ExpectExists
+        if ($ExpectExists) {
+            $env:AppSettings__DmsContainerName | Should -Be $ExpectValue
+        }
+    }
+
+    It "refuses to run the test process when DmsContainerName is <Label>" -ForEach @(
+        @{ Label = "missing"; Value = $null }
+        @{ Label = "empty"; Value = "" }
+        @{ Label = "whitespace"; Value = "   " }
+    ) {
+        # The harness would otherwise fall back to its local-image default and stop a container that
+        # does not exist in published-image mode, which is the DMS-1527 failure.
+        $settings = $script:testSettings.PSObject.Copy()
+        $settings.DmsContainerName = $Value
+        $actionRan = $false
+
+        { Invoke-WithE2ETestProcessContext -E2ETestSettings $settings -Action { $script:actionRan = $true } } |
+            Should -Throw -ExpectedMessage "*AppSettings__DmsContainerName must be set*"
+
+        $script:actionRan | Should -BeFalse
     }
 
     It "restores every mutated variable from a mix of absent, empty, whitespace, and valued prior states" {
@@ -254,6 +295,7 @@ Describe "Invoke-WithE2ETestProcessContext restores prior environment state exac
         $env:AppSettings__DataStoreAdminConnectionString = "   "
         $env:AppSettings__DataStoreConnectionString = "prior-registration"
         $env:AppSettings__DataStoreSnapshotConnectionString = "prior-snapshot"
+        $env:AppSettings__DmsContainerName = "prior-container"
         $env:DMS_E2E_ENVIRONMENT_FILE = "prior-environment-file"
         $env:NODE_OPTIONS = "--max-old-space-size=4096"
 
@@ -266,6 +308,7 @@ Describe "Invoke-WithE2ETestProcessContext restores prior environment state exac
         $env:AppSettings__DataStoreAdminConnectionString | Should -Be "   "
         $env:AppSettings__DataStoreConnectionString | Should -Be "prior-registration"
         $env:AppSettings__DataStoreSnapshotConnectionString | Should -Be "prior-snapshot"
+        $env:AppSettings__DmsContainerName | Should -Be "prior-container"
         $env:DMS_E2E_ENVIRONMENT_FILE | Should -Be "prior-environment-file"
         $env:NODE_OPTIONS | Should -Be "--max-old-space-size=4096"
     }

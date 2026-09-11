@@ -11,6 +11,7 @@ public static class AppSettings
 {
     public const string DefaultDataStoreDatabaseName = "edfi_datamanagementservice_e2e";
     public const string DefaultDatabaseEngine = "postgresql";
+    public const string DefaultDmsContainerName = "ed-fi-api";
     public const int BytesPerMegabyte = 1024 * 1024;
     public const int DefaultMaxRequestBodySizeMegabytes = 10;
 
@@ -40,6 +41,15 @@ public static class AppSettings
     /// </summary>
     public static string DataStoreSnapshotConnectionString => _settings.DataStoreSnapshotConnectionString;
 
+    /// <summary>
+    /// The name of the running DMS container, for the harness Docker operations that copy the API
+    /// schema out of it and stop/start it. Compose names it "ed-fi-api" for the local image
+    /// (local-dms.yml sets container_name) and "dms-published-dms-1" for the published image
+    /// (published-dms.yml sets none). build-dms.ps1's E2E process context sets this from the startup
+    /// phase plan; the default keeps direct setup and direct dotnet test runs working unchanged.
+    /// </summary>
+    public static string DmsContainerName => _settings.DmsContainerName;
+
     public static int MaxRequestBodySizeMegabytes => _settings.MaxRequestBodySizeMegabytes;
 
     internal static AppSettingsValues Create(IConfiguration configuration)
@@ -53,6 +63,7 @@ public static class AppSettings
             GetString(configuration, nameof(DataStoreAdminConnectionString), string.Empty),
             GetString(configuration, nameof(DataStoreConnectionString), string.Empty),
             GetString(configuration, nameof(DataStoreSnapshotConnectionString), string.Empty),
+            GetString(configuration, nameof(DmsContainerName), DefaultDmsContainerName),
             GetInt(configuration, nameof(MaxRequestBodySizeMegabytes), DefaultMaxRequestBodySizeMegabytes)
         );
     }
@@ -90,5 +101,6 @@ internal sealed record AppSettingsValues(
     string DataStoreAdminConnectionString,
     string DataStoreConnectionString,
     string DataStoreSnapshotConnectionString,
+    string DmsContainerName,
     int MaxRequestBodySizeMegabytes
 );
