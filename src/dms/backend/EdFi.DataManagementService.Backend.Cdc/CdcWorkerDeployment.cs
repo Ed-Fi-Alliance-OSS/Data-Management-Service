@@ -5,6 +5,7 @@
 
 using System.Diagnostics;
 using System.Globalization;
+using System.Runtime.ExceptionServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -349,7 +350,35 @@ internal sealed class CdcWorkerDockerCommand : ICdcWorkerDockerCommand
             process.StartInfo.ArgumentList.Add(argument);
         }
         process.Start();
-        using var registration = token.Register(() =>
+        TaskCompletionSource<Exception> readerFailure = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        using var registration = token.Register(TerminateProcess);
+        Task<string> output = ReadOutputAsync(process.StandardOutput);
+        Task<string> error = ReadOutputAsync(process.StandardError);
+        try
+        {
+            // Cancellation terminates the child, but cleanup must still await its exit and both readers.
+            await Task.WhenAll(output, error, process.WaitForExitAsync(CancellationToken.None));
+            token.ThrowIfCancellationRequested();
+            if (process.ExitCode != 0)
+            {
+                throw new IOException("Docker worker inspection failed.");
+            }
+            return await output;
+        }
+        catch when (readerFailure.Task.IsCompletedSuccessfully)
+        {
+            // Preserve the first reader failure even if terminating the child disrupts the other reader.
+            ExceptionDispatchInfo.Capture(readerFailure.Task.Result).Throw();
+            throw;
+        }
+        finally
+        {
+            TerminateProcess();
+        }
+
+        void TerminateProcess()
         {
             try
             {
@@ -358,23 +387,23 @@ internal sealed class CdcWorkerDockerCommand : ICdcWorkerDockerCommand
             catch (InvalidOperationException)
             { /* Process exited before cancellation. */
             }
-        });
-        Task<string> output = ReadBoundedAsync(process.StandardOutput, token);
-        Task<string> error = ReadBoundedAsync(process.StandardError, token);
-        try
-        {
-            await Task.WhenAll(output, error, process.WaitForExitAsync(token));
-            if (process.ExitCode != 0)
-            {
-                throw new IOException("Docker worker inspection failed.");
+            catch (System.ComponentModel.Win32Exception)
+            { /* Best-effort termination must not replace the original reader failure. */
             }
-            return await output;
         }
-        finally
+
+        async Task<string> ReadOutputAsync(StreamReader reader)
         {
-            if (!process.HasExited)
+            try
             {
-                process.Kill(entireProcessTree: true);
+                return await ReadBoundedAsync(reader, token);
+            }
+            catch (Exception exception)
+            {
+                readerFailure.TrySetResult(exception);
+                // Do this before WhenAll: an abandoned full pipe otherwise prevents child exit.
+                TerminateProcess();
+                throw;
             }
         }
     }
