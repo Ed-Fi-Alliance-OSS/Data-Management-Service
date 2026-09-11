@@ -11,12 +11,12 @@ These files are the developer handoff for the DMS-1334 spike after the Jira tick
 | [DMS-1437](DMS-1437-durable-jobs-and-schedules.md) | Add durable CMS background jobs, schedules, and Management API v3 job polling | CMS |
 | [DMS-1438](DMS-1438-template-provisioner.md) | Add a runtime-safe CMS DMS-template provisioner | CMS |
 | [DMS-1439](DMS-1439-managed-data-store-lifecycle.md) | Add managed data-store lifecycle endpoints and reconciliation to CMS | CMS, consuming CMS DMS-1438 |
-| [DMS-1440](DMS-1440-edorg-reader.md) | Add a CMS target-database education-organization reader | CMS |
-| [DMS-1441](DMS-1441-edorg-refresh-and-tenant-aggregate.md) | Add CMS education-organization refresh, projection, and tenant aggregation | CMS, consuming CMS DMS-1440 |
+| [DMS-1440](DMS-1440-edorg-reader.md) | Add DMS education-organization discovery projection and CMS HTTP reader | DMS and CMS |
+| [DMS-1441](DMS-1441-edorg-refresh-and-tenant-aggregate.md) | Add CMS education-organization refresh, projection, and tenant aggregation | CMS, consuming DMS-1440 |
 
 ## Dependency and delivery order
 
-- DMS-1437 and DMS-1440 can begin independently. DMS-1440 defines its minimal relational read contract and provider fixtures before implementing the provider SQL; final shared target-provider-setting wiring depends on DMS-1438. DMS-1438 design can begin, but package execution is blocked by DMS-1271 (transitively DMS-1270) until its trusted artifact contract is delivered.
+- DMS-1437 and DMS-1440 can begin independently. DMS-1440 first defines the DMS-owned HTTP projection contract, Discovery advertisement, service-authentication/authorization rules, DMS route-context prefix behavior, tenant/data-store targeting, pagination, and failure taxonomy, then implements the DMS endpoint and CMS HTTP reader. DMS-1438 design can begin, but package execution is blocked by DMS-1271 (transitively DMS-1270) until its trusted artifact contract is delivered.
 - DMS-1439 requires DMS-1437 and DMS-1438.
 - DMS-1441 requires DMS-1437 and DMS-1440. Its complete v3 tenant aggregate also requires DMS-1439, although refresh persistence for ordinary unmanaged stores can be developed before DMS-1439 lands.
 - DMS-1438 must carry a Jira blocker link to open [DMS-1271](https://edfi.atlassian.net/browse/DMS-1271). It consumes DMS-1271's delivered trusted manifest/artifact contract but does not take ownership of DMS-1271's operator/bootstrap sequencing.
@@ -41,7 +41,7 @@ graph TD
     DMS1437["DMS-1437<br/>Durable jobs, schedules, polling"]
     DMS1438["DMS-1438<br/>Runtime-safe template provisioner"]
     DMS1439["DMS-1439<br/>Managed data-store lifecycle"]
-    DMS1440["DMS-1440<br/>Target DB edOrg reader"]
+    DMS1440["DMS-1440<br/>DMS edOrg HTTP projection<br/>+ CMS reader"]
     DMS1441["DMS-1441<br/>edOrg refresh + tenant aggregate"]
   end
 
@@ -54,13 +54,12 @@ graph TD
 
   DMS1437 --> DMS1439
   DMS1438 --> DMS1439
-  DMS1438 -.->|target-provider setting only| DMS1440
   DMS1437 --> DMS1441
   DMS1440 --> DMS1441
   DMS1439 --> DMS1441
 ```
 
-- DMS-1438 and DMS-1440 are implemented inside the existing CMS backend and provider-specific projects. They consume versioned DMS artifacts and database-shape contracts as data and add no CMS-to-DMS project/package reference, DMS runtime dependency, or Docker build-context change.
+- DMS-1438 remains a CMS-owned administrative database lifecycle primitive that consumes DMS template artifacts. DMS-1440 is split by ownership: DMS owns the service endpoint, projection semantics, internal schema/mapping reads, Discovery advertisement, and authorization; CMS owns the HTTP client abstraction, token acquisition, endpoint discovery, paging loop, timeout/cancellation, and failure classification. CMS adds no DMS project/package reference and no direct SQL reader for DMS domain data.
 
 ### Expected implementation locations
 
@@ -68,6 +67,7 @@ graph TD
 - PostgreSQL persistence/adapters and live repository tests: `src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql` and `EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration`.
 - SQL Server persistence/adapters and live repository tests: `src/config/backend/EdFi.DmsConfigurationService.Backend.Mssql` and `EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration`.
 - HTTP routes, options/DI wiring, authorization, problem details, and endpoint unit tests: `src/config/frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore` and `EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit`.
+- DMS service projection route, Discovery advertisement, DMS authorization policy, DMS-owned projection handler, and endpoint/API tests: `src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore`, `src/dms/core`, `src/dms/backend`, and their existing unit/integration test projects.
 - Shared request/response validation models only when they follow existing ownership: `src/config/datamodel/EdFi.DmsConfigurationService.DataModel`.
 - API contract and cross-component behavior: `src/config/tests/EdFi.DmsConfigurationService.Tests.E2E`.
 
@@ -98,7 +98,7 @@ Recent Admin API story outcomes affect these candidate stories as follows:
 | [DMS-1437](DMS-1437-durable-jobs-and-schedules.md) | Ready now. |
 | [DMS-1438](DMS-1438-template-provisioner.md) | Contract/options design may start; artifact execution waits for DMS-1270/DMS-1271 delivery and a pinned trusted artifact contract. |
 | [DMS-1439](DMS-1439-managed-data-store-lifecycle.md) | Starts after DMS-1437 and DMS-1438 contracts are stable; end-to-end completion waits for both implementations. |
-| [DMS-1440](DMS-1440-edorg-reader.md) | Ready now; define the minimal relational read contract and provider fixtures before implementing provider SQL. |
+| [DMS-1440](DMS-1440-edorg-reader.md) | Ready now; define the DMS HTTP projection contract, service-auth contract, Discovery field, route-context prefix behavior, paging, targeting, and failure taxonomy before implementing the DMS endpoint or CMS reader. |
 | [DMS-1441](DMS-1441-edorg-refresh-and-tenant-aggregate.md) | Snapshot/schedule/read-route design may start; implementation needs DMS-1437/DMS-1440, complete aggregate payload parity needs DMS-1439, and endpoint conformance waits for a pinned Admin API/OpenAPI revision containing `ADMINAPI-1496` and the final education-organization GET route contract. |
 
 ## Story Files
@@ -108,7 +108,7 @@ Recent Admin API story outcomes affect these candidate stories as follows:
 | [DMS-1437](DMS-1437-durable-jobs-and-schedules.md) | Add durable CMS background jobs, schedules, and Management API v3 job polling |
 | [DMS-1438](DMS-1438-template-provisioner.md) | Add a runtime-safe CMS DMS-template provisioner |
 | [DMS-1439](DMS-1439-managed-data-store-lifecycle.md) | Add managed data-store lifecycle endpoints and reconciliation to CMS |
-| [DMS-1440](DMS-1440-edorg-reader.md) | Add a CMS target-database education-organization reader |
+| [DMS-1440](DMS-1440-edorg-reader.md) | Add DMS education-organization discovery projection and CMS HTTP reader |
 | [DMS-1441](DMS-1441-edorg-refresh-and-tenant-aggregate.md) | Add CMS education-organization refresh, projection, and tenant aggregation |
 
 ## Why five stories is appropriate
@@ -116,7 +116,7 @@ Recent Admin API story outcomes affect these candidate stories as follows:
 Fewer stories would combine independently substantial responsibilities:
 
 - DMS-1437 is shared job/schedule infrastructure with its own persistence, concurrency, tenancy, and API contract.
-- DMS-1438 and DMS-1440 are separate CMS provider-backed services with unrelated artifact/security and target-query risks.
+- DMS-1438 is a CMS administrative database lifecycle primitive, while DMS-1440 is a cross-service DMS projection/CMS HTTP reader contract with different security and availability risks.
 - DMS-1439 and DMS-1441 are separate CMS capabilities with different routes, persistence, failure semantics, and delivery dependencies.
 
 More stories would split endpoints, provider adapters, tables, workers, feature flags, or tests away from the cohesive capability that needs them. The five-story boundary lets the three prerequisites be developed and reviewed independently inside CMS, then lets each CMS feature consume them without creating one endpoint/class story or one oversized story.
@@ -136,7 +136,7 @@ More stories would split endpoints, provider adapters, tables, workers, feature 
 | G09 job polling | DMS-1437 |
 | G10 concurrency/crash recovery | DMS-1437 |
 | G11 DMS discovery | Existing capability; documented by DMS-1439. |
-| G12 versioned education-organization database contract and extraction | DMS-1440 relational read contract, provider fixtures, and CMS reader |
+| G12 education-organization discovery contract and extraction | DMS-1440 DMS-owned HTTP projection endpoint, Discovery advertisement, service-auth contract, and CMS HTTP reader |
 | G13 snapshot persistence | DMS-1441 |
 | G14 refresh all/one | DMS-1441 consuming DMS-1437/DMS-1440 |
 | G15 tenant aggregate | DMS-1441 |
@@ -147,7 +147,7 @@ More stories would split endpoints, provider adapters, tables, workers, feature 
 | G20 truthful refresh failure | DMS-1441 |
 | G21 scheduled refresh | DMS-1437 durable schedule/job infrastructure; DMS-1441 tenant schedule and refresh behavior |
 | G22 snapshot cleanup on data-store deletion | DMS-1441 integrated with DMS-1439 |
-| G23 CMS/DMS project boundary | Existing structure is sufficient: DMS-1438/DMS-1440 stay in CMS and consume versioned DMS artifacts/database contracts as data; no cross-project reference is added. |
+| G23 CMS/DMS project boundary | DMS-1438 stays in CMS for administrative lifecycle work; DMS-1440 keeps DMS physical-schema knowledge inside DMS and exposes only an authenticated HTTP projection. CMS consumes it through HTTP with no DMS project/package reference or direct SQL reader. |
 | G24 original unscoped all-store read | Excluded as an Admin API documentation error; no DMS story unless product explicitly diverges. |
 
-Every candidate story maps to confirmed gaps, and every gap has an explicit implementation or reuse disposition. DMS-1437 and DMS-1440 can start now. DMS-1438, DMS-1439, and DMS-1441 are directly implementable only for the portions allowed by their ready-to-start gates; no developer or AI agent should invent the missing artifact contract, ticket provenance, or response contract to bypass those gates.
+Every candidate story maps to confirmed gaps, and every gap has an explicit implementation or reuse disposition. DMS-1437 and DMS-1440 can start now. DMS-1438, DMS-1439, and DMS-1441 are directly implementable only for the portions allowed by their ready-to-start gates; no developer or AI agent should invent the missing artifact contract, service-authentication contract, ticket provenance, or response contract to bypass those gates.
