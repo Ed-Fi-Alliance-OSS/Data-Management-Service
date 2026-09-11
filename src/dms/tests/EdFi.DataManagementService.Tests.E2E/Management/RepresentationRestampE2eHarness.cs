@@ -819,12 +819,9 @@ internal static class RepresentationRestampE2EHarness
 
         IReadOnlyList<RepresentationRestampE2EResidualWorkRow> queuedBeforeDrain =
             await ReadResidualWorkBoundedAsync(providerOperations, target.ConnectionString);
-        Log.Information(
-            "Representation-restamp ordinary drain for target {Target} and document {DocumentUuid} starts with {QueuedRowCount} queued work row(s): {QueuedRows}",
-            targetDescription,
-            documentUuid,
-            queuedBeforeDrain.Count,
-            DescribeResidualWork(queuedBeforeDrain, documentUuid)
+        WriteHarnessOutput(
+            $"Ordinary drain for target {targetDescription} and document {documentUuid} starts with "
+                + $"{queuedBeforeDrain.Count} queued work row(s): {DescribeResidualWork(queuedBeforeDrain, documentUuid)}"
         );
 
         var tally = new RepresentationRestampDrainTally();
@@ -854,13 +851,19 @@ internal static class RepresentationRestampE2EHarness
                 ),
             describeDiagnosticsAsync
         );
-        Log.Information(
-            "Representation-restamp ordinary drain for target {Target} projected document {DocumentUuid}. {Tally}",
-            targetDescription,
-            documentUuid,
-            tally.Describe()
+        WriteHarnessOutput(
+            $"Ordinary drain for target {targetDescription} projected document {documentUuid}. {tally.Describe()}"
         );
     }
+
+    /// <summary>
+    /// Harness diagnostics go to NUnit's captured test output, which lands in the TRX for the scenario
+    /// and in the console for failed tests. The E2E project's Serilog <c>TestLogger</c> is an instance
+    /// the static harness cannot reach, and nothing assigns Serilog's static logger, so writing there
+    /// would be silently dropped.
+    /// </summary>
+    private static void WriteHarnessOutput(string message) =>
+        TestContext.Out.WriteLine($"[RepresentationRestamp] {message}");
 
     /// <summary>
     /// The ordinary drain loop, isolated from other scenarios' work. The scenario's obligation is that
