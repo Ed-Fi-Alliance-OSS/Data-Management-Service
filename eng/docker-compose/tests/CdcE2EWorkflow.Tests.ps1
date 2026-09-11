@@ -255,3 +255,36 @@ Describe 'Managed CDC provider infrastructure selection' {
         ($files -contains 'kafka-cdc.yml') | Should -Be $Enabled
     }
 }
+
+Describe 'Ordinary E2E workspace guard after CDC runtime cleanup' {
+    BeforeAll {
+        $script:guardRoot = Join-Path $TestDrive 'guard-compose'
+        New-Item -ItemType Directory $script:guardRoot | Out-Null
+        Copy-Item (Join-Path $script:composeRoot '*.psm1') $script:guardRoot
+        Import-Module (Join-Path $script:guardRoot 'e2e-cdc.psm1') -Force
+    }
+    AfterAll {
+        Get-Module -All | Where-Object { $_.Path -and $_.Path.StartsWith($script:guardRoot + '/') } | Remove-Module -Force
+    }
+    It 'accepts the released workspace but rejects unowned surviving runtime files' {
+        { Assert-E2ECdcWorkspaceAvailable } | Should -Not -Throw
+        $runtime = Join-Path $script:guardRoot '.bootstrap/cdc-runtime'
+        New-Item -ItemType Directory $runtime -Force | Out-Null
+        'unrelated' | Set-Content (Join-Path $runtime 'notes.txt')
+        { Assert-E2ECdcWorkspaceAvailable } | Should -Throw '*E2E setup cannot reset*'
+        Get-Content (Join-Path $runtime 'notes.txt') | Should -Be 'unrelated'
+    }
+    It 'rejects surviving nested state even after the generated runtime directory is gone' {
+        Remove-Item (Join-Path $script:guardRoot '.bootstrap/cdc-runtime') -Recurse -Force
+        $state = Join-Path $script:guardRoot '.bootstrap/private-state'
+        New-Item -ItemType Directory $state -Force | Out-Null
+        'historical' | Set-Content (Join-Path $state 'history.json')
+        $inventory = Join-Path $script:guardRoot '.cdc-deployments'
+        [IO.Directory]::CreateDirectory($inventory, [IO.UnixFileMode]448) | Out-Null
+        $path = Join-Path $inventory 'dms-local.json'
+        @{ Version = 1; Project = 'dms-local'; Phase = 'RuntimeCleanup'; Entries = @(@{ StatePath = $state }) } | ConvertTo-Json -Depth 5 | Set-Content $path
+        [IO.File]::SetUnixFileMode($path, [IO.UnixFileMode]384)
+        { Assert-E2ECdcWorkspaceAvailable } | Should -Throw '*surviving protected source-state root*'
+        Get-Content (Join-Path $state 'history.json') | Should -Be 'historical'
+    }
+}

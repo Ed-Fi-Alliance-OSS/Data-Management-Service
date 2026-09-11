@@ -247,6 +247,22 @@ exit 0
             Get-Content (Join-Path $workspace 'custom-state/source-history.json') | Should -Be 'historical'
         }
 
+        It "blocks recursive cleanup for inventoried nested state after generated files are gone" {
+            $compose = Join-Path $TestDrive 'nested-state-compose'
+            $workspace = Join-Path $compose '.bootstrap'
+            $state = Join-Path $workspace 'private-source-state'
+            New-Item -ItemType Directory $state -Force | Out-Null
+            'historical' | Set-Content (Join-Path $state 'history.json')
+            $inventory = Join-Path $compose '.cdc-deployments'
+            [IO.Directory]::CreateDirectory($inventory, [IO.UnixFileMode]448) | Out-Null
+            $path = Join-Path $inventory 'dms-local.json'
+            @{ Version = 1; Project = 'dms-local'; Phase = 'RuntimeCleanup'; Entries = @(@{ StatePath = $state }) } | ConvertTo-Json -Depth 5 | Set-Content $path
+            [IO.File]::SetUnixFileMode($path, [IO.UnixFileMode]384)
+            { Remove-E2EBootstrapWorkspace -BootstrapWorkspacePath $workspace } | Should -Throw '*surviving protected source-state root*'
+            Test-Path (Join-Path $workspace 'cdc-runtime') | Should -BeFalse
+            Get-Content (Join-Path $state 'history.json') | Should -Be 'historical'
+        }
+
         It "removes the shared bootstrap workspace after every compose project is down" {
             $bootstrapWorkspace = Join-Path $script:composeRoot ".bootstrap"
             New-Item -ItemType Directory -Path (Join-Path $bootstrapWorkspace "ApiSchema") -Force | Out-Null

@@ -16,8 +16,7 @@ function Assert-E2ECdcWorkspaceAvailable {
     .SYNOPSIS
     Rejects destructive E2E setup when retained CDC configuration still owns the workspace.
     #>
-    if ((Test-CdcDeployment 'dms-local') -or (Test-CdcDeployment 'dms-published') -or
-        (Test-Path -LiteralPath (Join-Path $PSScriptRoot '.bootstrap/cdc-runtime'))) {
+    if (Test-CdcBootstrapWorkspaceProtected) {
         throw 'E2E setup cannot reset retained CDC state or configuration. Use the original deployment for governed retirement and retain its source history before preparing a new workspace.'
     }
 }

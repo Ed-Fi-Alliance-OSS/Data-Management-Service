@@ -11,7 +11,15 @@ Describe 'Managed CDC deployment lifecycle ordering' {
         $script:root = Join-Path $TestDrive 'compose'
         New-Item -ItemType Directory $script:root | Out-Null
         Copy-Item (Join-Path $PSScriptRoot '../cdc-lifecycle.psm1') $script:root
-        Copy-Item (Join-Path $PSScriptRoot '../bootstrap-cdc.psm1') $script:root
+        Copy-Item (Join-Path $PSScriptRoot '../*.psm1') $script:root
+        @'
+function Resolve-BootstrapSchemaWorkspace { @{ CoreSchemaPath = '/staged/core.json'; ExtensionSchemaPaths = @() } }
+Export-ModuleMember -Function Resolve-BootstrapSchemaWorkspace
+'@ | Set-Content (Join-Path $script:root 'bootstrap-schema-workspace.psm1')
+        Import-Module (Join-Path $script:root 'bootstrap-cdc.psm1') -Force
+        Import-Module (Join-Path $script:root 'bootstrap-manifest.psm1') -Force
+        Import-Module (Join-Path $script:root 'e2e-cdc.psm1') -Force
+        Import-Module (Join-Path $script:root 'e2e-teardown.psm1') -Force
         Import-Module (Join-Path $script:root 'cdc-lifecycle.psm1') -Force
         $script:realCommand = & (Get-Module cdc-lifecycle) { (Get-Command Invoke-CdcLifecycleCommand).ScriptBlock }
         $script:realRest = & (Get-Module cdc-lifecycle) { (Get-Command Invoke-CdcLifecycleRest).ScriptBlock }
@@ -34,6 +42,14 @@ Describe 'Managed CDC deployment lifecycle ordering' {
             @{ services = @{ dms = @{ environment = @{ DataManagement__DocumentCache__Targets__0__DataStoreId = [string]$id; AppSettings__Datastore = $provider } } } } | ConvertTo-Json -Depth 10 | Set-Content $dmsPath
             foreach ($path in @($settingsPath, $dmsPath)) { [IO.File]::SetUnixFileMode($path, [IO.UnixFileMode]384) }
             return @{ IdentityProvider = $identityProvider; Settings = $settings; SettingsPath = $settingsPath; DmsComposePath = $dmsPath }
+        }
+        function New-TestBootstrapHandoff {
+            [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Creates isolated test bootstrap files only.')]
+            param($id = 42, $project = 'dms-local', $state = (Join-Path $script:root '.cdc-state'))
+            $sourceHandoff = New-TestHandoff -id $id -project $project
+            $sourceHandoff.Settings.ConfigurationServiceSettings = @{ BaseUrl = 'http://localhost:8081' }
+            New-BootstrapCdcHandoff -Settings $sourceHandoff.Settings -InputSettingsPath $sourceHandoff.SettingsPath -StatePath $state `
+                -EnvironmentFile (Join-Path $script:root '.env.custom') -Project $project -DatabaseName 'dedicated-cdc' -IdentityProvider self-contained
         }
         function Read-TestDeployment($project = 'dms-local') {
             Get-Content (Join-Path $script:root ".cdc-deployments/$project.json") -Raw | ConvertFrom-Json -AsHashtable
@@ -73,6 +89,7 @@ Describe 'Managed CDC deployment lifecycle ordering' {
     }
     BeforeEach {
         Remove-Item (Join-Path $script:root '.cdc-deployments') -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item (Join-Path $script:root '.bootstrap') -Recurse -Force -ErrorAction SilentlyContinue
         'CUSTOM=selected' | Set-Content (Join-Path $script:root '.env.custom')
         $script:trace = [Collections.Generic.List[string]]::new()
         $script:live = @('connector-42', 'connector-43')
@@ -121,7 +138,9 @@ Describe 'Managed CDC deployment lifecycle ordering' {
             if ($phase -in @('down-volumes', 'stop-worker')) { $script:workerRunning = $false }
         }
     }
-    AfterAll { Remove-Module cdc-lifecycle -Force }
+    AfterAll {
+        Get-Module -All | Where-Object { $_.Path -and $_.Path.StartsWith($script:root + '/') } | Remove-Module -Force
+    }
 
     if ($env:DMS_T57_BRIDGE) {
         It 'uses the production controller session bridge for retained wrapper startup' {
@@ -724,6 +743,148 @@ Invoke-CdcDeploymentLifecycle 'dms-local' '/unused/start.ps1' @{ d = $true; v = 
         Test-CdcDeployment 'dms-published' | Should -BeTrue
         Get-Content (Join-Path $state 'history') | Should -Be 'historical-exposure'
     }
+    Context 'Generated bootstrap runtime cleanup' {
+        BeforeEach {
+            Remove-Item (Join-Path $script:root '.cdc-deployments') -Recurse -Force
+            $script:handoff = New-TestBootstrapHandoff
+            Register-CdcDeploymentHandoff $script:handoff (Join-Path $script:root '.cdc-state')
+            $script:live = @('connector-42')
+            $script:runtimeRoot = Join-Path $script:root '.bootstrap/cdc-runtime'
+        }
+
+        It 'releases the existing bootstrap layout for ordinary E2E preparation (<cleanup>)' -ForEach @(
+            @{ cleanup = 'bootstrap' }, @{ cleanup = 'e2e' }
+        ) {
+            [IO.Path]::GetDirectoryName($script:handoff.SettingsPath) | Should -Be $script:runtimeRoot
+            ([int][IO.File]::GetUnixFileMode($script:runtimeRoot) -band 511) | Should -Be 448
+            foreach ($path in @($script:handoff.SettingsPath, $script:handoff.DmsComposePath)) {
+                ([int][IO.File]::GetUnixFileMode($path) -band 511) | Should -Be 384
+            }
+            $state = Join-Path $script:root '.cdc-state'
+            New-Item -ItemType Directory $state -Force | Out-Null
+            'irreversible-exposure' | Set-Content (Join-Path $state 'source-history.json')
+            { Assert-E2ECdcWorkspaceAvailable } | Should -Throw '*E2E setup cannot reset*'
+            Invoke-TestLifecycle @{ d = $true; v = $true; RemoveBootstrap = ($cleanup -eq 'bootstrap') }
+            if ($cleanup -eq 'e2e') { Remove-E2EBootstrapWorkspace -BootstrapWorkspacePath (Join-Path $script:root '.bootstrap') }
+            Test-Path (Join-Path $script:root '.bootstrap') | Should -BeFalse
+            Get-Content (Join-Path $state 'source-history.json') | Should -Be 'irreversible-exposure'
+            Test-CdcDeployment 'dms-local' | Should -BeFalse
+            { Assert-E2ECdcWorkspaceAvailable } | Should -Not -Throw
+        }
+
+        It 'resumes cleanup after one inventoried file was removed and preserves cleanup authority' {
+            $script:cleanupRemoved = 0
+            Mock Remove-Item -ModuleName cdc-lifecycle {
+                if ($script:cleanupRemoved -eq 1) { throw 'private-path injected interruption' }
+                [IO.File]::Delete($LiteralPath)
+                $script:cleanupRemoved++
+            } -ParameterFilter { $LiteralPath -like '*.bootstrap/cdc-runtime/*' }
+            { Invoke-TestLifecycle @{ d = $true; v = $true } } | Should -Throw '*runtime cleanup is incomplete*'
+            (Read-TestDeployment).Phase | Should -Be 'RuntimeCleanup'
+            (Read-TestDeployment).RuntimeCleanupFiles.Count | Should -Be 2
+            @(Get-ChildItem $script:runtimeRoot).Count | Should -Be 1
+            $script:trace.Clear()
+            # No settings re-read, controller call or Compose teardown is needed after this checkpoint.
+            Mock Remove-Item -ModuleName cdc-lifecycle { [IO.File]::Delete($LiteralPath) } -ParameterFilter { $LiteralPath -like '*.bootstrap/cdc-runtime/*' }
+            Invoke-TestLifecycle @{ d = $true; v = $true; RemoveBootstrap = $true }
+            $script:trace.Count | Should -Be 0
+            Test-CdcDeployment 'dms-local' | Should -BeFalse
+            { Assert-E2ECdcWorkspaceAvailable } | Should -Not -Throw
+        }
+
+        It 'rejects changed surviving configuration on an interrupted cleanup retry' {
+            $script:cleanupRemoved = 0
+            Mock Remove-Item -ModuleName cdc-lifecycle {
+                if ($script:cleanupRemoved -eq 1) { throw 'Interrupted' }
+                [IO.File]::Delete($LiteralPath)
+                $script:cleanupRemoved++
+            } -ParameterFilter { $LiteralPath -like '*.bootstrap/cdc-runtime/*' }
+            { Invoke-TestLifecycle @{ d = $true; v = $true } } | Should -Throw '*runtime cleanup is incomplete*'
+            $remaining = @(Get-ChildItem $script:runtimeRoot)[0].FullName
+            'private-changed-content' | Set-Content $remaining
+            $script:trace.Clear()
+            { Invoke-TestLifecycle @{ d = $true; v = $true } } | Should -Throw '*runtime cleanup is incomplete*'
+            Get-Content $remaining | Should -Be 'private-changed-content'
+            Test-CdcDeployment 'dms-local' | Should -BeTrue
+            $script:trace.Count | Should -Be 0
+        }
+
+        It 'does not delete generated files before the cleanup checkpoint is durable' {
+            $script:realWrite = & (Get-Module cdc-lifecycle) { (Get-Command Write-CdcDeployment).ScriptBlock }
+            Mock Write-CdcDeployment -ModuleName cdc-lifecycle {
+                if ($Deployment.Phase -eq 'RuntimeCleanup') { throw 'Checkpoint failed' }
+                & (Get-Module cdc-lifecycle) $script:realWrite $Project $Deployment
+            }
+            { Invoke-TestLifecycle @{ d = $true; v = $true } } | Should -Throw '*Checkpoint failed*'
+            (Read-TestDeployment).Phase | Should -Be 'Retired'
+            @(Get-ChildItem $script:runtimeRoot).Count | Should -Be 2
+            $script:trace[-1] | Should -Be 'down-volumes'
+        }
+
+        It 'keeps unrelated files protected from both recursive cleanup helpers' {
+            'unrelated' | Set-Content (Join-Path $script:runtimeRoot 'notes.txt')
+            Invoke-TestLifecycle @{ d = $true; v = $true; RemoveBootstrap = $true }
+            Remove-E2EBootstrapWorkspace -BootstrapWorkspacePath (Join-Path $script:root '.bootstrap')
+            Get-Content (Join-Path $script:runtimeRoot 'notes.txt') | Should -Be 'unrelated'
+            Test-Path $script:handoff.SettingsPath | Should -BeFalse
+            { Assert-E2ECdcWorkspaceAvailable } | Should -Throw '*E2E setup cannot reset*'
+        }
+
+        It 'keeps generated peer files and their deployment inventory' {
+            $peer = New-TestBootstrapHandoff -id 99 -project 'dms-published' -state (Join-Path $script:root 'peer-state')
+            Register-CdcDeploymentHandoff $peer (Join-Path $script:root 'peer-state')
+            $hash = (Get-FileHash $peer.SettingsPath).Hash
+            Invoke-TestLifecycle @{ d = $true; v = $true; RemoveBootstrap = $true }
+            Remove-E2EBootstrapWorkspace -BootstrapWorkspacePath (Join-Path $script:root '.bootstrap')
+            (Get-FileHash $peer.SettingsPath).Hash | Should -Be $hash
+            Test-Path $peer.DmsComposePath | Should -BeTrue
+            Test-CdcDeployment 'dms-published' | Should -BeTrue
+            { Assert-E2ECdcWorkspaceAvailable } | Should -Throw '*E2E setup cannot reset*'
+        }
+
+        It 'retains nested state at <location> and gives a sanitized protection diagnostic' -ForEach @(
+            @{ location = 'custom-source-secret' }, @{ location = 'cdc-runtime/custom-source-secret' }, @{ location = 'cdc-runtime' }
+        ) {
+            $state = Join-Path $script:root ".bootstrap/$location"
+            New-Item -ItemType Directory $state -Force | Out-Null
+            'irreversible-exposure' | Set-Content (Join-Path $state 'source-history.json')
+            & (Get-Module cdc-lifecycle) {
+                param($state)
+                $value = Read-CdcDeployment 'dms-local'
+                $value.Entries[0].StatePath = $state
+                Write-CdcDeployment 'dms-local' $value
+            } $state
+            { Invoke-TestLifecycle @{ d = $true; v = $true; RemoveBootstrap = $true } } | Should -Throw '*surviving protected source-state root*'
+            Test-CdcDeployment 'dms-local' | Should -BeTrue
+            (Read-TestDeployment).Phase | Should -Be 'RuntimeCleanup'
+            foreach ($action in @(
+                { Remove-BootstrapWorkspaceIfRequested -RemoveBootstrap },
+                { Remove-E2EBootstrapWorkspace -BootstrapWorkspacePath (Join-Path $script:root '.bootstrap') },
+                { Assert-E2ECdcWorkspaceAvailable }
+            )) {
+                $failure = $null
+                try { & $action } catch { $failure = $_ }
+                $failure.Exception.Message | Should -Match 'surviving protected source-state root'
+                $failure.Exception.Message | Should -Not -Match 'custom-source-secret|irreversible-exposure'
+            }
+            Get-Content (Join-Path $state 'source-history.json') | Should -Be 'irreversible-exposure'
+        }
+
+        It 'keeps runtime configuration during <operation>' -ForEach @(
+            @{ operation = 'stop' }, @{ operation = 'failed retirement' }
+        ) {
+            if ($operation -eq 'stop') { Invoke-TestLifecycle @{ d = $true } }
+            else {
+                $script:failure = 'retire:42'
+                { Invoke-TestLifecycle @{ d = $true; v = $true } } | Should -Throw
+            }
+            Remove-BootstrapWorkspaceIfRequested -RemoveBootstrap
+            Test-Path $script:handoff.SettingsPath | Should -BeTrue
+            Test-Path $script:handoff.DmsComposePath | Should -BeTrue
+            { Assert-E2ECdcWorkspaceAvailable } | Should -Throw
+        }
+    }
+
     It 'permits operational ceiling updates while retaining identity and leaving validation to controllers' {
         $settingsPath = Join-Path $script:root '42.settings.json'
         $settings = Get-Content $settingsPath -Raw | ConvertFrom-Json -AsHashtable

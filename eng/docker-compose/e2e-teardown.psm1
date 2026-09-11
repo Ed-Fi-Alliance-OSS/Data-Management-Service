@@ -156,7 +156,8 @@ function Remove-E2EBootstrapWorkspace {
         [string] $BootstrapWorkspacePath
     )
 
-    if (Test-Path -LiteralPath (Join-Path $BootstrapWorkspacePath 'cdc-runtime')) {
+    Import-Module (Join-Path $PSScriptRoot 'cdc-lifecycle.psm1')
+    if (Test-CdcBootstrapWorkspaceProtected -BootstrapRoot $BootstrapWorkspacePath) {
         Write-Output 'Retaining CDC configuration workspace and any nested state roots after governed teardown.'
         return
     }

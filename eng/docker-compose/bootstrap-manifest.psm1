@@ -683,7 +683,8 @@ function Remove-BootstrapWorkspaceIfRequested {
     }
 
     $bootstrapDir = Get-BootstrapRoot
-    if (Test-Path -LiteralPath (Join-Path $bootstrapDir 'cdc-runtime')) {
+    Import-Module (Join-Path $PSScriptRoot 'cdc-lifecycle.psm1')
+    if (Test-CdcBootstrapWorkspaceProtected -BootstrapRoot $bootstrapDir) {
         Write-Output 'Retaining CDC configuration workspace and any nested state roots after governed teardown.'
         return
     }
