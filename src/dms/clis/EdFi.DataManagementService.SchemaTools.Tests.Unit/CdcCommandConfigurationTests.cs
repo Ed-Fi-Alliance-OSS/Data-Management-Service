@@ -6,8 +6,6 @@
 using System.Text.Json;
 using EdFi.DataManagementService.Backend.Cdc;
 using EdFi.DataManagementService.Backend.Ddl;
-using EdFi.DataManagementService.Core.Configuration;
-using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.DocumentCache.Cdc;
 using EdFi.DataManagementService.Core.Startup;
 using EdFi.DataManagementService.SchemaTools.Cdc;
@@ -248,19 +246,15 @@ public partial class Given_Cdc_command_configuration(string providerToken, CoreP
     }
 
     [Test]
-    public async Task It_resolves_the_provider_adapters_and_history_bridge_without_starting_a_runtime()
+    public async Task It_resolves_control_plane_provider_setup_connector_templates_and_source_position_adapters()
     {
         using var logger = new LoggerConfiguration().CreateLogger();
         var services = new ServiceCollection();
-        services.AddCdcCommandRuntime(_settings, logger, DocumentCacheTargetKey.Create("", 42));
+        services.AddCdcCommandControlPlane(_settings, logger);
         await using var scope = services.BuildServiceProvider();
         scope.GetRequiredService<ICdcProviderSetupService>().Should().NotBeNull();
         scope.GetRequiredService<ICdcConnectorTemplateService>().Should().NotBeNull();
         scope.GetServices<ICdcProviderSourcePositionAdapter>().Single().Provider.Should().Be(provider);
-        scope
-            .GetRequiredService<IDocumentCacheDownstreamPublicationHistoryProvider>()
-            .Should()
-            .BeOfType<CdcDownstreamPublicationHistoryProvider>();
     }
 
     [Test]
