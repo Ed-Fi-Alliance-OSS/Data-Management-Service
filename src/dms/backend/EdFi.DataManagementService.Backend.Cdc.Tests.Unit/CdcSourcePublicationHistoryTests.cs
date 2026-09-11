@@ -442,6 +442,24 @@ public class Given_CdcSourcePublicationHistory(CdcProvider provider)
             .ThrowAsync<CdcWorkflowStateException>();
     }
 
+    [TestCase("2147483648", CdcWorkflowStateFailure.Invalid)]
+    [TestCase("-2147483649", CdcWorkflowStateFailure.Invalid)]
+    [TestCase("1.5", CdcWorkflowStateFailure.Invalid)]
+    [TestCase("999", CdcWorkflowStateFailure.UnsupportedVersion)]
+    public async Task It_classifies_invalid_numeric_versions(string version, CdcWorkflowStateFailure failure)
+    {
+        JsonNode json = JsonNode.Parse(await File.ReadAllTextAsync(HistoryPath))!;
+        json["version"] = JsonNode.Parse(version);
+        await File.WriteAllTextAsync(HistoryPath, json.ToJsonString());
+
+        var error = (
+            await FluentActions.Awaiting(ReadAsync).Should().ThrowAsync<CdcWorkflowStateException>()
+        ).Which;
+        error.Failure.Should().Be(failure);
+        error.InnerException.Should().BeNull();
+        error.ToString().Should().NotContain(_root);
+    }
+
     [TestCase("version")]
     [TestCase("unknown-field")]
     [TestCase("duplicate-field")]

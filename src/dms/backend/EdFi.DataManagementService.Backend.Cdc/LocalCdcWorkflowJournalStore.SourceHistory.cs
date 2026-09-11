@@ -151,6 +151,7 @@ public sealed partial class LocalCdcWorkflowJournalStore
         catch (Exception exception)
             when (exception
                     is JsonException
+                        or FormatException
                         or ArgumentException
                         or InvalidOperationException
                         or KeyNotFoundException

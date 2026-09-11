@@ -348,6 +348,24 @@ public class Given_CdcWorkflowJournal
         (await ReadAsync()).HasPendingRecordSizeIncrease.Should().BeFalse();
     }
 
+    [TestCase("2147483648", CdcWorkflowStateFailure.Invalid)]
+    [TestCase("-2147483649", CdcWorkflowStateFailure.Invalid)]
+    [TestCase("1.5", CdcWorkflowStateFailure.Invalid)]
+    [TestCase("999", CdcWorkflowStateFailure.UnsupportedVersion)]
+    public async Task It_classifies_invalid_numeric_versions(string version, CdcWorkflowStateFailure failure)
+    {
+        JsonNode json = JsonNode.Parse(await File.ReadAllTextAsync(JournalPath))!;
+        json["version"] = JsonNode.Parse(version);
+        await File.WriteAllTextAsync(JournalPath, json.ToJsonString());
+
+        var error = (
+            await FluentActions.Awaiting(ReadAsync).Should().ThrowAsync<CdcWorkflowStateException>()
+        ).Which;
+        error.Failure.Should().Be(failure);
+        error.InnerException.Should().BeNull();
+        error.ToString().Should().NotContain(_root);
+    }
+
     [TestCase("missing", CdcWorkflowStateFailure.Missing)]
     [TestCase("malformed", CdcWorkflowStateFailure.Invalid)]
     [TestCase("missing-purpose", CdcWorkflowStateFailure.Invalid)]
