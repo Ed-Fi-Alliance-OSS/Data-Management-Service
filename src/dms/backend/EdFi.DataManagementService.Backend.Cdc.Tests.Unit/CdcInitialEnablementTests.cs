@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Collections.Immutable;
+using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
 using EdFi.DataManagementService.Core.Configuration;
@@ -35,6 +36,8 @@ public class Given_CdcInitialEnablement(Ddl.CdcProvider provider)
     private bool _latch;
     private DocumentCacheGuardedNewEmptyActivationState _tables = null!;
     private List<string> _trace = null!;
+    private List<string> _calls = null!;
+    private Func<string, CancellationToken, Task> _beforeCall = null!;
     private CdcTargetIdentity Target => _request.TargetIdentity;
     private DocumentCacheTargetKey TargetKey =>
         DocumentCacheTargetKey.Create(
@@ -49,6 +52,10 @@ public class Given_CdcInitialEnablement(Ddl.CdcProvider provider)
         _request = CdcDeploymentRequestTestData.Request(provider);
         _store = new(_root);
         _trace = [];
+        _calls = [];
+        _beforeCall = (_, _) => Task.CompletedTask;
+        int exactReads = 0;
+        int observations = 0;
         _lifecycle = DocumentCacheLifecycleState.Disabled;
         _latch = false;
         _tables = new(true, true, true);
@@ -69,18 +76,25 @@ public class Given_CdcInitialEnablement(Ddl.CdcProvider provider)
         _bindings = A.Fake<ICdcBindingLifecycleService>();
         A.CallTo(() => _bindings.ListBindingsAsync(A<string>._, A<CancellationToken>._))
             .ReturnsLazily(
-                (string deployment, CancellationToken token) =>
-                    _realBindings.ListBindingsAsync(deployment, token)
+                async (string deployment, CancellationToken token) =>
+                {
+                    await BeforeCallAsync("list", token);
+                    return await _realBindings.ListBindingsAsync(deployment, token);
+                }
             );
         A.CallTo(() => _bindings.ExactMatchBindingAsync(A<CdcBinding>._, A<CancellationToken>._))
             .ReturnsLazily(
-                (CdcBinding binding, CancellationToken token) =>
-                    _realBindings.ExactMatchBindingAsync(binding, token)
+                async (CdcBinding binding, CancellationToken token) =>
+                {
+                    await BeforeCallAsync($"exact-{++exactReads}", token);
+                    return await _realBindings.ExactMatchBindingAsync(binding, token);
+                }
             );
         A.CallTo(() => _bindings.CreateBindingIfAbsentAsync(A<CdcBinding>._, A<CancellationToken>._))
             .ReturnsLazily(
                 async (CdcBinding binding, CancellationToken token) =>
                 {
+                    await BeforeCallAsync("create", token);
                     _trace.Add("binding");
                     var history = await ReadHistoryWithoutLockAsync();
                     history
@@ -95,11 +109,14 @@ public class Given_CdcInitialEnablement(Ddl.CdcProvider provider)
             );
         _runtime = A.Fake<ICdcProjectionRuntime>();
         A.CallTo(() => _runtime.ObserveInitialDatabaseAsync(A<CancellationToken>._))
-            .ReturnsLazily(() =>
-            {
-                _trace.Add("eligibility");
-                return Observation();
-            });
+            .ReturnsLazily(
+                async (CancellationToken token) =>
+                {
+                    await BeforeCallAsync($"observe-{++observations}", token);
+                    _trace.Add("eligibility");
+                    return Observation();
+                }
+            );
         A.CallTo(() =>
                 _runtime.ActivateAsync(
                     A<DocumentCacheGuardedNewEmptyActivationRequest>._,
@@ -109,6 +126,7 @@ public class Given_CdcInitialEnablement(Ddl.CdcProvider provider)
             .ReturnsLazily(
                 async (DocumentCacheGuardedNewEmptyActivationRequest request, CancellationToken token) =>
                 {
+                    await BeforeCallAsync("activate", token);
                     _trace.Add("activation");
                     (await _realBindings.ExactMatchBindingAsync(_request.Binding, token))
                         .Status.Should()
@@ -687,6 +705,180 @@ public class Given_CdcInitialEnablement(Ddl.CdcProvider provider)
                 return Success();
             });
         (await RunAsync()).State.Should().Be(CdcTransportEvidenceState.Observed);
+    }
+
+    [Test]
+    public async Task It_allows_individually_bounded_calls_to_exceed_one_call_budget_in_total()
+    {
+        SetTiming(TimeSpan.FromMilliseconds(500), TimeSpan.FromSeconds(5));
+        _beforeCall = (_, token) => Task.Delay(TimeSpan.FromMilliseconds(100), token);
+        var elapsed = Stopwatch.StartNew();
+
+        (await RunAsync()).State.Should().Be(CdcTransportEvidenceState.Observed);
+
+        elapsed.Elapsed.Should().BeGreaterThan(_request.Timing.CallTimeout);
+        _calls
+            .Should()
+            .Equal("observe-1", "list", "exact-1", "create", "exact-2", "activate", "observe-2", "exact-3");
+        _trace.Should().Equal("eligibility", "binding", "activation", "eligibility");
+        ReadJournalWithoutLock()
+            .Operations.Where(o =>
+                o.Effect is CdcWorkflowEffect.ReserveBinding or CdcWorkflowEffect.ActivateProjection
+            )
+            .Should()
+            .OnlyContain(o => !o.Completions.IsEmpty);
+        await AssertUnpublishedAndLockReleasedAsync();
+    }
+
+    [TestCase("observe-1", CdcDeploymentComponent.Projection)]
+    [TestCase("list", CdcDeploymentComponent.WorkflowState)]
+    [TestCase("exact-1", CdcDeploymentComponent.WorkflowState)]
+    [TestCase("create", CdcDeploymentComponent.WorkflowState)]
+    [TestCase("exact-2", CdcDeploymentComponent.WorkflowState)]
+    [TestCase("activate", CdcDeploymentComponent.Projection)]
+    [TestCase("observe-2", CdcDeploymentComponent.Projection)]
+    [TestCase("exact-3", CdcDeploymentComponent.WorkflowState)]
+    public async Task It_bounds_each_external_call_and_reconciles_the_interrupted_workflow(
+        string stage,
+        CdcDeploymentComponent component
+    )
+    {
+        SetTiming(TimeSpan.FromMilliseconds(250), TimeSpan.FromSeconds(5));
+        CancellationToken observedCallToken = CancellationToken.None;
+        _beforeCall = async (current, token) =>
+        {
+            if (current == stage)
+            {
+                observedCallToken = token;
+                await Task.Delay(Timeout.InfiniteTimeSpan, token);
+            }
+        };
+        var elapsed = Stopwatch.StartNew();
+
+        var result = (await RunAsync())
+            .Should()
+            .BeOfType<CdcTransportResult<CdcInitialEnablementEvidence>.Unavailable>()
+            .Subject;
+
+        elapsed.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(2));
+        result.Diagnostic.Failure.Should().Be(CdcDeploymentFailure.Timeout);
+        result.Diagnostic.Component.Should().Be(component);
+        observedCallToken.IsCancellationRequested.Should().BeTrue();
+        _calls[^1].Should().Be(stage);
+        await AssertUnpublishedAndLockReleasedAsync();
+        byte[] bytes = _calls.Contains("exact-2") ? BindingBytes() : [];
+        _beforeCall = (_, _) => Task.CompletedTask;
+        (await RunAsync()).State.Should().Be(CdcTransportEvidenceState.Observed);
+        if (bytes.Length > 0)
+        {
+            BindingBytes().Should().Equal(bytes);
+        }
+    }
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task It_preserves_an_earlier_enclosing_deadline_or_actual_caller_cancellation(bool deadline)
+    {
+        SetTiming(TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(5));
+        using var cancellation = new CancellationTokenSource();
+        _beforeCall = async (_, token) =>
+        {
+            if (deadline)
+            {
+                cancellation.CancelAfter(TimeSpan.FromMilliseconds(100));
+            }
+            else
+            {
+                await cancellation.CancelAsync();
+            }
+            await Task.Delay(Timeout.InfiniteTimeSpan, token);
+        };
+        var elapsed = Stopwatch.StartNew();
+
+        Func<Task> run = () => _controller.ActivateAsync(_request, _runtime, cancellation.Token);
+        await run.Should().ThrowAsync<OperationCanceledException>();
+
+        elapsed.Elapsed.Should().BeLessThan(_request.Timing.CallTimeout);
+        _calls.Should().Equal("observe-1");
+        await AssertUnpublishedAndLockReleasedAsync();
+    }
+
+    [Test]
+    public async Task It_bounds_the_complete_workflow_even_when_each_call_fits_its_budget()
+    {
+        SetTiming(TimeSpan.FromMilliseconds(500), TimeSpan.FromMilliseconds(750));
+        _beforeCall = (_, token) => Task.Delay(TimeSpan.FromMilliseconds(200), token);
+        var elapsed = Stopwatch.StartNew();
+
+        var result = (await RunAsync())
+            .Should()
+            .BeOfType<CdcTransportResult<CdcInitialEnablementEvidence>.Unavailable>()
+            .Subject;
+
+        elapsed
+            .Elapsed.Should()
+            .BeGreaterThan(_request.Timing.CallTimeout)
+            .And.BeLessThan(TimeSpan.FromSeconds(2));
+        result.Diagnostic.Failure.Should().Be(CdcDeploymentFailure.Timeout);
+        result.Diagnostic.Component.Should().Be(CdcDeploymentComponent.WorkflowState);
+        _calls.Should().Equal("observe-1", "list", "exact-1", "create");
+        await AssertUnpublishedAndLockReleasedAsync();
+    }
+
+    [Test]
+    public async Task It_bounds_lock_acquisition_by_the_call_budget()
+    {
+        SetTiming(TimeSpan.FromMilliseconds(250), TimeSpan.FromSeconds(5));
+        await using (
+            var held = await _store.AcquireAsync(
+                TimeSpan.FromSeconds(1),
+                TimeSpan.FromMilliseconds(10),
+                CancellationToken.None
+            )
+        )
+        {
+            var elapsed = Stopwatch.StartNew();
+            var result = (await RunAsync())
+                .Should()
+                .BeOfType<CdcTransportResult<CdcInitialEnablementEvidence>.Unavailable>()
+                .Subject;
+            elapsed.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(2));
+            result.Diagnostic.Failure.Should().Be(CdcDeploymentFailure.Timeout);
+            result.Diagnostic.Component.Should().Be(CdcDeploymentComponent.WorkflowState);
+            _calls.Should().BeEmpty();
+        }
+        await AssertUnpublishedAndLockReleasedAsync();
+    }
+
+    private async Task BeforeCallAsync(string stage, CancellationToken token)
+    {
+        _calls.Add(stage);
+        await _beforeCall(stage, token);
+    }
+
+    private void SetTiming(TimeSpan call, TimeSpan wait) =>
+        _request = new(
+            _request.Binding,
+            _request.DmsSettings,
+            _request.ProviderSetup,
+            _request.ConnectEndpoint,
+            _request.WorkerMetricsEndpoint,
+            _request.ConnectorPolicy,
+            _request.WorkerPolicy,
+            _request.ProviderConnectionProperties,
+            _request.KafkaClientSecurityProperties,
+            new(call, wait, TimeSpan.FromMilliseconds(10))
+        );
+
+    private async Task AssertUnpublishedAndLockReleasedAsync()
+    {
+        await using var session = await _store.AcquireAsync(
+            TimeSpan.FromSeconds(1),
+            TimeSpan.FromMilliseconds(10),
+            CancellationToken.None
+        );
+        var journal = await session.ReadAsync(Target, CancellationToken.None);
+        journal.Operations.Should().NotContain(o => o.Effect == CdcWorkflowEffect.AuthorizeWriterPublication);
     }
 
     [Test]
