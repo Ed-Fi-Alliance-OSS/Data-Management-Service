@@ -321,6 +321,39 @@ public class AuthorizationStrategiesModuleTests
         }
 
         [Test]
+        public async Task Given_sorting_without_a_limit_It_returns_every_item()
+        {
+            // The draft Management API spec declares a default limit of 25, which CMS deliberately
+            // does not implement. Enough strategies to exceed that default are returned here, so
+            // introducing any implicit row cap fails this test rather than silently truncating a
+            // deployment that has added custom authorization strategies.
+            AuthorizationStrategy[] manyStrategies =
+            [
+                .. Enumerable
+                    .Range(1, 30)
+                    .Select(id => new AuthorizationStrategy
+                    {
+                        Id = id,
+                        AuthorizationStrategyName = $"Strategy{id:D2}",
+                        DisplayName = $"Strategy {id:D2}",
+                    }),
+            ];
+
+            A.CallTo(() => _claimSetRepository.GetAuthorizationStrategies())
+                .Returns(
+                    Task.FromResult<AuthorizationStrategyGetResult>(
+                        new AuthorizationStrategyGetResult.Success(manyStrategies)
+                    )
+                );
+
+            var sorted = await GetStrategiesAsync("?orderBy=id");
+            var skipped = await GetStrategiesAsync("?offset=1");
+
+            sorted.Should().HaveCount(30);
+            skipped.Should().HaveCount(29);
+        }
+
+        [Test]
         public async Task Given_an_offset_and_a_limit_It_returns_that_page()
         {
             var strategies = await GetStrategiesAsync("?offset=1&limit=1");
