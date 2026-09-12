@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Collections.Concurrent;
+using EdFi.DataManagementService.Core.External.Logging;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -15,6 +16,15 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit;
 /// WebApplicationFactory's logging builder by the fixtures that boot the real pipeline
 /// in-process.
 /// </summary>
+/// <remarks>
+/// Deliberately scoped to the two request-logging event ids rather than to "any event carrying a
+/// TraceId property". The broader reading made the recorded count a measure of
+/// application-wide TraceId-bearing log volume, so adding any unrelated <c>{TraceId}</c> log line
+/// anywhere on a path this fixture exercises would fail a correlation ID test with "Expected 5
+/// items, but found 6" - a failure pointing at nothing. One request-completion or
+/// request-failure event per request is a property of the request-logging contract, not of how
+/// chatty the rest of the pipeline happens to be.
+/// </remarks>
 internal sealed class CorrelationIdRecordingLoggerProvider : ILoggerProvider
 {
     private readonly ConcurrentQueue<string> _traceIds = new();
@@ -42,6 +52,14 @@ internal sealed class CorrelationIdRecordingLoggerProvider : ILoggerProvider
             Func<TState, Exception?, string> formatter
         )
         {
+            if (
+                eventId != RequestLoggingEventIds.HttpRequestCompleted
+                && eventId != RequestLoggingEventIds.HttpRequestFailed
+            )
+            {
+                return;
+            }
+
             if (state is not IReadOnlyList<KeyValuePair<string, object?>> values)
             {
                 return;

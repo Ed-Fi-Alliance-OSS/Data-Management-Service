@@ -120,6 +120,82 @@ public class CorrelationIdNormalizerTests
     }
 
     [TestFixture]
+    public class Given_A_Correlation_Id_Exactly_At_The_Maximum_Length : CorrelationIdNormalizerTests
+    {
+        private const int MaxLength = 16;
+
+        [Test]
+        public void It_does_not_truncate_at_the_boundary()
+        {
+            // The truncation test is `value.Length > effectiveMaxLength`, so a value of exactly
+            // the maximum length passes through whole. An off-by-one that made it `>=` would
+            // silently shorten every conforming identifier by one character, and no other test
+            // in this file would notice: the over-length cases all overshoot by many characters.
+            string atTheBound = new('c', MaxLength);
+
+            CorrelationIdNormalizer.Normalize(atTheBound, MaxLength).Should().Be(atTheBound);
+        }
+
+        [Test]
+        public void It_truncates_one_character_past_the_boundary()
+        {
+            // The other side of the same boundary, so the pair pins the comparison rather than
+            // just one of its two outcomes.
+            CorrelationIdNormalizer
+                .Normalize(new string('c', MaxLength + 1), MaxLength)
+                .Should()
+                .Be(new string('c', MaxLength));
+        }
+    }
+
+    [TestFixture]
+    public class Given_A_Single_Astral_Character_And_A_Maximum_Length_Of_One : CorrelationIdNormalizerTests
+    {
+        [Test]
+        public void It_yields_an_empty_string_rather_than_an_orphaned_high_surrogate()
+        {
+            // Two UTF-16 code units cut to one lands on the high half, the surrogate guard drops
+            // it, and the retained prefix is empty. That empty result is documented behavior, and
+            // it is what the ingestion point's fallback to the server-generated identifier then
+            // depends on: the alternative - emitting a lone surrogate - would break the
+            // byte-identical log/body parity FR-LOG-6 guarantees.
+            CorrelationIdNormalizer.Normalize("\U0001F600", 1).Should().Be(string.Empty);
+        }
+    }
+
+    [TestFixture]
+    public class Given_A_Correlation_Id_That_Already_Contains_A_Lone_Surrogate : CorrelationIdNormalizerTests
+    {
+        // A high surrogate with nothing after it. An HTTP header value cannot carry this, so it
+        // is unreachable from a request - but the documented contract says such a value is
+        // preserved rather than repaired, and that promise is what is pinned here.
+        private const string WithLoneSurrogate = "ab\ud83dcd";
+
+        [Test]
+        public void It_preserves_the_lone_surrogate_rather_than_repairing_it()
+        {
+            // char.IsControl is false for a surrogate, so the allowlist keeps it. The
+            // surrogate-pair guard is deliberately scoped to the truncation cut and does not
+            // scan the input, so nothing here removes or replaces it.
+            CorrelationIdNormalizer
+                .Normalize(WithLoneSurrogate, AppSettings.DefaultCorrelationIdMaxLength)
+                .Should()
+                .Be(WithLoneSurrogate);
+        }
+
+        [Test]
+        public void It_still_removes_control_characters_around_it()
+        {
+            // The lone surrogate is preserved, not treated as a reason to give up on the rest of
+            // the value: the allowlist still applies to every other character.
+            CorrelationIdNormalizer
+                .Normalize($"\r{WithLoneSurrogate}\n", AppSettings.DefaultCorrelationIdMaxLength)
+                .Should()
+                .Be(WithLoneSurrogate);
+        }
+    }
+
+    [TestFixture]
     public class Given_A_Correlation_Id_That_Is_Both_Over_Length_And_Hostile : CorrelationIdNormalizerTests
     {
         // The first MaxLength characters contain a control character, which is what makes the

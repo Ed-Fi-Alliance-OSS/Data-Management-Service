@@ -217,11 +217,24 @@ normalization is three adjustments, applied in this order:
    "every other character is preserved": LINE SEPARATOR (`U+2028`) and
    PARAGRAPH SEPARATOR (`U+2029`) are removed as well. They are not control
    characters, but they break a line-oriented log consumer the same way a line
-   feed does, so the effective allowlist is the printable range minus those two.
+   feed does.
    Removing line-breaking characters is what prevents log forging: a
    client-supplied value cannot introduce additional log lines or corrupt
    structured log output. Bounding the value's size is the length cap's job, not
    the allowlist's.
+
+   "Control character" here means Unicode category `Cc` — `U+0000`–`U+001F` and
+   `U+007F`–`U+009F` — which is what `char.IsControl` reports. The **format**
+   characters of category `Cf` are therefore *not* removed: `U+00AD` SOFT
+   HYPHEN, the zero-width characters `U+200B`–`U+200D`, the bidirectional
+   embeddings and overrides `U+202A`–`U+202E` (including RIGHT-TO-LEFT
+   OVERRIDE), the bidirectional isolates `U+2066`–`U+2069`, and `U+FEFF` all
+   survive normalization. They cannot forge a log line, and both sinks that
+   receive the value — structured-log parameters and JSON serialization — escape
+   their own output, so this is not an injection exposure. It does mean a
+   correlation ID can render invisibly or in an unexpected direction in a
+   terminal, and that the effective retained set is "printable, plus `Cf`, minus
+   `U+2028`/`U+2029`" rather than simply "the printable range".
 
 This allowlist is scoped to correlation IDs and is deliberately broader than the
 stricter one applied to internally-controlled logged values such as `Method` and
@@ -239,17 +252,28 @@ nothing the allowlist would remove. Both are intended.
 
 Normalization is applied identically everywhere a correlation ID appears: every
 request log event, and the `correlationId` (or `traceId`) of every error response
-body, whatever the status code and whichever layer produced it — including the
-catch-all `404` for an unmatched route, the `429` rate-limit rejection, and the
-`500` written when an unhandled exception escapes the pipeline. The ID a client
-reads from a failed request is therefore always the ID to search for in the logs.
-The value is normalized once, where the request first supplies it, so no
-individual response path can drift from the logged value.
+body that carries a correlation ID, whatever the status code and whichever layer
+produced it — including the catch-all `404` for an unmatched route, the `429`
+rate-limit rejection, and the `500` written when an unhandled exception escapes
+the pipeline. The ID a client reads from such a response is therefore always the
+ID to search for in the logs. The value is normalized once, where the request
+first supplies it, so no individual response path can drift from the logged
+value.
 
-A client-supplied header whose value normalizes to empty — one made up only of
-control characters, such as a lone horizontal tab — is treated the same as a
+Not every error response carries one. The `413` answer to an oversized request
+body writes no response body at all, and the management, metadata and XSD
+metadata endpoints answer an unrecognized path with a `404` whose body is either
+absent or a bare message carrying no `correlationId` field. Those
+requests are still logged with their normalized correlation ID; there is simply
+no body for it to appear in, so a client correlating one of them must use the
+request log or the configured correlation header it sent.
+
+A client-supplied header whose value normalizes to nothing but whitespace — one
+made up only of control characters, such as a lone horizontal tab, or only of
+whitespace, such as a run of `U+00A0` NO-BREAK SPACE — is treated the same as a
 header sent empty or omitted: the server-generated trace identifier is used, so
-a client cannot blank the operational identifier.
+a client cannot blank the operational identifier. Whitespace *within* a
+correlation ID is preserved; only an all-blank value falls back.
 
 A correlation ID that the allowlist or the length cap alters is normalized, not
 rejected — the request still succeeds or fails on its own merits rather than on

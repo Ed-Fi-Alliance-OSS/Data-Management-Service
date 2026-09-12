@@ -405,12 +405,22 @@ public static class AspNetCoreFrontend
     /// the allowlist apply to a server-generated identifier as well as a client-supplied one.
     /// </summary>
     /// <remarks>
-    /// A client-supplied header that normalizes to an empty string - a value made up only of
-    /// control characters, such as a lone horizontal tab - falls through to the
-    /// server-generated identifier. Emptiness is therefore tested after normalization rather
-    /// than before it, so a client cannot blank the operational identifier that every log
-    /// event and error response body carries, and a header holding only control characters
-    /// behaves the same as a header sent empty.
+    /// A client-supplied header that normalizes to nothing but whitespace - a value made up
+    /// only of control characters, such as a lone horizontal tab, or only of spaces - falls
+    /// through to the server-generated identifier. Blankness is therefore tested after
+    /// normalization rather than before it, so a client cannot blank the operational identifier
+    /// that every log event and error response body carries, and a header holding only control
+    /// characters behaves the same as a header sent empty.
+    ///
+    /// The test is <see cref="string.IsNullOrWhiteSpace(string?)"/> rather than a length check
+    /// because whitespace is not control: a space is retained by the correlation-ID allowlist
+    /// by design, so a header of nothing but whitespace would otherwise survive normalization
+    /// intact and become the correlation ID. Kestrel strips leading and trailing ASCII optional
+    /// whitespace from a header value, but it decodes header bytes as Latin-1 by default, so
+    /// U+00A0 NO-BREAK SPACE - which is whitespace to .NET and not OWS to Kestrel - reaches
+    /// here. This narrows no allowlist: a correlation ID with internal whitespace is still
+    /// accepted whole, and <see cref="CorrelationIdNormalizer"/> still preserves whitespace.
+    /// Only the all-blank case falls back.
     /// </remarks>
     public static TraceId ExtractTraceIdFrom(HttpRequest request, IOptions<AppSettings> options)
     {
@@ -428,7 +438,7 @@ public static class AspNetCoreFrontend
                 : string.Empty;
 
         string normalized = CorrelationIdNormalizer.Normalize(clientSupplied, maxLength);
-        if (normalized.Length == 0)
+        if (string.IsNullOrWhiteSpace(normalized))
         {
             normalized = CorrelationIdNormalizer.Normalize(request.HttpContext.TraceIdentifier, maxLength);
         }

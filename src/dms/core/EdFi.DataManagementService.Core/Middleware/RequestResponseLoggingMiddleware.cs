@@ -29,11 +29,9 @@ internal class RequestResponseLoggingMiddleware(ILogger _logger) : IPipelineStep
         // client-supplied on that path, so it must keep flowing through LoggingSanitizer.
         string method = LoggingSanitizer.SanitizeForLogging(requestInfo.MethodName);
         string path = LoggingSanitizer.SanitizeForLogging(requestInfo.FrontendRequest.Path);
-        // The trace id takes the correlation-ID allowlist, not the stricter Method/Path one. It
-        // already arrives normalized from the frontend ingestion boundary, so this call is
-        // idempotent; using the strict allowlist here would stamp every Core log event with a value
-        // that differs from the correlationId in the response body for the same request.
-        string sanitizedTraceId = LoggingSanitizer.SanitizeCorrelationIdForLogging(traceId);
+        // The trace id takes the correlation-ID allowlist, not the stricter Method/Path one used
+        // two lines above. See LoggingSanitizer.SanitizeCorrelationId for the rule.
+        string sanitizedTraceId = LoggingSanitizer.SanitizeCorrelationId(traceId);
 
         var scopeValues = new Dictionary<string, object>
         {

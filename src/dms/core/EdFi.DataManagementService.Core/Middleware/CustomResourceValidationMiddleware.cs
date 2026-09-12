@@ -25,15 +25,11 @@ internal class CustomResourceValidationMiddleware(ILogger _logger, CustomValidat
 {
     public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
-        // TraceId already arrives normalized: the frontend applies the correlation-ID allowlist and
-        // the length cap once, at the ingestion boundary. Re-applying that same allowlist here is
-        // idempotent, and it keeps a sanitizer call on the path into the log template. It must not be
-        // the stricter Method/Path allowlist, which would emit a value that differs from the one in
-        // the response body for the same request. This file therefore reads the trace id three
-        // ways - sanitizedTraceId for its log records, the raw .Value handed to a third-party
-        // validator, and the TraceId handed to FailureResponse - that all now carry the identical
-        // value, so the distinction is historical rather than semantic.
-        string sanitizedTraceId = LoggingSanitizer.SanitizeCorrelationIdForLogging(
+        // See LoggingSanitizer.SanitizeCorrelationId for the rule this follows. Specific to this
+        // file: it reads the trace id three ways - sanitizedTraceId for its log records, the raw
+        // .Value handed to a third-party validator, and the TraceId handed to FailureResponse -
+        // which all now carry the identical value, so the distinction is historical, not semantic.
+        string sanitizedTraceId = LoggingSanitizer.SanitizeCorrelationId(
             requestInfo.FrontendRequest.TraceId.Value
         );
 

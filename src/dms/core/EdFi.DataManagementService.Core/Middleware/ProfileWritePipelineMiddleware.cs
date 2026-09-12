@@ -69,7 +69,7 @@ internal class ProfileWritePipelineMiddleware(ILogger<ProfileWritePipelineMiddle
             LoggingSanitizer.SanitizeForLogging(profileName),
             LoggingSanitizer.SanitizeForLogging(resourceName),
             method,
-            LoggingSanitizer.SanitizeCorrelationIdForLogging(requestInfo.FrontendRequest.TraceId.Value)
+            LoggingSanitizer.SanitizeCorrelationId(requestInfo.FrontendRequest.TraceId.Value)
         );
 
         // Resolve the write plan from the mapping set.
@@ -93,7 +93,7 @@ internal class ProfileWritePipelineMiddleware(ILogger<ProfileWritePipelineMiddle
                 "ProfileWritePipelineMiddleware: Write plan not available for resource {ResourceName}. "
                     + "Rejecting writable profile request. TraceId: {TraceId}",
                 LoggingSanitizer.SanitizeForLogging(resourceName),
-                LoggingSanitizer.SanitizeCorrelationIdForLogging(requestInfo.FrontendRequest.TraceId.Value)
+                LoggingSanitizer.SanitizeCorrelationId(requestInfo.FrontendRequest.TraceId.Value)
             );
             requestInfo.FrontendResponse = new FrontendResponse(
                 StatusCode: 400,
@@ -160,7 +160,7 @@ internal class ProfileWritePipelineMiddleware(ILogger<ProfileWritePipelineMiddle
                 result.Failures.Length,
                 LoggingSanitizer.SanitizeForLogging(profileName),
                 LoggingSanitizer.SanitizeForLogging(resourceName),
-                LoggingSanitizer.SanitizeCorrelationIdForLogging(requestInfo.FrontendRequest.TraceId.Value)
+                LoggingSanitizer.SanitizeCorrelationId(requestInfo.FrontendRequest.TraceId.Value)
             );
 
             // Collection value-filter violations and duplicate visible

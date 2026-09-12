@@ -151,7 +151,7 @@ internal class ValidateResourceKeySeedMiddleware(
                 ex.GetType().Name,
                 selectedInstance.Id,
                 LoggingSanitizer.SanitizeForLogging(selectedInstance.Name),
-                LoggingSanitizer.SanitizeCorrelationIdForLogging(requestInfo.FrontendRequest.TraceId.Value)
+                LoggingSanitizer.SanitizeCorrelationId(requestInfo.FrontendRequest.TraceId.Value)
             );
 #pragma warning restore S6667
 
@@ -196,9 +196,7 @@ internal class ValidateResourceKeySeedMiddleware(
                     selectedInstance.Id,
                     LoggingSanitizer.SanitizeForLogging(selectedInstance.Name),
                     LoggingSanitizer.SanitizeForConsole(failure.DiffReport),
-                    LoggingSanitizer.SanitizeCorrelationIdForLogging(
-                        requestInfo.FrontendRequest.TraceId.Value
-                    )
+                    LoggingSanitizer.SanitizeCorrelationId(requestInfo.FrontendRequest.TraceId.Value)
                 );
 
                 requestInfo.FrontendResponse = new FrontendResponse(

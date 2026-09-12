@@ -299,4 +299,50 @@ public class ExtractTraceIdFromTests
             _traceId.Value.Should().Be("0HNCTN1IRQMDG:00000003");
         }
     }
+
+    [TestFixture]
+    public class Given_A_Correlation_Header_Holding_Only_Whitespace : ExtractTraceIdFromTests
+    {
+        /// <summary>
+        /// U+00A0 NO-BREAK SPACE, not an ASCII space. Kestrel strips leading and trailing ASCII
+        /// optional whitespace from a header value, so a header of plain spaces never reaches
+        /// the ingestion point over a real socket - but Kestrel decodes header bytes as Latin-1
+        /// by default, so byte 0xA0 arrives as U+00A0 and is neither OWS nor a control character.
+        /// It therefore survives the allowlist intact and would become the correlation ID.
+        /// </summary>
+        private const string NoBreakSpaceOnly = "   ";
+
+        private TraceId _traceId;
+
+        [SetUp]
+        public void Setup()
+        {
+            _traceId = AspNetCoreFrontend.ExtractTraceIdFrom(
+                RequestWith(CorrelationHeader, NoBreakSpaceOnly, "0HNCTN1IRQMDG:00000005"),
+                AppSettingsFor(CorrelationHeader)
+            );
+        }
+
+        [Test]
+        public void It_falls_back_to_the_server_generated_trace_identifier()
+        {
+            // The documented promise is that a client cannot blank the operational identifier.
+            // A blank-looking identifier on every log line and every error response body for the
+            // request defeats that just as completely as an empty one.
+            _traceId.Value.Should().Be("0HNCTN1IRQMDG:00000005");
+        }
+
+        [Test]
+        public void It_does_not_narrow_the_allowlist_for_a_value_that_is_not_all_blank()
+        {
+            // Only the all-blank case falls back. Internal whitespace - including the same
+            // U+00A0 - is still part of a legitimate upstream identifier scheme and is kept.
+            TraceId traceId = AspNetCoreFrontend.ExtractTraceIdFrom(
+                RequestWith(CorrelationHeader, $"upstream{NoBreakSpaceOnly}id", "0HNCTN1IRQMDG:00000006"),
+                AppSettingsFor(CorrelationHeader)
+            );
+
+            traceId.Value.Should().Be($"upstream{NoBreakSpaceOnly}id");
+        }
+    }
 }
