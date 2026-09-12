@@ -51,6 +51,9 @@ function Invoke-QualificationSuite {
     $arguments = @('test', $Project, '-c', $script:qualificationConfiguration, '--nologo', '--results-directory', $suiteDirectory,
         '--logger', "trx;LogFileName=$Name.trx", '--logger', 'console;verbosity=quiet')
     if ($Filter) { $arguments += @('--filter', $Filter) }
+    # VSTest omits fixture-level attachments. Keep their original JSON under this suite's
+    # private directory so the existing allowlisted exporter can retain it as well.
+    $arguments += @('--', "NUnit.WorkDirectory=$suiteDirectory")
     & dotnet @arguments *> (Join-Path $suiteDirectory 'private.log')
     $report = Get-CdcQualificationReport -Path (Join-Path $suiteDirectory "$Name.trx") -ExitCode $LASTEXITCODE
     $report.Name = $Name

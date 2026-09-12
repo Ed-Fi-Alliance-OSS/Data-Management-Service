@@ -60,3 +60,12 @@ No full qualification claim yet.
   is provided separately by the existing secured Kafka lane.
 - Reviewed implementation commits: `70de74aa0`, `54d1aa1d4`, and `20310891b` on
   replacement base `c3ae3bfff`. The target 04 story and normative design tree have no diff.
+
+## Evidence export follow-up
+
+The first targeted PostgreSQL message suite passed all 502 cases, but only one JSON
+attachment reached the exporter: VSTest omits fixture-level attachments. That run is
+valid test-result evidence but incomplete message fault/recovery evidence. The runner
+now sets `NUnit.WorkDirectory` to each suite's private results directory so allowlisted
+fixture JSON is exported independently of TRX links. A fresh live export check and
+final qualification with this runner change are still required.

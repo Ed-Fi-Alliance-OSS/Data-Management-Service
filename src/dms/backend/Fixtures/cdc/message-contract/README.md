@@ -812,7 +812,9 @@ dotnet vstest /path/to/published/integration/EdFi.DataManagementService.Backend.
 Nightly artifacts are named `cdc-qualification-<lane>-<suite>-<run_attempt>` and
 retained for 14 days. The shared exporter publishes qualification summaries, image
 metadata, sanitized TRX results, and allowlisted `cdc-message-contract-*.json`
-attachments with resolvable TRX links. It strips raw assertion output and private
+attachments with resolvable TRX links where VSTest supplies them. NUnit writes
+fixture-level JSON into the suite's private results directory so it is retained even
+when VSTest omits its attachment link. The exporter strips raw assertion output and private
 logs; it does not upload the entire fixture work directory. Attachments retain stable
 scenario IDs and bounded provider positions, broker bounds, acknowledgement/retry/
 sizing observations, and failure categories without document bodies or credentials.
