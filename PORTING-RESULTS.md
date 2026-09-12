@@ -40,10 +40,12 @@ no skipped cases are counted as passing evidence. Paths are relative to this che
 | Fresh PostgreSQL full-lane managed lifecycle | 15 passed | `TestResults/port-postgresql-02/Postgresql-CdcControllerManagedLifecycle` |
 | Corrected PostgreSQL telemetry fixture | 1 passed | `TestResults/port-postgresql-telemetry-fixed-02` |
 | Corrected MSSQL telemetry fixture | 1 passed | `TestResults/port-mssql-telemetry-fixed-01` |
+| Focused MSSQL lifecycle failures after timing correction | 3 passed | `TestResults/port-mssql-lifecycle-focused-01` |
+| Corrected PostgreSQL persistent-backlog timing | 1 passed | `TestResults/port-postgresql-lifecycle-freshness-01` |
 | PostgreSQL history and cleanup with corrected admin environment | 25 history + 5 cleanup passed | `TestResults/port-postgresql-history-fixed-02` |
-| PostgreSQL full-lane native recovery phase | 9 passed | `TestResults/port-postgresql-01/Postgresql-CdcControllerNativeRecovery` |
+| Fresh PostgreSQL full-lane native recovery phase | 9 passed | `TestResults/port-postgresql-02/Postgresql-CdcControllerNativeRecovery` |
 | PostgreSQL full-lane record-size phase | 17 passed; 51 exported evidence links resolve | `TestResults/port-postgresql-01/Postgresql-CdcControllerRecordSize` |
-| MSSQL full-lane admission phase | 36 passed | `TestResults/port-mssql-01/Mssql-CdcControllerAdmission` |
+| Fresh MSSQL full-lane admission phase | 36 passed | `TestResults/port-mssql-02/Mssql-CdcControllerAdmission` |
 | Final integration package traceability outside checkout | 20 passed | `/tmp/dms1324-port-packaged-final/results-integration` |
 
 Remaining PostgreSQL/MSSQL controller phases, fixture repairs found by those runs,
@@ -171,3 +173,15 @@ The original MSSQL lifecycle phase passed 12 of 15 cases. One failed during offs
 setup, one rejected start before resume with workflow evidence validation, and one rejected
 restart with metrics/Connect validation diagnostics. These failures remain under
 investigation; the fresh full MSSQL invocation must qualify the complete lane.
+
+The persistent-backlog timing override was also found to reset `MaximumObservationAge`
+to ten seconds, despite the shared fixture explicitly allowing one minute. The override
+now preserves that fixture setting while retaining its existing wait deadline and all
+resume, polling, and retained-work assertions. A focused rerun of all three MSSQL failures
+passes (`TestResults/port-mssql-lifecycle-focused-01`, three passed, no skips). The other
+two failures did not reproduce in this rerun. The fresh full MSSQL lane has passed
+admission and is running managed lifecycle with this correction.
+
+The PostgreSQL persistent-backlog case passes with the corrected freshness override
+(`TestResults/port-postgresql-lifecycle-freshness-01`, one passed, no skips). This supplements
+the full PostgreSQL managed-lifecycle result after the test-only timing change.

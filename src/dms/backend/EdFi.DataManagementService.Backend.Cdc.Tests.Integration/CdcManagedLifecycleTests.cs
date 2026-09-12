@@ -190,8 +190,16 @@ public sealed class Given_Cdc_Controller_Managed_Lifecycle(CdcProvider provider)
         // SQL Server's live preflight is slower; leave time for completed resume and catch-up
         // observations within this one deadline, as in the fixture's provider-specific defaults.
         var wait = TimeSpan.FromSeconds(provider == CdcProvider.SqlServer ? 60 : 20);
+        // Bound backlog waiting without shortening the fixture's observation freshness window.
         var request = persistent
-            ? _fixture.WithTiming(new(wait / 2, wait, TimeSpan.FromMilliseconds(250)))
+            ? _fixture.WithTiming(
+                new(
+                    wait / 2,
+                    wait,
+                    TimeSpan.FromMilliseconds(250),
+                    _fixture.Request.Timing.MaximumObservationAge
+                )
+            )
             : _fixture.Request;
         var elapsed = System.Diagnostics.Stopwatch.StartNew();
         try

@@ -100,7 +100,8 @@ PORTING-RESULTS.md. Full live qualification remains in progress.
   the effective services preserve the shipped CDC listener and worker configuration.
 - `CdcManagedLifecycleTests.cs` asserts repeated polling until the persistent-backlog
   deadline without assuming four polls fit that deadline; the release-on-fourth-poll
-  scenario still requires all four observations.
+  scenario still requires all four observations. The shortened wait retains the fixture's
+  explicit observation freshness window instead of implicitly resetting it.
 - `CdcRetirementOffsetStoreTests.cs` reports subprocess exit diagnostics before checking
   handoff observation, so wrapper failures retain their actionable cause.
 
