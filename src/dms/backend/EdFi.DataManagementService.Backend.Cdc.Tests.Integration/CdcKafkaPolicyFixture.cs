@@ -462,8 +462,22 @@ internal sealed class CdcKafkaPolicyFixture(bool secured)
 
     public async Task StartWorkerAsync(CdcDeploymentRequest request, CancellationToken cancellationToken)
     {
-        // Independent live check inside the actual infrastructure effect records the gate-to-launch ordering.
-        var offsets = Value(await Controller.ObserveOffsetStoreAsync(request, cancellationToken));
+        // Startup already holds the controller session. Inspect live evidence directly through the
+        // shared adapter path so this independent gate check does not reacquire the same file lock.
+        var evidence = await CdcKafkaProvisioning.InspectAsync(
+            Adapter,
+            this,
+            request,
+            shared: true,
+            includeProducer: false,
+            cancellationToken
+        );
+        var offsets = CdcDeploymentKafkaPolicy.ObserveOffsetStore(
+            request,
+            Guid.NewGuid().ToString("D"),
+            DateTimeOffset.UtcNow,
+            evidence
+        );
         offsets.PolicyState.Should().Be(CoreCdc.CdcConnectOffsetStorePolicyState.Satisfied);
         OffsetVerifiedAt = offsets.ObservedAt;
         foreach (string topic in new[] { ConfigTopic, StatusTopic })

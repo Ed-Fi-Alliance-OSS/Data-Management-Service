@@ -461,7 +461,7 @@ Export-ModuleMember -Function Resolve-DmsSchemaTool
             }
             Mock -ModuleName cdc-lifecycle Invoke-CdcInfrastructure {
                 $Parameters.IdentityProvider | Should -Be $script:bridgeIdentity
-                if ($Parameters.d) {
+                if ($Parameters['d']) {
                     (Read-TestDeployment $script:bridgeProject).Phase | Should -Be 'Retired'
                     $script:trace | Should -Contain 'rest:connectors'
                     $script:trace.Add('down-volumes')
