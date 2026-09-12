@@ -43,9 +43,11 @@ no skipped cases are counted as passing evidence. Paths are relative to this che
 | Focused MSSQL lifecycle failures after timing correction | 3 passed | `TestResults/port-mssql-lifecycle-focused-01` |
 | Corrected PostgreSQL persistent-backlog timing | 1 passed | `TestResults/port-postgresql-lifecycle-freshness-01` |
 | PostgreSQL history and cleanup with corrected admin environment | 25 history + 5 cleanup passed | `TestResults/port-postgresql-history-fixed-02` |
+| MSSQL history and provider cleanup | 25 history + 5 cleanup passed | `TestResults/port-mssql-history-01` |
 | Fresh PostgreSQL full-lane native recovery phase | 9 passed | `TestResults/port-postgresql-02/Postgresql-CdcControllerNativeRecovery` |
 | PostgreSQL full-lane record-size phase | 17 passed; 51 exported evidence links resolve | `TestResults/port-postgresql-01/Postgresql-CdcControllerRecordSize` |
 | Fresh MSSQL full-lane admission phase | 36 passed | `TestResults/port-mssql-02/Mssql-CdcControllerAdmission` |
+| MSSQL full-lane native recovery | 9 passed; 27 exported evidence links resolve | `TestResults/port-mssql-01/Mssql-CdcControllerNativeRecovery` |
 | Final integration package traceability outside checkout | 20 passed | `/tmp/dms1324-port-packaged-verified/results-integration` |
 
 Remaining PostgreSQL/MSSQL controller phases, fixture repairs found by those runs,
