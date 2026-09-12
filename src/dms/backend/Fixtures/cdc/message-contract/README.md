@@ -751,90 +751,76 @@ message-contract exclusion. When adding/renaming cases, review their fully quali
 NUnit names and update the mapping and digest explicitly; tests never rewrite the
 manifest. Run **both** assemblies' traceability checks to validate the entire set.
 
-Normal PR `build-dms.ps1 UnitTest` includes all deterministic message-contract unit
-tests. The same lane runs the integration assembly's deterministic message-contract
-slice, including discovery, from downloaded build output, without Docker. Local:
+The existing PR Contract gate uses `eng/ci/Invoke-CdcQualification.ps1`. It runs
+all CDC unit tests and the integration assembly's Docker-free tests, including both
+traceability checks. Serialized pinned-image tests require Docker even though they
+start no provider, broker, or worker, so they belong to live qualification.
+
+The shared runner and nightly matrix expose `MessageContract` for PostgreSQL and
+MSSQL. It selects both serialized and broker categories for the requested provider.
+Provider `All` includes it alongside the six existing controller/history suites.
+The default nightly matrix contains 15 jobs: seven per provider and `Kafka/All`.
+Manual workflow dispatch uses the same lane and suite choices.
+
+Use the image recorded in
+`src/dms/backend/EdFi.DataManagementService.Backend.Cdc/CdcQualifiedWorkerImage.json`.
+Configure `CDC_CONNECTOR_TEMPLATE_REDPANDA_IMAGE`,
+`CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE`, and
+`CDC_CONNECTOR_TEMPLATE_SQLSERVER_2025_IMAGE` for the selected providers. SQL Server
+must be 2025 (major version 17). Provider `All` also needs the existing History
+suite's admin connection strings. Each invocation requires a fresh results directory:
+
+```powershell
+$qualified = Get-Content src/dms/backend/EdFi.DataManagementService.Backend.Cdc/CdcQualifiedWorkerImage.json -Raw | ConvertFrom-Json
+$env:CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE = $qualified.image
+pwsh ./eng/ci/Invoke-CdcQualification.ps1 -Lane Contract -ResultsDirectory TestResults/contracts-01
+pwsh ./eng/ci/Invoke-CdcQualification.ps1 -Lane Postgresql -Suite MessageContract -PullImages -ResultsDirectory TestResults/contracts-pg-01
+pwsh ./eng/ci/Invoke-CdcQualification.ps1 -Lane Mssql -Suite MessageContract -PullImages -ResultsDirectory TestResults/contracts-mssql-01
+```
+
+Direct project/category filters remain useful for development:
 
 ```sh
 unit=src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Unit/EdFi.DataManagementService.Backend.Cdc.Tests.Unit.csproj
 integration=src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/EdFi.DataManagementService.Backend.Cdc.Tests.Integration.csproj
 dotnet test "$unit" --filter 'Category=CdcMessageContract'
 dotnet test "$integration" --filter 'Category=CdcMessageContract&Category!=DatabaseIntegration'
-dotnet test "$integration" --list-tests --filter 'Category=CdcMessageContract'
+dotnet test "$integration" --filter 'Category=CdcMessageContractSerialized'
+dotnet test "$integration" --filter 'Category=CdcConnectorTemplateSmoke'
 ```
 
-The existing workflow-dispatch connector qualification lane now runs a PostgreSQL /
-SQL Server matrix. Each provider runs packaged traceability, serialized image-only
-contracts, broker contracts and the existing template smoke tests. Repository
-variables retain their existing names; supply these environment settings locally:
+The qualification runner enables fail-fast prerequisites and disables keep-containers.
+Unavailable prerequisites, empty discovery, failed tests, or skipped required cases
+cannot qualify. Direct local runs may skip unavailable suites with a sanitized reason;
+those skips are not acceptance evidence. Startup, cancellation, timeout, and fault
+cleanup use the shared fixture owners and independently bounded cleanup tokens.
+Do not tear down unrelated Docker stacks to run this suite.
+
+Build and publish outputs include the shared JSON/README assets and representative
+E18 `expected-*.json` files. The integration output also includes the Java runner,
+observer, proxy, compiled consumer helpers, and native Kafka client dependencies.
+Copy the complete output directory. Verify packaged discovery from outside the
+checkout for **both** assemblies, for example:
 
 ```sh
-export CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE='edfialliance/ed-fi-kafka-connect@sha256:12257c36a8d27b19d1da8dda4ccba56b651714231813fa3128c314ea9eb3fb89'
-export CDC_CONNECTOR_TEMPLATE_REDPANDA_IMAGE='<qualified broker image>'
-export CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE='<qualified PostgreSQL image>'
-export CDC_CONNECTOR_TEMPLATE_SQLSERVER_2025_IMAGE='<qualified SQL Server 2025 image>'
-export CDC_CONNECTOR_TEMPLATE_FAIL_FAST=true
-export CDC_CONNECTOR_TEMPLATE_KEEP_CONTAINERS=false
-dotnet test "$integration" --filter 'Category=CdcMessageContract' --logger trx
-# Image-only execution needs only CONNECT_IMAGE; it starts no provider/broker/worker.
-dotnet test "$integration" --filter 'Category=CdcMessageContractSerialized' --logger trx
-# Existing standalone smoke selection remains supported.
-dotnet test "$integration" --filter 'Category=CdcConnectorTemplateSmoke' --logger trx
+dotnet vstest /path/to/published/unit/EdFi.DataManagementService.Backend.Cdc.Tests.Unit.dll \
+  '--TestCaseFilter:FullyQualifiedName~MessageContractTraceability'
+dotnet vstest /path/to/published/integration/EdFi.DataManagementService.Backend.Cdc.Tests.Integration.dll \
+  '--TestCaseFilter:FullyQualifiedName~MessageContractTraceability'
 ```
 
-Docker must be available; SQL Server must be 2025 (the fixture checks major version
-17). Missing prerequisites skip locally with a sanitized reason when fail-fast is
-unset; explicit qualification fails. Fixture-only execution is never broker evidence.
-Startup, timeout and cancellation cleanup use the existing fixture owners. Temporary
-containers/networks/volumes are removed independently even after failed startup;
-image-only runners remove their container and temporary files. Keep-containers is
-an optional local diagnostic setting, disabled in qualification. Do not tear down
-unrelated Docker stacks to run this suite.
+Nightly artifacts are named `cdc-qualification-<lane>-<suite>-<run_attempt>` and
+retained for 14 days. The shared exporter publishes qualification summaries, image
+metadata, sanitized TRX results, and allowlisted `cdc-message-contract-*.json`
+attachments with resolvable TRX links. It strips raw assertion output and private
+logs; it does not upload the entire fixture work directory. Attachments retain stable
+scenario IDs and bounded provider positions, broker bounds, acknowledgement/retry/
+sizing observations, and failure categories without document bodies or credentials.
+Checked-in mappings connect stable IDs to executable cases; discovery alone is not
+a passing qualification result.
 
-The existing `dms-integration-test-assemblies` artifact's `backend-cdc/` directory
-contains the complete test output: DLL/deps/runtimeconfig/test adapter, native Kafka
-client libraries, Java runner/observer/proxy, CDC JSON descriptors/manifest, README,
-and referenced E18 `expected-*.json` files. Consumer helpers are compiled into the
-integration assembly. Copy/download the **whole directory**, not just its DLL.
-No checkout, NuGet restore or developer absolute path is needed at execution time:
-
-```sh
-assembly="$PWD/TestArtifacts/integration-test-assemblies/backend-cdc/EdFi.DataManagementService.Backend.Cdc.Tests.Integration.dll"
-dotnet test "$assembly" --filter 'Category=CdcMessageContract&FullyQualifiedName~MessageContractTraceability'
-# Run each provider; the unit lane separately runs deterministic non-provider cases.
-for provider in PostgresqlIntegration MssqlIntegration; do
-  dotnet test "$assembly" \
-    --filter "(Category=CdcMessageContract|Category=CdcConnectorTemplateSmoke)&Category=$provider" \
-    --results-directory "TestResults/cdc-qualification/$provider" \
-    --logger "trx;LogFileName=qualification.trx"
-done
-```
-
-CI retains `cdc-message-contract-PostgresqlIntegration` and
-`cdc-message-contract-MssqlIntegration` artifacts for 14 days. They include separate
-traceability/serialized/Kafka-and-smoke TRX files, the validated Connect image digest,
-stable discovery IDs/categories, and NUnit attachments with bounded provider
-positions, frozen broker bounds, offsets, acknowledgement/retry/sizing observations
-and sanitized failure reasons. Detailed JSON originates under the NUnit work
-directory's `TestResults/MessageContract*/` (beside the DLL in the downloaded
-layout); TRX attachments are also copied beside
-the results. Some fixture-level evidence is not exported by the TRX adapter, so CI
-uploads the work-directory JSON tree as well as TRX and its attachments.
-Attachments intentionally omit document bodies, credentials, connection
-strings and physical tenant/topic identities. Test names and the checked-in manifest
-connect IDs to executable cases; success requires the relevant TRX results, not
-merely the discovery attachment.
-
-## Qualification on the replacement controller
-
-Use the shipped `CdcQualifiedWorkerImage.json` image and the shared
-`eng/ci/Invoke-CdcQualification.ps1` runner. `-Lane Contract` runs Docker-free unit,
-offline and complete traceability checks. `-Lane Postgresql -Suite MessageContract`
-and `-Lane Mssql -Suite MessageContract` run serialized and broker scenarios; provider
-`All` and the nightly matrix include both suites. Each invocation requires a fresh
-results directory. Empty or skipped required cases fail qualification.
-
-Live fixtures use the authorization-disabled local profile. Replay convergence is
-message evidence, not managed lifecycle certification, retained-history continuity,
-or proof that native recovery published nothing before validation. The revised 04
-story owns those controller/recovery boundaries, image publication, and metric qualification.
+Message broker fixtures use `AuthorizationDisabledLocal`. Replay convergence is
+message evidence; managed lifecycle certification, retained-history continuity,
+and native recovery publication boundaries remain owned by revised 04. Synthetic
+ownership, projection, source-history, or lag inputs establish focused evaluator
+classification only. Image publication and metric qualification also remain in 04.

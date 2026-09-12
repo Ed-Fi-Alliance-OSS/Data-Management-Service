@@ -26,18 +26,37 @@
 - Final worktree pinned-image smoke: 6 passed, no failures/skips (`TestResults/port-smoke-final-01`).
 - Focused corrected CLI cases: 16 passed (`TestResults/port-cli-fixed-01`).
 - CI and affected wrapper Pester checks: 223 passed, no failures/skips.
-- Packaged unit assembly: 20 traceability/asset tests passed from `/tmp`, outside the checkout.
+- Both packaged assemblies: 20 traceability/asset tests passed per assembly from `/tmp`,
+  outside the checkout (`/tmp/dms1324-port-packaged/results-unit` and `results-integration`).
+- Final CI selection/export checks: 30 passed, no failures/skips.
+- Full Kafka lane: 48 secured tests and 1 local test passed, no failures/skips
+  (`TestResults/port-kafka-02`). The prior failed run remains recorded separately.
 - PowerShell 7.4.10 cannot represent the absent-versus-empty environment values required by
   the existing wrapper tests. Validation now uses an isolated PowerShell 7.5.3 tool with
   runtime roll-forward to installed .NET 10; the user's global tool was not changed.
 - Baseline fixture repairs are listed in PORTING-INVENTORY.md. The first secured-Kafka run
   exposed recursive session acquisition in its worker-start fixture callback; the callback
-  now uses the existing shared adapter inspection method. The lane is rerunning.
+  now uses the existing shared adapter inspection method. The corrected lane passed all 49 tests.
 - The user's requested plan clarification was applied to the source checkout and copied
   here. No source implementation or branch history was changed.
 
 ## Remaining work
 
-Full Contract, PostgreSQL, MSSQL, and Kafka lanes, packaged integration verification,
+Full Contract, PostgreSQL, and MSSQL lanes, targeted provider message-contract selection,
 final source/scenario disposition review, and evidence audit remain in progress.
 No full qualification claim yet.
+
+## Scenario reconciliation
+
+- Unit manifest: 891 source scenarios become 937; 829 stable IDs retained, 62 replaced
+  by explicit fixture/test naming or argument updates, and 46 additional lag/offset cases.
+- Integration manifest: 1030 source scenarios become 1031; 1022 stable IDs retained,
+  8 renamed to match qualified-image or focused-evaluator claims, and 1 additional
+  unqualified-digest prerequisite case. No required scenario was dropped.
+- Infrastructure traceability assertions add 20 tests per assembly and are explicitly
+  excluded from scenario self-mapping. Both complete manifests pass executable discovery.
+- Shipped Connect image: `edfialliance/ed-fi-kafka-connect@sha256:13d9afb3ee322bae4f9cc1939b32079e99543ca27d48cb908b1cebfcdb60546d`.
+- Message broker profile: `AuthorizationDisabledLocal`; production-like ACL qualification
+  is provided separately by the existing secured Kafka lane.
+- Reviewed implementation commits: `70de74aa0`, `54d1aa1d4`, and `20310891b` on
+  replacement base `c3ae3bfff`. The target 04 story and normative design tree have no diff.
