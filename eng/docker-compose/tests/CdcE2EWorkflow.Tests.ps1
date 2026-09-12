@@ -261,6 +261,7 @@ Describe 'Ordinary E2E workspace guard after CDC runtime cleanup' {
         $script:guardRoot = Join-Path $TestDrive 'guard-compose'
         New-Item -ItemType Directory $script:guardRoot | Out-Null
         Copy-Item (Join-Path $script:composeRoot '*.psm1') $script:guardRoot
+        Copy-Item (Join-Path $script:composeRoot '../schema-package-utility.psm1') $TestDrive
         Import-Module (Join-Path $script:guardRoot 'e2e-cdc.psm1') -Force
     }
     AfterAll {

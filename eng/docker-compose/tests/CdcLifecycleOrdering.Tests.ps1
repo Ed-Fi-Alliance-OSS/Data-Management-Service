@@ -754,7 +754,7 @@ Export-ModuleMember -Function Resolve-DmsSchemaTool
         $script:brokerOverride = $override
         Mock -ModuleName cdc-lifecycle Invoke-CdcInfrastructure {
             $model = Get-TestComposeModel $script:composeFlavor $Parameters
-            if ($Parameters.d) {
+            if ($Parameters['d']) {
                 $Parameters.CdcKafkaInfrastructure | Should -BeTrue
                 $Parameters.CdcBrokerSizeOverrideFile | Should -Be $script:brokerOverride
                 $model.services.kafka.image | Should -Not -BeNullOrEmpty
@@ -771,7 +771,7 @@ Export-ModuleMember -Function Resolve-DmsSchemaTool
                 $model.services.Keys | Should -Not -Contain 'kafka-cdc-worker'
                 $script:trace.Add('infra')
             }
-        } -ParameterFilter { $Parameters.InfraOnly -or $Parameters.d }
+        } -ParameterFilter { $Parameters['InfraOnly'] -or $Parameters['d'] }
         Mock -ModuleName cdc-lifecycle Invoke-CdcLifecycleCommand {
             $settings = Get-Content $Entry.SettingsPath -Raw | ConvertFrom-Json -AsHashtable
             $settings.Cdc.Compose.BrokerSizeOverrideFile | Should -Be $script:brokerOverride
