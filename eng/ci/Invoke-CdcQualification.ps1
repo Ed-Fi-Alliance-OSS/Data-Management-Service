@@ -9,7 +9,7 @@
 param(
     [ValidateSet('All', 'Contract', 'Postgresql', 'Mssql', 'Kafka')]
     [string] $Lane = 'All',
-    [ValidateSet('All', 'Admission', 'Lifecycle', 'Recovery', 'RecordSize', 'Telemetry', 'History')]
+    [ValidateSet('All', 'Admission', 'Lifecycle', 'Recovery', 'RecordSize', 'Telemetry', 'History', 'MessageContract')]
     [string] $Suite = 'All',
     [string] $ResultsDirectory = 'TestResults/cdc-qualification',
     [ValidateSet('Debug', 'Release')]
@@ -123,21 +123,20 @@ try {
             Invoke-QualificationSuite -Name 'kafka-local' -Project $backend -Filter 'Category=CdcControllerKafkaPolicy&Category=CdcAuthorizationDisabledLocal'
         }
         else {
-            $categories = [ordered]@{
-                Admission = 'CdcControllerAdmission'; Lifecycle = 'CdcControllerManagedLifecycle'
-                Recovery = 'CdcControllerNativeRecovery'; RecordSize = 'CdcControllerRecordSize'
-                Telemetry = 'CdcConnectorTelemetryQualification'; History = 'CdcPublicationHistory'
-            }
-            foreach ($phase in $categories.Keys) {
+            $filters = Get-CdcQualificationProviderSuite -Provider $selected
+            foreach ($phase in $filters.Keys) {
                 if ($Suite -ne 'All' -and $Suite -ne $phase) { continue }
                 $project = $backend
-                $name = "$selected-$($categories[$phase])"
+                $name = "$selected-$phase"
+                if ($phase -notin @('History', 'Telemetry', 'MessageContract')) {
+                    $name = "$selected-$(([regex]::Match($filters[$phase], '^Category=([^&]+)')).Groups[1].Value)"
+                }
                 if ($phase -eq 'Telemetry') { $name = "$selected-telemetry" }
                 if ($phase -eq 'History') {
                     $name = "$selected-history"
                     $project = 'src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration.csproj'
                 }
-                Invoke-QualificationSuite -Name $name -Project $project -Filter "Category=$($categories[$phase])&Category=$($selected)Integration"
+                Invoke-QualificationSuite -Name $name -Project $project -Filter $filters[$phase]
                 if ($phase -eq 'History') {
                     $env:CDC_ARTIFACT_CLEANUP_FAIL_FAST = 'true'
                     if ($selected -eq 'Postgresql') { $env:CDC_CLEANUP_POSTGRESQL_ADMIN = $env:ConnectionStrings__DatabaseConnection }

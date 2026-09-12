@@ -808,9 +808,9 @@
         "CDC-INV-10"
       ],
       "tests": {
-        "MC-TEST-315E3DCB1B2FCD564478": "It_fails_the_producer_without_partial_publication_and_blocks_readiness_despite_healthy_progress_and_lag",
+        "MC-TEST-8D0996B271D293C24F06": "It_fails_without_partial_publication_and_blocks_the_evaluator_with_synthetic_healthy_lag",
         "MC-TEST-CB8554499FD249F0CD72": "It_publishes_the_complete_synthetic_record_one_byte_below_the_pinned_producer_boundary",
-        "MC-TEST-077991BF4BC9EA65F6DB": "It_replays_the_rejected_record_and_recovers_readiness_after_aligned_limits_change_in_place"
+        "MC-TEST-AB22B70886B8FAEDC349": "It_replays_after_a_direct_limit_change_and_restores_focused_evaluator_classification"
       }
     },
     {
@@ -822,9 +822,9 @@
         "CDC-INV-10"
       ],
       "tests": {
-        "MC-TEST-58B6BBB1A6B1388D1248": "It_fails_the_producer_without_partial_publication_and_blocks_readiness_despite_healthy_progress_and_lag",
+        "MC-TEST-C0C8692E030D3564F717": "It_fails_without_partial_publication_and_blocks_the_evaluator_with_synthetic_healthy_lag",
         "MC-TEST-E85E84ECD99F2FD65C3B": "It_publishes_the_complete_synthetic_record_one_byte_below_the_pinned_producer_boundary",
-        "MC-TEST-8F6B573DCB1956A6A55E": "It_replays_the_rejected_record_and_recovers_readiness_after_aligned_limits_change_in_place"
+        "MC-TEST-F364F00B44EA7F4D52DD": "It_replays_after_a_direct_limit_change_and_restores_focused_evaluator_classification"
       }
     },
     {
@@ -1080,10 +1080,11 @@
         "MC-TEST-46AB1F13A521E716A240": "It_distinguishes_class_loading_from_bad_runtime_and_never_reports_plugin_output(41,\"required-class-missing\")",
         "MC-TEST-2923589BB420885FFCD6": "It_distinguishes_class_loading_from_bad_runtime_and_never_reports_plugin_output(42,\"runner-classpath-incompatible\")",
         "MC-TEST-65F9D8C8330C84960E4C": "It_fails_visibly_when_cleanup_fails",
-        "MC-TEST-DD49DF306C83657730DB": "It_rejects_missing_or_mutable_images_without_echoing_the_value(\"\")",
-        "MC-TEST-D77A4CCE96903B153C1E": "It_rejects_missing_or_mutable_images_without_echoing_the_value(\"connect:latest\")",
-        "MC-TEST-7E0E46B92E3D0878C2F3": "It_rejects_missing_or_mutable_images_without_echoing_the_value(\"connect@sha256:qualified\")",
-        "MC-TEST-7AC6D3249255B3E1620C": "It_rejects_missing_or_mutable_images_without_echoing_the_value(\"credentials-sentinel@connect@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\")",
+        "MC-TEST-F3D97A9404BB4588F0D2": "It_rejects_missing_mutable_or_unqualified_images_without_echoing_the_value(\"\")",
+        "MC-TEST-72A15A526500EE670805": "It_rejects_missing_mutable_or_unqualified_images_without_echoing_the_value(\"connect:latest\")",
+        "MC-TEST-9133545083CE1B40E72D": "It_rejects_missing_mutable_or_unqualified_images_without_echoing_the_value(\"connect@sha256:qualified\")",
+        "MC-TEST-59C862327D773ABD5CBB": "It_rejects_missing_mutable_or_unqualified_images_without_echoing_the_value(\"contract/connect@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\")",
+        "MC-TEST-7B32D9D075B4A7092F1C": "It_rejects_missing_mutable_or_unqualified_images_without_echoing_the_value(\"credentials-sentinel@connect@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\")",
         "MC-TEST-5A48C8B6F9EF44EACDFC": "It_reports_specific_sanitized_prerequisites_and_cleans_failed_startup(\"cp\",\"runner-container-startup\")",
         "MC-TEST-4999792882E549FDE888": "It_reports_specific_sanitized_prerequisites_and_cleans_failed_startup(\"create\",\"runner-container-startup\")",
         "MC-TEST-979C3C5D405E791118C7": "It_reports_specific_sanitized_prerequisites_and_cleans_failed_startup(\"image\",\"connect-image-unavailable\")",

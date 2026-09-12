@@ -216,8 +216,11 @@ Suggested commit: acknowledgement and sizing contract adaptation.
    and `14`. Restore complete traceability checks in both test assemblies. These checks
    validate executable coverage, not Markdown wording or controller documentation.
 3. Extend `eng/ci/Invoke-CdcQualification.ps1` and its existing evidence infrastructure.
-   Add an explicit provider suite selection for message contracts, including serialized
-   and broker categories, and include it in provider `All` runs. The current runner has
+   Add an explicit `MessageContract` provider suite selection, including serialized
+   and broker categories, and include it in provider `All` runs. Select
+   `(Category=CdcMessageContractSerialized|Category=CdcMessageContractKafka)` together
+   with the selected provider's `Category=<provider>Integration` constraint, applying
+   that constraint to both categories. The current runner has
    no message-contract suite selection; merely adding test files will not route them into
    its live provider lanes.
 4. Extend `eng/ci/Get-CdcQualificationMatrix.ps1` alongside the runner: add the new
@@ -226,13 +229,17 @@ Suggested commit: acknowledgement and sizing contract adaptation.
    selection does not schedule the new coverage. Update the matrix tests in
    `eng/ci/tests/CdcQualification.Tests.ps1` to verify default nightly selection, each
    provider's `All` selection, and targeted manual message-contract selection, with the
-   expected suite names and counts and no duplicate jobs.
+   exact expected suite names and no duplicate jobs: the default matrix must contain
+   15 jobs (`Kafka/All` plus seven suites per provider), each provider's `All` selection
+   must contain seven jobs, and each targeted `MessageContract` selection must contain
+   exactly one job for the requested provider. Keep the runner and matrix suite lists
+   consistent through a shared definition or an executable consistency check.
 5. Preserve the Contract lane's Docker-free behavior. Route pinned-image serialized tests
    and live provider/broker tests to explicit/nightly qualification. Update
    `.github/workflows/nightly-cdc-qualification.yml` and the relevant PR/manual workflow
    wiring, including manual suite choices, without restoring the source branch's competing
    qualification path. Update the hard-coded "13 live suites" success message and its
-   existing test assertion to match the expanded nightly matrix.
+   existing test assertion to "15 live suites" for the expanded nightly matrix.
 6. Keep shipped-image validation, prerequisite failure, and evidence reporting shared.
    Ensure new named suite failures reach the aggregate exit status and expected reports.
    Extend existing runner/Pester checks for selection, nonempty discovery, missing
@@ -240,6 +247,10 @@ Suggested commit: acknowledgement and sizing contract adaptation.
 7. Retain base/source/port revisions, qualified digest, provider, authorization profile,
    selected scenarios, TRX results, and sanitized contract evidence. Confirm the shared
    exporter carries the new attachments without publishing private logs or document bodies.
+   Reconcile message-contract attachment names with the allowlist in
+   `eng/ci/cdc-qualification.psm1`; add an exporter regression that verifies the sanitized
+   JSON is retained and its exported TRX link resolves. Passing tests alone do not prove
+   their attachments survive the publication boundary.
 8. Run discovery/traceability against packaged test assemblies as well as local builds so
    missing JSON or Java assets cannot hide behind source-tree availability.
 
@@ -281,6 +292,7 @@ environment values through the existing qualification setup, using the shipped q
 image. Replace each example result directory with a fresh path when rerunning.
 
 ```powershell
+pwsh -NoProfile -Command 'Import-Module Pester -MinimumVersion 5.7.1; Invoke-Pester -Path ./eng/ci/tests/CdcQualification.Tests.ps1 -CI'
 pwsh ./eng/ci/Invoke-CdcQualification.ps1 -Lane Contract -ResultsDirectory TestResults/port-contract-01
 pwsh ./eng/ci/Invoke-CdcQualification.ps1 -Lane Postgresql -PullImages -ResultsDirectory TestResults/port-postgresql-01
 pwsh ./eng/ci/Invoke-CdcQualification.ps1 -Lane Mssql -PullImages -ResultsDirectory TestResults/port-mssql-01
@@ -290,6 +302,13 @@ pwsh ./eng/ci/Invoke-CdcQualification.ps1 -Lane Kafka -PullImages -ResultsDirect
 During development, use focused project/category filters for each stage. The prior
 265-test experiment is useful as a portability reference, not a replacement for complete
 admission, traceability, provider, or broker qualification.
+
+After stage 7, verify targeted message-contract selection for both providers as well:
+
+```powershell
+pwsh ./eng/ci/Invoke-CdcQualification.ps1 -Lane Postgresql -Suite MessageContract -PullImages -ResultsDirectory TestResults/port-postgresql-message-contract-01
+pwsh ./eng/ci/Invoke-CdcQualification.ps1 -Lane Mssql -Suite MessageContract -PullImages -ResultsDirectory TestResults/port-mssql-message-contract-01
+```
 
 ## Completion checklist
 

@@ -9,11 +9,12 @@
 param(
     [ValidateSet('All', 'Kafka', 'Postgresql', 'Mssql')]
     [string] $Lane = 'All',
-    [ValidateSet('All', 'Admission', 'Lifecycle', 'Recovery', 'RecordSize', 'Telemetry', 'History')]
+    [ValidateSet('All', 'Admission', 'Lifecycle', 'Recovery', 'RecordSize', 'Telemetry', 'History', 'MessageContract')]
     [string] $Suite = 'All'
 )
 
 $ErrorActionPreference = 'Stop'
+Import-Module (Join-Path $PSScriptRoot 'cdc-qualification.psm1') -Force
 if ($Suite -ne 'All' -and $Lane -notin @('Postgresql', 'Mssql')) {
     throw 'A suite selection requires one provider lane.'
 }
@@ -21,7 +22,7 @@ $jobs = @(
     if ($Lane -in @('All', 'Kafka')) { @{ lane = 'Kafka'; suite = 'All' } }
     foreach ($provider in @('Postgresql', 'Mssql')) {
         if ($Lane -notin @('All', $provider)) { continue }
-        foreach ($phase in @('Admission', 'Lifecycle', 'Recovery', 'RecordSize', 'Telemetry', 'History')) {
+        foreach ($phase in (Get-CdcQualificationProviderSuite -Provider $provider).Keys) {
             if ($Suite -eq 'All' -or $Suite -eq $phase) { @{ lane = $provider; suite = $phase } }
         }
     }
