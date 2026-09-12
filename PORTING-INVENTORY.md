@@ -104,5 +104,8 @@ PORTING-RESULTS.md. Full live qualification remains in progress.
 - `CdcRetirementOffsetStoreTests.cs` reports subprocess exit diagnostics before checking
   handoff observation, so wrapper failures retain their actionable cause.
 
+- `CdcConnectorTelemetryQualificationTests.cs` reuses the live fixture observation request
+  for the rendered connector, replacing generic unit data with an unrelated broker policy.
+
 These supplemental changes repair test setup or outdated assertions discovered during
 baseline/full qualification. No production controller implementation was changed.

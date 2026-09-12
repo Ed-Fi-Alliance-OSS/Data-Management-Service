@@ -8,8 +8,9 @@
 - Source delta: `45046c1d3a26927d93e94394f901731e0aaa12fe..bb3aecb98cd887f9b05a7cebccda1d978ce40c8b`.
   Source branch history remains at `1c1e3a1fbedfa5d4f572a67b9eaf8750c4b9eedd`, which adds the plan.
   The user's later plan clarification is the only source-checkout working change.
-- Current implementation revision: `58e2001ed1d9105ba006de2733671ffa88b2a746`.
-  Fresh full-provider qualification is running against that executable code.
+- Managed-lifecycle implementation revision: `58e2001ed1d9105ba006de2733671ffa88b2a746`.
+  A subsequent telemetry fixture repair reuses the actual rendered connector observation
+  request; both provider telemetry qualifications pass.
 - Both solution restores, tool restore, and Husky installation passed. Release builds,
   packaged test publication, CSharpier, and staged PowerShell analysis passed.
 - The revised 05 story is retained. The target 04 story and normative design tree have
@@ -35,8 +36,13 @@ no skipped cases are counted as passing evidence. Paths are relative to this che
 | Full Kafka lane with corrected evidence directory | 48 secured + 1 local passed | `TestResults/port-kafka-03` |
 | PostgreSQL message contracts with corrected evidence export | 502 passed | `TestResults/port-postgresql-message-contract-02` |
 | MSSQL message contracts with corrected evidence export | 496 passed | `TestResults/port-mssql-message-contract-02` |
-| PostgreSQL full-lane admission phase | 30 passed | `TestResults/port-postgresql-01/Postgresql-CdcControllerAdmission` |
+| Fresh PostgreSQL full-lane admission phase | 30 passed; 60 exported evidence links resolve | `TestResults/port-postgresql-02/Postgresql-CdcControllerAdmission` |
+| Fresh PostgreSQL full-lane managed lifecycle | 15 passed | `TestResults/port-postgresql-02/Postgresql-CdcControllerManagedLifecycle` |
+| Corrected PostgreSQL telemetry fixture | 1 passed | `TestResults/port-postgresql-telemetry-fixed-02` |
+| Corrected MSSQL telemetry fixture | 1 passed | `TestResults/port-mssql-telemetry-fixed-01` |
+| PostgreSQL history and cleanup with corrected admin environment | 25 history + 5 cleanup passed | `TestResults/port-postgresql-history-fixed-02` |
 | PostgreSQL full-lane native recovery phase | 9 passed | `TestResults/port-postgresql-01/Postgresql-CdcControllerNativeRecovery` |
+| PostgreSQL full-lane record-size phase | 17 passed; 51 exported evidence links resolve | `TestResults/port-postgresql-01/Postgresql-CdcControllerRecordSize` |
 | MSSQL full-lane admission phase | 36 passed | `TestResults/port-mssql-01/Mssql-CdcControllerAdmission` |
 | Final integration package traceability outside checkout | 20 passed | `/tmp/dms1324-port-packaged-final/results-integration` |
 
@@ -120,7 +126,7 @@ is not substituted for affected controller qualification.
 | 8. Final validation and review | Release/analyzer/format checks pass; all 68 source paths accounted for; retained paths match source; only revised 05 changes in design tree; no production C# changes | Full provider lanes and final resource cleanup pending |
 
 The revised 05 file exactly matches `bb3aecb98`; target materializer goldens have no
-base-relative changes. The current target delta contains 81 paths, including the
+base-relative changes. The current target delta contains 82 paths, including the
 supplemental fixture repairs documented in the inventory. The source checkout retains
 only the requested plan clarification and its original branch history.
 
@@ -146,3 +152,22 @@ assertion checks repeated polling plus the unchanged deadline/timeout/retained-w
 requirements; the release-on-fourth-poll case still requires all four polls. Both backlog
 variants passed the focused rerun. Wrapper process failures now expose their captured
 exit diagnostics before asserting that a handoff occurred.
+
+### Telemetry and provider cleanup follow-up
+
+The original PostgreSQL telemetry case used generic unit-test request data, including an
+unrelated Kafka bootstrap address, for live worker inspection. It now reuses the existing
+fixture observation request built from the actual rendered connector. Both providers pass
+worker inspection, task replacement, worker replacement, and live telemetry correlation.
+
+The original PostgreSQL history phase passed all 25 cases, but all five provider-cleanup
+cases failed because the dedicated admin container used `wal_level=replica`. Logical
+decoding is now enabled. A restart changed its ephemeral published port and invalidated
+one focused rerun; the container was recreated with its preserved database volume and
+fixed original host port `32796`. Fresh qualification passes all 25 history and five
+provider-cleanup cases with no skips.
+
+The original MSSQL lifecycle phase passed 12 of 15 cases. One failed during offset-store
+setup, one rejected start before resume with workflow evidence validation, and one rejected
+restart with metrics/Connect validation diagnostics. These failures remain under
+investigation; the fresh full MSSQL invocation must qualify the complete lane.
