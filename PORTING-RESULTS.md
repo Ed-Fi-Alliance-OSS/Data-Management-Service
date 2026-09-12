@@ -9,7 +9,8 @@
   Source branch history remains at `1c1e3a1fbedfa5d4f572a67b9eaf8750c4b9eedd`, which adds the plan.
   The user's later plan clarification is the only source-checkout working change.
 - Current implementation revision: `1c53934af17c685333fe655fc7fae9582fe443fb`.
-  Subsequent results-document changes do not alter executable code.
+  The managed-lifecycle fixture follow-up is recorded in the commit containing this update;
+  fresh full-provider qualification is running against that executable code.
 - Both solution restores, tool restore, and Husky installation passed. Release builds,
   packaged test publication, CSharpier, and staged PowerShell analysis passed.
 - The revised 05 story is retained. The target 04 story and normative design tree have
@@ -27,7 +28,7 @@ no skipped cases are counted as passing evidence. Paths are relative to this che
 | Independent consumer/fixture unit subset | 265 passed | `TestResults/port-independent-01` |
 | Adapted focused admission subset | 672 passed | `TestResults/port-admission-03` |
 | Complete message unit suite, including traceability | 957 passed | `TestResults/port-message-unit-01` |
-| Full Contract lane before evidence-directory change | 5840 passed: 4465 CDC unit, 715 CLI unit, 283 offline, 377 PowerShell | `TestResults/port-contract-01` |
+| Full Contract lane with corrected evidence directory | 5840 passed: 4465 CDC unit, 715 CLI unit, 283 offline, 377 PowerShell | `TestResults/port-contract-02` |
 | Pinned-image smoke, including both generated-schema restamps | 6 passed | `TestResults/port-smoke-final-01` |
 | Corrected CLI fixture cases | 16 passed | `TestResults/port-cli-fixed-01` |
 | Packaged unit and integration traceability, run outside the checkout | 20 passed per assembly | `/tmp/dms1324-port-packaged/results-unit`, `results-integration` |
@@ -36,9 +37,10 @@ no skipped cases are counted as passing evidence. Paths are relative to this che
 | PostgreSQL message contracts with corrected evidence export | 502 passed | `TestResults/port-postgresql-message-contract-02` |
 | MSSQL message contracts with corrected evidence export | 496 passed | `TestResults/port-mssql-message-contract-02` |
 | PostgreSQL full-lane admission phase | 30 passed | `TestResults/port-postgresql-01/Postgresql-CdcControllerAdmission` |
+| PostgreSQL full-lane native recovery phase | 9 passed | `TestResults/port-postgresql-01/Postgresql-CdcControllerNativeRecovery` |
 
-The fresh Contract run, remaining PostgreSQL/MSSQL controller phases, and final
-acceptance audit are pending. Both provider message suites and their exports are complete.
+Remaining PostgreSQL/MSSQL controller phases, fixture repairs found by those runs,
+and the final acceptance audit are pending. Both provider message suites and their exports are complete.
 
 ## Evidence boundary
 
@@ -102,8 +104,22 @@ The port repairs the following fixture problems, described in the transfer inven
 
 ## Remaining acceptance work
 
-- Complete and inspect all live provider phases and current-runner Contract results.
+- Complete and inspect all live provider phases and all corrected fixture results.
 - Inspect the final aggregate results and all required provider-suite reports.
 - Reconcile final evidence with every plan gate and update its completion checklist.
 - Remove only the dedicated qualification admin containers after testing; the unrelated
   Docker stack remains untouched. Keep the source branch history intact and publish nothing.
+
+### Managed lifecycle follow-up
+
+The first full PostgreSQL lane passed 12 of 15 managed-lifecycle cases. Two wrapper
+handoff cases failed because the Compose fixture lacked the neighboring broker file
+required by retained-input inventory. The fixture now retains local copies of both shipped
+Compose files, preserving their relative inheritance and CDC listener overrides. Both wrapper variants pass
+(`TestResults/port-postgresql-lifecycle-fixed-04`, 2 passed, no skips). An intermediate broker-only inheritance attempt dropped those
+overrides and was corrected before acceptance.
+A persistent-backlog test assumed four polls fit a fixed deadline. Its corrected
+assertion checks repeated polling plus the unchanged deadline/timeout/retained-work
+requirements; the release-on-fourth-poll case still requires all four polls. Both backlog
+variants passed the focused rerun. Wrapper process failures now expose their captured
+exit diagnostics before asserting that a handoff occurred.

@@ -95,5 +95,14 @@ PORTING-RESULTS.md. Full live qualification remains in progress.
   and safely reads an optional hashtable key under strict mode. `CdcE2EWorkflow.Tests.ps1`
   copies the schema-package module required by its isolated fixture.
 
+- `CdcControllerFixtureComposeKafka.cs` retains both shipped Compose files together in its
+  private directory so wrapper handoff inventory resolves the neighboring broker file and
+  the effective services preserve the shipped CDC listener and worker configuration.
+- `CdcManagedLifecycleTests.cs` asserts repeated polling until the persistent-backlog
+  deadline without assuming four polls fit that deadline; the release-on-fourth-poll
+  scenario still requires all four observations.
+- `CdcRetirementOffsetStoreTests.cs` reports subprocess exit diagnostics before checking
+  handoff observation, so wrapper failures retain their actionable cause.
+
 These supplemental changes repair test setup or outdated assertions discovered during
 baseline/full qualification. No production controller implementation was changed.

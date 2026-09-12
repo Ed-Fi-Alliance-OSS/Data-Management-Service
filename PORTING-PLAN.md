@@ -315,7 +315,7 @@ pwsh ./eng/ci/Invoke-CdcQualification.ps1 -Lane Mssql -Suite MessageContract -Pu
 - [x] Source and replacement-base revisions recorded; original branch preserved.
 - [x] Revised 05 story retained alongside the replacement base's normative designs.
 - [x] Independent fixture and consumer contracts transferred and passing.
-- [x] Shared fixture and serialized runner qualified on the current image.
+- [ ] Shared fixture and serialized runner qualified on the current image.
 - [x] Admission tests use current adapters without obsolete control-library references.
 - [x] Both providers pass routing, deletion, progress, replay, sizing, and fault scenarios.
 - [x] Synthetic evaluator evidence is distinguished from live production readiness.
