@@ -209,8 +209,8 @@ public sealed class Given_Cdc_Retirement_Offset_Store(CdcProvider provider)
                 await File.WriteAllTextAsync(bridge + ".response", "prepared", token);
             }
             await process.WaitForExitAsync(token);
-            handoffObserved.Should().BeTrue();
             process.ExitCode.Should().Be(0, await output + await error);
+            handoffObserved.Should().BeTrue();
         }
         finally
         {

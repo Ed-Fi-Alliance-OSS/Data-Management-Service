@@ -213,10 +213,11 @@ public sealed class Given_Cdc_Controller_Managed_Lifecycle(CdcProvider provider)
             result.Succeeded.Should().Be(!persistent, "{0}", JsonSerializer.Serialize(result));
             result.Ready.Should().Be(!persistent);
             resumes.Should().Be(1);
-            postResumePasses.Should().BeGreaterThan(3);
             (await _fixture.JournalAsync(Token)).Operations.Last().Completions.Should().ContainSingle();
             if (persistent)
             {
+                // The deadline, not machine-dependent poll throughput, bounds persistent backlog.
+                postResumePasses.Should().BeGreaterThan(1);
                 elapsed
                     .Elapsed.Should()
                     .BeGreaterThanOrEqualTo(request.Timing.WaitTimeout - TimeSpan.FromMilliseconds(50))
@@ -230,6 +231,7 @@ public sealed class Given_Cdc_Controller_Managed_Lifecycle(CdcProvider provider)
             }
             else
             {
+                postResumePasses.Should().BeGreaterThan(3);
                 result.Observation.Status.Projection.State.Should().Be(CoreCdc.CdcComponentState.Satisfied);
                 result.Diagnostics.Should().BeEmpty();
             }
