@@ -50,7 +50,7 @@ no skipped cases are counted as passing evidence. Paths are relative to this che
 | Fresh MSSQL full-lane admission phase | 36 passed | `TestResults/port-mssql-02/Mssql-CdcControllerAdmission` |
 | Fresh MSSQL full-lane managed lifecycle | 15 passed | `TestResults/port-mssql-02/Mssql-CdcControllerManagedLifecycle` |
 | Fresh MSSQL full-lane native recovery | 9 passed; 27 exported evidence links resolve | `TestResults/port-mssql-02/Mssql-CdcControllerNativeRecovery` |
-| MSSQL diagnostic full-lane record-size phase | 17 passed; 51 exported evidence links resolve; fresh full-lane repeat pending | `TestResults/port-mssql-01/Mssql-CdcControllerRecordSize` |
+| Fresh MSSQL full-lane record-size phase | 17 passed; 51 exported evidence links resolve | `TestResults/port-mssql-02/Mssql-CdcControllerRecordSize` |
 | Final integration package traceability outside checkout | 20 passed | `/tmp/dms1324-port-packaged-verified/results-integration` |
 
 Remaining MSSQL phases and the final acceptance audit are pending. The complete PostgreSQL
