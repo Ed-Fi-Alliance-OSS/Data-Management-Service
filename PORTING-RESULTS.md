@@ -32,13 +32,13 @@ no skipped cases are counted as passing evidence. Paths are relative to this che
 | Corrected CLI fixture cases | 16 passed | `TestResults/port-cli-fixed-01` |
 | Packaged unit and integration traceability, run outside the checkout | 20 passed per assembly | `/tmp/dms1324-port-packaged/results-unit`, `results-integration` |
 | Final CI selection/export checks | 31 passed | `/tmp/dms1324-port-ci-evidence.log` |
-| Full Kafka lane before evidence-directory change | 48 secured + 1 local passed | `TestResults/port-kafka-02` |
+| Full Kafka lane with corrected evidence directory | 48 secured + 1 local passed | `TestResults/port-kafka-03` |
 | PostgreSQL message contracts with corrected evidence export | 502 passed | `TestResults/port-postgresql-message-contract-02` |
-| MSSQL message contracts before evidence-directory change | 496 passed; fixture-level export incomplete | `TestResults/port-mssql-message-contract-01` |
+| MSSQL message contracts with corrected evidence export | 496 passed | `TestResults/port-mssql-message-contract-02` |
 | PostgreSQL full-lane admission phase | 30 passed | `TestResults/port-postgresql-01/Postgresql-CdcControllerAdmission` |
 
-Fresh Contract/Kafka runs with the evidence-directory change, MSSQL message export,
-remaining PostgreSQL/MSSQL controller phases, and the final acceptance audit are pending.
+The fresh Contract run, remaining PostgreSQL/MSSQL controller phases, and final
+acceptance audit are pending. Both provider message suites and their exports are complete.
 
 ## Evidence boundary
 
@@ -56,7 +56,9 @@ remaining PostgreSQL/MSSQL controller phases, and the final acceptance audit are
 - The first PostgreSQL message run passed 502 cases but exported only one attachment.
   Its replacement run exports all six expected evidence files: serialized failures,
   provider observations, consumer bootstrap, acknowledgement, record-size recovery, and
-  replay. Its TRX attachment link resolves, and `qualified-image.json` matches the shipped image.
+  replay. The corrected MSSQL run exports its five expected files (consumer bootstrap is
+  provider-neutral and exercised by the PostgreSQL fixture). Both TRX attachment links
+  resolve, and both `qualified-image.json` files match the shipped image.
 - Candidate-tree checks before transfer passed 263 offline, 964 serialized, and 34 broker
   tests. These establish transfer compatibility; they are not substituted for final
   worktree qualification.
@@ -100,8 +102,8 @@ The port repairs the following fixture problems, described in the transfer inven
 
 ## Remaining acceptance work
 
-- Complete and inspect all live provider phases and current-runner Contract/Kafka results.
-- Verify complete MSSQL message evidence export and the final aggregate results.
+- Complete and inspect all live provider phases and current-runner Contract results.
+- Inspect the final aggregate results and all required provider-suite reports.
 - Reconcile final evidence with every plan gate and update its completion checklist.
 - Remove only the dedicated qualification admin containers after testing; the unrelated
   Docker stack remains untouched. Keep the source branch history intact and publish nothing.
