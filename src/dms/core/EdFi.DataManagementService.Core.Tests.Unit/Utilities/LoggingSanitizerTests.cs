@@ -23,14 +23,14 @@ public class LoggingSanitizerTests
     }
 
     [TestFixture]
-    public class Given_SanitizeCorrelationIdForLogging_With_Control_Characters : LoggingSanitizerTests
+    public class Given_SanitizeCorrelationId_With_Control_Characters : LoggingSanitizerTests
     {
         private string _result = string.Empty;
 
         [SetUp]
         public void Setup()
         {
-            _result = LoggingSanitizer.SanitizeCorrelationIdForLogging("tr\race\nid\twith\0nulls");
+            _result = LoggingSanitizer.SanitizeCorrelationId("tr\race\nid\twith\0nulls");
         }
 
         [Test]
@@ -47,7 +47,7 @@ public class LoggingSanitizerTests
     }
 
     [TestFixture]
-    public class Given_SanitizeCorrelationIdForLogging_With_Upstream_Punctuation : LoggingSanitizerTests
+    public class Given_SanitizeCorrelationId_With_Upstream_Punctuation : LoggingSanitizerTests
     {
         // The single most important assertion for FR-LOG-3: these characters are common in
         // upstream identifier schemes (base64, W3C traceparent, JSON-ish keys, RFC 5322
@@ -57,7 +57,7 @@ public class LoggingSanitizerTests
         [Test]
         public void It_preserves_printable_punctuation()
         {
-            LoggingSanitizer.SanitizeCorrelationIdForLogging(UpstreamId).Should().Be(UpstreamId);
+            LoggingSanitizer.SanitizeCorrelationId(UpstreamId).Should().Be(UpstreamId);
         }
 
         [Test]
@@ -68,75 +68,69 @@ public class LoggingSanitizerTests
     }
 
     [TestFixture]
-    public class Given_SanitizeCorrelationIdForLogging_With_Unicode_Line_Separators : LoggingSanitizerTests
+    public class Given_SanitizeCorrelationId_With_Unicode_Line_Separators : LoggingSanitizerTests
     {
         [Test]
         public void It_removes_line_and_paragraph_separators_that_are_not_control_characters()
         {
             // U+2028 and U+2029 are Unicode categories Zl and Zp, so char.IsControl is false
             // for both and the allowlist predicate admits them. They are removed by the
-            // ReplaceLineEndings call that opens LogSanitizer.SanitizeCorrelationIdForLog,
+            // ReplaceLineEndings call that opens LogSanitizer's shared Sanitize helper,
             // which is therefore load-bearing rather than redundant: deleting it as dead work
             // would re-admit two characters that break a line-oriented log consumer. This
             // test is what pins that call in place.
-            LoggingSanitizer
-                .SanitizeCorrelationIdForLogging("trace\u2028id\u2029end")
-                .Should()
-                .Be("traceidend");
+            LoggingSanitizer.SanitizeCorrelationId("trace\u2028id\u2029end").Should().Be("traceidend");
         }
     }
 
     [TestFixture]
-    public class Given_SanitizeCorrelationIdForLogging_With_Non_Ascii_Characters : LoggingSanitizerTests
+    public class Given_SanitizeCorrelationId_With_Non_Ascii_Characters : LoggingSanitizerTests
     {
         [Test]
         public void It_preserves_non_ascii_printable_characters()
         {
             LoggingSanitizer
-                .SanitizeCorrelationIdForLogging("trace-Ωμέγα-日本語-ñ")
+                .SanitizeCorrelationId("trace-Ωμέγα-日本語-ñ")
                 .Should()
                 .Be("trace-Ωμέγα-日本語-ñ");
         }
     }
 
     [TestFixture]
-    public class Given_SanitizeCorrelationIdForLogging_With_A_Clean_Value : LoggingSanitizerTests
+    public class Given_SanitizeCorrelationId_With_A_Clean_Value : LoggingSanitizerTests
     {
         [Test]
         public void It_returns_the_value_unchanged()
         {
-            LoggingSanitizer
-                .SanitizeCorrelationIdForLogging("test-correlationId")
-                .Should()
-                .Be("test-correlationId");
+            LoggingSanitizer.SanitizeCorrelationId("test-correlationId").Should().Be("test-correlationId");
         }
     }
 
     [TestFixture]
-    public class Given_SanitizeCorrelationIdForLogging_With_Null_Or_Empty_Input : LoggingSanitizerTests
+    public class Given_SanitizeCorrelationId_With_Null_Or_Empty_Input : LoggingSanitizerTests
     {
         [Test]
         public void It_returns_empty_string_for_null()
         {
-            LoggingSanitizer.SanitizeCorrelationIdForLogging(null).Should().Be(string.Empty);
+            LoggingSanitizer.SanitizeCorrelationId(null).Should().Be(string.Empty);
         }
 
         [Test]
         public void It_returns_empty_string_for_empty()
         {
-            LoggingSanitizer.SanitizeCorrelationIdForLogging(string.Empty).Should().Be(string.Empty);
+            LoggingSanitizer.SanitizeCorrelationId(string.Empty).Should().Be(string.Empty);
         }
 
         [Test]
         public void It_returns_empty_string_when_every_character_is_a_control_character()
         {
-            LoggingSanitizer.SanitizeCorrelationIdForLogging("\r\n\t\0").Should().Be(string.Empty);
+            LoggingSanitizer.SanitizeCorrelationId("\r\n\t\0").Should().Be(string.Empty);
         }
 
         [Test]
         public void It_preserves_whitespace_that_is_not_a_control_character()
         {
-            LoggingSanitizer.SanitizeCorrelationIdForLogging("   ").Should().Be("   ");
+            LoggingSanitizer.SanitizeCorrelationId("   ").Should().Be("   ");
         }
     }
 

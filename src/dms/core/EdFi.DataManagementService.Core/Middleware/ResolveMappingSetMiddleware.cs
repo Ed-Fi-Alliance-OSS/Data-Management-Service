@@ -40,7 +40,7 @@ internal class ResolveMappingSetMiddleware(
             logger.LogError(
                 "DatabaseFingerprint was not resolved before mapping set resolution. "
                     + "ValidateDatabaseFingerprintMiddleware must run before ResolveMappingSetMiddleware. TraceId: {TraceId}",
-                LoggingSanitizer.SanitizeCorrelationIdForLogging(requestInfo.FrontendRequest.TraceId.Value)
+                LoggingSanitizer.SanitizeCorrelationId(requestInfo.FrontendRequest.TraceId.Value)
             );
 
             requestInfo.FrontendResponse = new FrontendResponse(
@@ -67,7 +67,7 @@ internal class ResolveMappingSetMiddleware(
                 "No runtime mapping set compiler is registered. "
                     + "Ensure a relational backend (PostgreSQL or MSSQL) is configured. "
                     + "TraceId: {TraceId}",
-                LoggingSanitizer.SanitizeCorrelationIdForLogging(requestInfo.FrontendRequest.TraceId.Value)
+                LoggingSanitizer.SanitizeCorrelationId(requestInfo.FrontendRequest.TraceId.Value)
             );
 
             requestInfo.FrontendResponse = new FrontendResponse(
@@ -113,7 +113,7 @@ internal class ResolveMappingSetMiddleware(
                 LoggingSanitizer.SanitizeForLogging(key.EffectiveSchemaHash),
                 key.Dialect,
                 LoggingSanitizer.SanitizeForLogging(key.RelationalMappingVersion),
-                LoggingSanitizer.SanitizeCorrelationIdForLogging(requestInfo.FrontendRequest.TraceId.Value)
+                LoggingSanitizer.SanitizeCorrelationId(requestInfo.FrontendRequest.TraceId.Value)
             );
 
             requestInfo.FrontendResponse = new FrontendResponse(
@@ -136,7 +136,7 @@ internal class ResolveMappingSetMiddleware(
                 "Unexpected error resolving mapping set for EffectiveSchemaHash {EffectiveSchemaHash}. "
                     + "TraceId: {TraceId}",
                 LoggingSanitizer.SanitizeForLogging(key.EffectiveSchemaHash),
-                LoggingSanitizer.SanitizeCorrelationIdForLogging(requestInfo.FrontendRequest.TraceId.Value)
+                LoggingSanitizer.SanitizeCorrelationId(requestInfo.FrontendRequest.TraceId.Value)
             );
 
             requestInfo.FrontendResponse = new FrontendResponse(

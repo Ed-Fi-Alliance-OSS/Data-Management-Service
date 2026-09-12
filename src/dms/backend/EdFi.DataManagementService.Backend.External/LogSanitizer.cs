@@ -15,90 +15,63 @@ public static class LogSanitizer
     /// Sanitizes a string for safe logging with a strict allowlist of safe characters.
     /// Allows: letters, digits, spaces, and safe punctuation (_-.:/\)
     /// </summary>
-    public static string SanitizeForLog(string? input)
-    {
-        if (string.IsNullOrEmpty(input))
-        {
-            return string.Empty;
-        }
-
-        // Behaviorally redundant with the allowlist below, which also rejects every
-        // line-ending character. Kept because static log-injection analysis (CodeQL)
-        // models ReplaceLineEndings as a sanitizer but not the custom allowlist loop.
-        input = input.ReplaceLineEndings(string.Empty);
-
-        // First pass: check if sanitization is needed and count safe characters
-        int safeCount = 0;
-        bool needsSanitization = false;
-
-        foreach (char c in input)
-        {
-            if (IsAllowedChar(c))
-            {
-                safeCount++;
-            }
-            else
-            {
-                needsSanitization = true;
-            }
-        }
-
-        if (!needsSanitization)
-        {
-            return input;
-        }
-
-        if (safeCount == 0)
-        {
-            return string.Empty;
-        }
-
-        // Second pass: build the sanitized string with exact allocation
-#pragma warning disable S3267 // Loop intentionally avoids LINQ for performance - no intermediate allocations
-        return string.Create(
-            safeCount,
-            input,
-            static (span, source) =>
-            {
-                int index = 0;
-                foreach (char c in source)
-                {
-                    if (IsAllowedChar(c))
-                    {
-                        span[index++] = c;
-                    }
-                }
-            }
-        );
-#pragma warning restore S3267
-    }
+    public static string SanitizeForLog(string? input) => Sanitize(input, IsAllowedChar);
 
     /// <summary>
     /// Sanitizes a correlation ID for safe logging and for inclusion in an error response body.
-    /// The allowlist is deliberately broader than <see cref="SanitizeForLog"/>: every printable
-    /// character is preserved and control characters are removed, with the single exception
-    /// that LINE SEPARATOR (U+2028) and PARAGRAPH SEPARATOR (U+2029) are also removed even
-    /// though they are not control characters - see the <c>ReplaceLineEndings</c> call below.
-    /// A client-supplied correlation ID normally originates in an upstream system's own
-    /// identifier scheme, so narrowing it to alphanumerics would defeat the purpose of
-    /// accepting a client-supplied value. Removing line-breaking characters is what prevents
-    /// log forging and corruption of structured log output.
+    /// This is the canonical description of the correlation-ID allowlist; every other comment
+    /// about it in this repository points here rather than restating it.
     /// </summary>
-    public static string SanitizeCorrelationIdForLog(string? input)
+    /// <remarks>
+    /// The allowlist is deliberately broader than <see cref="SanitizeForLog"/>'s and is defined
+    /// as a single negative test, <c>!char.IsControl(c)</c>, with no positive character
+    /// enumeration: a client-supplied correlation ID normally originates in an upstream system's
+    /// own identifier scheme, so narrowing it to alphanumerics would defeat the purpose of
+    /// accepting a client-supplied value. Removing line-breaking characters is what prevents log
+    /// forging and corruption of structured log output; the length cap, applied by the caller, is
+    /// what bounds the value's size.
+    ///
+    /// The effective removed set is every character in Unicode category Cc - U+0000-U+001F
+    /// (including \r, \n, \t and \0) and U+007F-U+009F - plus LINE SEPARATOR (U+2028) and
+    /// PARAGRAPH SEPARATOR (U+2029), which <c>char.IsControl</c> does not report (they are
+    /// categories Zl and Zp) and which the <c>ReplaceLineEndings</c> call in
+    /// <see cref="Sanitize"/> removes instead, because they break a line-oriented log consumer
+    /// the same way a newline does.
+    ///
+    /// Everything else is preserved, and that deliberately includes the Unicode format
+    /// characters (category Cf): U+00AD SOFT HYPHEN, U+200B-U+200D, the bidirectional
+    /// overrides and embeddings U+202A-U+202E, the isolates U+2066-U+2069, and U+FEFF.
+    /// <c>char.IsControl</c> is true only for category Cc, so those survive normalization. They
+    /// are invisible or direction-changing in a terminal but cannot forge a log line, and the
+    /// sinks that receive this value - structured-log parameters and
+    /// <c>JsonSerializer</c>/<c>JsonObject</c> - escape their own output.
+    /// </remarks>
+    public static string SanitizeCorrelationId(string? input) =>
+        Sanitize(input, static c => !char.IsControl(c));
+
+    /// <summary>
+    /// The shared two-pass filter behind both public entry points.
+    /// </summary>
+    /// <remarks>
+    /// <paramref name="isAllowedChar"/> is invoked twice per character - once to count safe
+    /// characters for the exact-size allocation, once to select them into the buffer. It must
+    /// be a pure function of only its input character: deterministic, with no side effects and
+    /// no dependency on call count or ordering. A predicate that is not pure will silently
+    /// produce a buffer that is the wrong size or filled incorrectly.
+    /// </remarks>
+    private static string Sanitize(string? input, Func<char, bool> isAllowedChar)
     {
         if (string.IsNullOrEmpty(input))
         {
             return string.Empty;
         }
 
-        // Load-bearing here, unlike in SanitizeForLog. ReplaceLineEndings also recognizes
-        // LINE SEPARATOR (U+2028, category Zl) and PARAGRAPH SEPARATOR (U+2029, category Zp),
-        // and char.IsControl is true only for category Cc - so this call, not the allowlist
-        // below, is what removes those two. SanitizeForLog does not depend on it because its
-        // strict allowlist independently rejects both: neither is a letter or a digit. Do not
-        // delete this call as dead work; it is also why static log-injection analysis (CodeQL)
-        // sees a sanitizer here, since it models ReplaceLineEndings but not the custom
-        // allowlist loop.
+        // Required for the correlation-ID path, whose broader allowlist is only
+        // !char.IsControl(c) and would otherwise preserve Unicode line/paragraph
+        // separators that ReplaceLineEndings removes. Behaviorally redundant for the strict
+        // SanitizeForLog allowlist, which independently rejects both - neither U+2028 nor
+        // U+2029 is a letter or a digit. Also kept because static log-injection analysis
+        // (CodeQL) models ReplaceLineEndings as a sanitizer but not the custom allowlist loop.
         input = input.ReplaceLineEndings(string.Empty);
 
         // First pass: check if sanitization is needed and count safe characters
@@ -107,7 +80,7 @@ public static class LogSanitizer
 
         foreach (char c in input)
         {
-            if (IsAllowedCorrelationIdChar(c))
+            if (isAllowedChar(c))
             {
                 safeCount++;
             }
@@ -127,17 +100,19 @@ public static class LogSanitizer
             return string.Empty;
         }
 
-        // Second pass: build the sanitized string with exact allocation
+        // Second pass: build the sanitized string with exact allocation. The predicate travels
+        // with the source in a value tuple so the lambda stays static - no closure allocation,
+        // and no boxing of the state.
 #pragma warning disable S3267 // Loop intentionally avoids LINQ for performance - no intermediate allocations
         return string.Create(
             safeCount,
-            input,
-            static (span, source) =>
+            (Input: input, IsAllowedChar: isAllowedChar),
+            static (span, state) =>
             {
                 int index = 0;
-                foreach (char c in source)
+                foreach (char c in state.Input)
                 {
-                    if (IsAllowedCorrelationIdChar(c))
+                    if (state.IsAllowedChar(c))
                     {
                         span[index++] = c;
                     }
@@ -152,12 +127,4 @@ public static class LogSanitizer
     private static bool IsAllowedChar(char c) =>
         !char.IsControl(c)
         && (char.IsLetterOrDigit(c) || c is ' ' or '_' or '-' or '.' or ':' or '/' or '\\');
-
-    // The correlation ID allowlist is "all printable non-control characters" and is
-    // deliberately a single negative test with no positive character enumeration.
-    // char.IsControl is Unicode-aware, so the full printable Unicode range reaches this
-    // predicate intact. U+2028 and U+2029 pass it and are removed earlier, by the
-    // ReplaceLineEndings call in SanitizeCorrelationIdForLog, so the effective allowlist is
-    // the printable range minus those two.
-    private static bool IsAllowedCorrelationIdChar(char c) => !char.IsControl(c);
 }

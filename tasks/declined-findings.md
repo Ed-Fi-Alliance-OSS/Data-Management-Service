@@ -240,3 +240,54 @@ Raised by the implementation sub-agent as a new ambiguity, not covered by plan �
   untouched by this diff. More importantly it is semantically *outside* FR-LOG-6: if it were
   ever populated it would carry a **prior** request's identifier, which the log/response
   parity guarantee for the current request neither covers nor should.
+
+---
+
+## Round 6 — product owner overrides
+
+Two entries above were **reversed by the product owner** on PR #1236 and are now
+implemented. Their original entries are left intact above, unedited, so the reasoning
+that was current at the time is still readable. **Do not treat D-9 or D-16 as declined.**
+
+### D-9 — REVERSED. Now implemented.
+
+The duplicated sanitizer loop was collapsed into a single private
+`LogSanitizer.Sanitize(string?, Func<char, bool>)` helper parameterized by the allowlist
+predicate, matching the shape used by the closed competing PR #1232. Behavior is
+unchanged: the leading `ReplaceLineEndings`, the early return of the *original* instance
+when nothing needs removing, `string.Empty` when nothing survives, the exact-size
+`string.Create`, and the `S3267` suppression all remain. The predicate travels with the
+source in a value tuple so the `string.Create` lambda stays `static`. `IsAllowedChar`,
+the strict `Method`/`Path` predicate, is untouched.
+
+Alongside it, and for the same reason (alignment with #1232), the two members added by
+this work were renamed to drop the `For…` suffix:
+`LogSanitizer.SanitizeCorrelationIdForLog` → `LogSanitizer.SanitizeCorrelationId`, and
+`LoggingSanitizer.SanitizeCorrelationIdForLogging` →
+`LoggingSanitizer.SanitizeCorrelationId`. The pre-existing pair is asymmetric
+(`SanitizeForLog` vs `SanitizeForLogging`) and the new members had propagated that;
+dropping the suffix removes the asymmetry and is more accurate, since this value goes
+into both log events and response bodies. The pre-existing `SanitizeForLog`,
+`SanitizeForLogging` and `SanitizeForConsole` were **not** renamed — out of scope, and a
+much larger blast radius.
+
+### D-16 — REVERSED. Now implemented.
+
+The decline rested on "a source-scanning architecture test is machinery this repository
+has no precedent for". That premise was factually wrong:
+`src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Unit/CdcConnectorTemplateIntegrationBoundaryTests.cs`
+walks up to the `.sln` with a `FindRepositoryRoot()` helper and asserts on the contents
+of repository files. AD-2 names a guard test as the *only* mitigation for `TraceId`
+being unvalidated, and what had shipped asserted only about four already-existing
+endpoints.
+
+`src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/CorrelationIdConstructionSiteGuardTests.cs`
+now scans production `src/dms` sources — comments and literals blanked first, so prose
+cannot produce a false positive — and asserts (a) that the set of files constructing a
+`TraceId`, in either the explicit `new TraceId(` or the target-typed
+`TraceId t = new(` spelling, is exactly `{AspNetCoreFrontend.cs, Core/Model/No.cs}`, and
+(b) that no production file passes a trace- or correlation-shaped argument to the strict
+`SanitizeForLog`/`SanitizeForLogging`. Failures name the offending file, line and source
+text. Both assertions were verified to fail against a deliberately planted violation.
+
+**Everything else in D-1..D-17 remains declined.**

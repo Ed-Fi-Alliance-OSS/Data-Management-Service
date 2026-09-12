@@ -22,32 +22,48 @@ public static class LoggingSanitizer
     /// This prevents log forging, template injection, and other log-based attacks.
     /// </summary>
     /// <remarks>
-    /// Never use this for a correlation ID or a <see cref="Core.External.Model.TraceId"/>: this
-    /// strict <c>Method</c>/<c>Path</c> allowlist strips punctuation an upstream identifier
-    /// scheme legitimately uses, so the logged value would no longer match the
-    /// <c>correlationId</c> in the response body for the same request. Use
-    /// <see cref="SanitizeCorrelationIdForLogging"/> instead.
+    /// Never use this for a correlation ID or a <see cref="Core.External.Model.TraceId"/> - see
+    /// the rule on <see cref="SanitizeCorrelationId"/>, and use that instead.
     /// </remarks>
     /// <param name="input">The input string to sanitize</param>
     /// <returns>A sanitized string safe for logging</returns>
     public static string SanitizeForLogging(string? input) => LogSanitizer.SanitizeForLog(input);
 
     /// <summary>
-    /// Sanitizes a correlation ID for logging and for inclusion in an error response body,
-    /// using the correlation-ID allowlist: all printable non-control characters. Every control
-    /// character is removed (including \r, \n, \t and \0), which is what prevents log forging;
-    /// every other character is preserved, except LINE SEPARATOR (U+2028) and PARAGRAPH
-    /// SEPARATOR (U+2029), which are removed as well because they too break a line-oriented
-    /// log consumer even though they are not control characters.
-    /// This allowlist is deliberately broader than <see cref="SanitizeForLogging"/> and must not
-    /// be conflated with it: <see cref="SanitizeForLogging"/> is correct for internally-controlled
-    /// values such as the request method and path, whereas a client-supplied correlation ID
-    /// normally originates in an upstream system's own identifier scheme.
+    /// Sanitizes a correlation ID for logging and for inclusion in an error response body, using
+    /// the correlation-ID allowlist. <see cref="LogSanitizer.SanitizeCorrelationId"/> carries the
+    /// canonical description of that allowlist; this is only the Core-side facade over it.
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>This is the one place the rule for logging a correlation ID or a
+    /// <see cref="Core.External.Model.TraceId"/> is stated. Everywhere else points here.</b>
+    /// </para>
+    /// <para>
+    /// 1. <b>A correlation ID is already normalized before it is logged</b>, once, at the
+    /// frontend ingestion boundary (<c>AspNetCoreFrontend.ExtractTraceIdFrom</c>). Passing
+    /// <c>traceId.Value</c> to a log event raw is therefore correct and is what most sites in
+    /// this repository do. Nothing further is required of a new log site.
+    /// </para>
+    /// <para>
+    /// 2. <b>Wrapping a correlation ID in this method is equally correct but adds nothing
+    /// behaviorally</b>, because normalization is idempotent. The wrapper survives on the sites
+    /// that already had one so that static log-injection analysis (CodeQL) keeps seeing a
+    /// sanitizer marker there; it was not added as a second line of defense, and the two
+    /// spellings are not a disagreement about correctness. Do not churn existing sites in either
+    /// direction.
+    /// </para>
+    /// <para>
+    /// 3. <b>Never use <see cref="SanitizeForLogging"/> for a correlation ID.</b> That strict
+    /// <c>Method</c>/<c>Path</c> allowlist strips punctuation an upstream identifier scheme
+    /// legitimately uses, so the logged value would no longer match the <c>correlationId</c> the
+    /// client read from the response body for the same request - which is the single guarantee
+    /// FR-LOG-6 makes. This is the only one of the three spellings that is a defect.
+    /// </para>
+    /// </remarks>
     /// <param name="input">The correlation ID to sanitize</param>
     /// <returns>A sanitized correlation ID safe for logging and for an error response body</returns>
-    public static string SanitizeCorrelationIdForLogging(string? input) =>
-        LogSanitizer.SanitizeCorrelationIdForLog(input);
+    public static string SanitizeCorrelationId(string? input) => LogSanitizer.SanitizeCorrelationId(input);
 
     /// <summary>
     /// Sanitizes input for console/stderr output by stripping control characters,

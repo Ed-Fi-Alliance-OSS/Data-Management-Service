@@ -14,14 +14,24 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 /// <see cref="Core.External.Model.TraceId"/> is constructed from request data calls this, so
 /// the value a client reads from a failed request is always the value searchable in the logs.
 /// </summary>
+/// <remarks>
+/// This is a frontend policy type, not a second sanitizer: the character filtering is delegated
+/// in full to <see cref="LoggingSanitizer.SanitizeCorrelationId"/>, which owns the allowlist.
+/// What lives here and cannot live there is the part that depends on frontend configuration and
+/// on ordering: the truncate-then-surrogate-guard-then-filter sequence (whose order FR-LOG-6
+/// depends on and which the sanitizer, being character-wise, cannot express), and the fallback
+/// to <see cref="AppSettings.DefaultCorrelationIdMaxLength"/>. That constant is frontend
+/// configuration; moving this logic into the <c>Backend.External</c> assembly that hosts
+/// <c>LogSanitizer</c> would have to drag it across an assembly boundary that deliberately knows
+/// nothing about ASP.NET Core host settings.
+/// </remarks>
 public static class CorrelationIdNormalizer
 {
     /// <summary>
-    /// Truncates to <paramref name="maxLength"/> and then removes every control character,
-    /// plus LINE SEPARATOR (U+2028) and PARAGRAPH SEPARATOR (U+2029), which are not control
-    /// characters but break a line-oriented log consumer the same way. Every other character
-    /// is preserved. If truncation would split a surrogate pair, the orphaned high half is
-    /// dropped as well, so truncation never introduces a lone surrogate.
+    /// Truncates to <paramref name="maxLength"/> and then applies
+    /// <see cref="LoggingSanitizer.SanitizeCorrelationId"/>, which defines exactly which
+    /// characters are removed. If truncation would split a surrogate pair, the orphaned high
+    /// half is dropped as well, so truncation never introduces a lone surrogate.
     /// </summary>
     /// <remarks>
     /// The order is deliberate and must not be swapped: truncating first means a long hostile
@@ -46,15 +56,17 @@ public static class CorrelationIdNormalizer
     /// misconfigured host still gets a bounded identifier.
     /// </param>
     /// <returns>
-    /// The normalized correlation ID: no control characters, no U+2028 or U+2029, no longer
-    /// than the effective maximum length, and never null. The result is an empty string when
-    /// the input is null, empty, or made up entirely of removed characters - and also when the
-    /// input's retained prefix is empty, as for a single astral character truncated to a
-    /// maximum length of 1. Surrogates are guaranteed only to the extent that truncation never
-    /// splits a pair; a lone surrogate already present in <paramref name="value"/> is preserved
-    /// rather than repaired, because <see cref="char.IsControl(char)"/> is false for surrogates.
-    /// A caller whose correlation IDs can carry lone surrogates - which an HTTP header value
-    /// cannot - must check for that itself.
+    /// The normalized correlation ID: no longer than the effective maximum length, never null,
+    /// and holding only the characters
+    /// <see cref="LoggingSanitizer.SanitizeCorrelationId"/> retains. The result is an empty
+    /// string when the input is null, empty, or made up entirely of removed characters - and
+    /// also when the input's retained prefix is empty, as for a single astral character
+    /// truncated to a maximum length of 1. Surrogates are guaranteed only to the extent that
+    /// truncation never splits a pair; a lone surrogate already present in
+    /// <paramref name="value"/> is preserved rather than repaired, because
+    /// <see cref="char.IsControl(char)"/> is false for surrogates. A caller whose correlation
+    /// IDs can carry lone surrogates - which an HTTP header value cannot - must check for that
+    /// itself.
     /// </returns>
     public static string Normalize(string? value, int maxLength)
     {
@@ -63,6 +75,10 @@ public static class CorrelationIdNormalizer
             return string.Empty;
         }
 
+        // A non-positive cap falls back to the documented default rather than throwing, so a
+        // misconfigured host still gets a bounded identifier. This is a policy choice, not the
+        // guard that keeps the surrogate probe below in bounds - that guard is `retained > 0`,
+        // stated at the hazard so removing this fallback cannot reintroduce an index-out-of-range.
         int effectiveMaxLength = maxLength > 0 ? maxLength : AppSettings.DefaultCorrelationIdMaxLength;
 
         string truncated = value;
@@ -76,7 +92,20 @@ public static class CorrelationIdNormalizer
             // response body while a log sink receives the raw unpaired unit, and the two
             // values are no longer byte-identical - the one thing FR-LOG-6 guarantees. Drop
             // the orphan instead.
-            if (char.IsHighSurrogate(value[retained - 1]))
+            //
+            // `retained > 0` is load-bearing: an effective maximum length of zero would
+            // otherwise index value[-1]. It is tested here, where the hazard is, rather than
+            // relying on the fallback above to make zero unreachable.
+            //
+            // The analyzer is right that the fallback makes this condition true today - that is
+            // precisely why it is written out. The bound and the fallback are two separate
+            // concerns twenty lines apart, and a future simplification of the fallback (which its
+            // own comment invites, since it is documented as guarding a misconfiguration rather
+            // than an index) would turn an unreachable branch into an IndexOutOfRangeException on
+            // a production request. The suppression is cheaper than that failure mode.
+#pragma warning disable S2589 // Condition is redundant only because of a distant, separately-motivated clamp
+            if (retained > 0 && char.IsHighSurrogate(value[retained - 1]))
+#pragma warning restore S2589
             {
                 retained--;
             }
@@ -84,6 +113,6 @@ public static class CorrelationIdNormalizer
             truncated = value[..retained];
         }
 
-        return LoggingSanitizer.SanitizeCorrelationIdForLogging(truncated);
+        return LoggingSanitizer.SanitizeCorrelationId(truncated);
     }
 }

@@ -32,7 +32,10 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit;
 /// <item>403 from <c>HealthCheckEndpointModule</c> via <c>FailureResponse.ForForbidden</c></item>
 /// <item>429 from <c>WebApplicationBuilderExtensions</c> via <c>FailureResponse.ForTooManyRequests</c></item>
 /// </list>
-/// Every one of those four requests is also sent a second time with a clean correlation ID,
+/// A fifth request - the permitted <c>/health</c> call that opens the rate-limited arm - carries
+/// the same hostile correlation ID and is expected to answer 200, which is the "still succeeds"
+/// half of FR-LOG-5 that the four failure paths cannot evidence.
+/// Every one of those requests is also sent a second time with a clean correlation ID,
 /// which is FR-LOG-5's evidence: the status codes are compared against each other rather than
 /// against hardcoded expectations. No database is required: every one of these responses is
 /// produced before the request reaches a backend.
@@ -68,39 +71,37 @@ public class Given_A_Hostile_Correlation_Id_On_Requests_That_Fail_In_Different_L
     private const string CleanCorrelationId = "clean-correlation-id";
 
     /// <summary>
-    /// One request-completion log event carrying a TraceId per request sent on the
-    /// rate-limited factory: the permitted /health request and the rejected one. Asserting the
-    /// count, rather than non-emptiness, is what proves the *rejected* request logged.
+    /// The number of requests each arm sends on the rate-limited factory: one that consumes the
+    /// window's single permit, one that is rejected. The recorder keeps only the two
+    /// request-logging event ids and the middleware emits exactly one of those per request, so
+    /// recording at least this many proves the *rejected* request logged too - which
+    /// non-emptiness alone does not, since the permitted request satisfies that on its own.
     /// </summary>
-    private const int RateLimitedArmLoggedEventCount = 2;
-
-    /// <summary>
-    /// One request-completion log event carrying a TraceId per request sent on the main
-    /// factory: the 404, the 401 and the 403.
-    /// </summary>
-    private const int MainFactoryArmLoggedEventCount = 3;
-
-    /// <summary>
-    /// Every request sent before the snapshot in Setup: the main-factory ones plus the
-    /// rate-limited ones. Adding a hostile-arm request without updating this fails here, which is
-    /// what keeps the snapshot's ordering invariant real instead of comment-enforced.
-    /// </summary>
-    private const int HostileArmLoggedEventCount =
-        MainFactoryArmLoggedEventCount + RateLimitedArmLoggedEventCount;
+    private const int RateLimitedArmRequestCount = 2;
 
     private CorrelationIdRecordingLoggerProvider _loggerProvider = default!;
     private CorrelationIdRecordingLoggerProvider _rateLimitedLoggerProvider = default!;
+
+    /// <summary>
+    /// The control arm's own recorder. Nothing asserts on it - the control arm exists to compare
+    /// status codes - but the factory needs a provider, and giving it its own keeps the hostile
+    /// arm's snapshot free of clean values by construction rather than by ordering.
+    /// </summary>
+    private CorrelationIdRecordingLoggerProvider _cleanRateLimitedLoggerProvider = default!;
     private WebApplicationFactory<Program> _factory = default!;
     private WebApplicationFactory<Program> _rateLimitedFactory = default!;
+    private WebApplicationFactory<Program> _cleanRateLimitedFactory = default!;
 
     private HttpResponseMessage _notFoundResponse = default!;
     private HttpResponseMessage _unauthorizedResponse = default!;
     private HttpResponseMessage _forbiddenResponse = default!;
+    private HttpResponseMessage _permittedHealthResponse = default!;
     private HttpResponseMessage _tooManyRequestsResponse = default!;
 
     private HttpResponseMessage _cleanNotFoundResponse = default!;
     private HttpResponseMessage _cleanUnauthorizedResponse = default!;
     private HttpResponseMessage _cleanForbiddenResponse = default!;
+    private HttpResponseMessage _cleanPermittedHealthResponse = default!;
     private HttpResponseMessage _cleanTooManyRequestsResponse = default!;
 
     private JsonNode _notFoundBody = default!;
@@ -109,6 +110,7 @@ public class Given_A_Hostile_Correlation_Id_On_Requests_That_Fail_In_Different_L
     private JsonNode _tooManyRequestsBody = default!;
 
     private string[] _loggedTraceIds = [];
+    private string[] _mainFactoryLoggedTraceIds = [];
     private string[] _rateLimitedLoggedTraceIds = [];
 
     [OneTimeSetUp]
@@ -150,12 +152,19 @@ public class Given_A_Hostile_Correlation_Id_On_Requests_That_Fail_In_Different_L
         // The first request consumes the single permit in the window; the second is rejected.
         // It carries the hostile ID as well, so every event captured before the snapshot
         // below belongs to a request that supplied that ID.
-        using HttpResponseMessage permitted = await SendWithCorrelationId(
+        _permittedHealthResponse = await SendWithCorrelationId(
             rateLimitedClient,
             "/health",
             HostileCorrelationId,
             token: null
         );
+
+        // /health is the one request in this fixture whose body nothing else reads, and reading
+        // it is what makes the snapshot below deterministic: TestServer returns as soon as the
+        // response *starts*, while LoggingMiddleware writes its completion event only after
+        // `await _next(context)` returns. Without this await the permitted request's event may
+        // not be enqueued yet when the snapshot is taken.
+        await _permittedHealthResponse.Content.ReadAsStringAsync();
 
         _tooManyRequestsResponse = await SendWithCorrelationId(
             rateLimitedClient,
@@ -167,12 +176,11 @@ public class Given_A_Hostile_Correlation_Id_On_Requests_That_Fail_In_Different_L
 
         // Snapshotted after the rate-limited requests and before the clean control arm, so
         // the 429 path's log event is included and no clean value is.
+        _mainFactoryLoggedTraceIds = _loggerProvider.LoggedTraceIds;
         _rateLimitedLoggedTraceIds = _rateLimitedLoggerProvider.LoggedTraceIds;
-        _loggedTraceIds = [.. _loggerProvider.LoggedTraceIds, .. _rateLimitedLoggedTraceIds];
+        _loggedTraceIds = [.. _mainFactoryLoggedTraceIds, .. _rateLimitedLoggedTraceIds];
 
-        // The control arm: the identical four requests with a clean correlation ID. The
-        // rate limiter's sixty-second window has not elapsed, so the clean /health request is
-        // rejected for exactly the reason the hostile one was.
+        // The control arm: the identical requests with a clean correlation ID.
         _cleanNotFoundResponse = await SendWithCorrelationId(
             client,
             "/no-such-route",
@@ -191,8 +199,28 @@ public class Given_A_Hostile_Correlation_Id_On_Requests_That_Fail_In_Different_L
             CleanCorrelationId,
             ValidBearerToken
         );
+
+        // The control arm gets its own rate-limited host. Sharing the hostile arm's host would
+        // make the control result depend on a single sixty-second window still being open after
+        // two factory boots and five earlier requests: if that window rolled over, the clean
+        // /health request would answer 200 and the differential assertion would fail for a
+        // reason that has nothing to do with correlation IDs. With its own host the control arm
+        // reproduces the 429 the same way the hostile arm did - permit, then rejection - inside
+        // a window that opened moments earlier.
+        _cleanRateLimitedLoggerProvider = new CorrelationIdRecordingLoggerProvider();
+        _cleanRateLimitedFactory = CreateFactory(_cleanRateLimitedLoggerProvider, rateLimited: true);
+        using HttpClient cleanRateLimitedClient = _cleanRateLimitedFactory.CreateClient();
+
+        _cleanPermittedHealthResponse = await SendWithCorrelationId(
+            cleanRateLimitedClient,
+            "/health",
+            CleanCorrelationId,
+            token: null
+        );
+        await _cleanPermittedHealthResponse.Content.ReadAsStringAsync();
+
         _cleanTooManyRequestsResponse = await SendWithCorrelationId(
-            rateLimitedClient,
+            cleanRateLimitedClient,
             "/health",
             CleanCorrelationId,
             token: null
@@ -205,15 +233,19 @@ public class Given_A_Hostile_Correlation_Id_On_Requests_That_Fail_In_Different_L
         _notFoundResponse.Dispose();
         _unauthorizedResponse.Dispose();
         _forbiddenResponse.Dispose();
+        _permittedHealthResponse.Dispose();
         _tooManyRequestsResponse.Dispose();
         _cleanNotFoundResponse.Dispose();
         _cleanUnauthorizedResponse.Dispose();
         _cleanForbiddenResponse.Dispose();
+        _cleanPermittedHealthResponse.Dispose();
         _cleanTooManyRequestsResponse.Dispose();
         await _factory.DisposeAsync();
         await _rateLimitedFactory.DisposeAsync();
+        await _cleanRateLimitedFactory.DisposeAsync();
         _loggerProvider.Dispose();
         _rateLimitedLoggerProvider.Dispose();
+        _cleanRateLimitedLoggerProvider.Dispose();
     }
 
     [Test]
@@ -226,6 +258,18 @@ public class Given_A_Hostile_Correlation_Id_On_Requests_That_Fail_In_Different_L
         _unauthorizedResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
         _forbiddenResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
         _tooManyRequestsResponse.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
+    }
+
+    [Test]
+    public void It_still_succeeds_when_the_request_would_have_succeeded()
+    {
+        // The other half of FR-LOG-5, and the only request in this fixture that is supposed to
+        // succeed: a hostile correlation ID must not turn a 2xx into an error. Every other
+        // assertion here is about a request that was going to fail anyway, so without this one
+        // an implementation that rejected a malformed correlation ID outright would still be
+        // consistent with the rest of the fixture.
+        _permittedHealthResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        _permittedHealthResponse.StatusCode.Should().Be(_cleanPermittedHealthResponse.StatusCode);
     }
 
     [Test]
@@ -273,12 +317,15 @@ public class Given_A_Hostile_Correlation_Id_On_Requests_That_Fail_In_Different_L
         // recording provider so a regression in the 429 writer cannot hide behind a
         // body-only assertion.
         //
-        // The count is asserted, not merely non-emptiness, because the snapshot at the end of
-        // the hostile arm is what keeps this collection homogeneous: a fifth hostile-arm
-        // request added after that snapshot would go entirely unchecked here while the fixture
-        // stayed green. HostileArmLoggedEventCount makes that ordering invariant self-enforcing
-        // rather than comment-enforced.
-        _loggedTraceIds.Should().HaveCount(HostileArmLoggedEventCount);
+        // Presence is asserted per arm and the value with OnlyContain, rather than pinning one
+        // global total. A single expected total across both hosts encoded how many TraceId-
+        // bearing log events the whole application happens to emit on these paths, so an
+        // unrelated new log line failed this test with an arithmetic mismatch that named
+        // nothing. The recorder is scoped to the request-logging event ids instead, and what
+        // this fixture actually claims - every request-log event in the hostile arm carries the
+        // normalized value, and both arms produced events - is asserted directly.
+        _mainFactoryLoggedTraceIds.Should().NotBeEmpty();
+        _rateLimitedLoggedTraceIds.Should().NotBeEmpty();
         _loggedTraceIds.Should().OnlyContain(traceId => traceId == ExpectedCorrelationId);
     }
 
@@ -288,9 +335,10 @@ public class Given_A_Hostile_Correlation_Id_On_Requests_That_Fail_In_Different_L
         // The log arm of 429 parity is only real if the rate-limited pipeline's own events
         // were captured. This pins that wiring so the 429 case cannot quietly regress to a
         // body-only assertion by someone dropping the recording provider from that factory.
-        // The count is what makes it prove the *rejected* request logged too: non-emptiness
-        // alone was satisfied by the permitted request on its own.
-        _rateLimitedLoggedTraceIds.Should().HaveCount(RateLimitedArmLoggedEventCount);
+        // One event per request is what makes it prove the *rejected* request logged too:
+        // non-emptiness alone was satisfied by the permitted request on its own.
+        _rateLimitedLoggedTraceIds.Should().HaveCountGreaterThanOrEqualTo(RateLimitedArmRequestCount);
+        _rateLimitedLoggedTraceIds.Should().OnlyContain(traceId => traceId == ExpectedCorrelationId);
     }
 
     [Test]
