@@ -1,0 +1,12 @@
+{
+  "formatVersion": 1,
+  "documentProperties": {
+    "nestedContract": {
+      "source": {"schema": "resource schema", "payload": {"deleted": false}},
+      "items": [
+        {"source": "resource source", "schema": null, "payload": [true, null], "deleted": true, "_etag": "nested-resource-etag"},
+        {"payload": {"source": "second item"}}
+      ]
+    }
+  }
+}
