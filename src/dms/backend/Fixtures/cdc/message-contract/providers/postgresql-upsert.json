@@ -1,0 +1,185 @@
+{
+  "formatVersion": 1,
+  "provider": "postgresql",
+  "unavailableValuePlaceholder": "__debezium_unavailable_value",
+  "schemas": {
+    "row": {
+      "type": "STRUCT",
+      "optional": true,
+      "fields": {
+        "ProjectName": {
+          "type": "STRING",
+          "optional": false
+        },
+        "ResourceName": {
+          "type": "STRING",
+          "optional": false
+        },
+        "ResourceVersion": {
+          "type": "STRING",
+          "optional": false
+        },
+        "StreamEtag": {
+          "type": "STRING",
+          "optional": false
+        },
+        "DocumentId": {
+          "type": "INT64",
+          "optional": false
+        },
+        "DocumentUuid": {
+          "type": "STRING",
+          "optional": false,
+          "name": "io.debezium.data.Uuid",
+          "version": 1
+        },
+        "ContentVersion": {
+          "type": "INT64",
+          "optional": false
+        },
+        "LastModifiedAt": {
+          "type": "STRING",
+          "optional": false,
+          "name": "io.debezium.time.ZonedTimestamp",
+          "version": 1
+        },
+        "DocumentJson": {
+          "type": "STRING",
+          "optional": false,
+          "name": "io.debezium.data.Json",
+          "version": 1
+        },
+        "ComputedAt": {
+          "type": "STRING",
+          "optional": false,
+          "name": "io.debezium.time.ZonedTimestamp",
+          "version": 1
+        }
+      }
+    }
+  },
+  "sourceTopic": "contract-source.dms.DocumentCache",
+  "sourcePartition": {
+    "server": "contract-source"
+  },
+  "sourceOffset": {
+    "lsn": 123456,
+    "txId": 123
+  },
+  "operation": "c",
+  "keySchema": {
+    "type": "STRUCT",
+    "optional": false,
+    "name": "contract.DocumentCache.Key",
+    "fields": {
+      "DocumentUuid": {
+        "type": "STRING",
+        "optional": false,
+        "name": "io.debezium.data.Uuid",
+        "version": 1
+      }
+    }
+  },
+  "key": {
+    "DocumentUuid": {
+      "$cacheRow": "documentUuid"
+    }
+  },
+  "valueSchema": {
+    "type": "STRUCT",
+    "optional": false,
+    "name": "contract.DocumentCache.Envelope",
+    "fields": {
+      "before": {
+        "$schema": "row"
+      },
+      "after": {
+        "$schema": "row"
+      },
+      "source": {
+        "type": "STRUCT",
+        "optional": false,
+        "fields": {
+          "connector": {
+            "type": "STRING",
+            "optional": false
+          },
+          "name": {
+            "type": "STRING",
+            "optional": false
+          },
+          "db": {
+            "type": "STRING",
+            "optional": false
+          },
+          "schema": {
+            "type": "STRING",
+            "optional": false
+          },
+          "table": {
+            "type": "STRING",
+            "optional": false
+          }
+        },
+        "name": "io.debezium.connector.postgresql.Source"
+      },
+      "op": {
+        "type": "STRING",
+        "optional": false
+      }
+    }
+  },
+  "value": {
+    "before": null,
+    "after": {
+      "ProjectName": {
+        "$cacheRow": "projectName"
+      },
+      "ResourceName": {
+        "$cacheRow": "resourceName"
+      },
+      "ResourceVersion": {
+        "$cacheRow": "resourceVersion"
+      },
+      "StreamEtag": {
+        "$cacheRow": "streamEtag"
+      },
+      "DocumentId": {
+        "$cacheRow": "documentId"
+      },
+      "DocumentUuid": {
+        "$cacheRow": "documentUuid"
+      },
+      "ContentVersion": {
+        "$cacheRow": "contentVersion"
+      },
+      "LastModifiedAt": {
+        "$cacheRow": "lastModifiedAt"
+      },
+      "DocumentJson": {
+        "$cacheRow": "documentJson",
+        "encoding": "json-string"
+      },
+      "ComputedAt": "2026-08-01T01:02:03.123456Z"
+    },
+    "source": {
+      "connector": "postgresql",
+      "name": "contract-source",
+      "db": "contract_db",
+      "schema": "dms",
+      "table": "DocumentCache"
+    },
+    "op": "c"
+  },
+  "headers": [
+    {
+      "key": "fixture-header",
+      "schema": {
+        "type": "STRING",
+        "optional": false
+      },
+      "value": "fixture-value"
+    }
+  ],
+  "timestamp": 1785420916123
+}

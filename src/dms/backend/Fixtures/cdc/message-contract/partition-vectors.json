@@ -1,0 +1,110 @@
+{
+  "formatVersion": 1,
+  "algorithm": "kafka-murmur2-v1",
+  "vectors": [
+    {
+      "id": "TEMPLATE",
+      "uuid": "00000000-0000-0000-0000-000000000001",
+      "partitions": [
+        {
+          "count": 1,
+          "expected": 0
+        },
+        {
+          "count": 3,
+          "expected": 2
+        },
+        {
+          "count": 7,
+          "expected": 1
+        },
+        {
+          "count": 10,
+          "expected": 0
+        },
+        {
+          "count": 17,
+          "expected": 6
+        }
+      ]
+    },
+    {
+      "id": "MIXED",
+      "uuid": "00112233-4455-6677-8899-aabbccddeeff",
+      "partitions": [
+        {
+          "count": 1,
+          "expected": 0
+        },
+        {
+          "count": 3,
+          "expected": 2
+        },
+        {
+          "count": 7,
+          "expected": 3
+        },
+        {
+          "count": 10,
+          "expected": 2
+        },
+        {
+          "count": 17,
+          "expected": 13
+        }
+      ]
+    },
+    {
+      "id": "MAX",
+      "uuid": "ffffffff-ffff-ffff-ffff-ffffffffffff",
+      "partitions": [
+        {
+          "count": 1,
+          "expected": 0
+        },
+        {
+          "count": 3,
+          "expected": 0
+        },
+        {
+          "count": 7,
+          "expected": 4
+        },
+        {
+          "count": 10,
+          "expected": 6
+        },
+        {
+          "count": 17,
+          "expected": 16
+        }
+      ]
+    },
+    {
+      "id": "VERSIONED",
+      "uuid": "123e4567-e89b-12d3-a456-426614174000",
+      "partitions": [
+        {
+          "count": 1,
+          "expected": 0
+        },
+        {
+          "count": 3,
+          "expected": 2
+        },
+        {
+          "count": 7,
+          "expected": 5
+        },
+        {
+          "count": 10,
+          "expected": 6
+        },
+        {
+          "count": 17,
+          "expected": 14
+        }
+      ]
+    }
+  ]
+}
