@@ -312,14 +312,14 @@ pwsh ./eng/ci/Invoke-CdcQualification.ps1 -Lane Mssql -Suite MessageContract -Pu
 
 ## Completion checklist
 
-- [ ] Source and replacement-base revisions recorded; original branch preserved.
-- [ ] Revised 05 story retained alongside the replacement base's normative designs.
-- [ ] Independent fixture and consumer contracts transferred and passing.
-- [ ] Shared fixture and serialized runner qualified on the current image.
-- [ ] Admission tests use current adapters without obsolete control-library references.
-- [ ] Both providers pass routing, deletion, progress, replay, sizing, and fault scenarios.
-- [ ] Synthetic evaluator evidence is distinguished from live production readiness.
-- [ ] Traceability is complete and packaged assets are verified.
-- [ ] Shared CI runner selects and reports every required suite correctly.
+- [x] Source and replacement-base revisions recorded; original branch preserved.
+- [x] Revised 05 story retained alongside the replacement base's normative designs.
+- [x] Independent fixture and consumer contracts transferred and passing.
+- [x] Shared fixture and serialized runner qualified on the current image.
+- [x] Admission tests use current adapters without obsolete control-library references.
+- [x] Both providers pass routing, deletion, progress, replay, sizing, and fault scenarios.
+- [x] Synthetic evaluator evidence is distinguished from live production readiness.
+- [x] Traceability is complete and packaged assets are verified.
+- [x] Shared CI runner selects and reports every required suite correctly.
 - [ ] Contract and all required live qualification lanes pass without required skips.
 - [ ] Final base-relative diff and source-scenario disposition reviewed.
