@@ -1156,11 +1156,41 @@ internal class Given_Cdc_command_managed_start(Ddl.CdcProvider provider) : CdcRe
         ReadJournal().Operations.Last().Completions.Should().ContainSingle();
     }
 
+    [Test]
+    public async Task It_CdcBindingRetirement_allows_exposure_only_cleanup_and_preserves_history()
+    {
+        await PrepareEarlyCleanupAsync(false);
+        await using (
+            var session = await _store.AcquireAsync(
+                TimeSpan.FromSeconds(1),
+                TimeSpan.FromMilliseconds(1),
+                default
+            )
+        )
+        {
+            var journal = await session.ReadAsync(Target, default);
+            await session.RecordSourceExposureAsync(
+                Target,
+                journal.WorkflowId,
+                _request.Binding.PhysicalSourceFingerprint,
+                default
+            );
+        }
+        string historyPath = Directory
+            .GetFiles(Path.Combine(_root, "source-history"), "*.json", SearchOption.AllDirectories)
+            .Single();
+        string originalHistory = await File.ReadAllTextAsync(historyPath);
+
+        (await CommandAsync(CdcCommandOperation.Retire)).Succeeded.Should().BeTrue();
+
+        (await File.ReadAllTextAsync(historyPath)).Should().Be(originalHistory);
+        _trace.Should().NotContain("resume").And.NotContain("initialize");
+    }
+
     [TestCase(false, "receipt")]
     [TestCase(false, "history")]
     [TestCase(false, "corrupt-history")]
     [TestCase(false, "orphan-incident")]
-    [TestCase(false, "exposure")]
     [TestCase(true, "binding")]
     [TestCase(true, "registration")]
     [TestCase(false, "unavailable")]
@@ -1203,7 +1233,7 @@ internal class Given_Cdc_command_managed_start(Ddl.CdcProvider provider) : CdcRe
                 File.Delete(path);
             }
         }
-        if (failure is "exposure" or "registration")
+        if (failure == "registration")
         {
             await using var session = await _store.AcquireAsync(
                 TimeSpan.FromSeconds(1),
@@ -1211,26 +1241,14 @@ internal class Given_Cdc_command_managed_start(Ddl.CdcProvider provider) : CdcRe
                 default
             );
             var journal = await session.ReadAsync(Target, default);
-            if (failure == "exposure")
-            {
-                await session.RecordSourceExposureAsync(
-                    Target,
-                    journal.WorkflowId,
-                    _request.Binding.PhysicalSourceFingerprint,
-                    default
-                );
-            }
-            else
-            {
-                await session.RecordIntentAsync(
-                    Target,
-                    journal.WorkflowId,
-                    Guid.NewGuid(),
-                    CdcWorkflowEffect.RegisterConnector,
-                    [],
-                    default
-                );
-            }
+            await session.RecordIntentAsync(
+                Target,
+                journal.WorkflowId,
+                Guid.NewGuid(),
+                CdcWorkflowEffect.RegisterConnector,
+                [],
+                default
+            );
         }
         if (failure == "unavailable")
         {
