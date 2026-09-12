@@ -64,8 +64,6 @@ internal interface IRepresentationRestampE2EProviderOperations
 
     DbConnection OpenConnection(string connectionString);
 
-    Task SetTrackingLifecycleAsync(DbConnection connection, CancellationToken cancellationToken);
-
     Task SetLifecycleAsync(
         DbConnection connection,
         DocumentCacheLifecycleState lifecycleState,
@@ -109,9 +107,6 @@ internal abstract class RepresentationRestampE2EProviderOperations(Representatio
     public RepresentationRestampE2EProviderSql Sql { get; } = sql;
 
     public abstract DbConnection OpenConnection(string connectionString);
-
-    public Task SetTrackingLifecycleAsync(DbConnection connection, CancellationToken cancellationToken) =>
-        SetLifecycleAsync(connection, DocumentCacheLifecycleState.Tracking, cancellationToken);
 
     public async Task SetLifecycleAsync(
         DbConnection connection,
