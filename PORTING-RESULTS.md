@@ -8,9 +8,9 @@
 - Source delta: `45046c1d3a26927d93e94394f901731e0aaa12fe..bb3aecb98cd887f9b05a7cebccda1d978ce40c8b`.
   Source branch history remains at `1c1e3a1fbedfa5d4f572a67b9eaf8750c4b9eedd`, which adds the plan.
   The user's later plan clarification is the only source-checkout working change.
-- Managed-lifecycle implementation revision: `58e2001ed1d9105ba006de2733671ffa88b2a746`.
-  A subsequent telemetry fixture repair reuses the actual rendered connector observation
-  request; both provider telemetry qualifications pass.
+- Current implementation revision: `4af6fe5f576da8ab4bbbacb98095a91941b55329`.
+  Both provider telemetry qualifications and all focused lifecycle repairs pass.
+  Release publication with locked dependency restore and packaged discovery pass.
 - Both solution restores, tool restore, and Husky installation passed. Release builds,
   packaged test publication, CSharpier, and staged PowerShell analysis passed.
 - The revised 05 story is retained. The target 04 story and normative design tree have
@@ -46,7 +46,7 @@ no skipped cases are counted as passing evidence. Paths are relative to this che
 | Fresh PostgreSQL full-lane native recovery phase | 9 passed | `TestResults/port-postgresql-02/Postgresql-CdcControllerNativeRecovery` |
 | PostgreSQL full-lane record-size phase | 17 passed; 51 exported evidence links resolve | `TestResults/port-postgresql-01/Postgresql-CdcControllerRecordSize` |
 | Fresh MSSQL full-lane admission phase | 36 passed | `TestResults/port-mssql-02/Mssql-CdcControllerAdmission` |
-| Final integration package traceability outside checkout | 20 passed | `/tmp/dms1324-port-packaged-final/results-integration` |
+| Final integration package traceability outside checkout | 20 passed | `/tmp/dms1324-port-packaged-verified/results-integration` |
 
 Remaining PostgreSQL/MSSQL controller phases, fixture repairs found by those runs,
 and the final acceptance audit are pending. Both provider message suites and their exports are complete.
