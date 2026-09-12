@@ -1,6 +1,31 @@
 # DMS-1324 port execution
 
-## Scope and revisions
+## Rebase onto refreshed DMS-1323 (2026-09-12)
+
+- Replayed all 23 port commits from the original base `c3ae3bfff` onto
+  `7f08169fbc3e9c34b6ef33f76d3f64075d5576ed`, which includes main `7d3f31c7b`.
+  Rebased implementation tip: `0d5a08fa0cde8a20502ec391488a60d398b75ca0`.
+- Preserved the original tip `9feb985218b7d499833217f4ee1b557dd7690dd1` at
+  `backup/DMS-1324-port-before-rebase-20260912`.
+- Combined the PowerShell strict-mode fixes; retained upstream's stronger PostgreSQL
+  slot-before-offset tests; retained upstream's exposure-only retirement test with
+  the port's additional assertion that cleanup does not reserve a binding.
+- Range comparison confirms 22 unchanged patches and only the expected baseline-repair
+  patch adjustment. All 78 port-only paths were preserved exactly, and all 17
+  upstream-only paths match the new base. CDC production code and qualified-image
+  metadata are unchanged by this rebase.
+- Post-rebase Contract validation passed: **5842 tests**, with zero failures or skips
+  (4467 CDC unit, 715 CLI unit, 283 offline integration, 377 PowerShell). The runner
+  exited 0. Evidence: `TestResults/rebase-contract-20260912/qualification.json`.
+  This includes all 10 upstream slot-before-offset cases and both provider cases for
+  exposure-only retirement with the additional no-reservation assertion.
+- CSharpier formatting and `git diff --check` passed. The original DMS-1324 source
+  checkout and its uncommitted plan clarification were preserved; nothing was pushed.
+- Live Kafka, PostgreSQL, and MSSQL lanes were not rerun after the rebase. The full
+  qualification results below describe the original port revision and remain its
+  historical evidence.
+
+## Original port scope and revisions
 
 - Target: `/home/brad/work/dms-root/DMS-1324-port`, branch `DMS-1324-port`, no upstream.
 - Replacement DMS-1323 base: `c3ae3bfffbd0a049abf7b8768eb4f14744a6bbaf`;
@@ -8,7 +33,7 @@
 - Source delta: `45046c1d3a26927d93e94394f901731e0aaa12fe..bb3aecb98cd887f9b05a7cebccda1d978ce40c8b`.
   Source branch history remains at `1c1e3a1fbedfa5d4f572a67b9eaf8750c4b9eedd`, which adds the plan.
   The user's later plan clarification is the only source-checkout working change.
-- Current implementation revision: `4af6fe5f576da8ab4bbbacb98095a91941b55329`.
+- Original qualified implementation revision: `4af6fe5f576da8ab4bbbacb98095a91941b55329`.
   Both provider telemetry qualifications and all focused lifecycle repairs pass.
   Release publication with locked dependency restore and packaged discovery pass.
 - Both solution restores, tool restore, and Husky installation passed. Release builds,
@@ -18,7 +43,7 @@
 - All 68 source-delta paths are accounted for in `PORTING-INVENTORY.md`, including the
   superseded workflow and Control-library changes and supplemental target test repairs.
 
-## Qualification status
+## Original port qualification status
 
 Full qualification is **complete**. All four required lanes pass: Contract 5840,
 Kafka 49, PostgreSQL 604, and MSSQL 604, with no failed or skipped required cases.
