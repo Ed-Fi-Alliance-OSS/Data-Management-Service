@@ -34,6 +34,7 @@ no skipped cases are counted as passing evidence. Paths are relative to this che
 | Packaged unit and integration traceability, run outside the checkout | 20 passed per assembly | `/tmp/dms1324-port-packaged/results-unit`, `results-integration` |
 | Final CI selection/export checks | 31 passed | `/tmp/dms1324-port-ci-evidence.log` |
 | Full Kafka lane with corrected evidence directory | 48 secured + 1 local passed | `TestResults/port-kafka-03` |
+| Full PostgreSQL lane | 604 passed across all eight reports; no failures, skips, or environment failures; process exited 0 | `TestResults/port-postgresql-02` |
 | PostgreSQL message contracts with corrected evidence export | 502 passed | `TestResults/port-postgresql-message-contract-02` |
 | MSSQL message contracts with corrected evidence export | 496 passed | `TestResults/port-mssql-message-contract-02` |
 | Fresh PostgreSQL full-lane admission phase | 30 passed; 60 exported evidence links resolve | `TestResults/port-postgresql-02/Postgresql-CdcControllerAdmission` |
@@ -51,8 +52,8 @@ no skipped cases are counted as passing evidence. Paths are relative to this che
 | MSSQL full-lane native recovery | 9 passed; 27 exported evidence links resolve | `TestResults/port-mssql-01/Mssql-CdcControllerNativeRecovery` |
 | Final integration package traceability outside checkout | 20 passed | `/tmp/dms1324-port-packaged-verified/results-integration` |
 
-Remaining PostgreSQL/MSSQL controller phases, fixture repairs found by those runs,
-and the final acceptance audit are pending. Both provider message suites and their exports are complete.
+Remaining MSSQL phases and the final acceptance audit are pending. The complete PostgreSQL
+lane passes, and both targeted provider message suites and their exports are complete.
 
 ## Evidence boundary
 
@@ -73,6 +74,9 @@ and the final acceptance audit are pending. Both provider message suites and the
   replay. The corrected MSSQL run exports its five expected files (consumer bootstrap is
   provider-neutral and exercised by the PostgreSQL fixture). Both TRX attachment links
   resolve, and both `qualified-image.json` files match the shipped image.
+- The complete PostgreSQL lane also retains all six message-contract evidence files.
+  All 205 attachment links across its eight exported TRX reports resolve; its qualified
+  image metadata exactly matches the shipped image definition.
 - Candidate-tree checks before transfer passed 263 offline, 964 serialized, and 34 broker
   tests. These establish transfer compatibility; they are not substituted for final
   worktree qualification.
@@ -137,8 +141,8 @@ only the requested plan clarification and its original branch history.
 
 ## Remaining acceptance work
 
-- Complete and inspect all live provider phases and all corrected fixture results. Fresh
-  complete invocations use `TestResults/port-postgresql-02` and `TestResults/port-mssql-02`.
+- Complete and inspect the remaining MSSQL phases in `TestResults/port-mssql-02`.
+  The fresh complete PostgreSQL invocation in `TestResults/port-postgresql-02` has passed.
 - Inspect the final aggregate results and all required provider-suite reports.
 - Reconcile final evidence with every plan gate and update its completion checklist.
 - Remove only the dedicated qualification admin containers after testing; the unrelated
