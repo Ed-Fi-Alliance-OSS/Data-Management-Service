@@ -217,10 +217,10 @@ Suggested commit: acknowledgement and sizing contract adaptation.
    validate executable coverage, not Markdown wording or controller documentation.
 3. Extend `eng/ci/Invoke-CdcQualification.ps1` and its existing evidence infrastructure.
    Add an explicit `MessageContract` provider suite selection, including serialized
-   and broker categories, and include it in provider `All` runs. Select
-   `(Category=CdcMessageContractSerialized|Category=CdcMessageContractKafka)` together
-   with the selected provider's `Category=<provider>Integration` constraint, applying
-   that constraint to both categories. The current runner has
+   and broker categories, and include it in provider `All` runs. Use the filter
+   `(Category=CdcMessageContractSerialized|Category=CdcMessageContractKafka)&Category=<provider>Integration`,
+   substituting `Postgresql` or `Mssql` for `<provider>` so the provider constraint applies
+   to both categories. The current runner has
    no message-contract suite selection; merely adding test files will not route them into
    its live provider lanes.
 4. Extend `eng/ci/Get-CdcQualificationMatrix.ps1` alongside the runner: add the new
