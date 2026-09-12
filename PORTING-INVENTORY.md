@@ -1,10 +1,11 @@
 # Source delta disposition
 
 Source delta: `45046c1d3a26927d93e94394f901731e0aaa12fe..bb3aecb98cd887f9b05a7cebccda1d978ce40c8b`.
-Replacement base: `c3ae3bfffbd0a049abf7b8768eb4f14744a6bbaf`.
+Original replacement base: `c3ae3bfffbd0a049abf7b8768eb4f14744a6bbaf`.
 
 This inventory records the implemented file disposition; qualification status is in
-PORTING-RESULTS.md. Full Contract, Kafka, PostgreSQL, and MSSQL qualification passes.
+PORTING-RESULTS.md. The original port passed full Contract, Kafka, PostgreSQL, and MSSQL
+qualification. See the rebase section there for the refreshed base and its validation.
 
 | Source path | Treatment | Reason |
 | --- | --- | --- |
