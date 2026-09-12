@@ -78,6 +78,9 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
                 new("LastModifiedAt", "datetime2(7)"),
                 new("DocumentJson", "nvarchar(max)"),
                 new("ComputedAt", "datetime2(7)"),
+            ],
+            [
+                "CONSTRAINT [FK_DocumentCache_Document] FOREIGN KEY ([DocumentId]) REFERENCES [dms].[Document] ([DocumentId]) ON DELETE CASCADE",
             ]
         ),
         new(
@@ -93,7 +96,8 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
                 new("ContentVersion", "bigint"),
                 new("ContentLastModifiedAt", "datetime2(7)"),
                 new("CreatedAt", "datetime2(7)"),
-            ]
+            ],
+            ["CONSTRAINT [UX_Document_DocumentUuid] UNIQUE ([DocumentUuid])"]
         ),
         new(
             CdcSourceTableKind.CdcHeartbeat,
@@ -118,6 +122,7 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
     private readonly ServiceProvider _serviceProvider;
     private readonly string _resourcePrefix;
     private bool _controllerNativeKafka;
+    private bool _usesGeneratedSchema;
     private int _controllerBrokerPort;
     private int _controllerConnectPort;
     private int _controllerMetricsPort;
@@ -210,7 +215,8 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
         bool exposeBroker = false,
         bool nativeKafka = false,
         bool composeKafka = false,
-        bool offlineKafka = false
+        bool offlineKafka = false,
+        bool isolateSourceProducer = false
     )
     {
         CdcConnectorTemplateSmokeSettings settings = CdcConnectorTemplateSmokeSettings.FromEnvironment(
@@ -236,7 +242,8 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
             exposeBroker: exposeBroker,
             nativeKafka: nativeKafka,
             composeKafka: composeKafka,
-            offlineKafka: offlineKafka
+            offlineKafka: offlineKafka,
+            isolateSourceProducer: isolateSourceProducer
         );
     }
 
@@ -251,7 +258,8 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
         bool exposeBroker = false,
         bool nativeKafka = false,
         bool composeKafka = false,
-        bool offlineKafka = false
+        bool offlineKafka = false,
+        bool isolateSourceProducer = false
     )
     {
         var fixture = new CdcConnectorTemplatePinnedImageFixture(
@@ -264,6 +272,7 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
 
         try
         {
+            fixture._isolateSourceProducer = isolateSourceProducer;
             fixture._controllerNativeKafka = nativeKafka;
             fixture._controllerComposeKafka = composeKafka;
             if (exposeBroker)
@@ -317,21 +326,27 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
 
             settings.StopOnPrerequisiteFailure(
                 provider,
-                $"Pinned-image fixture prerequisites are not ready for {provider}. Failure details are redacted."
+                $"Pinned-image fixture prerequisites are not ready for {provider}. "
+                    + (ex is BrokerStartupException ? ex.Message : "Failure details are redacted.")
             );
             throw;
         }
     }
 
-    public async Task<CdcConnectorTemplateRequest> CreateRequestAsync(CancellationToken cancellationToken)
+    public async Task<CdcConnectorTemplateRequest> CreateRequestAsync(
+        CancellationToken cancellationToken,
+        int partitionCount = 1,
+        bool generatedSchema = false
+    )
     {
+        _usesGeneratedSchema = generatedSchema;
         await CreateMinimalProviderObjectsAsync(cancellationToken);
         await AssertSqlServer2025Async(cancellationToken);
         CdcProviderSetupResult providerSetupResult = await RunProviderSetupAsync(
             CdcProviderSetupMode.InitialCreateOrExactMatch,
             cancellationToken
         );
-        CdcConnectorTemplateRequest request = BuildRequest(providerSetupResult);
+        CdcConnectorTemplateRequest request = BuildRequest(providerSetupResult, partitionCount);
         await CreateMinimalTopicsAsync(request, cancellationToken);
         return request;
     }
@@ -480,10 +495,9 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
 
     public async Task AssertKafkaMurmur2PartitionerVectorsAsync(CancellationToken cancellationToken)
     {
-        const string javaProbe = """
+        string javaProbe = $$"""
             set -eu
-            class_path="$(find /kafka /opt/kafka /usr/share/java /usr/share/confluent-hub-components /debezium -name '*.jar' 2>/dev/null | tr '\n' ':')"
-            test -n "${class_path}"
+            {{CdcPinnedImageJavaRuntime.ClassPathScript}}
             cat >/tmp/CdcTemplatePartitionerProbe.java <<'JAVA'
             import java.nio.charset.StandardCharsets;
             import java.util.ArrayList;
@@ -645,15 +659,39 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
 
     public async Task RegisterRenderedConnectorConfigDirectlyAsync(
         CdcConnectorTemplateResult rendered,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        bool observeSourceRecords = false
     )
     {
         await AssertKafkaConnectWorkerEnvConfigProviderEnabledAsync(cancellationToken);
         AssertRenderedProviderPasswordUsesEnvReference(rendered);
 
         rendered.RegistrationPayload.Should().NotBeNull();
+        CdcKafkaConnectRegistrationPayload payload = rendered.RegistrationPayload!;
+        if (observeSourceRecords)
+        {
+            Dictionary<string, string> observedConfig = new(rendered.Config)
+            {
+                ["transforms"] = $"contractObserver,{rendered.Config["transforms"]}",
+                ["transforms.contractObserver.type"] = "org.edfi.contract.MessageContractSourceObserver",
+                ["transforms.contractObserver.expected.server"] = rendered.ConnectorName.Value,
+            };
+            if (Provider == CdcProvider.SqlServer)
+            {
+                observedConfig["transforms.contractObserver.expected.database"] = SqlServerDatabaseName;
+            }
+            payload = new(rendered.ConnectorName, observedConfig);
+        }
+        if (_isolateSourceProducer)
+        {
+            Dictionary<string, string> isolatedConfig = new(payload.Config)
+            {
+                ["producer.override.bootstrap.servers"] = $"{ConnectContainerName}:19094",
+            };
+            payload = new(rendered.ConnectorName, isolatedConfig);
+        }
         using var content = new StringContent(
-            JsonSerializer.Serialize(rendered.RegistrationPayload),
+            JsonSerializer.Serialize(payload),
             Encoding.UTF8,
             "application/json"
         );
@@ -728,6 +766,31 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
             .Should()
             .NotBeNull("restart validation must use the committed offset observed before restart");
 
+        await RestartRegisteredConnectorAsync(request, cancellationToken);
+        await WaitForRegisteredConnectorRunningAsync(request.ConnectorName.Value, cancellationToken);
+        CdcConnectorSourceOffsetSnapshot retainedOffset = await WaitForRetainedCommittedSourceOffsetAsync(
+            request,
+            preRestartCommittedOffset,
+            cancellationToken
+        );
+        CdcConnectorSourceOffsetSnapshot progressedOffset = await WaitForCommittedSourceOffsetProgressAsync(
+            request,
+            retainedOffset,
+            cancellationToken
+        );
+        await AssertKafkaConnectReadBackMatchesExpectedConfigAsync(
+            request,
+            progressedOffset.SourcePartitionEvidence,
+            cancellationToken
+        );
+        progressedOffset.CanonicalOffsetJson.Should().NotBeNullOrWhiteSpace();
+    }
+
+    public async Task RestartRegisteredConnectorAsync(
+        CdcConnectorTemplateRequest request,
+        CancellationToken cancellationToken
+    )
+    {
         string connectorName = request.ConnectorName.Value;
         using HttpResponseMessage response = await _httpClient.PostAsync(
             $"/connectors/{Uri.EscapeDataString(connectorName)}/restart?includeTasks=true&onlyFailed=false",
@@ -754,24 +817,6 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
                 "Kafka Connect restart failed. Connector restart output is redacted."
             );
         }
-
-        await WaitForRegisteredConnectorRunningAsync(connectorName, cancellationToken);
-        CdcConnectorSourceOffsetSnapshot retainedOffset = await WaitForRetainedCommittedSourceOffsetAsync(
-            request,
-            preRestartCommittedOffset,
-            cancellationToken
-        );
-        CdcConnectorSourceOffsetSnapshot progressedOffset = await WaitForCommittedSourceOffsetProgressAsync(
-            request,
-            retainedOffset,
-            cancellationToken
-        );
-        await AssertKafkaConnectReadBackMatchesExpectedConfigAsync(
-            request,
-            progressedOffset.SourcePartitionEvidence,
-            cancellationToken
-        );
-        progressedOffset.CanonicalOffsetJson.Should().NotBeNullOrWhiteSpace();
     }
 
     public async Task AssertKafkaConnectReadBackMatchesExpectedConfigAsync(
@@ -922,9 +967,15 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
         }
     }
 
-    private CdcConnectorTemplateRequest BuildRequest(CdcProviderSetupResult providerSetupResult) =>
+    private CdcConnectorTemplateRequest BuildRequest(
+        CdcProviderSetupResult providerSetupResult,
+        int partitionCount = 1
+    ) =>
         new(
-            BuildBinding(Provider),
+            BuildBinding(Provider) with
+            {
+                PartitionCount = partitionCount,
+            },
             new CdcConnectorProviderSetupEvidence(BindingGeneration, providerSetupResult),
             new CdcConnectorTemplateDeploymentPolicy(
                 KafkaBootstrapServers,
@@ -954,7 +1005,14 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
             mode == CdcProviderSetupMode.ValidateOnly
                 ? CdcProviderSetupOutcome.ExactMatch
                 : CdcProviderSetupOutcome.CreatedOrMatched;
-        string diagnosticCodes = string.Join(",", result.Diagnostics.Select(diagnostic => diagnostic.Code));
+        string diagnosticCodes = string.Join(
+            ",",
+            result.Diagnostics.Select(diagnostic =>
+                diagnostic.Code == "CDC_SOURCE_COLUMN_TYPE_MISMATCH"
+                    ? $"{diagnostic.Code}({diagnostic.SafeName.Value}: expected {diagnostic.ExpectedValue}, observed {diagnostic.ObservedValue})"
+                    : diagnostic.Code
+            )
+        );
 
         result.Outcome.Should().Be(expectedOutcome, "provider setup diagnostics were {0}", diagnosticCodes);
         result
@@ -991,7 +1049,7 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
             connectorPrincipal: new CdcConnectorPrincipal(new CdcSafeName(ConnectorDatabaseUser)),
             artifactNames: BuildProviderArtifactNames(Provider),
             artifactOutput: new CdcProviderArtifactOutputRequest(IncludeManifestPayload: false),
-            expectedSourceInventory: BuildRequiredSourceTableInventory(Provider),
+            expectedSourceInventory: BuildExpectedSourceTableInventory(),
             dmsManagedTableInventory: BuildDmsManagedTableInventory(Provider),
             databaseExecutor: databaseExecutor
         );
@@ -1050,44 +1108,74 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
             await StartControllerKafkaAsync(cancellationToken);
             return;
         }
-        await _docker.RunAsync(
-            [
-                "run",
-                "--detach",
-                "--name",
-                BrokerContainerName,
-                "--network",
-                NetworkName,
-                .. (
-                    _controllerBrokerPort > 0
-                        ? new[] { "-p", $"127.0.0.1:{_controllerBrokerPort}:29092" }
-                        : []
-                ),
-                _settings.BrokerImage,
-                "redpanda",
-                "start",
-                "--overprovisioned",
-                "--smp",
-                "1",
-                "--memory",
-                "512M",
-                "--reserve-memory",
-                "0M",
-                "--node-id",
-                "0",
-                "--check=false",
-                "--kafka-addr",
-                _controllerBrokerPort > 0
-                    ? "internal://0.0.0.0:9092,external://0.0.0.0:29092"
-                    : "PLAINTEXT://0.0.0.0:9092",
-                "--advertise-kafka-addr",
-                _controllerBrokerPort > 0
-                    ? $"internal://{BrokerContainerName}:9092,external://127.0.0.1:{_controllerBrokerPort}"
-                    : $"PLAINTEXT://{BrokerContainerName}:9092",
-            ],
-            cancellationToken
-        );
+        const int maximumAttempts = 3;
+        for (int attempt = 1; attempt <= maximumAttempts; attempt++)
+        {
+            // The reservation must be released before Docker can bind it. Another process can
+            // claim it in that gap, so reserve again for each retry instead of reusing the field.
+            using (var listener = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0))
+            {
+                listener.Start();
+                _controllerBrokerPort = ((IPEndPoint)listener.LocalEndpoint).Port;
+            }
+            DockerCommandResult result = await _docker.RunAllowingFailureAsync(
+                [
+                    "run",
+                    "--detach",
+                    "--name",
+                    BrokerContainerName,
+                    "--network",
+                    NetworkName,
+                    "-p",
+                    $"127.0.0.1:{_controllerBrokerPort}:29092",
+                    _settings.BrokerImage,
+                    "redpanda",
+                    "start",
+                    "--overprovisioned",
+                    "--smp",
+                    "1",
+                    "--memory",
+                    "512M",
+                    "--reserve-memory",
+                    "0M",
+                    "--node-id",
+                    "0",
+                    "--check=false",
+                    "--kafka-addr",
+                    "internal://0.0.0.0:9092,external://0.0.0.0:29092"
+                        + (_isolateSourceProducer ? ",producer://0.0.0.0:9094" : ""),
+                    "--advertise-kafka-addr",
+                    $"internal://{BrokerContainerName}:9092,external://127.0.0.1:{_controllerBrokerPort}"
+                        + (_isolateSourceProducer ? $",producer://{ConnectContainerName}:19094" : ""),
+                ],
+                cancellationToken
+            );
+            if (result.ExitCode == 0)
+            {
+                return;
+            }
+
+            _controllerBrokerPort = 0;
+            if (attempt == maximumAttempts || !IsBrokerPortBindFailure(result.StandardError))
+            {
+                throw new BrokerStartupException(result.ToFailureMessage(maximumOutputLength: 1024));
+            }
+
+            // Remove the container Docker may have created even when caller cancellation arrives.
+            // A failed cleanup stops startup; never retry with an occupied container name.
+            using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+            await _docker.RunAsync(["rm", "-f", "-v", BrokerContainerName], cleanup.Token);
+            cancellationToken.ThrowIfCancellationRequested();
+        }
     }
+
+    private static bool IsBrokerPortBindFailure(string error) =>
+        error.Contains("address already in use", StringComparison.OrdinalIgnoreCase)
+        || error.Contains("port is already allocated", StringComparison.OrdinalIgnoreCase)
+        || error.Contains("failed to bind host port", StringComparison.OrdinalIgnoreCase)
+        || error.Contains("bind: An attempt was made to access a socket", StringComparison.OrdinalIgnoreCase);
+
+    private sealed class BrokerStartupException(string message) : InvalidOperationException(message);
 
     private async Task StartProviderAsync(CancellationToken cancellationToken)
     {
@@ -1673,26 +1761,48 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
         CancellationToken cancellationToken
     )
     {
-        List<string> topics = [request.PublicTopicName, request.ProgressTopicName];
+        foreach (string topic in new[] { request.PublicTopicName, request.ProgressTopicName })
+        {
+            await _docker.RunAsync(
+                [
+                    "exec",
+                    BrokerContainerName,
+                    "rpk",
+                    "topic",
+                    "create",
+                    "--if-not-exists",
+                    topic,
+                    "--partitions",
+                    (topic == request.PublicTopicName ? request.Binding.PartitionCount : 1).ToString(
+                        CultureInfo.InvariantCulture
+                    ),
+                    "-c",
+                    "cleanup.policy=compact",
+                    "-c",
+                    "delete.retention.ms=604800000",
+                    "--brokers",
+                    $"{BrokerContainerName}:9092",
+                ],
+                cancellationToken
+            );
+        }
         if (request.SchemaHistoryTopicName is not null)
         {
-            topics.Add(request.SchemaHistoryTopicName);
+            await _docker.RunAsync(
+                [
+                    "exec",
+                    BrokerContainerName,
+                    "rpk",
+                    "topic",
+                    "create",
+                    "--if-not-exists",
+                    request.SchemaHistoryTopicName,
+                    "--brokers",
+                    $"{BrokerContainerName}:9092",
+                ],
+                cancellationToken
+            );
         }
-
-        await _docker.RunAsync(
-            [
-                "exec",
-                BrokerContainerName,
-                "rpk",
-                "topic",
-                "create",
-                "--if-not-exists",
-                .. topics,
-                "--brokers",
-                $"{BrokerContainerName}:9092",
-            ],
-            cancellationToken
-        );
     }
 
     private async Task CreateMinimalProviderObjectsAsync(CancellationToken cancellationToken)
@@ -1763,9 +1873,14 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
             INSERT INTO "dms"."DataStoreIdentity" ("DataStoreIdentitySingletonId", "SourceIdentity")
             VALUES (1, '{{CdcConnectorTemplatePinnedImageTestData.SourceIdentity}}')
             ON CONFLICT ("DataStoreIdentitySingletonId") DO NOTHING;
-            CREATE TABLE IF NOT EXISTS "dms"."DocumentCache" ("DocumentUuid" text NOT NULL PRIMARY KEY);
-            CREATE TABLE IF NOT EXISTS "dms"."Document" ("DocumentUuid" text NOT NULL PRIMARY KEY);
-            CREATE TABLE IF NOT EXISTS "dms"."DocumentProjectionWork" ("DocumentId" bigint NOT NULL PRIMARY KEY);
+            {{BuildPostgresqlSourceTablesSql()}}
+            CREATE TABLE IF NOT EXISTS "dms"."DocumentProjectionWork"
+            (
+                "DocumentId" bigint NOT NULL PRIMARY KEY REFERENCES "dms"."Document" ("DocumentId") ON DELETE CASCADE,
+                "RequiredContentVersion" bigint NOT NULL,
+                "FirstEnqueuedAt" timestamp with time zone NOT NULL,
+                "LastEnqueuedAt" timestamp with time zone NOT NULL
+            );
             DO $role$
             BEGIN
                 IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = '{{ConnectorDatabaseUser}}') THEN
@@ -1785,6 +1900,7 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
             Environment.NewLine,
             SqlServerCaptureInstances
                 .Where(definition => definition.TableKind != CdcSourceTableKind.CdcHeartbeat)
+                .OrderBy(definition => definition.TableKind == CdcSourceTableKind.Document ? 0 : 1)
                 .Select(CreateSqlServerSourceTableSql)
         );
 
@@ -1806,7 +1922,13 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
                 VALUES (1, '{{CdcConnectorTemplatePinnedImageTestData.SourceIdentity}}');
             {{createSourceTablesSql}}
             IF OBJECT_ID(N'[dms].[DocumentProjectionWork]', N'U') IS NULL
-                CREATE TABLE [dms].[DocumentProjectionWork] ([DocumentId] bigint NOT NULL PRIMARY KEY);
+                CREATE TABLE [dms].[DocumentProjectionWork]
+                (
+                    [DocumentId] bigint NOT NULL PRIMARY KEY REFERENCES [dms].[Document] ([DocumentId]) ON DELETE CASCADE,
+                    [RequiredContentVersion] bigint NOT NULL,
+                    [FirstEnqueuedAt] datetime2(7) NOT NULL,
+                    [LastEnqueuedAt] datetime2(7) NOT NULL
+                );
             IF SUSER_ID(N'{{ConnectorDatabaseUser}}') IS NULL
                 CREATE LOGIN {{SqlServerBracketIdentifier(ConnectorDatabaseUser)}}
                 WITH PASSWORD = '{{SqlServerLiteralValue(ConnectorDatabasePassword)}}', CHECK_POLICY = OFF;
@@ -1992,16 +2114,9 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
         string classNameArguments = string.Join(" ", classNames.Select(SingleQuote));
         string script = $$"""
             set -eu
-            class_path="$(find /kafka /opt/kafka /usr/share/java /usr/share/confluent-hub-components /debezium -name '*.jar' 2>/dev/null | tr '\n' ':')"
-            test -n "${class_path}"
+            {{CdcPinnedImageJavaRuntime.ClassPathScript}}
             cat >/tmp/CdcTemplateClassProbe.java <<'JAVA'
-            public class CdcTemplateClassProbe {
-                public static void main(String[] args) throws Exception {
-                    for (String className : args) {
-                        Class.forName(className);
-                    }
-                }
-            }
+            {{CdcPinnedImageJavaRuntime.ClassProbeSource}}
             JAVA
             java -cp "${class_path}" /tmp/CdcTemplateClassProbe.java {{classNameArguments}}
             """;
@@ -2060,7 +2175,7 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
         return errors;
     }
 
-    private async Task<CdcConnectorSourceOffsetSnapshot?> TryReadCommittedSourceOffsetAsync(
+    public async Task<CdcConnectorSourceOffsetSnapshot?> TryReadCommittedSourceOffsetAsync(
         CdcConnectorTemplateRequest request,
         CancellationToken cancellationToken
     )
@@ -2215,6 +2330,7 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
     {
         if (
             partition.ValueKind != JsonValueKind.Object
+            || partition.EnumerateObject().Count() != (request.Provider == CdcProvider.Postgresql ? 1 : 2)
             || !JsonStringPropertyEquals(partition, "server", request.ConnectorName.Value)
         )
         {
@@ -2658,36 +2774,107 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
             ),
         };
 
+    private IReadOnlyList<CdcSourceTableInventory> BuildExpectedSourceTableInventory()
+    {
+        var inventory = BuildRequiredSourceTableInventory(Provider);
+        if (!_usesGeneratedSchema)
+        {
+            return inventory;
+        }
+        string identityType =
+            Provider == CdcProvider.Postgresql
+                ? "bigint GENERATED ALWAYS AS IDENTITY"
+                : "bigint IDENTITY(1,1)";
+        return inventory
+            .Select(table => new CdcSourceTableInventory(
+                table.TableKind,
+                table.TableName,
+                table.EmittedQuotedTableName,
+                table
+                    .Columns.Select(column =>
+                        table.TableKind == CdcSourceTableKind.Document
+                        && column.ColumnName.Value == "DocumentId"
+                            ? new CdcSourceColumnInventory(
+                                column.ColumnName,
+                                column.EmittedQuotedColumnName,
+                                column.Ordinal,
+                                identityType,
+                                column.IsNullable
+                            )
+                            : column
+                    )
+                    .ToArray()
+            ))
+            .ToArray();
+    }
+
     private static IReadOnlyList<CdcSourceTableInventory> BuildRequiredSourceTableInventory(
         CdcProvider provider
     ) =>
-        provider == CdcProvider.SqlServer
-            ? SqlServerCaptureInstances.Select(BuildSqlServerSourceTableInventory).ToArray()
-            :
-            [
-                BuildSourceTable(
-                    provider,
-                    CdcSourceTableKind.DocumentCache,
-                    "DocumentCache",
-                    [BuildColumn(provider, "DocumentUuid")]
-                ),
-                BuildSourceTable(
-                    provider,
-                    CdcSourceTableKind.Document,
-                    "Document",
-                    [BuildColumn(provider, "DocumentUuid")]
-                ),
-                BuildSourceTable(
-                    provider,
-                    CdcSourceTableKind.CdcHeartbeat,
-                    "CdcHeartbeat",
-                    [
-                        BuildColumn(provider, "HeartbeatId", "smallint"),
-                        BuildColumn(provider, "HeartbeatSequence", "bigint", 2),
-                        BuildColumn(provider, "HeartbeatAt", "timestamp with time zone", 3),
-                    ]
-                ),
-            ];
+        SqlServerCaptureInstances
+            .Select(definition =>
+                provider == CdcProvider.SqlServer
+                    ? BuildSqlServerSourceTableInventory(definition)
+                    : BuildSourceTable(
+                        provider,
+                        definition.TableKind,
+                        definition.SourceTableName,
+                        definition
+                            .CapturedColumns.Select(
+                                (column, index) =>
+                                    new CdcSourceColumnInventory(
+                                        new DbColumnName(column.ColumnName),
+                                        $"\"{column.ColumnName}\"",
+                                        index + 1,
+                                        PostgresqlColumnType(column.ProviderDataType),
+                                        column.IsNullable
+                                    )
+                            )
+                            .ToArray()
+                    )
+            )
+            .ToArray();
+
+    private static string PostgresqlColumnType(string sqlServerType) =>
+        sqlServerType switch
+        {
+            "uniqueidentifier" => "uuid",
+            "datetime2(7)" => "timestamp with time zone",
+            "nvarchar(max)" => "jsonb",
+            "nvarchar(256)" => "varchar(256)",
+            "nvarchar(32)" => "varchar(32)",
+            "varchar(64)" => "varchar(64)",
+            _ => sqlServerType,
+        };
+
+    private static string BuildPostgresqlSourceTablesSql() =>
+        string.Join(
+            Environment.NewLine,
+            BuildRequiredSourceTableInventory(CdcProvider.Postgresql)
+                .Where(table => table.TableKind != CdcSourceTableKind.CdcHeartbeat)
+                .OrderBy(table => table.TableKind == CdcSourceTableKind.Document ? 0 : 1)
+                .Select(table =>
+                    $"CREATE TABLE IF NOT EXISTS {table.EmittedQuotedTableName} ("
+                    + string.Join(
+                        ", ",
+                        table.Columns.Select(column =>
+                            $"{column.EmittedQuotedColumnName} {column.ProviderDataType} {(column.IsNullable ? "NULL" : "NOT NULL")}"
+                        )
+                    )
+                    + ", PRIMARY KEY (\"DocumentId\")"
+                    + (
+                        table.TableKind == CdcSourceTableKind.Document
+                            ? ", CONSTRAINT \"UX_Document_DocumentUuid\" UNIQUE (\"DocumentUuid\")"
+                            : ""
+                    )
+                    + (
+                        table.TableKind == CdcSourceTableKind.DocumentCache
+                            ? ", CONSTRAINT \"FK_DocumentCache_Document\" FOREIGN KEY (\"DocumentId\") REFERENCES \"dms\".\"Document\" (\"DocumentId\") ON DELETE CASCADE"
+                            : ""
+                    )
+                    + ");"
+                )
+        );
 
     private static CdcSourceTableInventory BuildSqlServerSourceTableInventory(
         SqlServerCaptureInstanceDefinition definition
@@ -2721,20 +2908,6 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
             new DbTableName(new DbSchemaName("dms"), tableName),
             provider == CdcProvider.Postgresql ? $"\"dms\".\"{tableName}\"" : $"[dms].[{tableName}]",
             columns
-        );
-
-    private static CdcSourceColumnInventory BuildColumn(
-        CdcProvider provider,
-        string columnName,
-        string providerDataType = "text",
-        int ordinal = 1
-    ) =>
-        new(
-            new DbColumnName(columnName),
-            provider == CdcProvider.Postgresql ? $"\"{columnName}\"" : $"[{columnName}]",
-            ordinal,
-            providerDataType,
-            IsNullable: false
         );
 
     private static CdcConnectorTemplateSourcePartitionEvidence BuildSourcePartitionEvidence(
@@ -2972,7 +3145,12 @@ internal sealed record CdcConnectorTemplateSmokeSettings(
         {
             missingVariables.Add(ConnectImageVariable);
         }
-        else if (!ConnectImage.Contains("@sha256:", StringComparison.Ordinal))
+        else if (
+            !System.Text.RegularExpressions.Regex.IsMatch(
+                ConnectImage,
+                @"\A[a-zA-Z0-9][a-zA-Z0-9._/:-]*@sha256:[0-9a-f]{64}\z"
+            )
+        )
         {
             StopOnPrerequisiteFailure(
                 provider,
@@ -3163,13 +3341,17 @@ internal sealed class DockerCli : IDockerCli
 
 internal sealed record DockerCommandResult(int ExitCode, string StandardOutput, string StandardError)
 {
-    public string ToFailureMessage()
+    public string ToFailureMessage(int maximumOutputLength = int.MaxValue)
     {
         string stderr = string.IsNullOrWhiteSpace(StandardError) ? "<empty>" : Sanitize(StandardError).Trim();
         string stdout = string.IsNullOrWhiteSpace(StandardOutput)
             ? "<empty>"
             : Sanitize(StandardOutput).Trim();
 
+        stdout =
+            stdout.Length > maximumOutputLength ? stdout[..maximumOutputLength] + " [truncated]" : stdout;
+        stderr =
+            stderr.Length > maximumOutputLength ? stderr[..maximumOutputLength] + " [truncated]" : stderr;
         return string.Create(
             CultureInfo.InvariantCulture,
             $"docker exited with code {ExitCode}. stdout: {stdout}. stderr: {stderr}"

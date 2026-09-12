@@ -128,6 +128,7 @@ Describe 'CDC qualification CI scheduling' {
         $script:scheduledWorkflow = Get-Content (Join-Path $PSScriptRoot '../../../.github/workflows/nightly-cdc-qualification.yml') -Raw
         $script:scheduledJob = [regex]::Match($script:scheduledWorkflow, '(?ms)^  run-cdc-qualification:.*?(?=^  [a-z][a-z0-9-]+:|\z)').Value
         $script:scheduledNotification = [regex]::Match($script:scheduledWorkflow, '(?ms)^  notify-results:.*\z').Value
+        Import-Module (Join-Path $PSScriptRoot '../cdc-qualification.psm1') -Force
         $script:matrixScript = Join-Path $PSScriptRoot '../Get-CdcQualificationMatrix.ps1'
     }
     It 'requires only Contract without live Docker prerequisites in PR and merge-queue qualification' {
@@ -136,12 +137,12 @@ Describe 'CDC qualification CI scheduling' {
         $script:gate | Should -Match '(?m)^      - run-cdc-qualification$'
         $script:gate | Should -Not -Match 'nightly-cdc|run-cdc-heavy-qualification'
     }
-    It 'selects all thirteen live jobs by default without Contract or duplicates' {
+    It 'selects all fifteen live jobs by default without Contract or duplicates' {
         $matrix = & $script:matrixScript | ConvertFrom-Json
         $pairs = @($matrix.include | ForEach-Object { $_.lane + '/' + $_.suite })
         $expected = @('Kafka/All')
         foreach ($provider in @('Postgresql', 'Mssql')) {
-            foreach ($suite in @('Admission', 'Lifecycle', 'Recovery', 'RecordSize', 'Telemetry', 'History')) {
+            foreach ($suite in @('Admission', 'Lifecycle', 'Recovery', 'RecordSize', 'Telemetry', 'History', 'MessageContract')) {
                 $expected += "$provider/$suite"
             }
         }
@@ -149,15 +150,21 @@ Describe 'CDC qualification CI scheduling' {
     }
     It 'selects <Lane>/<Suite> for a targeted manual run' -ForEach @(
         @{ Lane = 'Kafka'; Suite = 'All'; Count = 1 }
-        @{ Lane = 'Postgresql'; Suite = 'All'; Count = 6 }
-        @{ Lane = 'Mssql'; Suite = 'All'; Count = 6 }
+        @{ Lane = 'Postgresql'; Suite = 'All'; Count = 7 }
+        @{ Lane = 'Mssql'; Suite = 'All'; Count = 7 }
         @{ Lane = 'Postgresql'; Suite = 'RecordSize'; Count = 1 }
         @{ Lane = 'Mssql'; Suite = 'Admission'; Count = 1 }
         @{ Lane = 'Mssql'; Suite = 'History'; Count = 1 }
+        @{ Lane = 'Postgresql'; Suite = 'MessageContract'; Count = 1 }
+        @{ Lane = 'Mssql'; Suite = 'MessageContract'; Count = 1 }
     ) {
         $matrix = & $script:matrixScript -Lane $Lane -Suite $Suite | ConvertFrom-Json
         $matrix.include.GetType().IsArray | Should -BeTrue
         $matrix.include.Count | Should -Be $Count
+        @($matrix.include | ForEach-Object { $_.lane + '/' + $_.suite } | Select-Object -Unique).Count | Should -Be $Count
+        if ($Suite -eq 'All' -and $Lane -ne 'Kafka') {
+            @($matrix.include.suite | Sort-Object) | Should -Be @('Admission', 'History', 'Lifecycle', 'MessageContract', 'RecordSize', 'Recovery', 'Telemetry')
+        }
         @($matrix.include | Where-Object lane -ne $Lane).Count | Should -Be 0
         if ($Suite -ne 'All') { @($matrix.include | Where-Object suite -ne $Suite).Count | Should -Be 0 }
     }
@@ -217,7 +224,7 @@ Describe 'CDC qualification CI scheduling' {
             ($_.Groups[1].Value | ConvertFrom-Json).text
         })
         $messages.Count | Should -Be 2
-        $messages[0] | Should -Be ':heavy_check_mark: DMS CI nightly CDC qualification passed, all 13 live suites verified'
+        $messages[0] | Should -Be ':heavy_check_mark: DMS CI nightly CDC qualification passed, all 15 live suites verified'
         $messages[1] | Should -Be ':x: DMS CI nightly CDC qualification failed (selection: ${{ needs.select-suites.result }}, qualification: ${{ needs.run-cdc-qualification.result }})'
         foreach ($message in $messages) {
             $message | Should -Not -Match '[\r\n]'
@@ -230,5 +237,38 @@ Describe 'CDC qualification CI scheduling' {
         $script:job | Should -Match 'if: always\(\)'
         $script:job | Should -Match 'path: TestResults/cdc-qualification/\*\*'
         $script:job | Should -Match 'name: cdc-qualification-.*github.run_attempt'
+    }
+}
+
+Describe 'Message contract qualification selection and attachments' {
+    BeforeAll {
+        Import-Module (Join-Path $PSScriptRoot '../cdc-qualification.psm1') -Force
+    }
+    It 'selects serialized and broker cases for <Provider> without selecting offline cases' -ForEach @(
+        @{ Provider = 'Postgresql' }
+        @{ Provider = 'Mssql' }
+    ) {
+        $suites = Get-CdcQualificationProviderSuite -Provider $Provider
+        $suites.MessageContract | Should -Be "(Category=CdcMessageContractSerialized|Category=CdcMessageContractKafka)&Category=$($Provider)Integration"
+        $suites.Count | Should -Be 7
+    }
+    It 'publishes contract attachments and their links while excluding document bodies and private logs' {
+        $raw = New-Item -ItemType Directory (Join-Path $TestDrive 'contract-raw')
+        $safe = Join-Path $TestDrive 'contract-safe'
+        $name = 'cdc-message-contract-MC-PG-1234567890abcdef.json'
+        "<TestRun><Results><UnitTestResult outcome='Passed'><ResultFiles><ResultFile path='host/$name'/><ResultFile path='host/input.json'/></ResultFiles></UnitTestResult></Results></TestRun>" | Set-Content (Join-Path $raw 'contract.trx')
+        '{"ScenarioIds":["MC-PG-BOUNDARY"],"KeyBytes":36,"ValueBytes":16300,"DocumentBody":{"name":"private-sentinel"},"Password":"private-sentinel"}' | Set-Content (Join-Path $raw $name)
+        '{"document":"private-sentinel"}' | Set-Content (Join-Path $raw 'input.json')
+        'private-sentinel' | Set-Content (Join-Path $raw 'private.log')
+        Export-CdcQualificationEvidence $raw $safe
+        [xml] $trx = Get-Content (Join-Path $safe 'contract.trx') -Raw
+        @($trx.TestRun.Results.UnitTestResult.ResultFiles.ResultFile).Count | Should -Be 1
+        $trx.TestRun.Results.UnitTestResult.ResultFiles.ResultFile.path | Should -Be $name
+        $evidence = Get-Content (Join-Path $safe $name) -Raw | ConvertFrom-Json
+        $evidence.ScenarioIds | Should -Contain 'MC-PG-BOUNDARY'
+        $evidence.ValueBytes | Should -Be 16300
+        (Get-ChildItem $safe -File | Get-Content -Raw) -join '' | Should -Not -Match 'private-sentinel'
+        Test-Path (Join-Path $safe 'input.json') | Should -BeFalse
+        Test-Path (Join-Path $safe 'private.log') | Should -BeFalse
     }
 }

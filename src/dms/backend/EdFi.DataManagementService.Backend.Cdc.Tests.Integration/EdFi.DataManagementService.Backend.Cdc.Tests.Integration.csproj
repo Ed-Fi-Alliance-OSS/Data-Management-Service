@@ -8,6 +8,7 @@
         <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     </PropertyGroup>
     <ItemGroup>
+        <PackageReference Include="Confluent.Kafka" />
         <PackageReference Include="FluentAssertions" />
         <PackageReference Include="FakeItEasy" />
         <PackageReference Include="Microsoft.Data.SqlClient" />
@@ -80,6 +81,41 @@
             Include="../../clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/Fixtures/minimal-api-schema.json"
             Link="Fixtures/minimal-api-schema.json"
             CopyToOutputDirectory="PreserveNewest"
+        />
+    </ItemGroup>
+    <Import Project="../Fixtures/cdc/message-contract/MessageContractFixtures.props" />
+    <ItemGroup>
+        <None
+            Update="MessageContractRunner/**/*"
+            CopyToOutputDirectory="PreserveNewest"
+            CopyToPublishDirectory="PreserveNewest"
+        />
+    </ItemGroup>
+    <ItemGroup>
+        <!-- Share test-only fixture helpers without referencing another test assembly. -->
+        <Compile
+            Include="../EdFi.DataManagementService.Backend.Cdc.Tests.Unit/MessageContractTraceabilityTests.cs"
+            Link="MessageContractTraceabilityTests.cs"
+        />
+        <Compile
+            Include="../EdFi.DataManagementService.Backend.Cdc.Tests.Unit/MessageContractAdmissionFixture.cs"
+            Link="MessageContractAdmissionFixture.cs"
+        />
+        <Compile
+            Include="../EdFi.DataManagementService.Backend.Cdc.Tests.Unit/MessageContractFixtureCatalog.cs"
+            Link="MessageContractFixtureCatalog.cs"
+        />
+        <Compile
+            Include="../EdFi.DataManagementService.Backend.Cdc.Tests.Unit/MessageContractConsumer.cs"
+            Link="MessageContractConsumer.cs"
+        />
+        <Compile
+            Include="../EdFi.DataManagementService.Backend.Cdc.Tests.Unit/MessageContractConsumerBootstrap.cs"
+            Link="MessageContractConsumerBootstrap.cs"
+        />
+        <Compile
+            Include="../EdFi.DataManagementService.Backend.Cdc.Tests.Unit/MessageContractJson.cs"
+            Link="MessageContractJson.cs"
         />
     </ItemGroup>
 </Project>
