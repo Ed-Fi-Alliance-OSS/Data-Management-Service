@@ -56,6 +56,12 @@ no skipped cases are counted as passing evidence. Paths are relative to this che
 Remaining MSSQL phases and the final acceptance audit are pending. The complete PostgreSQL
 lane passes, and both targeted provider message suites and their exports are complete.
 
+The earlier complete MSSQL invocation (`TestResults/port-mssql-01`) finished with 601
+passed and three lifecycle failures from before the repairs, with no skips. Its other
+seven reports pass, including 496 message-contract tests. That invocation also predates
+the evidence-directory fix and exports only one message-contract JSON file. It is retained
+as diagnostic history; the current full invocation remains the acceptance run.
+
 ## Evidence boundary
 
 - Shipped Connect image:
