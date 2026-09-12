@@ -371,7 +371,11 @@ DOCKER_LOG_MAX_SIZE=${T74_NESTED}
                 $current[$parts[-1]] = $flat[$key]
             }
             $handoff.Settings.Cdc.Compose.Project = $project
-            if (-not $bridge.Live) { $handoff.Settings.Cdc.Compose.EnvironmentFile = Join-Path $script:root '.env.custom' }
+            if (-not $bridge.Live) {
+                # Retain the fixture's copied Compose inputs instead of the command fixture's unused paths.
+                $handoff.Settings.Cdc.Compose.EnvironmentFile = Join-Path $script:root '.env.custom'
+                $handoff.Settings.Cdc.Compose.File = Join-Path $script:root 'kafka-cdc.yml'
+            }
             $handoff.Settings.Cdc.Worker.Key = $bridge.WorkerKey
             $handoff.Settings.Cdc.Worker.OffsetStorageTopic = $bridge.OffsetTopic
             $handoff.Settings | ConvertTo-Json -Depth 64 | Set-Content $handoff.SettingsPath
