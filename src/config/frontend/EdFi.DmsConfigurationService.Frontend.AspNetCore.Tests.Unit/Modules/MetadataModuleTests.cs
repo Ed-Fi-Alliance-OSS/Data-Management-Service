@@ -327,7 +327,8 @@ public class MetadataModuleTests
         // Route presence only. ActionsModule and AuthorizationStrategiesModule map collection-only
         // GETs that return untyped IResult with no .Produces<T>(), so the generator emits neither an
         // item route with an id parameter nor a response schema for either resource. Action.Id is
-        // already int and is covered by the model identifier contract test.
+        // already int and is covered by the model identifier contract test. Since DMS-1338 both GETs
+        // do declare query parameters; those are asserted by the paging and filter parameter tests.
         foreach (var path in new[] { "/v3/actions", "/v3/authorizationStrategies" })
         {
             pathMap.Should().ContainKey(path.ToLowerInvariant());
@@ -482,6 +483,8 @@ public class MetadataModuleTests
             "/v3/resourceClaims",
             "/v3/resourceClaimActions",
             "/v3/resourceClaimActionAuthStrategies",
+            "/v3/actions",
+            "/v3/authorizationStrategies",
         };
 
         var requiredParams = new[] { "offset", "limit", "orderby", "direction" };
@@ -616,6 +619,95 @@ public class MetadataModuleTests
         TypeIncludes(nameType, "string")
             .Should()
             .BeTrue("GET /v3/profiles parameter 'name' schema should include string");
+    }
+
+    [Test]
+    public async Task OpenApi_Action_Collection_Endpoint_Exposes_Filter_Params()
+    {
+        // Arrange
+        await using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+
+        // Act
+        var doc = await FetchOpenApiDocumentAsync(client);
+        var paramMap = QueryParametersFor(doc, "/v3/actions");
+
+        // Assert
+        // The Management API 3.0.0 draft declares id and name filters for this endpoint alongside the
+        // shared paging parameters, so a generated client's filter arguments must not be silently
+        // dropped. Paging parameter shapes are covered by the shared collection-endpoint test.
+        foreach (var required in new[] { "offset", "limit", "orderby", "direction", "id", "name" })
+        {
+            paramMap
+                .Should()
+                .ContainKey(required, $"GET /v3/actions should expose '{required}' as a query parameter");
+            paramMap[required]
+                .TryGetProperty("description", out var description)
+                .Should()
+                .BeTrue($"GET /v3/actions parameter '{required}' should have a description");
+            description.GetString().Should().NotBeNullOrWhiteSpace();
+        }
+
+        paramMap["id"].TryGetProperty("schema", out var idSchema).Should().BeTrue();
+        idSchema.TryGetProperty("type", out var idType).Should().BeTrue();
+        TypeIncludes(idType, "integer")
+            .Should()
+            .BeTrue("GET /v3/actions parameter 'id' schema should include integer");
+        idSchema.GetProperty("format").GetString().Should().Be("int32");
+
+        paramMap["name"].TryGetProperty("schema", out var nameSchema).Should().BeTrue();
+        nameSchema.TryGetProperty("type", out var nameType).Should().BeTrue();
+        TypeIncludes(nameType, "string")
+            .Should()
+            .BeTrue("GET /v3/actions parameter 'name' schema should include string");
+    }
+
+    [Test]
+    public async Task OpenApi_AuthorizationStrategy_Collection_Endpoint_Declares_No_Filter_Params()
+    {
+        // Arrange
+        await using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+
+        // Act
+        var doc = await FetchOpenApiDocumentAsync(client);
+        var paramMap = QueryParametersFor(doc, "/v3/authorizationStrategies");
+
+        // Assert
+        // The Management API 3.0.0 draft declares only paging parameters for this endpoint. Publishing
+        // id or name filters here would advertise filtering the endpoint does not implement.
+        paramMap.Keys.Should().BeEquivalentTo("offset", "limit", "orderby", "direction");
+    }
+
+    /// <summary>
+    /// Returns the GET query parameters published for a path, keyed by lower-case parameter name.
+    /// </summary>
+    private static Dictionary<string, System.Text.Json.JsonElement> QueryParametersFor(
+        System.Text.Json.JsonDocument doc,
+        string path
+    )
+    {
+        var pathMap = doc
+            .RootElement.GetProperty("paths")
+            .EnumerateObject()
+            .ToDictionary(p => p.Name.TrimEnd('/').ToLowerInvariant(), p => p.Value);
+
+        var normalized = path.TrimEnd('/').ToLowerInvariant();
+        pathMap.Should().ContainKey(normalized, $"path {path} should exist in the OpenAPI document");
+
+        pathMap[normalized]
+            .TryGetProperty("get", out var getOperation)
+            .Should()
+            .BeTrue($"GET {path} should exist");
+        getOperation
+            .TryGetProperty("parameters", out var parameters)
+            .Should()
+            .BeTrue($"GET {path} should have parameters");
+
+        return parameters
+            .EnumerateArray()
+            .Where(parameter => parameter.GetProperty("in").GetString() == "query")
+            .ToDictionary(parameter => parameter.GetProperty("name").GetString()!.ToLowerInvariant());
     }
 
     [Test]
