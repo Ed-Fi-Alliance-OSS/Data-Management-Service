@@ -51,9 +51,11 @@ no skipped cases are counted as passing evidence. Paths are relative to this che
 | Fresh MSSQL full-lane managed lifecycle | 15 passed | `TestResults/port-mssql-02/Mssql-CdcControllerManagedLifecycle` |
 | Fresh MSSQL full-lane native recovery | 9 passed; 27 exported evidence links resolve | `TestResults/port-mssql-02/Mssql-CdcControllerNativeRecovery` |
 | Fresh MSSQL full-lane record-size phase | 17 passed; 51 exported evidence links resolve | `TestResults/port-mssql-02/Mssql-CdcControllerRecordSize` |
+| Fresh MSSQL full-lane telemetry | 1 passed | `TestResults/port-mssql-02/Mssql-telemetry` |
+| Fresh MSSQL full-lane history and provider cleanup | 25 history + 5 cleanup passed; all 25 history evidence links resolve | `TestResults/port-mssql-02/Mssql-history`, `Mssql-provider-cleanup` |
 | Final integration package traceability outside checkout | 20 passed | `/tmp/dms1324-port-packaged-verified/results-integration` |
 
-Remaining MSSQL phases and the final acceptance audit are pending. The complete PostgreSQL
+The final MSSQL message-contract phase and acceptance audit are pending. The complete PostgreSQL
 lane passes, and both targeted provider message suites and their exports are complete.
 
 The earlier complete MSSQL invocation (`TestResults/port-mssql-01`) finished with 601
