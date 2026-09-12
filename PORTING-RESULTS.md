@@ -103,6 +103,27 @@ The port repairs the following fixture problems, described in the transfer inven
   15 nightly jobs. Targeted message selection includes both serialized and broker categories
   with the selected provider constraint applied to both.
 
+## Acceptance audit
+
+The stage gates below preserve the full plan scope. Passing message-contract evidence
+is not substituted for affected controller qualification.
+
+| Plan stage | Inspected evidence | Status |
+| --- | --- | --- |
+| 1. Isolated target and baseline | Recorded source/base revisions, both restores, tool/bootstrap setup, original baseline results, separate target branch | Complete |
+| 2. Independent fixtures and consumers | 265 independent tests, full 957 message unit tests, unchanged materializer goldens | Complete |
+| 3. Shared fixture and serialized runner | Both projects build and publish; offline lane passes; six pinned-image smoke/restamp tests and both provider message suites pass; latest wrapper repairs pass | Full current provider fixture qualification pending |
+| 4. Current admission adapters | 672 focused admission tests and complete 4465 CDC unit tests; no obsolete Control project or production parser replacement | Complete |
+| 5. Provider, delivery, and consumer scenarios | PostgreSQL 502 and MSSQL 496 message tests, with local authorization profile and sanitized evidence | Complete |
+| 6. Acknowledgement and sizing evidence | Both provider message suites pass; evidence distinguishes live offsets/task status from synthetic evaluator prerequisites | Affected controller qualification pending |
+| 7. Traceability and shared CI | Packaged discovery passes; manifest assigns exactly 02/06/07/08/09/10/13/14; matrix emits 15 jobs; targeted suite and exporter checks pass; expected provider JSON exports and TRX links verified | Complete |
+| 8. Final validation and review | Release/analyzer/format checks pass; all 68 source paths accounted for; retained paths match source; only revised 05 changes in design tree; no production C# changes | Full provider lanes and final resource cleanup pending |
+
+The revised 05 file exactly matches `bb3aecb98`; target materializer goldens have no
+base-relative changes. The current target delta contains 81 paths, including the
+supplemental fixture repairs documented in the inventory. The source checkout retains
+only the requested plan clarification and its original branch history.
+
 ## Remaining acceptance work
 
 - Complete and inspect all live provider phases and all corrected fixture results. Fresh
