@@ -757,14 +757,33 @@ internal class Given_CdcManagedLifecycle(Ddl.CdcProvider provider) : CdcReadines
     [TestCase(true)]
     public async Task It_does_not_treat_acknowledgement_or_lost_stop_reply_as_shutdown(bool lostReply)
     {
-        ShortTiming(30);
+        ShortTiming(1000);
+        using var deadline = new CancellationTokenSource();
+        int statusReads = 0;
         A.CallTo(() => _connect.StopAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
             .ReturnsLazily(() =>
                 lostReply
                     ? throw new TimeoutException("private-password")
                     : Observed(new CdcTransportAcknowledgement())
             );
-        var result = await Execute(CdcManagedLifecycleOperation.Stop);
+        A.CallTo(() => _connect.ReadStatusAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
+            .ReturnsLazily(() =>
+            {
+                // Expire only after the first running observation was rejected as shutdown.
+                if (++statusReads == 2)
+                {
+                    deadline.Cancel();
+                }
+                return Observed(Status());
+            });
+        var result = await _managed.ExecuteAsync(
+            new(_request, _runtime, 1000),
+            CdcManagedLifecycleOperation.Stop,
+            operationDeadline: deadline.Token
+        );
+        statusReads.Should().Be(2);
+        A.CallTo(() => _connect.StopAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
+            .MustHaveHappenedOnceExactly();
         result.Succeeded.Should().BeFalse();
         result.TargetShutdownVerified.Should().BeFalse();
         ReadJournal().Operations.Last().Completions.Should().BeEmpty();
