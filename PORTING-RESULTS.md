@@ -20,8 +20,10 @@
 
 ## Qualification status
 
-Full qualification is **not complete**. All counts below represent actual executed tests;
-no skipped cases are counted as passing evidence. Paths are relative to this checkout.
+Full qualification is **complete**. All four required lanes pass: Contract 5840,
+Kafka 49, PostgreSQL 604, and MSSQL 604, with no failed or skipped required cases.
+Paths below are relative to this checkout. Focused runs supplement the complete lanes;
+their counts overlap and should not be added to the lane totals.
 
 | Check | Result | Evidence |
 | --- | --- | --- |
@@ -35,6 +37,7 @@ no skipped cases are counted as passing evidence. Paths are relative to this che
 | Final CI selection/export checks | 31 passed | `/tmp/dms1324-port-ci-evidence.log` |
 | Full Kafka lane with corrected evidence directory | 48 secured + 1 local passed | `TestResults/port-kafka-03` |
 | Full PostgreSQL lane | 604 passed across all eight reports; no failures, skips, or environment failures; process exited 0 | `TestResults/port-postgresql-02` |
+| Full MSSQL lane | 604 passed across all eight reports; no failures, skips, or environment failures; process exited 0 | `TestResults/port-mssql-02` |
 | PostgreSQL message contracts with corrected evidence export | 502 passed | `TestResults/port-postgresql-message-contract-02` |
 | MSSQL message contracts with corrected evidence export | 496 passed | `TestResults/port-mssql-message-contract-02` |
 | Fresh PostgreSQL full-lane admission phase | 30 passed; 60 exported evidence links resolve | `TestResults/port-postgresql-02/Postgresql-CdcControllerAdmission` |
@@ -55,8 +58,8 @@ no skipped cases are counted as passing evidence. Paths are relative to this che
 | Fresh MSSQL full-lane history and provider cleanup | 25 history + 5 cleanup passed; all 25 history evidence links resolve | `TestResults/port-mssql-02/Mssql-history`, `Mssql-provider-cleanup` |
 | Final integration package traceability outside checkout | 20 passed | `/tmp/dms1324-port-packaged-verified/results-integration` |
 
-The final MSSQL message-contract phase and acceptance audit are pending. The complete PostgreSQL
-lane passes, and both targeted provider message suites and their exports are complete.
+Both complete provider lanes include the final message-contract suites: PostgreSQL 502
+and MSSQL 496. The aggregate reports and every exported TRX attachment link were inspected.
 
 The earlier complete MSSQL invocation (`TestResults/port-mssql-01`) finished with 601
 passed and three lifecycle failures from before the repairs, with no skips. Its other
@@ -86,6 +89,9 @@ as diagnostic history; the current full invocation remains the acceptance run.
 - The complete PostgreSQL lane also retains all six message-contract evidence files.
   All 205 attachment links across its eight exported TRX reports resolve; its qualified
   image metadata exactly matches the shipped image definition.
+- The complete MSSQL lane retains all five expected message-contract evidence files.
+  All 217 attachment links across its eight exported TRX reports resolve; its qualified
+  image metadata also exactly matches the shipped image definition.
 - Candidate-tree checks before transfer passed 263 offline, 964 serialized, and 34 broker
   tests. These establish transfer compatibility; they are not substituted for final
   worktree qualification.
@@ -123,6 +129,10 @@ The port repairs the following fixture problems, described in the transfer inven
   unqualified-digest prerequisite case. No required scenario was dropped.
 - Infrastructure traceability adds 20 tests per assembly and is explicitly excluded from
   scenario self-mapping. Both complete manifests pass executable packaged discovery.
+- Every mapped scenario was matched by its full parameterized fixture and test name to
+  a passing result in the complete Contract and provider lanes: 937 unit and 1031 integration
+  scenarios, with none missing. This independently checks executed coverage beyond discovery
+  and aggregate test counts.
 - The shared CI runner and matrix select seven suites per provider plus `Kafka/All`, for
   15 nightly jobs. Targeted message selection includes both serialized and broker categories
   with the selected provider constraint applied to both.
@@ -136,26 +146,31 @@ is not substituted for affected controller qualification.
 | --- | --- | --- |
 | 1. Isolated target and baseline | Recorded source/base revisions, both restores, tool/bootstrap setup, original baseline results, separate target branch | Complete |
 | 2. Independent fixtures and consumers | 265 independent tests, full 957 message unit tests, unchanged materializer goldens | Complete |
-| 3. Shared fixture and serialized runner | Both projects build and publish; offline lane passes; six pinned-image smoke/restamp tests and both provider message suites pass; latest wrapper repairs pass | Full current provider fixture qualification pending |
+| 3. Shared fixture and serialized runner | Both projects build and publish; offline lane passes; six pinned-image smoke/restamp tests and complete provider lanes pass, including wrapper and native recovery cases | Complete |
 | 4. Current admission adapters | 672 focused admission tests and complete 4465 CDC unit tests; no obsolete Control project or production parser replacement | Complete |
 | 5. Provider, delivery, and consumer scenarios | PostgreSQL 502 and MSSQL 496 message tests, with local authorization profile and sanitized evidence | Complete |
-| 6. Acknowledgement and sizing evidence | Both provider message suites pass; evidence distinguishes live offsets/task status from synthetic evaluator prerequisites | Affected controller qualification pending |
+| 6. Acknowledgement and sizing evidence | Both provider message suites and affected admission, lifecycle, recovery, sizing, and telemetry controller suites pass; live offset/task evidence remains distinct from synthetic evaluator prerequisites | Complete |
 | 7. Traceability and shared CI | Packaged discovery passes; manifest assigns exactly 02/06/07/08/09/10/13/14; matrix emits 15 jobs; targeted suite and exporter checks pass; expected provider JSON exports and TRX links verified | Complete |
-| 8. Final validation and review | Release/analyzer/format checks pass; all 68 source paths accounted for; retained paths match source; only revised 05 changes in design tree; no production C# changes | Full provider lanes and final resource cleanup pending |
+| 8. Final validation and review | All four complete lanes and Release/analyzer/format checks pass; all 68 source paths accounted for; retained paths match source; only revised 05 changes in design tree; no production C# changes; dedicated resources removed | Complete |
 
 The revised 05 file exactly matches `bb3aecb98`; target materializer goldens have no
 base-relative changes. The current target delta contains 82 paths, including the
 supplemental fixture repairs documented in the inventory. The source checkout retains
 only the requested plan clarification and its original branch history.
 
-## Remaining acceptance work
+## Completion and delivery
 
-- Complete and inspect the remaining MSSQL phases in `TestResults/port-mssql-02`.
-  The fresh complete PostgreSQL invocation in `TestResults/port-postgresql-02` has passed.
-- Inspect the final aggregate results and all required provider-suite reports.
-- Reconcile final evidence with every plan gate and update its completion checklist.
-- Remove only the dedicated qualification admin containers after testing; the unrelated
-  Docker stack remains untouched. Keep the source branch history intact and publish nothing.
+- All plan gates and the completion checklist are satisfied. Qualification used the shipped
+  immutable image, PostgreSQL 18.4, SQL Server 2025, and the explicit fixture authorization profiles.
+- Removed the dedicated `dms1324-port-history-pg` and `dms1324-port-history-mssql` containers
+  and the preserved PostgreSQL volume after qualification completed. No connector fixture
+  containers or networks remained. The four unrelated container identities were preserved,
+  and their existing application health checks remained healthy.
+- The port remains on the separate local `DMS-1324-port` branch. Source history is intact;
+  branch replacement, pushing, and PR publication remain separate delivery actions.
+- Sanitized reports remain under `TestResults`. Private diagnostic logs are local only and
+  must not be published. Historical failed runs are retained for diagnosis and are not
+  counted as successful acceptance evidence.
 
 ### Managed lifecycle follow-up
 
@@ -187,8 +202,8 @@ provider-cleanup cases with no skips.
 
 The original MSSQL lifecycle phase passed 12 of 15 cases. One failed during offset-store
 setup, one rejected start before resume with workflow evidence validation, and one rejected
-restart with metrics/Connect validation diagnostics. All three pass the focused rerun, and the fresh full MSSQL lifecycle phase passes all 15
-cases. The remaining fresh full-lane phases are still pending.
+restart with metrics/Connect validation diagnostics. All three pass the focused rerun,
+and the complete fresh MSSQL lane passes all 15 lifecycle cases and every remaining phase.
 
 The persistent-backlog timing override was also found to reset `MaximumObservationAge`
 to ten seconds, despite the shared fixture explicitly allowing one minute. The override

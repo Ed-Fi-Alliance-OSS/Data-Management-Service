@@ -4,7 +4,7 @@ Source delta: `45046c1d3a26927d93e94394f901731e0aaa12fe..bb3aecb98cd887f9b05a7ce
 Replacement base: `c3ae3bfffbd0a049abf7b8768eb4f14744a6bbaf`.
 
 This inventory records the implemented file disposition; qualification status is in
-PORTING-RESULTS.md. Full live qualification remains in progress.
+PORTING-RESULTS.md. Full Contract, Kafka, PostgreSQL, and MSSQL qualification passes.
 
 | Source path | Treatment | Reason |
 | --- | --- | --- |
