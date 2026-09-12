@@ -91,15 +91,47 @@ internal class Given_Postgresql_established_wal_observation_is_refreshed(bool re
 
 [TestFixture(false)]
 [TestFixture(true)]
-internal class Given_Postgresql_admission_refreshes_a_stale_offset(bool offsetRemainsBehind)
+internal class Given_Postgresql_admission_reads_the_offset_after_the_slot(bool offsetBehindSlot)
     : CdcReadinessTestBase(Ddl.CdcProvider.Postgresql)
 {
     private CdcTransportEvidenceState _state;
     private int _reads;
+    private bool _stopped;
 
     [SetUp]
-    public async Task SetupRefresh()
+    public async Task SetupAdmission()
     {
+        ShortTiming(1000);
+        _stopped = false;
+        A.CallTo(() => _connect.StopAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
+            .ReturnsLazily(() =>
+            {
+                _stopped = true;
+                return Observed(new CdcTransportAcknowledgement());
+            });
+        A.CallTo(() => _connect.ReadStatusAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
+            .ReturnsLazily(() =>
+            {
+                var status = Status();
+                if (!_stopped)
+                {
+                    return Observed(status);
+                }
+                Trace("stopped-readback");
+                return Observed(
+                    new CdcConnectStatus(
+                        status.Runtime with
+                        {
+                            ConnectorState = CdcConnectorRuntimeState.Stopped,
+                            TaskCount = 0,
+                            RunningTaskCount = 0,
+                            SoleTaskState = CdcConnectorRuntimeState.Unknown,
+                        },
+                        status.WorkerId,
+                        []
+                    )
+                );
+            });
         var original = _change;
         _change = r =>
         {
@@ -124,6 +156,7 @@ internal class Given_Postgresql_admission_refreshes_a_stale_offset(bool offsetRe
             .ReturnsLazily(() =>
             {
                 _reads++;
+                Trace("offset");
                 var offset = Offsets();
                 return Observed(
                     new CdcConnectOffsetEvidence(
@@ -131,7 +164,9 @@ internal class Given_Postgresql_admission_refreshes_a_stale_offset(bool offsetRe
                         offset.SourcePartitionHash,
                         offset.Postgresql with
                         {
-                            LsnProc = _reads == 1 || offsetRemainsBehind ? 16 : 17,
+                            // The slot is sampled first, so a fresh offset behind it proves loss.
+                            // A later healthy offset must not erase that already observed gap.
+                            LsnProc = offsetBehindSlot && _reads == 1 ? 16 : 17,
                         },
                         offset.SqlServer
                     )
@@ -144,20 +179,25 @@ internal class Given_Postgresql_admission_refreshes_a_stale_offset(bool offsetRe
     }
 
     [Test]
-    public void It_refreshes_the_offset_after_sampling_the_slot() =>
-        _reads.Should().BeGreaterThanOrEqualTo(2);
+    public void It_reads_the_offset_after_sampling_the_slot() =>
+        _trace.Should().ContainInOrder("provider", "offset");
+
+    [Test]
+    public void It_uses_the_fresh_offset_without_resampling_a_proven_gap() => _reads.Should().Be(1);
 
     [Test]
     public void It_only_admits_a_resumable_offset() =>
         _state
             .Should()
             .Be(
-                offsetRemainsBehind
-                    ? CdcTransportEvidenceState.Unavailable
-                    : CdcTransportEvidenceState.Observed
+                offsetBehindSlot ? CdcTransportEvidenceState.Unavailable : CdcTransportEvidenceState.Observed
             );
 
     [Test]
     public void It_keeps_writer_authorization_closed_for_a_proven_gap() =>
-        ReadJournal().WriterPublicationAuthorized.Should().Be(!offsetRemainsBehind);
+        ReadJournal().WriterPublicationAuthorized.Should().Be(!offsetBehindSlot);
+
+    [Test]
+    public void It_verifies_connector_shutdown_only_for_a_proven_gap() =>
+        _trace.Contains("stopped-readback").Should().Be(offsetBehindSlot);
 }
