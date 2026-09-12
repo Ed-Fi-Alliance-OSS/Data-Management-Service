@@ -6,6 +6,7 @@
 using System.Data.Common;
 using System.Reflection;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.Startup;
@@ -174,16 +175,6 @@ public sealed class Given_Representation_Restamp_E2E_Harness
         RepresentationRestampE2EHarness.ProviderFor("mssql").Should().Be(RelationalProviderToken.SqlServer);
     }
 
-    [TestCase(DocumentCacheRepresentationRestampMode.Disabled, true)]
-    [TestCase(DocumentCacheRepresentationRestampMode.Tracking, false)]
-    public void It_requires_a_lifecycle_reset_only_for_the_disabled_mode(
-        DocumentCacheRepresentationRestampMode mode,
-        bool expected
-    )
-    {
-        RepresentationRestampE2EHarness.RequiresDisabledLifecycleReset(mode).Should().Be(expected);
-    }
-
     [Test]
     public void It_rejects_an_unsupported_database_engine()
     {
@@ -250,6 +241,11 @@ public sealed class Given_Representation_Restamp_E2E_Harness
         operations.Sql.ReadRequiredWorkVersion.Should().Contain("dms.\"DocumentProjectionWork\"");
         operations.Sql.IsProjected.Should().Contain("dms.\"DocumentCache\"");
         operations.Sql.IsProjected.Should().Contain("dms.\"DocumentProjectionWork\"");
+        operations.Sql.ReadResidualWork.Should().Contain("dms.\"DocumentProjectionWork\"");
+        operations.Sql.ReadResidualWork.Should().Contain("LEFT JOIN dms.\"DocumentCache\"");
+        operations.Sql.ReadResidualWork.Should().Contain("LIMIT 50");
+        operations.Sql.ReadDocumentCacheState.Should().Contain("dms.\"DocumentCacheState\"");
+        operations.Sql.ReadDocumentCacheState.Should().Contain("\"CacheAheadRecoveryRequired\"");
     }
 
     [Test]
@@ -268,6 +264,11 @@ public sealed class Given_Representation_Restamp_E2E_Harness
         operations.Sql.ReadRequiredWorkVersion.Should().Contain("[dms].[DocumentProjectionWork]");
         operations.Sql.IsProjected.Should().Contain("[dms].[DocumentCache]");
         operations.Sql.IsProjected.Should().Contain("[dms].[DocumentProjectionWork]");
+        operations.Sql.ReadResidualWork.Should().Contain("[dms].[DocumentProjectionWork]");
+        operations.Sql.ReadResidualWork.Should().Contain("LEFT JOIN [dms].[DocumentCache]");
+        operations.Sql.ReadResidualWork.Should().Contain("SELECT TOP (50)");
+        operations.Sql.ReadDocumentCacheState.Should().Contain("[dms].[DocumentCacheState]");
+        operations.Sql.ReadDocumentCacheState.Should().Contain("[CacheAheadRecoveryRequired]");
     }
 
     [Test]
@@ -680,5 +681,739 @@ public sealed class Given_Representation_Restamp_E2E_Harness_Cleanup
 
         await act.Should().ThrowAsync<InvalidOperationException>();
         restartRan.Should().BeTrue();
+    }
+}
+
+[TestFixture]
+public sealed class Given_Representation_Restamp_E2E_Harness_Phase_Budgets
+{
+    private const string TargetDescription = "'':1";
+
+    [Test]
+    public async Task It_names_the_phase_elapsed_and_budget_when_a_phase_times_out()
+    {
+        TimeSpan budget = TimeSpan.FromMilliseconds(25);
+
+        Func<Task> act = async () =>
+            await RepresentationRestampE2EHarness.RunPhaseAsync(
+                RepresentationRestampE2EHarness.OrdinaryDrainPhase,
+                budget,
+                TargetDescription,
+                async cancellationToken =>
+                {
+                    await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+                    return 0;
+                }
+            );
+
+        TimeoutException exception = (await act.Should().ThrowAsync<TimeoutException>()).Which;
+        exception.Message.Should().Contain("phase 'OrdinaryDrain'");
+        exception.Message.Should().Contain($"budget {budget}");
+        exception.Message.Should().Contain($"for target {TargetDescription}.");
+        exception.Message.Should().MatchRegex(@"after \d\d:\d\d:\d\d");
+        exception.InnerException.Should().BeOfType<TaskCanceledException>();
+    }
+
+    [Test]
+    public async Task It_returns_the_phase_result_when_the_phase_completes()
+    {
+        int result = await RepresentationRestampE2EHarness.RunPhaseAsync(
+            RepresentationRestampE2EHarness.ProjectorSetupPhase,
+            TimeSpan.FromMinutes(1),
+            TargetDescription,
+            _ => Task.FromResult(42)
+        );
+
+        result.Should().Be(42);
+    }
+
+    [Test]
+    public async Task It_completes_a_result_free_phase()
+    {
+        var ran = false;
+
+        await RepresentationRestampE2EHarness.RunPhaseAsync(
+            RepresentationRestampE2EHarness.OrdinaryDrainPhase,
+            TimeSpan.FromMinutes(1),
+            TargetDescription,
+            _ =>
+            {
+                ran = true;
+                return Task.CompletedTask;
+            }
+        );
+
+        ran.Should().BeTrue();
+    }
+
+    [Test]
+    public async Task It_rethrows_cancellation_that_is_not_the_phase_budget()
+    {
+        using var externalSource = new CancellationTokenSource();
+        await externalSource.CancelAsync();
+
+        Func<Task> act = async () =>
+            await RepresentationRestampE2EHarness.RunPhaseAsync(
+                RepresentationRestampE2EHarness.OrdinaryDrainPhase,
+                TimeSpan.FromMinutes(1),
+                TargetDescription,
+                _ => Task.FromCanceled<int>(externalSource.Token)
+            );
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        await act.Should().NotThrowAsync<TimeoutException>();
+    }
+
+    [Test]
+    public async Task It_rethrows_non_cancellation_failures_unchanged()
+    {
+        var expected = new InvalidOperationException("provider failure");
+
+        Func<Task> act = async () =>
+            await RepresentationRestampE2EHarness.RunPhaseAsync(
+                RepresentationRestampE2EHarness.ProjectorSetupPhase,
+                TimeSpan.FromMinutes(1),
+                TargetDescription,
+                _ => Task.FromException<int>(expected)
+            );
+
+        InvalidOperationException exception = (
+            await act.Should().ThrowAsync<InvalidOperationException>()
+        ).Which;
+        exception.Should().BeSameAs(expected);
+    }
+
+    [Test]
+    public void It_formats_the_phase_timeout_message()
+    {
+        string message = RepresentationRestampE2EHarness.PhaseTimeoutMessage(
+            RepresentationRestampE2EHarness.ProjectorSetupPhase,
+            TimeSpan.FromSeconds(125),
+            TimeSpan.FromMinutes(2),
+            TargetDescription
+        );
+
+        message
+            .Should()
+            .Be(
+                "Timed out in representation-restamp phase 'ProjectorSetup' after 00:02:05 (budget 00:02:00) for target '':1."
+            );
+    }
+
+    [Test]
+    public void It_keeps_separate_two_minute_budgets_for_setup_and_drain()
+    {
+        RepresentationRestampE2EHarness.ProjectorSetupBudget.Should().Be(TimeSpan.FromMinutes(2));
+        RepresentationRestampE2EHarness.OrdinaryDrainBudget.Should().Be(TimeSpan.FromMinutes(2));
+    }
+}
+
+[TestFixture]
+public sealed class Given_Representation_Restamp_E2E_Harness_Drain_Diagnostics
+{
+    private static readonly Guid _ownDocument = Guid.Parse("9622f938-2c1a-4f99-9bc4-10970b1c2649");
+    private static readonly Guid _foreignDocument = Guid.Parse("3f1d2a6c-0d3f-4d1e-9c2b-7a5e0f1b2c3d");
+    private static readonly DateTimeOffset _enqueuedAt = new(2026, 9, 11, 15, 53, 45, TimeSpan.Zero);
+
+    [Test]
+    public void It_counts_pages_items_failures_and_consecutive_pages_without_acknowledgement()
+    {
+        var tally = new RepresentationRestampDrainTally();
+
+        tally.Record(DocumentCacheProjectionDrainPageResult.PageProcessed(2, 1, 1, [7]));
+        tally.Record(DocumentCacheProjectionDrainPageResult.PageProcessed(1));
+        tally.Record(DocumentCacheProjectionDrainPageResult.PageProcessed(1));
+
+        tally.Pages.Should().Be(3);
+        tally.ProcessedItems.Should().Be(4);
+        tally.AcknowledgedOrRemovedItems.Should().Be(1);
+        tally.DocumentScopedFailures.Should().Be(1);
+        tally.ConsecutivePagesWithoutAcknowledgement.Should().Be(2);
+        tally.LastOutcome.Should().Be(DocumentCacheProjectionDrainPageOutcome.PageProcessed);
+    }
+
+    [Test]
+    public void It_resets_the_consecutive_count_when_a_page_acknowledges_work()
+    {
+        var tally = new RepresentationRestampDrainTally();
+
+        tally.Record(DocumentCacheProjectionDrainPageResult.PageProcessed(1));
+        tally.Record(DocumentCacheProjectionDrainPageResult.PageProcessed(1, 1));
+
+        tally.ConsecutivePagesWithoutAcknowledgement.Should().Be(0);
+    }
+
+    [Test]
+    public void It_describes_an_empty_tally()
+    {
+        new RepresentationRestampDrainTally()
+            .Describe()
+            .Should()
+            .Be(
+                "Drain pages=0 processed=0 acknowledgedOrRemoved=0 documentScopedFailures=0 consecutivePagesWithoutAcknowledgement=0 lastOutcome=none."
+            );
+    }
+
+    [Test]
+    public void It_formats_drain_diagnostics_with_tallies_and_marks_the_own_document()
+    {
+        var tally = new RepresentationRestampDrainTally();
+        tally.Record(DocumentCacheProjectionDrainPageResult.PageProcessed(2, 1, 1, [1]));
+        RepresentationRestampE2EResidualWorkRow[] residualWork =
+        [
+            new(1, _foreignDocument, 1, 2, null, _enqueuedAt),
+            new(2, _ownDocument, 4, 4, 4, _enqueuedAt.AddSeconds(45)),
+        ];
+
+        string diagnostics = RepresentationRestampE2EHarness.FormatDrainDiagnostics(
+            tally,
+            residualWork,
+            ["DocumentId=1 WorkAnomaly: Cache writer observed work anomaly."],
+            _ownDocument
+        );
+
+        diagnostics
+            .Should()
+            .StartWith("Drain pages=1 processed=2 acknowledgedOrRemoved=1 documentScopedFailures=1");
+        diagnostics.Should().Contain($"Residual work rows (2, own document {_ownDocument})");
+        diagnostics
+            .Should()
+            .Contain(
+                $"[foreign DocumentId=1 DocumentUuid={_foreignDocument} RequiredContentVersion=1 CanonicalContentVersion=2 CacheContentVersion=absent FirstEnqueuedAt=2026-09-11T15:53:45.0000000+00:00]"
+            );
+        diagnostics
+            .Should()
+            .Contain(
+                $"[own DocumentId=2 DocumentUuid={_ownDocument} RequiredContentVersion=4 CanonicalContentVersion=4 CacheContentVersion=4"
+            );
+        diagnostics
+            .Should()
+            .EndWith(
+                "Projector failure diagnostics (1): DocumentId=1 WorkAnomaly: Cache writer observed work anomaly.."
+            );
+    }
+
+    [Test]
+    public void It_formats_an_empty_residual_snapshot()
+    {
+        string diagnostics = RepresentationRestampE2EHarness.FormatDrainDiagnostics(
+            new RepresentationRestampDrainTally(),
+            [],
+            [],
+            _ownDocument
+        );
+
+        diagnostics.Should().Contain($"Residual work rows (0, own document {_ownDocument}): none.");
+        diagnostics.Should().EndWith("Projector failure diagnostics (0): none.");
+    }
+
+    [Test]
+    public void It_describes_projector_failures_per_document()
+    {
+        DocumentCacheProjectionDocumentDiagnostic diagnostic = new(
+            17,
+            DocumentCacheProjectionDocumentDiagnosticCategory.WorkAnomaly,
+            "Cache writer observed work anomaly.",
+            _enqueuedAt,
+            _enqueuedAt.AddSeconds(1)
+        );
+        DocumentCacheProjectionFailureDiagnostics diagnostics = new(
+            effectiveProjectorPageSize: 10,
+            failureCount: 1,
+            earliestRetryAt: _enqueuedAt.AddSeconds(1),
+            evictionCount: 0,
+            documentDiagnostics: [diagnostic]
+        );
+
+        RepresentationRestampE2EHarness
+            .DescribeProjectorFailures(diagnostics)
+            .Should()
+            .Equal("DocumentId=17 WorkAnomaly: Cache writer observed work anomaly.");
+    }
+
+    [Test]
+    public async Task It_appends_the_drain_diagnostics_to_the_phase_timeout()
+    {
+        Func<Task> act = async () =>
+            await RepresentationRestampE2EHarness.RunPhaseAsync(
+                RepresentationRestampE2EHarness.OrdinaryDrainPhase,
+                TimeSpan.FromMilliseconds(25),
+                "'':1",
+                cancellationToken => Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken),
+                () => Task.FromResult("Drain pages=3 acknowledgedOrRemoved=0.")
+            );
+
+        TimeoutException exception = (await act.Should().ThrowAsync<TimeoutException>()).Which;
+        exception.Message.Should().Contain("phase 'OrdinaryDrain'");
+        exception.Message.Should().EndWith("for target '':1. Drain pages=3 acknowledgedOrRemoved=0.");
+    }
+
+    [Test]
+    public async Task It_reports_a_failing_describer_without_hiding_the_timeout()
+    {
+        Func<Task> act = async () =>
+            await RepresentationRestampE2EHarness.RunPhaseAsync(
+                RepresentationRestampE2EHarness.OrdinaryDrainPhase,
+                TimeSpan.FromMilliseconds(25),
+                "'':1",
+                cancellationToken => Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken),
+                () => Task.FromException<string>(new InvalidOperationException("database unreachable"))
+            );
+
+        TimeoutException exception = (await act.Should().ThrowAsync<TimeoutException>()).Which;
+        exception
+            .Message.Should()
+            .EndWith("Drain diagnostics unavailable: InvalidOperationException: database unreachable");
+    }
+
+    [Test]
+    public void It_leaves_the_phase_timeout_message_unchanged_without_detail()
+    {
+        RepresentationRestampE2EHarness
+            .PhaseTimeoutMessage(
+                RepresentationRestampE2EHarness.OrdinaryDrainPhase,
+                TimeSpan.FromSeconds(1),
+                TimeSpan.FromSeconds(2),
+                "'':1",
+                detail: "   "
+            )
+            .Should()
+            .Be(
+                "Timed out in representation-restamp phase 'OrdinaryDrain' after 00:00:01 (budget 00:00:02) for target '':1."
+            );
+    }
+}
+
+[TestFixture]
+public sealed class Given_Representation_Restamp_E2E_Harness_Lifecycle_Restore
+{
+    private const string TargetDescription = "'':1";
+
+    [TestCase("Disabled", DocumentCacheLifecycleState.Disabled)]
+    [TestCase("Resetting", DocumentCacheLifecycleState.Resetting)]
+    [TestCase("Rebuilding", DocumentCacheLifecycleState.Rebuilding)]
+    [TestCase("Tracking", DocumentCacheLifecycleState.Tracking)]
+    public void It_parses_each_supported_lifecycle_state_strictly(
+        string lifecycleValue,
+        DocumentCacheLifecycleState expected
+    )
+    {
+        RepresentationRestampE2EDocumentCacheStateObservation observation =
+            RepresentationRestampE2EHarness.ParseDocumentCacheState(lifecycleValue, true, TargetDescription);
+
+        observation.LifecycleState.Should().Be(expected);
+        observation.CacheAheadRecoveryRequired.Should().BeTrue();
+    }
+
+    [TestCase("tracking")]
+    [TestCase("Paused")]
+    [TestCase("")]
+    [TestCase("1")]
+    public void It_rejects_an_unknown_or_blank_lifecycle_value_with_the_capture_phase_named(
+        string lifecycleValue
+    )
+    {
+        Action act = () =>
+            RepresentationRestampE2EHarness.ParseDocumentCacheState(lifecycleValue, false, TargetDescription);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*phase 'LifecycleCapture'*")
+            .WithMessage($"*for target {TargetDescription}*")
+            .WithMessage($"*unsupported value '{lifecycleValue}'*");
+    }
+
+    [Test]
+    public void It_rejects_a_missing_state_row_with_the_capture_phase_named()
+    {
+        Action act = () =>
+            RepresentationRestampE2EHarness.ParseDocumentCacheState(null, null, TargetDescription);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*phase 'LifecycleCapture'*")
+            .WithMessage("*no readable singleton row*");
+    }
+
+    [Test]
+    public void It_rejects_an_unreadable_latch_with_the_capture_phase_named()
+    {
+        Action act = () =>
+            RepresentationRestampE2EHarness.ParseDocumentCacheState(
+                "Tracking",
+                DBNull.Value,
+                TargetDescription
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*phase 'LifecycleCapture'*")
+            .WithMessage("*CacheAheadRecoveryRequired is unreadable*");
+    }
+
+    [Test]
+    public void It_reads_the_latch_from_a_database_boolean()
+    {
+        RepresentationRestampE2EHarness
+            .ParseDocumentCacheState("Disabled", false, TargetDescription)
+            .Should()
+            .Be(
+                new RepresentationRestampE2EDocumentCacheStateObservation(
+                    DocumentCacheLifecycleState.Disabled,
+                    false
+                )
+            );
+    }
+
+    [TestCase(DocumentCacheLifecycleState.Disabled, false)]
+    [TestCase(DocumentCacheLifecycleState.Tracking, false)]
+    [TestCase(DocumentCacheLifecycleState.Tracking, true)]
+    [TestCase(DocumentCacheLifecycleState.Rebuilding, true)]
+    public async Task It_restores_the_observed_lifecycle_and_latch_for_both_modes(
+        DocumentCacheLifecycleState lifecycleState,
+        bool cacheAheadRecoveryRequired
+    )
+    {
+        // The restore does not depend on the restamp mode: whatever was observed before the first
+        // mutation is written back, latch included, so a set latch is never clobbered to false.
+        List<(DocumentCacheLifecycleState LifecycleState, bool Latch)> writes = [];
+
+        await RepresentationRestampE2EHarness.RestoreDocumentCacheStateAsync(
+            new RepresentationRestampE2EDocumentCacheStateObservation(
+                lifecycleState,
+                cacheAheadRecoveryRequired
+            ),
+            (state, latch) =>
+            {
+                writes.Add((state, latch));
+                return Task.CompletedTask;
+            }
+        );
+
+        writes.Should().Equal((lifecycleState, cacheAheadRecoveryRequired));
+    }
+
+    [Test]
+    public async Task It_skips_restore_when_nothing_was_observed()
+    {
+        var wrote = false;
+
+        await RepresentationRestampE2EHarness.RestoreDocumentCacheStateAsync(
+            null,
+            (_, _) =>
+            {
+                wrote = true;
+                return Task.CompletedTask;
+            }
+        );
+
+        wrote.Should().BeFalse();
+    }
+}
+
+[TestFixture]
+public sealed class Given_Representation_Restamp_E2E_Harness_Drain_Loop
+{
+    private const string TargetDescription = "'':1";
+    private const string Diagnostics = "Drain pages=1. Residual work rows (1): [foreign DocumentId=1].";
+
+    private static Func<CancellationToken, Task<DocumentCacheProjectionDrainPageResult>> Pages(
+        params DocumentCacheProjectionDrainPageResult[] results
+    )
+    {
+        var index = 0;
+        return _ =>
+        {
+            DocumentCacheProjectionDrainPageResult result = results[Math.Min(index, results.Length - 1)];
+            index++;
+            return Task.FromResult(result);
+        };
+    }
+
+    private static Func<CancellationToken, Task<bool>> OwnDocumentProjected(params bool[] answers)
+    {
+        var index = 0;
+        return _ =>
+        {
+            bool answer = answers[Math.Min(index, answers.Length - 1)];
+            index++;
+            return Task.FromResult(answer);
+        };
+    }
+
+    private static Task<string> DescribeDiagnostics() => Task.FromResult(Diagnostics);
+
+    private static Task Drain(
+        RepresentationRestampDrainTally tally,
+        Func<CancellationToken, Task<DocumentCacheProjectionDrainPageResult>> processPageAsync,
+        Func<CancellationToken, Task<bool>> isOwnDocumentProjectedAsync,
+        int maxConsecutivePagesWithoutAcknowledgement = 20,
+        Func<Task<string>>? describeDiagnosticsAsync = null
+    ) =>
+        RepresentationRestampE2EHarness.DrainUntilOwnWorkProjectedAsync(
+            tally,
+            processPageAsync,
+            isOwnDocumentProjectedAsync,
+            describeDiagnosticsAsync ?? DescribeDiagnostics,
+            TargetDescription,
+            maxConsecutivePagesWithoutAcknowledgement,
+            CancellationToken.None
+        );
+
+    [Test]
+    public void It_uses_a_fixed_named_stall_threshold_of_twenty_pages()
+    {
+        RepresentationRestampE2EHarness.MaxConsecutivePagesWithoutAcknowledgement.Should().Be(20);
+        RepresentationRestampE2EHarness.ResidualWorkReadBudget.Should().Be(TimeSpan.FromSeconds(15));
+    }
+
+    [Test]
+    public async Task It_completes_when_the_own_document_is_projected_even_if_foreign_work_remains()
+    {
+        // The page acknowledged the own row and left a foreign row behind; the drain must not wait
+        // for that foreign row.
+        var tally = new RepresentationRestampDrainTally();
+        var describeCalls = 0;
+
+        await Drain(
+            tally,
+            Pages(DocumentCacheProjectionDrainPageResult.PageProcessed(2, 1, 1, [1])),
+            OwnDocumentProjected(true),
+            describeDiagnosticsAsync: () =>
+            {
+                describeCalls++;
+                return DescribeDiagnostics();
+            }
+        );
+
+        tally.Pages.Should().Be(1);
+        describeCalls.Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_keeps_paging_until_the_own_document_is_projected()
+    {
+        var tally = new RepresentationRestampDrainTally();
+
+        await Drain(
+            tally,
+            Pages(
+                DocumentCacheProjectionDrainPageResult.PageProcessed(1, 1),
+                DocumentCacheProjectionDrainPageResult.PageProcessed(1, 1)
+            ),
+            OwnDocumentProjected(false, true)
+        );
+
+        tally.Pages.Should().Be(2);
+    }
+
+    [Test]
+    public async Task It_completes_on_no_eligible_work_when_the_own_document_is_projected()
+    {
+        var tally = new RepresentationRestampDrainTally();
+
+        await Drain(
+            tally,
+            Pages(DocumentCacheProjectionDrainPageResult.NoEligibleWork),
+            OwnDocumentProjected(true)
+        );
+
+        tally.LastOutcome.Should().Be(DocumentCacheProjectionDrainPageOutcome.NoEligibleWork);
+    }
+
+    [Test]
+    public async Task It_fails_with_diagnostics_on_no_eligible_work_when_the_own_document_is_not_projected()
+    {
+        Func<Task> act = () =>
+            Drain(
+                new RepresentationRestampDrainTally(),
+                Pages(
+                    DocumentCacheProjectionDrainPageResult.NoEligibleWorkWithRetry(
+                        DateTimeOffset.UtcNow.AddSeconds(1)
+                    )
+                ),
+                OwnDocumentProjected(false)
+            );
+
+        InvalidOperationException exception = (
+            await act.Should().ThrowAsync<InvalidOperationException>()
+        ).Which;
+        exception
+            .Message.Should()
+            .StartWith(
+                $"Representation-restamp phase 'OrdinaryDrain' failed for target {TargetDescription}: "
+            );
+        exception
+            .Message.Should()
+            .Contain("reported NoEligibleWork but the Tracking restamp's own document is not projected");
+        exception.Message.Should().EndWith(Diagnostics);
+    }
+
+    [Test]
+    public async Task It_fails_fast_after_the_stall_threshold_without_acknowledgements()
+    {
+        var tally = new RepresentationRestampDrainTally();
+
+        Func<Task> act = () =>
+            Drain(
+                tally,
+                Pages(DocumentCacheProjectionDrainPageResult.PageProcessed(1)),
+                OwnDocumentProjected(false),
+                maxConsecutivePagesWithoutAcknowledgement: 3
+            );
+
+        InvalidOperationException exception = (
+            await act.Should().ThrowAsync<InvalidOperationException>()
+        ).Which;
+        exception.Message.Should().Contain("made no progress: 3 consecutive page(s) acknowledged no work");
+        exception.Message.Should().EndWith(Diagnostics);
+        tally.Pages.Should().Be(3);
+    }
+
+    [Test]
+    public async Task It_resets_the_stall_count_when_a_page_acknowledges_work()
+    {
+        // Two idle pages, one page that acknowledges foreign work, then two more idle pages: the
+        // threshold of three is never reached consecutively, so the own-document check decides.
+        var tally = new RepresentationRestampDrainTally();
+
+        await Drain(
+            tally,
+            Pages(
+                DocumentCacheProjectionDrainPageResult.PageProcessed(1),
+                DocumentCacheProjectionDrainPageResult.PageProcessed(1),
+                DocumentCacheProjectionDrainPageResult.PageProcessed(1, 1),
+                DocumentCacheProjectionDrainPageResult.PageProcessed(1),
+                DocumentCacheProjectionDrainPageResult.PageProcessed(1)
+            ),
+            OwnDocumentProjected(false, false, false, false, true),
+            maxConsecutivePagesWithoutAcknowledgement: 3
+        );
+
+        tally.Pages.Should().Be(5);
+    }
+
+    private static IEnumerable<TestCaseData> NonPageOutcomes()
+    {
+        yield return new TestCaseData(
+            DocumentCacheProjectionDrainPageResult.TargetBackoff(
+                new DateTimeOffset(2026, 9, 11, 16, 0, 0, TimeSpan.Zero)
+            )
+        ).SetName("It_fails_naming_a_non_page_outcome(TargetBackoff)");
+        yield return new TestCaseData(DocumentCacheProjectionDrainPageResult.LifecycleFenced).SetName(
+            "It_fails_naming_a_non_page_outcome(LifecycleFenced)"
+        );
+        yield return new TestCaseData(DocumentCacheProjectionDrainPageResult.TargetPaused(1)).SetName(
+            "It_fails_naming_a_non_page_outcome(TargetPaused)"
+        );
+        yield return new TestCaseData(
+            DocumentCacheProjectionDrainPageResult.AdministrativeFailureResult(
+                0,
+                0,
+                0,
+                [],
+                new DocumentCacheAdministrativeDrainFailure(
+                    DocumentCacheAdministrativeCommandStatus.RejectedNoMutation,
+                    DocumentCacheAdministrativeCommandClassification.TargetNotConfigured,
+                    DocumentCacheAdministrativeDiagnosticCategory.TargetNotConfigured,
+                    "target not configured",
+                    retryable: false
+                )
+            )
+        ).SetName("It_fails_naming_a_non_page_outcome(AdministrativeFailure)");
+    }
+
+    [TestCaseSource(nameof(NonPageOutcomes))]
+    public async Task It_fails_naming_a_non_page_outcome(DocumentCacheProjectionDrainPageResult result)
+    {
+        var ownDocumentChecks = 0;
+
+        Func<Task> act = () =>
+            Drain(
+                new RepresentationRestampDrainTally(),
+                Pages(result),
+                _ =>
+                {
+                    ownDocumentChecks++;
+                    return Task.FromResult(true);
+                }
+            );
+
+        InvalidOperationException exception = (
+            await act.Should().ThrowAsync<InvalidOperationException>()
+        ).Which;
+        exception
+            .Message.Should()
+            .Contain($"ended with outcome '{result.Outcome}' instead of PageProcessed or NoEligibleWork");
+        exception.Message.Should().EndWith(Diagnostics);
+        ownDocumentChecks.Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_reports_a_failing_describer_inside_the_drain_failure()
+    {
+        Func<Task> act = () =>
+            Drain(
+                new RepresentationRestampDrainTally(),
+                Pages(DocumentCacheProjectionDrainPageResult.LifecycleFenced),
+                OwnDocumentProjected(true),
+                describeDiagnosticsAsync: () =>
+                    Task.FromException<string>(new TimeoutException("residual read timed out"))
+            );
+
+        InvalidOperationException exception = (
+            await act.Should().ThrowAsync<InvalidOperationException>()
+        ).Which;
+        exception.Message.Should().Contain("ended with outcome 'LifecycleFenced'");
+        exception
+            .Message.Should()
+            .EndWith("Drain diagnostics unavailable: TimeoutException: residual read timed out");
+    }
+
+    [Test]
+    public async Task It_reports_the_drain_phase_when_the_budget_expires_mid_page()
+    {
+        var tally = new RepresentationRestampDrainTally();
+
+        Func<Task> act = () =>
+            RepresentationRestampE2EHarness.RunPhaseAsync(
+                RepresentationRestampE2EHarness.OrdinaryDrainPhase,
+                TimeSpan.FromMilliseconds(25),
+                TargetDescription,
+                cancellationToken =>
+                    RepresentationRestampE2EHarness.DrainUntilOwnWorkProjectedAsync(
+                        tally,
+                        async token =>
+                        {
+                            await Task.Delay(Timeout.InfiniteTimeSpan, token);
+                            return DocumentCacheProjectionDrainPageResult.NoEligibleWork;
+                        },
+                        OwnDocumentProjected(false),
+                        DescribeDiagnostics,
+                        TargetDescription,
+                        20,
+                        cancellationToken
+                    ),
+                DescribeDiagnostics
+            );
+
+        TimeoutException exception = (await act.Should().ThrowAsync<TimeoutException>()).Which;
+        exception.Message.Should().Contain("phase 'OrdinaryDrain'");
+        exception.Message.Should().EndWith($"for target {TargetDescription}. {Diagnostics}");
+        tally.Pages.Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_rejects_a_non_positive_stall_threshold()
+    {
+        Func<Task> act = () =>
+            Drain(
+                new RepresentationRestampDrainTally(),
+                Pages(DocumentCacheProjectionDrainPageResult.NoEligibleWork),
+                OwnDocumentProjected(true),
+                maxConsecutivePagesWithoutAcknowledgement: 0
+            );
+
+        await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
     }
 }
