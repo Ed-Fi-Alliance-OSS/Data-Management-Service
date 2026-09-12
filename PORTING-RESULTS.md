@@ -45,8 +45,9 @@ no skipped cases are counted as passing evidence. Paths are relative to this che
 | PostgreSQL history and cleanup with corrected admin environment | 25 history + 5 cleanup passed | `TestResults/port-postgresql-history-fixed-02` |
 | MSSQL history and provider cleanup | 25 history + 5 cleanup passed | `TestResults/port-mssql-history-01` |
 | Fresh PostgreSQL full-lane native recovery phase | 9 passed | `TestResults/port-postgresql-02/Postgresql-CdcControllerNativeRecovery` |
-| PostgreSQL full-lane record-size phase | 17 passed; 51 exported evidence links resolve | `TestResults/port-postgresql-01/Postgresql-CdcControllerRecordSize` |
+| Fresh PostgreSQL full-lane record-size phase | 17 passed; 51 exported evidence links resolve | `TestResults/port-postgresql-02/Postgresql-CdcControllerRecordSize` |
 | Fresh MSSQL full-lane admission phase | 36 passed | `TestResults/port-mssql-02/Mssql-CdcControllerAdmission` |
+| Fresh MSSQL full-lane managed lifecycle | 15 passed | `TestResults/port-mssql-02/Mssql-CdcControllerManagedLifecycle` |
 | MSSQL full-lane native recovery | 9 passed; 27 exported evidence links resolve | `TestResults/port-mssql-01/Mssql-CdcControllerNativeRecovery` |
 | Final integration package traceability outside checkout | 20 passed | `/tmp/dms1324-port-packaged-verified/results-integration` |
 
@@ -173,8 +174,8 @@ provider-cleanup cases with no skips.
 
 The original MSSQL lifecycle phase passed 12 of 15 cases. One failed during offset-store
 setup, one rejected start before resume with workflow evidence validation, and one rejected
-restart with metrics/Connect validation diagnostics. These failures remain under
-investigation; the fresh full MSSQL invocation must qualify the complete lane.
+restart with metrics/Connect validation diagnostics. All three pass the focused rerun, and the fresh full MSSQL lifecycle phase passes all 15
+cases. The remaining fresh full-lane phases are still pending.
 
 The persistent-backlog timing override was also found to reset `MaximumObservationAge`
 to ten seconds, despite the shared fixture explicitly allowing one minute. The override
@@ -182,7 +183,7 @@ now preserves that fixture setting while retaining its existing wait deadline an
 resume, polling, and retained-work assertions. A focused rerun of all three MSSQL failures
 passes (`TestResults/port-mssql-lifecycle-focused-01`, three passed, no skips). The other
 two failures did not reproduce in this rerun. The fresh full MSSQL lane has passed
-admission and is running managed lifecycle with this correction.
+admission and all 15 managed-lifecycle cases with this correction.
 
 The PostgreSQL persistent-backlog case passes with the corrected freshness override
 (`TestResults/port-postgresql-lifecycle-freshness-01`, one passed, no skips). This supplements
