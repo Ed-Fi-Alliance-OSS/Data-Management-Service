@@ -272,3 +272,23 @@ Describe 'Message contract qualification selection and attachments' {
         Test-Path (Join-Path $safe 'private.log') | Should -BeFalse
     }
 }
+
+Describe 'CDC fixture-level evidence retention' {
+    BeforeAll {
+        Import-Module (Join-Path $PSScriptRoot '../cdc-qualification.psm1') -Force
+    }
+    It 'exports allowlisted fixture evidence even when VSTest omits the attachment link' {
+        $raw = Join-Path $TestDrive 'raw'
+        $fixture = Join-Path $raw 'TestResults/MessageContractProgressAcknowledgement'
+        $destination = Join-Path $TestDrive 'published'
+        New-Item -ItemType Directory -Force $fixture | Out-Null
+        @{ ScenarioIds = @('MC-PROGRESS-ACK-PG-GATING'); Payload = 'private-document' } |
+            ConvertTo-Json | Set-Content (Join-Path $fixture 'cdc-message-contract-ack.json')
+        '{"private":"not-exported"}' | Set-Content (Join-Path $fixture 'runtime-settings.json')
+        Export-CdcQualificationEvidence -RawDirectory $raw -Destination $destination
+        $result = Get-Content (Join-Path $destination 'cdc-message-contract-ack.json') -Raw | ConvertFrom-Json
+        $result.ScenarioIds | Should -Be @('MC-PROGRESS-ACK-PG-GATING')
+        $result.Payload | Should -Be '[redacted]'
+        Test-Path (Join-Path $destination 'runtime-settings.json') | Should -BeFalse
+    }
+}
