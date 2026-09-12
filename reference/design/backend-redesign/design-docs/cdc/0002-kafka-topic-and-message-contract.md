@@ -722,8 +722,10 @@ The public topic never exposes:
 - A published cache-ahead invariant durably latches cache use/readiness and cannot be
   repaired by later source equality or by sending the lower canonical version to the same
   topic; v1 fences publication and leaves the latch set because the required new-namespace
-  reset is deferred. Guarded source rollback/reset replacement independently uses a new
-  topic generation and does not clear a published cache-ahead latch.
+  reset is deferred. Physical-source rollback/reset replacement is also
+  [deferred from v1](cdc-streaming.md#v1-physical-source-replacement-deferral); any future
+  replacement requires a new topic generation and does not authorize clearing a published
+  cache-ahead latch.
 - One ACL protects one instance while resource metadata supports downstream routing.
 - Each binding records the stable `kafka-murmur2-v1` behavior token rather than a Java
   class/version; its fixed key-to-partition mapping and partition count preserve the

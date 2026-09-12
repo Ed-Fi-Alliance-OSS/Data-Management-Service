@@ -22,7 +22,7 @@ using CoreCdc = EdFi.DataManagementService.Core.DocumentCache.Cdc;
 
 namespace EdFi.DataManagementService.Backend.Cdc.Tests.Integration;
 
-internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
+internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
 {
     private const string ConnectorPasswordEnvironmentVariable = "CDC_DATABASE_PASSWORD";
     internal const string ConnectorDatabasePassword = "EdFi_Dms1!";
@@ -113,10 +113,15 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
     ];
 
     private readonly CdcConnectorTemplateSmokeSettings _settings;
-    private readonly HttpClient _httpClient;
+    private HttpClient _httpClient;
     private readonly IDockerCli _docker;
     private readonly ServiceProvider _serviceProvider;
     private readonly string _resourcePrefix;
+    private bool _controllerNativeKafka;
+    private int _controllerBrokerPort;
+    private int _controllerConnectPort;
+    private int _controllerMetricsPort;
+    private bool _disposed;
 
     private CdcConnectorTemplatePinnedImageFixture(
         CdcProvider provider,
@@ -171,7 +176,7 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
 
     private string ConnectContainerName => $"{_resourcePrefix}-connect";
 
-    private string ProviderContainerName => $"{_resourcePrefix}-provider";
+    internal string ProviderContainerName => $"{_resourcePrefix}-provider";
 
     public static CdcConnectorTemplatePinnedImageFixture CreateOffline(CdcProvider provider) =>
         new(
@@ -200,7 +205,12 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
 
     public static async Task<CdcConnectorTemplatePinnedImageFixture> StartAsync(
         CdcProvider provider,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        Func<CdcConnectorTemplatePinnedImageFixture, CancellationToken, Task> beforeWorker = null!,
+        bool exposeBroker = false,
+        bool nativeKafka = false,
+        bool composeKafka = false,
+        bool offlineKafka = false
     )
     {
         CdcConnectorTemplateSmokeSettings settings = CdcConnectorTemplateSmokeSettings.FromEnvironment(
@@ -216,7 +226,18 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
         );
 
         string resourcePrefix = $"dms-cdc-template-{Guid.NewGuid():N}";
-        return await StartAsync(provider, settings, docker, resourcePrefix, cancellationToken);
+        return await StartAsync(
+            provider,
+            settings,
+            docker,
+            resourcePrefix,
+            cancellationToken,
+            beforeWorker: beforeWorker,
+            exposeBroker: exposeBroker,
+            nativeKafka: nativeKafka,
+            composeKafka: composeKafka,
+            offlineKafka: offlineKafka
+        );
     }
 
     internal static async Task<CdcConnectorTemplatePinnedImageFixture> StartAsync(
@@ -225,7 +246,12 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
         IDockerCli docker,
         string resourcePrefix,
         CancellationToken cancellationToken,
-        bool applyPrerequisitePolicy = true
+        bool applyPrerequisitePolicy = true,
+        Func<CdcConnectorTemplatePinnedImageFixture, CancellationToken, Task> beforeWorker = null!,
+        bool exposeBroker = false,
+        bool nativeKafka = false,
+        bool composeKafka = false,
+        bool offlineKafka = false
     )
     {
         var fixture = new CdcConnectorTemplatePinnedImageFixture(
@@ -238,7 +264,37 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
 
         try
         {
-            await fixture.StartDockerResourcesAsync(cancellationToken);
+            fixture._controllerNativeKafka = nativeKafka;
+            fixture._controllerComposeKafka = composeKafka;
+            if (exposeBroker)
+            {
+                using var reservation = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
+                using var connectReservation = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
+                using var metricsReservation = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
+                reservation.Start();
+                connectReservation.Start();
+                metricsReservation.Start();
+                fixture._controllerBrokerPort = ((IPEndPoint)reservation.LocalEndpoint).Port;
+                fixture._controllerConnectPort = ((IPEndPoint)connectReservation.LocalEndpoint).Port;
+                fixture._controllerMetricsPort = ((IPEndPoint)metricsReservation.LocalEndpoint).Port;
+            }
+            if (offlineKafka)
+            {
+                if (!composeKafka || !exposeBroker)
+                {
+                    throw new ArgumentException("Offline cleanup requires isolated Compose endpoints.");
+                }
+                await docker.RunAsync(["network", "create", fixture.NetworkName], cancellationToken);
+                await fixture.PrepareControllerComposeAsync(cancellationToken);
+                await fixture.StartProviderAsync(cancellationToken);
+                if (beforeWorker is not null)
+                {
+                    await beforeWorker(fixture, cancellationToken);
+                }
+                fixture._httpClient.BaseAddress = fixture.ControllerConnectEndpoint;
+                return fixture;
+            }
+            await fixture.StartDockerResourcesAsync(cancellationToken, beforeWorker);
             Uri connectBaseUri = await fixture.ReadMappedConnectBaseUriAsync(cancellationToken);
 
             fixture._httpClient.BaseAddress = connectBaseUri;
@@ -246,10 +302,10 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
 
             return fixture;
         }
-        catch (Exception ex) when (ex is not AssertionException)
+        catch (Exception ex)
         {
             await fixture.DisposeAfterStartupFailureAsync();
-            if (ex is OperationCanceledException)
+            if (ex is OperationCanceledException or AssertionException)
             {
                 throw;
             }
@@ -777,18 +833,79 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
         _httpClient.Dispose();
         await _serviceProvider.DisposeAsync();
-
         if (_settings.KeepContainers || _docker.IsOffline)
         {
             return;
         }
 
-        await _docker.RunAllowingFailureAsync(["rm", "-f", ConnectContainerName], CancellationToken.None);
-        await _docker.RunAllowingFailureAsync(["rm", "-f", ProviderContainerName], CancellationToken.None);
-        await _docker.RunAllowingFailureAsync(["rm", "-f", BrokerContainerName], CancellationToken.None);
-        await _docker.RunAllowingFailureAsync(["network", "rm", NetworkName], CancellationToken.None);
+        int failures = 0;
+        if (_controllerComposeKafka && File.Exists(ControllerComposeFile))
+        {
+            using var composeTimeout = new CancellationTokenSource(TimeSpan.FromMinutes(1));
+            try
+            {
+                await RunControllerComposeAsync(
+                    ["down", "--volumes", "--remove-orphans"],
+                    composeTimeout.Token
+                );
+            }
+            catch
+            {
+                failures++;
+            }
+            try
+            {
+                Directory.Delete(_controllerComposeDirectory, recursive: true);
+            }
+            catch
+            {
+                failures++;
+            }
+        }
+
+        List<IReadOnlyList<string>> cleanup =
+        [
+            ["rm", "-f", "-v", ConnectContainerName],
+            ["rm", "-f", "-v", ProviderContainerName],
+            ["rm", "-f", "-v", BrokerContainerName],
+            ["network", "rm", NetworkName],
+            .. _controllerComposeVolumes.Select(name => new[] { "volume", "rm", name }),
+        ];
+        foreach (var arguments in cleanup)
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            try
+            {
+                var result = await _docker.RunAllowingFailureAsync(arguments, timeout.Token);
+                // Absence is an acceptable idempotent cleanup result. Never print Docker output.
+                if (
+                    result.ExitCode != 0
+                    && !result.StandardError.Contains("No such", StringComparison.OrdinalIgnoreCase)
+                    && !result.StandardError.Contains("not found", StringComparison.OrdinalIgnoreCase)
+                )
+                {
+                    failures++;
+                }
+            }
+            catch
+            {
+                failures++;
+            }
+        }
+        if (failures > 0)
+        {
+            throw new InvalidOperationException(
+                $"CDC fixture cleanup failed for {failures} isolated resources. Details redacted."
+            );
+        }
     }
 
     private async ValueTask DisposeAfterStartupFailureAsync()
@@ -797,10 +914,10 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
         {
             await DisposeAsync();
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             await TestContext.Error.WriteLineAsync(
-                $"Pinned-image fixture cleanup failed after startup failure: {ex.Message}"
+                "Pinned-image fixture cleanup failed after startup failure. Details redacted."
             );
         }
     }
@@ -904,16 +1021,35 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
             .ToArray();
     }
 
-    private async Task StartDockerResourcesAsync(CancellationToken cancellationToken)
+    private async Task StartDockerResourcesAsync(
+        CancellationToken cancellationToken,
+        Func<CdcConnectorTemplatePinnedImageFixture, CancellationToken, Task> beforeWorker
+    )
     {
         await _docker.RunAsync(["network", "create", NetworkName], cancellationToken);
         await StartBrokerAsync(cancellationToken);
         await StartProviderAsync(cancellationToken);
+        if (beforeWorker is not null)
+        {
+            await beforeWorker(this, cancellationToken);
+        }
+
         await StartKafkaConnectAsync(cancellationToken);
     }
 
     private async Task StartBrokerAsync(CancellationToken cancellationToken)
     {
+        if (_controllerComposeKafka)
+        {
+            await PrepareControllerComposeAsync(cancellationToken);
+            await RunControllerComposeAsync(["up", "--detach", "--wait", "kafka"], cancellationToken);
+            return;
+        }
+        if (_controllerNativeKafka)
+        {
+            await StartControllerKafkaAsync(cancellationToken);
+            return;
+        }
         await _docker.RunAsync(
             [
                 "run",
@@ -922,6 +1058,11 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
                 BrokerContainerName,
                 "--network",
                 NetworkName,
+                .. (
+                    _controllerBrokerPort > 0
+                        ? new[] { "-p", $"127.0.0.1:{_controllerBrokerPort}:29092" }
+                        : []
+                ),
                 _settings.BrokerImage,
                 "redpanda",
                 "start",
@@ -936,9 +1077,13 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
                 "0",
                 "--check=false",
                 "--kafka-addr",
-                $"PLAINTEXT://0.0.0.0:9092",
+                _controllerBrokerPort > 0
+                    ? "internal://0.0.0.0:9092,external://0.0.0.0:29092"
+                    : "PLAINTEXT://0.0.0.0:9092",
                 "--advertise-kafka-addr",
-                $"PLAINTEXT://{BrokerContainerName}:9092",
+                _controllerBrokerPort > 0
+                    ? $"internal://{BrokerContainerName}:9092,external://127.0.0.1:{_controllerBrokerPort}"
+                    : $"PLAINTEXT://{BrokerContainerName}:9092",
             ],
             cancellationToken
         );
@@ -1004,6 +1149,14 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
 
     private async Task StartKafkaConnectAsync(CancellationToken cancellationToken)
     {
+        if (_controllerComposeKafka)
+        {
+            await RunControllerComposeAsync(
+                ["up", "--detach", "--wait", "kafka-cdc-worker"],
+                cancellationToken
+            );
+            return;
+        }
         await _docker.RunAsync(BuildKafkaConnectRunArguments(), cancellationToken);
     }
 
@@ -1016,7 +1169,19 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
             "--network",
             NetworkName,
             "-p",
-            "127.0.0.1::8083",
+            _controllerConnectPort > 0 ? $"127.0.0.1:{_controllerConnectPort}:8083" : "127.0.0.1::8083",
+            "-p",
+            _controllerMetricsPort > 0 ? $"127.0.0.1:{_controllerMetricsPort}:9404" : "127.0.0.1::9404",
+            "--label",
+            $"com.docker.compose.project={_resourcePrefix}",
+            "--label",
+            "com.docker.compose.service=kafka-cdc-worker",
+            "--label",
+            $"org.edfi.cdc.worker={_resourcePrefix}",
+            "-e",
+            "CONNECT_CONNECTOR_CLIENT_CONFIG_OVERRIDE_POLICY=All",
+            "-e",
+            "CONNECT_REST_ADVERTISED_PORT=8083",
             "-e",
             $"BOOTSTRAP_SERVERS={BrokerContainerName}:9092",
             "-e",
@@ -1037,6 +1202,8 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
             $"CONNECT_REST_ADVERTISED_HOST_NAME={ConnectContainerName}",
             "-e",
             "OFFSET_FLUSH_INTERVAL_MS=1000",
+            // Plugin discovery can exhaust 512 MiB before REST starts on qualification hosts.
+            .. (_controllerNativeKafka ? new[] { "-e", "KAFKA_HEAP_OPTS=-Xms512m -Xmx1g" } : []),
             "-e",
             ConnectConfigProvidersEnvironmentVariable,
             "-e",
@@ -2964,7 +3131,27 @@ internal sealed class DockerCli : IDockerCli
         process.Start();
         Task<string> stdout = process.StandardOutput.ReadToEndAsync(cancellationToken);
         Task<string> stderr = process.StandardError.ReadToEndAsync(cancellationToken);
-        await process.WaitForExitAsync(cancellationToken);
+        try
+        {
+            await process.WaitForExitAsync(cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+            }
+
+            await process.WaitForExitAsync(CancellationToken.None);
+            try
+            {
+                await Task.WhenAll(stdout, stderr);
+            }
+            catch (OperationCanceledException)
+            { /* Canceled readers have been observed. */
+            }
+            throw;
+        }
 
         return new DockerCommandResult(
             process.ExitCode,

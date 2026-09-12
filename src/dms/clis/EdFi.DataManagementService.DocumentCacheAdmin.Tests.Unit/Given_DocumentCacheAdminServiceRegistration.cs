@@ -5,6 +5,7 @@
 
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend;
+using EdFi.DataManagementService.Backend.Cdc;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.External.Backend;
@@ -155,6 +156,44 @@ public sealed class Given_DocumentCacheAdminServiceRegistration
             .Which.Should()
             .Be(DocumentCacheTargetKey.Create(string.Empty, 1));
         serviceProvider.GetRequiredService<IOptions<AppSettings>>().Value.MaximumPageSize.Should().Be(0);
+    }
+
+    [TestCase("postgresql")]
+    [TestCase("mssql")]
+    public void It_registers_the_trusted_history_bridge_only_when_a_state_backend_is_configured(
+        string datastore
+    )
+    {
+        using ServiceProvider configured = BuildAdminServiceProvider(
+            CreateConfiguration(
+                datastore,
+                new Dictionary<string, string?>
+                {
+                    ["Cdc:PublicationHistory:StatePath"] = Path.Combine(
+                        Path.GetTempPath(),
+                        "cdc-registration-unused"
+                    ),
+                    ["Cdc:PublicationHistory:DeploymentKey"] = "local",
+                }
+            ),
+            DocumentCacheTargetKey.Create(string.Empty, 1)
+        );
+        configured
+            .GetRequiredService<IDocumentCacheDownstreamPublicationHistoryProvider>()
+            .Should()
+            .BeOfType<CdcDownstreamPublicationHistoryProvider>();
+        ResolveBackendService(configured, "IDocumentCacheAdministrativeCommandRunner")
+            .GetType()
+            .Name.Should()
+            .Be("CdcHistoryGatedAdministrativeCommandRunner");
+        using ServiceProvider unconfigured = BuildAdminServiceProvider(
+            CreateConfiguration(datastore),
+            DocumentCacheTargetKey.Create(string.Empty, 1)
+        );
+        unconfigured
+            .GetRequiredService<IDocumentCacheDownstreamPublicationHistoryProvider>()
+            .Should()
+            .BeOfType<DocumentCacheUnknownDownstreamPublicationHistoryProvider>();
     }
 
     [Test]

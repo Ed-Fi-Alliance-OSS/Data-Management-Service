@@ -13,6 +13,7 @@ related:
 - **Connector transformation**: reference/design/backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#connector-transformation
 - **Topic and message contract**: reference/design/backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md
 - **Pinned connector runtime**: reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#pinned-connector-runtime
+- **Local and CI connector telemetry**: reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#local-and-ci-connector-telemetry
 - **Completed generic expand-JSON transform**: reference/design/backend-redesign/design-docs/expandjsonsmt-replacement.md
 
 The referenced design sections define source classification, record transformation, public
@@ -49,6 +50,10 @@ Connect plugin without changing the completed generic transform.
   the transform.
 - Package the transform, converter, and partitioner in the qualified Ed-Fi Kafka Connect
   image.
+- DMS-1323 extends this image with the standard JMX Exporter and fixed provider mappings
+  for the linked local/CI telemetry contract. That follow-on work was identified after
+  this story was completed; DMS-1323 owns the companion change in Ed-Fi-Kafka-Connect,
+  telemetry qualification, and publication of the new immutable image digest.
 - Retain regression coverage for the existing generic transform.
 
 ## Implementation Contract
@@ -124,6 +129,9 @@ Connect plugin without changing the completed generic transform.
 
 ## Not Assigned to This Story
 
+- Follow-on exporter packaging, startup/management endpoint configuration, artifact
+  pinning, packaging smoke tests, and image publication are assigned to DMS-1323.
+  Packaging remains in Ed-Fi-Kafka-Connect and reuses this story's plugin artifacts.
 - Connector generation/registration and API-driven E2E scenarios are assigned to other
   E19 stories.
 - DMS materialization is assigned to E18.

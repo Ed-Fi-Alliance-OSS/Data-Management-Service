@@ -15,6 +15,7 @@ related:
 - **Provider source-position barrier**: reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#provider-source-position-barrier
 - **Source-history continuity**: reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#source-history-continuity
 - **Pinned connector runtime**: reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#pinned-connector-runtime
+- **Local and CI connector telemetry**: reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#local-and-ci-connector-telemetry
 
 The referenced design sections define connector inputs, generated configuration, image
 qualification, and lifecycle constraints. This story is only the work package for
@@ -253,6 +254,9 @@ implements those contracts.
   prove the same template remains valid against retained provider and Connect state. They do
   not reset offsets, recreate slots/capture instances, resnapshot an admitted database, or
   clear source-history incident state.
+- DMS-1323 extends these reusable pinned-image/provider fixtures with telemetry
+  qualification for the linked local/CI telemetry contract. That follow-on work was
+  identified after this story was completed and is owned by DMS-1323.
 
 ## Acceptance Evidence
 
@@ -285,6 +289,8 @@ implements those contracts.
 
 ## Not Assigned to This Story
 
+- Follow-on exporter metric qualification is assigned to DMS-1323, which extends this
+  story's existing fixtures and retains the qualification CI failure policy.
 - Bootstrap command wiring and Connect REST lifecycle are assigned to 19-04.
 - Detailed transform behavior and public-record assertions are assigned to 19-03 and
   19-05.

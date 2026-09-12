@@ -143,6 +143,9 @@ public sealed record CdcConnectorTemplateDeploymentPolicy
 
     public int? ProducerBufferBytes { get; }
 
+    public int EffectiveProducerBufferBytes =>
+        ProducerBufferBytes ?? Math.Max(MinimumProducerBufferBytes, MaxRecordBytes);
+
     public TimeSpan? HeartbeatInterval { get; }
 
     public TimeSpan? SqlServerPollInterval { get; }

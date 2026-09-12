@@ -89,6 +89,8 @@ internal sealed record CdcProviderSetupStepResult
         Diagnostics = diagnostics ?? [];
     }
 
+    public CdcPostgresqlInitialReplicationSlotProof? InitialReplicationSlotProof { get; init; }
+
     public CdcSourceFingerprint? ObservedSourceFingerprint { get; }
 
     public IReadOnlyList<CdcProviderArtifactObservation> ArtifactInventory { get; }
@@ -229,6 +231,7 @@ internal sealed class CdcProviderSetupAggregate(CdcProviderSetupRequest request)
     private readonly List<CdcProviderDiagnostic> _diagnostics = [];
     private CdcSourceFingerprint? _observedSourceFingerprint;
     private CdcHeartbeatActionQuery? _heartbeatActionQuery;
+    private CdcPostgresqlInitialReplicationSlotProof? _initialReplicationSlotProof;
 
     public bool HasErrorDiagnostics =>
         _diagnostics.Exists(diagnostic => diagnostic.Severity == CdcProviderDiagnosticSeverity.Error);
@@ -256,6 +259,7 @@ internal sealed class CdcProviderSetupAggregate(CdcProviderSetupRequest request)
         AddStepDiagnosticsIfMissing(stepResult.Diagnostics);
 
         _heartbeatActionQuery ??= stepResult.HeartbeatActionQuery;
+        _initialReplicationSlotProof ??= stepResult.InitialReplicationSlotProof;
 
         if (stepResult.SourceTableInventory.Count > 0)
         {
@@ -340,7 +344,10 @@ internal sealed class CdcProviderSetupAggregate(CdcProviderSetupRequest request)
             ProviderHistoryObservations: _providerHistoryObservations,
             ManifestPayload: null,
             Diagnostics: _diagnostics
-        );
+        )
+        {
+            InitialReplicationSlotProof = _initialReplicationSlotProof,
+        };
 
         if (!request.ArtifactOutput.ShouldCreateManifestPayload)
         {

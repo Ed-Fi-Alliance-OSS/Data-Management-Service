@@ -298,7 +298,7 @@ public class Given_PostgresqlCdcSourcePositionAdapterTests
                 OperationId(),
                 binding,
                 providerSetup.ProviderSetup,
-                BuildConnectorOffset(binding, BuildInventory(), unchecked((long)retainedRange.Start.Value)),
+                BuildConnectorOffset(binding, BuildInventory(), unchecked((long)retainedRange.End.Value)),
                 providerSetup.ProviderHistory
             )
         );
@@ -314,7 +314,12 @@ public class Given_PostgresqlCdcSourcePositionAdapterTests
             .Observation.PositionEvidence!.ProviderArtifactName.Should()
             .Be(BuildInventory().PostgresqlLogicalSlotName);
         result.Observation.PositionEvidence.RetainedRangeStart.Should().Be(retainedRange.Start.ToString());
-        result.Observation.PositionEvidence.RetainedRangeEnd.Should().Be(retainedRange.End.ToString());
+        ParsePostgresqlLsn(result.Observation.PositionEvidence.RetainedRangeEnd!)
+            .Value.Should()
+            .BeGreaterThanOrEqualTo(retainedRange.End.Value);
+        providerSetup
+            .ProviderHistory.PostgresqlSlot!.ConfirmedFlushLsn.Should()
+            .Be(retainedRange.End.ToString());
         result.Observation.Diagnostics.Should().BeEmpty();
         result.IncidentCandidate.Should().BeNull();
         ValidateSourceHistoryObservation(result.Observation, binding).Succeeded.Should().BeTrue();

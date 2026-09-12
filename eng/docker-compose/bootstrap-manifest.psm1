@@ -557,6 +557,13 @@ function Set-BootstrapStartupEnvironment {
 }
 
 $script:BootstrapEnvVarNames = @(
+    # Startup temporarily selects identity endpoints as well as staged schema/claims. Restore
+    # them before a later phase fingerprints the caller's Compose environment for CDC lifecycle.
+    "DMS_CONFIG_IDENTITY_PROVIDER",
+    "OAUTH_TOKEN_ENDPOINT",
+    "DMS_JWT_AUTHORITY",
+    "DMS_JWT_METADATA_ADDRESS",
+    "DMS_CONFIG_IDENTITY_AUTHORITY",
     "DMS_CONFIG_CLAIMS_SOURCE",
     "DMS_CONFIG_CLAIMS_DIRECTORY",
     "DMS_CONFIG_CLAIMS_MOUNT_SOURCE",
@@ -676,6 +683,11 @@ function Remove-BootstrapWorkspaceIfRequested {
     }
 
     $bootstrapDir = Get-BootstrapRoot
+    Import-Module (Join-Path $PSScriptRoot 'cdc-lifecycle.psm1')
+    if (Test-CdcBootstrapWorkspaceProtected -BootstrapRoot $bootstrapDir) {
+        Write-Output 'Retaining CDC configuration workspace and any nested state roots after governed teardown.'
+        return
+    }
     if (Test-Path -LiteralPath $bootstrapDir) {
         Write-Output "Removing bootstrap workspace at $(Format-LogSafeText $bootstrapDir)"
         # Remove-Item is non-terminating by default; promote to a terminating error so a failed

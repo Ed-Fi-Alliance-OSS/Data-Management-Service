@@ -9,16 +9,20 @@ using System.Data;
 using System.Data.Common;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend;
+using EdFi.DataManagementService.Backend.Cdc;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
+using EdFi.DataManagementService.Core.DocumentCache.Cdc;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.DocumentCacheAdmin;
 using FakeItEasy;
 using FluentAssertions;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Serilog;
 
 namespace EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit;
 
@@ -140,6 +144,128 @@ public sealed class Given_DocumentCacheAdminInProcessCommandRunner
         result["classification"]!.GetValue<string>().Should().Be("succeeded");
         result["mutated"]!.GetValue<bool>().Should().BeTrue();
         stderr.ToString().Should().BeEmpty();
+    }
+
+    [TestCaseSource(nameof(DownstreamGuardCases))]
+    [Category("Downstream")]
+    [Platform(Exclude = "Win", Reason = "Local CDC state requires Unix owner-only permissions.")]
+    public async Task It_uses_configured_trusted_history_with_the_real_E18_runner_and_rejects_after_exposure(
+        DownstreamCommandCase commandCase
+    )
+    {
+        string root = Path.Combine(Path.GetTempPath(), $"cdc-admin-bridge-{Guid.NewGuid():N}");
+        LocalCdcWorkflowJournalStore store = new(root);
+        var provisioner = A.Fake<ICdcManagedDatabaseProvisioner>();
+        A.CallTo(() => provisioner.CreateDatabase()).Returns(true);
+        A.CallTo(() => provisioner.ReadSourceFingerprintAsync(A<CancellationToken>._))
+            .Returns(Fingerprint.Value);
+        var target = CdcTargetValidator
+            .Validate(
+                new(
+                    "local",
+                    TargetKey.TenantKey.ToLowerInvariant(),
+                    "7",
+                    "instance",
+                    CdcProvider.Postgresql,
+                    "test",
+                    1,
+                    1,
+                    CdcTargetValidator.KafkaMurmur2V1PartitionerAlgorithm
+                )
+            )
+            .Target!.ToTargetIdentity();
+        try
+        {
+            var created = await new CdcManagedDatabaseProvisioning(store).ProvisionAsync(target, provisioner);
+            IConfiguration configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(
+                    new Dictionary<string, string?>
+                    {
+                        ["AppSettings:Datastore"] = "postgresql",
+                        ["AppSettings:DefaultPartitionCount"] = "10",
+                        ["ConfigurationServiceSettings:BaseUrl"] = "https://cms.example.org",
+                        ["ConfigurationServiceSettings:ClientId"] = "client-id",
+                        ["ConfigurationServiceSettings:ClientSecret"] = "client-secret",
+                        ["ConfigurationServiceSettings:Scope"] = "scope",
+                        ["ConfigurationServiceSettings:EncryptionKey"] =
+                            "TestEncryptionKey123456789012345678901234567890",
+                        ["Cdc:PublicationHistory:StatePath"] = root,
+                        ["Cdc:PublicationHistory:DeploymentKey"] = "local",
+                    }
+                )
+                .Build();
+            foreach (bool exposed in new[] { false, true })
+            {
+                if (exposed)
+                {
+                    await using var session = await store.AcquireAsync(
+                        TimeSpan.FromSeconds(2),
+                        TimeSpan.FromMilliseconds(10),
+                        CancellationToken.None
+                    );
+                    await session.RecordSourceExposureAsync(
+                        target,
+                        created.WorkflowId,
+                        Fingerprint.Value,
+                        CancellationToken.None
+                    );
+                }
+                var harness = InProcessCommandHarness.Create(
+                    commandCase.InitialLifecycle,
+                    new DocumentCacheUnknownDownstreamPublicationHistoryProvider(TimeProvider.System)
+                );
+                int mutexEntries = 0;
+                harness.BeforeMutexAcquisition = async () =>
+                {
+                    mutexEntries++;
+                    Func<Task> contend = async () =>
+                    {
+                        await using var unexpected = await store.AcquireAsync(
+                            TimeSpan.FromMilliseconds(20),
+                            TimeSpan.FromMilliseconds(5),
+                            CancellationToken.None
+                        );
+                    };
+                    await contend.Should().ThrowAsync<CdcWorkflowStateException>();
+                };
+                await using ServiceProvider serviceProvider = harness.BuildServiceProvider(configuration);
+                serviceProvider
+                    .GetRequiredService<IDocumentCacheDownstreamPublicationHistoryProvider>()
+                    .Should()
+                    .BeOfType<CdcDownstreamPublicationHistoryProvider>();
+                using var stdout = new StringWriter();
+                using var stderr = new StringWriter();
+                int exitCode = await DocumentCacheAdminCommandExecutor.ExecuteAsync(
+                    ParseCommand(commandCase.CommandName, commandCase.CommandArgs),
+                    InvocationTarget(),
+                    serviceProvider,
+                    stdout,
+                    stderr
+                );
+                exitCode
+                    .Should()
+                    .Be(
+                        exposed
+                            ? DocumentCacheAdminExitCodes.RejectedNoMutation
+                            : DocumentCacheAdminExitCodes.Success
+                    );
+                mutexEntries.Should().Be(1);
+                if (exposed)
+                {
+                    harness.Primitives.TransitionRequests.Should().BeEmpty();
+                    harness.Primitives.Events.Should().BeEmpty();
+                }
+                else
+                {
+                    harness.Primitives.TransitionRequests.Should().NotBeEmpty();
+                }
+                stderr.ToString().Should().BeEmpty();
+            }
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
     }
 
     [Test]
@@ -505,6 +631,8 @@ public sealed class Given_DocumentCacheAdminInProcessCommandRunner
 
         public ScriptedAdministrativePrimitives Primitives { get; }
 
+        public Func<Task> BeforeMutexAcquisition { get; set; } = () => Task.CompletedTask;
+
         public static InProcessCommandHarness Create(
             DocumentCacheLifecycleObservation lifecycle,
             IDocumentCacheDownstreamPublicationHistoryProvider downstreamHistoryProvider
@@ -518,7 +646,7 @@ public sealed class Given_DocumentCacheAdminInProcessCommandRunner
             );
         }
 
-        public ServiceProvider BuildServiceProvider()
+        public ServiceProvider BuildServiceProvider(IConfiguration? trustedHistoryConfiguration = null)
         {
             DocumentCacheProjectionObservationStore observationStore = new(new FixedTimeProvider(ObservedAt));
             DocumentCacheProjectionTargetRuntimeContext runtimeContext = CreateRuntimeContext(
@@ -541,11 +669,37 @@ public sealed class Given_DocumentCacheAdminInProcessCommandRunner
             );
 
             ServiceCollection services = new();
-            services.AddSingleton<IDocumentCacheAdministrativeCommandRunner>(runner);
+            if (trustedHistoryConfiguration is not null)
+            {
+                // Exercise the packaged host's production registration, replacing only database/runtime
+                // adapters below. The real E18 runner, commands, history bridge and lock remain installed.
+                services.AddLogging();
+                services.AddDocumentCacheAdminRuntimeServices(
+                    trustedHistoryConfiguration,
+                    new LoggerConfiguration().CreateLogger(),
+                    TargetKey
+                );
+                services.AddSingleton<IDocumentCacheTargetRegistry>(
+                    new StubTargetRegistry(_executionContext)
+                );
+                services.AddSingleton<IDocumentCacheAdministrativeMutex>(
+                    new RecordingAdministrativeMutex(BeforeMutexAcquisition)
+                );
+                services.AddSingleton<IDocumentCacheAdministrativePrimitives>(Primitives);
+                services.AddSingleton<IDocumentCacheProjectionObservationSink>(observationStore);
+                services.AddSingleton<TimeProvider>(new FixedTimeProvider(ObservedAt));
+                services.AddSingleton<IDocumentCacheProviderCommandTimeoutClassifier>(
+                    NoOpDocumentCacheProviderCommandTimeoutClassifier.Instance
+                );
+            }
+            else
+            {
+                services.AddSingleton<IDocumentCacheAdministrativeCommandRunner>(runner);
+                services.AddSingleton<IDocumentCacheDownstreamPublicationHistoryProvider>(
+                    _downstreamHistoryProvider
+                );
+            }
             services.AddSingleton<IDocumentCacheProjectionSupervisor>(projectionSupervisor);
-            services.AddSingleton<IDocumentCacheDownstreamPublicationHistoryProvider>(
-                _downstreamHistoryProvider
-            );
             services.AddSingleton<IDocumentCacheBaselineSeeder, SucceedingBaselineSeeder>();
             services.AddSingleton<IDocumentCacheAdministrativeDrainer, SucceedingAdministrativeDrainer>();
             services.AddSingleton<
@@ -734,18 +888,23 @@ public sealed class Given_DocumentCacheAdminInProcessCommandRunner
         }
     }
 
-    private sealed class RecordingAdministrativeMutex : IDocumentCacheAdministrativeMutex
+    private sealed class RecordingAdministrativeMutex(Func<Task>? beforeAcquire = null)
+        : IDocumentCacheAdministrativeMutex
     {
         public RelationalProviderToken ProviderToken => RelationalProviderToken.Postgresql;
 
-        public Task<IDocumentCacheAdministrativeMutexLease> AcquireAsync(
+        public async Task<IDocumentCacheAdministrativeMutexLease> AcquireAsync(
             DocumentCacheTargetConnectionInput connectionInput,
             CancellationToken cancellationToken = default
         )
         {
             cancellationToken.ThrowIfCancellationRequested();
             connectionInput.ProviderToken.Should().Be(RelationalProviderToken.Postgresql);
-            return Task.FromResult<IDocumentCacheAdministrativeMutexLease>(new RecordingMutexLease());
+            if (beforeAcquire is not null)
+            {
+                await beforeAcquire();
+            }
+            return new RecordingMutexLease();
         }
     }
 

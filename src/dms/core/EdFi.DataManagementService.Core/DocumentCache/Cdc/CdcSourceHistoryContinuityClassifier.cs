@@ -17,7 +17,19 @@ public sealed record CdcProviderSourceHistoryEvidence(
     public IReadOnlyList<CdcDiagnostic> Diagnostics { get; init; } = [];
 
     public CdcSqlServerCdcJobEvidence? SqlServerJobs { get; init; }
+
+    public CdcPostgresqlSlotHistoryEvidence? PostgresqlSlot { get; init; }
 }
+
+/// <summary>
+/// Acknowledgement is a logical resume floor, not the end of retained WAL. The observation
+/// time distinguishes an expired committed offset from a slot sampled after that offset.
+/// </summary>
+public sealed record CdcPostgresqlSlotHistoryEvidence(
+    string ConfirmedFlushLsn,
+    string WalStatus,
+    DateTimeOffset ObservedAt
+);
 
 public sealed record CdcSqlServerSchemaHistoryEvidence(
     CdcSqlServerSchemaHistoryEnablementPhase EnablementPhase,
@@ -835,7 +847,8 @@ public static class CdcSourceHistoryContinuityClassifier
         CdcRetainedRangeEvaluation retainedRange = EvaluateRetainedRange(
             input.Binding.Provider,
             input.ProviderHistory,
-            position
+            position,
+            input.ConnectorOffset!.ObservedAt
         );
         AddDiagnostics(diagnostics, retainedRange.Diagnostics);
 
@@ -1383,7 +1396,8 @@ public static class CdcSourceHistoryContinuityClassifier
     private static CdcRetainedRangeEvaluation EvaluateRetainedRange(
         CdcProvider provider,
         CdcProviderSourceHistoryEvidence providerHistory,
-        CdcCommittedSourcePosition committedPosition
+        CdcCommittedSourcePosition committedPosition,
+        DateTimeOffset offsetObservedAt
     )
     {
         if (!Enum.IsDefined(providerHistory.RetainedRangeState))
@@ -1408,57 +1422,119 @@ public static class CdcSourceHistoryContinuityClassifier
         }
 
         return provider == CdcProvider.Postgresql
-            ? EvaluatePostgresqlRetainedRange(providerHistory, committedPosition)
+            ? EvaluatePostgresqlRetainedRange(providerHistory, committedPosition, offsetObservedAt)
             : EvaluateSqlServerRetainedRange(providerHistory, committedPosition);
     }
 
     private static CdcRetainedRangeEvaluation EvaluatePostgresqlRetainedRange(
         CdcProviderSourceHistoryEvidence providerHistory,
-        CdcCommittedSourcePosition committedPosition
+        CdcCommittedSourcePosition committedPosition,
+        DateTimeOffset offsetObservedAt
     )
     {
-        CdcPostgresqlWalPositionResult committed = CdcPostgresqlProviderPosition.ParseWalLsn(
+        const string path = "$.providerHistory.postgresqlSlot";
+        if (providerHistory.PostgresqlSlot is not { } slot)
+        {
+            return CdcRetainedRangeEvaluation.UnknownResult([
+                new(
+                    CdcDiagnosticCategory.ProviderHistoryUnknown,
+                    path,
+                    "PostgreSQL acknowledgement and WAL retention evidence is required."
+                ),
+            ]);
+        }
+
+        var committed = CdcPostgresqlProviderPosition.ParseWalLsn(
             committedPosition.LsnProc,
             "$.connectorOffset.lsnProc"
         );
-        CdcPostgresqlWalPositionResult start = CdcPostgresqlProviderPosition.ParseWalLsn(
+        var start = CdcPostgresqlProviderPosition.ParseWalLsn(
             providerHistory.RetainedRangeStart,
             "$.providerHistory.retainedRangeStart"
         );
-        CdcPostgresqlWalPositionResult end = CdcPostgresqlProviderPosition.ParseWalLsn(
+        var end = CdcPostgresqlProviderPosition.ParseWalLsn(
             providerHistory.RetainedRangeEnd,
             "$.providerHistory.retainedRangeEnd"
+        );
+        var acknowledged = CdcPostgresqlProviderPosition.ParseWalLsn(
+            slot.ConfirmedFlushLsn,
+            path + ".confirmedFlushLsn"
         );
         IReadOnlyList<CdcDiagnostic> diagnostics =
         [
             .. committed.Diagnostics,
             .. start.Diagnostics,
             .. end.Diagnostics,
+            .. acknowledged.Diagnostics,
         ];
 
-        if (committed.Position is null || start.Position is null || end.Position is null)
+        if (
+            committed.Position is not { } position
+            || start.Position is not { } restart
+            || end.Position is not { } current
+            || acknowledged.Position is not { } confirmed
+        )
         {
             return CdcRetainedRangeEvaluation.UnknownResult(diagnostics);
         }
 
-        if (
-            committed.Position.Value.CompareTo(start.Position.Value) < 0
-            || committed.Position.Value.CompareTo(end.Position.Value) > 0
-        )
+        // An unreserved slot can lose its files at the next checkpoint. Absence of an explicit
+        // lost status alone is not affirmative retention evidence.
+        if (slot.WalStatus is not ("reserved" or "extended") || slot.ObservedAt == default)
         {
-            return CdcRetainedRangeEvaluation.Gap(diagnostics);
+            return CdcRetainedRangeEvaluation.UnknownResult([
+                .. diagnostics,
+                new(
+                    CdcDiagnosticCategory.ProviderHistoryUnknown,
+                    path,
+                    "PostgreSQL slot retention or observation time is unavailable."
+                ),
+            ]);
         }
 
-        return start.Position.Value.CompareTo(end.Position.Value) <= 0
-            ? CdcRetainedRangeEvaluation.Covers(diagnostics)
-            : CdcRetainedRangeEvaluation.UnknownResult([
+        if (restart.CompareTo(confirmed) > 0 || confirmed.CompareTo(current) > 0)
+        {
+            return CdcRetainedRangeEvaluation.UnknownResult([
                 .. diagnostics,
                 new(
                     CdcDiagnosticCategory.InvalidOrdering,
-                    "$.providerHistory.retainedRangeStart",
-                    "CDC provider retained range start must not be after retained range end."
+                    path,
+                    "PostgreSQL restart, acknowledgement and current WAL observations are inconsistent."
                 ),
             ]);
+        }
+
+        // START_REPLICATION starts at max(requested LSN, confirmed_flush_lsn). WAL retained
+        // before confirmed_flush_lsn does not prove logical replay from that earlier position.
+        if (position.CompareTo(restart) < 0 || position.CompareTo(confirmed) < 0)
+        {
+            return slot.ObservedAt < offsetObservedAt
+                ? CdcRetainedRangeEvaluation.Gap(diagnostics)
+                : CdcRetainedRangeEvaluation.UnknownResult([
+                    .. diagnostics,
+                    new(
+                        CdcDiagnosticCategory.ProviderHistoryUnknown,
+                        path,
+                        "Refresh the committed offset after the PostgreSQL slot observation before declaring a resume gap."
+                    ),
+                ]);
+        }
+
+        // A source sample can precede a newer Connect commit. This is not evidence of WAL
+        // removal; collect the source again instead of latching an irreversible incident.
+        if (position.CompareTo(current) > 0)
+        {
+            return CdcRetainedRangeEvaluation.UnknownResult([
+                .. diagnostics,
+                new(
+                    CdcDiagnosticCategory.ProviderHistoryUnknown,
+                    "$.providerHistory.retainedRangeEnd",
+                    "Refresh PostgreSQL current WAL after the committed offset observation."
+                ),
+            ]);
+        }
+
+        return CdcRetainedRangeEvaluation.Covers(diagnostics);
     }
 
     private static CdcRetainedRangeEvaluation EvaluateSqlServerRetainedRange(

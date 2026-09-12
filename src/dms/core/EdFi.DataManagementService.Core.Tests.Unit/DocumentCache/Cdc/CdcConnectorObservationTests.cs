@@ -209,6 +209,96 @@ public class Given_CdcConnectorObservation
             .And.Contain(CdcDiagnosticCategory.ArtifactNameMismatch);
     }
 
+    [TestFixture("aclState")]
+    [TestFixture("topicState")]
+    public class Given_an_unsupported_offset_store_item_state(string fieldName)
+    {
+        private CdcContractValidationResult _result = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            CdcBinding binding = CreateBinding(CdcProvider.Postgresql);
+            CdcConnectOffsetStorePolicyObservation observation = CdcTargetStatusFixture.ConnectOffsetStore(
+                binding
+            ) with
+            {
+                OperationId = OperationId,
+                ObservedAt = ObservedAt,
+                AclState =
+                    fieldName == "aclState"
+                        ? (CdcConnectOffsetStoreItemState)999
+                        : CdcConnectOffsetStoreItemState.Satisfied,
+                TopicState =
+                    fieldName == "topicState"
+                        ? (CdcConnectOffsetStoreItemState)999
+                        : CdcConnectOffsetStoreItemState.Satisfied,
+            };
+
+            _result = CdcConnectOffsetStorePolicyObservationValidator.Validate(
+                observation,
+                new(OperationId, binding.ToTargetIdentity(), SourceFingerprint, Now)
+            );
+        }
+
+        [Test]
+        public void It_rejects_the_unsupported_state() => _result.Succeeded.Should().BeFalse();
+
+        [Test]
+        public void It_identifies_the_unsupported_field() =>
+            _result
+                .Diagnostics.Should()
+                .BeEquivalentTo(
+                    new[]
+                    {
+                        new CdcDiagnostic(
+                            CdcDiagnosticCategory.InvalidEnumValue,
+                            $"$.{fieldName}",
+                            $"CDC Connect offset-store observation {fieldName} is unsupported."
+                        ),
+                    }
+                );
+    }
+
+    [TestCase(CdcConnectOffsetStoreItemState.Satisfied, true)]
+    [TestCase(CdcConnectOffsetStoreItemState.Invalid, false)]
+    [TestCase(CdcConnectOffsetStoreItemState.Unknown, false)]
+    public void It_preserves_offset_store_policy_consistency_for_supported_topic_states(
+        CdcConnectOffsetStoreItemState topicState,
+        bool expectedSuccess
+    )
+    {
+        CdcBinding binding = CreateBinding(CdcProvider.Postgresql);
+        CdcConnectOffsetStorePolicyObservation observation = CdcTargetStatusFixture.ConnectOffsetStore(
+            binding
+        ) with
+        {
+            OperationId = OperationId,
+            ObservedAt = ObservedAt,
+            TopicState = topicState,
+        };
+
+        CdcContractValidationResult result = CdcConnectOffsetStorePolicyObservationValidator.Validate(
+            observation,
+            new(OperationId, binding.ToTargetIdentity(), SourceFingerprint, Now)
+        );
+
+        result
+            .Diagnostics.Should()
+            .BeEquivalentTo(
+                expectedSuccess
+                    ? Array.Empty<CdcDiagnostic>()
+                    : new[]
+                    {
+                        new CdcDiagnostic(
+                            CdcDiagnosticCategory.InvalidObservation,
+                            "$.policyState",
+                            "CDC Connect offset-store satisfied state requires compact cleanup, positive durability values, and satisfied ACLs."
+                        ),
+                    }
+            );
+    }
+
     private static CdcBinding CreateBinding(CdcProvider provider)
     {
         CdcArtifactInventory inventory = CdcArtifactNameGenerator

@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: Apache-2.0
+﻿# SPDX-License-Identifier: Apache-2.0
 # Licensed to the Ed-Fi Alliance under one or more agreements.
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
@@ -41,6 +41,21 @@ param (
     # Enable Kafka and Kafka Connect infrastructure
     [Switch]
     $EnableKafka,
+
+    # Initial CDC preparation includes provider prerequisites without Kafka artifacts.
+    [switch]
+    $CdcDatabaseInfrastructure,
+
+    # Retained CDC phase seam: start broker/UI only; controller owns the later worker launch.
+    [switch]
+    $CdcKafkaInfrastructure,
+
+    [switch]$SuppressWriterGuidance,
+    [string]$CdcDmsComposeFile,
+
+    [string]$CdcBindingStatePath,
+    [string]$CdcSettingsPath,
+    [string]$CdcBrokerSizeOverrideFile,
 
     # Enable Kafka UI. This also enables Kafka infrastructure.
     [Switch]
@@ -133,6 +148,15 @@ param (
     [Switch]
     $SeparateConfigDatabase
 )
+
+Import-Module (Join-Path $PSScriptRoot 'cdc-lifecycle.psm1')
+if (-not (Test-CdcInfrastructureInvocation)) {
+    if (Test-CdcDeployment -Project 'dms-published') {
+        Invoke-CdcDeploymentLifecycle -Project 'dms-published' -StartScript $PSCommandPath -Parameters (@{} + $PSBoundParameters)
+        return
+    }
+    if ($CdcBindingStatePath -or $CdcSettingsPath) { throw 'CDC lifecycle requires its original retained deployment inventory.' }
+}
 
 $databaseOnlyStartup = $DbOnly -and -not $d
 if (-not $databaseOnlyStartup) {
@@ -385,11 +409,27 @@ if ($usePostgresqlTmpfs -and $DatabaseEngine -eq "postgresql") {
 if (-not $databaseOnlyStartup) {
     $files += @("-f", "published-dms.yml")
 
-    # Kafka (and KafkaUI) back the PostgreSQL Debezium CDC path only and are opt-in via
-    # -EnableKafka / -EnableKafkaUI. The relational MSSQL path serves writes and queries directly
-    # from SQL and registers no connector, so Kafka is omitted.
-    $enableKafkaInfrastructure = $EnableKafka -or $EnableKafkaUI
-    if ($enableKafkaInfrastructure -and $DatabaseEngine -eq "postgresql") {
+    if ($CdcDatabaseInfrastructure) {
+        if (-not $InfraOnly -or $d -or $EnableKafka -or $EnableKafkaUI -or $CdcKafkaInfrastructure) {
+            throw "CDC database preparation requires -InfraOnly without Kafka startup or teardown flags."
+        }
+        if ($DatabaseEngine -eq "mssql") { $files += @("-f", "mssql-cdc.yml") }
+    }
+
+    # CDC selects the same broker/qualified worker for either provider. The worker's
+    # profile stays inactive until the controller completes fresh offset-store preparation.
+    $enableKafkaInfrastructure = $EnableKafka -or $EnableKafkaUI -or $CdcKafkaInfrastructure
+    if ($CdcKafkaInfrastructure) {
+        if (-not $InfraOnly -and -not $d) {
+            throw "CDC infrastructure startup requires -InfraOnly; the controller owns writer handoff."
+        }
+        if (-not [string]::IsNullOrWhiteSpace($env:COMPOSE_PROFILES)) {
+            throw "CDC infrastructure startup does not accept COMPOSE_PROFILES."
+        }
+        $files += @("-f", "kafka-cdc.yml")
+        if ($DatabaseEngine -eq "mssql") { $files += @("-f", "mssql-cdc.yml") }
+    }
+    elseif ($enableKafkaInfrastructure -and $DatabaseEngine -eq "postgresql") {
         $files += @("-f", "kafka.yml")
     }
 
@@ -402,7 +442,7 @@ if (-not $databaseOnlyStartup) {
         $files += @("-f", "keycloak.yml")
     }
 
-    if ($EnableKafkaUI -and $DatabaseEngine -eq "postgresql") {
+    if ($EnableKafkaUI -and ($DatabaseEngine -eq "postgresql" -or $CdcKafkaInfrastructure)) {
         $files += @("-f", "kafka-ui.yml")
     }
 
@@ -427,6 +467,22 @@ if (-not $databaseOnlyStartup) {
     }
 }
 
+if ($CdcBrokerSizeOverrideFile -and (Test-Path -LiteralPath $CdcBrokerSizeOverrideFile)) {
+    $files += @('-f', $CdcBrokerSizeOverrideFile)
+}
+
+if ($CdcDmsComposeFile) {
+    if (-not $DmsOnly -or -not (Test-Path -LiteralPath $CdcDmsComposeFile -PathType Leaf)) {
+        throw 'CDC DMS settings handoff requires -DmsOnly and an existing Compose override.'
+    }
+    $files += @('-f', $CdcDmsComposeFile)
+}
+
+# Complete offline validation before inspecting Docker, and inspect before any stack changes.
+if (-not (Test-CdcInfrastructureInvocation)) {
+    Assert-CdcUnregisteredInfrastructure -Project 'dms-published'
+}
+
 if ($d) {
     $downArgs = @("--remove-orphans")
     if ($v) {
@@ -436,7 +492,13 @@ if ($d) {
     else {
         Write-Output "Shutting down"
     }
-    docker compose $files --env-file $EnvironmentFile -p dms-published down $downArgs
+    if ($CdcKafkaInfrastructure -and -not $v) {
+        docker compose $files --env-file $EnvironmentFile -p dms-published --profile cdc-managed-worker stop
+    }
+    elseif ($CdcKafkaInfrastructure) {
+        docker compose $files --env-file $EnvironmentFile -p dms-published --profile cdc-managed-worker down $downArgs
+    }
+    else { docker compose $files --env-file $EnvironmentFile -p dms-published down $downArgs }
     # Fail before workspace removal: a failed down can leave services running against the
     # bind-mounted .bootstrap schema and claims, so removing the workspace would pull it
     # out from under a live stack.
@@ -454,11 +516,14 @@ else {
     }
 
     $upArgs = @("--detach")
-    if (-not $databaseOnlyStartup) {
+    if (-not $databaseOnlyStartup -and -not $DmsOnly) {
+        # The DbOnly and DmsOnly compose sets must preserve CDC/peer services.
         # The DbOnly compose set intentionally contains only the database definition. Passing
         # --remove-orphans there would remove already-running DMS/CMS containers from this project.
         $upArgs += "--remove-orphans"
     }
+
+    if ($CdcDmsComposeFile) { $upArgs += "--no-deps" }
 
     function Wait-HttpEndpointHealthy {
         param(
@@ -729,7 +794,14 @@ else {
             ./setup-openiddict.ps1 -InsertData @identityRoleParams -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access" -EnvironmentFile $EnvironmentFile @identityDbParams
         }
 
-        if ($enableKafkaInfrastructure -and $DatabaseEngine -eq "postgresql") {
+        if ($CdcKafkaInfrastructure) {
+            Write-Output "Starting CDC broker; Connect remains stopped until offset-store preparation succeeds."
+            docker compose $files --env-file $EnvironmentFile -p dms-published up $upArgs --wait kafka
+            if ($LASTEXITCODE -ne 0) {
+                throw "Failed to start CDC broker. Exit code $LASTEXITCODE"
+            }
+        }
+        elseif ($enableKafkaInfrastructure -and $DatabaseEngine -eq "postgresql") {
             Write-Output "Starting Kafka infrastructure..."
             docker compose $files --env-file $EnvironmentFile -p dms-published up $upArgs kafka kafka-postgresql-source
             if ($LASTEXITCODE -ne 0) {
@@ -740,7 +812,7 @@ else {
             Write-Output "Skipping Kafka infrastructure: the MSSQL relational path does not use Debezium CDC (PostgreSQL-only)."
         }
 
-        if ($EnableKafkaUI -and $DatabaseEngine -eq "postgresql") {
+        if ($EnableKafkaUI -and ($DatabaseEngine -eq "postgresql" -or $CdcKafkaInfrastructure)) {
             Write-Output "Starting Kafka UI..."
             docker compose $files --env-file $EnvironmentFile -p dms-published up $upArgs kafka-ui
             if ($LASTEXITCODE -ne 0) {

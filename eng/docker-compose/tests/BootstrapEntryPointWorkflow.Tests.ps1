@@ -63,6 +63,17 @@ Describe "DMS-1153 bootstrap entry-point and IDE workflow" {
                 [string]$Destination
             )
             Copy-Item -LiteralPath (Join-Path $script:sourceDockerComposeRoot $FileName) -Destination $Destination
+            if ($FileName -in @('start-local-dms.ps1', 'start-published-dms.ps1')) {
+                # These fixtures exercise ordinary startup/teardown with no retained CDC deployment.
+                # CDC deployment discovery and governance have their own production-module suite.
+                @'
+function Test-CdcInfrastructureInvocation { return $false }
+function Test-CdcDeployment { param($Project) return $false }
+function Assert-CdcUnregisteredInfrastructure { param($Project) }
+function Test-CdcBootstrapWorkspaceProtected { param($BootstrapRoot) return $false }
+Export-ModuleMember -Function Test-CdcInfrastructureInvocation, Test-CdcDeployment, Assert-CdcUnregisteredInfrastructure, Test-CdcBootstrapWorkspaceProtected
+'@ | Set-Content -LiteralPath (Join-Path $Destination 'cdc-lifecycle.psm1')
+            }
         }
 
         function script:New-IsolatedBootstrapRepo {
@@ -500,6 +511,40 @@ $failureStatement
 
         if ($null -ne $script:repo -and (Test-Path -LiteralPath $script:repo.RepoRoot)) {
             Remove-Item -LiteralPath $script:repo.RepoRoot -Recurse -Force
+        }
+    }
+
+    Context "ordinary DmsOnly dependency startup" {
+        BeforeEach {
+            foreach ($fileName in @('start-local-dms.ps1', 'start-published-dms.ps1',
+                'bootstrap-manifest.psm1', 'bootstrap-claims-gate.psm1')) {
+                Copy-DockerComposeFile -FileName $fileName -Destination $script:repo.DockerComposeRoot
+            }
+            $script:dockerCommands = [Collections.Generic.List[string]]::new()
+            $recordedCommands = $script:dockerCommands
+            $stub = {
+                $recordedCommands.Add((@($args | ForEach-Object { $_ }) -join ' '))
+                $global:LASTEXITCODE = 0
+                if ($args[0] -eq 'network') { return 'existing-network' }
+            }.GetNewClosure()
+            Set-Item function:script:docker -Value $stub
+            Mock Invoke-WebRequest { @{ StatusCode = 200 } }
+        }
+        AfterEach { Remove-Item function:script:docker -Force -ErrorAction SilentlyContinue }
+
+        It 'allows dependencies and preserves peers for <flavor> DmsOnly (Swagger=<swagger>)' -ForEach @(
+            @{ flavor = 'local'; swagger = $false }, @{ flavor = 'published'; swagger = $false },
+            @{ flavor = 'local'; swagger = $true }, @{ flavor = 'published'; swagger = $true }
+        ) {
+            & (Join-Path $script:repo.DockerComposeRoot "start-$flavor-dms.ps1") `
+                -EnvironmentFile $script:repo.EnvFile -DmsOnly -EnableSwaggerUI:$swagger | Out-Null
+
+            $commands = @($script:dockerCommands | Where-Object { $_ -like 'compose *' })
+            $commands.Count | Should -Be 1
+            $services = if ($swagger) { 'dms swagger-ui' } else { 'dms' }
+            $commands[0] | Should -Match "-p dms-$flavor up --detach $services$"
+            $commands[0] | Should -Not -Match '--no-deps|--remove-orphans'
+            Should -Invoke Invoke-WebRequest -Times 1 -Exactly
         }
     }
 
@@ -1557,12 +1602,12 @@ param(
             $startScript | Should -Match 'if \(\$enableKafkaInfrastructure -and \$DatabaseEngine -eq "postgresql"\)\s*\{[^}]*\$files \+= @\("-f", "kafka\.yml"\)'
         }
 
-        It "start-local-dms.ps1 gates the Kafka UI startup on the PostgreSQL engine (no Debezium CDC on the MSSQL path)" {
+        It "start-local-dms.ps1 permits MSSQL Kafka UI only through the explicit CDC infrastructure path" {
             $startScript = Get-Content -LiteralPath (
                 Join-Path $script:sourceDockerComposeRoot "start-local-dms.ps1"
             ) -Raw
 
-            $startScript | Should -Match 'if \(\$EnableKafkaUI -and \$DatabaseEngine -eq "postgresql"\)\s*\{[^}]*up \$upArgs kafka-ui'
+            $startScript | Should -Match 'if \(\$EnableKafkaUI -and \(\$DatabaseEngine -eq "postgresql" -or \$CdcKafkaInfrastructure\)\)\s*\{[^}]*up \$upArgs kafka-ui'
             $startScript | Should -Match 'elseif \(\$EnableKafkaUI -and \$DatabaseEngine -eq "mssql"\)\s*\{[^}]*Skipping Kafka UI'
         }
 
@@ -1637,7 +1682,7 @@ param(
             ) -Raw
 
             $wrapperSource | Should -Match '\$composeDataStandardOverlay\s*=\s*\(\$StartScriptName\s+-eq\s+"start-local-dms\.ps1"\)\s*-or\s*\r?\n\s*\$PSBoundParameters\.ContainsKey\(''DataStandardVersion''\)'
-            $wrapperSource | Should -Match '(?s)if \(\$composeDataStandardOverlay\)\s*\{.*?Resolve-DataStandardEnvironmentFile'
+            $wrapperSource | Should -Match '(?s)if \(\$composeDataStandardOverlay -and -not \$UseEnvironmentFileSchemaSettings\)\s*\{.*?Resolve-DataStandardEnvironmentFile'
         }
 
         It "the wrapper never forwards -DataStandardVersion to a start script" {
@@ -1953,12 +1998,12 @@ Copy-Item -LiteralPath `$EnvironmentFile -Destination '$capturedEnvPath' -Force
             $params | Should -Contain "v"
         }
 
-        It "bootstrap-published-dms.ps1 does not declare -d or -v (teardown is local-only)" {
+        It "bootstrap-published-dms.ps1 declares -d and -v for governed deployment teardown" {
             $params = Get-DeclaredScriptParameters -Path (
                 Join-Path $script:sourceDockerComposeRoot "bootstrap-published-dms.ps1"
             )
-            $params | Should -Not -Contain "d"
-            $params | Should -Not -Contain "v"
+            $params | Should -Contain "d"
+            $params | Should -Contain "v"
         }
 
         It "start-local-dms.ps1 still owns -d, -v, and -RemoveBootstrap" {
@@ -2036,14 +2081,15 @@ Copy-Item -LiteralPath `$EnvironmentFile -Destination '$capturedEnvPath' -Force
                 # files a teardown must cover: local-config.yml is unconditional in
                 # start-local-dms.ps1's compose set. So it is excluded, like the other
                 # non-compose-shaping options.
-                'SeparateConfigDatabase'
+                'SeparateConfigDatabase', 'DataStoreDatabaseName'
             )
+            $rejectedCdc = @('EnableKafkaCdc', 'CdcSettingsPath', 'CdcBindingStatePath')
 
             # Completeness guard: every parameter the entry script declares must be classified here
             # as a teardown switch, forwarded, or excluded (and bound below), so a new parameter
             # fails this assertion and forces an explicit forwarding decision.
             $declared = Get-DeclaredScriptParameters -Path $script:repo.WrapperScript
-            ($declared | Sort-Object) | Should -Be ((@('d', 'v') + $forwarded + $excluded) | Sort-Object)
+            ($declared | Sort-Object) | Should -Be ((@('d', 'v') + $forwarded + $excluded + $rejectedCdc) | Sort-Object)
 
             # Binds every excluded parameter (the teardown short-circuit returns before the wrapper's
             # option-validation rules run, so all of them can be bound in one invocation); an unbound
@@ -2066,6 +2112,7 @@ Copy-Item -LiteralPath `$EnvironmentFile -Destination '$capturedEnvPath' -Force
                 -NoDataStore `
                 -AddSmokeTestCredentials `
                 -SeparateConfigDatabase `
+                -DataStoreDatabaseName ignored_by_teardown `
                 -d
 
             $log = @(Get-Content -LiteralPath $callLog)
@@ -2443,7 +2490,7 @@ DMS_CONFIG_IDENTITY_CLIENT_SECRET_MINIMUM_LENGTH=not-an-integer
                 $source.IndexOf('"bootstrap-dms.yml"', $applicationComposeGuardIndex) |
                     Should -BeGreaterThan $applicationComposeGuardIndex
                 $source | Should -Match 'docker compose \$files --env-file \$EnvironmentFile -p dms-(?:local|published) up \$upArgs db'
-                $source | Should -Match '(?s)\$upArgs\s*=\s*@\("--detach"\).*?if \(-not \$databaseOnlyStartup\) \{.*?\$upArgs\s*\+=\s*"--remove-orphans"' -Because "DbOnly must not remove already-running application containers omitted from its reduced compose set"
+                $source | Should -Match '(?s)\$upArgs\s*=\s*@\("--detach"\).*?if \(-not \$databaseOnlyStartup -and -not \$DmsOnly\) \{.*?\$upArgs\s*\+=\s*"--remove-orphans"' -Because "DbOnly must not remove already-running application containers omitted from its reduced compose set"
             }
         }
 
@@ -2761,7 +2808,7 @@ Describe "whole-file module-table ownership (post-Invoke-Pester, isolated childr
     # Both halves of the exact-ownership invariant, proven AFTER Invoke-Pester returns: owned
     # staged instances are gone, and a caller-owned module beneath a LOOKALIKE-named directory
     # survives untouched. The children exclude this tag, so there is no recursion; launches go
-    # through [Environment]::ProcessPath, never a literal executable name.
+    # through the resolved PowerShell launcher, including dotnet-tool installations.
 
     BeforeAll {
         $script:ownershipChildWork = Join-Path ([System.IO.Path]::GetTempPath()) "dms-1153-ownership-child-$([Guid]::NewGuid().ToString('N'))"
@@ -2800,7 +2847,7 @@ Describe "whole-file module-table ownership (post-Invoke-Pester, isolated childr
             "finally { Remove-Item -LiteralPath `$callerRoot -Recurse -Force -ErrorAction SilentlyContinue }"
         ) -join "`n" | Set-Content -LiteralPath $childScript
 
-        $childState = (& ([Environment]::ProcessPath) -NoProfile -File $childScript | Select-Object -Last 1) | ConvertFrom-Json
+        $childState = (& ((Get-Command pwsh -CommandType Application | Select-Object -First 1).Source) -NoProfile -File $childScript | Select-Object -Last 1) | ConvertFrom-Json
         # Execution proof first: the probe must have RUN and PASSED - discovery counts prove
         # nothing, and a probe that never reached its staged import would make survival vacuous.
         $childState.Failed | Should -Be 0 -Because "the staged-import probe must complete cleanly around the caller's module"
@@ -2840,7 +2887,7 @@ Describe "whole-file module-table ownership (post-Invoke-Pester, isolated childr
             "} | ConvertTo-Json -Compress"
         ) -join "`n" | Set-Content -LiteralPath $childScript
 
-        $childState = (& ([Environment]::ProcessPath) -NoProfile -File $childScript | Select-Object -Last 1) | ConvertFrom-Json
+        $childState = (& ((Get-Command pwsh -CommandType Application | Select-Object -First 1).Source) -NoProfile -File $childScript | Select-Object -Last 1) | ConvertFrom-Json
         # Execution proof first: the residue check is meaningful only if the staged-import probe
         # really ran and passed - a run that never imported a staged module has nothing to clean.
         $childState.Failed | Should -Be 0 -Because "the staged-import probe must complete cleanly"

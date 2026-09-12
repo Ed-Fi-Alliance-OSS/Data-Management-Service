@@ -8,6 +8,15 @@
         "resolved": "6.0.2",
         "contentHash": "bJShQ6uWRTQ100ZeyiMqcFlhP7WJ+bCuabUs885dJiBEzMsJMSFr7BOyeCw4rgvQokteGi5rKQTlkhfQPUXg2A=="
       },
+      "FakeItEasy": {
+        "type": "Direct",
+        "requested": "[8.3.0, )",
+        "resolved": "8.3.0",
+        "contentHash": "5QmShA6njFOhQHUYrFUjWEepfRcbQLOhgctaFhWyhPTi17kVGNyZOdvJ/2HhoNthmdghIzNsnZsMScJZhVBaQQ==",
+        "dependencies": {
+          "Castle.Core": "5.1.1"
+        }
+      },
       "FluentAssertions": {
         "type": "Direct",
         "requested": "[6.12.1, )",
@@ -114,6 +123,14 @@
           "Microsoft.Identity.Client.Extensions.Msal": "4.78.0"
         }
       },
+      "Castle.Core": {
+        "type": "Transitive",
+        "resolved": "5.1.1",
+        "contentHash": "rpYtIczkzGpf+EkZgDr9CClTdemhsrwA/W5hMoPjLkRFnXzH44zDLoovXeKtmxb1ykXK9aJVODSpiJml8CTw2g==",
+        "dependencies": {
+          "System.Diagnostics.EventLog": "6.0.0"
+        }
+      },
       "Humanizer.Core": {
         "type": "Transitive",
         "resolved": "2.14.1",
@@ -132,6 +149,11 @@
           "Humanizer.Core": "2.14.1",
           "Json.More.Net": "2.0.1.2"
         }
+      },
+      "librdkafka.redist": {
+        "type": "Transitive",
+        "resolved": "2.6.1",
+        "contentHash": "RcpH/eqmfp08RmfeQdHeJEz0OaAcYWJo8EqQiU4ohDrBygIXbWhCTksUFkhYGqap/5Ycm+HC9RVSlwetFo9SlA=="
       },
       "Microsoft.Bcl.AsyncInterfaces": {
         "type": "Transitive",
@@ -439,6 +461,8 @@
         "type": "Project",
         "dependencies": {
           "EdFi.DataManagementService.Backend": "[1.0.0, )",
+          "EdFi.DataManagementService.Backend.Cdc": "[1.0.0, )",
+          "EdFi.DataManagementService.Backend.DocumentCacheRuntime": "[1.0.0, )",
           "EdFi.DataManagementService.Backend.Mssql": "[1.0.0, )",
           "EdFi.DataManagementService.Backend.Postgresql": "[1.0.0, )",
           "EdFi.DataManagementService.Core": "[1.0.0, )",
@@ -474,7 +498,9 @@
       "edfi.datamanagementservice.backend.cdc": {
         "type": "Project",
         "dependencies": {
+          "Confluent.Kafka": "[2.6.1, )",
           "EdFi.DataManagementService.Backend.Ddl": "[1.0.0, )",
+          "EdFi.DataManagementService.Backend.DocumentCacheRuntime": "[1.0.0, )",
           "EdFi.DataManagementService.Core": "[1.0.0, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.1, )"
         }
@@ -484,6 +510,13 @@
         "dependencies": {
           "EdFi.DataManagementService.Backend.External": "[1.0.0, )",
           "EdFi.DataManagementService.Backend.RelationalModel": "[1.0.0, )"
+        }
+      },
+      "edfi.datamanagementservice.backend.documentcacheruntime": {
+        "type": "Project",
+        "dependencies": {
+          "EdFi.DataManagementService.Backend.Mssql": "[1.0.0, )",
+          "EdFi.DataManagementService.Backend.Postgresql": "[1.0.0, )"
         }
       },
       "edfi.datamanagementservice.backend.external": {
@@ -598,6 +631,15 @@
         "requested": "[4.0.0, )",
         "resolved": "4.0.0",
         "contentHash": "ssdML8g+JqdP2BbDxg/bqzUBz81RD3SCGAbop6qs+o1xCGPXnlCSNAOp22TDKTtFmHfp+sKSPuWL0JONf3fYYA=="
+      },
+      "Confluent.Kafka": {
+        "type": "CentralTransitive",
+        "requested": "[2.6.1, )",
+        "resolved": "2.6.1",
+        "contentHash": "DCap4xzbUzItoFVBCmBbng6q4XbaxfqLgR/b56b67L9S0iUTIwrSAvk3MPegyQNn56+1C/m3ytwy1YU+nAuqDA==",
+        "dependencies": {
+          "librdkafka.redist": "2.6.1"
+        }
       },
       "EdFi.DataStandard52.ApiSchema": {
         "type": "CentralTransitive",

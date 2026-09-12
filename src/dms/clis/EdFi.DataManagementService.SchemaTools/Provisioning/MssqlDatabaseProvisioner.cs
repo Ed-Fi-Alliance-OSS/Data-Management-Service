@@ -6,9 +6,11 @@
 using System.Data.Common;
 using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.Mssql;
 using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace EdFi.DataManagementService.SchemaTools.Provisioning;
 
@@ -238,6 +240,50 @@ public partial class MssqlDatabaseProvisioner(ILogger logger) : DatabaseProvisio
     [GeneratedRegex(@"^\s*GO\s*$", RegexOptions.Multiline | RegexOptions.IgnoreCase)]
     private static partial Regex GoBatchSeparatorPattern();
 
+    public override void CheckCdcProjectionPrerequisites(
+        string connectionString,
+        bool configureOwnedLocalServer
+    )
+    {
+        if (configureOwnedLocalServer)
+        {
+            var builder = new SqlConnectionStringBuilder(connectionString) { InitialCatalog = "master" };
+            using var connection = new SqlConnection(builder.ConnectionString);
+            connection.Open();
+            using var command = connection.CreateCommand();
+            // This option is not advanced; do not change show advanced options or any other setting.
+            // Reject pending configuration changes, since RECONFIGURE would apply them server-wide.
+            command.CommandText = """
+                IF EXISTS (SELECT 1 FROM sys.configurations
+                           WHERE [name] = N'nested triggers' AND [value_in_use] = 0)
+                BEGIN
+                    -- sys.configurations documents these two default-memory display exceptions:
+                    -- https://learn.microsoft.com/sql/relational-databases/system-catalog-views/sys-configurations-transact-sql
+                    IF EXISTS (SELECT 1 FROM sys.configurations
+                               WHERE [value] <> [value_in_use]
+                                 AND NOT ([name] = N'min server memory (MB)' AND [value] = 0 AND [value_in_use] IN (8, 16))
+                                 AND NOT ([name] = N'max server memory (MB)' AND [value] = 0 AND [value_in_use] = 2147483647))
+                        THROW 50000, 'Pending server configuration prevents CDC prerequisite preparation.', 1;
+                    EXEC sys.sp_configure N'nested triggers', 1;
+                    RECONFIGURE;
+                END;
+                """;
+            command.ExecuteNonQuery();
+        }
+
+        // E18 remains the authoritative reader, both here and again at target initialization/activation.
+        var validator = new MssqlDocumentCacheProviderPrerequisiteValidator(
+            NullLogger<MssqlDocumentCacheProviderPrerequisiteValidator>.Instance
+        );
+        var result = validator.ValidateActivationPreflightAsync(connectionString).GetAwaiter().GetResult();
+        if (!result.IsSatisfied)
+        {
+            throw new InvalidOperationException(
+                "CDC projection prerequisites are disabled or unavailable. Prepare the offline deployment before activation."
+            );
+        }
+    }
+
     public override void CheckOrConfigureMvcc(string connectionString, bool databaseWasCreated)
     {
         var targetDatabase = GetDatabaseName(connectionString);
@@ -297,7 +343,7 @@ public partial class MssqlDatabaseProvisioner(ILogger logger) : DatabaseProvisio
             if (!Convert.ToBoolean(result))
             {
                 var warning =
-                    $"READ_COMMITTED_SNAPSHOT is OFF for database '{LoggingSanitizer.SanitizeForConsole(targetDatabase)}'. "
+                    "READ_COMMITTED_SNAPSHOT is OFF for the target database. "
                     + "DMS strongly recommends enabling MVCC reads for correct concurrency behavior. "
                     + "Run: ALTER DATABASE [dbname] SET READ_COMMITTED_SNAPSHOT ON";
 
