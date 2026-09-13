@@ -14,6 +14,7 @@ using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Utilities;
+using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure.Extensions;
 using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.Extensions.DependencyInjection;
@@ -396,20 +397,54 @@ public static class AspNetCoreFrontend
     }
 
     /// <summary>
-    /// Takes an HttpRequest and returns a unique trace identifier
+    /// Takes an HttpRequest and returns a unique trace identifier, normalized by
+    /// <see cref="CorrelationIdNormalizer"/>. This is the single ingestion point for the
+    /// correlation ID: the value is normalized here, at this one place, so every downstream
+    /// consumer - every log event and every error response body - carries the identical value
+    /// with no further work. Both candidate sources are normalized, since the length cap and
+    /// the allowlist apply to a server-generated identifier as well as a client-supplied one.
     /// </summary>
+    /// <remarks>
+    /// A client-supplied header that normalizes to nothing but whitespace - a value made up
+    /// only of characters the allowlist removes, such as a lone horizontal tab or a lone
+    /// U+200B ZERO WIDTH SPACE, or only of spaces - falls through to the server-generated
+    /// identifier. Blankness is therefore tested after normalization rather than before it, so
+    /// a client cannot blank the operational identifier that every log event and error response
+    /// body carries, and a header holding only removed characters behaves the same as a header
+    /// sent empty.
+    ///
+    /// The test is <see cref="string.IsNullOrWhiteSpace(string?)"/> rather than a length check
+    /// because whitespace is neither control nor format: a space is retained by the
+    /// correlation-ID allowlist by design, so a header of nothing but whitespace would
+    /// otherwise survive normalization intact and become the correlation ID. Kestrel strips leading and trailing ASCII optional
+    /// whitespace from a header value, but it decodes header bytes as Latin-1 by default, so
+    /// U+00A0 NO-BREAK SPACE - which is whitespace to .NET and not OWS to Kestrel - reaches
+    /// here. This narrows no allowlist: a correlation ID with internal whitespace is still
+    /// accepted whole, and <see cref="CorrelationIdNormalizer"/> still preserves whitespace.
+    /// Only the all-blank case falls back.
+    /// </remarks>
     public static TraceId ExtractTraceIdFrom(HttpRequest request, IOptions<AppSettings> options)
     {
-        string headerName = options.Value.CorrelationIdHeader;
-        if (
+        AppSettings appSettings = options.Value;
+        int maxLength = appSettings.CorrelationIdMaxLength;
+        string headerName = appSettings.CorrelationIdHeader;
+
+        // Empty when the setting names no header or the request omits it, which is the same
+        // starting point as a header sent empty. Normalize("") short-circuits to string.Empty,
+        // so all three of those cases reach the fallback below through one code path.
+        string clientSupplied =
             !string.IsNullOrEmpty(headerName)
-            && request.Headers.TryGetValue(headerName, out var correlationId)
-            && !string.IsNullOrEmpty(correlationId)
-        )
+            && request.Headers.TryGetValue(headerName, out StringValues headerValue)
+                ? headerValue.ToString()
+                : string.Empty;
+
+        string normalized = CorrelationIdNormalizer.Normalize(clientSupplied, maxLength);
+        if (string.IsNullOrWhiteSpace(normalized))
         {
-            return new TraceId(correlationId!);
+            normalized = CorrelationIdNormalizer.Normalize(request.HttpContext.TraceIdentifier, maxLength);
         }
-        return new TraceId(request.HttpContext.TraceIdentifier);
+
+        return new TraceId(normalized);
     }
 
     /// <summary>
