@@ -1,9 +1,9 @@
 This repository contains the **Ed-Fi Data Management Service (DMS) Platform**, which consists of two main applications:
 
 1. **Ed-Fi Data Management Service (DMS)** - A functional implementation of Ed-Fi Resources API, Ed-Fi Descriptors API, and Ed-Fi Discovery API
- - Code and solution file in `./src/dms`
+   - Code and solution file in `./src/dms`. The official product name is "Ed-Fi API", but it is still often called "DMS".
 2. **Ed-Fi DMS Configuration Service (CMS)** - A functional implementation of the Ed-Fi Management API specification
- - Code and solution file in `./src/config`
+   - Code and solution file in `./src/config`
 
 ### Code Style
 
@@ -119,3 +119,10 @@ Example local container setup:
 - Use NUnit with FluentAssertions, and FakeItEasy for mocks when necessary.
 - NUnit tests should follow the existing style, which is filenames named like the code area being tested,
   TestFixture classes named with prefix "Given_", a Setup method which does arrange and act, and Test methods with "It_" prefixes for each individual assert.
+- When order of operations matters (e.g. truncate-then-filter vs. filter-then-truncate), write an explicit test for the case where the "obvious" order changes client-visible behavior — order-of-operations regressions are the kind of thing code review misses without a targeted test.
+- Avoid tests that pass regardless of whether the feature exists (e.g. `NotBeEmpty()` instead of an exact value, asserting on a hardcoded constant that never varies with input, or an ordering invariant enforced only by a comment). Before adding a test, ask "would this fail if the feature were reverted?"
+
+## Logging
+
+- Always normalize / sanitize strings derived from a client before logging them
+- Log a value's already-normalized string (`someId.Value`), never the wrapping record/struct itself
