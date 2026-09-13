@@ -290,4 +290,55 @@ cannot produce a false positive — and asserts (a) that the set of files constr
 `SanitizeForLog`/`SanitizeForLogging`. Failures name the offending file, line and source
 text. Both assertions were verified to fail against a deliberately planted violation.
 
+### D-18 — DIRECTED by the product owner. Now implemented. Amends plan §8 decision 2.
+
+The product owner directed that Unicode **format** characters (category `Cf`) be removed
+from a correlation ID in addition to control characters. This **changes the allowlist that
+plan §8 decision 2 previously fixed as a bare `!char.IsControl(c)`**; the plan text is
+amended by this entry. The current rule, in
+`src/dms/backend/EdFi.DataManagementService.Backend.External/LogSanitizer.cs`, is:
+
+```csharp
+static c => !char.IsControl(c) && char.GetUnicodeCategory(c) != UnicodeCategory.Format
+```
+
+so the removed set is now **Cc + Cf + the Unicode line/paragraph separators** (`U+2028`,
+`U+2029`, removed by the leading `ReplaceLineEndings` as before).
+
+**Security rationale.** `Cf` covers the bidirectional embeddings and overrides
+`U+202A`–`U+202E` (notably RIGHT-TO-LEFT OVERRIDE), the isolates `U+2066`–`U+2069`, the
+zero-width characters `U+200B`–`U+200D` and `U+2060`, the directional marks `U+200E`/`U+200F`,
+`U+00AD` SOFT HYPHEN and `U+FEFF` BOM. None can forge a log line — both sinks escape their
+own output — but each defeats FR-LOG-6's guarantee that an operator can *search the logs for
+the ID the client received*: a bidi override renders the remainder of a log line
+right-to-left in a viewer, so the displayed ID is not the stored ID; a zero-width character
+makes two visually identical IDs distinct strings, so a copied ID silently fails to match.
+
+**Do not report the `Cf` exclusion as a violation of plan §8 decision 2**, and **do not
+re-raise D-7**. D-7 declined *narrowing the allowlist to alphanumerics*, which is a different
+thing and **remains declined**: printable punctuation, symbols, non-ASCII letters (Lu/Ll/Lo)
+and whitespace of category `Zs` — SPACE and `U+00A0` NO-BREAK SPACE included — must still be
+preserved, per FR-LOG-3. Do not narrow the allowlist beyond Cc + Cf + Zl/Zp. The rule is
+expressed as a Unicode **category** test on purpose, not a code-point enumeration; do not
+propose converting it to a list.
+
+Pinned by `Given_SanitizeCorrelationId_With_Bidirectional_Format_Characters`,
+`Given_SanitizeCorrelationId_With_Zero_Width_Characters`,
+`Given_SanitizeCorrelationId_With_Non_Ascii_Characters` and
+`Given_SanitizeCorrelationId_Applied_Twice` in
+`src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/Utilities/LoggingSanitizerTests.cs`.
+Documented as a product change in `docs/LOGGING.md` §"Correlation ID normalization" and
+`docs/CONFIGURATION.md`.
+
+### D-19 — "`CorrelationIdMaxLength` needs an upper bound"
+
+- **Reported severity (anticipated):** Low / Medium
+- **Decision:** **Declined by the product owner.**
+- **Rationale:** The suggestion that `CorrelationIdMaxLength` be validated against a maximum
+  as well as a minimum was put to the product owner on PR #1236 and declined. The setting is
+  host-operator configuration, not client input: a host that sets an absurd cap is
+  misconfiguring its own logs, and the existing `> 0` validation — which fails loudly, at
+  `Critical`, short-circuiting every request — already covers the case that breaks the
+  service. **Do not re-raise this.**
+
 **Everything else in D-1..D-17 remains declined.**

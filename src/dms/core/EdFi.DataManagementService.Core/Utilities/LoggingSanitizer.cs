@@ -40,6 +40,14 @@ public static class LoggingSanitizer
     /// <see cref="Core.External.Model.TraceId"/> is stated. Everywhere else points here.</b>
     /// </para>
     /// <para>
+    /// <b>What is removed:</b> control characters (Unicode category Cc), format characters
+    /// (category Cf - the bidirectional overrides and isolates, the zero-width characters, SOFT
+    /// HYPHEN and the BYTE ORDER MARK), and the Unicode line/paragraph separators U+2028 and
+    /// U+2029. Everything else survives, including printable punctuation, non-ASCII letters and
+    /// internal whitespace. <see cref="LogSanitizer.SanitizeCorrelationId"/> states the rule and
+    /// the rationale in full; do not restate it here or anywhere else.
+    /// </para>
+    /// <para>
     /// 1. <b>A correlation ID is already normalized before it is logged</b>, once, at the
     /// frontend ingestion boundary (<c>AspNetCoreFrontend.ExtractTraceIdFrom</c>). Passing
     /// <c>traceId.Value</c> to a log event raw is therefore correct and is what most sites in

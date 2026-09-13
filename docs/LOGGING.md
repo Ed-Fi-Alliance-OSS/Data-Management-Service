@@ -209,32 +209,38 @@ normalization is three adjustments, applied in this order:
    character short of the cap. Without this, JSON serialization would write
    `U+FFFD` into the response body while a log sink received the raw unpaired
    unit, and the two values would no longer be identical.
-3. **Remove characters outside the allowlist.** The correlation ID allowlist is
-   *all printable non-control characters*: every control character is removed —
-   carriage return, line feed, tab and null included — and every other character
-   is preserved, including punctuation such as `+ = { } @ | , # ( ) [ ] < > " '`
-   and non-ASCII letters, digits and symbols. There is one exception to
-   "every other character is preserved": LINE SEPARATOR (`U+2028`) and
-   PARAGRAPH SEPARATOR (`U+2029`) are removed as well. They are not control
-   characters, but they break a line-oriented log consumer the same way a line
-   feed does.
-   Removing line-breaking characters is what prevents log forging: a
-   client-supplied value cannot introduce additional log lines or corrupt
-   structured log output. Bounding the value's size is the length cap's job, not
-   the allowlist's.
+3. **Remove characters outside the allowlist.** The correlation ID allowlist
+   removes **control characters (category `Cc`)**, **format characters (category
+   `Cf`)**, and the **Unicode line and paragraph separators** (`U+2028` and
+   `U+2029`, categories `Zl` and `Zp`). Every other character is preserved,
+   including punctuation such as `+ = { } @ | , # ( ) [ ] < > " '`, non-ASCII
+   letters, digits and symbols, and internal whitespace.
 
-   "Control character" here means Unicode category `Cc` — `U+0000`–`U+001F` and
-   `U+007F`–`U+009F` — which is what `char.IsControl` reports. The **format**
-   characters of category `Cf` are therefore *not* removed: `U+00AD` SOFT
-   HYPHEN, the zero-width characters `U+200B`–`U+200D`, the bidirectional
-   embeddings and overrides `U+202A`–`U+202E` (including RIGHT-TO-LEFT
-   OVERRIDE), the bidirectional isolates `U+2066`–`U+2069`, and `U+FEFF` all
-   survive normalization. They cannot forge a log line, and both sinks that
-   receive the value — structured-log parameters and JSON serialization — escape
-   their own output, so this is not an injection exposure. It does mean a
-   correlation ID can render invisibly or in an unexpected direction in a
-   terminal, and that the effective retained set is "printable, plus `Cf`, minus
-   `U+2028`/`U+2029`" rather than simply "the printable range".
+   Removing the control characters — carriage return, line feed, tab and null
+   included — together with the line and paragraph separators is what prevents
+   log forging: a client-supplied value cannot introduce additional log lines or
+   corrupt structured log output. Bounding the value's size is the length cap's
+   job, not the allowlist's.
+
+   The format characters are removed for a different reason. `Cf` covers the
+   bidirectional embeddings and overrides `U+202A`–`U+202E` (notably
+   RIGHT-TO-LEFT OVERRIDE), the bidirectional isolates `U+2066`–`U+2069`, the
+   zero-width characters `U+200B`–`U+200D` and `U+2060`, the directional marks
+   `U+200E`/`U+200F`, `U+00AD` SOFT HYPHEN and `U+FEFF` BYTE ORDER MARK. None of
+   these can forge a log line — both sinks that receive the value,
+   structured-log parameters and JSON serialization, escape their own output —
+   but each defeats the single guarantee a correlation ID carries, that an
+   operator can *search the logs for the ID the client received*. A bidi
+   override renders the remainder of a log line right-to-left in a viewer, so
+   the ID an operator reads is not the ID that is stored; and a zero-width
+   character makes two visually identical IDs distinct strings, so a copied ID
+   silently fails to match. Both are removed rather than escaped so that the
+   stored value, the displayed value and the value the client holds are the same
+   string.
+
+   The rule is expressed as a Unicode **category** test, not a list of code
+   points, so it stays a single coherent negative test and does not drift as new
+   format characters are assigned.
 
 This allowlist is scoped to correlation IDs and is deliberately broader than the
 stricter one applied to internally-controlled logged values such as `Method` and
@@ -269,11 +275,12 @@ no body for it to appear in, so a client correlating one of them must use the
 request log or the configured correlation header it sent.
 
 A client-supplied header whose value normalizes to nothing but whitespace — one
-made up only of control characters, such as a lone horizontal tab, or only of
-whitespace, such as a run of `U+00A0` NO-BREAK SPACE — is treated the same as a
-header sent empty or omitted: the server-generated trace identifier is used, so
-a client cannot blank the operational identifier. Whitespace *within* a
-correlation ID is preserved; only an all-blank value falls back.
+made up only of removed characters, such as a lone horizontal tab or a lone
+`U+200B` ZERO WIDTH SPACE, or only of whitespace, such as a run of `U+00A0`
+NO-BREAK SPACE — is treated the same as a header sent empty or omitted: the
+server-generated trace identifier is used, so a client cannot blank the
+operational identifier. Whitespace *within* a correlation ID is preserved; only
+an all-blank value falls back.
 
 A correlation ID that the allowlist or the length cap alters is normalized, not
 rejected — the request still succeeds or fails on its own merits rather than on

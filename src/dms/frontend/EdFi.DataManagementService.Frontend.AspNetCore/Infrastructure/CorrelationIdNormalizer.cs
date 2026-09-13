@@ -37,7 +37,7 @@ public static class CorrelationIdNormalizer
     /// The order is deliberate and must not be swapped: truncating first means a long hostile
     /// value retains less trailing content than filtering first would, and it matches the order
     /// the request-logging middleware has always used. A consequence is that a value which is
-    /// both over-length and contains control characters yields a result <em>shorter</em> than
+    /// both over-length and contains removed characters yields a result <em>shorter</em> than
     /// <paramref name="maxLength"/>; that is intended, not a defect to compensate for. The
     /// surrogate-pair guard has the same effect for a value with no disallowed characters at
     /// all: an over-length value cut between the halves of a pair yields
@@ -45,9 +45,9 @@ public static class CorrelationIdNormalizer
     ///
     /// A value that violates the allowlist or the length cap is adjusted, never rejected, so a
     /// request still succeeds or fails on its own merits rather than on the shape of an
-    /// operational identifier. Normalization is idempotent: the result contains no control
-    /// characters and is no longer than <paramref name="maxLength"/>, so re-applying it is a
-    /// no-op.
+    /// operational identifier. Normalization is idempotent: the result contains none of the
+    /// characters <see cref="LoggingSanitizer.SanitizeCorrelationId"/> removes and is no longer
+    /// than <paramref name="maxLength"/>, so re-applying it is a no-op.
     /// </remarks>
     /// <param name="value">The raw correlation ID. Null or empty yields an empty string.</param>
     /// <param name="maxLength">
@@ -63,9 +63,9 @@ public static class CorrelationIdNormalizer
     /// also when the input's retained prefix is empty, as for a single astral character
     /// truncated to a maximum length of 1. Surrogates are guaranteed only to the extent that
     /// truncation never splits a pair; a lone surrogate already present in
-    /// <paramref name="value"/> is preserved rather than repaired, because
-    /// <see cref="char.IsControl(char)"/> is false for surrogates. A caller whose correlation
-    /// IDs can carry lone surrogates - which an HTTP header value cannot - must check for that
+    /// <paramref name="value"/> is preserved rather than repaired, because a surrogate is
+    /// Unicode category Cs and the allowlist removes only Cc, Cf, Zl and Zp. A caller whose
+    /// correlation IDs can carry lone surrogates - which an HTTP header value cannot - must check for that
     /// itself.
     /// </returns>
     public static string Normalize(string? value, int maxLength)
@@ -87,11 +87,11 @@ public static class CorrelationIdNormalizer
             int retained = effectiveMaxLength;
 
             // The cut is on a UTF-16 code unit, so it can land between the halves of a
-            // surrogate pair. char.IsControl is false for surrogates, so the allowlist below
-            // would keep the orphaned high half; System.Text.Json then writes U+FFFD into the
-            // response body while a log sink receives the raw unpaired unit, and the two
-            // values are no longer byte-identical - the one thing FR-LOG-6 guarantees. Drop
-            // the orphan instead.
+            // surrogate pair. A surrogate is Unicode category Cs, which the allowlist below
+            // does not remove, so it would keep the orphaned high half; System.Text.Json then
+            // writes U+FFFD into the response body while a log sink receives the raw unpaired
+            // unit, and the two values are no longer byte-identical - the one thing FR-LOG-6
+            // guarantees. Drop the orphan instead.
             //
             // `retained > 0` is load-bearing: an effective maximum length of zero would
             // otherwise index value[-1]. It is tested here, where the hazard is, rather than
