@@ -119,7 +119,7 @@ internal class ValidateResourceKeySeedMiddleware(
                 ex.TargetKind,
                 selectedInstance.Id,
                 LoggingSanitizer.SanitizeForLogging(selectedInstance.Name),
-                LoggingSanitizer.SanitizeForLogging(requestInfo.FrontendRequest.TraceId.Value)
+                LoggingSanitizer.SanitizeCorrelationId(requestInfo.FrontendRequest.TraceId.Value)
             );
 #pragma warning restore S6667
 
