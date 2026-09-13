@@ -84,6 +84,70 @@ public class LoggingSanitizerTests
     }
 
     [TestFixture]
+    public class Given_SanitizeCorrelationId_With_Bidirectional_Format_Characters : LoggingSanitizerTests
+    {
+        // U+202A-U+202E and U+2066-U+2069 are Unicode category Cf, so char.IsControl is false
+        // for all of them and they were preserved before this rule. They are removed now: a
+        // bidirectional override renders the remainder of a log line right-to-left in a viewer,
+        // so the ID an operator reads is not the ID that is stored, which defeats the single
+        // guarantee a correlation ID carries.
+        private string _result = string.Empty;
+
+        [SetUp]
+        public void Setup()
+        {
+            // RIGHT-TO-LEFT OVERRIDE planted mid-ID, the classic display-spoofing shape.
+            _result = LoggingSanitizer.SanitizeCorrelationId("req-\u202E12345-tenantA");
+        }
+
+        [Test]
+        public void It_removes_the_right_to_left_override()
+        {
+            _result.Should().Be("req-12345-tenantA");
+        }
+
+        [Test]
+        public void It_removes_every_bidirectional_embedding_override_and_isolate()
+        {
+            LoggingSanitizer
+                .SanitizeCorrelationId("a\u202Ab\u202Bc\u202Cd\u202De\u202Ef\u2066g\u2067h\u2068i\u2069j")
+                .Should()
+                .Be("abcdefghij");
+        }
+
+        [Test]
+        public void It_returns_empty_string_when_the_value_is_only_bidirectional_controls()
+        {
+            LoggingSanitizer.SanitizeCorrelationId("\u202E\u202D\u2066\u2069").Should().Be(string.Empty);
+        }
+    }
+
+    [TestFixture]
+    public class Given_SanitizeCorrelationId_With_Zero_Width_Characters : LoggingSanitizerTests
+    {
+        // Zero-width and invisible format characters make two visually identical correlation IDs
+        // distinct strings, so an ID copied out of a response body silently fails to match the
+        // one in the logs. All are category Cf.
+        [Test]
+        public void It_removes_zero_width_and_invisible_format_characters()
+        {
+            LoggingSanitizer
+                .SanitizeCorrelationId("tr\u200Ba\u200Cc\u200De\uFEFFi\u00ADd\u2060X\u200E\u200F")
+                .Should()
+                .Be("traceidX");
+        }
+
+        [Test]
+        public void It_makes_two_visually_identical_ids_the_same_string()
+        {
+            LoggingSanitizer
+                .SanitizeCorrelationId("trace-\u200B123")
+                .Should()
+                .Be(LoggingSanitizer.SanitizeCorrelationId("trace-123"));
+        }
+    }
+
+    [TestFixture]
     public class Given_SanitizeCorrelationId_With_Non_Ascii_Characters : LoggingSanitizerTests
     {
         [Test]
@@ -93,6 +157,32 @@ public class LoggingSanitizerTests
                 .SanitizeCorrelationId("trace-Ωμέγα-日本語-ñ")
                 .Should()
                 .Be("trace-Ωμέγα-日本語-ñ");
+        }
+
+        [Test]
+        public void It_preserves_internal_whitespace_including_no_break_space()
+        {
+            // SPACE and U+00A0 are category Zs, not Cf, so the format-character rule must not
+            // reach them. FR-LOG-3 forbids narrowing this allowlist toward alphanumerics.
+            LoggingSanitizer
+                .SanitizeCorrelationId("trace id\u00A0with spaces")
+                .Should()
+                .Be("trace id\u00A0with spaces");
+        }
+    }
+
+    [TestFixture]
+    public class Given_SanitizeCorrelationId_Applied_Twice : LoggingSanitizerTests
+    {
+        [Test]
+        public void It_is_idempotent_for_a_value_mixing_removed_and_retained_characters()
+        {
+            const string Raw = "req\r-\u202E12 3\u200B-Ωμέγα+a\u2028b";
+
+            string once = LoggingSanitizer.SanitizeCorrelationId(Raw);
+
+            once.Should().Be("req-12 3-Ωμέγα+ab");
+            LoggingSanitizer.SanitizeCorrelationId(once).Should().Be(once);
         }
     }
 
