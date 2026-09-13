@@ -5,8 +5,10 @@
 
 using System.Net;
 using System.Text;
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.OAuth;
+using EdFi.DataManagementService.Core.Tests.Unit.TestSupport;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
@@ -404,6 +406,72 @@ public class OAuthManagerTests
                 content.Should().NotBeNull();
                 content!.Should().Contain("\"detail\": \"Unsupported grant type\"");
             }
+        }
+    }
+
+    /// <summary>
+    /// FR-LOG-6 regression guard for the upstream-error (non-200, non-401) branch. OAuthManager
+    /// produces a 502's log record and its response body from separate expressions in two
+    /// places — this branch and the <c>catch</c> branch below it — so both must pass
+    /// <c>traceId.Value</c>: passing the TraceId record struct makes its synthesized ToString
+    /// render "TraceId { Value = ... }", so the logged value differs from the correlationId the
+    /// client reads even though it still *contains* it. That is why the assertion below is exact
+    /// equality rather than Contain. Only this branch is covered here; the <c>catch</c> branch is
+    /// already correct.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_An_Upstream_Identity_Service_Error_With_An_Upstream_Style_Correlation_Id
+    {
+        /// <summary>
+        /// Already normalized under the correlation-ID allowlist, but holds characters the stricter
+        /// Method/Path allowlist would strip (+ = { }), so a value transformed or decorated a second
+        /// time anywhere on this path is distinguishable from one carried through verbatim.
+        /// </summary>
+        private const string UpstreamCorrelationId = "3f2b+aQ==/{svc}";
+
+        private RecordingLogger<OAuthManager> _logger = default!;
+        private JsonNode _body = default!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _logger = new RecordingLogger<OAuthManager>();
+
+            var upstreamResponse = A.Fake<HttpResponseMessage>();
+            upstreamResponse.StatusCode = HttpStatusCode.InternalServerError;
+            upstreamResponse.Content = new StringContent(
+                """{ "error": "server_error" }""",
+                Encoding.UTF8,
+                "application/json"
+            );
+
+            var httpClient = A.Fake<IHttpClientWrapper>();
+            A.CallTo(() => httpClient.SendAsync(A<HttpRequestMessage>._))
+                .ReturnsLazily(() => upstreamResponse);
+
+            HttpResponseMessage response = await new OAuthManager(_logger).GetAccessTokenAsync(
+                httpClient,
+                "client_credentials",
+                "basic abc:123",
+                "http://example.com/oauth/token",
+                new TraceId(UpstreamCorrelationId)
+            );
+
+            _body = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
+        }
+
+        [Test]
+        public void It_logs_the_correlation_id_value_and_not_the_TraceId_struct()
+        {
+            LogRecord warning = _logger.Records.Single(record => record.Level == LogLevel.Warning);
+            warning.Properties["TraceId"].Should().Be(UpstreamCorrelationId);
+        }
+
+        [Test]
+        public void It_puts_the_identical_correlation_id_in_the_gateway_error_body()
+        {
+            _body["correlationId"]!.GetValue<string>().Should().Be(UpstreamCorrelationId);
         }
     }
 }

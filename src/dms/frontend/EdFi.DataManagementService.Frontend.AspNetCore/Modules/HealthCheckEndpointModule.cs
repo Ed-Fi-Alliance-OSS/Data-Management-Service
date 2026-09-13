@@ -11,6 +11,7 @@ using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure.Extensions;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
+using AppSettings = EdFi.DataManagementService.Frontend.AspNetCore.Configuration.AppSettings;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Modules;
 
@@ -69,7 +70,8 @@ public class HealthCheckEndpointModule(
     internal static async Task GetDocumentCacheStatus(
         HttpContext httpContext,
         IDocumentCacheStatusAuthorizationService authorizationService,
-        IDocumentCacheStatusService documentCacheStatusService
+        IDocumentCacheStatusService documentCacheStatusService,
+        IOptions<AppSettings> appSettings
     )
     {
         DocumentCacheStatusAuthorizationResult authorizationResult =
@@ -80,7 +82,7 @@ public class HealthCheckEndpointModule(
 
         if (!authorizationResult.IsAuthorized)
         {
-            await WriteAuthorizationFailureAsync(httpContext, authorizationResult);
+            await WriteAuthorizationFailureAsync(httpContext, authorizationResult, appSettings);
             return;
         }
 
@@ -98,10 +100,14 @@ public class HealthCheckEndpointModule(
 
     private static async Task WriteAuthorizationFailureAsync(
         HttpContext httpContext,
-        DocumentCacheStatusAuthorizationResult authorizationResult
+        DocumentCacheStatusAuthorizationResult authorizationResult,
+        IOptions<AppSettings> appSettings
     )
     {
-        TraceId traceId = new(httpContext.TraceIdentifier);
+        // Routed through the shared ingestion point rather than reading TraceIdentifier directly,
+        // so this endpoint's 401/403 bodies carry the same normalized correlation ID - and honor
+        // the configured correlation header - exactly as every other DMS error response does.
+        TraceId traceId = AspNetCoreFrontend.ExtractTraceIdFrom(httpContext.Request, appSettings);
         httpContext.Response.ContentType = "application/problem+json";
 
         if (authorizationResult.Outcome == DocumentCacheStatusAuthorizationOutcome.Unauthorized)

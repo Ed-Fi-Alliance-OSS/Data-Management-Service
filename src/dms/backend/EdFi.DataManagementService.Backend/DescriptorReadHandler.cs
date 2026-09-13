@@ -1060,7 +1060,7 @@ internal sealed class DescriptorReadHandler(
         _logger.LogDebug(
             "Descriptor partition boundaries routed to descriptor read handler for {Resource} - {TraceId}",
             RelationalWriteSupport.FormatResource(request.Resource),
-            LoggingSanitizer.SanitizeForLogging(request.TraceId.Value)
+            LoggingSanitizer.SanitizeCorrelationId(request.TraceId.Value)
         );
 
         // No read-acceleration path: the cache holds hydrated documents and the candidate pages that

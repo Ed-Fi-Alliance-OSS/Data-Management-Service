@@ -68,7 +68,7 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
                     var content = await response.Content.ReadAsStringAsync();
                     logger.LogWarning(
                         "Error from upstream identity service - {TraceId} - {Content}",
-                        traceId,
+                        traceId.Value,
                         content
                     );
                     return GenerateProblemDetailResponse(

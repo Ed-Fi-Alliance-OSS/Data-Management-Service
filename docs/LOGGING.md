@@ -197,23 +197,90 @@ those fields.
 ### Correlation ID normalization
 
 A correlation ID is normalized before it is used anywhere — whether it came from
-the configured correlation header or from `HttpContext.TraceIdentifier`:
+the configured correlation header or from `HttpContext.TraceIdentifier`. The
+normalization is three adjustments, applied in this order:
 
-* Characters outside a logging-safe allowlist are removed. The allowlist exists
-  to prevent log forging and structured-log template injection; a
-  client-supplied value containing a carriage return or line feed cannot
-  introduce additional log lines. This allowlist is scoped to correlation IDs
-  and is deliberately broader than the stricter one applied to
-  internally-controlled logged values such as `Method` and `Path`, because a
-  client-supplied correlation ID normally originates in an upstream system's own
-  identifier scheme.
-* Values longer than `AppSettings:CorrelationIdMaxLength` (default `255`) are
-  truncated. See [Configuration](./CONFIGURATION.md).
+1. **Truncate.** A value longer than `AppSettings:CorrelationIdMaxLength`
+   (default `255`) is cut to that length. See
+   [Configuration](./CONFIGURATION.md).
+2. **Back the cut off a split surrogate pair.** The cut in step 1 is made on a
+   UTF-16 code unit, so it can land between the two halves of a non-BMP
+   character. When it does, the orphaned leading half is dropped as well, one
+   character short of the cap. Without this, JSON serialization would write
+   `U+FFFD` into the response body while a log sink received the raw unpaired
+   unit, and the two values would no longer be identical.
+3. **Remove characters outside the allowlist.** The correlation ID allowlist
+   removes **control characters (category `Cc`)**, **format characters (category
+   `Cf`)**, and the **Unicode line and paragraph separators** (`U+2028` and
+   `U+2029`, categories `Zl` and `Zp`). Every other character is preserved,
+   including punctuation such as `+ = { } @ | , # ( ) [ ] < > " '`, non-ASCII
+   letters, digits and symbols, and internal whitespace.
+
+   Removing the control characters — carriage return, line feed, tab and null
+   included — together with the line and paragraph separators is what prevents
+   log forging: a client-supplied value cannot introduce additional log lines or
+   corrupt structured log output. Bounding the value's size is the length cap's
+   job, not the allowlist's.
+
+   The format characters are removed for a different reason. `Cf` covers the
+   bidirectional embeddings and overrides `U+202A`–`U+202E` (notably
+   RIGHT-TO-LEFT OVERRIDE), the bidirectional isolates `U+2066`–`U+2069`, the
+   zero-width characters `U+200B`–`U+200D` and `U+2060`, the directional marks
+   `U+200E`/`U+200F`, `U+00AD` SOFT HYPHEN and `U+FEFF` BYTE ORDER MARK. None of
+   these can forge a log line — both sinks that receive the value,
+   structured-log parameters and JSON serialization, escape their own output —
+   but each defeats the single guarantee a correlation ID carries, that an
+   operator can *search the logs for the ID the client received*. A bidi
+   override renders the remainder of a log line right-to-left in a viewer, so
+   the ID an operator reads is not the ID that is stored; and a zero-width
+   character makes two visually identical IDs distinct strings, so a copied ID
+   silently fails to match. Both are removed rather than escaped so that the
+   stored value, the displayed value and the value the client holds are the same
+   string.
+
+   The rule is expressed as a Unicode **category** test, not a list of code
+   points, so it stays a single coherent negative test and does not drift as new
+   format characters are assigned.
+
+This allowlist is scoped to correlation IDs and is deliberately broader than the
+stricter one applied to internally-controlled logged values such as `Method` and
+`Path`, because a client-supplied correlation ID normally originates in an
+upstream system's own identifier scheme — narrowing it to alphanumerics would
+defeat the purpose of accepting a client-supplied value at all.
+
+The order matters, and truncating first is deliberate: a long hostile value
+retains less trailing content than it would if characters were removed first. A
+consequence is that an over-length value can yield a result **shorter** than
+`CorrelationIdMaxLength` — either because it also contained characters outside
+the allowlist, which are removed after the cut, or because the cut landed inside
+a surrogate pair, which costs one further character even for a value containing
+nothing the allowlist would remove. Both are intended.
 
 Normalization is applied identically everywhere a correlation ID appears: every
 request log event, and the `correlationId` (or `traceId`) of every error response
-body, whatever the status code and whichever layer produced it. The ID a client
-reads from a failed request is therefore always the ID to search for in the logs.
+body that carries a correlation ID, whatever the status code and whichever layer
+produced it — including the catch-all `404` for an unmatched route, the `429`
+rate-limit rejection, and the `500` written when an unhandled exception escapes
+the pipeline. The ID a client reads from such a response is therefore always the
+ID to search for in the logs. The value is normalized once, where the request
+first supplies it, so no individual response path can drift from the logged
+value.
+
+Not every error response carries one. The `413` answer to an oversized request
+body writes no response body at all, and the management, metadata and XSD
+metadata endpoints answer an unrecognized path with a `404` whose body is either
+absent or a bare message carrying no `correlationId` field. Those
+requests are still logged with their normalized correlation ID; there is simply
+no body for it to appear in, so a client correlating one of them must use the
+request log or the configured correlation header it sent.
+
+A client-supplied header whose value normalizes to nothing but whitespace — one
+made up only of removed characters, such as a lone horizontal tab or a lone
+`U+200B` ZERO WIDTH SPACE, or only of whitespace, such as a run of `U+00A0`
+NO-BREAK SPACE — is treated the same as a header sent empty or omitted: the
+server-generated trace identifier is used, so a client cannot blank the
+operational identifier. Whitespace *within* a correlation ID is preserved; only
+an all-blank value falls back.
 
 A correlation ID that the allowlist or the length cap alters is normalized, not
 rejected — the request still succeeds or fails on its own merits rather than on

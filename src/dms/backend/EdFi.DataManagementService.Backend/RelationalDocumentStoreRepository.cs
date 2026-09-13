@@ -434,7 +434,7 @@ public sealed class RelationalDocumentStoreRepository(
 
         _logger.LogDebug(
             "Entering RelationalDocumentStoreRepository.DeleteDocumentById - {TraceId}",
-            LoggingSanitizer.SanitizeForLogging(deleteRequest.TraceId.Value)
+            LoggingSanitizer.SanitizeCorrelationId(deleteRequest.TraceId.Value)
         );
 
         var mappingSet = deleteRequest.MappingSet;
@@ -516,7 +516,7 @@ public sealed class RelationalDocumentStoreRepository(
                 ex,
                 "Transient conflict creating write session for relational DELETE on {DocumentUuid} - {TraceId}",
                 documentUuid.Value,
-                LoggingSanitizer.SanitizeForLogging(traceId.Value)
+                LoggingSanitizer.SanitizeCorrelationId(traceId.Value)
             );
             return new DeleteResult.DeleteFailureWriteConflict();
         }
@@ -526,7 +526,7 @@ public sealed class RelationalDocumentStoreRepository(
                 ex,
                 "Database error creating write session for relational DELETE on {DocumentUuid} - {TraceId}",
                 documentUuid.Value,
-                LoggingSanitizer.SanitizeForLogging(traceId.Value)
+                LoggingSanitizer.SanitizeCorrelationId(traceId.Value)
             );
             return new DeleteResult.UnknownFailure(
                 "An unexpected error occurred while processing the delete request."
@@ -578,7 +578,7 @@ public sealed class RelationalDocumentStoreRepository(
                     ex,
                     "Transient conflict resolving delete target for {DocumentUuid} - {TraceId}",
                     documentUuid.Value,
-                    LoggingSanitizer.SanitizeForLogging(traceId.Value)
+                    LoggingSanitizer.SanitizeCorrelationId(traceId.Value)
                 );
 
                 await writeSession.RollbackAsync().ConfigureAwait(false);
@@ -590,7 +590,7 @@ public sealed class RelationalDocumentStoreRepository(
                     ex,
                     "Database error resolving delete target for {DocumentUuid} - {TraceId}",
                     documentUuid.Value,
-                    LoggingSanitizer.SanitizeForLogging(traceId.Value)
+                    LoggingSanitizer.SanitizeCorrelationId(traceId.Value)
                 );
 
                 await writeSession.RollbackAsync().ConfigureAwait(false);
@@ -611,7 +611,7 @@ public sealed class RelationalDocumentStoreRepository(
                         ex,
                         "Transient conflict committing relational DELETE for {DocumentUuid} - {TraceId}",
                         documentUuid.Value,
-                        LoggingSanitizer.SanitizeForLogging(traceId.Value)
+                        LoggingSanitizer.SanitizeCorrelationId(traceId.Value)
                     );
 
                     // Commit-phase failures leave the transaction in an ambiguous state: do not call
@@ -626,7 +626,7 @@ public sealed class RelationalDocumentStoreRepository(
                         ex,
                         "Database error committing relational DELETE for {DocumentUuid} - {TraceId}",
                         documentUuid.Value,
-                        LoggingSanitizer.SanitizeForLogging(traceId.Value)
+                        LoggingSanitizer.SanitizeCorrelationId(traceId.Value)
                     );
 
                     return new DeleteResult.UnknownFailure(
@@ -1559,7 +1559,7 @@ public sealed class RelationalDocumentStoreRepository(
 
         _logger.LogDebug(
             "Entering RelationalDocumentStoreRepository.QueryPartitions - {TraceId}",
-            LoggingSanitizer.SanitizeForLogging(partitionRequest.TraceId.Value)
+            LoggingSanitizer.SanitizeCorrelationId(partitionRequest.TraceId.Value)
         );
 
         // Read acceleration is not consulted on this path, for either resource kind. The cache holds
