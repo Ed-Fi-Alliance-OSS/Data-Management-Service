@@ -330,6 +330,37 @@ Pinned by `Given_SanitizeCorrelationId_With_Bidirectional_Format_Characters`,
 Documented as a product change in `docs/LOGGING.md` §"Correlation ID normalization" and
 `docs/CONFIGURATION.md`.
 
+#### D-18a — "Removing `U+200C`/`U+200D` destroys orthographically significant characters"
+
+- **Reported severity (anticipated):** Low / Medium
+- **Decision:** **Raised to the product owner during implementation and accepted as-is.**
+- **Rationale:** This is a real and correctly-identified trade-off, not a false positive, so
+  it is recorded rather than dismissed. Most of the `Cf` set is display-only — the bidi
+  controls, the directional marks, SOFT HYPHEN and BOM change how a string renders, never
+  what it *is*. Two members are different: `U+200C` ZERO WIDTH NON-JOINER is **required** for
+  correct Persian/Farsi orthography, and `U+200D` ZERO WIDTH JOINER is what binds an emoji
+  sequence into a single grapheme. For those two, removal alters the identifier's meaning,
+  not merely its presentation.
+- **The trade-off was put to the product owner explicitly, with the narrower alternative
+  ("`Cf` except `U+200C`/`U+200D`") offered, and the current behavior was accepted.** The
+  deciding consideration: a correlation ID is an operational identifier, in practice machine-
+  generated, and a uniform category rule is both simpler to reason about and harder to get
+  subtly wrong than a category-minus-exceptions rule. **Do not re-raise this as a new
+  finding.** If a real upstream identifier scheme is ever found that legitimately carries
+  ZWNJ or ZWJ, that is new evidence and a reason to reopen it with the product owner — not a
+  code review comment.
+
+#### D-18b — "A BOM-prefixed correlation header is now stripped"
+
+- **Decision:** Not a behavior change on the shipped configuration; recorded to prevent a
+  false assumption in either direction.
+- **Rationale:** Kestrel decodes request header bytes as Latin-1 by default, so a UTF-8 BOM
+  arrives as the three printable characters `U+00EF U+00BB U+00BF` and is **not** matched by
+  the `Cf` rule. `U+FEFF` only reaches the sanitizer on a host that has installed a UTF-8
+  `RequestHeaderEncodingSelector`, where stripping it is the desired outcome anyway. Do not
+  claim BOM removal as active on the default configuration, and do not "fix" its apparent
+  absence.
+
 ### D-19 — "`CorrelationIdMaxLength` needs an upper bound"
 
 - **Reported severity (anticipated):** Low / Medium
