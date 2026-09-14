@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Linq;
+using EdFi.Api.Plugins.Hosting;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Model;
@@ -34,6 +35,18 @@ var bootstrapStartupStatusSignal = new FileStartupStatusSignal(
 bool enableAspNetCompression = false;
 bool useReverseProxyHeaders = false;
 
+// Before ConfigureServices, because AddServices reads configuration and composes against what this
+// returns, and after the status signal above, so a loader fatal has somewhere to record itself. A
+// deployment that allowlisted nothing gets LoadedPlugins.Empty without the loader touching the
+// filesystem, which is what keeps a plugin-free boot on exactly the path it took before.
+LoadedPlugins loadedPlugins = RunBootstrapPhaseWithResult(
+    DmsStartupPhases.LoadPlugins,
+    "Loading plugins named in Plugins:Allowed.",
+    "Loaded plugins named in Plugins:Allowed.",
+    "Loading plugins failed before DMS services were configured.",
+    () => PluginLoader.Load(builder.Configuration, DmsPluginContracts.Registry.ContractAssemblyNames)
+);
+
 RunBootstrapPhase(
     DmsStartupPhases.ConfigureServices,
     "Configuring DMS services and shared HTTP infrastructure.",
@@ -42,7 +55,7 @@ RunBootstrapPhase(
     () =>
     {
         builder.Services.AddHttpClient();
-        builder.AddServices();
+        builder.AddServices(loadedPlugins);
         builder.Services.ConfigureHttpJsonOptions(options =>
         {
             options.SerializerOptions.Encoder = EdFi.DataManagementService
@@ -132,6 +145,13 @@ app.Logger.LogInformation(
     "DMS startup status file path: {StartupStatusFilePath}",
     startupPhaseExecutor.StatusFilePath
 );
+
+// Here and nowhere later. The logger exists from the line above, and no startup task has run: the
+// executor is not entered until the RunFatalAsync calls further down, so the inventory reaches an
+// operator before any check that can abort startup naming a type and not the plugin that supplied
+// it. The per-file loaded flags are read at this moment rather than carried from loading, because an
+// assembly first touched inside a contribution hook loaded after that phase returned.
+PluginInventoryLog.Emit(app.Logger, app.Services.GetRequiredService<PluginAuditInput>());
 
 var pathBase = app.Configuration.GetValue<string>("AppSettings:PathBase");
 if (!string.IsNullOrEmpty(pathBase))

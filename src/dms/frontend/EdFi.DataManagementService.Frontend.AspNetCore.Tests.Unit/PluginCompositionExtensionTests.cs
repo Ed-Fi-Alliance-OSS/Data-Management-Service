@@ -57,7 +57,7 @@ internal static class PluginCompositionProbe
             }
         );
 
-        builder.AddServices();
+        builder.AddServices(LoadedPlugins.Empty);
 
         return builder.Services;
     }

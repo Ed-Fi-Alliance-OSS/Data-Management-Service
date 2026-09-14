@@ -328,6 +328,42 @@ These settings configure the allowed client-secret length range used by CMS regi
 > run `teardown-local-dms.ps1` and set up again, or drop the Keycloak realm / `dmscs` OpenIddict
 > tables — then start with the new secret.
 
+## Plugins
+
+Plugins are directories of already-published assemblies that DMS loads at startup
+and lets contribute to its service composition. This section is the **only**
+configuration surface for them: it says what may load, and nothing about where the
+bytes came from. DMS ships no fetcher; getting a plugin directory under the root is
+a deployment step that happens before the process starts. See
+[eng/docker-compose/README.md](../eng/docker-compose/README.md) for the two
+acquisition recipes.
+
+| Parameter | Description                                                                                                                                                                                                                  |
+| --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Directory | The plugin root. Defaults to `/app/plugins`, and a relative value is resolved against the application's base directory. A root that does not exist is not an error when `Allowed` is empty.                                   |
+| Allowed   | A comma-delimited, ordered list of plugin directory names under `Directory`. **Ships empty**, which loads nothing. Each name must be a single path segment; a repeated name, including one that repeats only after trimming, fails startup. |
+
+`Allowed` is the only switch. A plugin runs if and only if its directory name
+appears here, and there is no per-feature switch of any kind. A directory present
+under the root but absent from `Allowed` is never opened, and produces one warning
+naming it.
+
+The order written is the invocation order, so it is what decides the order in which
+plugins contribute.
+
+Both keys bind from environment variables in the standard way, which is how a
+container deployment sets them:
+
+```text
+Plugins__Directory=/app/plugins
+Plugins__Allowed=Sea.Dms.StudentIdValidator,Acme.Dms.Identity
+```
+
+> [!IMPORTANT]
+> **One bootstrap exception.** `AppSettings:StartupStatusFilePath` is read before the
+> plugin phase runs, so no plugin-supplied configuration source could ever provide it.
+> Everything DMS reads while registering its services is read after that phase.
+
 ## RateLimit
 
 Basic rate limiting can be applied by supplying a `RateLimit` object in the

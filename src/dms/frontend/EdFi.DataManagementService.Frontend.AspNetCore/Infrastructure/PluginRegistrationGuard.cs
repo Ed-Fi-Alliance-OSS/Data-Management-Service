@@ -47,11 +47,11 @@ internal sealed class PluginRegistrationGuard(
             cancellationToken
         );
 
-        // Logged before anything is thrown, because it is the record of what each plugin contributed
-        // and a startup that is about to abort is exactly when an operator needs it. The full
-        // structured inventory event, emitted before any startup task runs, belongs to the
-        // host-integration story; this is the same information from the same records, at the only
-        // point this story has a logger at.
+        // Logged before anything is thrown, because a startup that is about to abort is exactly when
+        // an operator needs to see what each plugin contributed. This is a flat, human-readable
+        // summary at the point of the check; the structured inventory event PluginInventoryLog emits
+        // immediately after the container is built is the machine-readable record, and the two are
+        // distinguished by their message templates rather than by their content.
         LogWhatEachPluginContributed();
 
         if (result.ScopeCleanupFailure is not null)
@@ -131,20 +131,7 @@ internal sealed class PluginRegistrationGuard(
         return joined.Length == 0 ? "none" : joined;
     }
 
-    /// <summary>
-    /// A type name for a log record. Type names come from assembly metadata, so the only hazard one
-    /// carries is a control character forging a record; stripping just those keeps a nested or generic
-    /// name searchable in the source it came from.
-    /// </summary>
-    private static string TypeNameForLog(Type type) => Loggable(type.FullName ?? type.Name)!;
+    private static string TypeNameForLog(Type type) => PluginLogText.TypeName(type);
 
-    /// <summary>
-    /// A value from outside the process, rendered so it cannot forge a log record.
-    /// </summary>
-    /// <remarks>
-    /// Plugin names, file names and assembly names all originate in a directory a third party
-    /// published, and these records are line-oriented.
-    /// </remarks>
-    private static string? Loggable(string? value) =>
-        value is null ? null : string.Concat(value.Where(static character => !char.IsControl(character)));
+    private static string? Loggable(string? value) => PluginLogText.Loggable(value);
 }

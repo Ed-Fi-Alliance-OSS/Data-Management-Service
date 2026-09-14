@@ -27,6 +27,14 @@
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         </PackageReference>
         <PackageReference Include="NUnit3TestAdapter" />
+        <!--
+            The plugin inventory cases assert on Serilog's own LogEvent properties rather than on a
+            rendered string, because the criterion is that the named properties arrive structured. A
+            capturing sink is added to the host through the test's logging hook, which runs after
+            AddServices has cleared the providers the application configured.
+        -->
+        <PackageReference Include="Serilog" />
+        <PackageReference Include="Serilog.Extensions.Logging" />
     </ItemGroup>
     <ItemGroup>
         <ProjectReference Include="..\..\frontend\EdFi.DataManagementService.Frontend.AspNetCore\EdFi.DataManagementService.Frontend.AspNetCore.csproj" />
@@ -37,6 +45,11 @@
     <ItemGroup>
         <Using Include="NUnit.Framework" />
     </ItemGroup>
+    <!--
+        Publishes the fixture plugin directories the host-integration plugin cases load. See the targets
+        file for why staging lives here rather than in the tree the fixture sources sit in.
+    -->
+    <Import Project="PluginIntegrationFixtures.targets" />
     <ItemGroup>
         <InternalsVisibleTo Include="EdFi.DataManagementService.Performance.Harness" />
     </ItemGroup>
