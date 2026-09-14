@@ -24,6 +24,7 @@ file.
 | IdentityProvider                 | Specifies the authentication provider. Valid values are `keycloak` (to use Keycloak's authentication) and `self-contained` (to use self-contained authentication). When using `self-contained`, you must also provide a value for `IdentitySettings:EncryptionKey`. Default: self-contained |
 | RouteQualifierSegments           | Comma separated list of route qualifier context segments as defined by `dataStoreContexts` in Configuration Service. Example: "districtId,schoolYear" |
 | MultiTenancy                     | When `true`, enables multi-tenancy mode where the tenant identifier is extracted from the URL route. Default: `false` |
+| EnableManagementEndpoints       | When `true`, allows the DMS claimset management endpoint surface to be registered. When `false`, `/management/reload-claimsets` and `/management/view-claimsets` are not mapped. Environment override: `AppSettings__EnableManagementEndpoints`. Default: `false` |
 | ManagementEndpoints:RequiredRole | Single literal role token a bearer must carry, under `JwtAuthentication:RoleClaimType`, to reach `reload-claimsets` and `view-claimsets`. Empty by default, which leaves those endpoints unmapped. Environment override: `AppSettings__ManagementEndpoints__RequiredRole`. Recommended: `dms-management-operator` |
 | MaximumPageSize                  | Upper bound for the `limit` and `pageSize` query parameters on GET-many requests, and the page size applied when neither is supplied. Also the `default` and `maximum` published for those parameters in the OpenAPI specification. Must be greater than `0`; the service refuses to start otherwise. Environment override: `AppSettings__MaximumPageSize`. Default: `500` |
 | DefaultPartitionCount            | Number of partitions returned by a resource or descriptor `/partitions` request that omits the `number` query parameter. Also the `default` published for `numberOfPartitions` in the OpenAPI specification. Must be between `1` and `200`, the same range accepted for `number`; the service refuses to start otherwise. Environment override: `AppSettings__DefaultPartitionCount`. See [Cursor Paging](./CURSOR-PAGING.md). Default: `10` |
@@ -33,12 +34,16 @@ file.
 | ReverseProxy:KnownNetworks       | Comma-separated list of trusted reverse-proxy networks in CIDR notation whose `X-Forwarded-*` headers are honored. Used only when `ReverseProxy:UseForwardedHeaders` is `true`. Example: `10.0.0.0/8,172.16.0.0/12` |
 | EnableApplicationResetEndpoint   | When `true`, enables the `/v3/applications/{id}/reset-credential` endpoint in the Configuration Service, allowing application credentials to be reset via API. When `false`, the endpoint is not registered and will return a 404 (Not Found) response. <br>**Recommended:** Set to `false` if you need to support multiple API clients per application, as enabling this endpoint may interfere with multi-client scenarios. Default: `false` |
 
-`ManagementEndpoints:RequiredRole` must be one untrimmed token no longer than 256 characters. Values
-containing ASCII whitespace, commas, semicolons, quotes, brackets, braces, or control characters are
+Claimset management endpoints use three separate controls. `EnableManagementEndpoints` is the
+global exposure switch; when it is `false`, the claimset management routes are not mapped.
+When it is `true`, `ManagementEndpoints:RequiredRole` must be one untrimmed token no longer
+than 256 characters, and `JwtAuthentication:RoleClaimType` must be present. Values containing
+ASCII whitespace, commas, semicolons, quotes, brackets, braces, or control characters are
 invalid and leave the claimset management endpoints unmapped, as does a missing or blank
 `JwtAuthentication:RoleClaimType`. A request to a mapped endpoint without a valid bearer token
-receives `401`; a valid token whose claims do not include this exact role under the configured role
-claim type receives `403`.
+receives `401`; a valid token whose claims do not include this exact role under the configured
+role claim type receives `403`. `EnableClaimsetReload` is checked later by the claimset
+operation handlers; it does not control route registration.
 
 ## MappingPacks
 
