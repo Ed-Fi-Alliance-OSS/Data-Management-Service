@@ -246,13 +246,14 @@ public sealed class CdcComposeWorkerStartupTransport : ICdcWorkerStartupTranspor
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(request.Timing.CallTimeout);
-        await ValidateComposeAsync(request, timeout.Token);
+        string[] composeArguments = ComposeArguments;
+        await ValidateComposeAsync(request, composeArguments, timeout.Token);
         string waitSeconds = Math.Max(1, (int)Math.Ceiling(request.Timing.CallTimeout.TotalSeconds))
             .ToString(CultureInfo.InvariantCulture);
         string[] dependencyOptions = worker ? ["--no-deps"] : [];
         await _docker.RunAsync(
             [
-                .. ComposeArguments,
+                .. composeArguments,
                 "up",
                 "--detach",
                 .. dependencyOptions,
@@ -265,10 +266,14 @@ public sealed class CdcComposeWorkerStartupTransport : ICdcWorkerStartupTranspor
         );
     }
 
-    private async Task ValidateComposeAsync(CdcDeploymentRequest request, CancellationToken token)
+    private async Task ValidateComposeAsync(
+        CdcDeploymentRequest request,
+        string[] composeArguments,
+        CancellationToken token
+    )
     {
         string output = await _docker.RunAsync(
-            [.. ComposeArguments, "--profile", "cdc-managed-worker", "config", "--format", "json"],
+            [.. composeArguments, "--profile", "cdc-managed-worker", "config", "--format", "json"],
             token
         );
         using var document = JsonDocument.Parse(output);

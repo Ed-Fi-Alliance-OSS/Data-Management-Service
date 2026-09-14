@@ -458,6 +458,71 @@ public sealed class Given_CdcWorkerComposeStartup
     }
 
     [TestCase(false, true)]
+    [TestCase(true, true)]
+    [TestCase(false, false)]
+    [TestCase(true, false)]
+    public async Task It_preserves_override_selection_when_the_file_changes_after_validation(
+        bool worker,
+        bool initiallyExists
+    )
+    {
+        string file = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".json");
+        var commands = new List<string[]>();
+        try
+        {
+            if (initiallyExists)
+            {
+                await File.WriteAllTextAsync(file, "{}");
+            }
+            var docker = new Docker(
+                async (args, _) =>
+                {
+                    commands.Add([.. args]);
+                    if (args.Contains("config"))
+                    {
+                        if (initiallyExists)
+                        {
+                            File.Delete(file);
+                        }
+                        else
+                        {
+                            await File.WriteAllTextAsync(file, "{}");
+                        }
+                        return _configuration;
+                    }
+                    return "";
+                }
+            );
+            _transport = new(
+                "/compose/kafka-cdc.yml",
+                "/configuration/selected.env",
+                "selected-project",
+                new HashSet<string> { Image },
+                docker,
+                file
+            );
+            if (worker)
+            {
+                await _transport.StartWorkerAsync(_request, CancellationToken.None);
+            }
+            else
+            {
+                await _transport.StartBrokerAsync(_request, CancellationToken.None);
+            }
+            commands.Should().HaveCount(2);
+            commands[0].Contains(file).Should().Be(initiallyExists);
+            commands[1]
+                .TakeWhile(argument => argument != "up")
+                .Should()
+                .Equal(commands[0].TakeWhile(argument => argument != "--profile"));
+        }
+        finally
+        {
+            File.Delete(file);
+        }
+    }
+
+    [TestCase(false, true)]
     [TestCase(false, false)]
     [TestCase(true, true)]
     [TestCase(true, false)]
