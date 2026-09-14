@@ -59,6 +59,36 @@ Export-ModuleMember -Function Resolve-BootstrapSchemaWorkspace
         function Invoke-TestLifecycle($parameters, $project = 'dms-local') {
             Invoke-CdcDeploymentLifecycle -Project $project -StartScript "/compose/start-$project.ps1" -Parameters $parameters
         }
+        function Invoke-TestPreparationStartup($flavor, $parameters) {
+            $path = Join-Path $PSScriptRoot "../start-$flavor-dms.ps1"
+            $ast = [Management.Automation.Language.Parser]::ParseFile($path, [ref]$null, [ref]$null)
+            $nodes = $ast.FindAll({
+                param($n)
+                return ($n -is [Management.Automation.Language.AssignmentStatementAst] -and $n.Extent.Text -eq '$upArgs = @("--detach")') -or
+                    ($n -is [Management.Automation.Language.IfStatementAst] -and $n.Extent.Text.StartsWith('if (-not $databaseOnlyStartup -and -not $DmsOnly'))
+            }, $true)
+            $nodes.Count | Should -Be 2
+            $databaseOnlyStartup = [bool]$parameters.DbOnly
+            $DmsOnly = $false
+            $CdcDatabaseInfrastructure = [bool]$parameters.CdcDatabaseInfrastructure
+            $files = @('-f', "$flavor-dms.yml")
+            $EnvironmentFile = $parameters.EnvironmentFile
+            $commands = [Collections.Generic.List[string]]::new()
+            function docker { $commands.Add((@($args | ForEach-Object { $_ }) -join ' ')); $global:LASTEXITCODE = 0 }
+            . ([scriptblock]::Create(($nodes.Extent.Text -join "`n")))
+            # Execute the actual database/CMS commands with the production arguments, using
+            # the database-only command for DbOnly and the full-start command for its control.
+            $services = if ($databaseOnlyStartup) { @('db') } elseif ($parameters.InfraOnly) { @('db', 'config') } else { @('db', '') }
+            foreach ($service in $services) {
+                $text = 'docker compose $files --env-file $EnvironmentFile -p dms-' + $flavor + ' up $upArgs'
+                if ($service) { $text += " $service" }
+                $calls = @($ast.FindAll({ param($n) $n -is [Management.Automation.Language.CommandAst] -and $n.Extent.Text -eq $text }, $true))
+                $calls.Count | Should -BeGreaterThan 0
+                $call = if ($databaseOnlyStartup) { $calls[0] } else { $calls[-1] }
+                . ([scriptblock]::Create($call.Extent.Text))
+            }
+            return $commands.ToArray()
+        }
         function Get-TestComposeModel($flavor, $parameters) {
             $composeRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
             Import-Module (Join-Path $composeRoot 'env-utility.psm1') -Scope Local
@@ -845,6 +875,13 @@ Export-ModuleMember -Function Resolve-DmsSchemaTool
                 $Parameters.InfraOnly | Should -BeTrue
                 $Parameters.CdcDatabaseInfrastructure | Should -BeTrue
                 $Parameters.ContainsKey('CdcBrokerSizeOverrideFile') | Should -BeFalse
+                $Parameters.ContainsKey('CdcKafkaInfrastructure') | Should -BeFalse
+                $Parameters.ContainsKey('EnableKafkaUI') | Should -BeFalse
+                $commands = @(Invoke-TestPreparationStartup $script:composeFlavor $Parameters)
+                $commands.Count | Should -Be 2
+                $commands[0] | Should -Match "-p dms-$script:composeFlavor up --detach db$"
+                $commands[1] | Should -Match "-p dms-$script:composeFlavor up --detach config$"
+                $commands | Should -Not -Match '--remove-orphans|--no-deps|kafka'
                 $model.services.Keys | Should -Contain 'db'
                 $model.services.Keys | Should -Contain 'config'
                 $model.services.Keys | Should -Not -Contain 'kafka'
@@ -872,6 +909,23 @@ Export-ModuleMember -Function Resolve-DmsSchemaTool
         }
         $script:trace | Should -Be $expected
         (Get-FileHash $override).Hash | Should -Be $originalHash
+    }
+    It 'preserves ordinary <flavor> <mode> startup arguments' -ForEach @(
+        foreach ($flavor in @('local', 'published')) {
+            foreach ($mode in @('full', 'DbOnly')) { @{ flavor = $flavor; mode = $mode } }
+        }
+    ) {
+        $commands = @(Invoke-TestPreparationStartup $flavor @{ DbOnly = ($mode -eq 'DbOnly'); EnvironmentFile = '/selected/.env' })
+        if ($mode -eq 'DbOnly') {
+            $commands.Count | Should -Be 1
+            $commands[0] | Should -Match "-p dms-$flavor up --detach db$"
+            $commands[0] | Should -Not -Match '--remove-orphans|--no-deps'
+        }
+        else {
+            $commands.Count | Should -Be 2
+            $commands[0] | Should -Match "-p dms-$flavor up --detach --remove-orphans db$"
+            $commands[1] | Should -Match "-p dms-$flavor up --detach --remove-orphans$"
+        }
     }
     It 'never resumes or starts DMS if worker restart lost STOPPED state' {
         Invoke-TestLifecycle @{ d = $true }
@@ -1431,7 +1485,7 @@ Describe 'Managed primitive DMS startup selection' {
                 }
                 if ($n -isnot [Management.Automation.Language.IfStatementAst]) { return $false }
                 return $n.Extent.Text.StartsWith('if ($CdcDmsComposeFile)') -or
-                    $n.Extent.Text.StartsWith('if (-not $databaseOnlyStartup -and -not $DmsOnly)') -or
+                    $n.Extent.Text.StartsWith('if (-not $databaseOnlyStartup -and -not $DmsOnly -and -not $CdcDatabaseInfrastructure)') -or
                     ($n.Clauses[0].Item2.Statements.Extent.Text -contains '$upArgs += "--no-deps"') -or
                     ($n.Extent.Text.StartsWith('if ($DmsOnly)') -and $n.Extent.Text.Contains('$dmsServices ='))
             }, $true)
@@ -1439,6 +1493,7 @@ Describe 'Managed primitive DMS startup selection' {
             $files = @('-f', "$flavor-dms.yml")
             $EnvironmentFile = '/selected/.env'
             $databaseOnlyStartup = $false
+            $CdcDatabaseInfrastructure = $false
             $dmsUrl = 'http://localhost:8080'
             & ([scriptblock]::Create(($nodes.Extent.Text -join "`n"))) | Out-Null
         }

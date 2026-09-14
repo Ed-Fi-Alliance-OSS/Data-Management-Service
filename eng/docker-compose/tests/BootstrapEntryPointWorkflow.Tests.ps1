@@ -2490,7 +2490,7 @@ DMS_CONFIG_IDENTITY_CLIENT_SECRET_MINIMUM_LENGTH=not-an-integer
                 $source.IndexOf('"bootstrap-dms.yml"', $applicationComposeGuardIndex) |
                     Should -BeGreaterThan $applicationComposeGuardIndex
                 $source | Should -Match 'docker compose \$files --env-file \$EnvironmentFile -p dms-(?:local|published) up \$upArgs db'
-                $source | Should -Match '(?s)\$upArgs\s*=\s*@\("--detach"\).*?if \(-not \$databaseOnlyStartup -and -not \$DmsOnly\) \{.*?\$upArgs\s*\+=\s*"--remove-orphans"' -Because "DbOnly must not remove already-running application containers omitted from its reduced compose set"
+                $source | Should -Match '(?s)\$upArgs\s*=\s*@\("--detach"\).*?if \(-not \$databaseOnlyStartup -and -not \$DmsOnly -and -not \$CdcDatabaseInfrastructure\) \{.*?\$upArgs\s*\+=\s*"--remove-orphans"' -Because "DbOnly, DmsOnly, and managed database/CMS preparation must preserve running peer containers omitted from their reduced compose sets"
             }
         }
 

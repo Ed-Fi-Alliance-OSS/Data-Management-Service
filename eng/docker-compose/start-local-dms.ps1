@@ -541,10 +541,10 @@ else {
     }
 
     $upArgs = @("--detach")
-    if (-not $databaseOnlyStartup -and -not $DmsOnly) {
-        # The DbOnly and DmsOnly compose sets must preserve CDC/peer services.
-        # The DbOnly compose set intentionally contains only the database definition. Passing
-        # --remove-orphans there would remove already-running DMS/CMS containers from this project.
+    if (-not $databaseOnlyStartup -and -not $DmsOnly -and -not $CdcDatabaseInfrastructure) {
+        # DbOnly, DmsOnly, and managed database/CMS preparation must preserve CDC/peer services.
+        # Their narrowed compose sets omit retained services; --remove-orphans would remove
+        # already-running DMS/CMS or Kafka/worker/UI containers from this project.
         $upArgs += "--remove-orphans"
     }
     if ($r) {
