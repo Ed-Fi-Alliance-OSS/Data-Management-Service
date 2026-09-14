@@ -321,7 +321,7 @@ public sealed partial class LocalCdcWorkflowJournalStore
                 cancellationToken
             );
 
-        public Task<CdcWorkflowJournal> AppendAcknowledgementAsync(
+        internal Task<CdcWorkflowJournal> AppendAcknowledgementAsync(
             CdcTargetIdentity target,
             Guid workflowId,
             Guid operationId,
