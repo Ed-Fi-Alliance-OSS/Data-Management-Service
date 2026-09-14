@@ -37,6 +37,12 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit;
 /// <c>TraceId</c> from the request rather than from <c>HttpContext.TraceIdentifier</c>, so a
 /// client-supplied correlation header is honored there too; nothing else in the suite covers it.
 /// </item>
+/// <item>
+/// 404 from <c>ManagementEndpointModule.NotFoundProblem</c>, the module's own not-found envelope.
+/// It is the arm an authorized caller reaches, so it cannot be covered by the unauthorized
+/// request above, and it used to answer with a hand-rolled problem-details object that omitted
+/// <c>correlationId</c> entirely.
+/// </item>
 /// <item>429 from <c>WebApplicationBuilderExtensions</c> via <c>FailureResponse.ForTooManyRequests</c></item>
 /// </list>
 /// A fifth request - the permitted <c>/health</c> call that opens the rate-limited arm - carries
@@ -75,6 +81,22 @@ public class Given_A_Hostile_Correlation_Id_On_Requests_That_Fail_In_Different_L
     /// environment does not override) map the unscoped GET form of this route.
     /// </summary>
     private const string ManagementRoute = "/management/view-claimsets";
+
+    /// <summary>
+    /// The bearer token the management-404 arm presents. It is distinct from
+    /// <see cref="ValidBearerToken"/> because the two arms need principals with different roles:
+    /// the 403 arm needs one whose role does not match, this one needs the role that authorizes.
+    /// </summary>
+    private const string ManagementBearerToken = "valid-management-token";
+
+    /// <summary>
+    /// The <c>detail</c> literal <c>ManagementEndpointModule.NotFoundProblem</c> emits. It differs
+    /// from the "specified data" wording <c>MapFallback</c> uses, and that difference is the only
+    /// thing in the response that distinguishes the two 404s: both are status 404 and both carry a
+    /// correct <c>correlationId</c>, so pinning the status alone would let an unmapped management
+    /// route satisfy the parity assertion while proving nothing about this module.
+    /// </summary>
+    private const string ManagementNotFoundDetail = "The specified resource could not be found.";
 
     /// <summary>
     /// Over-length (80 characters against a configured cap of 64) and carrying control
@@ -124,10 +146,20 @@ public class Given_A_Hostile_Correlation_Id_On_Requests_That_Fail_In_Different_L
     private WebApplicationFactory<Program> _rateLimitedFactory = default!;
     private WebApplicationFactory<Program> _cleanRateLimitedFactory = default!;
 
+    /// <summary>
+    /// The management-404 arm needs its own host: <c>NotFoundProblem</c> is only reachable for an
+    /// <em>authorized</em> caller, and only in multi-tenant mode, where the unscoped route maps to
+    /// <c>ClaimsetsNotFound</c>. The main factory is single-tenant and its JWT stub deliberately
+    /// yields a non-matching role so the 403 arm works, so neither can be reused here.
+    /// </summary>
+    private WebApplicationFactory<Program> _managementNotFoundFactory = default!;
+    private CorrelationIdRecordingLoggerProvider _managementNotFoundLoggerProvider = default!;
+
     private HttpResponseMessage _notFoundResponse = default!;
     private HttpResponseMessage _unauthorizedResponse = default!;
     private HttpResponseMessage _forbiddenResponse = default!;
     private HttpResponseMessage _managementUnauthorizedResponse = default!;
+    private HttpResponseMessage _managementNotFoundResponse = default!;
     private HttpResponseMessage _permittedHealthResponse = default!;
     private HttpResponseMessage _tooManyRequestsResponse = default!;
 
@@ -135,6 +167,7 @@ public class Given_A_Hostile_Correlation_Id_On_Requests_That_Fail_In_Different_L
     private HttpResponseMessage _cleanUnauthorizedResponse = default!;
     private HttpResponseMessage _cleanForbiddenResponse = default!;
     private HttpResponseMessage _cleanManagementUnauthorizedResponse = default!;
+    private HttpResponseMessage _cleanManagementNotFoundResponse = default!;
     private HttpResponseMessage _cleanPermittedHealthResponse = default!;
     private HttpResponseMessage _cleanTooManyRequestsResponse = default!;
 
@@ -142,11 +175,13 @@ public class Given_A_Hostile_Correlation_Id_On_Requests_That_Fail_In_Different_L
     private JsonNode _unauthorizedBody = default!;
     private JsonNode _forbiddenBody = default!;
     private JsonNode _managementUnauthorizedBody = default!;
+    private JsonNode _managementNotFoundBody = default!;
     private JsonNode _tooManyRequestsBody = default!;
 
     private string[] _loggedTraceIds = [];
     private string[] _mainFactoryLoggedTraceIds = [];
     private string[] _rateLimitedLoggedTraceIds = [];
+    private string[] _managementNotFoundLoggedTraceIds = [];
 
     [OneTimeSetUp]
     public async Task Setup()
@@ -155,6 +190,22 @@ public class Given_A_Hostile_Correlation_Id_On_Requests_That_Fail_In_Different_L
         _rateLimitedLoggerProvider = new CorrelationIdRecordingLoggerProvider();
         _factory = CreateFactory(_loggerProvider, rateLimited: false);
         _rateLimitedFactory = CreateFactory(_rateLimitedLoggerProvider, rateLimited: true);
+
+        _managementNotFoundLoggerProvider = new CorrelationIdRecordingLoggerProvider();
+        _managementNotFoundFactory = CreateFactory(
+            _managementNotFoundLoggerProvider,
+            rateLimited: false,
+            multiTenancy: true,
+            // The role that authorizes, so AuthorizeAsync returns null and the handler runs on to
+            // NotFoundProblem. The main factory's stub cannot be reused: it is deliberately wired
+            // to a non-matching role so the 403 arm above works.
+            jwtValidationService: new StubJwtValidationService(
+                ManagementBearerToken,
+                new ClaimsPrincipal(
+                    new ClaimsIdentity([new Claim(RoleClaimType, ManagementRequiredRole)], "test")
+                )
+            )
+        );
 
         using HttpClient client = _factory.CreateClient();
 
@@ -194,6 +245,20 @@ public class Given_A_Hostile_Correlation_Id_On_Requests_That_Fail_In_Different_L
         );
         _managementUnauthorizedBody = await ReadBody(_managementUnauthorizedResponse);
 
+        using HttpClient managementNotFoundClient = _managementNotFoundFactory.CreateClient();
+
+        // An authorized caller on the multi-tenant unscoped route: AuthorizeAsync passes, and
+        // ClaimsetsNotFound answers from ManagementEndpointModule.NotFoundProblem. That is the
+        // only way to reach the module's own 404 envelope - the unauthorized request above is
+        // answered by AuthorizeAsync and never gets there.
+        _managementNotFoundResponse = await SendWithCorrelationId(
+            managementNotFoundClient,
+            ManagementRoute,
+            HostileCorrelationId,
+            ManagementBearerToken
+        );
+        _managementNotFoundBody = await ReadBody(_managementNotFoundResponse);
+
         using HttpClient rateLimitedClient = _rateLimitedFactory.CreateClient();
 
         // The first request consumes the single permit in the window; the second is rejected.
@@ -225,7 +290,13 @@ public class Given_A_Hostile_Correlation_Id_On_Requests_That_Fail_In_Different_L
         // the 429 path's log event is included and no clean value is.
         _mainFactoryLoggedTraceIds = _loggerProvider.LoggedTraceIds;
         _rateLimitedLoggedTraceIds = _rateLimitedLoggerProvider.LoggedTraceIds;
-        _loggedTraceIds = [.. _mainFactoryLoggedTraceIds, .. _rateLimitedLoggedTraceIds];
+        _managementNotFoundLoggedTraceIds = _managementNotFoundLoggerProvider.LoggedTraceIds;
+        _loggedTraceIds =
+        [
+            .. _mainFactoryLoggedTraceIds,
+            .. _rateLimitedLoggedTraceIds,
+            .. _managementNotFoundLoggedTraceIds,
+        ];
 
         // The control arm: the identical requests with a clean correlation ID.
         _cleanNotFoundResponse = await SendWithCorrelationId(
@@ -251,6 +322,12 @@ public class Given_A_Hostile_Correlation_Id_On_Requests_That_Fail_In_Different_L
             ManagementRoute,
             CleanCorrelationId,
             token: null
+        );
+        _cleanManagementNotFoundResponse = await SendWithCorrelationId(
+            managementNotFoundClient,
+            ManagementRoute,
+            CleanCorrelationId,
+            ManagementBearerToken
         );
 
         // The control arm gets its own rate-limited host. Sharing the hostile arm's host would
@@ -287,18 +364,22 @@ public class Given_A_Hostile_Correlation_Id_On_Requests_That_Fail_In_Different_L
         _unauthorizedResponse.Dispose();
         _forbiddenResponse.Dispose();
         _managementUnauthorizedResponse.Dispose();
+        _managementNotFoundResponse.Dispose();
         _permittedHealthResponse.Dispose();
         _tooManyRequestsResponse.Dispose();
         _cleanNotFoundResponse.Dispose();
         _cleanUnauthorizedResponse.Dispose();
         _cleanForbiddenResponse.Dispose();
         _cleanManagementUnauthorizedResponse.Dispose();
+        _cleanManagementNotFoundResponse.Dispose();
         _cleanPermittedHealthResponse.Dispose();
         _cleanTooManyRequestsResponse.Dispose();
         await _factory.DisposeAsync();
         await _rateLimitedFactory.DisposeAsync();
         await _cleanRateLimitedFactory.DisposeAsync();
+        await _managementNotFoundFactory.DisposeAsync();
         _loggerProvider.Dispose();
+        _managementNotFoundLoggerProvider.Dispose();
         _rateLimitedLoggerProvider.Dispose();
         _cleanRateLimitedLoggerProvider.Dispose();
     }
@@ -318,6 +399,7 @@ public class Given_A_Hostile_Correlation_Id_On_Requests_That_Fail_In_Different_L
         // carries a correlationId too, so the parity assertion below would otherwise still pass
         // while proving nothing about ManagementEndpointModule.
         _managementUnauthorizedResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        _managementNotFoundResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
         _tooManyRequestsResponse.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
     }
 
@@ -346,6 +428,7 @@ public class Given_A_Hostile_Correlation_Id_On_Requests_That_Fail_In_Different_L
         _managementUnauthorizedResponse
             .StatusCode.Should()
             .Be(_cleanManagementUnauthorizedResponse.StatusCode);
+        _managementNotFoundResponse.StatusCode.Should().Be(_cleanManagementNotFoundResponse.StatusCode);
         _tooManyRequestsResponse.StatusCode.Should().Be(_cleanTooManyRequestsResponse.StatusCode);
     }
 
@@ -377,6 +460,46 @@ public class Given_A_Hostile_Correlation_Id_On_Requests_That_Fail_In_Different_L
         // non-null, non-empty and differs from what the client sent, so any weaker assertion would
         // pass against precisely the bug this covers.
         _managementUnauthorizedBody["correlationId"]!.ToString().Should().Be(ExpectedCorrelationId);
+    }
+
+    [Test]
+    public void It_normalizes_the_correlation_id_in_the_management_endpoint_not_found_body()
+    {
+        // ManagementEndpointModule.NotFoundProblem used to hand-roll the Ed-Fi problem-details
+        // envelope and omit correlationId altogether, so a client with one generic
+        // problem+json handler read `undefined` on exactly this endpoint family. It now builds
+        // the body with FailureResponse.ForNotFound, the same factory every other 404 uses.
+        _managementNotFoundResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        // The status alone does not identify the responder: an unmapped /management/* route
+        // falls through to MapFallback, which also answers 404 with a correct correlationId.
+        // The detail literal is what tells the two apart, so it is pinned here to keep the
+        // parity assertion below attributable to this module.
+        _managementNotFoundBody["detail"]!.ToString().Should().Be(ManagementNotFoundDetail);
+        _managementNotFoundBody["type"]!.ToString().Should().Be("urn:ed-fi:api:not-found");
+        _managementNotFoundBody["title"]!.ToString().Should().Be("Not Found");
+        _managementNotFoundBody["status"]!.GetValue<int>().Should().Be(404);
+
+        // The member list in order, which is what "one shape" means to a client with a single
+        // problem+json handler: the same names, casing and order FailureResponse emits
+        // everywhere else. Asserted before the value below so a missing correlationId fails by
+        // naming the member rather than by dereferencing null.
+        string[] memberNames = [.. _managementNotFoundBody.AsObject().Select(member => member.Key)];
+        memberNames
+            .Should()
+            .Equal("detail", "type", "title", "status", "correlationId", "validationErrors", "errors");
+
+        _managementNotFoundBody["correlationId"]!.ToString().Should().Be(ExpectedCorrelationId);
+    }
+
+    [Test]
+    public void It_logs_the_value_the_management_endpoint_not_found_body_carries()
+    {
+        // The log half of FR-LOG-6 for this arm. Its host has its own recorder, and an assertion
+        // over the combined array could be satisfied entirely by the other two hosts' events, so
+        // this pins that the management-404 request itself logged, and logged the same value.
+        _managementNotFoundLoggedTraceIds.Should().NotBeEmpty();
+        _managementNotFoundLoggedTraceIds.Should().OnlyContain(traceId => traceId == ExpectedCorrelationId);
     }
 
     [Test]
@@ -426,6 +549,7 @@ public class Given_A_Hostile_Correlation_Id_On_Requests_That_Fail_In_Different_L
             _unauthorizedBody["correlationId"]!.ToString(),
             _forbiddenBody["correlationId"]!.ToString(),
             _managementUnauthorizedBody["correlationId"]!.ToString(),
+            _managementNotFoundBody["correlationId"]!.ToString(),
             _tooManyRequestsBody["correlationId"]!.ToString(),
             .. _loggedTraceIds,
         ];
@@ -468,7 +592,9 @@ public class Given_A_Hostile_Correlation_Id_On_Requests_That_Fail_In_Different_L
 
     private static WebApplicationFactory<Program> CreateFactory(
         CorrelationIdRecordingLoggerProvider loggerProvider,
-        bool rateLimited
+        bool rateLimited,
+        bool multiTenancy = false,
+        IJwtValidationService? jwtValidationService = null
     ) =>
         new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
@@ -490,6 +616,10 @@ public class Given_A_Hostile_Correlation_Id_On_Requests_That_Fail_In_Different_L
                         // Without this the /management/* routes are never mapped and the request
                         // would be answered by MapFallback instead of by AuthorizeAsync.
                         ["AppSettings:ManagementEndpoints:RequiredRole"] = ManagementRequiredRole,
+                        // Multi-tenant mode is what maps the unscoped /management/view-claimsets
+                        // route to ClaimsetsNotFound, which is the only handler that reaches
+                        // NotFoundProblem without a tenant validator in play.
+                        ["AppSettings:MultiTenancy"] = multiTenancy ? "true" : "false",
                         ["JwtAuthentication:RoleClaimType"] = RoleClaimType,
                         ["JwtAuthentication:ClientRole"] = "legacy-service",
                     };
@@ -503,14 +633,15 @@ public class Given_A_Hostile_Correlation_Id_On_Requests_That_Fail_In_Different_L
                 TestMockHelper.AddEssentialMocks(services);
                 services.Replace(
                     ServiceDescriptor.Singleton<IJwtValidationService>(
-                        // A token that validates but carries no matching role, so the
-                        // document-cache endpoint answers 403 rather than 401.
-                        new StubJwtValidationService(
-                            ValidBearerToken,
-                            new ClaimsPrincipal(
-                                new ClaimsIdentity([new Claim(RoleClaimType, "some-other-role")], "test")
+                        jwtValidationService
+                            // A token that validates but carries no matching role, so the
+                            // document-cache endpoint answers 403 rather than 401.
+                            ?? new StubJwtValidationService(
+                                ValidBearerToken,
+                                new ClaimsPrincipal(
+                                    new ClaimsIdentity([new Claim(RoleClaimType, "some-other-role")], "test")
+                                )
                             )
-                        )
                     )
                 );
                 services.Replace(
