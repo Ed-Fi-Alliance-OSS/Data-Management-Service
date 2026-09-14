@@ -43,8 +43,8 @@ The default posture was the fewest that cover the scope, and the shape that fell
 
 | Draft | Title | Depends on | Status |
 | --- | --- | --- | --- |
-| [01](./01-add-phase-a-configuration-contribution.md) | Add Phase A Configuration Contribution to the Plugin Contract | DMS-1499 | not filed |
-| [02](./02-add-secrets-contract-package.md) | Add the `EdFi.Api.Secrets` Contract Package and Relocate `IClientSecretHasher` | DMS-1499 | not filed |
+| [01](./01-add-phase-a-configuration-contribution.md) | Add Phase A Configuration Contribution to the Plugin Contract | the plugin foundations, DMS-1496 through DMS-1501 | not filed |
+| [02](./02-add-secrets-contract-package.md) | Add the `EdFi.Api.Secrets` Contract Package and Relocate `IClientSecretHasher` | the plugin foundations | not filed |
 | [03](./03-integrate-plugin-loading-into-cms-startup.md) | Integrate Plugin Loading into Configuration Service Startup | 01, 02 | not filed |
 | [04](./04-resolve-secret-references-in-connection-strings.md) | Resolve Secret References in Stored Connection Strings | 03 | not filed |
 | [05](./05-document-and-publish-secrets-contract.md) | Document and Publish `EdFi.Api.Secrets` | 04, DMS-1500, DMS-1501 | not filed, release-gated |
@@ -53,14 +53,14 @@ The default posture was the fewest that cover the scope, and the shape that fell
 
 | Draft | Blocked by | Why |
 | --- | --- | --- |
-| 01 | [DMS-1499](https://edfi.atlassian.net/browse/DMS-1499) Integrate Plugin Loading into DMS Startup | The Phase A invocation goes inside the `LoadPlugins` bootstrap phase that story creates, and the integration proof needs a host that loads plugins at all. DMS-1496, DMS-1497, and DMS-1498 are merged, so this is the only open spine story draft 01 waits for |
-| 02 | [DMS-1499](https://edfi.atlassian.net/browse/DMS-1499) | Nothing in this story loads a plugin, so on its own merits it would be unblocked. It is blocked anyway, because the spine says "every ticket it produces depends on the full plugin foundations being in place, because a secrets plugin is a plugin" (`plugins-DMS-1462/design.md:1402`), and that is an approved decision this spike inherits rather than one it is free to narrow. An earlier revision marked it unblocked and recorded the difference as a flagged divergence; two independent readers read that flag as an unreconciled contradiction rather than as a reconciliation. The dependency costs ordering and nothing else |
+| 01 | the plugin foundations, [DMS-1501](https://edfi.atlassian.net/browse/DMS-1501) included | The Phase A invocation goes inside the `LoadPlugins` bootstrap phase [DMS-1499](https://edfi.atlassian.net/browse/DMS-1499) creates, and the integration proof needs a host that loads plugins at all. DMS-1501 is load-bearing for ordering rather than for code: the spine specifies `EdFi.Api.Plugins` at "`1.0.0` for the first published contract and `1.1.0` when `ContributeConfiguration` lands" (`plugins-DMS-1462/design.md:697`), and this story is what lands `ContributeConfiguration`. Landing it first would make the first published contract `1.1.0`, leaving no `1.0.0` for an older plugin to have been built against, which is the compatibility direction the contract shape exists for |
+| 02 | the plugin foundations | Nothing in this story loads a plugin, so on its own merits it would be unblocked. It is blocked anyway, because the spine says "every ticket it produces depends on the full plugin foundations being in place, because a secrets plugin is a plugin" (`plugins-DMS-1462/design.md:1402`), and that is an approved decision this spike inherits rather than one it is free to narrow. The dependency costs ordering and nothing else |
 | 03 | 01, 02 | Needs `ContributeConfiguration` to exist before it can invoke it, and needs both contracts to exist before `CmsPluginContracts` can declare them |
 | 04 | 03 | Needs a registered `ISecretResolver` to resolve anything, and needs CMS to be loading plugins at all. Transitively needs 02 for the contract |
 | 05 | 04, [DMS-1500](https://edfi.atlassian.net/browse/DMS-1500), [DMS-1501](https://edfi.atlassian.net/browse/DMS-1501) | The implementer guide links outward to `PLUGINS.md` for packaging, delivery, and the trust model, and DMS-1500 is the story that turns that file from a placeholder into the delivery guide. An implementer also cannot build a plugin without `EdFi.Api.Plugins` on the feed, which is DMS-1501 |
 
 Nothing here blocks a spine story.
-Draft 01 changes the plugin contract and the loader, and every spine story that reads either is either merged or, in DMS-1499's case, a dependency rather than a dependent.
+Draft 01 changes the plugin contract and the loader, and every spine story that reads either is a dependency of it rather than a dependent.
 
 **Why draft 01 is here and not in the spine.**
 The spine assigned it explicitly: the member is withheld from the first published contract because a virtual the host never calls is a hook a plugin can override to no effect, so it lands with its first consumer.
@@ -72,7 +72,7 @@ Filing it separately would leave a plugin contract for the hasher whose host def
 Whether it is *also* worth its own Jira ticket is a filing question rather than a design one; see the gate below.
 
 **Why there is no Data Management Service story after draft 01.**
-The capability lands in CMS, which is the spine's finding and which this design's research confirms: DMS holds two secrets, both served by Phase A, and obtains every connection string from CMS as cipher text it decrypts with a shared key.
+The capability lands in CMS, which is the spine's finding and which this design's research confirms: DMS's own configuration secrets are all served by Phase A, and it obtains every connection string from CMS as cipher text it decrypts with a shared key.
 Nothing in drafts 02 through 05 changes a DMS file.
 
 **Why no sample vault plugin is shipped.**
