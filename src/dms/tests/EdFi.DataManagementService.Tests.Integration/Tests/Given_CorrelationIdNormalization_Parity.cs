@@ -41,8 +41,21 @@ namespace EdFi.DataManagementService.Tests.Integration.Tests;
 [Category("MssqlIntegration")]
 public class Given_CorrelationIdNormalization_Parity
 {
-    private const string HostileCorrelationId = "12\r{34}\t567890";
-    private const int CorrelationIdMaxLength = 8;
+    /// <summary>
+    /// Over-length (80 characters against the configured cap of 64) and carrying control
+    /// characters, so it exercises the allowlist and the length cap together. It has to stay
+    /// longer than the cap, which <c>AppSettingsValidator</c> floors at 64: a shorter value
+    /// would not be truncated at all and this fixture would stop covering truncation.
+    /// </summary>
+    private const string HostileCorrelationId =
+        "12\r{34}\t567890567890567890567890567890567890567890567890567890567890567890567890";
+
+    /// <summary>
+    /// The lowest cap <c>AppSettingsValidator</c> accepts. Anything lower would fail validation
+    /// and every request below would be answered with a bodiless 500 instead of the response
+    /// under test.
+    /// </summary>
+    private const int CorrelationIdMaxLength = 64;
     private const string CorrelationIdHeader = "correlationid";
 
     private WebApplicationFactory<Program> _generalFactory = null!;
@@ -92,7 +105,9 @@ public class Given_CorrelationIdNormalization_Parity
     [Test]
     public void It_applies_the_same_normalized_correlation_id_to_401_404_and_429_responses()
     {
-        const string expected = "12{34}";
+        // Truncate-to-64-then-filter: the first 64 characters of the hostile value are "12", CR,
+        // "{34}", TAB and 56 digits; dropping the two control characters leaves 62.
+        const string expected = "12{34}56789056789056789056789056789056789056789056789056789056";
 
         _unauthorizedResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
         _notFoundResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);

@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Globalization;
 using System.Net;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.DocumentCache;
@@ -521,25 +522,94 @@ public class ConfigurationTests
         }
     }
 
+    /// <summary>
+    /// <c>CorrelationIdMaxLength</c> is bounded on both sides, and both bounds are inclusive.
+    /// The floor exists because <c>ExtractTraceIdFrom</c> pushes the server-generated
+    /// <c>HttpContext.TraceIdentifier</c> through the same cap: Kestrel formats that value as a
+    /// 13-character connection id, a colon and an 8-hex request number - 22 characters - so a cap
+    /// below it would drop the request number and collapse every request on one connection onto a
+    /// single correlation ID. 64 is the shortest cap that also leaves every common upstream scheme
+    /// intact, the longest being a 55-character W3C traceparent. The ceiling bounds how much
+    /// client-controlled text one request can push into every log event and error response body.
+    /// </summary>
     [TestFixture]
-    public class Given_A_Bound_App_Settings_With_Nonpositive_Correlation_Id_Max_Length
+    public class Given_A_Bound_App_Settings_With_A_Correlation_Id_Max_Length_Outside_The_Permitted_Range
     {
-        [Test]
-        public void It_fails_validation()
-        {
-            var appSettings = new AppSettings
+        private static AppSettings SettingsWith(int correlationIdMaxLength) =>
+            new()
             {
                 AuthenticationService = "http://localhost:5126/connect/token",
                 Datastore = "postgresql",
                 CorrelationIdHeader = "correlationid",
-                CorrelationIdMaxLength = 0,
+                CorrelationIdMaxLength = correlationIdMaxLength,
             };
 
-            var validator = new AppSettingsValidator();
-            var result = validator.Validate(null, appSettings);
+        [TestCase(-1)]
+        [TestCase(0)]
+        [TestCase(1)]
+        [TestCase(22)]
+        [TestCase(32)]
+        [TestCase(63)]
+        [TestCase(1025)]
+        [TestCase(int.MaxValue)]
+        public void It_fails_validation_naming_the_setting_the_value_and_the_range(int outOfRange)
+        {
+            var result = new AppSettingsValidator().Validate(null, SettingsWith(outOfRange));
 
             result.Succeeded.Should().BeFalse();
             result.FailureMessage.Should().Contain(nameof(AppSettings.CorrelationIdMaxLength));
+            result.FailureMessage.Should().Contain(outOfRange.ToString(CultureInfo.InvariantCulture));
+            result.FailureMessage.Should().Contain("64");
+            result.FailureMessage.Should().Contain("1024");
+        }
+
+        /// <summary>
+        /// The failure message is handed to <c>ILogger.LogCritical</c> by
+        /// <c>ReportInvalidConfigurationMiddleware</c> as the message *template* argument, which
+        /// Serilog then parses for property holes. A brace in the message would be read as a hole
+        /// rather than logged literally, so the message must stay brace-free.
+        /// </summary>
+        [Test]
+        public void It_produces_a_brace_free_failure_message()
+        {
+            var result = new AppSettingsValidator().Validate(null, SettingsWith(63));
+
+            result.FailureMessage.Should().NotContain("{").And.NotContain("}");
+        }
+
+        /// <summary>
+        /// The other side of the boundary. Without these the range check could be off by one - or
+        /// exclude the very values the bounds are named for - and the rejection cases above would
+        /// still pass.
+        /// </summary>
+        [TestCase(64)]
+        [TestCase(255)]
+        [TestCase(1024)]
+        public void It_accepts_the_inclusive_bounds_and_the_default(int inRange)
+        {
+            new AppSettingsValidator().Validate(null, SettingsWith(inRange)).Succeeded.Should().BeTrue();
+        }
+
+        [Test]
+        public void It_places_the_bounds_where_the_named_constants_say()
+        {
+            AppSettings.MinimumCorrelationIdMaxLength.Should().Be(64);
+            AppSettings.MaximumCorrelationIdMaxLength.Should().Be(1024);
+            AppSettings.DefaultCorrelationIdMaxLength.Should().Be(255);
+        }
+
+        /// <summary>
+        /// The floor's reason for existing: the server-generated identifier DMS falls back to
+        /// must survive the smallest cap an operator can configure.
+        /// </summary>
+        [Test]
+        public void It_leaves_a_kestrel_trace_identifier_untruncated_at_the_floor()
+        {
+            const string KestrelTraceIdentifier = "0HNOIG2VLOC0S:00000001";
+
+            KestrelTraceIdentifier
+                .Length.Should()
+                .BeLessThanOrEqualTo(AppSettings.MinimumCorrelationIdMaxLength);
         }
     }
 
