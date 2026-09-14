@@ -68,11 +68,27 @@ public static class CorrelationIdNormalizer
     /// correlation IDs can carry lone surrogates - which an HTTP header value cannot - must check for that
     /// itself.
     /// </returns>
-    public static string Normalize(string? value, int maxLength)
+    public static string Normalize(string? value, int maxLength) =>
+        NormalizeWithDetail(value, maxLength).Value;
+
+    /// <summary>
+    /// <see cref="Normalize"/>, additionally reporting which of the two adjustments were applied.
+    /// The result's <see cref="NormalizationDetail.Value"/> is byte-for-byte what
+    /// <see cref="Normalize"/> returns for the same arguments - the latter is a thin wrapper over
+    /// this method, so the two cannot drift.
+    /// </summary>
+    /// <remarks>
+    /// This exists so the request-logging middleware can report <em>that</em> a client-supplied
+    /// correlation ID was adjusted without reflecting the original value into a log sink. The
+    /// flags are derived facts about the transformation, not content: nothing here carries any
+    /// part of <paramref name="value"/> other than its normalized form, which is already the
+    /// value every log event and error response body carries.
+    /// </remarks>
+    public static NormalizationDetail NormalizeWithDetail(string? value, int maxLength)
     {
         if (string.IsNullOrEmpty(value))
         {
-            return string.Empty;
+            return new NormalizationDetail(string.Empty, Truncated: false, CharactersRemoved: false);
         }
 
         // A non-positive cap falls back to the documented default rather than throwing, so a
@@ -82,7 +98,8 @@ public static class CorrelationIdNormalizer
         int effectiveMaxLength = maxLength > 0 ? maxLength : AppSettings.DefaultCorrelationIdMaxLength;
 
         string truncated = value;
-        if (value.Length > effectiveMaxLength)
+        bool wasTruncated = value.Length > effectiveMaxLength;
+        if (wasTruncated)
         {
             int retained = effectiveMaxLength;
 
@@ -113,6 +130,25 @@ public static class CorrelationIdNormalizer
             truncated = value[..retained];
         }
 
-        return LoggingSanitizer.SanitizeCorrelationId(truncated);
+        string filtered = LoggingSanitizer.SanitizeCorrelationId(truncated);
+
+        // Length comparison rather than a string comparison: SanitizeCorrelationId only ever
+        // removes characters, never substitutes them, so a shorter result is exactly "something
+        // was removed" and an equal-length result is exactly "nothing was".
+        return new NormalizationDetail(
+            filtered,
+            Truncated: wasTruncated,
+            CharactersRemoved: filtered.Length != truncated.Length
+        );
     }
+
+    /// <summary>
+    /// The normalized value together with the two derived facts about how it was reached.
+    /// </summary>
+    /// <param name="Value">The normalized correlation ID, as <see cref="Normalize"/> returns it.</param>
+    /// <param name="Truncated">Whether the input was longer than the effective maximum length.</param>
+    /// <param name="CharactersRemoved">
+    /// Whether the allowlist removed at least one character from the (possibly truncated) input.
+    /// </param>
+    public readonly record struct NormalizationDetail(string Value, bool Truncated, bool CharactersRemoved);
 }

@@ -59,7 +59,9 @@ request logging layer:
   or `1228002` (`HttpRequestFailed`). This document is the source of truth for
   these values; CMS and DMS build as separate solutions, so each application
   defines them in its own `RequestLoggingEventIds` class and pins them with its
-  own unit test.
+  own unit test. DMS allocates one further id from the same block, `1228003`
+  (`CorrelationIdModified`), which is not a request log event — see [Notice when
+  a correlation ID is modified](#notice-when-a-correlation-id-is-modified).
 * `SourceContext`: logger category emitted by Serilog/Microsoft logging.
 * `RequestLayer`: DMS-only value of `Frontend` or `Core`. Use this field to
   separate externally visible HTTP request events from core pipeline request
@@ -262,9 +264,14 @@ body that carries a correlation ID, whatever the status code and whichever layer
 produced it — including the catch-all `404` for an unmatched route, the `429`
 rate-limit rejection, and the `500` written when an unhandled exception escapes
 the pipeline. The ID a client reads from such a response is therefore always the
-ID to search for in the logs. The value is normalized once, where the request
-first supplies it, so no individual response path can drift from the logged
-value.
+ID to search for in the logs. The value really is normalized once per request:
+the request-logging middleware is registered ahead of routing, the rate limiter
+and every endpoint, so it is the first component to read the correlation ID, and
+the result it computes is cached on `HttpContext.Items` for every later use. No
+individual response path re-derives it, so none can drift from the logged value.
+(A call site that ever ran ahead of that middleware would compute and cache the
+value itself; normalization is pure and idempotent, so the result would be the
+same.)
 
 Not every error response carries one. The `413` answer to an oversized request
 body writes no response body at all, and the management, metadata and XSD
@@ -289,6 +296,56 @@ longer matches the identifier recorded in the upstream system that generated it;
 hosts who need to rule that out entirely can leave
 `AppSettings:CorrelationIdHeader` empty, which disables client-supplied
 correlation IDs and uses the server-generated trace identifier for every request.
+
+#### Notice when a correlation ID is modified
+
+Because the adjustment is silent from the client's point of view, DMS emits one
+Information-level event when the correlation ID a request is answered and logged
+under is **not** the value the client sent.
+
+* `EventId`: `1228003`, `EventName` `CorrelationIdModified`. DMS-only; CMS reads
+  no correlation header and never emits it. It is not a request log event, so
+  collectors filtering on `1228001`/`1228002` will not pick it up.
+* Structured properties: `SuppliedLength` and `NormalizedLength` (numeric
+  `int`), `CharactersRemoved`, `Truncated` and `FellBackToServerIdentifier`
+  (boolean), and `TraceId` (the normalized correlation ID).
+* It is emitted inside the request scope, so it carries the same `Application`,
+  `RequestLayer`, `TraceId`, `Method`, `Path` and `PathBase` properties as that
+  request's `HttpRequestCompleted` event.
+
+The message template is:
+
+```text
+{EventName}: Client-supplied correlation ID was modified by normalization; the original value is deliberately not logged. SuppliedLength {SuppliedLength}, NormalizedLength {NormalizedLength}, CharactersRemoved {CharactersRemoved}, Truncated {Truncated}, FellBackToServerIdentifier {FellBackToServerIdentifier}, TraceId {TraceId}
+```
+
+`FellBackToServerIdentifier` is the flag to alert on. `true` means the
+client-supplied value normalized to blank and was discarded in full for the
+server-generated trace identifier, so the client's own identifier is not
+recoverable from the request at all; `false` means the value was adjusted but
+the client's identifier scheme is still recognizable in `TraceId`.
+
+Nothing is emitted when the host configures no correlation header, when a
+request sends none or sends it empty, or when the value the client sent survives
+normalization unchanged. Those are the overwhelmingly common cases, and a notice
+on them would double the Information-level volume of every request.
+
+**The original value is deliberately absent — not raw, not sanitized, not
+truncated.** The client-supplied correlation ID is exactly the hostile input
+normalization exists to defang, and writing any form of it to a log sink would
+reopen the log-forging vector normalization closes. A sanitized copy would in
+most cases simply reproduce the normalized value already on the line, and a
+truncated copy is still client content. What is logged instead is derived facts
+— two lengths and three booleans — plus the normalized `TraceId`, which is
+already safe and is the key an operator searches on.
+
+**Known limitation.** The consequence is that the event is discoverable by the
+*normalized* ID, not by the value the client actually sent. An operator handed a
+client's original correlation ID still cannot find the request directly; they
+have to work forward from the client's own record of the request (time, method,
+path) or from the normalized ID the client received in the error response body.
+This is accepted rather than solved: reflecting the original is the one thing
+this event must not do.
 
 This behavior is specified as FR-LOG-3 through FR-LOG-6 in
 [PRD v8.1](./PRD-v8.1.md).

@@ -32,10 +32,15 @@ public class LoggingMiddleware
         var sanitizedMethod = LoggingSanitizer.SanitizeInternalValueForLogging(context.Request.Method);
         var sanitizedPath = LoggingSanitizer.SanitizeInternalValueForLogging(context.Request.Path.Value);
         var pathBase = LoggingSanitizer.SanitizeInternalValueForLogging(context.Request.PathBase.Value);
-        // Already normalized at the ingestion boundary by AspNetCoreFrontend.ExtractTraceIdFrom,
-        // so this middleware deliberately applies no second, differently-shaped normalization of
-        // its own. Method and Path keep the stricter SanitizeInternalValueForLogging allowlist above.
-        var traceId = ExtractTraceId(context);
+        // Normalized at the ingestion boundary by AspNetCoreFrontend, so this middleware
+        // deliberately applies no second, differently-shaped normalization of its own. Method and
+        // Path keep the stricter SanitizeInternalValueForLogging allowlist above.
+        //
+        // This middleware is registered ahead of routing, the rate limiter and endpoint execution,
+        // so it is the first component in the pipeline to ingest the correlation ID. That is what
+        // makes the value it caches on HttpContext.Items the one every later call site reads.
+        var ingestion = ExtractCorrelationId(context);
+        var traceId = ingestion.TraceId.Value;
 
         var scopeValues = new Dictionary<string, object>
         {
@@ -56,6 +61,8 @@ public class LoggingMiddleware
 
         using (logger.BeginScope(scopeValues))
         {
+            LogCorrelationIdModification(logger, ingestion, traceId);
+
             if (logger.IsEnabled(LogLevel.Debug))
             {
                 logger.LogDebug("Request started");
@@ -196,11 +203,59 @@ public class LoggingMiddleware
         }
     }
 
-    private string ExtractTraceId(HttpContext context)
+    /// <summary>
+    /// Emits an Information-level notice when the correlation ID the request is logged and
+    /// answered under is not the value the client sent.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The original value is deliberately absent</b> - not raw, not sanitized, not truncated.
+    /// The client-supplied correlation ID is precisely the hostile input normalization exists to
+    /// defang; writing any form of it to a log sink would reopen the log-forging vector that
+    /// normalization closes, and a sanitized copy would in most cases just reproduce the
+    /// normalized value that is already on the line. What is logged instead is derived facts -
+    /// two lengths and three booleans - plus the resulting normalized <c>TraceId</c>, which is
+    /// already safe and is the key an operator searches on.
+    /// </para>
+    /// <para>
+    /// <b>Silence is the normal case.</b> Nothing is emitted when the host configures no
+    /// correlation header, when the request sends none, or when the value the client sent
+    /// survived normalization unchanged. A per-request line on the normal path would be
+    /// unacceptable log volume for a notice about an exceptional condition.
+    /// </para>
+    /// </remarks>
+    private static void LogCorrelationIdModification(
+        ILogger<LoggingMiddleware> logger,
+        AspNetCoreFrontend.CorrelationIdIngestion ingestion,
+        string traceId
+    )
+    {
+        if (!ingestion.WasModified || !logger.IsEnabled(LogLevel.Information))
+        {
+            return;
+        }
+
+        logger.Log(
+            LogLevel.Information,
+            CorrelationIdLoggingEventIds.CorrelationIdModified,
+            "{EventName}: Client-supplied correlation ID was modified by normalization; the original value is deliberately not logged. "
+                + "SuppliedLength {SuppliedLength}, NormalizedLength {NormalizedLength}, CharactersRemoved {CharactersRemoved}, "
+                + "Truncated {Truncated}, FellBackToServerIdentifier {FellBackToServerIdentifier}, TraceId {TraceId}",
+            CorrelationIdLoggingEventIds.CorrelationIdModified.Name,
+            ingestion.SuppliedLength,
+            traceId.Length,
+            ingestion.CharactersRemoved,
+            ingestion.Truncated,
+            ingestion.FellBackToServerIdentifier,
+            traceId
+        );
+    }
+
+    private AspNetCoreFrontend.CorrelationIdIngestion ExtractCorrelationId(HttpContext context)
     {
         try
         {
-            return AspNetCoreFrontend.ExtractTraceIdFrom(context.Request, _appSettings).Value;
+            return AspNetCoreFrontend.IngestCorrelationIdFrom(context.Request, _appSettings);
         }
         catch (OptionsValidationException)
         {
@@ -209,9 +264,23 @@ public class LoggingMiddleware
             // what just failed. The documented default stands in, and the server-generated
             // identifier still goes through the same normalization, so this path cannot emit a
             // differently-shaped value than any other.
-            return CorrelationIdNormalizer.Normalize(
-                context.TraceIdentifier,
-                AppSettings.DefaultCorrelationIdMaxLength
+            //
+            // ClientSuppliedAValue is false because on this path no client value was considered
+            // at all: the header name lives in the configuration that just failed to validate.
+            // There is therefore nothing to report as modified, and the notice stays silent -
+            // which also keeps a host stuck in invalid-configuration mode from adding a second
+            // log line to every short-circuited request.
+            //
+            // Nothing is cached on HttpContext.Items here either, because in this mode every
+            // request is short-circuited by the invalid-configuration middleware ahead of
+            // routing, so no other correlation ID call site runs. Caching a value derived from
+            // the documented default rather than from validated configuration would only matter
+            // if that stopped being true, and then it ought to be recomputed rather than reused.
+            return AspNetCoreFrontend.CorrelationIdIngestion.ForServerGeneratedIdentifier(
+                CorrelationIdNormalizer.Normalize(
+                    context.TraceIdentifier,
+                    AppSettings.DefaultCorrelationIdMaxLength
+                )
             );
         }
     }
