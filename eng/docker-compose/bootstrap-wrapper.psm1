@@ -606,6 +606,16 @@ function Invoke-BootstrapWrapper {
 
     $ErrorActionPreference = "Stop"
 
+    # Restore mode and CDC bootstrap are mutually exclusive. A restore replaces the datastore
+    # from a packaged artifact and deliberately skips the provision phase, but CDC enablement is
+    # driven by that phase's authoritative provisioning receipt - so the combination would run the
+    # ENTIRE destructive restore and only then fail on the missing receipt, after the target
+    # database was already replaced. Rejected ahead of the CDC validation below so neither
+    # feature's setup runs for a request that can never succeed.
+    if ($EnableKafkaCdc -and $PSBoundParameters.ContainsKey('RestoreTemplate') -and -not [string]::IsNullOrWhiteSpace($RestoreTemplate)) {
+        throw "-RestoreTemplate is not valid with -EnableKafkaCdc. A restore skips the provision phase that produces the CDC provisioning receipt; enable CDC on a bootstrap that provisions its own schema."
+    }
+
     if ($EnableKafkaCdc) {
         if (-not $SeparateConfigDatabase -or $NoDataStore -or $SchoolYearRange -or $DmsBaseUrl -or
             [string]::IsNullOrWhiteSpace($CdcSettingsPath) -or

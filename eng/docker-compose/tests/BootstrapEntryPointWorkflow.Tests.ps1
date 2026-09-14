@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: Apache-2.0
+﻿# SPDX-License-Identifier: Apache-2.0
 # Licensed to the Ed-Fi Alliance under one or more agreements.
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
@@ -1725,6 +1725,7 @@ $resultStatement
             @{ Name = "-RestoreTemplate with -SchoolYearRange"; Arguments = @{ RestoreTemplate = "Populated"; SchoolYearRange = "2024-2025" }; Expected = "*-RestoreTemplate is not valid with -SchoolYearRange*" }
             @{ Name = "a bare -LoadSeedData with -RestoreTemplate"; Arguments = @{ RestoreTemplate = "Populated"; LoadSeedData = $true }; Expected = "*requires its own seed source*bare -LoadSeedData is ambiguous*" }
             @{ Name = "-PackageDirectory without -RestoreTemplate"; Arguments = @{ PackageDirectory = "C:\\packages" }; Expected = "*-PackageDirectory requires -RestoreTemplate*" }
+            @{ Name = "-RestoreTemplate with -EnableKafkaCdc"; Arguments = @{ RestoreTemplate = "Minimal"; EnableKafkaCdc = $true }; Expected = "*-RestoreTemplate is not valid with -EnableKafkaCdc*" }
         ) {
             $invocationArguments = $Arguments
             { & $script:repo.WrapperScript -EnvironmentFile $script:repo.EnvFile @invocationArguments } |
