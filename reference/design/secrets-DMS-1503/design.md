@@ -13,9 +13,9 @@ This document decides two things the spine deliberately left open, and it treats
 In ODS those are one mechanism.
 In DMS they cannot be, and this document says what each one is instead.
 
-**Reviewed in four blind rounds** by three independent reviewers on different model families, before any team review.
-Seventy-one findings were raised, every one re-verified against the code, and none refuted; all are applied.
-Six changed a decision rather than a wording, and each is recorded where the decision is made rather than in a revision history: builder-mediated substitution, decrypting every row, the derivative containment rule and its boundary, the host-raced resolve timeout, the retrieval-path statement in the trust notes, and draft 02's dependency on the plugin foundations.
+**Reviewed in six blind rounds** by independent reviewers on different model families, before any team review.
+Ninety-five findings were raised, every one re-verified against the code before being applied.
+Ten changed a decision rather than a wording, and each is recorded where the decision is made rather than in a revision history: builder-mediated substitution, the builder taken from the validator's own registration, decrypting every row, materializing every projection the seam runs in, the derivative containment rule and its boundary, the host-raced resolve timeout, the keyed-registration refusal, the retrieval-path statement in the trust notes, the compose variable the identity bootstrap consumes, and draft 02's dependency on the plugin foundations.
 
 **What is inherited and not reopened.**
 Every Phase A statement in the spine is a decision this document builds on rather than revisits: the `ContributeConfiguration(IConfigurationBuilder, IConfiguration bootstrapConfiguration)` hook shape, the placement of plugin sources immediately below the last environment variable source, the additive `Sources` guard, the presence of `bootstrapConfiguration` as a second parameter the plugin reads, and `Replace` cardinality for the secret resolver and the secret hasher.
@@ -128,6 +128,11 @@ Its own lifetime is not one thing and is not load-bearing here: `ConfigureDatast
 The consequence an operator cares about is the same for all ten: changing one takes a restart.
 The count correction changes nothing structural, and the two extra `appsettings.json`-absent rows plus the two header sections matter only because a document that promised to cover "the six" would have left four secrets unserved and unmentioned.
 
+**One deployment credential sits outside this enumeration and outside Phase A's reach, and it is named so the count above is not read as the whole secret surface.**
+`DATABASE_CONNECTION_STRING_ADMIN` carries elevated database credentials, and the shipped compose files default it to `username=postgres` with `${POSTGRES_PASSWORD}` (`eng/docker-compose/local-dms.yml:43`, `eng/docker-compose/published-dms.yml:38`).
+Its consumer is the DMS container entrypoint rather than the host: `src/dms/run.sh:14-16` parses host, port, and username out of it in the shell, before `dotnet` starts, to wait for PostgreSQL readiness, and no production `.cs` file reads it.
+A value consumed before the .NET host exists is a value no configuration source can serve, Phase A's included, so it stays a deployment-environment value, and [Phase A](#phase-a-the-process-global-secrets) lists it beside the two configuration surfaces Phase A cannot reach.
+
 **The connection strings are a different problem, and they are the one the ODS documentation is actually about.**
 
 An operator POSTs a data store connection string to CMS at `/v3/dataStores/` (`Config.Frontend/Modules/DataStoreModule.cs:22`).
@@ -192,7 +197,9 @@ What changes is only the claim made about it: a write through that parameter is 
 DMS reads `AppSettings:StartupStatusFilePath` at `src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Program.cs:30-33`, before plugins load, because that file is how a loader fatal is reported.
 CMS has no equivalent, since `Config.Frontend/Program.cs` is a plain minimal-API startup with no bootstrap status signal, so in CMS the exception is that there is no exception.
 The `Plugins` section itself is out of reach for the same structural reason and in both hosts: `PluginLoader.Load` binds `Plugins:Directory` and `Plugins:Allowed` to decide what loads before any Phase A hook runs, which is what makes the allowlist a surface no plugin can reach and is asserted as a test rather than assumed.
-None of these is a secret, so nothing in this design wants them.
+Neither of those is a secret, so nothing in this design wants them.
+One value out of reach **is** a secret: `DATABASE_CONNECTION_STRING_ADMIN`, which the [Problem Statement](#problem-statement) sets out, is consumed by the container entrypoint in the shell before the .NET host exists (`src/dms/run.sh:14-16`), so no configuration source of any origin can serve it.
+The documentation states it beside the two surfaces above rather than leaving an operator to point a vault at a value nothing would read from one.
 
 **Phase A is not a way to supply a connection string.**
 It can only supply values that are read out of `IConfiguration`, and a data store connection string is not one.
@@ -283,12 +290,14 @@ It does not survive contact with the derivative half of the surface.
 `DataStoreDerivativeResponse` carries `Id`, `DataStoreId`, `DerivativeType`, and `ConnectionString` and no provider (`DataModel/Model/DataStoreDerivative/DataStoreDerivativeResponse.cs:11-31`), and the derivative queries select none, so eight of the twelve sites have no row-level provider to read.
 Threading the parent's provider into the derivative projections would change every derivative query and the DTO, on behalf of a per-data-store engine this deployment model does not have.
 
-So the seam takes the engine the deployment is configured for, which is exactly the choice `AddDataStoreConnectionStringValidator` already makes when it decides which engine a **submitted** connection string is validated against (`Config.Frontend/Infrastructure/WebApplicationBuilderExtensions.cs:215-231`).
-Using the same source for validation and for substitution is the property worth having: a value accepted by one engine's parser is then quoted by that same engine's builder, and the two cannot disagree.
+So the seam takes the engine the deployment is configured for, and it takes it from the object that already owns it rather than from a parallel switch.
+No abstraction hands that builder out today: `IDataStoreConnectionStringValidator` declares only `Validate` (`DataModel/Infrastructure/IDataStoreConnectionStringValidator.cs`), the parse lives in the protected abstract `CreateBuilder` (`Backend/Services/DataStoreConnectionStringValidator.cs:83`) that the two engine validators implement (`Backend.Postgresql/PostgresqlDataStoreConnectionStringValidator.cs`, `Backend.Mssql/MssqlDataStoreConnectionStringValidator.cs`), and `Backend`'s own project references neither `Npgsql` nor `Microsoft.Data.SqlClient`, so a seam in `Backend/Services/` cannot construct one itself.
+The abstract validator therefore additionally implements a new one-member interface beside it in `Backend/Services/`, `IDataStoreConnectionStringBuilderSource`, whose `CreateBuilder(string)` is the same protected parse made reachable, and `AddDataStoreConnectionStringValidator` (`Config.Frontend/Infrastructure/WebApplicationBuilderExtensions.cs:215-231`), which already decides which engine a **submitted** connection string is validated against, registers the one engine validator it constructs under both interfaces, forwarding the second to the first registration.
+That is what makes "cannot disagree" a construction rather than a convention: the parser a submitted string was validated by and the builder its tokens are substituted through are one object, asserted by a test that resolves both interfaces and gets the same instance.
 That method's own summary records the limitation this inherits, that "a setting that names the target provider per data store replaces this method and nothing else", so this adds no new coupling and is removed by the same future change, at which point both the validator and this seam read it and the derivative projections are what that change has to carry.
 
 **Re-emitting normalizes the text, and that is accepted.**
-The string a reader receives may differ from the operator's in keyword casing, ordering, and quoting, because it has been through the provider's builder.
+The string a reader receives may differ from the operator's in keyword naming, casing, ordering, and quoting, because it has been through the provider's builder: measured on `net10.0`, `SqlConnectionStringBuilder` canonicalizes the keyword names themselves, re-emitting `Server=db;Database=edfi;User Id=sa` as `Data Source=db;Initial Catalog=edfi;User ID=sa`, while `NpgsqlConnectionStringBuilder` returns the same text unchanged.
 Every consumer opens the string with the provider that emitted it. DMS does key caches on the text, so re-emission changes those keys once, the way a rotation changes them each time; see [Freshness, Caching, and the Tenant Set](#freshness-caching-and-the-tenant-set).
 
 ### Where Resolution Happens
@@ -321,6 +330,12 @@ They encrypt what they were given (`Backend.Postgresql/Repositories/DataStoreRep
 Twelve call sites of one rule across two resources and two engines is a shape this codebase has already met and already solved once.
 `Backend/Services/ConnectionStringWrite.cs` exists because the four *write* paths must not drift apart, and says so in its own summary: "One rule for both resources on both engines, so the four update paths cannot drift apart."
 The read rule gets the same treatment: one host-owned service in `Backend/Services/`, called from all twelve sites, with the engine-specific repositories carrying no policy.
+
+**Eight of the twelve are lazy today, and the seam makes all twelve eager, because it must.**
+The four single-row `Get` sites build their response before returning; the other eight project through LINQ `Select` and return the un-materialized enumerable inside `Success(...)`, so their lambdas run during response serialization, after the endpoint has chosen `Results.Ok` and outside the repository's `try/catch`.
+A resolution failure raised there would never reach the failure arm [Failure Semantics](#failure-semantics) routes it to, and `ISecretResolver.ResolveAsync` is asynchronous, which a synchronous `Select` lambda cannot await without blocking a thread.
+So the resolving story materializes every projection: each read method awaits the seam row by row inside its own `try/catch`, and `Success(...)` carries a completed list.
+That changes when the projection runs and nothing about what any caller receives, and it is what makes the failure semantics below statements about behavior rather than aspirations.
 
 The service takes the stored bytes and returns the Base64 the response carries.
 Both directions already exist and no new cryptography is written: `IConnectionStringEncryptionService` declares `Encrypt` and `Decrypt` and the implementation carries both (`Backend/Services/IConnectionStringEncryptionService.cs:10-11`, `Backend/Services/ConnectionStringEncryptionService.cs:19-38`, `:41-63`).
@@ -374,7 +389,7 @@ The one DMS-touching story is the Phase A composition point, which the spine des
 
 **The seam is not a singleton, the cache is, and stating that is not a detail.**
 The seam reads the request's tenant, which comes from `ITenantContextProvider`, registered **scoped** (`Config.Frontend/Infrastructure/WebApplicationBuilderExtensions.cs:126`).
-An implementer who reads "host-owned cache" as "singleton seam" lands on a trap the file already documents four lines above that registration: a singleton depending on the scoped tenant provider "fails DI scope validation at startup in the Development environment" (`:116-119`).
+An implementer who reads "host-owned cache" as "singleton seam" lands on a trap the same file already documents: the comment over its scoped claims services (`:116-119`, on the `AddScoped` pair at `:120-121`) explains that a singleton depending on the scoped tenant provider "fails DI scope validation at startup in the Development environment".
 So the split is specified.
 The seam is **not a singleton**, and beyond that it takes the lifetime of the repositories that call it, which is **transient** in both engines (`Config.Frontend/Infrastructure/WebApplicationBuilderExtensions.cs:177-181`, `Backend.Mssql/MssqlServiceExtensions.cs:29`, `:31`); `DataStoreRepository` is already a transient taking the scoped tenant provider by constructor (`Backend.Postgresql/Repositories/DataStoreRepository.cs:27`), so the seam joining them needs no new pattern and the scoped-versus-transient question is not one this design has to settle.
 The cache behind it **is** a singleton, holding no scoped dependency and receiving the tenant as an argument the same way the resolver does, which is the shape the host-owned `IConnectionStringEncryptionService` beside it already has (`Config.Frontend/Infrastructure/WebApplicationBuilderExtensions.cs:122-125`).
@@ -527,6 +542,12 @@ The hasher is a singleton today at all four of its registration sites, so nothin
 The resolver is a singleton because a vault client is a connection-pooled, credential-holding object whose whole cost is construction, because the contract takes every input it needs as an argument and therefore has no per-request state to hold, and because the host caches in front of it and a per-scope resolver would make that cache the only thing keeping a per-request vault client from being constructed.
 The rule is enforced the way custom validation enforces its own transient-only rule: by the host's startup check over the composition snapshot, not by the loader, and its message names the plugin and the lifetime it used.
 
+**The same check refuses a keyed registration of either contract, and that closes a hole the shared audit deliberately leaves open.**
+The audit supports a declared contract registered under a concrete service key and counts it as an ordinary claim (`src/plugins/EdFi.Api.Plugins.Hosting/PluginRegistrationAudit.cs:231`, `:88`), because keyed registration is a capability some host may want.
+CMS is not that host: both of its consumers resolve unkeyed, `OpenIddictClientRepository` taking `IClientSecretHasher` by plain constructor injection (`Backend.OpenIddict/Repositories/OpenIddictClientRepository.cs:21`) and the resolution seam taking `ISecretResolver` the same way.
+A plugin that registered either contract under a key would therefore boot green, emit an inventory event saying it registered the contract, and displace nothing, which is the silent no-op this design refuses everywhere else.
+So a keyed registration of a declared CMS contract is refused at the same CMS-side check, naming the plugin and the key.
+
 ### Contract Cardinality
 
 Both contracts are `Replace`, which the spine's [Contract Cardinality](../plugins-DMS-1462/design.md#contract-cardinality) rules then govern unchanged.
@@ -587,14 +608,19 @@ Three reasons, in order of weight.
 
 - It is the only one an operator can discover.
   `appsettings.json` is the shipped surface and the file the documentation points at; the compose variable is an artifact of this repository's own deployment examples.
-- Making it live changes no deployment's behavior.
+- Making it live changes no working deployment's behavior.
   Its shipped value is `210000`, which equals the model default, so every deployment that does not override it hashes exactly as it does today.
-  Making `HashingIterations` live instead would silently change the work factor of every deployment that set `DMS_CONFIG_IDENTITY_HASHING_ITERATIONS` to something other than the default, which is a change to how stored secrets are verified arriving without anyone asking for it.
+  The compose re-point below does give `DMS_CONFIG_IDENTITY_HASHING_ITERATIONS` its first effect on the host, and a deployment that had set that variable to anything but the default was already broken in a visible way: `eng/docker-compose/setup-openiddict.ps1` has always hashed the bootstrapped client secrets at the variable's value (`:36`, `:212`) while the host verified at the hard-coded default, so its self-contained bootstrap credentials could never verify.
 - It names what it configures.
   `IdentityOptions` has two other iteration-shaped and cache-shaped numbers already, and a bare `HashingIterations` on a type that also manages token lifetimes and key caches says less than it should.
 
 The model property is renamed to `ClientSecretHashingIterations` in the same pass, so that the key, the property, and the setting the operator reads all carry one name.
 The binder gains the assignment; the two compose files change to `IdentitySettings__ClientSecretHashingIterations`; and `IdentitySettings:HashingIterations` remains unbound, which is what it already is.
+
+**The variable feeding those two compose lines, `DMS_CONFIG_IDENTITY_HASHING_ITERATIONS`, stays, because the host was never its only consumer.**
+`eng/docker-compose/setup-openiddict.ps1` takes it as `$HashIterations` (`:36`) and hashes every client secret the self-contained identity bootstrap creates with it (`:212`), through a resolver that throws when the value is configured nowhere, and the `.env*` files under `eng/docker-compose/` all define it.
+Removing the variable would fail that bootstrap outright.
+The re-point is also what finally makes the bootstrap's hash count and the host's verify count read one knob, instead of agreeing only when both happen to sit at the default.
 
 **The contract needs nothing from configuration, and that is why the defect is prerequisite rather than contained.**
 A replacing plugin reads its own settings and applies its own work factor; the iteration count belongs to the host default alone.
@@ -636,7 +662,7 @@ builder.AddServices(loadedPlugins);
 **The audit is a direct call rather than a startup task, because CMS has no startup-task machinery and inventing some for this would be the scaffolding the spine said not to port.**
 After `Build()` and before `RunAsync()`, CMS resolves the `PluginAuditInput` it registered, calls `PluginRegistrationAudit.AuditAsync(input, app.Services)`, and throws on any finding after writing each one.
 The audit function is host-agnostic by construction: it takes the input and a service provider and returns findings rather than throwing (`src/plugins/EdFi.Api.Plugins.Hosting/PluginRegistrationAudit.cs:47`).
-The lifetime rule from [The Contract Package](#the-contract-package) is a CMS-side check beside it, over the same input, because a lifetime rule is per-contract metadata the shared audit does not hold.
+The lifetime and keyedness rules from [The Contract Package](#the-contract-package) are a CMS-side check beside it, over the same input, because both are per-contract metadata the shared audit does not hold.
 
 **The inventory event is emitted before the audit runs**, for the attribution reason the spine gives: an audit failure names a service type, and only the inventory maps that type back to the plugin that registered it.
 In CMS that ordering is trivially available, because both sit between `Build()` and `RunAsync()` and the logger exists at both.
@@ -728,6 +754,7 @@ It is added to `src/config/EdFi.DmsConfigurationService.sln` and, because the DM
 **The resolution seam is host code in `Backend/Services/`, beside the write rule it mirrors.**
 `ConnectionStringWrite.cs` and `ConnectionStringCipherText.cs` are already there, and both exist to keep one rule from drifting across two resources and two engines.
 The read rule joins them, and the engine-specific repositories keep no policy of their own.
+So does `IDataStoreConnectionStringBuilderSource`, the one-member interface [The Secret Reference](#the-secret-reference-runtime-data-secrets) has the abstract validator implement, since the substitution reads it from `Backend/Services/` too.
 
 **`CmsPluginContracts` is frontend-owned**, as `DmsPluginContracts` is, because the set of contracts a host declares is a host-specific value and `EdFi.Api.Plugins.Hosting` stays host-agnostic.
 
@@ -749,7 +776,8 @@ The charset is asserted by table rather than by example, one case per permitted 
 
 **Unit, over resolution.**
 A resolver is faked and asserted to receive the token name and the tenant, with the tenant null under `TenantContext.NotMultitenant` and the tenant name under `TenantContext.Multitenant`.
-The substituted value is asserted to be re-encrypted, and the assertion is a round trip through `ConnectionStringDecryptionService` rather than a comparison against a fixed string, because a fixed string would pin the initialization vector and `Encrypt` generates a fresh one per call.
+The substituted value is asserted to be re-encrypted, and the assertion is a round trip through CMS's own `IConnectionStringEncryptionService.Decrypt` rather than a comparison against a fixed string, because a fixed string would pin the initialization vector and `Encrypt` generates a fresh one per call.
+DMS's `ConnectionStringDecryptionService` is deliberately not that round trip's other half: no project under `src/config/` references any `EdFi.DataManagementService.*` assembly, and a test must not create the first such reference.
 A resolver that throws, one that times out, one that returns null, and one that returns an empty string are each asserted to fail the read with the data store and the token named and the resolved value absent from the message and from the captured log.
 A token present with no resolver registered is asserted to fail with its own message naming the missing contract, distinct from the resolver-failed message.
 
@@ -759,6 +787,7 @@ A resolved value with a leading space is the load-bearing one: it is asserted to
 Values containing `;`, `=`, `"`, `'`, and the combination `a;b=c` each get a case.
 A probe test records what a textual substitution actually does with those values, so the decision is pinned by measurement rather than by an assumed behaviour.
 One case asserts the builder is the **configured** datastore engine's for both parent and derivative rows, and that the row's `Provider` column is not read for this purpose, which is the decision [The Secret Reference](#the-secret-reference-runtime-data-secrets) takes because derivative rows carry no provider at all.
+One case resolves `IDataStoreConnectionStringValidator` and `IDataStoreConnectionStringBuilderSource` from the composed host and asserts they are the same instance, which is the construction the cannot-disagree claim rests on.
 
 **Unit, over the resolve timeout.**
 A resolver that does not return within `SecretsSettings:ResolveTimeoutSeconds` is asserted to fail the read with the timeout named.
@@ -777,6 +806,7 @@ Time is controlled through a fake time provider, so no test sleeps.
 One test per repository method that projects a connection string, asserting the resolved value rather than the stored bytes reaches the response, driven from the same table for both engines so that a site added to one engine and not the other fails.
 A test asserts the count: every `Convert.ToBase64String` over a connection string column in `Backend.Postgresql` and `Backend.Mssql` goes through the seam. It is a source scan over those projects' repository files rather than a reflection test, because `System.Reflection` exposes metadata and not call sites.
 Nested derivative items are asserted to be resolved once, not twice.
+A failing resolver driven through each collection method is asserted to surface as that method's documented failure result rather than as an exception escaping while the response is enumerated, which is the assertion a lazy `Select` projection fails and the reason [Where Resolution Happens](#where-resolution-happens) requires materialization.
 
 **Unit, over the hashing-iterations key.**
 `IdentitySettings:ClientSecretHashingIterations` set to a non-default value is asserted to reach `ClientSecretHasher`, which is the assertion that fails today.
@@ -788,6 +818,7 @@ A secret hashed at one count and verified at another is asserted to fail verific
 Two plugins each registering `ISecretResolver` is fatal and names both; one plugin registering it twice is fatal and names the plugin and the count.
 A plugin registering `IClientSecretHasher` once is asserted to load with the host's own registrations present, which is the case that must pass and the one a naive descriptor count would refuse; the fixture covers both reachable shapes, the self-contained deployment where the host registered twice and the Keycloak one where it registered once.
 A plugin registering either contract as scoped or transient is refused with the plugin and the lifetime named.
+A plugin registering either contract under a service key is refused with the plugin and the key named; the shared audit deliberately admits that shape (`PluginRegistrationAudit.cs:231`), so the test pins the CMS-side refusal rather than the audit.
 A plugin that registers `ISecretResolver` with `TryAdd` is asserted to load, because there is no host default for the call to decline against, and the test carries a comment saying that is why rather than leaving a reader to infer that the implementer obligation is unenforced here for a different reason.
 
 **Integration, over CMS host startup.**
@@ -855,7 +886,7 @@ The per-PR lane packs `EdFi.Api.Secrets` and compiles a scratch consumer against
 | **Putting `ISecretResolver` in `src/plugins/`** beside the shared contract | Rejected | `src/plugins/` holds what both hosts consume. Only CMS resolves secrets, and a contract placed there would tell an implementer that DMS calls it |
 | **Leaving `IClientSecretHasher` in `Backend.OpenIddict`** and packaging that assembly | Rejected | CMS also runs against Keycloak, and a contract shipping from an assembly named for one identity provider tells half the operators that the extension point is not for them. It would also publish an implementation assembly's whole surface as a compatibility commitment |
 | **A host default for `ISecretResolver`** | Rejected | The two candidates are a resolver that fails every call, which is the no-resolver failure row under another name, and one that reads from configuration, which is Phase A. Absence is the clearer signal and the failure table is where it is read |
-| **Making `IdentitySettings:HashingIterations` the live key** instead | Rejected | It is set in this repository's own compose files with an operator-overridable default, so making it live would silently change the work factor of any deployment that had set it, and a work-factor change invalidates every secret hashed at the old count. The declared key's shipped value equals the model default, so making that one live changes no deployment's behavior |
+| **Making `IdentitySettings:HashingIterations` the live key** instead | Rejected | Behavior no longer separates the two choices, because either way `DMS_CONFIG_IDENTITY_HASHING_ITERATIONS` ends up feeding the live key and a deployment that had set that variable was already broken against the host's hard-coded verify count, as [The `IClientSecretHasher` Relocation](#the-iclientsecrethasher-relocation) sets out. What separates them is that the declared key is the one an operator can discover in the shipped `appsettings.json`, and that it names what it configures where a bare `HashingIterations` on a type that also manages token lifetimes and key caches says less than it should |
 | **Making both keys live**, with one falling back to the other | Rejected | Two keys for one setting is the state this resolves, not a resolution of it, and a fallback means an operator who sets both has to know which wins |
 | **Leaving the hashing-iterations defect to its own ticket** outside this spike | Rejected | The spine handed the question here explicitly, and a plugin contract for the hasher that left the host's own knob dead would make replacing the hasher the only way to reach a setting that was supposed to be configuration |
 | **Changing the stored hash format** to carry its iteration count, so raising the work factor does not invalidate stored secrets | **Deferred, not rejected** | It is a real improvement and it is a different change: it touches a stored format, needs a migration path for values already written, and is not needed by anything in this design. Recorded in [Out of Scope and Deferred](#out-of-scope-and-deferred) |
@@ -894,8 +925,8 @@ The delivery mechanism, the loader, the recording wrapper, and the cardinality g
 | --- | --- | --- |
 | Phase A on the contract: `ContributeConfiguration`, the loader's invocation, source placement below the last environment variable source, the additive `Sources` guard, the `Contribute` cardinality row and its exemption in the no-contract check, the `docs/CONFIGURATION.md` precedence order, and the Phase A test rows | Small | The spine designed every line of it and assigned it here. The contract's version moves, which is the first exercise of the additive-only policy. |
 | `EdFi.Api.Secrets`: the new project, `ISecretResolver`, `SecretReference`, the relocated `IClientSecretHasher`, the solution entry, the lock file, and the pack-and-consumer-verify lane | Small | Follows the merged pack-and-consumer-verify lanes. The relocation is a namespace move with no type or signature change. |
-| The hashing-iterations key: bind `IdentitySettings:ClientSecretHashingIterations`, rename the model property, move the two compose files | Small | A binder assignment, a property rename, and a removal in the compose files. Small, and behaviour-neutral once the dead override is gone. |
-| CMS host integration: the loader call, the Phase A invocation, `AddServices` taking the aggregate, `CmsPluginContracts`, the direct audit call, the lifetime check, the inventory event, the `Plugins` section, the frontend's `ProjectReference` | Small | `Config.Frontend/Program.cs` is a plain minimal-API startup and no scaffolding is ported. The registry and the audit function are host-agnostic and merged. |
+| The hashing-iterations key: bind `IdentitySettings:ClientSecretHashingIterations`, rename the model property, re-point the two compose files | Small | A binder assignment, a property rename, and a re-point in the compose files, with `DMS_CONFIG_IDENTITY_HASHING_ITERATIONS` kept for the identity bootstrap that consumes it. Behaviour-neutral for every working deployment. |
+| CMS host integration: the loader call, the Phase A invocation, `AddServices` taking the aggregate, `CmsPluginContracts`, the direct audit call, the lifetime-and-keyedness check, the inventory event, the `Plugins` section, the frontend's `ProjectReference` | Small | `Config.Frontend/Program.cs` is a plain minimal-API startup and no scaffolding is ported. The registry and the audit function are host-agnostic and merged. |
 | `src/config/Dockerfile` build stage: the `pluginsource` filtering stage, the plugin project and lock file copies, the `WORKDIR` move, the extended restore, and the post-restore source copy | Small | Mechanical but load-bearing, and `src/dms/Dockerfile` carries a worked version of it. It also carries the contract project's own entries and the removal of this image's version stamping, which story 02 specifies. |
 | The resolution seam: the token grammar, builder-mediated substitution, the host cache, the resolve timeout, the failure semantics, and the twelve call sites | Medium | The grammar, the substitution and the cache are the genuinely new code, and the substitution is where the obvious implementation is measurably wrong. The call sites are mechanical. |
 | `SecretsSettings`, the `Plugins` section in CMS, their `docs/CONFIGURATION.md` entries, and `DMS_CONFIG_*` overrides in both compose files | Small | Host-owned settings, documented and overridable in the deployment examples. |
@@ -903,8 +934,8 @@ The delivery mechanism, the loader, the recording wrapper, and the cardinality g
 | Publish `EdFi.Api.Secrets` | Small | **Release-gated leaf.** Blocked by every other row and blocking none. Burns a package id permanently, so it wants its own review. |
 | Test assets: the fixture secrets plugin, the file-backed resolver, and the CMS end-to-end deployment | Medium | The fixture plugin exercises both phases, which no fixture in the spine does, and the end-to-end tier brings up CMS and DMS together. |
 
-No row changes shipped behavior on a path DMS or CMS already ships, with one exception that is stated rather than buried: `IdentitySettings:ClientSecretHashingIterations` becomes live, and a deployment that had set it to something other than `210000` while believing it took effect will find that it now does.
-Such a deployment does not exist in this repository's own examples, which set the other key, and the documentation names the consequence.
+No row changes shipped behavior on a path DMS or CMS already ships, with one exception that is stated rather than buried: `IdentitySettings:ClientSecretHashingIterations` becomes live, the compose files feed it from `DMS_CONFIG_IDENTITY_HASHING_ITERATIONS`, and a deployment that had set that variable to something other than `210000` will find it taking effect.
+Such a deployment was already visibly broken, because the identity bootstrap has always hashed its created client secrets at the variable's value while the host verified at the model default; the repository's own examples leave it at `210000`, and the documentation names the consequence.
 
 ---
 
