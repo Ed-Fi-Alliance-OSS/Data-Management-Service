@@ -10,6 +10,7 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Security;
+using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -51,7 +52,13 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit;
 public class Given_A_Hostile_Correlation_Id_On_Requests_That_Fail_In_Different_Layers
 {
     private const string CorrelationHeader = "x-correlation-id";
-    private const int ConfiguredMaxLength = 24;
+
+    /// <summary>
+    /// The floor <c>AppSettingsValidator</c> enforces. Anything lower is rejected as invalid
+    /// configuration, which would drop this fixture's host into invalid-configuration mode and
+    /// answer every request below with a bodiless 500 instead of the response under test.
+    /// </summary>
+    private const int ConfiguredMaxLength = AppSettings.MinimumCorrelationIdMaxLength;
     private const string ValidRequiredRole = "dms-document-cache-operator";
     private const string RoleClaimType = "operator_role";
     private const string ValidBearerToken = "valid-token";
@@ -70,18 +77,24 @@ public class Given_A_Hostile_Correlation_Id_On_Requests_That_Fail_In_Different_L
     private const string ManagementRoute = "/management/view-claimsets";
 
     /// <summary>
-    /// Over-length (49 characters against a configured cap of 24) and carrying control
-    /// characters, so it exercises the allowlist and the length cap at the same time. The
+    /// Over-length (80 characters against a configured cap of 64) and carrying control
+    /// characters, so it exercises the allowlist and the length cap at the same time. It has to
+    /// stay comfortably longer than the cap: a value at or under 64 would not be truncated at
+    /// all and the fixture would quietly stop covering the truncation path it exists for. The
     /// braces are the FR-LOG-3 check: the stricter Method/Path allowlist would strip them.
     /// </summary>
-    private const string HostileCorrelationId = "hos\r\ntile{id}XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX";
+    private const string HostileCorrelationId =
+        "hos\r\ntile{id}XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX";
 
     /// <summary>
-    /// Truncate-to-24-then-filter yields this. Filter-then-truncate would instead yield
-    /// "hostile{id}XXXXXXXXXXXXX" (a full 24 characters), so this literal also pins the order
-    /// end to end. The result being shorter than the cap is the intended consequence.
+    /// Truncate-to-64-then-filter yields this: the first 64 characters of the hostile value are
+    /// "hos", CR, LF, "tile{id}" and 51 X's; dropping the two control characters leaves 62.
+    /// Filter-then-truncate would instead yield "hostile{id}" followed by 53 X's (a full 64
+    /// characters), so this literal also pins the order end to end. The result being shorter
+    /// than the cap is the intended consequence.
     /// </summary>
-    private const string ExpectedCorrelationId = "hostile{id}XXXXXXXXXXX";
+    private const string ExpectedCorrelationId =
+        "hostile{id}XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX";
 
     /// <summary>
     /// The control arm for FR-LOG-5: short enough for the cap and holding nothing the

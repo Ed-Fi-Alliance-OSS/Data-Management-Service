@@ -39,8 +39,8 @@ client-supplied value at all.
 
 Normalization is exactly three steps, in this order:
 
-1. **Truncate** to `AppSettings:CorrelationIdMaxLength` (default `255`; must be `> 0` or the host
-   refuses to start).
+1. **Truncate** to `AppSettings:CorrelationIdMaxLength` (default `255`, constrained to the
+   inclusive range `64`–`1024`; see [Bounds on the length cap](#bounds-on-the-length-cap)).
 2. **Back the truncation cut off a split UTF-16 surrogate pair.** Truncating at a raw code-unit
    boundary can land between the two halves of a non-BMP character; when it does, the orphaned
    leading half is dropped as well, one character short of the cap. Without this, JSON
@@ -53,6 +53,53 @@ trailing content than it would if characters were removed first. A consequence t
 expect, not "fix": an over-length value can normalize to something **shorter** than
 `CorrelationIdMaxLength` — either because it also contained excluded characters, or because the
 cut landed inside a surrogate pair.
+
+### Bounds on the length cap
+
+`CorrelationIdMaxLength` is constrained to the **inclusive range 64 to 1024**. A value outside that
+range is a configuration error, not a value to be clamped at use.
+
+**Why there is a floor at all.** The cap is not applied only to client-supplied values. When no
+usable correlation header is present, DMS falls back to the server-generated
+`HttpContext.TraceIdentifier`, and that value goes through exactly the same normalization — a
+deliberate consequence of having a single point of normalization. Kestrel formats the trace
+identifier as a 13-character connection id, a colon, and an 8-hex-digit request number
+(`0HNOIG2VLOC0S:00000001`, 22 characters). A cap below 22 truncates DMS's *own* identifier and
+drops the request number, so every request on one connection collapses onto a single correlation
+ID — the opposite of what a correlation ID is for, reached silently through a setting that reads
+as though it only governs hostile input.
+
+**Why the floor is 64 and not 22 or 32.** 64 is the shortest cap that preserves every common
+upstream identifier scheme intact, so an operator cannot configure a value that silently mangles
+real client IDs:
+
+| Scheme                                | Length |
+| ------------------------------------- | -----: |
+| Kestrel `HttpContext.TraceIdentifier` |     22 |
+| W3C trace-id (bare)                   |     32 |
+| AWS X-Ray trace ID                    |     35 |
+| UUID                                  |     36 |
+| Braced GUID                           |     38 |
+| W3C `traceparent` (full)              |     55 |
+
+A floor of 32 was considered and rejected: it sits exactly at a bare W3C trace-id and below UUID,
+X-Ray and `traceparent`, so it would still permit a configuration that truncates most real schemes.
+
+**Why there is a ceiling.** A correlation ID is reflected back into every request log event and
+into the `correlationId` of every error response body. With no upper bound a cap of, say,
+`1000000` is accepted, and one request can then push up to Kestrel's ~32 KB header limit of
+client-controlled text into all of those sinks at once. `1024` is generous for any real identifier
+scheme while bounding that amplification.
+
+**What an out-of-range value actually does.** It does *not* stop the process from starting, and it
+is not a startup crash. `Program.cs` resolves `IOptions<AppSettings>` eagerly, catches the
+resulting `OptionsValidationException`, and registers `ReportInvalidConfigurationMiddleware` ahead
+of routing and endpoint configuration — which is then skipped in full. The host starts and
+listens; every request, `/health` included (it is never mapped), is short-circuited with a
+bodiless `500`, and the validation failure is logged at `Critical`. The setting has to be
+corrected and the service restarted. That failure message is passed to `ILogger` as the message
+*template*, so it is written brace-free: the template is parsed by the logging pipeline, and a
+brace in it would be read as a property hole rather than as literal text.
 
 ### Single point of normalization
 

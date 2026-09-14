@@ -201,8 +201,8 @@ the configured correlation header or from `HttpContext.TraceIdentifier`. The
 normalization is three adjustments, applied in this order:
 
 1. **Truncate.** A value longer than `AppSettings:CorrelationIdMaxLength`
-   (default `255`) is cut to that length. See
-   [Configuration](./CONFIGURATION.md).
+   (default `255`, and constrained to the inclusive range `64`-`1024`) is cut
+   to that length. See [Configuration](./CONFIGURATION.md).
 2. **Back the cut off a split surrogate pair.** The cut in step 1 is made on a
    UTF-16 code unit, so it can land between the two halves of a non-BMP
    character. When it does, the orphaned leading half is dropped as well, one
