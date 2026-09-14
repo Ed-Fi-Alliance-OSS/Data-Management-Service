@@ -195,8 +195,8 @@ forging.
   headers become a requested capability of CMS.
 - **Renaming the `traceId` field in the ad-hoc 500 response body to `correlationId`, or
   consolidating DMS's two competing 500 response shapes, is explicitly out of scope for this
-  contract.** Both are real, tracked follow-ups (see the project's issue tracker for the
-  successor ticket), but are a client-visible contract change beyond normalization itself.
+  contract.** Both are tracked as DMS-1518, which covers the two competing 500 shapes and the
+  field name together, but are a client-visible contract change beyond normalization itself.
 - **Consolidating the duplicate copies of the strict allowlist** is a pre-existing condition, not
   introduced by this contract, and was accepted as-is rather than fixed here because doing so
   would require touching `src/config`. Tracked as DMS-1538. There are six copies, and they have
