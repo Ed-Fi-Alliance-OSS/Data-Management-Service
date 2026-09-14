@@ -10609,9 +10609,9 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
     [Test]
     public async Task It_returns_post_security_configuration_failure_for_a_child_collection_custom_view_basis()
     {
-        // The basis is reachable, but only through a child collection table, so a POST's proposed check has
-        // no root-table value to bind: the designed security-configuration failure, not an unhandled
-        // ArgumentOutOfRangeException from the message builder.
+        // The basis is reachable only through a child collection table, which is no join path at all —
+        // ODS only authorizes against subject root-table columns — so every operation reports the
+        // no-join-path security-configuration failure.
         var upsertRequest = A.Fake<IUpsertRequest>();
         A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
         A.CallTo(() => upsertRequest.MappingSet)
@@ -10628,7 +10628,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         var failure = result.Should().BeOfType<UpsertResult.UpsertFailureSecurityConfiguration>().Subject;
         failure.Errors.Should().ContainSingle();
         failure.Errors[0].Should().Contain("StudentWithCTECourseEnrollments");
-        failure.Errors[0].Should().Contain("child collection table");
+        failure.Errors[0].Should().Contain("No DocumentId join path");
     }
 
     [Test]
@@ -15703,8 +15703,9 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
 
     /// <summary>
     /// A write-aware mapping set whose only route from the subject to the Student basis crosses a child
-    /// collection table, which makes the single-record planner fail a POST/PUT proposed check closed with
-    /// <see cref="RelationshipAuthorizationFailureKind.MissingProposedCustomViewRootBinding"/>.
+    /// collection table. Collection-table routes are not authorization join paths (ODS only matches basis
+    /// identifiers on the subject root table), so planning reports
+    /// <see cref="RelationshipAuthorizationFailureKind.NoCustomViewJoinPath"/>.
     /// </summary>
     private static MappingSet CreateWriteAwareMappingSetWithChildCollectionStudentBasis(
         ResourceInfo resourceInfo

@@ -3605,6 +3605,13 @@ internal static class AuthPeopleViewsFixture
                     IsPrimaryKey: true
                 ),
                 new TrackedChangeSystemColumnInfo(
+                    TrackedChangeSystemColumnRole.DocumentId,
+                    new DbColumnName("DocumentId"),
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    IsPrimaryKey: false
+                ),
+                new TrackedChangeSystemColumnInfo(
                     TrackedChangeSystemColumnRole.CreatedAt,
                     new DbColumnName("CreatedAt"),
                     new RelationalScalarType(ScalarKind.DateTime),

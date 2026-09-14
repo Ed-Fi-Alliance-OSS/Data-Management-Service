@@ -676,8 +676,7 @@ public static class RelationalAuthorizationPlanner
     private static bool IsCustomViewConfigurationFailure(RelationshipAuthorizationFailureMetadata failure) =>
         failure.FailureKind
             is RelationshipAuthorizationFailureKind.UnknownCustomViewBasisResource
-                or RelationshipAuthorizationFailureKind.NoCustomViewJoinPath
-                or RelationshipAuthorizationFailureKind.MissingProposedCustomViewRootBinding;
+                or RelationshipAuthorizationFailureKind.NoCustomViewJoinPath;
 
     /// <summary>
     /// Whether the caller for this operation executes the custom-view checks this planner hands back. When it

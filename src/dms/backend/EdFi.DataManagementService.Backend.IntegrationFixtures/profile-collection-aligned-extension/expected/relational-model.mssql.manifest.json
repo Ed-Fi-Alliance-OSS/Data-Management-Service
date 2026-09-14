@@ -432,6 +432,15 @@
           "is_primary_key": true
         },
         {
+          "role": "DocumentId",
+          "column": "DocumentId",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
           "role": "CreatedAt",
           "column": "CreatedAt",
           "scalar_type": {

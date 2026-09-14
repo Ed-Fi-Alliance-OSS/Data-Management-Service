@@ -410,7 +410,7 @@ public sealed record TrackedChangeAttachment(DbTableName TrackedChangeTable);
 
 /// <summary>
 /// Fixed-by-role system column on a tracked-change table (<c>Id</c>, <c>ChangeVersion</c>,
-/// <c>CreatedAt</c>, and—on the shared descriptor table—<c>Discriminator</c>). These are determined by
+/// <c>DocumentId</c>, <c>CreatedAt</c>, and—on the shared descriptor table—<c>Discriminator</c>). These are determined by
 /// role rather than by ApiSchema value metadata; dialect emitters render the appropriate type/default.
 /// </summary>
 /// <param name="Role">The system column role.</param>
@@ -490,18 +490,40 @@ public sealed record TrackedChangeDescriptorJoinInfo(
 );
 
 /// <summary>
-/// A table-level join path from a tracked-change table to a person (Student/Contact/Staff) resource
-/// root, used by trigger emitters to materialize the person <c>DocumentId</c> for the old and new row
-/// images. The person <c>DocumentId</c> value column references this join by
-/// <paramref name="PersonJoinName"/> rather than duplicating the join definition.
+/// A table-level person (Student/Contact/Staff) join on a tracked-change table, used by trigger emitters
+/// to materialize the person <c>DocumentId</c> for the old and new row images. The person
+/// <c>DocumentId</c> value column references this join by <paramref name="PersonJoinName"/> rather than
+/// duplicating the join definition.
 /// </summary>
+/// <remarks>
+/// The trigger seeks the person root table directly by natural key:
+/// <c>JOIN &lt;PersonTable&gt; p ON p.&lt;PersonIdentityColumn&gt; = &lt;row&gt;.&lt;SourceBindingColumn&gt;</c>.
+/// Every root-level reference stores binding columns for all of the referenced resource's flattened
+/// identity parts, kept consistent by composite FKs with <c>ON UPDATE CASCADE</c>, so the person's unique
+/// id is always on the subject row. Seeking (rather than hopping through live intermediates by
+/// <c>DocumentId</c>) is what makes the old person correct under a cascading key change: the intermediate
+/// has already been re-pointed when the subject's trigger fires, but the old row still carries the old
+/// unique id. <paramref name="JoinPath"/> is still computed: it names the column and
+/// <c>ReadChangesAuthorizationPlanner</c> matches securable paths to columns by comparing chains.
+/// </remarks>
 /// <param name="PersonJoinName">The stable join name referenced by the person <c>DocumentId</c> column.</param>
 /// <param name="PersonKind">The kind of person resource this join reaches.</param>
 /// <param name="JoinPath">The resource-table join chain reaching the person resource root.</param>
+/// <param name="PersonTable">The person resource's root table (e.g. <c>edfi.Student</c>).</param>
+/// <param name="PersonIdentityColumn">
+/// The person's unique-id storage column on <paramref name="PersonTable"/> (e.g. <c>StudentUniqueId</c>).
+/// </param>
+/// <param name="SourceBindingColumn">
+/// The subject root column the person securable path resolves to, canonical under key unification (e.g.
+/// <c>StudentSectionAssociation_StudentUniqueId</c> on <c>edfi.Grade</c>).
+/// </param>
 public sealed record TrackedChangePersonJoinInfo(
     string PersonJoinName,
     SecurableElementKind PersonKind,
-    IReadOnlyList<ColumnPathStep> JoinPath
+    IReadOnlyList<ColumnPathStep> JoinPath,
+    DbTableName PersonTable,
+    DbColumnName PersonIdentityColumn,
+    DbColumnName SourceBindingColumn
 );
 
 /// <summary>
@@ -513,8 +535,8 @@ public sealed record TrackedChangePersonJoinInfo(
 /// <param name="SourceTable">The live source table whose changes this table tracks.</param>
 /// <param name="ValueColumnsInTableOrder">The tracked old/new value columns in table order.</param>
 /// <param name="SystemColumns">
-/// The fixed-by-role system columns (<c>Id</c>, <c>ChangeVersion</c>, <c>CreatedAt</c>, and
-/// <c>Discriminator</c> for the shared descriptor table).
+/// The fixed-by-role system columns (<c>Id</c>, <c>ChangeVersion</c>, <c>DocumentId</c>, <c>CreatedAt</c>,
+/// and <c>Discriminator</c> for the shared descriptor table).
 /// </param>
 /// <param name="PrimaryKeyColumns">
 /// The primary-key columns. <c>[ChangeVersion]</c> in the current design; carried here so renderers do

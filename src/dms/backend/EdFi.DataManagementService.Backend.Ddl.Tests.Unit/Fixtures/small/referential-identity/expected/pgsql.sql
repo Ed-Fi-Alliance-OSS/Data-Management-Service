@@ -1202,6 +1202,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."DateTimeKeyResource"
     "NewEventTimestamp" timestamp with time zone NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_DateTimeKeyResource" PRIMARY KEY ("ChangeVersion")
 );
@@ -1212,6 +1213,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."DecimalKeyResource"
     "NewDecimalKey" numeric(9,2) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_DecimalKeyResource" PRIMARY KEY ("ChangeVersion")
 );
@@ -1224,6 +1226,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."DecimalRefResource"
     "NewDecimalKeyReference_DecimalKey" numeric(9,2) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_DecimalRefResource" PRIMARY KEY ("ChangeVersion")
 );
@@ -1238,6 +1241,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."EdOrgDependentChildResource"
     "NewEdOrgDependentResourceReference_EducationOrganizationId" integer NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_EdOrgDependentChildResource" PRIMARY KEY ("ChangeVersion")
 );
@@ -1250,6 +1254,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."EdOrgDependentResource"
     "NewEducationOrganization_EducationOrganizationId" integer NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_EdOrgDependentResource" PRIMARY KEY ("ChangeVersion")
 );
@@ -1266,6 +1271,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."KeyUnifiedResource"
     "NewResourceBReference_ResourceBId" varchar(64) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_KeyUnifiedResource" PRIMARY KEY ("ChangeVersion")
 );
@@ -1278,6 +1284,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."ResourceA"
     "NewStudentReference_StudentUniqueId" varchar(32) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_ResourceA" PRIMARY KEY ("ChangeVersion")
 );
@@ -1290,6 +1297,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."ResourceB"
     "NewStudentReference_StudentUniqueId" varchar(32) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_ResourceB" PRIMARY KEY ("ChangeVersion")
 );
@@ -1300,6 +1308,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."School"
     "NewSchoolId" integer NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_School" PRIMARY KEY ("ChangeVersion")
 );
@@ -1310,6 +1319,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Student"
     "NewStudentUniqueId" varchar(32) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_Student" PRIMARY KEY ("ChangeVersion")
 );
@@ -1322,6 +1332,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentSchoolAssociation"
     "NewSchoolReference_SchoolId" integer NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_StudentSchoolAssociation" PRIMARY KEY ("ChangeVersion")
 );
@@ -1753,12 +1764,14 @@ BEGIN
         INSERT INTO "tracked_changes_edfi"."DateTimeKeyResource" (
             "OldEventTimestamp",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."EventTimestamp",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -1786,13 +1799,15 @@ BEGIN
             "OldEventTimestamp",
             "NewEventTimestamp",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."EventTimestamp",
             NEW."EventTimestamp",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -1838,12 +1853,14 @@ BEGIN
         INSERT INTO "tracked_changes_edfi"."DecimalKeyResource" (
             "OldDecimalKey",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."DecimalKey",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -1871,13 +1888,15 @@ BEGIN
             "OldDecimalKey",
             "NewDecimalKey",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."DecimalKey",
             NEW."DecimalKey",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -1924,13 +1943,15 @@ BEGIN
             "OldRefResourceId",
             "OldDecimalKeyReference_DecimalKey",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."RefResourceId",
             OLD."DecimalKeyReference_DecimalKey",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -1960,7 +1981,8 @@ BEGIN
             "NewRefResourceId",
             "NewDecimalKeyReference_DecimalKey",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."RefResourceId",
@@ -1968,7 +1990,8 @@ BEGIN
             NEW."RefResourceId",
             NEW."DecimalKeyReference_DecimalKey",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -2016,14 +2039,16 @@ BEGIN
             "OldEdOrgDependentResourceReference_EdOrgDependentResourceId",
             "OldEdOrgDependentResourceReference_EducationOrganizationId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."EdOrgDependentChildResourceId",
             OLD."EdOrgDependentResourceReference_EdOrgDependentResourceId",
             OLD."EdOrgDependentResourceReference_EducationOrganizationId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -2055,7 +2080,8 @@ BEGIN
             "NewEdOrgDependentResourceReference_EdOrgDependentResourceId",
             "NewEdOrgDependentResourceReference_EducationOrganizationId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."EdOrgDependentChildResourceId",
@@ -2065,7 +2091,8 @@ BEGIN
             NEW."EdOrgDependentResourceReference_EdOrgDependentResourceId",
             NEW."EdOrgDependentResourceReference_EducationOrganizationId",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -2112,13 +2139,15 @@ BEGIN
             "OldEdOrgDependentResourceId",
             "OldEducationOrganization_EducationOrganizationId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."EdOrgDependentResourceId",
             OLD."EducationOrganization_EducationOrganizationId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -2148,7 +2177,8 @@ BEGIN
             "NewEdOrgDependentResourceId",
             "NewEducationOrganization_EducationOrganizationId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."EdOrgDependentResourceId",
@@ -2156,7 +2186,8 @@ BEGIN
             NEW."EdOrgDependentResourceId",
             NEW."EducationOrganization_EducationOrganizationId",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -2205,7 +2236,8 @@ BEGIN
             "OldStudentUniqueId_Unified",
             "OldResourceBReference_ResourceBId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."KeyUnifiedResourceId",
@@ -2213,7 +2245,8 @@ BEGIN
             OLD."StudentUniqueId_Unified",
             OLD."ResourceBReference_ResourceBId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -2247,7 +2280,8 @@ BEGIN
             "NewStudentUniqueId_Unified",
             "NewResourceBReference_ResourceBId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."KeyUnifiedResourceId",
@@ -2259,7 +2293,8 @@ BEGIN
             NEW."StudentUniqueId_Unified",
             NEW."ResourceBReference_ResourceBId",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -2306,13 +2341,15 @@ BEGIN
             "OldResourceAId",
             "OldStudentReference_StudentUniqueId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."ResourceAId",
             OLD."StudentReference_StudentUniqueId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -2342,7 +2379,8 @@ BEGIN
             "NewResourceAId",
             "NewStudentReference_StudentUniqueId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."ResourceAId",
@@ -2350,7 +2388,8 @@ BEGIN
             NEW."ResourceAId",
             NEW."StudentReference_StudentUniqueId",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -2397,13 +2436,15 @@ BEGIN
             "OldResourceBId",
             "OldStudentReference_StudentUniqueId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."ResourceBId",
             OLD."StudentReference_StudentUniqueId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -2433,7 +2474,8 @@ BEGIN
             "NewResourceBId",
             "NewStudentReference_StudentUniqueId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."ResourceBId",
@@ -2441,7 +2483,8 @@ BEGIN
             NEW."ResourceBId",
             NEW."StudentReference_StudentUniqueId",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -2540,12 +2583,14 @@ BEGIN
         INSERT INTO "tracked_changes_edfi"."School" (
             "OldSchoolId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."SchoolId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -2610,12 +2655,14 @@ BEGIN
         INSERT INTO "tracked_changes_edfi"."Student" (
             "OldStudentUniqueId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."StudentUniqueId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -2643,13 +2690,15 @@ BEGIN
             "OldStudentUniqueId",
             "NewStudentUniqueId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."StudentUniqueId",
             NEW."StudentUniqueId",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -2696,13 +2745,15 @@ BEGIN
             "OldStudentUniqueId",
             "OldSchoolReference_SchoolId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."StudentUniqueId",
             OLD."SchoolReference_SchoolId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -2732,7 +2783,8 @@ BEGIN
             "NewStudentUniqueId",
             "NewSchoolReference_SchoolId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."StudentUniqueId",
@@ -2740,7 +2792,8 @@ BEGIN
             NEW."StudentUniqueId",
             NEW."SchoolReference_SchoolId",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;

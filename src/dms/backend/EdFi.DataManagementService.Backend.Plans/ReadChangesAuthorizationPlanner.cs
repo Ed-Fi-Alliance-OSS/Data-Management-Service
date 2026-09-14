@@ -6,15 +6,17 @@
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.RelationalModel;
 using EdFi.DataManagementService.Core.External.Security;
+using static EdFi.DataManagementService.Backend.Plans.RelationshipAuthorizationStrategyClassifier;
 
 namespace EdFi.DataManagementService.Backend.Plans;
 
 /// <summary>
 /// Isolated ReadChanges authorization planner for the /deletes and /keyChanges endpoints. Reuses the
 /// shared parameterization and view inventory but owns a ReadChanges-specific strategy table:
-/// only the strategies in <see cref="_supportedSubjectsByStrategyName"/> (plus NoFurtherAuthorizationRequired,
-/// a no-op, and NamespaceBased, split out) are valid; any other configured strategy fails with a 500
-/// security configuration outcome.
+/// the strategies in <see cref="_supportedSubjectsByStrategyName"/> (plus NoFurtherAuthorizationRequired,
+/// a no-op, and NamespaceBased, split out) are valid, and any other name is handed to the shared
+/// custom-view resolution in <see cref="RelationshipAuthorizationStrategyClassifier"/>; a name outside
+/// the <c>{Basis}With...</c> convention fails with a 500 security configuration outcome.
 /// </summary>
 public static class ReadChangesAuthorizationPlanner
 {
@@ -103,16 +105,86 @@ public static class ReadChangesAuthorizationPlanner
             )
             .ToArray();
 
-        // Classify: any relationship strategy not in the ReadChanges table is a 500.
-        string[] unavailable =
-        [
-            .. relationshipStrategies
-                .Where(s => !_supportedSubjectsByStrategyName.ContainsKey(s.StrategyName))
-                .Select(s => s.StrategyName),
-        ];
-        if (unavailable.Length > 0)
+        // Classify: a relationship strategy is either in the ReadChanges table, a resolvable custom view
+        // (planned separately), a custom-view name whose basis is unknown (500 with the shared diagnostic),
+        // or outside both — the unavailable-strategy 500.
+        List<ConfiguredAuthorizationStrategy> builtInStrategies = [];
+        List<SupportedCustomViewAuthorizationStrategy> customViewStrategies = [];
+        List<RelationshipAuthorizationFailureMetadata> customViewFailures = [];
+        List<string> unavailable = [];
+        foreach (var strategy in relationshipStrategies)
+        {
+            if (_supportedSubjectsByStrategyName.ContainsKey(strategy.StrategyName))
+            {
+                builtInStrategies.Add(strategy);
+                continue;
+            }
+
+            // A built-in relationship strategy the ReadChanges table lacks (e.g. RelationshipsWithPeopleOnly)
+            // is unavailable here, never a custom view: its "With" would otherwise parse as the convention.
+            if (
+                RelationshipAuthorizationStrategyClassifier.SupportedRelationshipStrategyNames.Contains(
+                    strategy.StrategyName,
+                    StringComparer.Ordinal
+                )
+            )
+            {
+                unavailable.Add(strategy.StrategyName);
+                continue;
+            }
+
+            var customViewResolution = RelationshipAuthorizationStrategyClassifier.ResolveCustomViewStrategy(
+                mappingSet,
+                strategy.StrategyName
+            );
+            if (
+                customViewResolution.Outcome is CustomViewStrategyResolutionOutcome.Resolved
+                && customViewResolution.BasisResource is { } basisResource
+            )
+            {
+                customViewStrategies.Add(
+                    new SupportedCustomViewAuthorizationStrategy(
+                        strategy,
+                        strategy.RawConfiguredIndex,
+                        basisResource
+                    )
+                );
+            }
+            else if (customViewResolution.Outcome is CustomViewStrategyResolutionOutcome.UnknownBasisResource)
+            {
+                customViewFailures.Add(
+                    RelationshipAuthorizationStrategyClassifier.BuildUnknownCustomViewBasisResourceFailure(
+                        resource.RelationalModel.Resource,
+                        strategy,
+                        strategy.RawConfiguredIndex,
+                        customViewResolution
+                    )
+                );
+            }
+            else
+            {
+                unavailable.Add(strategy.StrategyName);
+            }
+        }
+
+        ReadChangesCustomViewPlanResult customViewPlan = ReadChangesCustomViewPlanner.Plan(
+            mappingSet,
+            resource,
+            trackedChangeTable,
+            customViewStrategies
+        );
+        if (unavailable.Count > 0)
         {
             return new ReadChangesAuthorizationPlanOutcome.SecurityConfiguration(unavailable);
+        }
+
+        customViewFailures.AddRange(customViewPlan.Failures);
+        if (customViewFailures.Count > 0)
+        {
+            return new ReadChangesAuthorizationPlanOutcome.CustomViewSecurityConfiguration(
+                [.. customViewFailures.OrderBy(static failure => failure.RelationshipLocalOrder)],
+                customViewPlan.Checks
+            );
         }
 
         // Relationship subject resolution (Task 5). A null result means a usable-column resolution failure → 500.
@@ -120,7 +192,7 @@ public static class ReadChangesAuthorizationPlanner
         List<string> resolutionFailures = [];
         IReadOnlyDictionary<QualifiedResourceName, ConcreteResourceModel> resourceLookup =
             mappingSet.Model.GetConcreteResourceModelsByResource();
-        foreach (var strategy in relationshipStrategies)
+        foreach (var strategy in builtInStrategies)
         {
             var definition = _supportedSubjectsByStrategyName[strategy.StrategyName];
             var subjects = ResolveSubjects(resource, trackedChangeTable, definition, resourceLookup);
@@ -185,7 +257,8 @@ public static class ReadChangesAuthorizationPlanner
                 relationshipChecks,
                 namespaceCheck,
                 claimParameterization,
-                namespaceParameterization
+                namespaceParameterization,
+                [.. customViewPlan.Checks.OrderBy(static check => check.AuthorizationLocalOrder)]
             )
         );
     }
@@ -315,7 +388,7 @@ public static class ReadChangesAuthorizationPlanner
 
                 foreach (var personPath in PersonSecurablePaths(resource, personKind))
                 {
-                    TrackedChangeColumnInfo? personColumn = ResolveTrackedPersonColumnForSecurable(
+                    DbColumnName? personColumn = ResolveTrackedPersonColumnForSecurable(
                         resource,
                         trackedChangeTable,
                         resourceLookup,
@@ -329,7 +402,7 @@ public static class ReadChangesAuthorizationPlanner
 
                     subjects.Add(
                         new ReadChangesAuthorizationSubject(
-                            personColumn.OldColumnName,
+                            personColumn.Value,
                             view.View,
                             view.PersonDocumentIdOutputColumn,
                             view.ClaimEducationOrganizationIdColumn
@@ -355,7 +428,14 @@ public static class ReadChangesAuthorizationPlanner
             _ => [],
         };
 
-    private static TrackedChangeColumnInfo? ResolveTrackedPersonColumnForSecurable(
+    /// <summary>
+    /// Resolves the tracked column that carries the person <c>DocumentId</c> for one declared person
+    /// securable path. A person resource's own (zero-hop) path is the <c>DocumentId</c> system column —
+    /// the tombstone stores no separate self person value column. Every other path resolves to the
+    /// <c>Old*_DocumentId</c> value column whose person join matches the path (by exact source path, then
+    /// by join chain).
+    /// </summary>
+    private static DbColumnName? ResolveTrackedPersonColumnForSecurable(
         ConcreteResourceModel resource,
         TrackedChangeTableInfo trackedChangeTable,
         IReadOnlyDictionary<QualifiedResourceName, ConcreteResourceModel> resourceLookup,
@@ -363,16 +443,30 @@ public static class ReadChangesAuthorizationPlanner
         string personPath
     )
     {
+        if (
+            PersonJoinPathResolver.IsSelfPersonIdentityPath(
+                resource.RelationalModel.Resource,
+                personKind,
+                personPath
+            )
+        )
+        {
+            return trackedChangeTable
+                .SystemColumns.Where(c => c.Role == TrackedChangeSystemColumnRole.DocumentId)
+                .Select(c => (DbColumnName?)c.ColumnName)
+                .SingleOrDefault();
+        }
+
         TrackedChangeColumnInfo[] exactPathMatches =
         [
             .. trackedChangeTable.ValueColumnsInTableOrder.Where(c =>
-                IsPersonColumnForKindOrSelfPath(resource, trackedChangeTable, c, personKind)
+                IsPersonColumnForKind(trackedChangeTable, c, personKind)
                 && string.Equals(c.SourceJsonPath, personPath, StringComparison.Ordinal)
             ),
         ];
         if (exactPathMatches.Length > 0)
         {
-            return exactPathMatches.Length == 1 ? exactPathMatches[0] : null;
+            return exactPathMatches.Length == 1 ? exactPathMatches[0].OldColumnName : null;
         }
 
         List<string> skippedArrayNestedPaths = [];
@@ -399,7 +493,7 @@ public static class ReadChangesAuthorizationPlanner
             ),
         ];
 
-        return joinPathMatches.Length == 1 ? joinPathMatches[0] : null;
+        return joinPathMatches.Length == 1 ? joinPathMatches[0].OldColumnName : null;
     }
 
     private static string PersonResourceName(SecurableElementKind personKind) =>
@@ -419,38 +513,6 @@ public static class ReadChangesAuthorizationPlanner
         column.Role is TrackedChangeColumnRole.PersonDocumentId
         && column.PersonJoinName is not null
         && PersonJoinKind(table, column.PersonJoinName) == personKind;
-
-    private static bool IsPersonColumnForKindOrSelfPath(
-        ConcreteResourceModel resource,
-        TrackedChangeTableInfo table,
-        TrackedChangeColumnInfo column,
-        SecurableElementKind personKind
-    )
-    {
-        if (column.Role != TrackedChangeColumnRole.PersonDocumentId)
-        {
-            return false;
-        }
-
-        if (column.PersonJoinName is not null)
-        {
-            return PersonJoinKind(table, column.PersonJoinName) == personKind;
-        }
-
-        if (
-            column.CanonicalStorageColumn is not { } canonicalStorageColumn
-            || !canonicalStorageColumn.Equals(new DbColumnName("DocumentId"))
-        )
-        {
-            return false;
-        }
-
-        return PersonJoinPathResolver.IsSelfPersonIdentityPath(
-            resource.RelationalModel.Resource,
-            personKind,
-            column.SourceJsonPath
-        );
-    }
 
     private static SecurableElementKind? PersonJoinKind(
         TrackedChangeTableInfo table,

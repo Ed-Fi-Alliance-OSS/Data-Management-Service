@@ -1011,6 +1011,112 @@ public class Given_TrackedChangeQueryPlanner
         authIndex.Should().BeLessThan(groupByIndex);
     }
 
+    // DMS-1193 Task 47: a custom-view predicate is one more authorization AND term. It must land inside the
+    // /deletes filtered subquery WHERE after the tombstone and change-version conditions, correlated on c,
+    // and its descriptor discriminator parameters ride along with the command's parameters.
+    [Test]
+    public void It_places_a_custom_view_predicate_after_the_tombstone_and_version_conditions_in_deletes_sql()
+    {
+        TrackedChangeColumnInfo schoolIdColumn = ValueColumn(
+            "SchoolId",
+            "$.schoolId",
+            TrackedChangeColumnRole.Scalar,
+            TrackedChangeColumnOrigin.Identity,
+            canonicalStorageColumn: new DbColumnName("SchoolId")
+        );
+        ChangeQueryResponseField[] fields = [ScalarField("schoolId", schoolIdColumn)];
+        TrackedChangeTableInfo table = CreateTrackedChangeTable(
+            TrackedChangeTableKind.Resource,
+            [schoolIdColumn]
+        );
+        IRelationalTrackedChangeQueryRequest request = CreateRequest(
+            ChangeQueryEndpointOperation.Deletes,
+            totalCount: false,
+            trackedChangeTable: table,
+            changeVersionRange: new ChangeVersionRange(10L, 20L),
+            resourceModel: CreateRegularResourceModel(RootColumn("SchoolId", "$.schoolId"))
+        );
+
+        const string customViewPredicate =
+            "EXISTS (SELECT 1 FROM \"dms\".\"Descriptor\" d WHERE d.\"Discriminator\" IN (@CustomViewDescriptorDiscriminator0, @CustomViewDescriptorDiscriminatorQualified0) AND d.\"DocumentId\" IN (SELECT \"DocumentId\" FROM \"auth\".\"SchoolTypeDescriptorWithX\"))";
+        var authSql = new TrackedChangeAuthorizationSql(
+            [customViewPredicate],
+            [
+                new RelationalParameter("@CustomViewDescriptorDiscriminator0", "SchoolTypeDescriptor"),
+                new RelationalParameter(
+                    "@CustomViewDescriptorDiscriminatorQualified0",
+                    "Ed-Fi:SchoolTypeDescriptor"
+                ),
+            ]
+        );
+
+        var sut = new TrackedChangeQueryPlanner(SqlDialect.Pgsql);
+        TrackedChangeQueryPlan plan = sut.Plan(request, fields, authSql);
+
+        string sql = NormalizeSql(plan.Command!.CommandText);
+        int fromIndex = sql.IndexOf("FROM \"tracked_changes_edfi\".\"School\" c", StringComparison.Ordinal);
+        int tombstoneIndex = sql.IndexOf("c.\"NewSchoolId\" IS NULL", StringComparison.Ordinal);
+        int maxVersionIndex = sql.IndexOf(
+            "c.\"ChangeVersion\" <= @MaxChangeVersion",
+            StringComparison.Ordinal
+        );
+        int customViewIndex = sql.IndexOf(customViewPredicate, StringComparison.Ordinal);
+        int liveJoinIndex = sql.IndexOf("live.\"DocumentId\" IS NULL", StringComparison.Ordinal);
+        fromIndex.Should().BeGreaterThan(-1);
+        tombstoneIndex.Should().BeGreaterThan(fromIndex);
+        maxVersionIndex.Should().BeGreaterThan(tombstoneIndex);
+        customViewIndex.Should().BeGreaterThan(maxVersionIndex);
+        liveJoinIndex.Should().BeGreaterThan(customViewIndex);
+        plan.Command!.Parameters.Select(p => p.Name)
+            .Should()
+            .EndWith(["@CustomViewDescriptorDiscriminator0", "@CustomViewDescriptorDiscriminatorQualified0"]);
+    }
+
+    [Test]
+    public void It_places_a_custom_view_predicate_after_the_version_conditions_inside_the_keychanges_cte()
+    {
+        TrackedChangeColumnInfo schoolIdColumn = ValueColumn(
+            "SchoolId",
+            "$.schoolId",
+            TrackedChangeColumnRole.Scalar,
+            TrackedChangeColumnOrigin.Identity,
+            canonicalStorageColumn: new DbColumnName("SchoolId")
+        );
+        ChangeQueryResponseField[] fields = [ScalarField("schoolId", schoolIdColumn)];
+        TrackedChangeTableInfo table = CreateTrackedChangeTable(
+            TrackedChangeTableKind.Resource,
+            [schoolIdColumn]
+        );
+        IRelationalTrackedChangeQueryRequest request = CreateRequest(
+            ChangeQueryEndpointOperation.KeyChanges,
+            totalCount: false,
+            trackedChangeTable: table,
+            changeVersionRange: new ChangeVersionRange(10L, 20L),
+            resourceModel: CreateRegularResourceModel(RootColumn("SchoolId", "$.schoolId"))
+        );
+
+        const string customViewPredicate =
+            "c.\"DocumentId\" IN (SELECT \"DocumentId\" FROM \"auth\".\"SchoolWithAlternativeType\")";
+        var authSql = new TrackedChangeAuthorizationSql([customViewPredicate], []);
+
+        var sut = new TrackedChangeQueryPlanner(SqlDialect.Pgsql);
+        string sql = NormalizeSql(sut.Plan(request, fields, authSql).Command!.CommandText);
+
+        int cteIndex = sql.IndexOf("WITH FilteredChanges AS", StringComparison.Ordinal);
+        int representativeIndex = sql.IndexOf("c.\"NewSchoolId\" IS NOT NULL", StringComparison.Ordinal);
+        int maxVersionIndex = sql.IndexOf(
+            "c.\"ChangeVersion\" <= @MaxChangeVersion",
+            StringComparison.Ordinal
+        );
+        int customViewIndex = sql.IndexOf(customViewPredicate, StringComparison.Ordinal);
+        int changeWindowIndex = sql.IndexOf("ChangeWindow AS", StringComparison.Ordinal);
+        cteIndex.Should().BeGreaterThan(-1);
+        representativeIndex.Should().BeGreaterThan(cteIndex);
+        maxVersionIndex.Should().BeGreaterThan(representativeIndex);
+        customViewIndex.Should().BeGreaterThan(maxVersionIndex);
+        changeWindowIndex.Should().BeGreaterThan(customViewIndex);
+    }
+
     private static void AssertEmptyKeyChangesPlan(
         TrackedChangeTableKind trackedChangeTableKind,
         bool totalCount,

@@ -634,14 +634,16 @@ BEGIN
             [OldNamespace],
             [OldCodeValue],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[Discriminator],
             del.[Namespace],
             del.[CodeValue],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -784,6 +786,7 @@ CREATE TABLE [tracked_changes_edfi].[Descriptor]
     [Discriminator] nvarchar(128) NOT NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_Descriptor_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_Descriptor] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -795,6 +798,7 @@ CREATE TABLE [tracked_changes_edfi].[ProfileRootOnlyMergeItem]
     [NewProfileRootOnlyMergeItemId] int NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_ProfileRootOnlyMergeItem_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_ProfileRootOnlyMergeItem] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -806,6 +810,7 @@ CREATE TABLE [tracked_changes_edfi].[Student]
     [NewStudentUniqueId] nvarchar(32) NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_Student_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_Student] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -985,12 +990,14 @@ BEGIN
         INSERT INTO [tracked_changes_edfi].[ProfileRootOnlyMergeItem] (
             [OldProfileRootOnlyMergeItemId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[ProfileRootOnlyMergeItemId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -1007,13 +1014,15 @@ BEGIN
                 [OldProfileRootOnlyMergeItemId],
                 [NewProfileRootOnlyMergeItemId],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[ProfileRootOnlyMergeItemId],
                 i.[ProfileRootOnlyMergeItemId],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -1105,12 +1114,14 @@ BEGIN
         INSERT INTO [tracked_changes_edfi].[Student] (
             [OldStudentUniqueId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[StudentUniqueId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -1127,13 +1138,15 @@ BEGIN
                 [OldStudentUniqueId],
                 [NewStudentUniqueId],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[StudentUniqueId],
                 i.[StudentUniqueId],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]

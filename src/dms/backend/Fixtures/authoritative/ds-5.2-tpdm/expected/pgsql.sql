@@ -756,14 +756,16 @@ BEGIN
             "OldNamespace",
             "OldCodeValue",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."Discriminator",
             OLD."Namespace",
             OLD."CodeValue",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -9625,6 +9627,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."AcademicWeek"
     "NewWeekIdentifier" varchar(80) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_AcademicWeek" PRIMARY KEY ("ChangeVersion")
 );
@@ -9639,6 +9642,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."AccountabilityRating"
     "NewSchoolYear_SchoolYear" integer NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_AccountabilityRating" PRIMARY KEY ("ChangeVersion")
 );
@@ -9651,6 +9655,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Assessment"
     "NewNamespace" varchar(255) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_Assessment" PRIMARY KEY ("ChangeVersion")
 );
@@ -9667,6 +9672,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."AssessmentAdministration"
     "NewAssigningEducationOrganization_EducationOrganizationId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_AssessmentAdministration" PRIMARY KEY ("ChangeVersion")
 );
@@ -9685,6 +9691,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."AssessmentAdministrationParti
     "NewParticipatingEducationOrganization_EducationOrganizationId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_AssessmentAdministrationParticipation" PRIMARY KEY ("ChangeVersion")
 );
@@ -9699,6 +9706,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."AssessmentBatteryPart"
     "NewAssessment_Namespace" varchar(255) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_AssessmentBatteryPart" PRIMARY KEY ("ChangeVersion")
 );
@@ -9713,6 +9721,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."AssessmentItem"
     "NewIdentificationCode" varchar(60) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_AssessmentItem" PRIMARY KEY ("ChangeVersion")
 );
@@ -9727,6 +9736,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."AssessmentScoreRangeLearningS
     "NewScoreRangeId" varchar(60) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_AssessmentScoreRangeLearningStandard" PRIMARY KEY ("ChangeVersion")
 );
@@ -9739,6 +9749,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."BalanceSheetDimension"
     "NewFiscalYear" integer NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_BalanceSheetDimension" PRIMARY KEY ("ChangeVersion")
 );
@@ -9751,6 +9762,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."BellSchedule"
     "NewSchool_SchoolId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_BellSchedule" PRIMARY KEY ("ChangeVersion")
 );
@@ -9765,6 +9777,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Calendar"
     "NewSchoolYear_SchoolYear" integer NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_Calendar" PRIMARY KEY ("ChangeVersion")
 );
@@ -9781,6 +9794,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."CalendarDate"
     "NewDate" date NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_CalendarDate" PRIMARY KEY ("ChangeVersion")
 );
@@ -9795,6 +9809,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."ChartOfAccount"
     "NewFiscalYear_Unified" integer NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_ChartOfAccount" PRIMARY KEY ("ChangeVersion")
 );
@@ -9807,6 +9822,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."ClassPeriod"
     "NewSchool_SchoolId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_ClassPeriod" PRIMARY KEY ("ChangeVersion")
 );
@@ -9819,6 +9835,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Cohort"
     "NewEducationOrganization_EducationOrganizationId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_Cohort" PRIMARY KEY ("ChangeVersion")
 );
@@ -9829,6 +9846,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."CommunityOrganization"
     "NewCommunityOrganizationId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_CommunityOrganization" PRIMARY KEY ("ChangeVersion")
 );
@@ -9839,6 +9857,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."CommunityProvider"
     "NewCommunityProviderId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_CommunityProvider" PRIMARY KEY ("ChangeVersion")
 );
@@ -9853,6 +9872,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."CommunityProviderLicense"
     "NewLicensingOrganization" varchar(75) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_CommunityProviderLicense" PRIMARY KEY ("ChangeVersion")
 );
@@ -9869,6 +9889,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."CompetencyObjective"
     "NewObjectiveGradeLevelDescriptor_CodeValue" varchar(50) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_CompetencyObjective" PRIMARY KEY ("ChangeVersion")
 );
@@ -9877,10 +9898,9 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Contact"
 (
     "OldContactUniqueId" varchar(32) NOT NULL,
     "NewContactUniqueId" varchar(32) NULL,
-    "OldContact_DocumentId" bigint NOT NULL,
-    "NewContact_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_Contact" PRIMARY KEY ("ChangeVersion")
 );
@@ -9893,6 +9913,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Course"
     "NewEducationOrganization_EducationOrganizationId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_Course" PRIMARY KEY ("ChangeVersion")
 );
@@ -9909,6 +9930,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."CourseOffering"
     "NewSession_SessionName" varchar(60) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_CourseOffering" PRIMARY KEY ("ChangeVersion")
 );
@@ -9937,6 +9959,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."CourseTranscript"
     "NewStudentAcademicRecord_Student_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_CourseTranscript" PRIMARY KEY ("ChangeVersion")
 );
@@ -9953,6 +9976,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Credential"
     "NewNamespace" varchar(255) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_Credential" PRIMARY KEY ("ChangeVersion")
 );
@@ -9963,6 +9987,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."CrisisEvent"
     "NewCrisisEventName" varchar(100) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_CrisisEvent" PRIMARY KEY ("ChangeVersion")
 );
@@ -9976,6 +10001,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Descriptor"
     "Discriminator" varchar(128) NOT NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_Descriptor" PRIMARY KEY ("ChangeVersion")
 );
@@ -9992,6 +10018,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."DescriptorMapping"
     "NewValue" varchar(50) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_DescriptorMapping" PRIMARY KEY ("ChangeVersion")
 );
@@ -10010,6 +10037,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."DisciplineAction"
     "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_DisciplineAction" PRIMARY KEY ("ChangeVersion")
 );
@@ -10022,6 +10050,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."DisciplineIncident"
     "NewSchool_SchoolId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_DisciplineIncident" PRIMARY KEY ("ChangeVersion")
 );
@@ -10034,6 +10063,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."EducationContent"
     "NewNamespace" varchar(255) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_EducationContent" PRIMARY KEY ("ChangeVersion")
 );
@@ -10048,6 +10078,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."EducationOrganizationInterven
     "NewInterventionPrescriptionInterventionPrescription__a4d6e2eb61" varchar(60) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_EducationOrganizationInterve_b35c95b48c" PRIMARY KEY ("ChangeVersion")
 );
@@ -10058,6 +10089,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."EducationOrganizationNetwork"
     "NewEducationOrganizationNetworkId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_EducationOrganizationNetwork" PRIMARY KEY ("ChangeVersion")
 );
@@ -10070,6 +10102,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."EducationOrganizationNetworkA
     "NewMemberEducationOrganization_EducationOrganizationId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_EducationOrganizationNetworkAssociation" PRIMARY KEY ("ChangeVersion")
 );
@@ -10082,6 +10115,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."EducationOrganizationPeerAsso
     "NewPeerEducationOrganization_EducationOrganizationId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_EducationOrganizationPeerAssociation" PRIMARY KEY ("ChangeVersion")
 );
@@ -10092,6 +10126,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."EducationServiceCenter"
     "NewEducationServiceCenterId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_EducationServiceCenter" PRIMARY KEY ("ChangeVersion")
 );
@@ -10122,6 +10157,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."EvaluationRubricDimension"
     "NewProgramEvaluationElement_ProgramTypeDescriptor_CodeValue" varchar(50) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_EvaluationRubricDimension" PRIMARY KEY ("ChangeVersion")
 );
@@ -10136,6 +10172,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."FeederSchoolAssociation"
     "NewSchool_SchoolId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_FeederSchoolAssociation" PRIMARY KEY ("ChangeVersion")
 );
@@ -10148,6 +10185,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."FunctionDimension"
     "NewFiscalYear" integer NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_FunctionDimension" PRIMARY KEY ("ChangeVersion")
 );
@@ -10160,6 +10198,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."FundDimension"
     "NewFiscalYear" integer NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_FundDimension" PRIMARY KEY ("ChangeVersion")
 );
@@ -10194,6 +10233,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Grade"
     "NewStudentSectionAssociation_Student_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_Grade" PRIMARY KEY ("ChangeVersion")
 );
@@ -10206,6 +10246,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."GradebookEntry"
     "NewNamespace" varchar(255) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_GradebookEntry" PRIMARY KEY ("ChangeVersion")
 );
@@ -10224,6 +10265,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."GradingPeriod"
     "NewSchoolYear_SchoolYear" integer NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_GradingPeriod" PRIMARY KEY ("ChangeVersion")
 );
@@ -10240,6 +10282,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."GraduationPlan"
     "NewGraduationSchoolYear_GraduationSchoolYear" integer NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_GraduationPlan" PRIMARY KEY ("ChangeVersion")
 );
@@ -10252,6 +10295,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Intervention"
     "NewInterventionIdentificationCode" varchar(60) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_Intervention" PRIMARY KEY ("ChangeVersion")
 );
@@ -10264,6 +10308,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."InterventionPrescription"
     "NewInterventionPrescriptionIdentificationCode" varchar(60) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_InterventionPrescription" PRIMARY KEY ("ChangeVersion")
 );
@@ -10276,6 +10321,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."InterventionStudy"
     "NewInterventionStudyIdentificationCode" varchar(60) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_InterventionStudy" PRIMARY KEY ("ChangeVersion")
 );
@@ -10288,6 +10334,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."LearningStandard"
     "NewNamespace" varchar(255) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_LearningStandard" PRIMARY KEY ("ChangeVersion")
 );
@@ -10302,6 +10349,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."LearningStandardEquivalenceAs
     "NewTargetLearningStandard_LearningStandardId" varchar(60) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_LearningStandardEquivalenceAssociation" PRIMARY KEY ("ChangeVersion")
 );
@@ -10316,6 +10364,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."LocalAccount"
     "NewFiscalYear_Unified" integer NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_LocalAccount" PRIMARY KEY ("ChangeVersion")
 );
@@ -10332,6 +10381,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."LocalActual"
     "NewLocalAccount_FiscalYear" integer NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_LocalActual" PRIMARY KEY ("ChangeVersion")
 );
@@ -10348,6 +10398,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."LocalBudget"
     "NewLocalAccount_FiscalYear" integer NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_LocalBudget" PRIMARY KEY ("ChangeVersion")
 );
@@ -10368,6 +10419,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."LocalContractedStaff"
     "NewStaff_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_LocalContractedStaff" PRIMARY KEY ("ChangeVersion")
 );
@@ -10378,6 +10430,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."LocalEducationAgency"
     "NewLocalEducationAgencyId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_LocalEducationAgency" PRIMARY KEY ("ChangeVersion")
 );
@@ -10394,6 +10447,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."LocalEncumbrance"
     "NewLocalAccount_FiscalYear" integer NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_LocalEncumbrance" PRIMARY KEY ("ChangeVersion")
 );
@@ -10414,6 +10468,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."LocalPayroll"
     "NewStaff_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_LocalPayroll" PRIMARY KEY ("ChangeVersion")
 );
@@ -10426,6 +10481,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Location"
     "NewSchool_SchoolId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_Location" PRIMARY KEY ("ChangeVersion")
 );
@@ -10438,6 +10494,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."ObjectDimension"
     "NewFiscalYear" integer NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_ObjectDimension" PRIMARY KEY ("ChangeVersion")
 );
@@ -10452,6 +10509,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."ObjectiveAssessment"
     "NewIdentificationCode" varchar(60) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_ObjectiveAssessment" PRIMARY KEY ("ChangeVersion")
 );
@@ -10464,6 +10522,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."OpenStaffPosition"
     "NewRequisitionNumber" varchar(20) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_OpenStaffPosition" PRIMARY KEY ("ChangeVersion")
 );
@@ -10476,6 +10535,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."OperationalUnitDimension"
     "NewFiscalYear" integer NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_OperationalUnitDimension" PRIMARY KEY ("ChangeVersion")
 );
@@ -10488,6 +10548,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."OrganizationDepartment"
     "NewParentEducationOrganization_EducationOrganizationId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_OrganizationDepartment" PRIMARY KEY ("ChangeVersion")
 );
@@ -10502,6 +10563,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Person"
     "NewSourceSystemDescriptor_CodeValue" varchar(50) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_Person" PRIMARY KEY ("ChangeVersion")
 );
@@ -10520,6 +10582,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."PostSecondaryEvent"
     "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_PostSecondaryEvent" PRIMARY KEY ("ChangeVersion")
 );
@@ -10530,6 +10593,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."PostSecondaryInstitution"
     "NewPostSecondaryInstitutionId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_PostSecondaryInstitution" PRIMARY KEY ("ChangeVersion")
 );
@@ -10546,6 +10610,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Program"
     "NewProgramTypeDescriptor_CodeValue" varchar(50) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_Program" PRIMARY KEY ("ChangeVersion")
 );
@@ -10558,6 +10623,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."ProgramDimension"
     "NewFiscalYear" integer NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_ProgramDimension" PRIMARY KEY ("ChangeVersion")
 );
@@ -10584,6 +10650,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."ProgramEvaluation"
     "NewProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_ProgramEvaluation" PRIMARY KEY ("ChangeVersion")
 );
@@ -10612,6 +10679,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."ProgramEvaluationElement"
     "NewProgramEvaluation_ProgramTypeDescriptor_CodeValue" varchar(50) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_ProgramEvaluationElement" PRIMARY KEY ("ChangeVersion")
 );
@@ -10640,6 +10708,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."ProgramEvaluationObjective"
     "NewProgramEvaluation_ProgramTypeDescriptor_CodeValue" varchar(50) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_ProgramEvaluationObjective" PRIMARY KEY ("ChangeVersion")
 );
@@ -10652,6 +10721,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."ProjectDimension"
     "NewFiscalYear" integer NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_ProjectDimension" PRIMARY KEY ("ChangeVersion")
 );
@@ -10676,6 +10746,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."ReportCard"
     "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_ReportCard" PRIMARY KEY ("ChangeVersion")
 );
@@ -10692,6 +10763,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."RestraintEvent"
     "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_RestraintEvent" PRIMARY KEY ("ChangeVersion")
 );
@@ -10702,6 +10774,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."School"
     "NewSchoolId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_School" PRIMARY KEY ("ChangeVersion")
 );
@@ -10712,6 +10785,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."SchoolYearType"
     "NewSchoolYear" integer NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_SchoolYearType" PRIMARY KEY ("ChangeVersion")
 );
@@ -10730,6 +10804,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Section"
     "NewSectionIdentifier" varchar(255) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_Section" PRIMARY KEY ("ChangeVersion")
 );
@@ -10752,6 +10827,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."SectionAttendanceTakenEvent"
     "NewSection_SessionName" varchar(60) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_SectionAttendanceTakenEvent" PRIMARY KEY ("ChangeVersion")
 );
@@ -10766,6 +10842,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Session"
     "NewSessionName" varchar(60) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_Session" PRIMARY KEY ("ChangeVersion")
 );
@@ -10778,6 +10855,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."SourceDimension"
     "NewFiscalYear" integer NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_SourceDimension" PRIMARY KEY ("ChangeVersion")
 );
@@ -10786,10 +10864,9 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Staff"
 (
     "OldStaffUniqueId" varchar(32) NOT NULL,
     "NewStaffUniqueId" varchar(32) NULL,
-    "OldStaff_DocumentId" bigint NOT NULL,
-    "NewStaff_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_Staff" PRIMARY KEY ("ChangeVersion")
 );
@@ -10808,6 +10885,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StaffAbsenceEvent"
     "NewStaff_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_StaffAbsenceEvent" PRIMARY KEY ("ChangeVersion")
 );
@@ -10826,6 +10904,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StaffCohortAssociation"
     "NewStaff_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_StaffCohortAssociation" PRIMARY KEY ("ChangeVersion")
 );
@@ -10842,6 +10921,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StaffDisciplineIncidentAssoci
     "NewStaff_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_StaffDisciplineIncidentAssociation" PRIMARY KEY ("ChangeVersion")
 );
@@ -10862,6 +10942,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StaffEducationOrganizationAss
     "NewStaff_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_StaffEducationOrganizationAs_21269a4e1f" PRIMARY KEY ("ChangeVersion")
 );
@@ -10878,6 +10959,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StaffEducationOrganizationCon
     "NewStaff_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_StaffEducationOrganizationCo_e13fddbebe" PRIMARY KEY ("ChangeVersion")
 );
@@ -10898,6 +10980,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StaffEducationOrganizationEmp
     "NewStaff_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_StaffEducationOrganizationEm_6b655adbbd" PRIMARY KEY ("ChangeVersion")
 );
@@ -10916,6 +10999,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StaffLeave"
     "NewStaff_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_StaffLeave" PRIMARY KEY ("ChangeVersion")
 );
@@ -10938,6 +11022,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StaffProgramAssociation"
     "NewStaff_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_StaffProgramAssociation" PRIMARY KEY ("ChangeVersion")
 );
@@ -10956,6 +11041,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StaffSchoolAssociation"
     "NewStaff_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_StaffSchoolAssociation" PRIMARY KEY ("ChangeVersion")
 );
@@ -10980,6 +11066,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StaffSectionAssociation"
     "NewStaff_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_StaffSectionAssociation" PRIMARY KEY ("ChangeVersion")
 );
@@ -10990,6 +11077,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StateEducationAgency"
     "NewStateEducationAgencyId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_StateEducationAgency" PRIMARY KEY ("ChangeVersion")
 );
@@ -10998,10 +11086,9 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Student"
 (
     "OldStudentUniqueId" varchar(32) NOT NULL,
     "NewStudentUniqueId" varchar(32) NULL,
-    "OldStudent_DocumentId" bigint NOT NULL,
-    "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_Student" PRIMARY KEY ("ChangeVersion")
 );
@@ -11022,6 +11109,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentAcademicRecord"
     "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_StudentAcademicRecord" PRIMARY KEY ("ChangeVersion")
 );
@@ -11042,6 +11130,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentAssessment"
     "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_StudentAssessment" PRIMARY KEY ("ChangeVersion")
 );
@@ -11066,6 +11155,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentAssessmentEducationOrg
     "NewStudentAssessment_Student_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_StudentAssessmentEducationOr_117a915d68" PRIMARY KEY ("ChangeVersion")
 );
@@ -11088,6 +11178,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentAssessmentRegistration
     "NewStudentEducationOrganizationAssociation_Student_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_StudentAssessmentRegistration" PRIMARY KEY ("ChangeVersion")
 );
@@ -11112,6 +11203,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentAssessmentRegistration
     "NewStudentAssessmentRegistration_StudentEducationOrg_bfebe478d0" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_StudentAssessmentRegistratio_8d02af3ca4" PRIMARY KEY ("ChangeVersion")
 );
@@ -11136,6 +11228,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentCTEProgramAssociation"
     "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_StudentCTEProgramAssociation" PRIMARY KEY ("ChangeVersion")
 );
@@ -11154,6 +11247,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentCohortAssociation"
     "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_StudentCohortAssociation" PRIMARY KEY ("ChangeVersion")
 );
@@ -11184,6 +11278,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentCompetencyObjective"
     "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_StudentCompetencyObjective" PRIMARY KEY ("ChangeVersion")
 );
@@ -11200,6 +11295,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentContactAssociation"
     "NewContact_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_StudentContactAssociation" PRIMARY KEY ("ChangeVersion")
 );
@@ -11220,6 +11316,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentDisciplineIncidentBeha
     "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_StudentDisciplineIncidentBeh_ca7986a163" PRIMARY KEY ("ChangeVersion")
 );
@@ -11236,6 +11333,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentDisciplineIncidentNonO
     "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_StudentDisciplineIncidentNon_3ea812687c" PRIMARY KEY ("ChangeVersion")
 );
@@ -11250,6 +11348,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentEducationOrganizationA
     "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_StudentEducationOrganization_333a5c25d4" PRIMARY KEY ("ChangeVersion")
 );
@@ -11264,6 +11363,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentEducationOrganizationA
     "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_StudentEducationOrganizationAssociation" PRIMARY KEY ("ChangeVersion")
 );
@@ -11284,6 +11384,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentEducationOrganizationR
     "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_StudentEducationOrganization_1f44fed0a1" PRIMARY KEY ("ChangeVersion")
 );
@@ -11300,6 +11401,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentGradebookEntry"
     "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_StudentGradebookEntry" PRIMARY KEY ("ChangeVersion")
 );
@@ -11314,6 +11416,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentHealth"
     "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_StudentHealth" PRIMARY KEY ("ChangeVersion")
 );
@@ -11338,6 +11441,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentHomelessProgramAssocia
     "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_StudentHomelessProgramAssociation" PRIMARY KEY ("ChangeVersion")
 );
@@ -11354,6 +11458,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentInterventionAssociatio
     "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_StudentInterventionAssociation" PRIMARY KEY ("ChangeVersion")
 );
@@ -11376,6 +11481,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentInterventionAttendance
     "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_StudentInterventionAttendanceEvent" PRIMARY KEY ("ChangeVersion")
 );
@@ -11400,6 +11506,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentLanguageInstructionPro
     "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_StudentLanguageInstructionPr_96ed70d2c0" PRIMARY KEY ("ChangeVersion")
 );
@@ -11424,6 +11531,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentMigrantEducationProgra
     "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_StudentMigrantEducationProgr_796d1fdb71" PRIMARY KEY ("ChangeVersion")
 );
@@ -11448,6 +11556,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentNeglectedOrDelinquentP
     "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_StudentNeglectedOrDelinquent_08a1d91197" PRIMARY KEY ("ChangeVersion")
 );
@@ -11472,6 +11581,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentProgramAssociation"
     "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_StudentProgramAssociation" PRIMARY KEY ("ChangeVersion")
 );
@@ -11500,6 +11610,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentProgramAttendanceEvent
     "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_StudentProgramAttendanceEvent" PRIMARY KEY ("ChangeVersion")
 );
@@ -11532,6 +11643,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentProgramEvaluation"
     "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_StudentProgramEvaluation" PRIMARY KEY ("ChangeVersion")
 );
@@ -11548,6 +11660,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentSchoolAssociation"
     "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_StudentSchoolAssociation" PRIMARY KEY ("ChangeVersion")
 );
@@ -11572,6 +11685,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentSchoolAttendanceEvent"
     "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_StudentSchoolAttendanceEvent" PRIMARY KEY ("ChangeVersion")
 );
@@ -11596,6 +11710,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentSchoolFoodServiceProgr
     "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_StudentSchoolFoodServiceProg_7e29d88dd5" PRIMARY KEY ("ChangeVersion")
 );
@@ -11620,6 +11735,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentSection504ProgramAssoc
     "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_StudentSection504ProgramAssociation" PRIMARY KEY ("ChangeVersion")
 );
@@ -11644,6 +11760,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentSectionAssociation"
     "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_StudentSectionAssociation" PRIMARY KEY ("ChangeVersion")
 );
@@ -11672,6 +11789,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentSectionAttendanceEvent
     "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_StudentSectionAttendanceEvent" PRIMARY KEY ("ChangeVersion")
 );
@@ -11696,6 +11814,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentSpecialEducationProgra
     "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_StudentSpecialEducationProgr_56bafd7b8f" PRIMARY KEY ("ChangeVersion")
 );
@@ -11720,6 +11839,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentSpecialEducationProgra
     "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_StudentSpecialEducationProgr_5672b6d178" PRIMARY KEY ("ChangeVersion")
 );
@@ -11744,6 +11864,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentTitleIPartAProgramAsso
     "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_StudentTitleIPartAProgramAssociation" PRIMARY KEY ("ChangeVersion")
 );
@@ -11758,6 +11879,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentTransportation"
     "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_StudentTransportation" PRIMARY KEY ("ChangeVersion")
 );
@@ -11770,6 +11892,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Survey"
     "NewSurveyIdentifier" varchar(60) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_Survey" PRIMARY KEY ("ChangeVersion")
 );
@@ -11786,6 +11909,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."SurveyCourseAssociation"
     "NewSurvey_SurveyIdentifier" varchar(60) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_SurveyCourseAssociation" PRIMARY KEY ("ChangeVersion")
 );
@@ -11806,6 +11930,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."SurveyProgramAssociation"
     "NewSurvey_SurveyIdentifier" varchar(60) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_SurveyProgramAssociation" PRIMARY KEY ("ChangeVersion")
 );
@@ -11820,6 +11945,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."SurveyQuestion"
     "NewSurveyIdentifier_Unified" varchar(60) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_SurveyQuestion" PRIMARY KEY ("ChangeVersion")
 );
@@ -11836,6 +11962,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."SurveyQuestionResponse"
     "NewSurveyResponse_SurveyResponseIdentifier" varchar(60) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_SurveyQuestionResponse" PRIMARY KEY ("ChangeVersion")
 );
@@ -11850,6 +11977,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."SurveyResponse"
     "NewSurveyResponseIdentifier" varchar(60) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_SurveyResponse" PRIMARY KEY ("ChangeVersion")
 );
@@ -11866,6 +11994,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."SurveyResponseEducationOrgani
     "NewSurveyResponse_SurveyResponseIdentifier" varchar(60) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_SurveyResponseEducationOrgan_64e955bb5b" PRIMARY KEY ("ChangeVersion")
 );
@@ -11884,6 +12013,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."SurveyResponseStaffTargetAsso
     "NewStaff_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_SurveyResponseStaffTargetAssociation" PRIMARY KEY ("ChangeVersion")
 );
@@ -11898,6 +12028,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."SurveySection"
     "NewSurveySectionTitle" varchar(255) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_SurveySection" PRIMARY KEY ("ChangeVersion")
 );
@@ -11920,6 +12051,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."SurveySectionAssociation"
     "NewSurvey_SurveyIdentifier" varchar(60) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_SurveySectionAssociation" PRIMARY KEY ("ChangeVersion")
 );
@@ -11936,6 +12068,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."SurveySectionResponse"
     "NewSurveySection_SurveySectionTitle" varchar(255) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_SurveySectionResponse" PRIMARY KEY ("ChangeVersion")
 );
@@ -11954,6 +12087,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."SurveySectionResponseEducatio
     "NewSurveySectionResponse_SurveySectionTitle" varchar(255) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_SurveySectionResponseEducati_a10d4e9a5f" PRIMARY KEY ("ChangeVersion")
 );
@@ -11974,6 +12108,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."SurveySectionResponseStaffTar
     "NewStaff_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_SurveySectionResponseStaffTa_51a2f849f1" PRIMARY KEY ("ChangeVersion")
 );
@@ -11984,6 +12119,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_tpdm"."Candidate"
     "NewCandidateIdentifier" varchar(32) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_tpdm_Candidate" PRIMARY KEY ("ChangeVersion")
 );
@@ -12004,6 +12140,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_tpdm"."CandidateEducatorPreparationP
     "NewEducatorPreparationProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_tpdm_CandidateEducatorPreparation_2db4f2d9ca" PRIMARY KEY ("ChangeVersion")
 );
@@ -12020,6 +12157,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_tpdm"."EducatorPreparationProgram"
     "NewProgramTypeDescriptor_CodeValue" varchar(50) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_tpdm_EducatorPreparationProgram" PRIMARY KEY ("ChangeVersion")
 );
@@ -12048,6 +12186,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_tpdm"."Evaluation"
     "NewPerformanceEvaluation_TermDescriptor_CodeValue" varchar(50) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_tpdm_Evaluation" PRIMARY KEY ("ChangeVersion")
 );
@@ -12080,6 +12219,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_tpdm"."EvaluationElement"
     "NewEvaluationObjective_TermDescriptor_CodeValue" varchar(50) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_tpdm_EvaluationElement" PRIMARY KEY ("ChangeVersion")
 );
@@ -12132,6 +12272,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_tpdm"."EvaluationElementRating"
     "NewEvaluationObjectiveRating_EvaluationObjectiveRefe_5529c7df99" varchar(50) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_tpdm_EvaluationElementRating" PRIMARY KEY ("ChangeVersion")
 );
@@ -12162,6 +12303,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_tpdm"."EvaluationObjective"
     "NewEvaluation_TermDescriptor_CodeValue" varchar(50) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_tpdm_EvaluationObjective" PRIMARY KEY ("ChangeVersion")
 );
@@ -12212,6 +12354,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_tpdm"."EvaluationObjectiveRating"
     "NewEvaluationRating_EvaluationReferenceTermDescriptor_CodeValue" varchar(50) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_tpdm_EvaluationObjectiveRating" PRIMARY KEY ("ChangeVersion")
 );
@@ -12260,6 +12403,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_tpdm"."EvaluationRating"
     "NewPerformanceEvaluationRating_TermDescriptor_CodeValue" varchar(50) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_tpdm_EvaluationRating" PRIMARY KEY ("ChangeVersion")
 );
@@ -12278,6 +12422,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_tpdm"."FinancialAid"
     "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_tpdm_FinancialAid" PRIMARY KEY ("ChangeVersion")
 );
@@ -12304,6 +12449,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_tpdm"."PerformanceEvaluation"
     "NewTermDescriptor_CodeValue" varchar(50) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_tpdm_PerformanceEvaluation" PRIMARY KEY ("ChangeVersion")
 );
@@ -12336,6 +12482,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_tpdm"."PerformanceEvaluationRating"
     "NewPerson_SourceSystemDescriptor_CodeValue" varchar(50) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_tpdm_PerformanceEvaluationRating" PRIMARY KEY ("ChangeVersion")
 );
@@ -12370,6 +12517,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_tpdm"."RubricDimension"
     "NewRubricRating" integer NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_tpdm_RubricDimension" PRIMARY KEY ("ChangeVersion")
 );
@@ -12390,6 +12538,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_tpdm"."SurveyResponsePersonTargetAss
     "NewSurveyResponse_SurveyResponseIdentifier" varchar(60) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_tpdm_SurveyResponsePersonTargetAssociation" PRIMARY KEY ("ChangeVersion")
 );
@@ -12412,6 +12561,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_tpdm"."SurveySectionResponsePersonTa
     "NewSurveySectionResponse_SurveySectionTitle" varchar(255) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_tpdm_SurveySectionResponsePersonT_c06ea113da" PRIMARY KEY ("ChangeVersion")
 );
@@ -41694,13 +41844,15 @@ BEGIN
             "OldSchool_SchoolId",
             "OldWeekIdentifier",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."School_SchoolId",
             OLD."WeekIdentifier",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -41730,7 +41882,8 @@ BEGIN
             "NewSchool_SchoolId",
             "NewWeekIdentifier",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."School_SchoolId",
@@ -41738,7 +41891,8 @@ BEGIN
             NEW."School_SchoolId",
             NEW."WeekIdentifier",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -41786,14 +41940,16 @@ BEGIN
             "OldRatingTitle",
             "OldSchoolYear_SchoolYear",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."EducationOrganization_EducationOrganizationId",
             OLD."RatingTitle",
             OLD."SchoolYear_SchoolYear",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -41825,7 +41981,8 @@ BEGIN
             "NewRatingTitle",
             "NewSchoolYear_SchoolYear",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."EducationOrganization_EducationOrganizationId",
@@ -41835,7 +41992,8 @@ BEGIN
             NEW."RatingTitle",
             NEW."SchoolYear_SchoolYear",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -41882,13 +42040,15 @@ BEGIN
             "OldAssessmentIdentifier",
             "OldNamespace",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."AssessmentIdentifier",
             OLD."Namespace",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -41918,7 +42078,8 @@ BEGIN
             "NewAssessmentIdentifier",
             "NewNamespace",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."AssessmentIdentifier",
@@ -41926,7 +42087,8 @@ BEGIN
             NEW."AssessmentIdentifier",
             NEW."Namespace",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -42073,7 +42235,8 @@ BEGIN
             "OldAssessment_Namespace",
             "OldAssigningEducationOrganization_EducationOrganizationId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."AdministrationIdentifier",
@@ -42081,7 +42244,8 @@ BEGIN
             OLD."Assessment_Namespace",
             OLD."AssigningEducationOrganization_EducationOrganizationId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -42115,7 +42279,8 @@ BEGIN
             "NewAssessment_Namespace",
             "NewAssigningEducationOrganization_EducationOrganizationId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."AdministrationIdentifier",
@@ -42127,7 +42292,8 @@ BEGIN
             NEW."Assessment_Namespace",
             NEW."AssigningEducationOrganization_EducationOrganizationId",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -42275,7 +42441,8 @@ BEGIN
             "OldAssessmentAdministration_Namespace",
             "OldParticipatingEducationOrganization_EducationOrganizationId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."AssessmentAdministration_AdministrationIdentifier",
@@ -42284,7 +42451,8 @@ BEGIN
             OLD."AssessmentAdministration_Namespace",
             OLD."ParticipatingEducationOrganization_EducationOrganizationId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -42320,7 +42488,8 @@ BEGIN
             "NewAssessmentAdministration_Namespace",
             "NewParticipatingEducationOrganization_EducationOrganizationId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."AssessmentAdministration_AdministrationIdentifier",
@@ -42334,7 +42503,8 @@ BEGIN
             NEW."AssessmentAdministration_Namespace",
             NEW."ParticipatingEducationOrganization_EducationOrganizationId",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -42774,14 +42944,16 @@ BEGIN
             "OldAssessment_AssessmentIdentifier",
             "OldAssessment_Namespace",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."AssessmentBatteryPartName",
             OLD."Assessment_AssessmentIdentifier",
             OLD."Assessment_Namespace",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -42813,7 +42985,8 @@ BEGIN
             "NewAssessment_AssessmentIdentifier",
             "NewAssessment_Namespace",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."AssessmentBatteryPartName",
@@ -42823,7 +42996,8 @@ BEGIN
             NEW."Assessment_AssessmentIdentifier",
             NEW."Assessment_Namespace",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -43067,14 +43241,16 @@ BEGIN
             "OldAssessment_Namespace",
             "OldIdentificationCode",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."Assessment_AssessmentIdentifier",
             OLD."Assessment_Namespace",
             OLD."IdentificationCode",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -43106,7 +43282,8 @@ BEGIN
             "NewAssessment_Namespace",
             "NewIdentificationCode",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."Assessment_AssessmentIdentifier",
@@ -43116,7 +43293,8 @@ BEGIN
             NEW."Assessment_Namespace",
             NEW."IdentificationCode",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -43948,14 +44126,16 @@ BEGIN
             "OldNamespace_Unified",
             "OldScoreRangeId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."AssessmentIdentifier_Unified",
             OLD."Namespace_Unified",
             OLD."ScoreRangeId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -43987,7 +44167,8 @@ BEGIN
             "NewNamespace_Unified",
             "NewScoreRangeId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."AssessmentIdentifier_Unified",
@@ -43997,7 +44178,8 @@ BEGIN
             NEW."Namespace_Unified",
             NEW."ScoreRangeId",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -44240,13 +44422,15 @@ BEGIN
             "OldCode",
             "OldFiscalYear",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."Code",
             OLD."FiscalYear",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -44276,7 +44460,8 @@ BEGIN
             "NewCode",
             "NewFiscalYear",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."Code",
@@ -44284,7 +44469,8 @@ BEGIN
             NEW."Code",
             NEW."FiscalYear",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -44429,13 +44615,15 @@ BEGIN
             "OldBellScheduleName",
             "OldSchool_SchoolId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."BellScheduleName",
             OLD."School_SchoolId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -44465,7 +44653,8 @@ BEGIN
             "NewBellScheduleName",
             "NewSchool_SchoolId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."BellScheduleName",
@@ -44473,7 +44662,8 @@ BEGIN
             NEW."BellScheduleName",
             NEW."School_SchoolId",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -44815,14 +45005,16 @@ BEGIN
             "OldSchool_SchoolId",
             "OldSchoolYear_SchoolYear",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."CalendarCode",
             OLD."School_SchoolId",
             OLD."SchoolYear_SchoolYear",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -44854,7 +45046,8 @@ BEGIN
             "NewSchool_SchoolId",
             "NewSchoolYear_SchoolYear",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."CalendarCode",
@@ -44864,7 +45057,8 @@ BEGIN
             NEW."School_SchoolId",
             NEW."SchoolYear_SchoolYear",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -44913,7 +45107,8 @@ BEGIN
             "OldCalendar_SchoolYear",
             "OldDate",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."Calendar_CalendarCode",
@@ -44921,7 +45116,8 @@ BEGIN
             OLD."Calendar_SchoolYear",
             OLD."Date",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -44955,7 +45151,8 @@ BEGIN
             "NewCalendar_SchoolYear",
             "NewDate",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."Calendar_CalendarCode",
@@ -44967,7 +45164,8 @@ BEGIN
             NEW."Calendar_SchoolYear",
             NEW."Date",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -45211,14 +45409,16 @@ BEGIN
             "OldEducationOrganization_EducationOrganizationId",
             "OldFiscalYear_Unified",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."AccountIdentifier",
             OLD."EducationOrganization_EducationOrganizationId",
             OLD."FiscalYear_Unified",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -45250,7 +45450,8 @@ BEGIN
             "NewEducationOrganization_EducationOrganizationId",
             "NewFiscalYear_Unified",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."AccountIdentifier",
@@ -45260,7 +45461,8 @@ BEGIN
             NEW."EducationOrganization_EducationOrganizationId",
             NEW."FiscalYear_Unified",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -45405,13 +45607,15 @@ BEGIN
             "OldClassPeriodName",
             "OldSchool_SchoolId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."ClassPeriodName",
             OLD."School_SchoolId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -45441,7 +45645,8 @@ BEGIN
             "NewClassPeriodName",
             "NewSchool_SchoolId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."ClassPeriodName",
@@ -45449,7 +45654,8 @@ BEGIN
             NEW."ClassPeriodName",
             NEW."School_SchoolId",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -45594,13 +45800,15 @@ BEGIN
             "OldCohortIdentifier",
             "OldEducationOrganization_EducationOrganizationId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."CohortIdentifier",
             OLD."EducationOrganization_EducationOrganizationId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -45630,7 +45838,8 @@ BEGIN
             "NewCohortIdentifier",
             "NewEducationOrganization_EducationOrganizationId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."CohortIdentifier",
@@ -45638,7 +45847,8 @@ BEGIN
             NEW."CohortIdentifier",
             NEW."EducationOrganization_EducationOrganizationId",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -45835,12 +46045,14 @@ BEGIN
         INSERT INTO "tracked_changes_edfi"."CommunityOrganization" (
             "OldCommunityOrganizationId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."CommunityOrganizationId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -46826,12 +47038,14 @@ BEGIN
         INSERT INTO "tracked_changes_edfi"."CommunityProvider" (
             "OldCommunityProviderId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."CommunityProviderId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -47682,14 +47896,16 @@ BEGIN
             "OldLicenseIdentifier",
             "OldLicensingOrganization",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."CommunityProvider_CommunityProviderId",
             OLD."LicenseIdentifier",
             OLD."LicensingOrganization",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -47721,7 +47937,8 @@ BEGIN
             "NewLicenseIdentifier",
             "NewLicensingOrganization",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."CommunityProvider_CommunityProviderId",
@@ -47731,7 +47948,8 @@ BEGIN
             NEW."LicenseIdentifier",
             NEW."LicensingOrganization",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -47780,7 +47998,8 @@ BEGIN
             "OldObjectiveGradeLevelDescriptor_Namespace",
             "OldObjectiveGradeLevelDescriptor_CodeValue",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."EducationOrganization_EducationOrganizationId",
@@ -47788,7 +48007,8 @@ BEGIN
             oldDj0."Namespace",
             oldDj0."CodeValue",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."ObjectiveGradeLevelDescriptor_DescriptorId"
         WHERE doc."DocumentId" = OLD."DocumentId";
@@ -47823,7 +48043,8 @@ BEGIN
             "NewObjectiveGradeLevelDescriptor_Namespace",
             "NewObjectiveGradeLevelDescriptor_CodeValue",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."EducationOrganization_EducationOrganizationId",
@@ -47835,7 +48056,8 @@ BEGIN
             newDj0."Namespace",
             newDj0."CodeValue",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."ObjectiveGradeLevelDescriptor_DescriptorId"
         INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DocumentId" = NEW."ObjectiveGradeLevelDescriptor_DescriptorId"
@@ -47882,15 +48104,15 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."Contact" (
             "OldContactUniqueId",
-            "OldContact_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."ContactUniqueId",
-            OLD."DocumentId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -47916,19 +48138,17 @@ BEGIN
     IF TG_OP = 'UPDATE' AND (OLD."ContactUniqueId" IS DISTINCT FROM NEW."ContactUniqueId") THEN
         INSERT INTO "tracked_changes_edfi"."Contact" (
             "OldContactUniqueId",
-            "OldContact_DocumentId",
             "NewContactUniqueId",
-            "NewContact_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."ContactUniqueId",
-            OLD."DocumentId",
             NEW."ContactUniqueId",
-            NEW."DocumentId",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -48857,13 +49077,15 @@ BEGIN
             "OldCourseCode",
             "OldEducationOrganization_EducationOrganizationId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."CourseCode",
             OLD."EducationOrganization_EducationOrganizationId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -48893,7 +49115,8 @@ BEGIN
             "NewCourseCode",
             "NewEducationOrganization_EducationOrganizationId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."CourseCode",
@@ -48901,7 +49124,8 @@ BEGIN
             NEW."CourseCode",
             NEW."EducationOrganization_EducationOrganizationId",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -49538,7 +49762,8 @@ BEGIN
             "OldSession_SchoolYear",
             "OldSession_SessionName",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."LocalCourseCode",
@@ -49546,7 +49771,8 @@ BEGIN
             OLD."Session_SchoolYear",
             OLD."Session_SessionName",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -49580,7 +49806,8 @@ BEGIN
             "NewSession_SchoolYear",
             "NewSession_SessionName",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."LocalCourseCode",
@@ -49592,7 +49819,8 @@ BEGIN
             NEW."Session_SchoolYear",
             NEW."Session_SessionName",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -49941,7 +50169,8 @@ BEGIN
             "OldStudentAcademicRecord_TermDescriptor_CodeValue",
             "OldStudentAcademicRecord_Student_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             oldDj0."Namespace",
@@ -49953,14 +50182,14 @@ BEGIN
             OLD."StudentAcademicRecord_StudentUniqueId",
             oldDj1."Namespace",
             oldDj1."CodeValue",
-            oldPj0s1."DocumentId",
+            oldPj0."DocumentId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."CourseAttemptResultDescriptor_DescriptorId"
         INNER JOIN "dms"."Descriptor" oldDj1 ON oldDj1."DocumentId" = OLD."StudentAcademicRecord_TermDescriptor_DescriptorId"
-        INNER JOIN "edfi"."StudentAcademicRecord" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."StudentAcademicRecord_DocumentId"
-        INNER JOIN "edfi"."Student" oldPj0s1 ON oldPj0s1."DocumentId" = oldPj0s0."Student_DocumentId"
+        INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."StudentAcademicRecord_StudentUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
@@ -50005,7 +50234,8 @@ BEGIN
             "NewStudentAcademicRecord_TermDescriptor_CodeValue",
             "NewStudentAcademicRecord_Student_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             oldDj0."Namespace",
@@ -50017,7 +50247,7 @@ BEGIN
             OLD."StudentAcademicRecord_StudentUniqueId",
             oldDj1."Namespace",
             oldDj1."CodeValue",
-            oldPj0s1."DocumentId",
+            oldPj0."DocumentId",
             newDj0."Namespace",
             newDj0."CodeValue",
             NEW."CourseCourse_CourseCode",
@@ -50027,18 +50257,17 @@ BEGIN
             NEW."StudentAcademicRecord_StudentUniqueId",
             newDj1."Namespace",
             newDj1."CodeValue",
-            newPj0s1."DocumentId",
+            newPj0."DocumentId",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."CourseAttemptResultDescriptor_DescriptorId"
         INNER JOIN "dms"."Descriptor" oldDj1 ON oldDj1."DocumentId" = OLD."StudentAcademicRecord_TermDescriptor_DescriptorId"
-        INNER JOIN "edfi"."StudentAcademicRecord" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."StudentAcademicRecord_DocumentId"
-        INNER JOIN "edfi"."Student" oldPj0s1 ON oldPj0s1."DocumentId" = oldPj0s0."Student_DocumentId"
+        INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."StudentAcademicRecord_StudentUniqueId"
         INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DocumentId" = NEW."CourseAttemptResultDescriptor_DescriptorId"
         INNER JOIN "dms"."Descriptor" newDj1 ON newDj1."DocumentId" = NEW."StudentAcademicRecord_TermDescriptor_DescriptorId"
-        INNER JOIN "edfi"."StudentAcademicRecord" newPj0s0 ON newPj0s0."DocumentId" = NEW."StudentAcademicRecord_DocumentId"
-        INNER JOIN "edfi"."Student" newPj0s1 ON newPj0s1."DocumentId" = newPj0s0."Student_DocumentId"
+        INNER JOIN "edfi"."Student" newPj0 ON newPj0."StudentUniqueId" = NEW."StudentAcademicRecord_StudentUniqueId"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
     RETURN NEW;
@@ -50772,7 +51001,8 @@ BEGIN
             "OldStateOfIssueStateAbbreviationDescriptor_CodeValue",
             "OldNamespace",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."CredentialIdentifier",
@@ -50780,7 +51010,8 @@ BEGIN
             oldDj0."CodeValue",
             OLD."Namespace",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."StateOfIssueStateAbbreviationDescriptor_DescriptorId"
         WHERE doc."DocumentId" = OLD."DocumentId";
@@ -50815,7 +51046,8 @@ BEGIN
             "NewStateOfIssueStateAbbreviationDescriptor_CodeValue",
             "NewNamespace",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."CredentialIdentifier",
@@ -50827,7 +51059,8 @@ BEGIN
             newDj0."CodeValue",
             NEW."Namespace",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."StateOfIssueStateAbbreviationDescriptor_DescriptorId"
         INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DocumentId" = NEW."StateOfIssueStateAbbreviationDescriptor_DescriptorId"
@@ -51169,12 +51402,14 @@ BEGIN
         INSERT INTO "tracked_changes_edfi"."CrisisEvent" (
             "OldCrisisEventName",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."CrisisEventName",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -51202,13 +51437,15 @@ BEGIN
             "OldCrisisEventName",
             "NewCrisisEventName",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."CrisisEventName",
             NEW."CrisisEventName",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -51257,7 +51494,8 @@ BEGIN
             "OldNamespace",
             "OldValue",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."MappedNamespace",
@@ -51265,7 +51503,8 @@ BEGIN
             OLD."Namespace",
             OLD."Value",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -51299,7 +51538,8 @@ BEGIN
             "NewNamespace",
             "NewValue",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."MappedNamespace",
@@ -51311,7 +51551,8 @@ BEGIN
             NEW."Namespace",
             NEW."Value",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -51459,18 +51700,20 @@ BEGIN
             "OldResponsibilitySchool_SchoolId",
             "OldStudent_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."DisciplineActionIdentifier",
             OLD."DisciplineDate",
             OLD."Student_StudentUniqueId",
             OLD."ResponsibilitySchool_SchoolId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "edfi"."Student" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Student_DocumentId"
+        INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
@@ -51505,24 +51748,26 @@ BEGIN
             "NewResponsibilitySchool_SchoolId",
             "NewStudent_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."DisciplineActionIdentifier",
             OLD."DisciplineDate",
             OLD."Student_StudentUniqueId",
             OLD."ResponsibilitySchool_SchoolId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             NEW."DisciplineActionIdentifier",
             NEW."DisciplineDate",
             NEW."Student_StudentUniqueId",
             NEW."ResponsibilitySchool_SchoolId",
-            newPj0s0."DocumentId",
+            newPj0."DocumentId",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "edfi"."Student" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Student_DocumentId"
-        INNER JOIN "edfi"."Student" newPj0s0 ON newPj0s0."DocumentId" = NEW."Student_DocumentId"
+        INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
+        INNER JOIN "edfi"."Student" newPj0 ON newPj0."StudentUniqueId" = NEW."Student_StudentUniqueId"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
     RETURN NEW;
@@ -51862,13 +52107,15 @@ BEGIN
             "OldIncidentIdentifier",
             "OldSchool_SchoolId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."IncidentIdentifier",
             OLD."School_SchoolId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -51898,7 +52145,8 @@ BEGIN
             "NewIncidentIdentifier",
             "NewSchool_SchoolId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."IncidentIdentifier",
@@ -51906,7 +52154,8 @@ BEGIN
             NEW."IncidentIdentifier",
             NEW."School_SchoolId",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -52247,13 +52496,15 @@ BEGIN
             "OldContentIdentifier",
             "OldNamespace",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."ContentIdentifier",
             OLD."Namespace",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -52283,7 +52534,8 @@ BEGIN
             "NewContentIdentifier",
             "NewNamespace",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."ContentIdentifier",
@@ -52291,7 +52543,8 @@ BEGIN
             NEW."ContentIdentifier",
             NEW."Namespace",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -53006,14 +53259,16 @@ BEGIN
             "OldInterventionPrescriptionInterventionPrescription__756e805543",
             "OldInterventionPrescriptionInterventionPrescription__0c20ee7025",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."EducationOrganization_EducationOrganizationId",
             OLD."InterventionPrescriptionInterventionPrescription_Edu_532babb247",
             OLD."InterventionPrescriptionInterventionPrescription_Int_409fc39d28",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -53045,7 +53300,8 @@ BEGIN
             "NewInterventionPrescriptionInterventionPrescription__4e45dc33ef",
             "NewInterventionPrescriptionInterventionPrescription__a4d6e2eb61",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."EducationOrganization_EducationOrganizationId",
@@ -53055,7 +53311,8 @@ BEGIN
             NEW."InterventionPrescriptionInterventionPrescription_Edu_532babb247",
             NEW."InterventionPrescriptionInterventionPrescription_Int_409fc39d28",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -53173,12 +53430,14 @@ BEGIN
         INSERT INTO "tracked_changes_edfi"."EducationOrganizationNetwork" (
             "OldEducationOrganizationNetworkId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."EducationOrganizationNetworkId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -53440,13 +53699,15 @@ BEGIN
             "OldEducationOrganizationNetwork_EducationOrganizationNetworkId",
             "OldMemberEducationOrganization_EducationOrganizationId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."EducationOrganizationNetwork_EducationOrganizationNetworkId",
             OLD."MemberEducationOrganization_EducationOrganizationId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -53476,7 +53737,8 @@ BEGIN
             "NewEducationOrganizationNetwork_EducationOrganizationNetworkId",
             "NewMemberEducationOrganization_EducationOrganizationId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."EducationOrganizationNetwork_EducationOrganizationNetworkId",
@@ -53484,7 +53746,8 @@ BEGIN
             NEW."EducationOrganizationNetwork_EducationOrganizationNetworkId",
             NEW."MemberEducationOrganization_EducationOrganizationId",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -54119,13 +54382,15 @@ BEGIN
             "OldEducationOrganization_EducationOrganizationId",
             "OldPeerEducationOrganization_EducationOrganizationId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."EducationOrganization_EducationOrganizationId",
             OLD."PeerEducationOrganization_EducationOrganizationId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -54155,7 +54420,8 @@ BEGIN
             "NewEducationOrganization_EducationOrganizationId",
             "NewPeerEducationOrganization_EducationOrganizationId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."EducationOrganization_EducationOrganizationId",
@@ -54163,7 +54429,8 @@ BEGIN
             NEW."EducationOrganization_EducationOrganizationId",
             NEW."PeerEducationOrganization_EducationOrganizationId",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -54346,12 +54613,14 @@ BEGIN
         INSERT INTO "tracked_changes_edfi"."EducationServiceCenter" (
             "OldEducationServiceCenterId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."EducationServiceCenterId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -55210,7 +55479,8 @@ BEGIN
             "OldProgramEvaluationElement_ProgramTypeDescriptor_Namespace",
             "OldProgramEvaluationElement_ProgramTypeDescriptor_CodeValue",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."EvaluationRubricRating",
@@ -55225,7 +55495,8 @@ BEGIN
             oldDj2."Namespace",
             oldDj2."CodeValue",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."ProgramEvaluationElement_ProgramEvaluationPeriodDesc_cc4f929706"
         INNER JOIN "dms"."Descriptor" oldDj1 ON oldDj1."DocumentId" = OLD."ProgramEvaluationElement_ProgramEvaluationTypeDescri_18bd7f7e71"
@@ -55276,7 +55547,8 @@ BEGIN
             "NewProgramEvaluationElement_ProgramTypeDescriptor_Namespace",
             "NewProgramEvaluationElement_ProgramTypeDescriptor_CodeValue",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."EvaluationRubricRating",
@@ -55302,7 +55574,8 @@ BEGIN
             newDj2."Namespace",
             newDj2."CodeValue",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."ProgramEvaluationElement_ProgramEvaluationPeriodDesc_cc4f929706"
         INNER JOIN "dms"."Descriptor" oldDj1 ON oldDj1."DocumentId" = OLD."ProgramEvaluationElement_ProgramEvaluationTypeDescri_18bd7f7e71"
@@ -55356,14 +55629,16 @@ BEGIN
             "OldFeederSchool_SchoolId",
             "OldSchool_SchoolId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."BeginDate",
             OLD."FeederSchool_SchoolId",
             OLD."School_SchoolId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -55395,7 +55670,8 @@ BEGIN
             "NewFeederSchool_SchoolId",
             "NewSchool_SchoolId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."BeginDate",
@@ -55405,7 +55681,8 @@ BEGIN
             NEW."FeederSchool_SchoolId",
             NEW."School_SchoolId",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -55452,13 +55729,15 @@ BEGIN
             "OldCode",
             "OldFiscalYear",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."Code",
             OLD."FiscalYear",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -55488,7 +55767,8 @@ BEGIN
             "NewCode",
             "NewFiscalYear",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."Code",
@@ -55496,7 +55776,8 @@ BEGIN
             NEW."Code",
             NEW."FiscalYear",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -55641,13 +55922,15 @@ BEGIN
             "OldCode",
             "OldFiscalYear",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."Code",
             OLD."FiscalYear",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -55677,7 +55960,8 @@ BEGIN
             "NewCode",
             "NewFiscalYear",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."Code",
@@ -55685,7 +55969,8 @@ BEGIN
             NEW."Code",
             NEW."FiscalYear",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -55841,7 +56126,8 @@ BEGIN
             "OldStudentSectionAssociation_StudentUniqueId",
             "OldStudentSectionAssociation_Student_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             oldDj0."Namespace",
@@ -55856,14 +56142,14 @@ BEGIN
             OLD."StudentSectionAssociation_SectionIdentifier",
             OLD."StudentSectionAssociation_SessionName",
             OLD."StudentSectionAssociation_StudentUniqueId",
-            oldPj0s1."DocumentId",
+            oldPj0."DocumentId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."GradeTypeDescriptor_DescriptorId"
         INNER JOIN "dms"."Descriptor" oldDj1 ON oldDj1."DocumentId" = OLD."GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId"
-        INNER JOIN "edfi"."StudentSectionAssociation" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."StudentSectionAssociation_DocumentId"
-        INNER JOIN "edfi"."Student" oldPj0s1 ON oldPj0s1."DocumentId" = oldPj0s0."Student_DocumentId"
+        INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."StudentSectionAssociation_StudentUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
@@ -55914,7 +56200,8 @@ BEGIN
             "NewStudentSectionAssociation_StudentUniqueId",
             "NewStudentSectionAssociation_Student_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             oldDj0."Namespace",
@@ -55929,7 +56216,7 @@ BEGIN
             OLD."StudentSectionAssociation_SectionIdentifier",
             OLD."StudentSectionAssociation_SessionName",
             OLD."StudentSectionAssociation_StudentUniqueId",
-            oldPj0s1."DocumentId",
+            oldPj0."DocumentId",
             newDj0."Namespace",
             newDj0."CodeValue",
             newDj1."Namespace",
@@ -55942,18 +56229,17 @@ BEGIN
             NEW."StudentSectionAssociation_SectionIdentifier",
             NEW."StudentSectionAssociation_SessionName",
             NEW."StudentSectionAssociation_StudentUniqueId",
-            newPj0s1."DocumentId",
+            newPj0."DocumentId",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."GradeTypeDescriptor_DescriptorId"
         INNER JOIN "dms"."Descriptor" oldDj1 ON oldDj1."DocumentId" = OLD."GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId"
-        INNER JOIN "edfi"."StudentSectionAssociation" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."StudentSectionAssociation_DocumentId"
-        INNER JOIN "edfi"."Student" oldPj0s1 ON oldPj0s1."DocumentId" = oldPj0s0."Student_DocumentId"
+        INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."StudentSectionAssociation_StudentUniqueId"
         INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DocumentId" = NEW."GradeTypeDescriptor_DescriptorId"
         INNER JOIN "dms"."Descriptor" newDj1 ON newDj1."DocumentId" = NEW."GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId"
-        INNER JOIN "edfi"."StudentSectionAssociation" newPj0s0 ON newPj0s0."DocumentId" = NEW."StudentSectionAssociation_DocumentId"
-        INNER JOIN "edfi"."Student" newPj0s1 ON newPj0s1."DocumentId" = newPj0s0."Student_DocumentId"
+        INNER JOIN "edfi"."Student" newPj0 ON newPj0."StudentUniqueId" = NEW."StudentSectionAssociation_StudentUniqueId"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
     RETURN NEW;
@@ -56097,13 +56383,15 @@ BEGIN
             "OldGradebookEntryIdentifier",
             "OldNamespace",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."GradebookEntryIdentifier",
             OLD."Namespace",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -56133,7 +56421,8 @@ BEGIN
             "NewGradebookEntryIdentifier",
             "NewNamespace",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."GradebookEntryIdentifier",
@@ -56141,7 +56430,8 @@ BEGIN
             NEW."GradebookEntryIdentifier",
             NEW."Namespace",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -56289,7 +56579,8 @@ BEGIN
             "OldSchool_SchoolId",
             "OldSchoolYear_SchoolYear",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             oldDj0."Namespace",
@@ -56298,7 +56589,8 @@ BEGIN
             OLD."School_SchoolId",
             OLD."SchoolYear_SchoolYear",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."GradingPeriodDescriptor_DescriptorId"
         WHERE doc."DocumentId" = OLD."DocumentId";
@@ -56335,7 +56627,8 @@ BEGIN
             "NewSchool_SchoolId",
             "NewSchoolYear_SchoolYear",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             oldDj0."Namespace",
@@ -56349,7 +56642,8 @@ BEGIN
             NEW."School_SchoolId",
             NEW."SchoolYear_SchoolYear",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."GradingPeriodDescriptor_DescriptorId"
         INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DocumentId" = NEW."GradingPeriodDescriptor_DescriptorId"
@@ -56400,7 +56694,8 @@ BEGIN
             "OldGraduationPlanTypeDescriptor_CodeValue",
             "OldGraduationSchoolYear_GraduationSchoolYear",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."EducationOrganization_EducationOrganizationId",
@@ -56408,7 +56703,8 @@ BEGIN
             oldDj0."CodeValue",
             OLD."GraduationSchoolYear_GraduationSchoolYear",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."GraduationPlanTypeDescriptor_DescriptorId"
         WHERE doc."DocumentId" = OLD."DocumentId";
@@ -56443,7 +56739,8 @@ BEGIN
             "NewGraduationPlanTypeDescriptor_CodeValue",
             "NewGraduationSchoolYear_GraduationSchoolYear",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."EducationOrganization_EducationOrganizationId",
@@ -56455,7 +56752,8 @@ BEGIN
             newDj0."CodeValue",
             NEW."GraduationSchoolYear_GraduationSchoolYear",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."GraduationPlanTypeDescriptor_DescriptorId"
         INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DocumentId" = NEW."GraduationPlanTypeDescriptor_DescriptorId"
@@ -57092,13 +57390,15 @@ BEGIN
             "OldEducationOrganization_EducationOrganizationId",
             "OldInterventionIdentificationCode",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."EducationOrganization_EducationOrganizationId",
             OLD."InterventionIdentificationCode",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -57128,7 +57428,8 @@ BEGIN
             "NewEducationOrganization_EducationOrganizationId",
             "NewInterventionIdentificationCode",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."EducationOrganization_EducationOrganizationId",
@@ -57136,7 +57437,8 @@ BEGIN
             NEW."EducationOrganization_EducationOrganizationId",
             NEW."InterventionIdentificationCode",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -57967,13 +58269,15 @@ BEGIN
             "OldEducationOrganization_EducationOrganizationId",
             "OldInterventionPrescriptionIdentificationCode",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."EducationOrganization_EducationOrganizationId",
             OLD."InterventionPrescriptionIdentificationCode",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -58003,7 +58307,8 @@ BEGIN
             "NewEducationOrganization_EducationOrganizationId",
             "NewInterventionPrescriptionIdentificationCode",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."EducationOrganization_EducationOrganizationId",
@@ -58011,7 +58316,8 @@ BEGIN
             NEW."EducationOrganization_EducationOrganizationId",
             NEW."InterventionPrescriptionIdentificationCode",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -58842,13 +59148,15 @@ BEGIN
             "OldEducationOrganization_EducationOrganizationId",
             "OldInterventionStudyIdentificationCode",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."EducationOrganization_EducationOrganizationId",
             OLD."InterventionStudyIdentificationCode",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -58878,7 +59186,8 @@ BEGIN
             "NewEducationOrganization_EducationOrganizationId",
             "NewInterventionStudyIdentificationCode",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."EducationOrganization_EducationOrganizationId",
@@ -58886,7 +59195,8 @@ BEGIN
             NEW."EducationOrganization_EducationOrganizationId",
             NEW."InterventionStudyIdentificationCode",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -59815,13 +60125,15 @@ BEGIN
             "OldLearningStandardId",
             "OldNamespace",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."LearningStandardId",
             OLD."Namespace",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -59851,7 +60163,8 @@ BEGIN
             "NewLearningStandardId",
             "NewNamespace",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."LearningStandardId",
@@ -59859,7 +60172,8 @@ BEGIN
             NEW."LearningStandardId",
             NEW."Namespace",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -60103,14 +60417,16 @@ BEGIN
             "OldSourceLearningStandard_LearningStandardId",
             "OldTargetLearningStandard_LearningStandardId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."Namespace",
             OLD."SourceLearningStandard_LearningStandardId",
             OLD."TargetLearningStandard_LearningStandardId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -60142,7 +60458,8 @@ BEGIN
             "NewSourceLearningStandard_LearningStandardId",
             "NewTargetLearningStandard_LearningStandardId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."Namespace",
@@ -60152,7 +60469,8 @@ BEGIN
             NEW."SourceLearningStandard_LearningStandardId",
             NEW."TargetLearningStandard_LearningStandardId",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -60396,14 +60714,16 @@ BEGIN
             "OldEducationOrganization_EducationOrganizationId",
             "OldFiscalYear_Unified",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."AccountIdentifier",
             OLD."EducationOrganization_EducationOrganizationId",
             OLD."FiscalYear_Unified",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -60435,7 +60755,8 @@ BEGIN
             "NewEducationOrganization_EducationOrganizationId",
             "NewFiscalYear_Unified",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."AccountIdentifier",
@@ -60445,7 +60766,8 @@ BEGIN
             NEW."EducationOrganization_EducationOrganizationId",
             NEW."FiscalYear_Unified",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -60592,7 +60914,8 @@ BEGIN
             "OldLocalAccount_EducationOrganizationId",
             "OldLocalAccount_FiscalYear",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."AsOfDate",
@@ -60600,7 +60923,8 @@ BEGIN
             OLD."LocalAccount_EducationOrganizationId",
             OLD."LocalAccount_FiscalYear",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -60634,7 +60958,8 @@ BEGIN
             "NewLocalAccount_EducationOrganizationId",
             "NewLocalAccount_FiscalYear",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."AsOfDate",
@@ -60646,7 +60971,8 @@ BEGIN
             NEW."LocalAccount_EducationOrganizationId",
             NEW."LocalAccount_FiscalYear",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -60695,7 +61021,8 @@ BEGIN
             "OldLocalAccount_EducationOrganizationId",
             "OldLocalAccount_FiscalYear",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."AsOfDate",
@@ -60703,7 +61030,8 @@ BEGIN
             OLD."LocalAccount_EducationOrganizationId",
             OLD."LocalAccount_FiscalYear",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -60737,7 +61065,8 @@ BEGIN
             "NewLocalAccount_EducationOrganizationId",
             "NewLocalAccount_FiscalYear",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."AsOfDate",
@@ -60749,7 +61078,8 @@ BEGIN
             NEW."LocalAccount_EducationOrganizationId",
             NEW."LocalAccount_FiscalYear",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -60800,7 +61130,8 @@ BEGIN
             "OldStaff_StaffUniqueId",
             "OldStaff_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."AsOfDate",
@@ -60808,11 +61139,12 @@ BEGIN
             OLD."LocalAccount_EducationOrganizationId",
             OLD."LocalAccount_FiscalYear",
             OLD."Staff_StaffUniqueId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "edfi"."Staff" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Staff_DocumentId"
+        INNER JOIN "edfi"."Staff" oldPj0 ON oldPj0."StaffUniqueId" = OLD."Staff_StaffUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
@@ -60849,7 +61181,8 @@ BEGIN
             "NewStaff_StaffUniqueId",
             "NewStaff_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."AsOfDate",
@@ -60857,18 +61190,19 @@ BEGIN
             OLD."LocalAccount_EducationOrganizationId",
             OLD."LocalAccount_FiscalYear",
             OLD."Staff_StaffUniqueId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             NEW."AsOfDate",
             NEW."LocalAccount_AccountIdentifier",
             NEW."LocalAccount_EducationOrganizationId",
             NEW."LocalAccount_FiscalYear",
             NEW."Staff_StaffUniqueId",
-            newPj0s0."DocumentId",
+            newPj0."DocumentId",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "edfi"."Staff" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Staff_DocumentId"
-        INNER JOIN "edfi"."Staff" newPj0s0 ON newPj0s0."DocumentId" = NEW."Staff_DocumentId"
+        INNER JOIN "edfi"."Staff" oldPj0 ON oldPj0."StaffUniqueId" = OLD."Staff_StaffUniqueId"
+        INNER JOIN "edfi"."Staff" newPj0 ON newPj0."StaffUniqueId" = NEW."Staff_StaffUniqueId"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
     RETURN NEW;
@@ -61120,12 +61454,14 @@ BEGIN
         INSERT INTO "tracked_changes_edfi"."LocalEducationAgency" (
             "OldLocalEducationAgencyId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."LocalEducationAgencyId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -62173,7 +62509,8 @@ BEGIN
             "OldLocalAccount_EducationOrganizationId",
             "OldLocalAccount_FiscalYear",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."AsOfDate",
@@ -62181,7 +62518,8 @@ BEGIN
             OLD."LocalAccount_EducationOrganizationId",
             OLD."LocalAccount_FiscalYear",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -62215,7 +62553,8 @@ BEGIN
             "NewLocalAccount_EducationOrganizationId",
             "NewLocalAccount_FiscalYear",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."AsOfDate",
@@ -62227,7 +62566,8 @@ BEGIN
             NEW."LocalAccount_EducationOrganizationId",
             NEW."LocalAccount_FiscalYear",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -62278,7 +62618,8 @@ BEGIN
             "OldStaff_StaffUniqueId",
             "OldStaff_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."AsOfDate",
@@ -62286,11 +62627,12 @@ BEGIN
             OLD."LocalAccount_EducationOrganizationId",
             OLD."LocalAccount_FiscalYear",
             OLD."Staff_StaffUniqueId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "edfi"."Staff" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Staff_DocumentId"
+        INNER JOIN "edfi"."Staff" oldPj0 ON oldPj0."StaffUniqueId" = OLD."Staff_StaffUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
@@ -62327,7 +62669,8 @@ BEGIN
             "NewStaff_StaffUniqueId",
             "NewStaff_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."AsOfDate",
@@ -62335,18 +62678,19 @@ BEGIN
             OLD."LocalAccount_EducationOrganizationId",
             OLD."LocalAccount_FiscalYear",
             OLD."Staff_StaffUniqueId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             NEW."AsOfDate",
             NEW."LocalAccount_AccountIdentifier",
             NEW."LocalAccount_EducationOrganizationId",
             NEW."LocalAccount_FiscalYear",
             NEW."Staff_StaffUniqueId",
-            newPj0s0."DocumentId",
+            newPj0."DocumentId",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "edfi"."Staff" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Staff_DocumentId"
-        INNER JOIN "edfi"."Staff" newPj0s0 ON newPj0s0."DocumentId" = NEW."Staff_DocumentId"
+        INNER JOIN "edfi"."Staff" oldPj0 ON oldPj0."StaffUniqueId" = OLD."Staff_StaffUniqueId"
+        INNER JOIN "edfi"."Staff" newPj0 ON newPj0."StaffUniqueId" = NEW."Staff_StaffUniqueId"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
     RETURN NEW;
@@ -62392,13 +62736,15 @@ BEGIN
             "OldClassroomIdentificationCode",
             "OldSchool_SchoolId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."ClassroomIdentificationCode",
             OLD."School_SchoolId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -62428,7 +62774,8 @@ BEGIN
             "NewClassroomIdentificationCode",
             "NewSchool_SchoolId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."ClassroomIdentificationCode",
@@ -62436,7 +62783,8 @@ BEGIN
             NEW."ClassroomIdentificationCode",
             NEW."School_SchoolId",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -62483,13 +62831,15 @@ BEGIN
             "OldCode",
             "OldFiscalYear",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."Code",
             OLD."FiscalYear",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -62519,7 +62869,8 @@ BEGIN
             "NewCode",
             "NewFiscalYear",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."Code",
@@ -62527,7 +62878,8 @@ BEGIN
             NEW."Code",
             NEW."FiscalYear",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -62673,14 +63025,16 @@ BEGIN
             "OldNamespace_Unified",
             "OldIdentificationCode",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."AssessmentIdentifier_Unified",
             OLD."Namespace_Unified",
             OLD."IdentificationCode",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -62712,7 +63066,8 @@ BEGIN
             "NewNamespace_Unified",
             "NewIdentificationCode",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."AssessmentIdentifier_Unified",
@@ -62722,7 +63077,8 @@ BEGIN
             NEW."Namespace_Unified",
             NEW."IdentificationCode",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -63161,13 +63517,15 @@ BEGIN
             "OldEducationOrganization_EducationOrganizationId",
             "OldRequisitionNumber",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."EducationOrganization_EducationOrganizationId",
             OLD."RequisitionNumber",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -63197,7 +63555,8 @@ BEGIN
             "NewEducationOrganization_EducationOrganizationId",
             "NewRequisitionNumber",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."EducationOrganization_EducationOrganizationId",
@@ -63205,7 +63564,8 @@ BEGIN
             NEW."EducationOrganization_EducationOrganizationId",
             NEW."RequisitionNumber",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -63448,13 +63808,15 @@ BEGIN
             "OldCode",
             "OldFiscalYear",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."Code",
             OLD."FiscalYear",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -63484,7 +63846,8 @@ BEGIN
             "NewCode",
             "NewFiscalYear",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."Code",
@@ -63492,7 +63855,8 @@ BEGIN
             NEW."Code",
             NEW."FiscalYear",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -63774,13 +64138,15 @@ BEGIN
             "OldOrganizationDepartmentId",
             "OldParentEducationOrganization_EducationOrganizationId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."OrganizationDepartmentId",
             OLD."ParentEducationOrganization_EducationOrganizationId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -64631,14 +64997,16 @@ BEGIN
             "OldSourceSystemDescriptor_Namespace",
             "OldSourceSystemDescriptor_CodeValue",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."PersonId",
             oldDj0."Namespace",
             oldDj0."CodeValue",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."SourceSystemDescriptor_DescriptorId"
         WHERE doc."DocumentId" = OLD."DocumentId";
@@ -64671,7 +65039,8 @@ BEGIN
             "NewSourceSystemDescriptor_Namespace",
             "NewSourceSystemDescriptor_CodeValue",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."PersonId",
@@ -64681,7 +65050,8 @@ BEGIN
             newDj0."Namespace",
             newDj0."CodeValue",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."SourceSystemDescriptor_DescriptorId"
         INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DocumentId" = NEW."SourceSystemDescriptor_DescriptorId"
@@ -64733,19 +65103,21 @@ BEGIN
             "OldStudent_StudentUniqueId",
             "OldStudent_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."EventDate",
             oldDj0."Namespace",
             oldDj0."CodeValue",
             OLD."Student_StudentUniqueId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."PostSecondaryEventCategoryDescriptor_DescriptorId"
-        INNER JOIN "edfi"."Student" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Student_DocumentId"
+        INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
@@ -64780,26 +65152,28 @@ BEGIN
             "NewStudent_StudentUniqueId",
             "NewStudent_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."EventDate",
             oldDj0."Namespace",
             oldDj0."CodeValue",
             OLD."Student_StudentUniqueId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             NEW."EventDate",
             newDj0."Namespace",
             newDj0."CodeValue",
             NEW."Student_StudentUniqueId",
-            newPj0s0."DocumentId",
+            newPj0."DocumentId",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."PostSecondaryEventCategoryDescriptor_DescriptorId"
-        INNER JOIN "edfi"."Student" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Student_DocumentId"
+        INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
         INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DocumentId" = NEW."PostSecondaryEventCategoryDescriptor_DescriptorId"
-        INNER JOIN "edfi"."Student" newPj0s0 ON newPj0s0."DocumentId" = NEW."Student_DocumentId"
+        INNER JOIN "edfi"."Student" newPj0 ON newPj0."StudentUniqueId" = NEW."Student_StudentUniqueId"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
     RETURN NEW;
@@ -64897,12 +65271,14 @@ BEGIN
         INSERT INTO "tracked_changes_edfi"."PostSecondaryInstitution" (
             "OldPostSecondaryInstitutionId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."PostSecondaryInstitutionId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -65852,7 +66228,8 @@ BEGIN
             "OldProgramTypeDescriptor_Namespace",
             "OldProgramTypeDescriptor_CodeValue",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."EducationOrganization_EducationOrganizationId",
@@ -65860,7 +66237,8 @@ BEGIN
             oldDj0."Namespace",
             oldDj0."CodeValue",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."ProgramTypeDescriptor_DescriptorId"
         WHERE doc."DocumentId" = OLD."DocumentId";
@@ -65895,7 +66273,8 @@ BEGIN
             "NewProgramTypeDescriptor_Namespace",
             "NewProgramTypeDescriptor_CodeValue",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."EducationOrganization_EducationOrganizationId",
@@ -65907,7 +66286,8 @@ BEGIN
             newDj0."Namespace",
             newDj0."CodeValue",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."ProgramTypeDescriptor_DescriptorId"
         INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DocumentId" = NEW."ProgramTypeDescriptor_DescriptorId"
@@ -66054,13 +66434,15 @@ BEGIN
             "OldCode",
             "OldFiscalYear",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."Code",
             OLD."FiscalYear",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -66090,7 +66472,8 @@ BEGIN
             "NewCode",
             "NewFiscalYear",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."Code",
@@ -66098,7 +66481,8 @@ BEGIN
             NEW."Code",
             NEW."FiscalYear",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -66250,7 +66634,8 @@ BEGIN
             "OldProgramProgram_ProgramTypeDescriptor_Namespace",
             "OldProgramProgram_ProgramTypeDescriptor_CodeValue",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             oldDj0."Namespace",
@@ -66263,7 +66648,8 @@ BEGIN
             oldDj2."Namespace",
             oldDj2."CodeValue",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."ProgramEvaluationPeriodDescriptor_DescriptorId"
         INNER JOIN "dms"."Descriptor" oldDj1 ON oldDj1."DocumentId" = OLD."ProgramEvaluationTypeDescriptor_DescriptorId"
@@ -66310,7 +66696,8 @@ BEGIN
             "NewProgramProgram_ProgramTypeDescriptor_Namespace",
             "NewProgramProgram_ProgramTypeDescriptor_CodeValue",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             oldDj0."Namespace",
@@ -66332,7 +66719,8 @@ BEGIN
             newDj2."Namespace",
             newDj2."CodeValue",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."ProgramEvaluationPeriodDescriptor_DescriptorId"
         INNER JOIN "dms"."Descriptor" oldDj1 ON oldDj1."DocumentId" = OLD."ProgramEvaluationTypeDescriptor_DescriptorId"
@@ -66393,7 +66781,8 @@ BEGIN
             "OldProgramEvaluation_ProgramTypeDescriptor_Namespace",
             "OldProgramEvaluation_ProgramTypeDescriptor_CodeValue",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."ProgramEvaluationElementTitle",
@@ -66407,7 +66796,8 @@ BEGIN
             oldDj2."Namespace",
             oldDj2."CodeValue",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e"
         INNER JOIN "dms"."Descriptor" oldDj1 ON oldDj1."DocumentId" = OLD."ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId"
@@ -66456,7 +66846,8 @@ BEGIN
             "NewProgramEvaluation_ProgramTypeDescriptor_Namespace",
             "NewProgramEvaluation_ProgramTypeDescriptor_CodeValue",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."ProgramEvaluationElementTitle",
@@ -66480,7 +66871,8 @@ BEGIN
             newDj2."Namespace",
             newDj2."CodeValue",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e"
         INNER JOIN "dms"."Descriptor" oldDj1 ON oldDj1."DocumentId" = OLD."ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId"
@@ -66737,7 +67129,8 @@ BEGIN
             "OldProgramEvaluation_ProgramTypeDescriptor_Namespace",
             "OldProgramEvaluation_ProgramTypeDescriptor_CodeValue",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."ProgramEvaluationObjectiveTitle",
@@ -66751,7 +67144,8 @@ BEGIN
             oldDj2."Namespace",
             oldDj2."CodeValue",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e"
         INNER JOIN "dms"."Descriptor" oldDj1 ON oldDj1."DocumentId" = OLD."ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId"
@@ -66800,7 +67194,8 @@ BEGIN
             "NewProgramEvaluation_ProgramTypeDescriptor_Namespace",
             "NewProgramEvaluation_ProgramTypeDescriptor_CodeValue",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."ProgramEvaluationObjectiveTitle",
@@ -66824,7 +67219,8 @@ BEGIN
             newDj2."Namespace",
             newDj2."CodeValue",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e"
         INNER JOIN "dms"."Descriptor" oldDj1 ON oldDj1."DocumentId" = OLD."ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId"
@@ -67171,13 +67567,15 @@ BEGIN
             "OldCode",
             "OldFiscalYear",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."Code",
             OLD."FiscalYear",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -67207,7 +67605,8 @@ BEGIN
             "NewCode",
             "NewFiscalYear",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."Code",
@@ -67215,7 +67614,8 @@ BEGIN
             NEW."Code",
             NEW."FiscalYear",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -67366,7 +67766,8 @@ BEGIN
             "OldStudent_StudentUniqueId",
             "OldStudent_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."EducationOrganization_EducationOrganizationId",
@@ -67376,12 +67777,13 @@ BEGIN
             OLD."GradingPeriodGradingPeriod_SchoolId",
             OLD."GradingPeriodGradingPeriod_SchoolYear",
             OLD."Student_StudentUniqueId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId"
-        INNER JOIN "edfi"."Student" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Student_DocumentId"
+        INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
@@ -67422,7 +67824,8 @@ BEGIN
             "NewStudent_StudentUniqueId",
             "NewStudent_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."EducationOrganization_EducationOrganizationId",
@@ -67432,7 +67835,7 @@ BEGIN
             OLD."GradingPeriodGradingPeriod_SchoolId",
             OLD."GradingPeriodGradingPeriod_SchoolYear",
             OLD."Student_StudentUniqueId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             NEW."EducationOrganization_EducationOrganizationId",
             newDj0."Namespace",
             newDj0."CodeValue",
@@ -67440,14 +67843,15 @@ BEGIN
             NEW."GradingPeriodGradingPeriod_SchoolId",
             NEW."GradingPeriodGradingPeriod_SchoolYear",
             NEW."Student_StudentUniqueId",
-            newPj0s0."DocumentId",
+            newPj0."DocumentId",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId"
-        INNER JOIN "edfi"."Student" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Student_DocumentId"
+        INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
         INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DocumentId" = NEW."GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId"
-        INNER JOIN "edfi"."Student" newPj0s0 ON newPj0s0."DocumentId" = NEW."Student_DocumentId"
+        INNER JOIN "edfi"."Student" newPj0 ON newPj0."StudentUniqueId" = NEW."Student_StudentUniqueId"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
     RETURN NEW;
@@ -67789,17 +68193,19 @@ BEGIN
             "OldStudent_StudentUniqueId",
             "OldStudent_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."RestraintEventIdentifier",
             OLD."SchoolId_Unified",
             OLD."Student_StudentUniqueId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "edfi"."Student" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Student_DocumentId"
+        INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
@@ -67832,22 +68238,24 @@ BEGIN
             "NewStudent_StudentUniqueId",
             "NewStudent_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."RestraintEventIdentifier",
             OLD."SchoolId_Unified",
             OLD."Student_StudentUniqueId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             NEW."RestraintEventIdentifier",
             NEW."SchoolId_Unified",
             NEW."Student_StudentUniqueId",
-            newPj0s0."DocumentId",
+            newPj0."DocumentId",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "edfi"."Student" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Student_DocumentId"
-        INNER JOIN "edfi"."Student" newPj0s0 ON newPj0s0."DocumentId" = NEW."Student_DocumentId"
+        INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
+        INNER JOIN "edfi"."Student" newPj0 ON newPj0."StudentUniqueId" = NEW."Student_StudentUniqueId"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
     RETURN NEW;
@@ -68225,12 +68633,14 @@ BEGIN
         INSERT INTO "tracked_changes_edfi"."School" (
             "OldSchoolId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."SchoolId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -69275,12 +69685,14 @@ BEGIN
         INSERT INTO "tracked_changes_edfi"."SchoolYearType" (
             "OldSchoolYear",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."SchoolYear",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -69308,13 +69720,15 @@ BEGIN
             "OldSchoolYear",
             "NewSchoolYear",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."SchoolYear",
             NEW."SchoolYear",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -69364,7 +69778,8 @@ BEGIN
             "OldCourseOffering_SessionName",
             "OldSectionIdentifier",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."CourseOffering_LocalCourseCode",
@@ -69373,7 +69788,8 @@ BEGIN
             OLD."CourseOffering_SessionName",
             OLD."SectionIdentifier",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -69409,7 +69825,8 @@ BEGIN
             "NewCourseOffering_SessionName",
             "NewSectionIdentifier",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."CourseOffering_LocalCourseCode",
@@ -69423,7 +69840,8 @@ BEGIN
             NEW."CourseOffering_SessionName",
             NEW."SectionIdentifier",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -69475,7 +69893,8 @@ BEGIN
             "OldSection_SectionIdentifier",
             "OldSection_SessionName",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."CalendarDate_CalendarCode",
@@ -69486,7 +69905,8 @@ BEGIN
             OLD."Section_SectionIdentifier",
             OLD."Section_SessionName",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -69526,7 +69946,8 @@ BEGIN
             "NewSection_SectionIdentifier",
             "NewSection_SessionName",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."CalendarDate_CalendarCode",
@@ -69544,7 +69965,8 @@ BEGIN
             NEW."Section_SectionIdentifier",
             NEW."Section_SessionName",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -70082,14 +70504,16 @@ BEGIN
             "OldSchoolYear_SchoolYear",
             "OldSessionName",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."School_SchoolId",
             OLD."SchoolYear_SchoolYear",
             OLD."SessionName",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -70121,7 +70545,8 @@ BEGIN
             "NewSchoolYear_SchoolYear",
             "NewSessionName",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."School_SchoolId",
@@ -70131,7 +70556,8 @@ BEGIN
             NEW."SchoolYear_SchoolYear",
             NEW."SessionName",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -70374,13 +70800,15 @@ BEGIN
             "OldCode",
             "OldFiscalYear",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."Code",
             OLD."FiscalYear",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -70410,7 +70838,8 @@ BEGIN
             "NewCode",
             "NewFiscalYear",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."Code",
@@ -70418,7 +70847,8 @@ BEGIN
             NEW."Code",
             NEW."FiscalYear",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -70561,15 +70991,15 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."Staff" (
             "OldStaffUniqueId",
-            "OldStaff_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."StaffUniqueId",
-            OLD."DocumentId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -70595,19 +71025,17 @@ BEGIN
     IF TG_OP = 'UPDATE' AND (OLD."StaffUniqueId" IS DISTINCT FROM NEW."StaffUniqueId") THEN
         INSERT INTO "tracked_changes_edfi"."Staff" (
             "OldStaffUniqueId",
-            "OldStaff_DocumentId",
             "NewStaffUniqueId",
-            "NewStaff_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."StaffUniqueId",
-            OLD."DocumentId",
             NEW."StaffUniqueId",
-            NEW."DocumentId",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -70657,19 +71085,21 @@ BEGIN
             "OldStaff_StaffUniqueId",
             "OldStaff_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             oldDj0."Namespace",
             oldDj0."CodeValue",
             OLD."EventDate",
             OLD."Staff_StaffUniqueId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."AbsenceEventCategoryDescriptor_DescriptorId"
-        INNER JOIN "edfi"."Staff" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Staff_DocumentId"
+        INNER JOIN "edfi"."Staff" oldPj0 ON oldPj0."StaffUniqueId" = OLD."Staff_StaffUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
@@ -70704,26 +71134,28 @@ BEGIN
             "NewStaff_StaffUniqueId",
             "NewStaff_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             oldDj0."Namespace",
             oldDj0."CodeValue",
             OLD."EventDate",
             OLD."Staff_StaffUniqueId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             newDj0."Namespace",
             newDj0."CodeValue",
             NEW."EventDate",
             NEW."Staff_StaffUniqueId",
-            newPj0s0."DocumentId",
+            newPj0."DocumentId",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."AbsenceEventCategoryDescriptor_DescriptorId"
-        INNER JOIN "edfi"."Staff" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Staff_DocumentId"
+        INNER JOIN "edfi"."Staff" oldPj0 ON oldPj0."StaffUniqueId" = OLD."Staff_StaffUniqueId"
         INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DocumentId" = NEW."AbsenceEventCategoryDescriptor_DescriptorId"
-        INNER JOIN "edfi"."Staff" newPj0s0 ON newPj0s0."DocumentId" = NEW."Staff_DocumentId"
+        INNER JOIN "edfi"."Staff" newPj0 ON newPj0."StaffUniqueId" = NEW."Staff_StaffUniqueId"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
     RETURN NEW;
@@ -71066,18 +71498,20 @@ BEGIN
             "OldStaff_StaffUniqueId",
             "OldStaff_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."BeginDate",
             OLD."Cohort_CohortIdentifier",
             OLD."Cohort_EducationOrganizationId",
             OLD."Staff_StaffUniqueId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "edfi"."Staff" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Staff_DocumentId"
+        INNER JOIN "edfi"."Staff" oldPj0 ON oldPj0."StaffUniqueId" = OLD."Staff_StaffUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
@@ -71112,24 +71546,26 @@ BEGIN
             "NewStaff_StaffUniqueId",
             "NewStaff_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."BeginDate",
             OLD."Cohort_CohortIdentifier",
             OLD."Cohort_EducationOrganizationId",
             OLD."Staff_StaffUniqueId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             NEW."BeginDate",
             NEW."Cohort_CohortIdentifier",
             NEW."Cohort_EducationOrganizationId",
             NEW."Staff_StaffUniqueId",
-            newPj0s0."DocumentId",
+            newPj0."DocumentId",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "edfi"."Staff" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Staff_DocumentId"
-        INNER JOIN "edfi"."Staff" newPj0s0 ON newPj0s0."DocumentId" = NEW."Staff_DocumentId"
+        INNER JOIN "edfi"."Staff" oldPj0 ON oldPj0."StaffUniqueId" = OLD."Staff_StaffUniqueId"
+        INNER JOIN "edfi"."Staff" newPj0 ON newPj0."StaffUniqueId" = NEW."Staff_StaffUniqueId"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
     RETURN NEW;
@@ -71275,17 +71711,19 @@ BEGIN
             "OldStaff_StaffUniqueId",
             "OldStaff_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."DisciplineIncident_IncidentIdentifier",
             OLD."DisciplineIncident_SchoolId",
             OLD."Staff_StaffUniqueId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "edfi"."Staff" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Staff_DocumentId"
+        INNER JOIN "edfi"."Staff" oldPj0 ON oldPj0."StaffUniqueId" = OLD."Staff_StaffUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
@@ -71318,22 +71756,24 @@ BEGIN
             "NewStaff_StaffUniqueId",
             "NewStaff_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."DisciplineIncident_IncidentIdentifier",
             OLD."DisciplineIncident_SchoolId",
             OLD."Staff_StaffUniqueId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             NEW."DisciplineIncident_IncidentIdentifier",
             NEW."DisciplineIncident_SchoolId",
             NEW."Staff_StaffUniqueId",
-            newPj0s0."DocumentId",
+            newPj0."DocumentId",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "edfi"."Staff" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Staff_DocumentId"
-        INNER JOIN "edfi"."Staff" newPj0s0 ON newPj0s0."DocumentId" = NEW."Staff_DocumentId"
+        INNER JOIN "edfi"."Staff" oldPj0 ON oldPj0."StaffUniqueId" = OLD."Staff_StaffUniqueId"
+        INNER JOIN "edfi"."Staff" newPj0 ON newPj0."StaffUniqueId" = NEW."Staff_StaffUniqueId"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
     RETURN NEW;
@@ -71481,7 +71921,8 @@ BEGIN
             "OldStaffUniqueId_Unified",
             "OldStaff_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."BeginDate",
@@ -71489,12 +71930,13 @@ BEGIN
             oldDj0."Namespace",
             oldDj0."CodeValue",
             OLD."StaffUniqueId_Unified",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."StaffClassificationDescriptor_DescriptorId"
-        INNER JOIN "edfi"."Staff" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Staff_DocumentId"
+        INNER JOIN "edfi"."Staff" oldPj0 ON oldPj0."StaffUniqueId" = OLD."StaffUniqueId_Unified"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
@@ -71531,7 +71973,8 @@ BEGIN
             "NewStaffUniqueId_Unified",
             "NewStaff_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."BeginDate",
@@ -71539,20 +71982,21 @@ BEGIN
             oldDj0."Namespace",
             oldDj0."CodeValue",
             OLD."StaffUniqueId_Unified",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             NEW."BeginDate",
             NEW."EducationOrganization_EducationOrganizationId",
             newDj0."Namespace",
             newDj0."CodeValue",
             NEW."StaffUniqueId_Unified",
-            newPj0s0."DocumentId",
+            newPj0."DocumentId",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."StaffClassificationDescriptor_DescriptorId"
-        INNER JOIN "edfi"."Staff" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Staff_DocumentId"
+        INNER JOIN "edfi"."Staff" oldPj0 ON oldPj0."StaffUniqueId" = OLD."StaffUniqueId_Unified"
         INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DocumentId" = NEW."StaffClassificationDescriptor_DescriptorId"
-        INNER JOIN "edfi"."Staff" newPj0s0 ON newPj0s0."DocumentId" = NEW."Staff_DocumentId"
+        INNER JOIN "edfi"."Staff" newPj0 ON newPj0."StaffUniqueId" = NEW."StaffUniqueId_Unified"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
     RETURN NEW;
@@ -71600,17 +72044,19 @@ BEGIN
             "OldStaff_StaffUniqueId",
             "OldStaff_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."ContactTitle",
             OLD."EducationOrganization_EducationOrganizationId",
             OLD."Staff_StaffUniqueId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "edfi"."Staff" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Staff_DocumentId"
+        INNER JOIN "edfi"."Staff" oldPj0 ON oldPj0."StaffUniqueId" = OLD."Staff_StaffUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
@@ -71643,22 +72089,24 @@ BEGIN
             "NewStaff_StaffUniqueId",
             "NewStaff_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."ContactTitle",
             OLD."EducationOrganization_EducationOrganizationId",
             OLD."Staff_StaffUniqueId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             NEW."ContactTitle",
             NEW."EducationOrganization_EducationOrganizationId",
             NEW."Staff_StaffUniqueId",
-            newPj0s0."DocumentId",
+            newPj0."DocumentId",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "edfi"."Staff" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Staff_DocumentId"
-        INNER JOIN "edfi"."Staff" newPj0s0 ON newPj0s0."DocumentId" = NEW."Staff_DocumentId"
+        INNER JOIN "edfi"."Staff" oldPj0 ON oldPj0."StaffUniqueId" = OLD."Staff_StaffUniqueId"
+        INNER JOIN "edfi"."Staff" newPj0 ON newPj0."StaffUniqueId" = NEW."Staff_StaffUniqueId"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
     RETURN NEW;
@@ -71904,7 +72352,8 @@ BEGIN
             "OldStaff_StaffUniqueId",
             "OldStaff_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."EducationOrganization_EducationOrganizationId",
@@ -71912,12 +72361,13 @@ BEGIN
             oldDj0."CodeValue",
             OLD."HireDate",
             OLD."Staff_StaffUniqueId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."EmploymentStatusDescriptor_DescriptorId"
-        INNER JOIN "edfi"."Staff" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Staff_DocumentId"
+        INNER JOIN "edfi"."Staff" oldPj0 ON oldPj0."StaffUniqueId" = OLD."Staff_StaffUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
@@ -71954,7 +72404,8 @@ BEGIN
             "NewStaff_StaffUniqueId",
             "NewStaff_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."EducationOrganization_EducationOrganizationId",
@@ -71962,20 +72413,21 @@ BEGIN
             oldDj0."CodeValue",
             OLD."HireDate",
             OLD."Staff_StaffUniqueId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             NEW."EducationOrganization_EducationOrganizationId",
             newDj0."Namespace",
             newDj0."CodeValue",
             NEW."HireDate",
             NEW."Staff_StaffUniqueId",
-            newPj0s0."DocumentId",
+            newPj0."DocumentId",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."EmploymentStatusDescriptor_DescriptorId"
-        INNER JOIN "edfi"."Staff" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Staff_DocumentId"
+        INNER JOIN "edfi"."Staff" oldPj0 ON oldPj0."StaffUniqueId" = OLD."Staff_StaffUniqueId"
         INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DocumentId" = NEW."EmploymentStatusDescriptor_DescriptorId"
-        INNER JOIN "edfi"."Staff" newPj0s0 ON newPj0s0."DocumentId" = NEW."Staff_DocumentId"
+        INNER JOIN "edfi"."Staff" newPj0 ON newPj0."StaffUniqueId" = NEW."Staff_StaffUniqueId"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
     RETURN NEW;
@@ -72612,19 +73064,21 @@ BEGIN
             "OldStaff_StaffUniqueId",
             "OldStaff_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."BeginDate",
             oldDj0."Namespace",
             oldDj0."CodeValue",
             OLD."Staff_StaffUniqueId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."StaffLeaveEventCategoryDescriptor_DescriptorId"
-        INNER JOIN "edfi"."Staff" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Staff_DocumentId"
+        INNER JOIN "edfi"."Staff" oldPj0 ON oldPj0."StaffUniqueId" = OLD."Staff_StaffUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
@@ -72659,26 +73113,28 @@ BEGIN
             "NewStaff_StaffUniqueId",
             "NewStaff_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."BeginDate",
             oldDj0."Namespace",
             oldDj0."CodeValue",
             OLD."Staff_StaffUniqueId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             NEW."BeginDate",
             newDj0."Namespace",
             newDj0."CodeValue",
             NEW."Staff_StaffUniqueId",
-            newPj0s0."DocumentId",
+            newPj0."DocumentId",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."StaffLeaveEventCategoryDescriptor_DescriptorId"
-        INNER JOIN "edfi"."Staff" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Staff_DocumentId"
+        INNER JOIN "edfi"."Staff" oldPj0 ON oldPj0."StaffUniqueId" = OLD."Staff_StaffUniqueId"
         INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DocumentId" = NEW."StaffLeaveEventCategoryDescriptor_DescriptorId"
-        INNER JOIN "edfi"."Staff" newPj0s0 ON newPj0s0."DocumentId" = NEW."Staff_DocumentId"
+        INNER JOIN "edfi"."Staff" newPj0 ON newPj0."StaffUniqueId" = NEW."Staff_StaffUniqueId"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
     RETURN NEW;
@@ -72925,7 +73381,8 @@ BEGIN
             "OldStaff_StaffUniqueId",
             "OldStaff_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."BeginDate",
@@ -72934,12 +73391,13 @@ BEGIN
             oldDj0."Namespace",
             oldDj0."CodeValue",
             OLD."Staff_StaffUniqueId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId"
-        INNER JOIN "edfi"."Staff" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Staff_DocumentId"
+        INNER JOIN "edfi"."Staff" oldPj0 ON oldPj0."StaffUniqueId" = OLD."Staff_StaffUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
@@ -72978,7 +73436,8 @@ BEGIN
             "NewStaff_StaffUniqueId",
             "NewStaff_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."BeginDate",
@@ -72987,21 +73446,22 @@ BEGIN
             oldDj0."Namespace",
             oldDj0."CodeValue",
             OLD."Staff_StaffUniqueId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             NEW."BeginDate",
             NEW."ProgramProgram_EducationOrganizationId",
             NEW."ProgramProgram_ProgramName",
             newDj0."Namespace",
             newDj0."CodeValue",
             NEW."Staff_StaffUniqueId",
-            newPj0s0."DocumentId",
+            newPj0."DocumentId",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId"
-        INNER JOIN "edfi"."Staff" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Staff_DocumentId"
+        INNER JOIN "edfi"."Staff" oldPj0 ON oldPj0."StaffUniqueId" = OLD."Staff_StaffUniqueId"
         INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DocumentId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId"
-        INNER JOIN "edfi"."Staff" newPj0s0 ON newPj0s0."DocumentId" = NEW."Staff_DocumentId"
+        INNER JOIN "edfi"."Staff" newPj0 ON newPj0."StaffUniqueId" = NEW."Staff_StaffUniqueId"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
     RETURN NEW;
@@ -73246,19 +73706,21 @@ BEGIN
             "OldStaff_StaffUniqueId",
             "OldStaff_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             oldDj0."Namespace",
             oldDj0."CodeValue",
             OLD."SchoolId_Unified",
             OLD."Staff_StaffUniqueId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."ProgramAssignmentDescriptor_DescriptorId"
-        INNER JOIN "edfi"."Staff" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Staff_DocumentId"
+        INNER JOIN "edfi"."Staff" oldPj0 ON oldPj0."StaffUniqueId" = OLD."Staff_StaffUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
@@ -73293,26 +73755,28 @@ BEGIN
             "NewStaff_StaffUniqueId",
             "NewStaff_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             oldDj0."Namespace",
             oldDj0."CodeValue",
             OLD."SchoolId_Unified",
             OLD."Staff_StaffUniqueId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             newDj0."Namespace",
             newDj0."CodeValue",
             NEW."SchoolId_Unified",
             NEW."Staff_StaffUniqueId",
-            newPj0s0."DocumentId",
+            newPj0."DocumentId",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."ProgramAssignmentDescriptor_DescriptorId"
-        INNER JOIN "edfi"."Staff" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Staff_DocumentId"
+        INNER JOIN "edfi"."Staff" oldPj0 ON oldPj0."StaffUniqueId" = OLD."Staff_StaffUniqueId"
         INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DocumentId" = NEW."ProgramAssignmentDescriptor_DescriptorId"
-        INNER JOIN "edfi"."Staff" newPj0s0 ON newPj0s0."DocumentId" = NEW."Staff_DocumentId"
+        INNER JOIN "edfi"."Staff" newPj0 ON newPj0."StaffUniqueId" = NEW."Staff_StaffUniqueId"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
     RETURN NEW;
@@ -73560,7 +74024,8 @@ BEGIN
             "OldStaff_StaffUniqueId",
             "OldStaff_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."BeginDate",
@@ -73570,11 +74035,12 @@ BEGIN
             OLD."Section_SectionIdentifier",
             OLD."Section_SessionName",
             OLD."Staff_StaffUniqueId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "edfi"."Staff" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Staff_DocumentId"
+        INNER JOIN "edfi"."Staff" oldPj0 ON oldPj0."StaffUniqueId" = OLD."Staff_StaffUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
@@ -73615,7 +74081,8 @@ BEGIN
             "NewStaff_StaffUniqueId",
             "NewStaff_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."BeginDate",
@@ -73625,7 +74092,7 @@ BEGIN
             OLD."Section_SectionIdentifier",
             OLD."Section_SessionName",
             OLD."Staff_StaffUniqueId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             NEW."BeginDate",
             NEW."Section_LocalCourseCode",
             NEW."Section_SchoolId",
@@ -73633,12 +74100,13 @@ BEGIN
             NEW."Section_SectionIdentifier",
             NEW."Section_SessionName",
             NEW."Staff_StaffUniqueId",
-            newPj0s0."DocumentId",
+            newPj0."DocumentId",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "edfi"."Staff" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Staff_DocumentId"
-        INNER JOIN "edfi"."Staff" newPj0s0 ON newPj0s0."DocumentId" = NEW."Staff_DocumentId"
+        INNER JOIN "edfi"."Staff" oldPj0 ON oldPj0."StaffUniqueId" = OLD."Staff_StaffUniqueId"
+        INNER JOIN "edfi"."Staff" newPj0 ON newPj0."StaffUniqueId" = NEW."Staff_StaffUniqueId"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
     RETURN NEW;
@@ -74030,12 +74498,14 @@ BEGIN
         INSERT INTO "tracked_changes_edfi"."StateEducationAgency" (
             "OldStateEducationAgencyId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."StateEducationAgencyId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -75079,15 +75549,15 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."Student" (
             "OldStudentUniqueId",
-            "OldStudent_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."StudentUniqueId",
-            OLD."DocumentId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -75113,19 +75583,17 @@ BEGIN
     IF TG_OP = 'UPDATE' AND (OLD."StudentUniqueId" IS DISTINCT FROM NEW."StudentUniqueId") THEN
         INSERT INTO "tracked_changes_edfi"."Student" (
             "OldStudentUniqueId",
-            "OldStudent_DocumentId",
             "NewStudentUniqueId",
-            "NewStudent_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."StudentUniqueId",
-            OLD."DocumentId",
             NEW."StudentUniqueId",
-            NEW."DocumentId",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -75176,7 +75644,8 @@ BEGIN
             "OldTermDescriptor_CodeValue",
             "OldStudent_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."EducationOrganization_EducationOrganizationId",
@@ -75184,12 +75653,13 @@ BEGIN
             OLD."Student_StudentUniqueId",
             oldDj0."Namespace",
             oldDj0."CodeValue",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."TermDescriptor_DescriptorId"
-        INNER JOIN "edfi"."Student" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Student_DocumentId"
+        INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
@@ -75226,7 +75696,8 @@ BEGIN
             "NewTermDescriptor_CodeValue",
             "NewStudent_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."EducationOrganization_EducationOrganizationId",
@@ -75234,20 +75705,21 @@ BEGIN
             OLD."Student_StudentUniqueId",
             oldDj0."Namespace",
             oldDj0."CodeValue",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             NEW."EducationOrganization_EducationOrganizationId",
             NEW."SchoolYear_SchoolYear",
             NEW."Student_StudentUniqueId",
             newDj0."Namespace",
             newDj0."CodeValue",
-            newPj0s0."DocumentId",
+            newPj0."DocumentId",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."TermDescriptor_DescriptorId"
-        INNER JOIN "edfi"."Student" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Student_DocumentId"
+        INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
         INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DocumentId" = NEW."TermDescriptor_DescriptorId"
-        INNER JOIN "edfi"."Student" newPj0s0 ON newPj0s0."DocumentId" = NEW."Student_DocumentId"
+        INNER JOIN "edfi"."Student" newPj0 ON newPj0."StudentUniqueId" = NEW."Student_StudentUniqueId"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
     RETURN NEW;
@@ -75787,7 +76259,8 @@ BEGIN
             "OldReportedSchool_SchoolId",
             "OldStudent_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."Assessment_AssessmentIdentifier",
@@ -75795,11 +76268,12 @@ BEGIN
             OLD."StudentAssessmentIdentifier",
             OLD."Student_StudentUniqueId",
             OLD."ReportedSchool_SchoolId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "edfi"."Student" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Student_DocumentId"
+        INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
@@ -75836,7 +76310,8 @@ BEGIN
             "NewReportedSchool_SchoolId",
             "NewStudent_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."Assessment_AssessmentIdentifier",
@@ -75844,18 +76319,19 @@ BEGIN
             OLD."StudentAssessmentIdentifier",
             OLD."Student_StudentUniqueId",
             OLD."ReportedSchool_SchoolId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             NEW."Assessment_AssessmentIdentifier",
             NEW."Assessment_Namespace",
             NEW."StudentAssessmentIdentifier",
             NEW."Student_StudentUniqueId",
             NEW."ReportedSchool_SchoolId",
-            newPj0s0."DocumentId",
+            newPj0."DocumentId",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "edfi"."Student" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Student_DocumentId"
-        INNER JOIN "edfi"."Student" newPj0s0 ON newPj0s0."DocumentId" = NEW."Student_DocumentId"
+        INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
+        INNER JOIN "edfi"."Student" newPj0 ON newPj0."StudentUniqueId" = NEW."Student_StudentUniqueId"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
     RETURN NEW;
@@ -76005,7 +76481,8 @@ BEGIN
             "OldStudentAssessment_StudentUniqueId",
             "OldStudentAssessment_Student_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             oldDj0."Namespace",
@@ -76015,13 +76492,13 @@ BEGIN
             OLD."StudentAssessment_Namespace",
             OLD."StudentAssessment_StudentAssessmentIdentifier",
             OLD."StudentAssessment_StudentUniqueId",
-            oldPj0s1."DocumentId",
+            oldPj0."DocumentId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."EducationOrganizationAssociationTypeDescriptor_DescriptorId"
-        INNER JOIN "edfi"."StudentAssessment" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."StudentAssessment_DocumentId"
-        INNER JOIN "edfi"."Student" oldPj0s1 ON oldPj0s1."DocumentId" = oldPj0s0."Student_DocumentId"
+        INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."StudentAssessment_StudentUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
@@ -76062,7 +76539,8 @@ BEGIN
             "NewStudentAssessment_StudentUniqueId",
             "NewStudentAssessment_Student_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             oldDj0."Namespace",
@@ -76072,7 +76550,7 @@ BEGIN
             OLD."StudentAssessment_Namespace",
             OLD."StudentAssessment_StudentAssessmentIdentifier",
             OLD."StudentAssessment_StudentUniqueId",
-            oldPj0s1."DocumentId",
+            oldPj0."DocumentId",
             newDj0."Namespace",
             newDj0."CodeValue",
             NEW."EducationOrganization_EducationOrganizationId",
@@ -76080,16 +76558,15 @@ BEGIN
             NEW."StudentAssessment_Namespace",
             NEW."StudentAssessment_StudentAssessmentIdentifier",
             NEW."StudentAssessment_StudentUniqueId",
-            newPj0s1."DocumentId",
+            newPj0."DocumentId",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."EducationOrganizationAssociationTypeDescriptor_DescriptorId"
-        INNER JOIN "edfi"."StudentAssessment" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."StudentAssessment_DocumentId"
-        INNER JOIN "edfi"."Student" oldPj0s1 ON oldPj0s1."DocumentId" = oldPj0s0."Student_DocumentId"
+        INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."StudentAssessment_StudentUniqueId"
         INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DocumentId" = NEW."EducationOrganizationAssociationTypeDescriptor_DescriptorId"
-        INNER JOIN "edfi"."StudentAssessment" newPj0s0 ON newPj0s0."DocumentId" = NEW."StudentAssessment_DocumentId"
-        INNER JOIN "edfi"."Student" newPj0s1 ON newPj0s1."DocumentId" = newPj0s0."Student_DocumentId"
+        INNER JOIN "edfi"."Student" newPj0 ON newPj0."StudentUniqueId" = NEW."StudentAssessment_StudentUniqueId"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
     RETURN NEW;
@@ -76336,7 +76813,8 @@ BEGIN
             "OldStudentUniqueId_Unified",
             "OldStudentEducationOrganizationAssociation_Student_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."AssessmentAdministration_AdministrationIdentifier",
@@ -76345,12 +76823,12 @@ BEGIN
             OLD."AssessmentAdministration_Namespace",
             OLD."StudentEducationOrganizationAssociation_EducationOrganizationId",
             OLD."StudentUniqueId_Unified",
-            oldPj0s1."DocumentId",
+            oldPj0."DocumentId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "edfi"."StudentEducationOrganizationAssociation" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."StudentEducationOrganizationAssociation_DocumentId"
-        INNER JOIN "edfi"."Student" oldPj0s1 ON oldPj0s1."DocumentId" = oldPj0s0."Student_DocumentId"
+        INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."StudentUniqueId_Unified"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
@@ -76389,7 +76867,8 @@ BEGIN
             "NewStudentUniqueId_Unified",
             "NewStudentEducationOrganizationAssociation_Student_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."AssessmentAdministration_AdministrationIdentifier",
@@ -76398,21 +76877,20 @@ BEGIN
             OLD."AssessmentAdministration_Namespace",
             OLD."StudentEducationOrganizationAssociation_EducationOrganizationId",
             OLD."StudentUniqueId_Unified",
-            oldPj0s1."DocumentId",
+            oldPj0."DocumentId",
             NEW."AssessmentAdministration_AdministrationIdentifier",
             NEW."AssessmentAdministration_AssessmentIdentifier",
             NEW."AssessmentAdministration_AssigningEducationOrganizationId",
             NEW."AssessmentAdministration_Namespace",
             NEW."StudentEducationOrganizationAssociation_EducationOrganizationId",
             NEW."StudentUniqueId_Unified",
-            newPj0s1."DocumentId",
+            newPj0."DocumentId",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "edfi"."StudentEducationOrganizationAssociation" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."StudentEducationOrganizationAssociation_DocumentId"
-        INNER JOIN "edfi"."Student" oldPj0s1 ON oldPj0s1."DocumentId" = oldPj0s0."Student_DocumentId"
-        INNER JOIN "edfi"."StudentEducationOrganizationAssociation" newPj0s0 ON newPj0s0."DocumentId" = NEW."StudentEducationOrganizationAssociation_DocumentId"
-        INNER JOIN "edfi"."Student" newPj0s1 ON newPj0s1."DocumentId" = newPj0s0."Student_DocumentId"
+        INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."StudentUniqueId_Unified"
+        INNER JOIN "edfi"."Student" newPj0 ON newPj0."StudentUniqueId" = NEW."StudentUniqueId_Unified"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
     RETURN NEW;
@@ -76660,7 +77138,8 @@ BEGIN
             "OldStudentAssessmentRegistration_StudentUniqueId",
             "OldStudentAssessmentRegistration_StudentEducationOrg_492057c6e1",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."AssessmentBatteryPart_AssessmentBatteryPartName",
@@ -76670,13 +77149,12 @@ BEGIN
             OLD."StudentAssessmentRegistration_AssigningEducationOrganizationId",
             OLD."StudentAssessmentRegistration_EducationOrganizationId",
             OLD."StudentAssessmentRegistration_StudentUniqueId",
-            oldPj0s2."DocumentId",
+            oldPj0."DocumentId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "edfi"."StudentAssessmentRegistration" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."StudentAssessmentRegistration_DocumentId"
-        INNER JOIN "edfi"."StudentEducationOrganizationAssociation" oldPj0s1 ON oldPj0s1."DocumentId" = oldPj0s0."StudentEducationOrganizationAssociation_DocumentId"
-        INNER JOIN "edfi"."Student" oldPj0s2 ON oldPj0s2."DocumentId" = oldPj0s1."Student_DocumentId"
+        INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."StudentAssessmentRegistration_StudentUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
@@ -76717,7 +77195,8 @@ BEGIN
             "NewStudentAssessmentRegistration_StudentUniqueId",
             "NewStudentAssessmentRegistration_StudentEducationOrg_bfebe478d0",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."AssessmentBatteryPart_AssessmentBatteryPartName",
@@ -76727,7 +77206,7 @@ BEGIN
             OLD."StudentAssessmentRegistration_AssigningEducationOrganizationId",
             OLD."StudentAssessmentRegistration_EducationOrganizationId",
             OLD."StudentAssessmentRegistration_StudentUniqueId",
-            oldPj0s2."DocumentId",
+            oldPj0."DocumentId",
             NEW."AssessmentBatteryPart_AssessmentBatteryPartName",
             NEW."AssessmentIdentifier_Unified",
             NEW."Namespace_Unified",
@@ -76735,16 +77214,13 @@ BEGIN
             NEW."StudentAssessmentRegistration_AssigningEducationOrganizationId",
             NEW."StudentAssessmentRegistration_EducationOrganizationId",
             NEW."StudentAssessmentRegistration_StudentUniqueId",
-            newPj0s2."DocumentId",
+            newPj0."DocumentId",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "edfi"."StudentAssessmentRegistration" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."StudentAssessmentRegistration_DocumentId"
-        INNER JOIN "edfi"."StudentEducationOrganizationAssociation" oldPj0s1 ON oldPj0s1."DocumentId" = oldPj0s0."StudentEducationOrganizationAssociation_DocumentId"
-        INNER JOIN "edfi"."Student" oldPj0s2 ON oldPj0s2."DocumentId" = oldPj0s1."Student_DocumentId"
-        INNER JOIN "edfi"."StudentAssessmentRegistration" newPj0s0 ON newPj0s0."DocumentId" = NEW."StudentAssessmentRegistration_DocumentId"
-        INNER JOIN "edfi"."StudentEducationOrganizationAssociation" newPj0s1 ON newPj0s1."DocumentId" = newPj0s0."StudentEducationOrganizationAssociation_DocumentId"
-        INNER JOIN "edfi"."Student" newPj0s2 ON newPj0s2."DocumentId" = newPj0s1."Student_DocumentId"
+        INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."StudentAssessmentRegistration_StudentUniqueId"
+        INNER JOIN "edfi"."Student" newPj0 ON newPj0."StudentUniqueId" = NEW."StudentAssessmentRegistration_StudentUniqueId"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
     RETURN NEW;
@@ -77309,7 +77785,8 @@ BEGIN
             "OldStudent_StudentUniqueId",
             "OldStudent_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."BeginDate",
@@ -77319,12 +77796,13 @@ BEGIN
             oldDj0."Namespace",
             oldDj0."CodeValue",
             OLD."Student_StudentUniqueId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId"
-        INNER JOIN "edfi"."Student" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Student_DocumentId"
+        INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
@@ -77588,18 +78066,20 @@ BEGIN
             "OldStudent_StudentUniqueId",
             "OldStudent_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."BeginDate",
             OLD."Cohort_CohortIdentifier",
             OLD."Cohort_EducationOrganizationId",
             OLD."Student_StudentUniqueId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "edfi"."Student" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Student_DocumentId"
+        INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
@@ -77634,24 +78114,26 @@ BEGIN
             "NewStudent_StudentUniqueId",
             "NewStudent_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."BeginDate",
             OLD."Cohort_CohortIdentifier",
             OLD."Cohort_EducationOrganizationId",
             OLD."Student_StudentUniqueId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             NEW."BeginDate",
             NEW."Cohort_CohortIdentifier",
             NEW."Cohort_EducationOrganizationId",
             NEW."Student_StudentUniqueId",
-            newPj0s0."DocumentId",
+            newPj0."DocumentId",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "edfi"."Student" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Student_DocumentId"
-        INNER JOIN "edfi"."Student" newPj0s0 ON newPj0s0."DocumentId" = NEW."Student_DocumentId"
+        INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
+        INNER JOIN "edfi"."Student" newPj0 ON newPj0."StudentUniqueId" = NEW."Student_StudentUniqueId"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
     RETURN NEW;
@@ -77804,7 +78286,8 @@ BEGIN
             "OldStudent_StudentUniqueId",
             "OldStudent_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             oldDj0."Namespace",
@@ -77817,13 +78300,14 @@ BEGIN
             oldDj1."Namespace",
             oldDj1."CodeValue",
             OLD."Student_StudentUniqueId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId"
         INNER JOIN "dms"."Descriptor" oldDj1 ON oldDj1."DocumentId" = OLD."ObjectiveCompetencyObjective_ObjectiveGradeLevelDesc_5b5c253e2e"
-        INNER JOIN "edfi"."Student" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Student_DocumentId"
+        INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
@@ -77870,7 +78354,8 @@ BEGIN
             "NewStudent_StudentUniqueId",
             "NewStudent_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             oldDj0."Namespace",
@@ -77883,7 +78368,7 @@ BEGIN
             oldDj1."Namespace",
             oldDj1."CodeValue",
             OLD."Student_StudentUniqueId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             newDj0."Namespace",
             newDj0."CodeValue",
             NEW."GradingPeriodGradingPeriod_GradingPeriodName",
@@ -77894,16 +78379,17 @@ BEGIN
             newDj1."Namespace",
             newDj1."CodeValue",
             NEW."Student_StudentUniqueId",
-            newPj0s0."DocumentId",
+            newPj0."DocumentId",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId"
         INNER JOIN "dms"."Descriptor" oldDj1 ON oldDj1."DocumentId" = OLD."ObjectiveCompetencyObjective_ObjectiveGradeLevelDesc_5b5c253e2e"
-        INNER JOIN "edfi"."Student" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Student_DocumentId"
+        INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
         INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DocumentId" = NEW."GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId"
         INNER JOIN "dms"."Descriptor" newDj1 ON newDj1."DocumentId" = NEW."ObjectiveCompetencyObjective_ObjectiveGradeLevelDesc_5b5c253e2e"
-        INNER JOIN "edfi"."Student" newPj0s0 ON newPj0s0."DocumentId" = NEW."Student_DocumentId"
+        INNER JOIN "edfi"."Student" newPj0 ON newPj0."StudentUniqueId" = NEW."Student_StudentUniqueId"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
     RETURN NEW;
@@ -78147,18 +78633,20 @@ BEGIN
             "OldStudent_DocumentId",
             "OldContact_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."Contact_ContactUniqueId",
             OLD."Student_StudentUniqueId",
-            oldPj1s0."DocumentId",
-            oldPj0s0."DocumentId",
+            oldPj1."DocumentId",
+            oldPj0."DocumentId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "edfi"."Contact" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Contact_DocumentId"
-        INNER JOIN "edfi"."Student" oldPj1s0 ON oldPj1s0."DocumentId" = OLD."Student_DocumentId"
+        INNER JOIN "edfi"."Contact" oldPj0 ON oldPj0."ContactUniqueId" = OLD."Contact_ContactUniqueId"
+        INNER JOIN "edfi"."Student" oldPj1 ON oldPj1."StudentUniqueId" = OLD."Student_StudentUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
@@ -78191,24 +78679,26 @@ BEGIN
             "NewStudent_DocumentId",
             "NewContact_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."Contact_ContactUniqueId",
             OLD."Student_StudentUniqueId",
-            oldPj1s0."DocumentId",
-            oldPj0s0."DocumentId",
+            oldPj1."DocumentId",
+            oldPj0."DocumentId",
             NEW."Contact_ContactUniqueId",
             NEW."Student_StudentUniqueId",
-            newPj1s0."DocumentId",
-            newPj0s0."DocumentId",
+            newPj1."DocumentId",
+            newPj0."DocumentId",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "edfi"."Contact" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Contact_DocumentId"
-        INNER JOIN "edfi"."Student" oldPj1s0 ON oldPj1s0."DocumentId" = OLD."Student_DocumentId"
-        INNER JOIN "edfi"."Contact" newPj0s0 ON newPj0s0."DocumentId" = NEW."Contact_DocumentId"
-        INNER JOIN "edfi"."Student" newPj1s0 ON newPj1s0."DocumentId" = NEW."Student_DocumentId"
+        INNER JOIN "edfi"."Contact" oldPj0 ON oldPj0."ContactUniqueId" = OLD."Contact_ContactUniqueId"
+        INNER JOIN "edfi"."Student" oldPj1 ON oldPj1."StudentUniqueId" = OLD."Student_StudentUniqueId"
+        INNER JOIN "edfi"."Contact" newPj0 ON newPj0."ContactUniqueId" = NEW."Contact_ContactUniqueId"
+        INNER JOIN "edfi"."Student" newPj1 ON newPj1."StudentUniqueId" = NEW."Student_StudentUniqueId"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
     RETURN NEW;
@@ -78258,7 +78748,8 @@ BEGIN
             "OldStudent_StudentUniqueId",
             "OldStudent_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             oldDj0."Namespace",
@@ -78266,12 +78757,13 @@ BEGIN
             OLD."DisciplineIncident_IncidentIdentifier",
             OLD."DisciplineIncident_SchoolId",
             OLD."Student_StudentUniqueId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."BehaviorDescriptor_DescriptorId"
-        INNER JOIN "edfi"."Student" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Student_DocumentId"
+        INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
@@ -78308,7 +78800,8 @@ BEGIN
             "NewStudent_StudentUniqueId",
             "NewStudent_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             oldDj0."Namespace",
@@ -78316,20 +78809,21 @@ BEGIN
             OLD."DisciplineIncident_IncidentIdentifier",
             OLD."DisciplineIncident_SchoolId",
             OLD."Student_StudentUniqueId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             newDj0."Namespace",
             newDj0."CodeValue",
             NEW."DisciplineIncident_IncidentIdentifier",
             NEW."DisciplineIncident_SchoolId",
             NEW."Student_StudentUniqueId",
-            newPj0s0."DocumentId",
+            newPj0."DocumentId",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."BehaviorDescriptor_DescriptorId"
-        INNER JOIN "edfi"."Student" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Student_DocumentId"
+        INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
         INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DocumentId" = NEW."BehaviorDescriptor_DescriptorId"
-        INNER JOIN "edfi"."Student" newPj0s0 ON newPj0s0."DocumentId" = NEW."Student_DocumentId"
+        INNER JOIN "edfi"."Student" newPj0 ON newPj0."StudentUniqueId" = NEW."Student_StudentUniqueId"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
     RETURN NEW;
@@ -78573,17 +79067,19 @@ BEGIN
             "OldStudent_StudentUniqueId",
             "OldStudent_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."DisciplineIncident_IncidentIdentifier",
             OLD."DisciplineIncident_SchoolId",
             OLD."Student_StudentUniqueId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "edfi"."Student" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Student_DocumentId"
+        INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
@@ -78616,22 +79112,24 @@ BEGIN
             "NewStudent_StudentUniqueId",
             "NewStudent_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."DisciplineIncident_IncidentIdentifier",
             OLD."DisciplineIncident_SchoolId",
             OLD."Student_StudentUniqueId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             NEW."DisciplineIncident_IncidentIdentifier",
             NEW."DisciplineIncident_SchoolId",
             NEW."Student_StudentUniqueId",
-            newPj0s0."DocumentId",
+            newPj0."DocumentId",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "edfi"."Student" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Student_DocumentId"
-        INNER JOIN "edfi"."Student" newPj0s0 ON newPj0s0."DocumentId" = NEW."Student_DocumentId"
+        INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
+        INNER JOIN "edfi"."Student" newPj0 ON newPj0."StudentUniqueId" = NEW."Student_StudentUniqueId"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
     RETURN NEW;
@@ -78776,16 +79274,18 @@ BEGIN
             "OldStudent_StudentUniqueId",
             "OldStudent_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."EducationOrganization_EducationOrganizationId",
             OLD."Student_StudentUniqueId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "edfi"."Student" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Student_DocumentId"
+        INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
@@ -78816,20 +79316,22 @@ BEGIN
             "NewStudent_StudentUniqueId",
             "NewStudent_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."EducationOrganization_EducationOrganizationId",
             OLD."Student_StudentUniqueId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             NEW."EducationOrganization_EducationOrganizationId",
             NEW."Student_StudentUniqueId",
-            newPj0s0."DocumentId",
+            newPj0."DocumentId",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "edfi"."Student" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Student_DocumentId"
-        INNER JOIN "edfi"."Student" newPj0s0 ON newPj0s0."DocumentId" = NEW."Student_DocumentId"
+        INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
+        INNER JOIN "edfi"."Student" newPj0 ON newPj0."StudentUniqueId" = NEW."Student_StudentUniqueId"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
     RETURN NEW;
@@ -78974,16 +79476,18 @@ BEGIN
             "OldStudent_StudentUniqueId",
             "OldStudent_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."EducationOrganization_EducationOrganizationId",
             OLD."Student_StudentUniqueId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "edfi"."Student" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Student_DocumentId"
+        INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
@@ -79014,20 +79518,22 @@ BEGIN
             "NewStudent_StudentUniqueId",
             "NewStudent_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."EducationOrganization_EducationOrganizationId",
             OLD."Student_StudentUniqueId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             NEW."EducationOrganization_EducationOrganizationId",
             NEW."Student_StudentUniqueId",
-            newPj0s0."DocumentId",
+            newPj0."DocumentId",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "edfi"."Student" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Student_DocumentId"
-        INNER JOIN "edfi"."Student" newPj0s0 ON newPj0s0."DocumentId" = NEW."Student_DocumentId"
+        INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
+        INNER JOIN "edfi"."Student" newPj0 ON newPj0."StudentUniqueId" = NEW."Student_StudentUniqueId"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
     RETURN NEW;
@@ -80939,7 +81445,8 @@ BEGIN
             "OldStudent_StudentUniqueId",
             "OldStudent_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."BeginDate",
@@ -80947,12 +81454,13 @@ BEGIN
             oldDj0."Namespace",
             oldDj0."CodeValue",
             OLD."Student_StudentUniqueId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."ResponsibilityDescriptor_DescriptorId"
-        INNER JOIN "edfi"."Student" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Student_DocumentId"
+        INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
@@ -80989,7 +81497,8 @@ BEGIN
             "NewStudent_StudentUniqueId",
             "NewStudent_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."BeginDate",
@@ -80997,20 +81506,21 @@ BEGIN
             oldDj0."Namespace",
             oldDj0."CodeValue",
             OLD."Student_StudentUniqueId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             NEW."BeginDate",
             NEW."EducationOrganization_EducationOrganizationId",
             newDj0."Namespace",
             newDj0."CodeValue",
             NEW."Student_StudentUniqueId",
-            newPj0s0."DocumentId",
+            newPj0."DocumentId",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."ResponsibilityDescriptor_DescriptorId"
-        INNER JOIN "edfi"."Student" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Student_DocumentId"
+        INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
         INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DocumentId" = NEW."ResponsibilityDescriptor_DescriptorId"
-        INNER JOIN "edfi"."Student" newPj0s0 ON newPj0s0."DocumentId" = NEW."Student_DocumentId"
+        INNER JOIN "edfi"."Student" newPj0 ON newPj0."StudentUniqueId" = NEW."Student_StudentUniqueId"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
     RETURN NEW;
@@ -81058,17 +81568,19 @@ BEGIN
             "OldStudent_StudentUniqueId",
             "OldStudent_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."GradebookEntry_GradebookEntryIdentifier",
             OLD."GradebookEntry_Namespace",
             OLD."Student_StudentUniqueId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "edfi"."Student" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Student_DocumentId"
+        INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
@@ -81101,22 +81613,24 @@ BEGIN
             "NewStudent_StudentUniqueId",
             "NewStudent_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."GradebookEntry_GradebookEntryIdentifier",
             OLD."GradebookEntry_Namespace",
             OLD."Student_StudentUniqueId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             NEW."GradebookEntry_GradebookEntryIdentifier",
             NEW."GradebookEntry_Namespace",
             NEW."Student_StudentUniqueId",
-            newPj0s0."DocumentId",
+            newPj0."DocumentId",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "edfi"."Student" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Student_DocumentId"
-        INNER JOIN "edfi"."Student" newPj0s0 ON newPj0s0."DocumentId" = NEW."Student_DocumentId"
+        INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
+        INNER JOIN "edfi"."Student" newPj0 ON newPj0."StudentUniqueId" = NEW."Student_StudentUniqueId"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
     RETURN NEW;
@@ -81163,16 +81677,18 @@ BEGIN
             "OldStudent_StudentUniqueId",
             "OldStudent_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."EducationOrganization_EducationOrganizationId",
             OLD."Student_StudentUniqueId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "edfi"."Student" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Student_DocumentId"
+        INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
@@ -81203,20 +81719,22 @@ BEGIN
             "NewStudent_StudentUniqueId",
             "NewStudent_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."EducationOrganization_EducationOrganizationId",
             OLD."Student_StudentUniqueId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             NEW."EducationOrganization_EducationOrganizationId",
             NEW."Student_StudentUniqueId",
-            newPj0s0."DocumentId",
+            newPj0."DocumentId",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "edfi"."Student" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Student_DocumentId"
-        INNER JOIN "edfi"."Student" newPj0s0 ON newPj0s0."DocumentId" = NEW."Student_DocumentId"
+        INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
+        INNER JOIN "edfi"."Student" newPj0 ON newPj0."StudentUniqueId" = NEW."Student_StudentUniqueId"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
     RETURN NEW;
@@ -81683,7 +82201,8 @@ BEGIN
             "OldStudent_StudentUniqueId",
             "OldStudent_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."BeginDate",
@@ -81693,12 +82212,13 @@ BEGIN
             oldDj0."Namespace",
             oldDj0."CodeValue",
             OLD."Student_StudentUniqueId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId"
-        INNER JOIN "edfi"."Student" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Student_DocumentId"
+        INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
@@ -82059,17 +82579,19 @@ BEGIN
             "OldStudent_StudentUniqueId",
             "OldStudent_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."Intervention_EducationOrganizationId",
             OLD."Intervention_InterventionIdentificationCode",
             OLD."Student_StudentUniqueId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "edfi"."Student" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Student_DocumentId"
+        INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
@@ -82102,22 +82624,24 @@ BEGIN
             "NewStudent_StudentUniqueId",
             "NewStudent_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."Intervention_EducationOrganizationId",
             OLD."Intervention_InterventionIdentificationCode",
             OLD."Student_StudentUniqueId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             NEW."Intervention_EducationOrganizationId",
             NEW."Intervention_InterventionIdentificationCode",
             NEW."Student_StudentUniqueId",
-            newPj0s0."DocumentId",
+            newPj0."DocumentId",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "edfi"."Student" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Student_DocumentId"
-        INNER JOIN "edfi"."Student" newPj0s0 ON newPj0s0."DocumentId" = NEW."Student_DocumentId"
+        INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
+        INNER JOIN "edfi"."Student" newPj0 ON newPj0."StudentUniqueId" = NEW."Student_StudentUniqueId"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
     RETURN NEW;
@@ -82266,7 +82790,8 @@ BEGIN
             "OldStudent_StudentUniqueId",
             "OldStudent_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             oldDj0."Namespace",
@@ -82275,12 +82800,13 @@ BEGIN
             OLD."Intervention_EducationOrganizationId",
             OLD."Intervention_InterventionIdentificationCode",
             OLD."Student_StudentUniqueId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."AttendanceEventCategoryDescriptor_DescriptorId"
-        INNER JOIN "edfi"."Student" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Student_DocumentId"
+        INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
@@ -82319,7 +82845,8 @@ BEGIN
             "NewStudent_StudentUniqueId",
             "NewStudent_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             oldDj0."Namespace",
@@ -82328,21 +82855,22 @@ BEGIN
             OLD."Intervention_EducationOrganizationId",
             OLD."Intervention_InterventionIdentificationCode",
             OLD."Student_StudentUniqueId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             newDj0."Namespace",
             newDj0."CodeValue",
             NEW."EventDate",
             NEW."Intervention_EducationOrganizationId",
             NEW."Intervention_InterventionIdentificationCode",
             NEW."Student_StudentUniqueId",
-            newPj0s0."DocumentId",
+            newPj0."DocumentId",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."AttendanceEventCategoryDescriptor_DescriptorId"
-        INNER JOIN "edfi"."Student" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Student_DocumentId"
+        INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
         INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DocumentId" = NEW."AttendanceEventCategoryDescriptor_DescriptorId"
-        INNER JOIN "edfi"."Student" newPj0s0 ON newPj0s0."DocumentId" = NEW."Student_DocumentId"
+        INNER JOIN "edfi"."Student" newPj0 ON newPj0."StudentUniqueId" = NEW."Student_StudentUniqueId"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
     RETURN NEW;
@@ -82417,7 +82945,8 @@ BEGIN
             "OldStudent_StudentUniqueId",
             "OldStudent_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."BeginDate",
@@ -82427,12 +82956,13 @@ BEGIN
             oldDj0."Namespace",
             oldDj0."CodeValue",
             OLD."Student_StudentUniqueId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId"
-        INNER JOIN "edfi"."Student" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Student_DocumentId"
+        INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
@@ -82820,7 +83350,8 @@ BEGIN
             "OldStudent_StudentUniqueId",
             "OldStudent_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."BeginDate",
@@ -82830,12 +83361,13 @@ BEGIN
             oldDj0."Namespace",
             oldDj0."CodeValue",
             OLD."Student_StudentUniqueId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId"
-        INNER JOIN "edfi"."Student" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Student_DocumentId"
+        INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
@@ -83125,7 +83657,8 @@ BEGIN
             "OldStudent_StudentUniqueId",
             "OldStudent_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."BeginDate",
@@ -83135,12 +83668,13 @@ BEGIN
             oldDj0."Namespace",
             oldDj0."CodeValue",
             OLD."Student_StudentUniqueId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId"
-        INNER JOIN "edfi"."Student" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Student_DocumentId"
+        INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
@@ -83626,7 +84160,8 @@ BEGIN
             "OldStudent_StudentUniqueId",
             "OldStudent_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."BeginDate",
@@ -83636,12 +84171,13 @@ BEGIN
             oldDj0."Namespace",
             oldDj0."CodeValue",
             OLD."Student_StudentUniqueId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId"
-        INNER JOIN "edfi"."Student" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Student_DocumentId"
+        INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
@@ -83910,7 +84446,8 @@ BEGIN
             "OldStudent_StudentUniqueId",
             "OldStudent_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             oldDj0."Namespace",
@@ -83922,13 +84459,14 @@ BEGIN
             oldDj1."Namespace",
             oldDj1."CodeValue",
             OLD."Student_StudentUniqueId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."AttendanceEventCategoryDescriptor_DescriptorId"
         INNER JOIN "dms"."Descriptor" oldDj1 ON oldDj1."DocumentId" = OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId"
-        INNER JOIN "edfi"."Student" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Student_DocumentId"
+        INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
@@ -83973,7 +84511,8 @@ BEGIN
             "NewStudent_StudentUniqueId",
             "NewStudent_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             oldDj0."Namespace",
@@ -83985,7 +84524,7 @@ BEGIN
             oldDj1."Namespace",
             oldDj1."CodeValue",
             OLD."Student_StudentUniqueId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             newDj0."Namespace",
             newDj0."CodeValue",
             NEW."EducationOrganization_EducationOrganizationId",
@@ -83995,16 +84534,17 @@ BEGIN
             newDj1."Namespace",
             newDj1."CodeValue",
             NEW."Student_StudentUniqueId",
-            newPj0s0."DocumentId",
+            newPj0."DocumentId",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."AttendanceEventCategoryDescriptor_DescriptorId"
         INNER JOIN "dms"."Descriptor" oldDj1 ON oldDj1."DocumentId" = OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId"
-        INNER JOIN "edfi"."Student" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Student_DocumentId"
+        INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
         INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DocumentId" = NEW."AttendanceEventCategoryDescriptor_DescriptorId"
         INNER JOIN "dms"."Descriptor" newDj1 ON newDj1."DocumentId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId"
-        INNER JOIN "edfi"."Student" newPj0s0 ON newPj0s0."DocumentId" = NEW."Student_DocumentId"
+        INNER JOIN "edfi"."Student" newPj0 ON newPj0."StudentUniqueId" = NEW."Student_StudentUniqueId"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
     RETURN NEW;
@@ -84060,7 +84600,8 @@ BEGIN
             "OldStudent_StudentUniqueId",
             "OldStudent_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."EvaluationDate",
@@ -84074,14 +84615,15 @@ BEGIN
             oldDj2."Namespace",
             oldDj2."CodeValue",
             OLD."Student_StudentUniqueId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e"
         INNER JOIN "dms"."Descriptor" oldDj1 ON oldDj1."DocumentId" = OLD."ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId"
         INNER JOIN "dms"."Descriptor" oldDj2 ON oldDj2."DocumentId" = OLD."ProgramEvaluation_ProgramTypeDescriptor_DescriptorId"
-        INNER JOIN "edfi"."Student" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Student_DocumentId"
+        INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
@@ -84130,7 +84672,8 @@ BEGIN
             "NewStudent_StudentUniqueId",
             "NewStudent_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."EvaluationDate",
@@ -84144,7 +84687,7 @@ BEGIN
             oldDj2."Namespace",
             oldDj2."CodeValue",
             OLD."Student_StudentUniqueId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             NEW."EvaluationDate",
             NEW."ProgramEvaluation_ProgramEducationOrganizationId",
             newDj0."Namespace",
@@ -84156,18 +84699,19 @@ BEGIN
             newDj2."Namespace",
             newDj2."CodeValue",
             NEW."Student_StudentUniqueId",
-            newPj0s0."DocumentId",
+            newPj0."DocumentId",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e"
         INNER JOIN "dms"."Descriptor" oldDj1 ON oldDj1."DocumentId" = OLD."ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId"
         INNER JOIN "dms"."Descriptor" oldDj2 ON oldDj2."DocumentId" = OLD."ProgramEvaluation_ProgramTypeDescriptor_DescriptorId"
-        INNER JOIN "edfi"."Student" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Student_DocumentId"
+        INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
         INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DocumentId" = NEW."ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e"
         INNER JOIN "dms"."Descriptor" newDj1 ON newDj1."DocumentId" = NEW."ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId"
         INNER JOIN "dms"."Descriptor" newDj2 ON newDj2."DocumentId" = NEW."ProgramEvaluation_ProgramTypeDescriptor_DescriptorId"
-        INNER JOIN "edfi"."Student" newPj0s0 ON newPj0s0."DocumentId" = NEW."Student_DocumentId"
+        INNER JOIN "edfi"."Student" newPj0 ON newPj0."StudentUniqueId" = NEW."Student_StudentUniqueId"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
     RETURN NEW;
@@ -84509,17 +85053,19 @@ BEGIN
             "OldStudent_StudentUniqueId",
             "OldStudent_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."EntryDate",
             OLD."SchoolId_Unified",
             OLD."Student_StudentUniqueId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "edfi"."Student" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Student_DocumentId"
+        INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
@@ -84552,22 +85098,24 @@ BEGIN
             "NewStudent_StudentUniqueId",
             "NewStudent_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."EntryDate",
             OLD."SchoolId_Unified",
             OLD."Student_StudentUniqueId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             NEW."EntryDate",
             NEW."SchoolId_Unified",
             NEW."Student_StudentUniqueId",
-            newPj0s0."DocumentId",
+            newPj0."DocumentId",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "edfi"."Student" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Student_DocumentId"
-        INNER JOIN "edfi"."Student" newPj0s0 ON newPj0s0."DocumentId" = NEW."Student_DocumentId"
+        INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
+        INNER JOIN "edfi"."Student" newPj0 ON newPj0."StudentUniqueId" = NEW."Student_StudentUniqueId"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
     RETURN NEW;
@@ -84815,7 +85363,8 @@ BEGIN
             "OldStudent_StudentUniqueId",
             "OldStudent_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             oldDj0."Namespace",
@@ -84825,12 +85374,13 @@ BEGIN
             OLD."Session_SchoolYear",
             OLD."Session_SessionName",
             OLD."Student_StudentUniqueId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."AttendanceEventCategoryDescriptor_DescriptorId"
-        INNER JOIN "edfi"."Student" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Student_DocumentId"
+        INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
@@ -84871,7 +85421,8 @@ BEGIN
             "NewStudent_StudentUniqueId",
             "NewStudent_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             oldDj0."Namespace",
@@ -84881,7 +85432,7 @@ BEGIN
             OLD."Session_SchoolYear",
             OLD."Session_SessionName",
             OLD."Student_StudentUniqueId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             newDj0."Namespace",
             newDj0."CodeValue",
             NEW."EventDate",
@@ -84889,14 +85440,15 @@ BEGIN
             NEW."Session_SchoolYear",
             NEW."Session_SessionName",
             NEW."Student_StudentUniqueId",
-            newPj0s0."DocumentId",
+            newPj0."DocumentId",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."AttendanceEventCategoryDescriptor_DescriptorId"
-        INNER JOIN "edfi"."Student" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Student_DocumentId"
+        INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
         INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DocumentId" = NEW."AttendanceEventCategoryDescriptor_DescriptorId"
-        INNER JOIN "edfi"."Student" newPj0s0 ON newPj0s0."DocumentId" = NEW."Student_DocumentId"
+        INNER JOIN "edfi"."Student" newPj0 ON newPj0."StudentUniqueId" = NEW."Student_StudentUniqueId"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
     RETURN NEW;
@@ -84971,7 +85523,8 @@ BEGIN
             "OldStudent_StudentUniqueId",
             "OldStudent_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."BeginDate",
@@ -84981,12 +85534,13 @@ BEGIN
             oldDj0."Namespace",
             oldDj0."CodeValue",
             OLD."Student_StudentUniqueId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId"
-        INNER JOIN "edfi"."Student" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Student_DocumentId"
+        INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
@@ -85276,7 +85830,8 @@ BEGIN
             "OldStudent_StudentUniqueId",
             "OldStudent_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."BeginDate",
@@ -85286,12 +85841,13 @@ BEGIN
             oldDj0."Namespace",
             oldDj0."CodeValue",
             OLD."Student_StudentUniqueId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId"
-        INNER JOIN "edfi"."Student" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Student_DocumentId"
+        INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
@@ -85460,7 +86016,8 @@ BEGIN
             "OldStudent_StudentUniqueId",
             "OldStudent_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."BeginDate",
@@ -85470,11 +86027,12 @@ BEGIN
             OLD."Section_SectionIdentifier",
             OLD."Section_SessionName",
             OLD."Student_StudentUniqueId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "edfi"."Student" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Student_DocumentId"
+        INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
@@ -85515,7 +86073,8 @@ BEGIN
             "NewStudent_StudentUniqueId",
             "NewStudent_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."BeginDate",
@@ -85525,7 +86084,7 @@ BEGIN
             OLD."Section_SectionIdentifier",
             OLD."Section_SessionName",
             OLD."Student_StudentUniqueId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             NEW."BeginDate",
             NEW."Section_LocalCourseCode",
             NEW."Section_SchoolId",
@@ -85533,12 +86092,13 @@ BEGIN
             NEW."Section_SectionIdentifier",
             NEW."Section_SessionName",
             NEW."Student_StudentUniqueId",
-            newPj0s0."DocumentId",
+            newPj0."DocumentId",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "edfi"."Student" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Student_DocumentId"
-        INNER JOIN "edfi"."Student" newPj0s0 ON newPj0s0."DocumentId" = NEW."Student_DocumentId"
+        INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
+        INNER JOIN "edfi"."Student" newPj0 ON newPj0."StudentUniqueId" = NEW."Student_StudentUniqueId"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
     RETURN NEW;
@@ -85690,7 +86250,8 @@ BEGIN
             "OldStudent_StudentUniqueId",
             "OldStudent_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             oldDj0."Namespace",
@@ -85702,12 +86263,13 @@ BEGIN
             OLD."Section_SectionIdentifier",
             OLD."Section_SessionName",
             OLD."Student_StudentUniqueId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."AttendanceEventCategoryDescriptor_DescriptorId"
-        INNER JOIN "edfi"."Student" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Student_DocumentId"
+        INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
@@ -85752,7 +86314,8 @@ BEGIN
             "NewStudent_StudentUniqueId",
             "NewStudent_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             oldDj0."Namespace",
@@ -85764,7 +86327,7 @@ BEGIN
             OLD."Section_SectionIdentifier",
             OLD."Section_SessionName",
             OLD."Student_StudentUniqueId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             newDj0."Namespace",
             newDj0."CodeValue",
             NEW."EventDate",
@@ -85774,14 +86337,15 @@ BEGIN
             NEW."Section_SectionIdentifier",
             NEW."Section_SessionName",
             NEW."Student_StudentUniqueId",
-            newPj0s0."DocumentId",
+            newPj0."DocumentId",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."AttendanceEventCategoryDescriptor_DescriptorId"
-        INNER JOIN "edfi"."Student" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Student_DocumentId"
+        INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
         INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DocumentId" = NEW."AttendanceEventCategoryDescriptor_DescriptorId"
-        INNER JOIN "edfi"."Student" newPj0s0 ON newPj0s0."DocumentId" = NEW."Student_DocumentId"
+        INNER JOIN "edfi"."Student" newPj0 ON newPj0."StudentUniqueId" = NEW."Student_StudentUniqueId"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
     RETURN NEW;
@@ -85954,7 +86518,8 @@ BEGIN
             "OldStudent_StudentUniqueId",
             "OldStudent_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."BeginDate",
@@ -85964,12 +86529,13 @@ BEGIN
             oldDj0."Namespace",
             oldDj0."CodeValue",
             OLD."Student_StudentUniqueId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId"
-        INNER JOIN "edfi"."Student" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Student_DocumentId"
+        INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
@@ -86628,7 +87194,8 @@ BEGIN
             "OldStudent_StudentUniqueId",
             "OldStudent_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."ConsentToEvaluationReceivedDate",
@@ -86638,12 +87205,13 @@ BEGIN
             oldDj0."Namespace",
             oldDj0."CodeValue",
             OLD."Student_StudentUniqueId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId"
-        INNER JOIN "edfi"."Student" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Student_DocumentId"
+        INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
@@ -86684,7 +87252,8 @@ BEGIN
             "NewStudent_StudentUniqueId",
             "NewStudent_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."ConsentToEvaluationReceivedDate",
@@ -86694,7 +87263,7 @@ BEGIN
             oldDj0."Namespace",
             oldDj0."CodeValue",
             OLD."Student_StudentUniqueId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             NEW."ConsentToEvaluationReceivedDate",
             NEW."EducationOrganization_EducationOrganizationId",
             NEW."ProgramProgram_EducationOrganizationId",
@@ -86702,14 +87271,15 @@ BEGIN
             newDj0."Namespace",
             newDj0."CodeValue",
             NEW."Student_StudentUniqueId",
-            newPj0s0."DocumentId",
+            newPj0."DocumentId",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId"
-        INNER JOIN "edfi"."Student" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Student_DocumentId"
+        INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
         INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DocumentId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId"
-        INNER JOIN "edfi"."Student" newPj0s0 ON newPj0s0."DocumentId" = NEW."Student_DocumentId"
+        INNER JOIN "edfi"."Student" newPj0 ON newPj0."StudentUniqueId" = NEW."Student_StudentUniqueId"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
     RETURN NEW;
@@ -86784,7 +87354,8 @@ BEGIN
             "OldStudent_StudentUniqueId",
             "OldStudent_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."BeginDate",
@@ -86794,12 +87365,13 @@ BEGIN
             oldDj0."Namespace",
             oldDj0."CodeValue",
             OLD."Student_StudentUniqueId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId"
-        INNER JOIN "edfi"."Student" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Student_DocumentId"
+        INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
@@ -87061,16 +87633,18 @@ BEGIN
             "OldTransportationEducationOrganization_EducationOrganizationId",
             "OldStudent_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."Student_StudentUniqueId",
             OLD."TransportationEducationOrganization_EducationOrganizationId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "edfi"."Student" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Student_DocumentId"
+        INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
@@ -87101,20 +87675,22 @@ BEGIN
             "NewTransportationEducationOrganization_EducationOrganizationId",
             "NewStudent_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."Student_StudentUniqueId",
             OLD."TransportationEducationOrganization_EducationOrganizationId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             NEW."Student_StudentUniqueId",
             NEW."TransportationEducationOrganization_EducationOrganizationId",
-            newPj0s0."DocumentId",
+            newPj0."DocumentId",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "edfi"."Student" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Student_DocumentId"
-        INNER JOIN "edfi"."Student" newPj0s0 ON newPj0s0."DocumentId" = NEW."Student_DocumentId"
+        INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
+        INNER JOIN "edfi"."Student" newPj0 ON newPj0."StudentUniqueId" = NEW."Student_StudentUniqueId"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
     RETURN NEW;
@@ -87454,13 +88030,15 @@ BEGIN
             "OldNamespace",
             "OldSurveyIdentifier",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."Namespace",
             OLD."SurveyIdentifier",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -87490,7 +88068,8 @@ BEGIN
             "NewNamespace",
             "NewSurveyIdentifier",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."Namespace",
@@ -87498,7 +88077,8 @@ BEGIN
             NEW."Namespace",
             NEW."SurveyIdentifier",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -87547,7 +88127,8 @@ BEGIN
             "OldSurvey_Namespace",
             "OldSurvey_SurveyIdentifier",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."Course_CourseCode",
@@ -87555,7 +88136,8 @@ BEGIN
             OLD."Survey_Namespace",
             OLD."Survey_SurveyIdentifier",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -87589,7 +88171,8 @@ BEGIN
             "NewSurvey_Namespace",
             "NewSurvey_SurveyIdentifier",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."Course_CourseCode",
@@ -87601,7 +88184,8 @@ BEGIN
             NEW."Survey_Namespace",
             NEW."Survey_SurveyIdentifier",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -87652,7 +88236,8 @@ BEGIN
             "OldSurvey_Namespace",
             "OldSurvey_SurveyIdentifier",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."Program_EducationOrganizationId",
@@ -87662,7 +88247,8 @@ BEGIN
             OLD."Survey_Namespace",
             OLD."Survey_SurveyIdentifier",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."Program_ProgramTypeDescriptor_DescriptorId"
         WHERE doc."DocumentId" = OLD."DocumentId";
@@ -87701,7 +88287,8 @@ BEGIN
             "NewSurvey_Namespace",
             "NewSurvey_SurveyIdentifier",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."Program_EducationOrganizationId",
@@ -87717,7 +88304,8 @@ BEGIN
             NEW."Survey_Namespace",
             NEW."Survey_SurveyIdentifier",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."Program_ProgramTypeDescriptor_DescriptorId"
         INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DocumentId" = NEW."Program_ProgramTypeDescriptor_DescriptorId"
@@ -87767,14 +88355,16 @@ BEGIN
             "OldNamespace_Unified",
             "OldSurveyIdentifier_Unified",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."QuestionCode",
             OLD."Namespace_Unified",
             OLD."SurveyIdentifier_Unified",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -87806,7 +88396,8 @@ BEGIN
             "NewNamespace_Unified",
             "NewSurveyIdentifier_Unified",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."QuestionCode",
@@ -87816,7 +88407,8 @@ BEGIN
             NEW."Namespace_Unified",
             NEW."SurveyIdentifier_Unified",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -87963,7 +88555,8 @@ BEGIN
             "OldSurveyIdentifier_Unified",
             "OldSurveyResponse_SurveyResponseIdentifier",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."Namespace_Unified",
@@ -87971,7 +88564,8 @@ BEGIN
             OLD."SurveyIdentifier_Unified",
             OLD."SurveyResponse_SurveyResponseIdentifier",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -88005,7 +88599,8 @@ BEGIN
             "NewSurveyIdentifier_Unified",
             "NewSurveyResponse_SurveyResponseIdentifier",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."Namespace_Unified",
@@ -88017,7 +88612,8 @@ BEGIN
             NEW."SurveyIdentifier_Unified",
             NEW."SurveyResponse_SurveyResponseIdentifier",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -88359,14 +88955,16 @@ BEGIN
             "OldSurvey_SurveyIdentifier",
             "OldSurveyResponseIdentifier",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."Survey_Namespace",
             OLD."Survey_SurveyIdentifier",
             OLD."SurveyResponseIdentifier",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -88398,7 +88996,8 @@ BEGIN
             "NewSurvey_SurveyIdentifier",
             "NewSurveyResponseIdentifier",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."Survey_Namespace",
@@ -88408,7 +89007,8 @@ BEGIN
             NEW."Survey_SurveyIdentifier",
             NEW."SurveyResponseIdentifier",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -88457,7 +89057,8 @@ BEGIN
             "OldSurveyResponse_SurveyIdentifier",
             "OldSurveyResponse_SurveyResponseIdentifier",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."EducationOrganization_EducationOrganizationId",
@@ -88465,7 +89066,8 @@ BEGIN
             OLD."SurveyResponse_SurveyIdentifier",
             OLD."SurveyResponse_SurveyResponseIdentifier",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -88499,7 +89101,8 @@ BEGIN
             "NewSurveyResponse_SurveyIdentifier",
             "NewSurveyResponse_SurveyResponseIdentifier",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."EducationOrganization_EducationOrganizationId",
@@ -88511,7 +89114,8 @@ BEGIN
             NEW."SurveyResponse_SurveyIdentifier",
             NEW."SurveyResponse_SurveyResponseIdentifier",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -88561,18 +89165,20 @@ BEGIN
             "OldSurveyResponse_SurveyResponseIdentifier",
             "OldStaff_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."Staff_StaffUniqueId",
             OLD."SurveyResponse_Namespace",
             OLD."SurveyResponse_SurveyIdentifier",
             OLD."SurveyResponse_SurveyResponseIdentifier",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "edfi"."Staff" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Staff_DocumentId"
+        INNER JOIN "edfi"."Staff" oldPj0 ON oldPj0."StaffUniqueId" = OLD."Staff_StaffUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
@@ -88607,24 +89213,26 @@ BEGIN
             "NewSurveyResponse_SurveyResponseIdentifier",
             "NewStaff_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."Staff_StaffUniqueId",
             OLD."SurveyResponse_Namespace",
             OLD."SurveyResponse_SurveyIdentifier",
             OLD."SurveyResponse_SurveyResponseIdentifier",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             NEW."Staff_StaffUniqueId",
             NEW."SurveyResponse_Namespace",
             NEW."SurveyResponse_SurveyIdentifier",
             NEW."SurveyResponse_SurveyResponseIdentifier",
-            newPj0s0."DocumentId",
+            newPj0."DocumentId",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "edfi"."Staff" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Staff_DocumentId"
-        INNER JOIN "edfi"."Staff" newPj0s0 ON newPj0s0."DocumentId" = NEW."Staff_DocumentId"
+        INNER JOIN "edfi"."Staff" oldPj0 ON oldPj0."StaffUniqueId" = OLD."Staff_StaffUniqueId"
+        INNER JOIN "edfi"."Staff" newPj0 ON newPj0."StaffUniqueId" = NEW."Staff_StaffUniqueId"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
     RETURN NEW;
@@ -88769,14 +89377,16 @@ BEGIN
             "OldSurvey_SurveyIdentifier",
             "OldSurveySectionTitle",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."Survey_Namespace",
             OLD."Survey_SurveyIdentifier",
             OLD."SurveySectionTitle",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -88808,7 +89418,8 @@ BEGIN
             "NewSurvey_SurveyIdentifier",
             "NewSurveySectionTitle",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."Survey_Namespace",
@@ -88818,7 +89429,8 @@ BEGIN
             NEW."Survey_SurveyIdentifier",
             NEW."SurveySectionTitle",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -88870,7 +89482,8 @@ BEGIN
             "OldSurvey_Namespace",
             "OldSurvey_SurveyIdentifier",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."Section_LocalCourseCode",
@@ -88881,7 +89494,8 @@ BEGIN
             OLD."Survey_Namespace",
             OLD."Survey_SurveyIdentifier",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -88921,7 +89535,8 @@ BEGIN
             "NewSurvey_Namespace",
             "NewSurvey_SurveyIdentifier",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."Section_LocalCourseCode",
@@ -88939,7 +89554,8 @@ BEGIN
             NEW."Survey_Namespace",
             NEW."Survey_SurveyIdentifier",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -88988,7 +89604,8 @@ BEGIN
             "OldSurveyResponse_SurveyResponseIdentifier",
             "OldSurveySection_SurveySectionTitle",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."Namespace_Unified",
@@ -88996,7 +89613,8 @@ BEGIN
             OLD."SurveyResponse_SurveyResponseIdentifier",
             OLD."SurveySection_SurveySectionTitle",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -89030,7 +89648,8 @@ BEGIN
             "NewSurveyResponse_SurveyResponseIdentifier",
             "NewSurveySection_SurveySectionTitle",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."Namespace_Unified",
@@ -89042,7 +89661,8 @@ BEGIN
             NEW."SurveyResponse_SurveyResponseIdentifier",
             NEW."SurveySection_SurveySectionTitle",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -89073,7 +89693,8 @@ BEGIN
             "OldSurveySectionResponse_SurveyResponseIdentifier",
             "OldSurveySectionResponse_SurveySectionTitle",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."EducationOrganization_EducationOrganizationId",
@@ -89082,7 +89703,8 @@ BEGIN
             OLD."SurveySectionResponse_SurveyResponseIdentifier",
             OLD."SurveySectionResponse_SurveySectionTitle",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -89118,7 +89740,8 @@ BEGIN
             "NewSurveySectionResponse_SurveyResponseIdentifier",
             "NewSurveySectionResponse_SurveySectionTitle",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."EducationOrganization_EducationOrganizationId",
@@ -89132,7 +89755,8 @@ BEGIN
             NEW."SurveySectionResponse_SurveyResponseIdentifier",
             NEW."SurveySectionResponse_SurveySectionTitle",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -89202,7 +89826,8 @@ BEGIN
             "OldSurveySectionResponse_SurveySectionTitle",
             "OldStaff_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."Staff_StaffUniqueId",
@@ -89210,11 +89835,12 @@ BEGIN
             OLD."SurveyIdentifier_Unified",
             OLD."SurveySectionResponse_SurveyResponseIdentifier",
             OLD."SurveySectionResponse_SurveySectionTitle",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "edfi"."Staff" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Staff_DocumentId"
+        INNER JOIN "edfi"."Staff" oldPj0 ON oldPj0."StaffUniqueId" = OLD."Staff_StaffUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
@@ -89251,7 +89877,8 @@ BEGIN
             "NewSurveySectionResponse_SurveySectionTitle",
             "NewStaff_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."Staff_StaffUniqueId",
@@ -89259,18 +89886,19 @@ BEGIN
             OLD."SurveyIdentifier_Unified",
             OLD."SurveySectionResponse_SurveyResponseIdentifier",
             OLD."SurveySectionResponse_SurveySectionTitle",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             NEW."Staff_StaffUniqueId",
             NEW."Namespace_Unified",
             NEW."SurveyIdentifier_Unified",
             NEW."SurveySectionResponse_SurveyResponseIdentifier",
             NEW."SurveySectionResponse_SurveySectionTitle",
-            newPj0s0."DocumentId",
+            newPj0."DocumentId",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "edfi"."Staff" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Staff_DocumentId"
-        INNER JOIN "edfi"."Staff" newPj0s0 ON newPj0s0."DocumentId" = NEW."Staff_DocumentId"
+        INNER JOIN "edfi"."Staff" oldPj0 ON oldPj0."StaffUniqueId" = OLD."Staff_StaffUniqueId"
+        INNER JOIN "edfi"."Staff" newPj0 ON newPj0."StaffUniqueId" = NEW."Staff_StaffUniqueId"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
     RETURN NEW;
@@ -89315,12 +89943,14 @@ BEGIN
         INSERT INTO "tracked_changes_tpdm"."Candidate" (
             "OldCandidateIdentifier",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."CandidateIdentifier",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -89348,13 +89978,15 @@ BEGIN
             "OldCandidateIdentifier",
             "NewCandidateIdentifier",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."CandidateIdentifier",
             NEW."CandidateIdentifier",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -89797,7 +90429,8 @@ BEGIN
             "OldEducatorPreparationProgram_ProgramTypeDescriptor_Namespace",
             "OldEducatorPreparationProgram_ProgramTypeDescriptor_CodeValue",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."BeginDate",
@@ -89807,7 +90440,8 @@ BEGIN
             oldDj0."Namespace",
             oldDj0."CodeValue",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."EducatorPreparationProgram_ProgramTypeDescriptor_DescriptorId"
         WHERE doc."DocumentId" = OLD."DocumentId";
@@ -89846,7 +90480,8 @@ BEGIN
             "NewEducatorPreparationProgram_ProgramTypeDescriptor_Namespace",
             "NewEducatorPreparationProgram_ProgramTypeDescriptor_CodeValue",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."BeginDate",
@@ -89862,7 +90497,8 @@ BEGIN
             newDj0."Namespace",
             newDj0."CodeValue",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."EducatorPreparationProgram_ProgramTypeDescriptor_DescriptorId"
         INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DocumentId" = NEW."EducatorPreparationProgram_ProgramTypeDescriptor_DescriptorId"
@@ -90991,7 +91627,8 @@ BEGIN
             "OldProgramTypeDescriptor_Namespace",
             "OldProgramTypeDescriptor_CodeValue",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."EducationOrganization_EducationOrganizationId",
@@ -90999,7 +91636,8 @@ BEGIN
             oldDj0."Namespace",
             oldDj0."CodeValue",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."ProgramTypeDescriptor_DescriptorId"
         WHERE doc."DocumentId" = OLD."DocumentId";
@@ -91034,7 +91672,8 @@ BEGIN
             "NewProgramTypeDescriptor_Namespace",
             "NewProgramTypeDescriptor_CodeValue",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."EducationOrganization_EducationOrganizationId",
@@ -91046,7 +91685,8 @@ BEGIN
             newDj0."Namespace",
             newDj0."CodeValue",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."ProgramTypeDescriptor_DescriptorId"
         INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DocumentId" = NEW."ProgramTypeDescriptor_DescriptorId"
@@ -91201,7 +91841,8 @@ BEGIN
             "OldPerformanceEvaluation_TermDescriptor_Namespace",
             "OldPerformanceEvaluation_TermDescriptor_CodeValue",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."EvaluationTitle",
@@ -91215,7 +91856,8 @@ BEGIN
             oldDj2."Namespace",
             oldDj2."CodeValue",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."PerformanceEvaluation_EvaluationPeriodDescriptor_DescriptorId"
         INNER JOIN "dms"."Descriptor" oldDj1 ON oldDj1."DocumentId" = OLD."PerformanceEvaluation_PerformanceEvaluationTypeDescr_3b4178ed80"
@@ -91264,7 +91906,8 @@ BEGIN
             "NewPerformanceEvaluation_TermDescriptor_Namespace",
             "NewPerformanceEvaluation_TermDescriptor_CodeValue",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."EvaluationTitle",
@@ -91288,7 +91931,8 @@ BEGIN
             newDj2."Namespace",
             newDj2."CodeValue",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."PerformanceEvaluation_EvaluationPeriodDescriptor_DescriptorId"
         INNER JOIN "dms"."Descriptor" oldDj1 ON oldDj1."DocumentId" = OLD."PerformanceEvaluation_PerformanceEvaluationTypeDescr_3b4178ed80"
@@ -91351,7 +91995,8 @@ BEGIN
             "OldEvaluationObjective_TermDescriptor_Namespace",
             "OldEvaluationObjective_TermDescriptor_CodeValue",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."EvaluationElementTitle",
@@ -91367,7 +92012,8 @@ BEGIN
             oldDj2."Namespace",
             oldDj2."CodeValue",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."EvaluationObjective_EvaluationPeriodDescriptor_DescriptorId"
         INNER JOIN "dms"."Descriptor" oldDj1 ON oldDj1."DocumentId" = OLD."EvaluationObjective_PerformanceEvaluationTypeDescrip_25c9414056"
@@ -91420,7 +92066,8 @@ BEGIN
             "NewEvaluationObjective_TermDescriptor_Namespace",
             "NewEvaluationObjective_TermDescriptor_CodeValue",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."EvaluationElementTitle",
@@ -91448,7 +92095,8 @@ BEGIN
             newDj2."Namespace",
             newDj2."CodeValue",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."EvaluationObjective_EvaluationPeriodDescriptor_DescriptorId"
         INNER JOIN "dms"."Descriptor" oldDj1 ON oldDj1."DocumentId" = OLD."EvaluationObjective_PerformanceEvaluationTypeDescrip_25c9414056"
@@ -91521,7 +92169,8 @@ BEGIN
             "OldEvaluationObjectiveRating_EvaluationObjectiveRefe_ab17ca223c",
             "OldEvaluationObjectiveRating_EvaluationObjectiveRefe_639de2f3ab",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."EducationOrganizationId_Unified",
@@ -91547,7 +92196,8 @@ BEGIN
             oldDj5."Namespace",
             oldDj5."CodeValue",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."EvaluationElement_EvaluationPeriodDescriptor_DescriptorId"
         INNER JOIN "dms"."Descriptor" oldDj1 ON oldDj1."DocumentId" = OLD."EvaluationElement_PerformanceEvaluationTypeDescripto_8a1fe07903"
@@ -91624,7 +92274,8 @@ BEGIN
             "NewEvaluationObjectiveRating_EvaluationObjectiveRefe_1b9605e2c1",
             "NewEvaluationObjectiveRating_EvaluationObjectiveRefe_5529c7df99",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."EducationOrganizationId_Unified",
@@ -91672,7 +92323,8 @@ BEGIN
             newDj5."Namespace",
             newDj5."CodeValue",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."EvaluationElement_EvaluationPeriodDescriptor_DescriptorId"
         INNER JOIN "dms"."Descriptor" oldDj1 ON oldDj1."DocumentId" = OLD."EvaluationElement_PerformanceEvaluationTypeDescripto_8a1fe07903"
@@ -91938,7 +92590,8 @@ BEGIN
             "OldEvaluation_TermDescriptor_Namespace",
             "OldEvaluation_TermDescriptor_CodeValue",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."EvaluationObjectiveTitle",
@@ -91953,7 +92606,8 @@ BEGIN
             oldDj2."Namespace",
             oldDj2."CodeValue",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."Evaluation_EvaluationPeriodDescriptor_DescriptorId"
         INNER JOIN "dms"."Descriptor" oldDj1 ON oldDj1."DocumentId" = OLD."Evaluation_PerformanceEvaluationTypeDescriptor_DescriptorId"
@@ -92004,7 +92658,8 @@ BEGIN
             "NewEvaluation_TermDescriptor_Namespace",
             "NewEvaluation_TermDescriptor_CodeValue",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."EvaluationObjectiveTitle",
@@ -92030,7 +92685,8 @@ BEGIN
             newDj2."Namespace",
             newDj2."CodeValue",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."Evaluation_EvaluationPeriodDescriptor_DescriptorId"
         INNER JOIN "dms"."Descriptor" oldDj1 ON oldDj1."DocumentId" = OLD."Evaluation_PerformanceEvaluationTypeDescriptor_DescriptorId"
@@ -92102,7 +92758,8 @@ BEGIN
             "OldEvaluationRating_EvaluationReferenceTermDescriptor_Namespace",
             "OldEvaluationRating_EvaluationReferenceTermDescriptor_CodeValue",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."EducationOrganizationId_Unified",
@@ -92127,7 +92784,8 @@ BEGIN
             oldDj5."Namespace",
             oldDj5."CodeValue",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."EvaluationObjective_EvaluationPeriodDescriptor_DescriptorId"
         INNER JOIN "dms"."Descriptor" oldDj1 ON oldDj1."DocumentId" = OLD."EvaluationObjective_PerformanceEvaluationTypeDescrip_25c9414056"
@@ -92202,7 +92860,8 @@ BEGIN
             "NewEvaluationRating_EvaluationReferenceTermDescriptor_Namespace",
             "NewEvaluationRating_EvaluationReferenceTermDescriptor_CodeValue",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."EducationOrganizationId_Unified",
@@ -92248,7 +92907,8 @@ BEGIN
             newDj5."Namespace",
             newDj5."CodeValue",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."EvaluationObjective_EvaluationPeriodDescriptor_DescriptorId"
         INNER JOIN "dms"."Descriptor" oldDj1 ON oldDj1."DocumentId" = OLD."EvaluationObjective_PerformanceEvaluationTypeDescrip_25c9414056"
@@ -92523,7 +93183,8 @@ BEGIN
             "OldPerformanceEvaluationRating_TermDescriptor_Namespace",
             "OldPerformanceEvaluationRating_TermDescriptor_CodeValue",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."EvaluationDate",
@@ -92547,7 +93208,8 @@ BEGIN
             oldDj6."Namespace",
             oldDj6."CodeValue",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."Evaluation_EvaluationPeriodDescriptor_DescriptorId"
         INNER JOIN "dms"."Descriptor" oldDj1 ON oldDj1."DocumentId" = OLD."Evaluation_PerformanceEvaluationTypeDescriptor_DescriptorId"
@@ -92620,7 +93282,8 @@ BEGIN
             "NewPerformanceEvaluationRating_TermDescriptor_Namespace",
             "NewPerformanceEvaluationRating_TermDescriptor_CodeValue",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."EvaluationDate",
@@ -92664,7 +93327,8 @@ BEGIN
             newDj6."Namespace",
             newDj6."CodeValue",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."Evaluation_EvaluationPeriodDescriptor_DescriptorId"
         INNER JOIN "dms"."Descriptor" oldDj1 ON oldDj1."DocumentId" = OLD."Evaluation_PerformanceEvaluationTypeDescriptor_DescriptorId"
@@ -93022,19 +93686,21 @@ BEGIN
             "OldStudent_StudentUniqueId",
             "OldStudent_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             oldDj0."Namespace",
             oldDj0."CodeValue",
             OLD."BeginDate",
             OLD."Student_StudentUniqueId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."AidTypeDescriptor_DescriptorId"
-        INNER JOIN "edfi"."Student" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Student_DocumentId"
+        INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
@@ -93069,26 +93735,28 @@ BEGIN
             "NewStudent_StudentUniqueId",
             "NewStudent_DocumentId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             oldDj0."Namespace",
             oldDj0."CodeValue",
             OLD."BeginDate",
             OLD."Student_StudentUniqueId",
-            oldPj0s0."DocumentId",
+            oldPj0."DocumentId",
             newDj0."Namespace",
             newDj0."CodeValue",
             NEW."BeginDate",
             NEW."Student_StudentUniqueId",
-            newPj0s0."DocumentId",
+            newPj0."DocumentId",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."AidTypeDescriptor_DescriptorId"
-        INNER JOIN "edfi"."Student" oldPj0s0 ON oldPj0s0."DocumentId" = OLD."Student_DocumentId"
+        INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
         INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DocumentId" = NEW."AidTypeDescriptor_DescriptorId"
-        INNER JOIN "edfi"."Student" newPj0s0 ON newPj0s0."DocumentId" = NEW."Student_DocumentId"
+        INNER JOIN "edfi"."Student" newPj0 ON newPj0."StudentUniqueId" = NEW."Student_StudentUniqueId"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
     RETURN NEW;
@@ -93141,7 +93809,8 @@ BEGIN
             "OldTermDescriptor_Namespace",
             "OldTermDescriptor_CodeValue",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."EducationOrganization_EducationOrganizationId",
@@ -93154,7 +93823,8 @@ BEGIN
             oldDj2."Namespace",
             oldDj2."CodeValue",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."EvaluationPeriodDescriptor_DescriptorId"
         INNER JOIN "dms"."Descriptor" oldDj1 ON oldDj1."DocumentId" = OLD."PerformanceEvaluationTypeDescriptor_DescriptorId"
@@ -93201,7 +93871,8 @@ BEGIN
             "NewTermDescriptor_Namespace",
             "NewTermDescriptor_CodeValue",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."EducationOrganization_EducationOrganizationId",
@@ -93223,7 +93894,8 @@ BEGIN
             newDj2."Namespace",
             newDj2."CodeValue",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."EvaluationPeriodDescriptor_DescriptorId"
         INNER JOIN "dms"."Descriptor" oldDj1 ON oldDj1."DocumentId" = OLD."PerformanceEvaluationTypeDescriptor_DescriptorId"
@@ -93384,7 +94056,8 @@ BEGIN
             "OldPerson_SourceSystemDescriptor_Namespace",
             "OldPerson_SourceSystemDescriptor_CodeValue",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."PerformanceEvaluation_EducationOrganizationId",
@@ -93400,7 +94073,8 @@ BEGIN
             oldDj3."Namespace",
             oldDj3."CodeValue",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."PerformanceEvaluation_EvaluationPeriodDescriptor_DescriptorId"
         INNER JOIN "dms"."Descriptor" oldDj1 ON oldDj1."DocumentId" = OLD."PerformanceEvaluation_PerformanceEvaluationTypeDescr_3b4178ed80"
@@ -93454,7 +94128,8 @@ BEGIN
             "NewPerson_SourceSystemDescriptor_Namespace",
             "NewPerson_SourceSystemDescriptor_CodeValue",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."PerformanceEvaluation_EducationOrganizationId",
@@ -93482,7 +94157,8 @@ BEGIN
             newDj3."Namespace",
             newDj3."CodeValue",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."PerformanceEvaluation_EvaluationPeriodDescriptor_DescriptorId"
         INNER JOIN "dms"."Descriptor" oldDj1 ON oldDj1."DocumentId" = OLD."PerformanceEvaluation_PerformanceEvaluationTypeDescr_3b4178ed80"
@@ -93842,7 +94518,8 @@ BEGIN
             "OldEvaluationElement_TermDescriptor_CodeValue",
             "OldRubricRating",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."EvaluationElement_EducationOrganizationId",
@@ -93859,7 +94536,8 @@ BEGIN
             oldDj2."CodeValue",
             OLD."RubricRating",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."EvaluationElement_EvaluationPeriodDescriptor_DescriptorId"
         INNER JOIN "dms"."Descriptor" oldDj1 ON oldDj1."DocumentId" = OLD."EvaluationElement_PerformanceEvaluationTypeDescripto_8a1fe07903"
@@ -93914,7 +94592,8 @@ BEGIN
             "NewEvaluationElement_TermDescriptor_CodeValue",
             "NewRubricRating",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."EvaluationElement_EducationOrganizationId",
@@ -93944,7 +94623,8 @@ BEGIN
             newDj2."CodeValue",
             NEW."RubricRating",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."EvaluationElement_EvaluationPeriodDescriptor_DescriptorId"
         INNER JOIN "dms"."Descriptor" oldDj1 ON oldDj1."DocumentId" = OLD."EvaluationElement_PerformanceEvaluationTypeDescripto_8a1fe07903"
@@ -94197,7 +94877,8 @@ BEGIN
             "OldSurveyResponse_SurveyIdentifier",
             "OldSurveyResponse_SurveyResponseIdentifier",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."Person_PersonId",
@@ -94207,7 +94888,8 @@ BEGIN
             OLD."SurveyResponse_SurveyIdentifier",
             OLD."SurveyResponse_SurveyResponseIdentifier",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."Person_SourceSystemDescriptor_DescriptorId"
         WHERE doc."DocumentId" = OLD."DocumentId";
@@ -94246,7 +94928,8 @@ BEGIN
             "NewSurveyResponse_SurveyIdentifier",
             "NewSurveyResponse_SurveyResponseIdentifier",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."Person_PersonId",
@@ -94262,7 +94945,8 @@ BEGIN
             NEW."SurveyResponse_SurveyIdentifier",
             NEW."SurveyResponse_SurveyResponseIdentifier",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."Person_SourceSystemDescriptor_DescriptorId"
         INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DocumentId" = NEW."Person_SourceSystemDescriptor_DescriptorId"
@@ -94316,7 +95000,8 @@ BEGIN
             "OldSurveySectionResponse_SurveyResponseIdentifier",
             "OldSurveySectionResponse_SurveySectionTitle",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."Person_PersonId",
@@ -94327,7 +95012,8 @@ BEGIN
             OLD."SurveySectionResponse_SurveyResponseIdentifier",
             OLD."SurveySectionResponse_SurveySectionTitle",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."Person_SourceSystemDescriptor_DescriptorId"
         WHERE doc."DocumentId" = OLD."DocumentId";
@@ -94368,7 +95054,8 @@ BEGIN
             "NewSurveySectionResponse_SurveyResponseIdentifier",
             "NewSurveySectionResponse_SurveySectionTitle",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."Person_PersonId",
@@ -94386,7 +95073,8 @@ BEGIN
             NEW."SurveySectionResponse_SurveyResponseIdentifier",
             NEW."SurveySectionResponse_SurveySectionTitle",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."Person_SourceSystemDescriptor_DescriptorId"
         INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DocumentId" = NEW."Person_SourceSystemDescriptor_DescriptorId"

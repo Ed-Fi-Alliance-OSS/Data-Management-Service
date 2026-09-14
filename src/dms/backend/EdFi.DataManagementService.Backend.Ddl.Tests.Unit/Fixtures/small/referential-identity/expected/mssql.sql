@@ -894,6 +894,7 @@ CREATE TABLE [tracked_changes_edfi].[DateTimeKeyResource]
     [NewEventTimestamp] datetime2(7) NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_DateTimeKeyResource_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_DateTimeKeyResource] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -905,6 +906,7 @@ CREATE TABLE [tracked_changes_edfi].[DecimalKeyResource]
     [NewDecimalKey] decimal(9,2) NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_DecimalKeyResource_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_DecimalKeyResource] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -918,6 +920,7 @@ CREATE TABLE [tracked_changes_edfi].[DecimalRefResource]
     [NewDecimalKeyReference_DecimalKey] decimal(9,2) NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_DecimalRefResource_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_DecimalRefResource] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -933,6 +936,7 @@ CREATE TABLE [tracked_changes_edfi].[EdOrgDependentChildResource]
     [NewEdOrgDependentResourceReference_EducationOrganizationId] int NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_EdOrgDependentChildResource_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_EdOrgDependentChildResource] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -946,6 +950,7 @@ CREATE TABLE [tracked_changes_edfi].[EdOrgDependentResource]
     [NewEducationOrganization_EducationOrganizationId] int NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_EdOrgDependentResource_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_EdOrgDependentResource] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -963,6 +968,7 @@ CREATE TABLE [tracked_changes_edfi].[KeyUnifiedResource]
     [NewResourceBReference_ResourceBId] nvarchar(64) NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_KeyUnifiedResource_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_KeyUnifiedResource] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -976,6 +982,7 @@ CREATE TABLE [tracked_changes_edfi].[ResourceA]
     [NewStudentReference_StudentUniqueId] nvarchar(32) NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_ResourceA_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_ResourceA] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -989,6 +996,7 @@ CREATE TABLE [tracked_changes_edfi].[ResourceB]
     [NewStudentReference_StudentUniqueId] nvarchar(32) NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_ResourceB_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_ResourceB] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -1000,6 +1008,7 @@ CREATE TABLE [tracked_changes_edfi].[School]
     [NewSchoolId] int NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_School_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_School] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -1011,6 +1020,7 @@ CREATE TABLE [tracked_changes_edfi].[Student]
     [NewStudentUniqueId] nvarchar(32) NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_Student_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_Student] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -1024,6 +1034,7 @@ CREATE TABLE [tracked_changes_edfi].[StudentSchoolAssociation]
     [NewSchoolReference_SchoolId] int NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_StudentSchoolAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_StudentSchoolAssociation] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -1508,12 +1519,14 @@ BEGIN
         INSERT INTO [tracked_changes_edfi].[DateTimeKeyResource] (
             [OldEventTimestamp],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[EventTimestamp],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -1530,13 +1543,15 @@ BEGIN
                 [OldEventTimestamp],
                 [NewEventTimestamp],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[EventTimestamp],
                 i.[EventTimestamp],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -1628,12 +1643,14 @@ BEGIN
         INSERT INTO [tracked_changes_edfi].[DecimalKeyResource] (
             [OldDecimalKey],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[DecimalKey],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -1650,13 +1667,15 @@ BEGIN
                 [OldDecimalKey],
                 [NewDecimalKey],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[DecimalKey],
                 i.[DecimalKey],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -1749,13 +1768,15 @@ BEGIN
             [OldRefResourceId],
             [OldDecimalKeyReference_DecimalKey],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[RefResourceId],
             del.[DecimalKeyReference_DecimalKey],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -1774,7 +1795,8 @@ BEGIN
                 [NewRefResourceId],
                 [NewDecimalKeyReference_DecimalKey],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[RefResourceId],
@@ -1782,7 +1804,8 @@ BEGIN
                 i.[RefResourceId],
                 i.[DecimalKeyReference_DecimalKey],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -1876,14 +1899,16 @@ BEGIN
             [OldEdOrgDependentResourceReference_EdOrgDependentResourceId],
             [OldEdOrgDependentResourceReference_EducationOrganizationId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[EdOrgDependentChildResourceId],
             del.[EdOrgDependentResourceReference_EdOrgDependentResourceId],
             del.[EdOrgDependentResourceReference_EducationOrganizationId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -1904,7 +1929,8 @@ BEGIN
                 [NewEdOrgDependentResourceReference_EdOrgDependentResourceId],
                 [NewEdOrgDependentResourceReference_EducationOrganizationId],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[EdOrgDependentChildResourceId],
@@ -1914,7 +1940,8 @@ BEGIN
                 i.[EdOrgDependentResourceReference_EdOrgDependentResourceId],
                 i.[EdOrgDependentResourceReference_EducationOrganizationId],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -2007,13 +2034,15 @@ BEGIN
             [OldEdOrgDependentResourceId],
             [OldEducationOrganization_EducationOrganizationId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[EdOrgDependentResourceId],
             del.[EducationOrganization_EducationOrganizationId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -2032,7 +2061,8 @@ BEGIN
                 [NewEdOrgDependentResourceId],
                 [NewEducationOrganization_EducationOrganizationId],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[EdOrgDependentResourceId],
@@ -2040,7 +2070,8 @@ BEGIN
                 i.[EdOrgDependentResourceId],
                 i.[EducationOrganization_EducationOrganizationId],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -2135,7 +2166,8 @@ BEGIN
             [OldStudentUniqueId_Unified],
             [OldResourceBReference_ResourceBId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[KeyUnifiedResourceId],
@@ -2143,7 +2175,8 @@ BEGIN
             del.[StudentUniqueId_Unified],
             del.[ResourceBReference_ResourceBId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -2166,7 +2199,8 @@ BEGIN
                 [NewStudentUniqueId_Unified],
                 [NewResourceBReference_ResourceBId],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[KeyUnifiedResourceId],
@@ -2178,7 +2212,8 @@ BEGIN
                 i.[StudentUniqueId_Unified],
                 i.[ResourceBReference_ResourceBId],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -2271,13 +2306,15 @@ BEGIN
             [OldResourceAId],
             [OldStudentReference_StudentUniqueId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[ResourceAId],
             del.[StudentReference_StudentUniqueId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -2296,7 +2333,8 @@ BEGIN
                 [NewResourceAId],
                 [NewStudentReference_StudentUniqueId],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[ResourceAId],
@@ -2304,7 +2342,8 @@ BEGIN
                 i.[ResourceAId],
                 i.[StudentReference_StudentUniqueId],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -2397,13 +2436,15 @@ BEGIN
             [OldResourceBId],
             [OldStudentReference_StudentUniqueId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[ResourceBId],
             del.[StudentReference_StudentUniqueId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -2422,7 +2463,8 @@ BEGIN
                 [NewResourceBId],
                 [NewStudentReference_StudentUniqueId],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[ResourceBId],
@@ -2430,7 +2472,8 @@ BEGIN
                 i.[ResourceBId],
                 i.[StudentReference_StudentUniqueId],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -2604,12 +2647,14 @@ BEGIN
         INSERT INTO [tracked_changes_edfi].[School] (
             [OldSchoolId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[SchoolId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -2698,12 +2743,14 @@ BEGIN
         INSERT INTO [tracked_changes_edfi].[Student] (
             [OldStudentUniqueId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[StudentUniqueId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -2720,13 +2767,15 @@ BEGIN
                 [OldStudentUniqueId],
                 [NewStudentUniqueId],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[StudentUniqueId],
                 i.[StudentUniqueId],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -2819,13 +2868,15 @@ BEGIN
             [OldStudentUniqueId],
             [OldSchoolReference_SchoolId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[StudentUniqueId],
             del.[SchoolReference_SchoolId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -2844,7 +2895,8 @@ BEGIN
                 [NewStudentUniqueId],
                 [NewSchoolReference_SchoolId],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[StudentUniqueId],
@@ -2852,7 +2904,8 @@ BEGIN
                 i.[StudentUniqueId],
                 i.[SchoolReference_SchoolId],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
