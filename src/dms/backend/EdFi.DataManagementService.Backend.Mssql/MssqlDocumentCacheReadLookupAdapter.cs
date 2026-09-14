@@ -76,7 +76,7 @@ internal sealed class MssqlDocumentCacheReadLookupAdapter : DocumentCacheReadLoo
 
         _logger.LogDebug(
             "Executing SQL Server DocumentCache read lookup for target {TargetKey} with {ParameterCount} parameters",
-            LogSanitizer.SanitizeForLog(targetContext.TargetKey.ToString()),
+            LogSanitizer.SanitizeInternalValueForLog(targetContext.TargetKey.ToString()),
             command.Parameters.Count
         );
 

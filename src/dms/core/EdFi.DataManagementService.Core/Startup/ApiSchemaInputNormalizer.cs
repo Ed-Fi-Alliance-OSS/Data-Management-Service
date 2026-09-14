@@ -37,7 +37,7 @@ public class ApiSchemaInputNormalizer(ILogger<ApiSchemaInputNormalizer> _logger)
         var coreVersion = GetApiSchemaVersion(nodes.CoreApiSchemaRootNode);
         _logger.LogDebug(
             "Core schema apiSchemaVersion: {Version}",
-            LoggingSanitizer.SanitizeForLogging(coreVersion)
+            LoggingSanitizer.SanitizeInternalValueForLogging(coreVersion)
         );
 
         // Step 2: Validate all extensions and check for version mismatches
@@ -58,9 +58,9 @@ public class ApiSchemaInputNormalizer(ILogger<ApiSchemaInputNormalizer> _logger)
             {
                 _logger.LogError(
                     "apiSchemaVersion mismatch in {SchemaSource}: expected {Expected}, got {Actual}",
-                    LoggingSanitizer.SanitizeForLogging(schemaSource),
-                    LoggingSanitizer.SanitizeForLogging(coreVersion),
-                    LoggingSanitizer.SanitizeForLogging(extVersion)
+                    LoggingSanitizer.SanitizeInternalValueForLogging(schemaSource),
+                    LoggingSanitizer.SanitizeInternalValueForLogging(coreVersion),
+                    LoggingSanitizer.SanitizeInternalValueForLogging(extVersion)
                 );
                 return new ApiSchemaNormalizationResult.ApiSchemaVersionMismatchResult(
                     coreVersion,
@@ -107,7 +107,7 @@ public class ApiSchemaInputNormalizer(ILogger<ApiSchemaInputNormalizer> _logger)
         {
             _logger.LogError(
                 "Schema {SchemaSource} is missing projectSchema node",
-                LoggingSanitizer.SanitizeForLogging(schemaSource)
+                LoggingSanitizer.SanitizeInternalValueForLogging(schemaSource)
             );
             return new ApiSchemaNormalizationResult.MissingOrMalformedProjectSchemaResult(
                 schemaSource,
@@ -120,7 +120,7 @@ public class ApiSchemaInputNormalizer(ILogger<ApiSchemaInputNormalizer> _logger)
         {
             _logger.LogError(
                 "Schema {SchemaSource} is missing apiSchemaVersion",
-                LoggingSanitizer.SanitizeForLogging(schemaSource)
+                LoggingSanitizer.SanitizeInternalValueForLogging(schemaSource)
             );
             return new ApiSchemaNormalizationResult.MissingOrMalformedProjectSchemaResult(
                 schemaSource,
@@ -133,7 +133,7 @@ public class ApiSchemaInputNormalizer(ILogger<ApiSchemaInputNormalizer> _logger)
         {
             _logger.LogError(
                 "Schema {SchemaSource} is missing projectEndpointName in projectSchema",
-                LoggingSanitizer.SanitizeForLogging(schemaSource)
+                LoggingSanitizer.SanitizeInternalValueForLogging(schemaSource)
             );
             return new ApiSchemaNormalizationResult.MissingOrMalformedProjectSchemaResult(
                 schemaSource,
@@ -187,10 +187,10 @@ public class ApiSchemaInputNormalizer(ILogger<ApiSchemaInputNormalizer> _logger)
             {
                 _logger.LogError(
                     "Duplicate projectEndpointName {EndpointName} found in: {Sources}",
-                    LoggingSanitizer.SanitizeForLogging(collision.ProjectEndpointName),
+                    LoggingSanitizer.SanitizeInternalValueForLogging(collision.ProjectEndpointName),
                     string.Join(
                         ", ",
-                        collision.ConflictingSources.Select(LoggingSanitizer.SanitizeForLogging)
+                        collision.ConflictingSources.Select(LoggingSanitizer.SanitizeInternalValueForLogging)
                     )
                 );
             }

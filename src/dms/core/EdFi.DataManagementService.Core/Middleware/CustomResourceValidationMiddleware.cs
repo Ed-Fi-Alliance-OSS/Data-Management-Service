@@ -109,7 +109,9 @@ internal class CustomResourceValidationMiddleware(ILogger _logger, CustomValidat
 
             // The validator's own type name is implementer-authored, so it is routed through the
             // sanitizer before it reaches a log template, for the same reason the trace id is.
-            string sanitizedValidatorTypeName = LoggingSanitizer.SanitizeForLogging(validator.GetType().Name);
+            string sanitizedValidatorTypeName = LoggingSanitizer.SanitizeInternalValueForLogging(
+                validator.GetType().Name
+            );
             long validatorStartTimestamp = Stopwatch.GetTimestamp();
 
             IReadOnlyList<CustomValidationFailure> failures;
@@ -283,7 +285,7 @@ internal class CustomResourceValidationMiddleware(ILogger _logger, CustomValidat
         IReadOnlyList<ValidatedResource> appliesTo =
             validator.AppliesTo
             ?? throw new InvalidOperationException(
-                $"{LoggingSanitizer.SanitizeForLogging(validator.GetType().Name)}.AppliesTo returned "
+                $"{LoggingSanitizer.SanitizeInternalValueForLogging(validator.GetType().Name)}.AppliesTo returned "
                     + "null. A null is not a substitute for an empty list and is treated as a hard "
                     + "failure."
             );
@@ -293,7 +295,7 @@ internal class CustomResourceValidationMiddleware(ILogger _logger, CustomValidat
         if (appliesTo.Any(entry => entry is null))
         {
             throw new InvalidOperationException(
-                $"{LoggingSanitizer.SanitizeForLogging(validator.GetType().Name)}.AppliesTo contains "
+                $"{LoggingSanitizer.SanitizeInternalValueForLogging(validator.GetType().Name)}.AppliesTo contains "
                     + "a null entry."
             );
         }

@@ -172,7 +172,7 @@ public class ConfigurationServiceProfileProvider(
             logger.LogDebug(
                 "Successfully fetched profile for profileId: {ProfileId}, Name: {ProfileName}",
                 profileId,
-                LoggingSanitizer.SanitizeForLogging(profileResponse.Name)
+                LoggingSanitizer.SanitizeInternalValueForLogging(profileResponse.Name)
             );
 
             return new CmsProfileResponse(

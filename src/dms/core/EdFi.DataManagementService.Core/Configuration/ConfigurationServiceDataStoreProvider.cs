@@ -115,7 +115,7 @@ public class ConfigurationServiceDataStoreProvider(
                     instance.DataStoreType
                 );
             }
-            string sanitizedTenant = LoggingSanitizer.SanitizeForLogging(tenant ?? "(default)");
+            string sanitizedTenant = LoggingSanitizer.SanitizeInternalValueForLogging(tenant ?? "(default)");
             logger.LogInformation(
                 "Data store cache updated successfully for tenant {Tenant}",
                 sanitizedTenant
@@ -188,7 +188,7 @@ public class ConfigurationServiceDataStoreProvider(
             {
                 return;
             }
-            string sanitizedTenant = LoggingSanitizer.SanitizeForLogging(tenant ?? "(default)");
+            string sanitizedTenant = LoggingSanitizer.SanitizeInternalValueForLogging(tenant ?? "(default)");
             logger.LogInformation(
                 "Data store cache expired for tenant {Tenant} after {TtlSeconds}s, refreshing configuration from Configuration Service",
                 sanitizedTenant,
@@ -272,9 +272,9 @@ public class ConfigurationServiceDataStoreProvider(
 #pragma warning disable S6667
                     logger.LogWarning(
                         "Ownership reconciler {Reconciler} failed with {ExceptionType} for tenant {Tenant} at ownership version {Version}. Configuration was published; the next publication will deliver the complete snapshot again",
-                        LoggingSanitizer.SanitizeForLogging(reconciler.GetType().Name),
-                        LoggingSanitizer.SanitizeForLogging(exception.GetType().Name),
-                        LoggingSanitizer.SanitizeForLogging(tenant ?? "(default)"),
+                        LoggingSanitizer.SanitizeInternalValueForLogging(reconciler.GetType().Name),
+                        LoggingSanitizer.SanitizeInternalValueForLogging(exception.GetType().Name),
+                        LoggingSanitizer.SanitizeInternalValueForLogging(tenant ?? "(default)"),
                         snapshot.Version
                     );
 #pragma warning restore S6667
@@ -375,7 +375,10 @@ public class ConfigurationServiceDataStoreProvider(
 
             foreach (string tenant in tenants)
             {
-                logger.LogDebug("Found tenant: {TenantName}", LoggingSanitizer.SanitizeForLogging(tenant));
+                logger.LogDebug(
+                    "Found tenant: {TenantName}",
+                    LoggingSanitizer.SanitizeInternalValueForLogging(tenant)
+                );
             }
 
             return tenants;
@@ -548,7 +551,7 @@ public class ConfigurationServiceDataStoreProvider(
     )
     {
         List<KeyValuePair<DataStoreDerivativeType, string>> derivatives = [];
-        string sanitizedTenant = LoggingSanitizer.SanitizeForLogging(tenant ?? "(default)");
+        string sanitizedTenant = LoggingSanitizer.SanitizeInternalValueForLogging(tenant ?? "(default)");
 
 #pragma warning disable S3267 // Loops should be simplified with "LINQ" expressions - False positive: this loop has several early exits, per-item logging, and duplicate detection against what it has already accepted
         foreach (DataStoreDerivativeItem derivative in response.DataStoreDerivatives)
@@ -563,7 +566,7 @@ public class ConfigurationServiceDataStoreProvider(
             {
                 logger.LogError(
                     "Ignoring a data store derivative with unrecognized type '{DerivativeType}' for tenant {Tenant}, parent data store {DataStoreId}",
-                    LoggingSanitizer.SanitizeForLogging(derivative.DerivativeType ?? "(none)"),
+                    LoggingSanitizer.SanitizeInternalValueForLogging(derivative.DerivativeType ?? "(none)"),
                     sanitizedTenant,
                     response.Id
                 );

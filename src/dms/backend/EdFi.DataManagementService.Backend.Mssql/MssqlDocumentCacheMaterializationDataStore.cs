@@ -57,7 +57,7 @@ internal sealed class MssqlDocumentCacheMaterializationDataStore : IDocumentCach
 
         _logger.LogDebug(
             "Executing SQL Server DocumentCache materialization command for target {TargetKey} with {ParameterCount} parameters",
-            LogSanitizer.SanitizeForLog(request.TargetContext.TargetKey.ToString()),
+            LogSanitizer.SanitizeInternalValueForLog(request.TargetContext.TargetKey.ToString()),
             command.Parameters.Count
         );
 

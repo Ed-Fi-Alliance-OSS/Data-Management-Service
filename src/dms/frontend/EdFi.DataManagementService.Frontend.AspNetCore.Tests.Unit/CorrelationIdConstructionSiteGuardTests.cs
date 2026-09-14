@@ -32,7 +32,8 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit;
 /// so a new one would add no failing test.
 /// </item>
 /// <item>
-/// A correlation ID routed through the strict <c>Method</c>/<c>Path</c> sanitizer. That
+/// A correlation ID routed through <c>SanitizeInternalValueForLog</c> - the strict
+/// <c>Method</c>/<c>Path</c> sanitizer for internally-controlled values. That
 /// allowlist strips punctuation an upstream identifier scheme legitimately uses, so the logged
 /// value would silently stop matching the <c>correlationId</c> the client read for the same
 /// request - the single guarantee FR-LOG-6 makes. Most of the sites that log a correlation ID
@@ -96,12 +97,20 @@ public class CorrelationIdConstructionSiteGuardTests
     );
 
     /// <summary>
-    /// A call to the strict <c>Method</c>/<c>Path</c> sanitizer under either of its two names.
-    /// The argument text is inspected separately, because a regex cannot reliably match a
-    /// balanced argument list.
+    /// A call to the internally-controlled-value sanitizer under either of its two names -
+    /// <c>LogSanitizer.SanitizeInternalValueForLog</c> and the Core facade
+    /// <c>LoggingSanitizer.SanitizeInternalValueForLogging</c>. The argument text is inspected
+    /// separately, because a regex cannot reliably match a balanced argument list.
     /// </summary>
-    private static readonly Regex StrictSanitizerCall = new(
-        @"\bSanitizeFor(?:Log|Logging)\s*\(",
+    /// <remarks>
+    /// Renaming either method without updating this pattern would leave the scan matching nothing,
+    /// and a scan that matches nothing still reports success.
+    /// <see cref="It_never_routes_a_correlation_id_through_the_strict_method_and_path_sanitizer"/>
+    /// therefore asserts that the pattern still finds calls in production source, so the guard
+    /// fails closed rather than silently lapsing.
+    /// </remarks>
+    private static readonly Regex InternalValueSanitizerCall = new(
+        @"\bSanitizeInternalValueForLog(?:ging)?\s*\(",
         RegexOptions.Compiled
     );
 
@@ -157,16 +166,21 @@ public class CorrelationIdConstructionSiteGuardTests
     public void It_never_routes_a_correlation_id_through_the_strict_method_and_path_sanitizer()
     {
         List<string> offendingSites = [];
+        int scannedCallSites = 0;
 
         foreach (SourceFile file in ProductionSourceFiles())
         {
-            foreach (SourceMatch match in FindMatches(file, StrictSanitizerCall))
+            foreach (SourceMatch match in FindMatches(file, InternalValueSanitizerCall))
             {
+                scannedCallSites++;
+
                 string argument = ArgumentListAt(file.ScannableText, match.Index + match.Length - 1);
 
                 if (LooksLikeACorrelationId(argument))
                 {
-                    offendingSites.Add($"{match.Describe()}: SanitizeFor...({argument.Trim()})");
+                    offendingSites.Add(
+                        $"{match.Describe()}: SanitizeInternalValueForLog...({argument.Trim()})"
+                    );
                 }
             }
         }
@@ -174,13 +188,28 @@ public class CorrelationIdConstructionSiteGuardTests
         offendingSites
             .Should()
             .BeEmpty(
-                "SanitizeForLog/SanitizeForLogging apply the strict Method/Path allowlist, which "
-                    + "strips punctuation an upstream correlation ID legitimately uses. The logged "
-                    + "value would then differ from the correlationId in the response body for the "
-                    + "same request. Use LoggingSanitizer.SanitizeCorrelationId, or pass the already-"
-                    + "normalized value raw. Offending sites:{0}{1}",
+                "SanitizeInternalValueForLog/SanitizeInternalValueForLogging apply the strict "
+                    + "Method/Path allowlist, which strips punctuation an upstream correlation ID "
+                    + "legitimately uses. The logged value would then differ from the correlationId "
+                    + "in the response body for the same request. Use "
+                    + "LoggingSanitizer.SanitizeCorrelationId, or pass the already-normalized value "
+                    + "raw. Offending sites:{0}{1}",
                 Environment.NewLine,
                 string.Join(Environment.NewLine, offendingSites.Order(StringComparer.Ordinal))
+            );
+
+        // The assertion above is vacuous if the pattern matches nothing, which is exactly what a
+        // rename of either sanitizer would cause. Production source calls the pair well over a
+        // hundred times, so a floor of fifty fails loudly on a stale pattern while leaving room
+        // for ordinary call sites to come and go.
+        scannedCallSites
+            .Should()
+            .BeGreaterThan(
+                50,
+                "{0} must still match the sanitizer's real spelling. Finding almost no call sites "
+                    + "means the method was renamed and this guard has silently stopped guarding, "
+                    + "not that the codebase stopped calling it",
+                nameof(InternalValueSanitizerCall)
             );
     }
 

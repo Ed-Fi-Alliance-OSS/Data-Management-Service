@@ -1951,7 +1951,7 @@ public class OpenApiDocument(
                         // Target resource schemas not in this spec (e.g., Contact not in descriptors)
                         _logger.LogDebug(
                             "Resource '{ResourceName}' has commonExtensionOverrides but no matching core schema in {DocType} spec — skipping",
-                            LoggingSanitizer.SanitizeForLogging(resourceName),
+                            LoggingSanitizer.SanitizeInternalValueForLogging(resourceName),
                             documentTypeKey
                         );
                         continue;

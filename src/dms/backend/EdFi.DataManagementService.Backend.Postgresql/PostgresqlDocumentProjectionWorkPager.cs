@@ -82,7 +82,9 @@ internal sealed class PostgresqlDocumentProjectionWorkPager(
 
         _logger.LogDebug(
             "Paging PostgreSQL DocumentProjectionWork for target {TargetKey} with cursor {HasCursor}.",
-            LoggingSanitizer.SanitizeForLogging(request.TargetExecutionContext.TargetKey.ToString()),
+            LoggingSanitizer.SanitizeInternalValueForLogging(
+                request.TargetExecutionContext.TargetKey.ToString()
+            ),
             request.Cursor.HasValue
         );
 

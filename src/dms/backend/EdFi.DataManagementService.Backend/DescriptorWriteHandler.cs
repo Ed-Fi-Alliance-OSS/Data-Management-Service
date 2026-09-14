@@ -1312,7 +1312,7 @@ internal sealed class DescriptorWriteHandler(
                 "Descriptor etag precondition for document {DocumentId}: "
                     + "clientTag={ClientTag}, currentTag={CurrentTag}, satisfied={IsSatisfied}",
                 targetContext.DocumentId,
-                LoggingSanitizer.SanitizeForLogging(clientTag),
+                LoggingSanitizer.SanitizeInternalValueForLogging(clientTag),
                 currentEtag,
                 isSatisfied
             );

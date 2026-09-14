@@ -58,7 +58,7 @@ public class CachedClaimSetProvider(
 
             logger.LogDebug(
                 "Cache miss for claim sets, fetching from CMS for tenant: {Tenant}",
-                LoggingSanitizer.SanitizeForLogging(tenant)
+                LoggingSanitizer.SanitizeInternalValueForLogging(tenant)
             );
 
             var claimSets = await claimSetProvider.GetAllClaimSets(tenant);
@@ -110,7 +110,7 @@ public class CachedClaimSetProvider(
         _cacheKeyLocks.TryRemove(cacheKey, out _);
         logger.LogInformation(
             "Invalidated claim sets cache for tenant: {Tenant}",
-            LoggingSanitizer.SanitizeForLogging(tenant)
+            LoggingSanitizer.SanitizeInternalValueForLogging(tenant)
         );
         return Task.CompletedTask;
     }

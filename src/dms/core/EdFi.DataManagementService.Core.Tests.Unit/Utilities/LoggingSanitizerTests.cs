@@ -13,12 +13,15 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Utilities;
 public class LoggingSanitizerTests
 {
     [TestFixture]
-    public class Given_SanitizeForLogging_With_Line_Endings : LoggingSanitizerTests
+    public class Given_SanitizeInternalValueForLogging_With_Line_Endings : LoggingSanitizerTests
     {
         [Test]
         public void It_removes_line_endings_before_returning_log_values()
         {
-            LoggingSanitizer.SanitizeForLogging("trace\r\nid\nwith\runsafe").Should().Be("traceidwithunsafe");
+            LoggingSanitizer
+                .SanitizeInternalValueForLogging("trace\r\nid\nwith\runsafe")
+                .Should()
+                .Be("traceidwithunsafe");
         }
     }
 
@@ -63,7 +66,7 @@ public class LoggingSanitizerTests
         [Test]
         public void It_is_broader_than_the_strict_method_and_path_allowlist()
         {
-            LoggingSanitizer.SanitizeForLogging(UpstreamId).Should().NotBe(UpstreamId);
+            LoggingSanitizer.SanitizeInternalValueForLogging(UpstreamId).Should().NotBe(UpstreamId);
         }
     }
 
@@ -276,8 +279,7 @@ public class LoggingSanitizerTests
         // value below displays as the bare "trace-1234" while carrying ten extra UTF-16 code
         // units. A per-code-unit filter round-trips it fully intact, which is precisely the
         // stored-value/displayed-value divergence the Cf rule exists to prevent.
-        private const string SmuggledId =
-            "trace-1234\U000E0041\U000E0044\U000E004D\U000E0049\U000E004E";
+        private const string SmuggledId = "trace-1234\U000E0041\U000E0044\U000E004D\U000E0049\U000E004E";
 
         [Test]
         public void It_strips_the_smuggled_payload_down_to_the_visible_id()
@@ -316,10 +318,7 @@ public class LoggingSanitizerTests
         public void It_preserves_an_astral_symbol()
         {
             // U+1F600 GRINNING FACE, category So.
-            LoggingSanitizer
-                .SanitizeCorrelationId("trace-\U0001F600-id")
-                .Should()
-                .Be("trace-\U0001F600-id");
+            LoggingSanitizer.SanitizeCorrelationId("trace-\U0001F600-id").Should().Be("trace-\U0001F600-id");
         }
 
         [Test]
@@ -332,10 +331,7 @@ public class LoggingSanitizerTests
         [Test]
         public void It_preserves_a_surrogate_pair_while_removing_neighbouring_format_characters()
         {
-            LoggingSanitizer
-                .SanitizeCorrelationId("a​\U0001F600‮b")
-                .Should()
-                .Be("a\U0001F600b");
+            LoggingSanitizer.SanitizeCorrelationId("a​\U0001F600‮b").Should().Be("a\U0001F600b");
         }
     }
 
@@ -366,7 +362,8 @@ public class LoggingSanitizerTests
     }
 
     [TestFixture]
-    public class Given_SanitizeForLogging_With_Supplementary_Plane_Characters : LoggingSanitizerTests
+    public class Given_SanitizeInternalValueForLogging_With_Supplementary_Plane_Characters
+        : LoggingSanitizerTests
     {
         // The strict Method/Path allowlist is deliberately still applied per UTF-16 code unit, so
         // every astral character is stripped: each half of the pair is a surrogate, and a
@@ -376,19 +373,22 @@ public class LoggingSanitizerTests
         [Test]
         public void It_strips_an_astral_letter_from_a_method_or_path_value()
         {
-            LoggingSanitizer.SanitizeForLogging("Method-\U0001D400-Path").Should().Be("Method--Path");
+            LoggingSanitizer
+                .SanitizeInternalValueForLogging("Method-\U0001D400-Path")
+                .Should()
+                .Be("Method--Path");
         }
 
         [Test]
         public void It_strips_an_astral_symbol_from_a_method_or_path_value()
         {
-            LoggingSanitizer.SanitizeForLogging("GET /x\U0001F600y").Should().Be("GET /xy");
+            LoggingSanitizer.SanitizeInternalValueForLogging("GET /x\U0001F600y").Should().Be("GET /xy");
         }
 
         [Test]
         public void It_strips_a_lone_surrogate_from_a_method_or_path_value()
         {
-            LoggingSanitizer.SanitizeForLogging("ab\uD83Dcd").Should().Be("abcd");
+            LoggingSanitizer.SanitizeInternalValueForLogging("ab\uD83Dcd").Should().Be("abcd");
         }
     }
 

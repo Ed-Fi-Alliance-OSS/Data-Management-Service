@@ -80,7 +80,7 @@ public sealed record CdcTelemetryLabels
 
     private static string SafeTokenLabel(string? value)
     {
-        string sanitized = LoggingSanitizer.SanitizeForLogging(value);
+        string sanitized = LoggingSanitizer.SanitizeInternalValueForLogging(value);
         if (!CdcKafkaSafeTokenValidator.IsValid(sanitized))
         {
             return "invalid";

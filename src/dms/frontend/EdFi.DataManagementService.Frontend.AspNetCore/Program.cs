@@ -408,7 +408,7 @@ async Task InitializeDataStoresForMultiTenancy(WebApplication app, IDataStorePro
     {
         app.Logger.LogInformation(
             "Loading data stores for tenant: {TenantName}",
-            LoggingSanitizer.SanitizeForLogging(tenant)
+            LoggingSanitizer.SanitizeInternalValueForLogging(tenant)
         );
 
         IList<DataStore> instances = await dataStoreProvider.LoadDataStores(tenant);
@@ -417,7 +417,7 @@ async Task InitializeDataStoresForMultiTenancy(WebApplication app, IDataStorePro
         app.Logger.LogInformation(
             "Loaded {InstanceCount} data stores for tenant {TenantName}",
             instances.Count,
-            LoggingSanitizer.SanitizeForLogging(tenant)
+            LoggingSanitizer.SanitizeInternalValueForLogging(tenant)
         );
 
         LogInstanceDetails(app, instances);
