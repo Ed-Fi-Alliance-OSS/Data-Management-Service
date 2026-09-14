@@ -34,7 +34,7 @@ Draft 01 below is that build, and it is the only draft here that touches the Dat
 | --- | --- | --- |
 | [design.md](./design.md) | **Drafted 2026-09-14**, not yet approved | The type: the two kinds of secret and why they need two mechanisms, the secret reference and its grammar, where resolution happens, freshness and caching, failure semantics, the contract package, the hasher relocation, cardinality, CMS host integration, the configuration surface, and the trust notes |
 | [plugins-DMS-1462/design.md](../plugins-DMS-1462/design.md) | Approved 2026-08-27 | The mechanism this builds on. Every Phase A statement in it is inherited here rather than revisited |
-| [identity-DMS-1413/design.md](../identity-DMS-1413/design.md) | Drafted 2026-09-03 | The sibling companion under the same spine, and the precedent for a replace-cardinality contract with a host default |
+| [identity-DMS-1413/design.md](../identity-DMS-1413/design.md) | **Approved**, filing gate closed 2026-09-07, six drafts filed as DMS-1512 through DMS-1517 | The sibling companion under the same spine, and the precedent for a replace-cardinality contract with a host default |
 
 ## Ticket Drafts
 
@@ -54,7 +54,7 @@ The default posture was the fewest that cover the scope, and the shape that fell
 | Draft | Blocked by | Why |
 | --- | --- | --- |
 | 01 | [DMS-1499](https://edfi.atlassian.net/browse/DMS-1499) Integrate Plugin Loading into DMS Startup | The Phase A invocation goes inside the `LoadPlugins` bootstrap phase that story creates, and the integration proof needs a host that loads plugins at all. DMS-1496, DMS-1497, and DMS-1498 are merged, so this is the only open spine story draft 01 waits for |
-| 02 | none | A contract package and a host-default repair. It touches no plugin machinery and can be built and reviewed while the spine's remaining stories land |
+| 02 | none, **and that is a stated divergence** | A contract package and a host-default repair. It touches no plugin machinery, compiles without a loader, and can be built and reviewed while the spine's remaining stories land. The spine says "every ticket it produces depends on the full plugin foundations being in place, because a secrets plugin is a plugin" (`plugins-DMS-1462/design.md:1402`). That holds for delivering the capability and not for this ticket: nothing in it loads a plugin, and blocking it on the foundations would delay a contract package and a defect fix for a dependency neither has. The divergence is recorded here rather than absorbed, per the spine's own rule that a divergence is flagged |
 | 03 | 01, 02 | Needs `ContributeConfiguration` to exist before it can invoke it, and needs both contracts to exist before `CmsPluginContracts` can declare them |
 | 04 | 03 | Needs a registered `ISecretResolver` to resolve anything, and needs CMS to be loading plugins at all. Transitively needs 02 for the contract |
 | 05 | 04, [DMS-1500](https://edfi.atlassian.net/browse/DMS-1500), [DMS-1501](https://edfi.atlassian.net/browse/DMS-1501) | The implementer guide links outward to `PLUGINS.md` for packaging, delivery, and the trust model, and DMS-1500 is the story that turns that file from a placeholder into the delivery guide. An implementer also cannot build a plugin without `EdFi.Api.Plugins` on the feed, which is DMS-1501 |
