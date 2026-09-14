@@ -225,6 +225,174 @@ public class LoggingSanitizerTests
     }
 
     [TestFixture]
+    public class Given_SanitizeCorrelationId_With_Supplementary_Plane_Format_Characters
+        : LoggingSanitizerTests
+    {
+        // The Cf category is not confined to the BMP, and the allowlist is a category test, so
+        // these must be removed for exactly the reason the zero-width characters are. They are
+        // pinned separately because a per-UTF-16-code-unit implementation of the same category
+        // test silently misses every one of them: both halves of a non-BMP code point are
+        // surrogates, and char.GetUnicodeCategory reports Cs for a surrogate, never Cf. These
+        // tests fail against such an implementation and pass against a code-point-wise one.
+
+        [Test]
+        public void It_removes_the_tag_block_characters()
+        {
+            // U+E0020 TAG SPACE and U+E007F CANCEL TAG.
+            LoggingSanitizer.SanitizeCorrelationId("trace\U000E0020\U000E007Fid").Should().Be("traceid");
+        }
+
+        [Test]
+        public void It_removes_the_language_tag_character()
+        {
+            // U+E0001 LANGUAGE TAG.
+            LoggingSanitizer.SanitizeCorrelationId("req-\U000E0001123").Should().Be("req-123");
+        }
+
+        [Test]
+        public void It_removes_the_musical_notation_format_characters()
+        {
+            // U+1D173 MUSICAL SYMBOL BEGIN BEAM and U+1D17A MUSICAL SYMBOL END PHRASE.
+            LoggingSanitizer.SanitizeCorrelationId("a\U0001D173b\U0001D17Ac").Should().Be("abc");
+        }
+
+        [Test]
+        public void It_removes_the_remaining_astral_format_characters()
+        {
+            // U+110BD KAITHI NUMBER SIGN, U+13430 EGYPTIAN HIEROGLYPH VERTICAL JOINER and
+            // U+1BCA0 SHORTHAND FORMAT LETTER OVERLAP.
+            LoggingSanitizer
+                .SanitizeCorrelationId("x\U000110BDy\U00013430z\U0001BCA0w")
+                .Should()
+                .Be("xyzw");
+        }
+    }
+
+    [TestFixture]
+    public class Given_SanitizeCorrelationId_With_A_Tag_Smuggled_Payload : LoggingSanitizerTests
+    {
+        // The full invisible-text-smuggling shape. Each ASCII character of "ADMIN" is encoded as
+        // the TAG-block code point U+E0000 + its code, which renders as nothing at all, so the
+        // value below displays as the bare "trace-1234" while carrying ten extra UTF-16 code
+        // units. A per-code-unit filter round-trips it fully intact, which is precisely the
+        // stored-value/displayed-value divergence the Cf rule exists to prevent.
+        private const string SmuggledId =
+            "trace-1234\U000E0041\U000E0044\U000E004D\U000E0049\U000E004E";
+
+        [Test]
+        public void It_strips_the_smuggled_payload_down_to_the_visible_id()
+        {
+            LoggingSanitizer.SanitizeCorrelationId(SmuggledId).Should().Be("trace-1234");
+        }
+
+        [Test]
+        public void It_makes_the_smuggled_id_and_the_visible_id_the_same_string()
+        {
+            LoggingSanitizer
+                .SanitizeCorrelationId(SmuggledId)
+                .Should()
+                .Be(LoggingSanitizer.SanitizeCorrelationId("trace-1234"));
+        }
+
+        [Test]
+        public void It_returns_empty_string_when_the_value_is_only_a_smuggled_payload()
+        {
+            LoggingSanitizer
+                .SanitizeCorrelationId("\U000E0041\U000E0044\U000E004D\U000E0049\U000E004E")
+                .Should()
+                .Be(string.Empty);
+        }
+    }
+
+    [TestFixture]
+    public class Given_SanitizeCorrelationId_With_Supplementary_Plane_Characters_Outside_Cc_And_Cf
+        : LoggingSanitizerTests
+    {
+        // The guard against the Cf fix over-reaching. Filtering by code point rather than by code
+        // unit must not start removing astral characters that are not Cc or Cf, and it must not
+        // split a surrogate pair on the way through.
+
+        [Test]
+        public void It_preserves_an_astral_symbol()
+        {
+            // U+1F600 GRINNING FACE, category So.
+            LoggingSanitizer
+                .SanitizeCorrelationId("trace-\U0001F600-id")
+                .Should()
+                .Be("trace-\U0001F600-id");
+        }
+
+        [Test]
+        public void It_preserves_an_astral_letter()
+        {
+            // U+1D400 MATHEMATICAL BOLD CAPITAL A, category Lu.
+            LoggingSanitizer.SanitizeCorrelationId("id-\U0001D400").Should().Be("id-\U0001D400");
+        }
+
+        [Test]
+        public void It_preserves_a_surrogate_pair_while_removing_neighbouring_format_characters()
+        {
+            LoggingSanitizer
+                .SanitizeCorrelationId("a​\U0001F600‮b")
+                .Should()
+                .Be("a\U0001F600b");
+        }
+    }
+
+    [TestFixture]
+    public class Given_SanitizeCorrelationId_With_A_Lone_Surrogate : LoggingSanitizerTests
+    {
+        // A surrogate is category Cs, which is neither Cc nor Cf, so the allowlist keeps it.
+        // CorrelationIdNormalizer.Normalize documents that a pre-existing lone surrogate is
+        // preserved rather than repaired; this pins the sanitizer half of that promise, which
+        // code-point iteration could otherwise break by substituting U+FFFD for it.
+        [Test]
+        public void It_preserves_a_lone_high_surrogate()
+        {
+            LoggingSanitizer.SanitizeCorrelationId("ab\uD83Dcd").Should().Be("ab\uD83Dcd");
+        }
+
+        [Test]
+        public void It_preserves_a_lone_low_surrogate()
+        {
+            LoggingSanitizer.SanitizeCorrelationId("ab\uDC00cd").Should().Be("ab\uDC00cd");
+        }
+
+        [Test]
+        public void It_preserves_a_trailing_lone_high_surrogate_while_removing_format_characters()
+        {
+            LoggingSanitizer.SanitizeCorrelationId("a​b\uD83D").Should().Be("ab\uD83D");
+        }
+    }
+
+    [TestFixture]
+    public class Given_SanitizeForLogging_With_Supplementary_Plane_Characters : LoggingSanitizerTests
+    {
+        // The strict Method/Path allowlist is deliberately still applied per UTF-16 code unit, so
+        // every astral character is stripped: each half of the pair is a surrogate, and a
+        // surrogate is neither a letter nor a digit. Rune.IsLetterOrDigit(U+1D400) is true, so
+        // reunifying the two sanitizers on code-point iteration would silently start admitting
+        // these. This test is what pins the strict path's behavior against that change.
+        [Test]
+        public void It_strips_an_astral_letter_from_a_method_or_path_value()
+        {
+            LoggingSanitizer.SanitizeForLogging("Method-\U0001D400-Path").Should().Be("Method--Path");
+        }
+
+        [Test]
+        public void It_strips_an_astral_symbol_from_a_method_or_path_value()
+        {
+            LoggingSanitizer.SanitizeForLogging("GET /x\U0001F600y").Should().Be("GET /xy");
+        }
+
+        [Test]
+        public void It_strips_a_lone_surrogate_from_a_method_or_path_value()
+        {
+            LoggingSanitizer.SanitizeForLogging("ab\uD83Dcd").Should().Be("abcd");
+        }
+    }
+
+    [TestFixture]
     public class Given_SanitizeForConsole_With_Newlines : LoggingSanitizerTests
     {
         private string _result = string.Empty;
