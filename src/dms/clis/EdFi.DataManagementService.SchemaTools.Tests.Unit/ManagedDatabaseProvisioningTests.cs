@@ -326,9 +326,9 @@ public class Given_Managed_Database_Provisioning_Command_Failure(string dialect)
     private (int ExitCode, string Output, string Error) _retry;
 
     [SetUp]
-    public void SetUp()
+    public async Task SetUp()
     {
-        string connection = $"Database={Database};Password={Secret};{Secret}-{Database}=invalid";
+        string connection = ConnectionString;
         IDatabaseProvisioner provider =
             dialect == "pgsql"
                 ? new PgsqlDatabaseProvisioner(NullLogger.Instance)
@@ -349,41 +349,16 @@ public class Given_Managed_Database_Provisioning_Command_Failure(string dialect)
         {
             Console.SetOut(output);
             Console.SetError(error);
-            var command = DdlProvisionCommand.Create(
-                NullLogger.Instance,
-                new ApiSchemaFileLoader(
-                    new ApiSchemaInputNormalizer(NullLogger<ApiSchemaInputNormalizer>.Instance),
-                    NullLogger<ApiSchemaFileLoader>.Instance
-                ),
-                new EffectiveSchemaSetBuilder(
-                    new EffectiveSchemaHashProvider(NullLogger<EffectiveSchemaHashProvider>.Instance),
-                    new ResourceKeySeedProvider(NullLogger<ResourceKeySeedProvider>.Instance)
-                )
-            );
-            string[] arguments =
-            [
-                "--schema",
-                Path.Combine(TestContext.CurrentContext.TestDirectory, "Fixtures", "minimal-api-schema.json"),
-                "--connection-string",
-                connection,
-                "--dialect",
-                dialect,
-                "--create-database",
-                "--managed-state-path",
-                root,
-                "--data-store-id",
-                "42",
-                "--instance-key",
-                "datastore-42",
-            ];
+            var command = CreateCommand();
+            string[] arguments = Arguments(root);
 
-            int exitCode = command.Parse(arguments).Invoke();
+            int exitCode = await command.Parse(arguments).InvokeAsync();
             _failure = (exitCode, output.ToString(), error.ToString());
 
             // The failed CREATE attempt leaves intent; retry must keep the dedicated recovery diagnostic.
             output.GetStringBuilder().Clear();
             error.GetStringBuilder().Clear();
-            exitCode = command.Parse(arguments).Invoke();
+            exitCode = await command.Parse(arguments).InvokeAsync();
             _retry = (exitCode, output.ToString(), error.ToString());
         }
         finally
@@ -393,6 +368,130 @@ public class Given_Managed_Database_Provisioning_Command_Failure(string dialect)
             if (Directory.Exists(root))
             {
                 Directory.Delete(root, true);
+            }
+        }
+    }
+
+    private static string ConnectionString =>
+        $"Database={Database};Password={Secret};{Secret}-{Database}=invalid";
+
+    private static Command CreateCommand() =>
+        DdlProvisionCommand.Create(
+            NullLogger.Instance,
+            new ApiSchemaFileLoader(
+                new ApiSchemaInputNormalizer(NullLogger<ApiSchemaInputNormalizer>.Instance),
+                NullLogger<ApiSchemaFileLoader>.Instance
+            ),
+            new EffectiveSchemaSetBuilder(
+                new EffectiveSchemaHashProvider(NullLogger<EffectiveSchemaHashProvider>.Instance),
+                new ResourceKeySeedProvider(NullLogger<ResourceKeySeedProvider>.Instance)
+            )
+        );
+
+    private string[] Arguments(string root) =>
+        [
+            "--schema",
+            Path.Combine(TestContext.CurrentContext.TestDirectory, "Fixtures", "minimal-api-schema.json"),
+            "--connection-string",
+            ConnectionString,
+            "--dialect",
+            dialect,
+            "--create-database",
+            "--managed-state-path",
+            root,
+            "--data-store-id",
+            "42",
+            "--instance-key",
+            "datastore-42",
+        ];
+
+    [Test]
+    public async Task It_cancels_the_real_command_while_waiting_for_the_controller_lock()
+    {
+        string root = Path.Combine(
+            Path.GetTempPath(),
+            "managed-cancellation-" + Guid.NewGuid().ToString("N")
+        );
+        LocalCdcWorkflowJournalStore store = new(root);
+        var heldSession = await store.AcquireAsync(
+            TimeSpan.FromSeconds(1),
+            TimeSpan.FromMilliseconds(10),
+            CancellationToken.None
+        );
+        using CancellationTokenSource cancellation = new();
+        using CancellationTokenSource guardCancellation = new();
+        using StringWriter output = new();
+        using StringWriter error = new();
+        TextWriter originalOutput = Console.Out;
+        TextWriter originalError = Console.Error;
+        bool guardReleasedLock = false;
+        Task guard = ReleaseLockAfterGuardAsync();
+        try
+        {
+            Console.SetOut(output);
+            Console.SetError(error);
+            var parsed = CreateCommand().Parse(Arguments(root));
+            parsed.Errors.Should().BeEmpty();
+            // Execute is synchronous: schedule both cancellation and emergency lock release before invocation.
+            cancellation.CancelAfter(TimeSpan.FromSeconds(1));
+            int exitCode = await parsed.InvokeAsync(cancellationToken: cancellation.Token);
+
+            guardReleasedLock.Should().BeFalse("cancellation must finish before the test releases the lock");
+            cancellation.IsCancellationRequested.Should().BeTrue();
+            exitCode.Should().Be(130);
+            error.ToString().Should().Be("Managed provisioning cancelled." + Environment.NewLine);
+            output.ToString().Should().BeEmpty();
+            Directory
+                .GetFiles(root, "*", SearchOption.AllDirectories)
+                .Select(Path.GetFileName)
+                .Should()
+                .Equal("controller.lock");
+            // The command must neither release the test's lock nor leave a competing owner behind.
+            await FluentActions
+                .Awaiting(async () =>
+                {
+                    await using var unexpected = await store.AcquireAsync(
+                        TimeSpan.FromMilliseconds(100),
+                        TimeSpan.FromMilliseconds(10),
+                        CancellationToken.None
+                    );
+                })
+                .Should()
+                .ThrowAsync<CdcWorkflowStateException>()
+                .Where(exception => exception.Failure == CdcWorkflowStateFailure.LockTimeout);
+        }
+        finally
+        {
+            Console.SetOut(originalOutput);
+            Console.SetError(originalError);
+            await guardCancellation.CancelAsync();
+            await guard;
+            await heldSession.DisposeAsync();
+            try
+            {
+                await using var reacquired = await store.AcquireAsync(
+                    TimeSpan.FromSeconds(1),
+                    TimeSpan.FromMilliseconds(10),
+                    CancellationToken.None
+                );
+            }
+            finally
+            {
+                Directory.Delete(root, true);
+            }
+        }
+
+        async Task ReleaseLockAfterGuardAsync()
+        {
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(5), guardCancellation.Token);
+                guardReleasedLock = true;
+                await heldSession.DisposeAsync();
+            }
+            catch (OperationCanceledException) when (guardCancellation.IsCancellationRequested)
+            {
+                // Normal completion cancels the emergency release; finally disposes the held session.
             }
         }
     }

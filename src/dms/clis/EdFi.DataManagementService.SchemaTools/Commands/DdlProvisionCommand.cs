@@ -108,44 +108,51 @@ public static class DdlProvisionCommand
         command.Options.Add(instanceOption);
         command.Options.Add(generationOption);
 
-        command.SetAction(parseResult =>
-        {
-            var schemas = parseResult.GetValue(schemaOption) ?? [];
-            var connectionString = parseResult.GetValue(connectionStringOption)!;
-            var dialect = parseResult.GetValue(dialectOption)!;
-            var createDatabase = parseResult.GetValue(createDatabaseOption);
-            var timeout = parseResult.GetValue(timeoutOption);
-            return Execute(
-                logger,
-                fileLoader,
-                schemaSetBuilder,
-                schemas,
-                connectionString,
-                dialect,
-                createDatabase,
-                timeout,
-                parseResult.GetValue(statePathOption)!,
-                parseResult.GetValue(purposeOption) == "initial-cdc-provisioning"
-                    ? CdcWorkflowPurpose.InitialCdcProvisioning
-                    : CdcWorkflowPurpose.SourceHistoryOnly,
-                parseResult.GetValue(prerequisitesOption) switch
-                {
-                    "inspect" => CdcProjectionPrerequisiteMode.Inspect,
-                    "owned-local-sql-server" => CdcProjectionPrerequisiteMode.OwnedLocalSqlServer,
-                    _ => CdcProjectionPrerequisiteMode.None,
-                },
-                new CdcTargetIdentity(
-                    parseResult.GetValue(deploymentOption)!,
-                    CdcTargetValidator.MapE18TenantKeyToBindingTenantKey(
-                        parseResult.GetValue(tenantOption)!
-                    )!,
-                    parseResult.GetValue(dataStoreOption)!,
-                    parseResult.GetValue(instanceOption)!,
-                    parseResult.GetValue(generationOption),
-                    ParseDialect(dialect) == SqlDialect.Pgsql ? CdcProvider.Postgresql : CdcProvider.SqlServer
-                )
-            );
-        });
+        command.SetAction(
+            (parseResult, cancellationToken) =>
+            {
+                var schemas = parseResult.GetValue(schemaOption) ?? [];
+                var connectionString = parseResult.GetValue(connectionStringOption)!;
+                var dialect = parseResult.GetValue(dialectOption)!;
+                var createDatabase = parseResult.GetValue(createDatabaseOption);
+                var timeout = parseResult.GetValue(timeoutOption);
+                return Task.FromResult(
+                    Execute(
+                        logger,
+                        fileLoader,
+                        schemaSetBuilder,
+                        schemas,
+                        connectionString,
+                        dialect,
+                        createDatabase,
+                        timeout,
+                        parseResult.GetValue(statePathOption)!,
+                        parseResult.GetValue(purposeOption) == "initial-cdc-provisioning"
+                            ? CdcWorkflowPurpose.InitialCdcProvisioning
+                            : CdcWorkflowPurpose.SourceHistoryOnly,
+                        parseResult.GetValue(prerequisitesOption) switch
+                        {
+                            "inspect" => CdcProjectionPrerequisiteMode.Inspect,
+                            "owned-local-sql-server" => CdcProjectionPrerequisiteMode.OwnedLocalSqlServer,
+                            _ => CdcProjectionPrerequisiteMode.None,
+                        },
+                        new CdcTargetIdentity(
+                            parseResult.GetValue(deploymentOption)!,
+                            CdcTargetValidator.MapE18TenantKeyToBindingTenantKey(
+                                parseResult.GetValue(tenantOption)!
+                            )!,
+                            parseResult.GetValue(dataStoreOption)!,
+                            parseResult.GetValue(instanceOption)!,
+                            parseResult.GetValue(generationOption),
+                            ParseDialect(dialect) == SqlDialect.Pgsql
+                                ? CdcProvider.Postgresql
+                                : CdcProvider.SqlServer
+                        ),
+                        cancellationToken
+                    )
+                );
+            }
+        );
 
         return command;
     }
@@ -162,7 +169,8 @@ public static class DdlProvisionCommand
         string managedStatePath,
         CdcWorkflowPurpose workflowPurpose,
         CdcProjectionPrerequisiteMode projectionPrerequisites,
-        CdcTargetIdentity managedTarget
+        CdcTargetIdentity managedTarget,
+        CancellationToken cancellationToken
     )
     {
         if (schemaPaths.Length == 0)
@@ -265,7 +273,12 @@ public static class DdlProvisionCommand
                             projectionPrerequisites
                         );
                         var receipt = controller
-                            .ProvisionAsync(managedTarget, adapter, purpose: workflowPurpose)
+                            .ProvisionAsync(
+                                managedTarget,
+                                adapter,
+                                cancellationToken,
+                                purpose: workflowPurpose
+                            )
                             .GetAwaiter()
                             .GetResult();
                         Console.WriteLine(
@@ -281,7 +294,8 @@ public static class DdlProvisionCommand
                     }
                     catch (OperationCanceledException)
                     {
-                        throw;
+                        Console.Error.WriteLine("Managed provisioning cancelled.");
+                        return 130;
                     }
                     catch (CdcManagedProvisioningRecoveryException exception)
                     {
