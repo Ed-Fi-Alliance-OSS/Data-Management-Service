@@ -29,7 +29,33 @@ internal sealed record RepresentationRestampE2EProviderSql(
     string SetLifecycle,
     string ReadCanonicalContentVersion,
     string ReadRequiredWorkVersion,
-    string IsProjected
+    string IsProjected,
+    string ReadResidualWork,
+    string ReadDocumentCacheState
+);
+
+/// <summary>
+/// The <c>dms.DocumentCacheState</c> singleton as observed before a scenario mutates it. Both
+/// columns are captured so cleanup restores the exact pre-scenario state: <c>SetLifecycleAsync</c>
+/// also writes the cache-ahead latch, so restoring the lifecycle alone would clobber a set latch.
+/// </summary>
+internal sealed record RepresentationRestampE2EDocumentCacheStateObservation(
+    DocumentCacheLifecycleState LifecycleState,
+    bool CacheAheadRecoveryRequired
+);
+
+/// <summary>
+/// One durable <c>dms.DocumentProjectionWork</c> row joined to its canonical document and, when
+/// present, its cache row. Read only for diagnostics: it tells a reader which rows kept a drain
+/// alive and whether they belong to the scenario under test.
+/// </summary>
+internal sealed record RepresentationRestampE2EResidualWorkRow(
+    long DocumentId,
+    Guid DocumentUuid,
+    long RequiredContentVersion,
+    long CanonicalContentVersion,
+    long? CacheContentVersion,
+    DateTimeOffset FirstEnqueuedAt
 );
 
 internal interface IRepresentationRestampE2EProviderOperations
@@ -38,11 +64,16 @@ internal interface IRepresentationRestampE2EProviderOperations
 
     DbConnection OpenConnection(string connectionString);
 
-    Task SetTrackingLifecycleAsync(DbConnection connection, CancellationToken cancellationToken);
-
     Task SetLifecycleAsync(
         DbConnection connection,
         DocumentCacheLifecycleState lifecycleState,
+        CancellationToken cancellationToken,
+        bool cacheAheadRecoveryRequired = false
+    );
+
+    Task<RepresentationRestampE2EDocumentCacheStateObservation> ReadDocumentCacheStateAsync(
+        DbConnection connection,
+        string targetDescription,
         CancellationToken cancellationToken
     );
 
@@ -63,6 +94,11 @@ internal interface IRepresentationRestampE2EProviderOperations
         Guid documentUuid,
         CancellationToken cancellationToken
     );
+
+    Task<IReadOnlyList<RepresentationRestampE2EResidualWorkRow>> ReadResidualWorkAsync(
+        DbConnection connection,
+        CancellationToken cancellationToken
+    );
 }
 
 internal abstract class RepresentationRestampE2EProviderOperations(RepresentationRestampE2EProviderSql sql)
@@ -72,20 +108,39 @@ internal abstract class RepresentationRestampE2EProviderOperations(Representatio
 
     public abstract DbConnection OpenConnection(string connectionString);
 
-    public Task SetTrackingLifecycleAsync(DbConnection connection, CancellationToken cancellationToken) =>
-        SetLifecycleAsync(connection, DocumentCacheLifecycleState.Tracking, cancellationToken);
-
     public async Task SetLifecycleAsync(
         DbConnection connection,
         DocumentCacheLifecycleState lifecycleState,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        bool cacheAheadRecoveryRequired = false
     )
     {
         await using DbCommand command = connection.CreateCommand();
         command.CommandText = Sql.SetLifecycle;
         AddParameter(command, "projectionLifecycleState", lifecycleState.ToString());
-        AddParameter(command, "cacheAheadRecoveryRequired", false);
+        AddParameter(command, "cacheAheadRecoveryRequired", cacheAheadRecoveryRequired);
         await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    public async Task<RepresentationRestampE2EDocumentCacheStateObservation> ReadDocumentCacheStateAsync(
+        DbConnection connection,
+        string targetDescription,
+        CancellationToken cancellationToken
+    )
+    {
+        await using DbCommand command = connection.CreateCommand();
+        command.CommandText = Sql.ReadDocumentCacheState;
+        await using DbDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return RepresentationRestampE2EHarness.ParseDocumentCacheState(null, null, targetDescription);
+        }
+
+        return RepresentationRestampE2EHarness.ParseDocumentCacheState(
+            reader.GetValue(0),
+            reader.GetValue(1),
+            targetDescription
+        );
     }
 
     public async Task<long> ReadCanonicalContentVersionAsync(
@@ -126,6 +181,50 @@ internal abstract class RepresentationRestampE2EProviderOperations(Representatio
         await using DbCommand command = CreateDocumentCommand(connection, Sql.IsProjected, documentUuid);
         return Convert.ToBoolean(await command.ExecuteScalarAsync(cancellationToken));
     }
+
+    public async Task<IReadOnlyList<RepresentationRestampE2EResidualWorkRow>> ReadResidualWorkAsync(
+        DbConnection connection,
+        CancellationToken cancellationToken
+    )
+    {
+        await using DbCommand command = connection.CreateCommand();
+        command.CommandText = Sql.ReadResidualWork;
+        await using DbDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+        List<RepresentationRestampE2EResidualWorkRow> rows = [];
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            rows.Add(
+                new RepresentationRestampE2EResidualWorkRow(
+                    reader.GetInt64(0),
+                    reader.GetGuid(1),
+                    reader.GetInt64(2),
+                    reader.GetInt64(3),
+                    await reader.IsDBNullAsync(4, cancellationToken) ? null : reader.GetInt64(4),
+                    ToUtcTimestamp(reader.GetValue(5))
+                )
+            );
+        }
+
+        return rows;
+    }
+
+    private static DateTimeOffset ToUtcTimestamp(object value) =>
+        value switch
+        {
+            DateTimeOffset dateTimeOffset => dateTimeOffset.ToUniversalTime(),
+            DateTime dateTime => new DateTimeOffset(
+                dateTime.Kind == DateTimeKind.Unspecified
+                    ? DateTime.SpecifyKind(dateTime, DateTimeKind.Utc)
+                    : dateTime.ToUniversalTime()
+            ),
+            _ => DateTimeOffset
+                .Parse(
+                    Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture)
+                        ?? throw new InvalidOperationException("DocumentProjectionWork timestamp was null."),
+                    System.Globalization.CultureInfo.InvariantCulture
+                )
+                .ToUniversalTime(),
+        };
 
     private static DbCommand CreateDocumentCommand(
         DbConnection connection,
@@ -182,6 +281,24 @@ internal sealed class PostgresqlRepresentationRestampE2EProviderOperations()
                       WHERE work."DocumentId" = document."DocumentId"
                   )
             );
+            """,
+            """
+            SELECT work."DocumentId",
+                   document."DocumentUuid",
+                   work."RequiredContentVersion",
+                   document."ContentVersion",
+                   cache."ContentVersion",
+                   work."FirstEnqueuedAt"
+            FROM dms."DocumentProjectionWork" AS work
+            INNER JOIN dms."Document" AS document ON document."DocumentId" = work."DocumentId"
+            LEFT JOIN dms."DocumentCache" AS cache ON cache."DocumentId" = work."DocumentId"
+            ORDER BY work."FirstEnqueuedAt", work."DocumentId"
+            LIMIT 50;
+            """,
+            """
+            SELECT "ProjectionLifecycleState", "CacheAheadRecoveryRequired"
+            FROM dms."DocumentCacheState"
+            WHERE "StateId" = 1;
             """
         )
     )
@@ -227,6 +344,24 @@ internal sealed class MssqlRepresentationRestampE2EProviderOperations()
                 ) THEN 1 ELSE 0 END
                 AS bit
             );
+            """,
+            """
+            SELECT TOP (50)
+                   work.[DocumentId],
+                   document.[DocumentUuid],
+                   work.[RequiredContentVersion],
+                   document.[ContentVersion],
+                   cache.[ContentVersion],
+                   work.[FirstEnqueuedAt]
+            FROM [dms].[DocumentProjectionWork] AS work
+            INNER JOIN [dms].[Document] AS document ON document.[DocumentId] = work.[DocumentId]
+            LEFT JOIN [dms].[DocumentCache] AS cache ON cache.[DocumentId] = work.[DocumentId]
+            ORDER BY work.[FirstEnqueuedAt], work.[DocumentId];
+            """,
+            """
+            SELECT [ProjectionLifecycleState], [CacheAheadRecoveryRequired]
+            FROM [dms].[DocumentCacheState]
+            WHERE [StateId] = 1;
             """
         )
     )
@@ -266,12 +401,12 @@ internal static class RepresentationRestampE2EHarness
             async () =>
             {
                 var projectionExpected = false;
-                // Cleanup undoes only what this run could have changed: the container is restarted
-                // only after a stop that succeeded, and the Disabled lifecycle reset is armed once
-                // the write is about to be attempted. A wrong container name fails on the copy
-                // below, before DMS is touched, so neither cleanup runs.
+                // Cleanup undoes only what actually happened: the container is restarted only after a
+                // stop that succeeded, and DocumentCacheState is restored only after it was observed,
+                // which happens before any mutation. A wrong container name fails on the copy below,
+                // before DMS is touched; an unreadable state row fails before the lifecycle is changed.
                 var dmsStopped = false;
-                var disabledLifecycleResetRequired = false;
+                RepresentationRestampE2EDocumentCacheStateObservation? observedState = null;
                 IRepresentationRestampE2EProviderOperations providerOperations = ProviderOperationsFor(
                     ProviderFor(AppSettings.DatabaseEngine)
                 );
@@ -294,11 +429,17 @@ internal static class RepresentationRestampE2EHarness
                         );
                         providerOperations = ProviderOperationsFor(target.ProviderToken);
                         connectionString = target.ConnectionString;
-                        // Arm the reset before the write is attempted, not after it returns: a write
-                        // that fails partway can still have moved the lifecycle, and cleanup has to
-                        // try to restore Tracking either way. Safe to arm here because the provider
-                        // and connection now address the external target the reset will use.
-                        disabledLifecycleResetRequired = RequiresDisabledLifecycleReset(mode);
+                        // Capture the pre-scenario state before the first mutation so cleanup can put the
+                        // shared E2E database back exactly. Without this the first restamp scenario left
+                        // the database in Tracking for the rest of the run, every later write enqueued
+                        // work nobody drained, and a later Disabled restamp orphaned a work row that kept
+                        // the next Tracking drain spinning (DMS-1528).
+                        observedState = await ReadDocumentCacheStateAsync(
+                            providerOperations,
+                            connectionString,
+                            TargetDescription(target),
+                            CancellationToken.None
+                        );
                         await SetLifecycleAsync(
                             providerOperations,
                             connectionString,
@@ -373,28 +514,28 @@ internal static class RepresentationRestampE2EHarness
                             },
                             async () =>
                             {
-                                await DrainOrdinaryProjectorAsync(target);
+                                await DrainOrdinaryProjectorAsync(target, documentUuid);
                                 projectionExpected = true;
                             }
                         );
                     },
-                    // Nested so a failed lifecycle reset cannot skip the restart: the reset is the
+                    // Nested so a failed state restore cannot skip the restart: the restore is the
                     // inner action and the restart is its cleanup, which runs either way.
                     () =>
                         RunWithCleanupAsync(
                             $"cleanup after representation restamp ({mode}) for DMS container '{containerName}'",
-                            async () =>
-                            {
-                                if (disabledLifecycleResetRequired)
-                                {
-                                    await SetLifecycleAsync(
-                                        providerOperations,
-                                        connectionString,
-                                        DocumentCacheLifecycleState.Tracking,
-                                        CancellationToken.None
-                                    );
-                                }
-                            },
+                            () =>
+                                RestoreDocumentCacheStateAsync(
+                                    observedState,
+                                    (lifecycleState, cacheAheadRecoveryRequired) =>
+                                        SetLifecycleAsync(
+                                            providerOperations,
+                                            connectionString,
+                                            lifecycleState,
+                                            CancellationToken.None,
+                                            cacheAheadRecoveryRequired
+                                        )
+                                ),
                             async () =>
                             {
                                 if (!dmsStopped)
@@ -476,14 +617,6 @@ internal static class RepresentationRestampE2EHarness
         }
     }
 
-    /// <summary>
-    /// Whether cleanup has to restore the Tracking lifecycle. True for a Disabled restamp, which is
-    /// the only mode that writes a different lifecycle. Callers arm this before attempting that
-    /// write rather than after it succeeds, so a write that fails partway is still reset.
-    /// </summary>
-    internal static bool RequiresDisabledLifecycleReset(DocumentCacheRepresentationRestampMode mode) =>
-        mode == DocumentCacheRepresentationRestampMode.Disabled;
-
     internal static RelationalProviderToken ProviderFor(string databaseEngine)
     {
         if (string.Equals(databaseEngine, "mssql", StringComparison.OrdinalIgnoreCase))
@@ -530,85 +663,521 @@ internal static class RepresentationRestampE2EHarness
         IRepresentationRestampE2EProviderOperations providerOperations,
         string connectionString,
         DocumentCacheLifecycleState lifecycleState,
+        CancellationToken cancellationToken,
+        bool cacheAheadRecoveryRequired = false
+    )
+    {
+        await using DbConnection connection = providerOperations.OpenConnection(connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await providerOperations.SetLifecycleAsync(
+            connection,
+            lifecycleState,
+            cancellationToken,
+            cacheAheadRecoveryRequired
+        );
+    }
+
+    private static async Task<RepresentationRestampE2EDocumentCacheStateObservation> ReadDocumentCacheStateAsync(
+        IRepresentationRestampE2EProviderOperations providerOperations,
+        string connectionString,
+        string targetDescription,
         CancellationToken cancellationToken
     )
     {
         await using DbConnection connection = providerOperations.OpenConnection(connectionString);
         await connection.OpenAsync(cancellationToken);
-        await providerOperations.SetLifecycleAsync(connection, lifecycleState, cancellationToken);
+        return await providerOperations.ReadDocumentCacheStateAsync(
+            connection,
+            targetDescription,
+            cancellationToken
+        );
     }
 
-    private static async Task DrainOrdinaryProjectorAsync(DocumentCacheAdminCliTarget target)
+    /// <summary>
+    /// Interprets the <c>dms.DocumentCacheState</c> row strictly. A missing row, an unknown lifecycle
+    /// value, or an unreadable latch fails the <see cref="LifecycleCapturePhase"/> before anything is
+    /// mutated; guessing here would silently reintroduce the cross-scenario coupling this guards against.
+    /// </summary>
+    internal static RepresentationRestampE2EDocumentCacheStateObservation ParseDocumentCacheState(
+        object? lifecycleValue,
+        object? cacheAheadRecoveryRequiredValue,
+        string targetDescription
+    )
     {
-        using var timeoutSource = new CancellationTokenSource(TimeSpan.FromMinutes(2));
-        try
+        if (lifecycleValue is null || lifecycleValue is DBNull)
         {
-            await using ServiceProvider serviceProvider = await CreateProjectionServiceProviderAsync(
-                target.ProviderToken,
-                target.AppSettingsDatastore,
-                target.ApiSchemaDirectory,
-                timeoutSource.Token
+            throw new InvalidOperationException(
+                $"Representation-restamp phase '{LifecycleCapturePhase}' failed for target {targetDescription}: "
+                    + "dms.DocumentCacheState has no readable singleton row (StateId = 1)."
             );
-            DocumentCacheTargetExecutionContext executionContext = new(
-                DocumentCacheTargetKey.Create(target.TenantKey, target.DataStoreId),
-                new DocumentCacheTargetContextGeneration(1),
-                new DocumentCacheTargetEffectiveSettings(
-                    true,
-                    TimeSpan.FromMilliseconds(250),
-                    TimeSpan.FromMilliseconds(10),
-                    10,
-                    1,
-                    TimeSpan.FromSeconds(1),
-                    1000,
-                    TimeSpan.FromMinutes(1)
-                ),
-                new DocumentCacheTargetDataStoreMetadata(target.DataStoreId, target.AppSettingsDatastore),
-                new DocumentCacheTargetConnectionInput(target.ProviderToken, target.ConnectionString),
-                new DocumentCachePhysicalSourceFingerprint(
-                    "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-                ),
-                new DocumentCacheLifecycleObservation(DocumentCacheLifecycleState.Tracking, false),
-                new DocumentCacheInventoryValidationResult(
-                    DocumentCacheInventoryStatus.Satisfied,
-                    "Inventory satisfied."
-                ),
-                new DocumentCacheEnqueueTriggerValidationResult(
-                    DocumentCacheEnqueueTriggerStatus.Satisfied,
-                    "Enqueue trigger satisfied."
-                ),
-                DocumentCacheSqlServerPrerequisiteDetails.NotApplicable()
-            );
-            await using DocumentCacheProjectionTargetRuntimeContext context = await serviceProvider
-                .GetRequiredService<IDocumentCacheProjectionTargetRuntimeContextFactory>()
-                .CreateAsync(executionContext, timeoutSource.Token);
-            IDocumentCacheProjectionDrainPageProcessor processor =
-                serviceProvider.GetRequiredService<IDocumentCacheProjectionDrainPageProcessor>();
+        }
 
-            while (true)
+        string lifecycleText = Convert.ToString(
+            lifecycleValue,
+            System.Globalization.CultureInfo.InvariantCulture
+        )!;
+        // Enum.TryParse also accepts numeric text such as "1"; only the exact member name is a valid
+        // column value, matching the DDL CHECK constraint.
+        if (
+            !Enum.TryParse(lifecycleText, ignoreCase: false, out DocumentCacheLifecycleState lifecycleState)
+            || !Enum.IsDefined(lifecycleState)
+            || !string.Equals(lifecycleState.ToString(), lifecycleText, StringComparison.Ordinal)
+        )
+        {
+            throw new InvalidOperationException(
+                $"Representation-restamp phase '{LifecycleCapturePhase}' failed for target {targetDescription}: "
+                    + $"dms.DocumentCacheState.ProjectionLifecycleState has unsupported value '{lifecycleText}'."
+            );
+        }
+
+        if (cacheAheadRecoveryRequiredValue is null || cacheAheadRecoveryRequiredValue is DBNull)
+        {
+            throw new InvalidOperationException(
+                $"Representation-restamp phase '{LifecycleCapturePhase}' failed for target {targetDescription}: "
+                    + "dms.DocumentCacheState.CacheAheadRecoveryRequired is unreadable."
+            );
+        }
+
+        return new RepresentationRestampE2EDocumentCacheStateObservation(
+            lifecycleState,
+            Convert.ToBoolean(
+                cacheAheadRecoveryRequiredValue,
+                System.Globalization.CultureInfo.InvariantCulture
+            )
+        );
+    }
+
+    /// <summary>
+    /// Restores the observed <c>dms.DocumentCacheState</c> for both restamp modes. Nothing is written
+    /// when nothing was observed, because then nothing was mutated either.
+    /// </summary>
+    internal static Task RestoreDocumentCacheStateAsync(
+        RepresentationRestampE2EDocumentCacheStateObservation? observedState,
+        Func<DocumentCacheLifecycleState, bool, Task> setStateAsync
+    ) =>
+        observedState is null
+            ? Task.CompletedTask
+            : setStateAsync(observedState.LifecycleState, observedState.CacheAheadRecoveryRequired);
+
+    /// <summary>
+    /// Phase names reported when a representation-restamp harness phase exceeds its budget. Setup
+    /// (service provider, effective schema bootstrap, runtime mapping-set compilation) and the drain
+    /// loop have separate budgets so a timeout says which one ran out instead of one undifferentiated
+    /// two-minute failure.
+    /// </summary>
+    internal const string ProjectorSetupPhase = "ProjectorSetup";
+    internal const string OrdinaryDrainPhase = "OrdinaryDrain";
+    internal const string LifecycleCapturePhase = "LifecycleCapture";
+
+    internal static readonly TimeSpan ProjectorSetupBudget = TimeSpan.FromMinutes(2);
+    internal static readonly TimeSpan OrdinaryDrainBudget = TimeSpan.FromMinutes(2);
+
+    /// <summary>
+    /// Diagnostic reads of the queued work rows are bounded separately from the phase budgets: the
+    /// pre-drain snapshot must not eat into the drain, and the failure snapshot runs after the drain
+    /// budget is already spent.
+    /// </summary>
+    internal static readonly TimeSpan ResidualWorkReadBudget = TimeSpan.FromSeconds(15);
+
+    /// <summary>
+    /// A residual row the projector cannot acknowledge (for example a WorkVersionMismatch anomaly left
+    /// by a Disabled restamp) makes every page report PageProcessed with nothing acknowledged. The drain
+    /// stops after this many such pages in a row and reports the residual rows instead of spinning
+    /// until the budget expires.
+    /// </summary>
+    internal const int MaxConsecutivePagesWithoutAcknowledgement = 20;
+
+    private sealed record ProjectionRuntime(
+        ServiceProvider ServiceProvider,
+        DocumentCacheProjectionTargetRuntimeContext Context
+    );
+
+    private static async Task DrainOrdinaryProjectorAsync(
+        DocumentCacheAdminCliTarget target,
+        Guid documentUuid
+    )
+    {
+        string targetDescription = TargetDescription(target);
+        IRepresentationRestampE2EProviderOperations providerOperations = ProviderOperationsFor(
+            target.ProviderToken
+        );
+        ProjectionRuntime runtime = await RunPhaseAsync(
+            ProjectorSetupPhase,
+            ProjectorSetupBudget,
+            targetDescription,
+            cancellationToken => CreateProjectionRuntimeAsync(target, cancellationToken)
+        );
+        await using ServiceProvider serviceProvider = runtime.ServiceProvider;
+        await using DocumentCacheProjectionTargetRuntimeContext context = runtime.Context;
+        IDocumentCacheProjectionDrainPageProcessor processor =
+            serviceProvider.GetRequiredService<IDocumentCacheProjectionDrainPageProcessor>();
+
+        IReadOnlyList<RepresentationRestampE2EResidualWorkRow> queuedBeforeDrain =
+            await ReadResidualWorkBoundedAsync(providerOperations, target.ConnectionString);
+        WriteHarnessOutput(
+            $"Ordinary drain for target {targetDescription} and document {documentUuid} starts with "
+                + $"{queuedBeforeDrain.Count} queued work row(s): {DescribeResidualWork(queuedBeforeDrain, documentUuid)}"
+        );
+
+        var tally = new RepresentationRestampDrainTally();
+        Func<Task<string>> describeDiagnosticsAsync = () =>
+            DescribeDrainAsync(tally, context, providerOperations, target.ConnectionString, documentUuid);
+        await RunPhaseAsync(
+            OrdinaryDrainPhase,
+            OrdinaryDrainBudget,
+            targetDescription,
+            cancellationToken =>
+                DrainUntilOwnWorkProjectedAsync(
+                    tally,
+                    token =>
+                        processor.ProcessPageAsync(
+                            new DocumentCacheProjectionDrainPageRequest(
+                                context,
+                                DocumentCacheProjectionDrainInvocationKind.Ordinary
+                            ),
+                            token
+                        ),
+                    token =>
+                        IsProjectedAsync(providerOperations, target.ConnectionString, documentUuid, token),
+                    describeDiagnosticsAsync,
+                    targetDescription,
+                    MaxConsecutivePagesWithoutAcknowledgement,
+                    cancellationToken
+                ),
+            describeDiagnosticsAsync
+        );
+        WriteHarnessOutput(
+            $"Ordinary drain for target {targetDescription} projected document {documentUuid}. {tally.Describe()}"
+        );
+    }
+
+    /// <summary>
+    /// Harness diagnostics go to NUnit's captured test output, which lands in the TRX for the scenario
+    /// and in the console for failed tests. The E2E project's Serilog <c>TestLogger</c> is an instance
+    /// the static harness cannot reach, and nothing assigns Serilog's static logger, so writing there
+    /// would be silently dropped.
+    /// </summary>
+    private static void WriteHarnessOutput(string message) =>
+        TestContext.Out.WriteLine($"[RepresentationRestamp] {message}");
+
+    /// <summary>
+    /// The ordinary drain loop, isolated from other scenarios' work. The scenario's obligation is that
+    /// its own Tracking restamp work gets projected, so the drain completes as soon as the own document
+    /// is projected and merely reports any foreign rows still queued. NoEligibleWork without the own
+    /// document projected, any outcome other than PageProcessed, and a run of pages that acknowledge
+    /// nothing all fail with the drain diagnostics instead of waiting for the budget.
+    /// </summary>
+    internal static async Task DrainUntilOwnWorkProjectedAsync(
+        RepresentationRestampDrainTally tally,
+        Func<CancellationToken, Task<DocumentCacheProjectionDrainPageResult>> processPageAsync,
+        Func<CancellationToken, Task<bool>> isOwnDocumentProjectedAsync,
+        Func<Task<string>> describeDiagnosticsAsync,
+        string targetDescription,
+        int maxConsecutivePagesWithoutAcknowledgement,
+        CancellationToken cancellationToken
+    )
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxConsecutivePagesWithoutAcknowledgement);
+        while (true)
+        {
+            DocumentCacheProjectionDrainPageResult result = await processPageAsync(cancellationToken);
+            tally.Record(result);
+            switch (result.Outcome)
             {
-                DocumentCacheProjectionDrainPageResult result = await processor.ProcessPageAsync(
-                    new DocumentCacheProjectionDrainPageRequest(
-                        context,
-                        DocumentCacheProjectionDrainInvocationKind.Ordinary
-                    ),
-                    timeoutSource.Token
-                );
-                if (result.Outcome == DocumentCacheProjectionDrainPageOutcome.NoEligibleWork)
-                {
-                    return;
-                }
+                case DocumentCacheProjectionDrainPageOutcome.PageProcessed:
+                    if (await isOwnDocumentProjectedAsync(cancellationToken))
+                    {
+                        return;
+                    }
 
-                result.Outcome.Should().Be(DocumentCacheProjectionDrainPageOutcome.PageProcessed);
+                    if (
+                        tally.ConsecutivePagesWithoutAcknowledgement
+                        >= maxConsecutivePagesWithoutAcknowledgement
+                    )
+                    {
+                        throw new InvalidOperationException(
+                            await DrainFailureMessageAsync(
+                                targetDescription,
+                                $"made no progress: {maxConsecutivePagesWithoutAcknowledgement} consecutive page(s) acknowledged no work while the own document is still not projected",
+                                describeDiagnosticsAsync
+                            )
+                        );
+                    }
+
+                    continue;
+
+                case DocumentCacheProjectionDrainPageOutcome.NoEligibleWork:
+                    if (await isOwnDocumentProjectedAsync(cancellationToken))
+                    {
+                        return;
+                    }
+
+                    throw new InvalidOperationException(
+                        await DrainFailureMessageAsync(
+                            targetDescription,
+                            "reported NoEligibleWork but the Tracking restamp's own document is not projected, so its enqueued work was never acknowledged",
+                            describeDiagnosticsAsync
+                        )
+                    );
+
+                default:
+                    throw new InvalidOperationException(
+                        await DrainFailureMessageAsync(
+                            targetDescription,
+                            $"ended with outcome '{result.Outcome}' instead of PageProcessed or NoEligibleWork",
+                            describeDiagnosticsAsync
+                        )
+                    );
             }
         }
-        catch (OperationCanceledException exception) when (timeoutSource.IsCancellationRequested)
+    }
+
+    private static async Task<string> DrainFailureMessageAsync(
+        string targetDescription,
+        string reason,
+        Func<Task<string>> describeDiagnosticsAsync
+    ) =>
+        $"Representation-restamp phase '{OrdinaryDrainPhase}' failed for target {targetDescription}: "
+        + $"the ordinary drain {reason}. {await DescribeSafelyAsync(describeDiagnosticsAsync)}";
+
+    private static async Task<bool> IsProjectedAsync(
+        IRepresentationRestampE2EProviderOperations providerOperations,
+        string connectionString,
+        Guid documentUuid,
+        CancellationToken cancellationToken
+    )
+    {
+        await using DbConnection connection = providerOperations.OpenConnection(connectionString);
+        await connection.OpenAsync(cancellationToken);
+        return await providerOperations.IsProjectedAsync(connection, documentUuid, cancellationToken);
+    }
+
+    private static async Task<
+        IReadOnlyList<RepresentationRestampE2EResidualWorkRow>
+    > ReadResidualWorkBoundedAsync(
+        IRepresentationRestampE2EProviderOperations providerOperations,
+        string connectionString
+    )
+    {
+        using var readBudget = new CancellationTokenSource(ResidualWorkReadBudget);
+        return await ReadResidualWorkAsync(providerOperations, connectionString, readBudget.Token);
+    }
+
+    /// <summary>
+    /// Builds the drain diagnostics attached to a drain failure: the page tallies, the projector's own
+    /// per-document failure snapshot, and a fresh read of the work rows still queued. The residual read
+    /// gets its own short budget because the drain budget has already been spent when this runs.
+    /// </summary>
+    private static async Task<string> DescribeDrainAsync(
+        RepresentationRestampDrainTally tally,
+        DocumentCacheProjectionTargetRuntimeContext context,
+        IRepresentationRestampE2EProviderOperations providerOperations,
+        string connectionString,
+        Guid documentUuid
+    )
+    {
+        IReadOnlyList<RepresentationRestampE2EResidualWorkRow> residualWork =
+            await ReadResidualWorkBoundedAsync(providerOperations, connectionString);
+        return FormatDrainDiagnostics(
+            tally,
+            residualWork,
+            DescribeProjectorFailures(context.FailureBackoffState.CreateFailureDiagnosticsSnapshot()),
+            documentUuid
+        );
+    }
+
+    internal static string FormatDrainDiagnostics(
+        RepresentationRestampDrainTally tally,
+        IReadOnlyList<RepresentationRestampE2EResidualWorkRow> residualWork,
+        IReadOnlyList<string> projectorFailures,
+        Guid documentUuid
+    ) =>
+        $"{tally.Describe()} Residual work rows ({residualWork.Count}, own document {documentUuid}): "
+        + $"{DescribeResidualWork(residualWork, documentUuid)}. Projector failure diagnostics ({projectorFailures.Count}): "
+        + $"{(projectorFailures.Count == 0 ? "none" : string.Join("; ", projectorFailures))}.";
+
+    internal static string DescribeResidualWork(
+        IReadOnlyList<RepresentationRestampE2EResidualWorkRow> residualWork,
+        Guid documentUuid
+    ) =>
+        residualWork.Count == 0
+            ? "none"
+            : string.Join(
+                "; ",
+                residualWork.Select(row =>
+                    $"[{(row.DocumentUuid == documentUuid ? "own" : "foreign")} DocumentId={row.DocumentId} "
+                    + $"DocumentUuid={row.DocumentUuid} RequiredContentVersion={row.RequiredContentVersion} "
+                    + $"CanonicalContentVersion={row.CanonicalContentVersion} "
+                    + $"CacheContentVersion={(row.CacheContentVersion is null ? "absent" : row.CacheContentVersion.Value.ToString())} "
+                    + $"FirstEnqueuedAt={row.FirstEnqueuedAt:O}]"
+                )
+            );
+
+    internal static IReadOnlyList<string> DescribeProjectorFailures(
+        DocumentCacheProjectionFailureDiagnostics diagnostics
+    ) =>
+        diagnostics
+            .DocumentDiagnostics.Select(diagnostic =>
+                $"DocumentId={diagnostic.DocumentId} {diagnostic.Category}: {diagnostic.Message}"
+            )
+            .ToList();
+
+    private static async Task<IReadOnlyList<RepresentationRestampE2EResidualWorkRow>> ReadResidualWorkAsync(
+        IRepresentationRestampE2EProviderOperations providerOperations,
+        string connectionString,
+        CancellationToken cancellationToken
+    )
+    {
+        await using DbConnection connection = providerOperations.OpenConnection(connectionString);
+        await connection.OpenAsync(cancellationToken);
+        return await providerOperations.ReadResidualWorkAsync(connection, cancellationToken);
+    }
+
+    private static async Task<ProjectionRuntime> CreateProjectionRuntimeAsync(
+        DocumentCacheAdminCliTarget target,
+        CancellationToken cancellationToken
+    )
+    {
+        ServiceProvider serviceProvider = await CreateProjectionServiceProviderAsync(
+            target.ProviderToken,
+            target.AppSettingsDatastore,
+            target.ApiSchemaDirectory,
+            cancellationToken
+        );
+        try
+        {
+            DocumentCacheProjectionTargetRuntimeContext context = await serviceProvider
+                .GetRequiredService<IDocumentCacheProjectionTargetRuntimeContextFactory>()
+                .CreateAsync(CreateExecutionContext(target), cancellationToken);
+            return new ProjectionRuntime(serviceProvider, context);
+        }
+        catch
+        {
+            await serviceProvider.DisposeAsync();
+            throw;
+        }
+    }
+
+    private static DocumentCacheTargetExecutionContext CreateExecutionContext(
+        DocumentCacheAdminCliTarget target
+    ) =>
+        new(
+            DocumentCacheTargetKey.Create(target.TenantKey, target.DataStoreId),
+            new DocumentCacheTargetContextGeneration(1),
+            new DocumentCacheTargetEffectiveSettings(
+                true,
+                TimeSpan.FromMilliseconds(250),
+                TimeSpan.FromMilliseconds(10),
+                10,
+                1,
+                TimeSpan.FromSeconds(1),
+                1000,
+                TimeSpan.FromMinutes(1)
+            ),
+            new DocumentCacheTargetDataStoreMetadata(target.DataStoreId, target.AppSettingsDatastore),
+            new DocumentCacheTargetConnectionInput(target.ProviderToken, target.ConnectionString),
+            new DocumentCachePhysicalSourceFingerprint(
+                "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+            ),
+            new DocumentCacheLifecycleObservation(DocumentCacheLifecycleState.Tracking, false),
+            new DocumentCacheInventoryValidationResult(
+                DocumentCacheInventoryStatus.Satisfied,
+                "Inventory satisfied."
+            ),
+            new DocumentCacheEnqueueTriggerValidationResult(
+                DocumentCacheEnqueueTriggerStatus.Satisfied,
+                "Enqueue trigger satisfied."
+            ),
+            DocumentCacheSqlServerPrerequisiteDetails.NotApplicable()
+        );
+
+    private static string TargetDescription(DocumentCacheAdminCliTarget target) =>
+        $"'{target.TenantKey}':{target.DataStoreId}";
+
+    /// <summary>
+    /// Runs one harness phase under its own budget. Only a cancellation caused by this phase's budget
+    /// becomes a <see cref="TimeoutException"/> that names the phase, the elapsed time, and the budget;
+    /// cancellation from another token and every other failure propagate unchanged.
+    /// </summary>
+    internal static async Task<T> RunPhaseAsync<T>(
+        string phaseName,
+        TimeSpan budget,
+        string targetDescription,
+        Func<CancellationToken, Task<T>> action,
+        Func<Task<string>>? describeTimeoutAsync = null
+    )
+    {
+        using var budgetSource = new CancellationTokenSource(budget);
+        var stopwatch = Stopwatch.StartNew();
+        try
+        {
+            return await action(budgetSource.Token);
+        }
+        catch (OperationCanceledException exception) when (budgetSource.IsCancellationRequested)
         {
             throw new TimeoutException(
-                $"Timed out draining the ordinary projector for target '{target.TenantKey}':{target.DataStoreId}.",
+                PhaseTimeoutMessage(
+                    phaseName,
+                    stopwatch.Elapsed,
+                    budget,
+                    targetDescription,
+                    await DescribeSafelyAsync(describeTimeoutAsync)
+                ),
                 exception
             );
         }
     }
+
+    internal static async Task RunPhaseAsync(
+        string phaseName,
+        TimeSpan budget,
+        string targetDescription,
+        Func<CancellationToken, Task> action,
+        Func<Task<string>>? describeTimeoutAsync = null
+    ) =>
+        await RunPhaseAsync(
+            phaseName,
+            budget,
+            targetDescription,
+            async cancellationToken =>
+            {
+                await action(cancellationToken);
+                return true;
+            },
+            describeTimeoutAsync
+        );
+
+    /// <summary>
+    /// Diagnostics must never hide the failure they describe: a failing describer is reported inline
+    /// instead of replacing the timeout or drain failure.
+    /// </summary>
+    private static async Task<string?> DescribeSafelyAsync(Func<Task<string>>? describeAsync)
+    {
+        if (describeAsync is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            return await describeAsync();
+        }
+        catch (Exception exception)
+        {
+            return $"Drain diagnostics unavailable: {exception.GetType().Name}: {exception.Message}";
+        }
+    }
+
+    internal static string PhaseTimeoutMessage(
+        string phaseName,
+        TimeSpan elapsed,
+        TimeSpan budget,
+        string targetDescription,
+        string? detail = null
+    ) =>
+        $"Timed out in representation-restamp phase '{phaseName}' after {elapsed} (budget {budget}) "
+        + $"for target {targetDescription}."
+        + (string.IsNullOrWhiteSpace(detail) ? string.Empty : $" {detail}");
 
     internal static async Task<ServiceProvider> CreateProjectionServiceProviderAsync(
         RelationalProviderToken providerToken,
@@ -1071,4 +1640,44 @@ internal static class RepresentationRestampE2EHarness
     }
 
     private sealed record ProcessResult(int ExitCode, string StandardOutput, string StandardError);
+}
+
+/// <summary>
+/// Running totals for one ordinary drain, kept by the harness so a drain failure can say how many
+/// pages ran and whether any of them acknowledged work. Consecutive pages without an acknowledgement
+/// are counted because a residual row the projector cannot acknowledge produces exactly that pattern.
+/// </summary>
+internal sealed class RepresentationRestampDrainTally
+{
+    public int Pages { get; private set; }
+
+    public int ProcessedItems { get; private set; }
+
+    public int AcknowledgedOrRemovedItems { get; private set; }
+
+    public int DocumentScopedFailures { get; private set; }
+
+    public int ConsecutivePagesWithoutAcknowledgement { get; private set; }
+
+    public DocumentCacheProjectionDrainPageOutcome? LastOutcome { get; private set; }
+
+    public void Record(DocumentCacheProjectionDrainPageResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+        Pages++;
+        ProcessedItems += result.ProcessedItemCount;
+        AcknowledgedOrRemovedItems += result.AcknowledgedOrRemovedItemCount;
+        DocumentScopedFailures += result.DocumentScopedFailureCount;
+        LastOutcome = result.Outcome;
+        ConsecutivePagesWithoutAcknowledgement =
+            result.Outcome == DocumentCacheProjectionDrainPageOutcome.PageProcessed
+            && result.AcknowledgedOrRemovedItemCount == 0
+                ? ConsecutivePagesWithoutAcknowledgement + 1
+                : 0;
+    }
+
+    public string Describe() =>
+        $"Drain pages={Pages} processed={ProcessedItems} acknowledgedOrRemoved={AcknowledgedOrRemovedItems} "
+        + $"documentScopedFailures={DocumentScopedFailures} consecutivePagesWithoutAcknowledgement={ConsecutivePagesWithoutAcknowledgement} "
+        + $"lastOutcome={(LastOutcome is null ? "none" : LastOutcome.Value.ToString())}.";
 }

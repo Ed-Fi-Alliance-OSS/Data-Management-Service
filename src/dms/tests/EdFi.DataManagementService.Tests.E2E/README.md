@@ -162,6 +162,17 @@ variables — **names only; never commit or echo credential values**) are:
   scenario immediately on `docker cp`, reporting the operation, the name, the exit code, and both
   Docker streams.
 
+The representation-restamp scenarios share one database and the E2E DMS container runs no
+DocumentCache projector, so the harness keeps them isolated from each other: each scenario reads
+`dms.DocumentCacheState` (lifecycle and cache-ahead latch) after stopping DMS and before changing
+it, and cleanup restores both values, so the database returns to the seeded `Disabled` state and a
+Disabled restamp never orphans a work row for the next Tracking drain. The Tracking drain completes
+as soon as the scenario's own document is projected and only reports any foreign work rows still
+queued. Setup (`ProjectorSetup`) and the drain (`OrdinaryDrain`) run under separate two-minute
+budgets; a timeout names the phase, and a drain failure carries the page tallies, the queued rows
+marked own or foreign, and the projector's per-document failure diagnostics. A drain that pages
+twenty times in a row without acknowledging anything fails fast with the same diagnostics.
+
 If the engine or database name does not match the provisioned stack, the run fails fast at
 setup (an engine/schema mismatch surfaces as an `EffectiveSchemaHash` mismatch and all
 data-plane requests return 503).
