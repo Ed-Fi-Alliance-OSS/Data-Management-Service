@@ -203,7 +203,10 @@ public sealed class CdcConnectorRegistration
             );
             boundary.Component = CdcDeploymentComponent.Kafka;
             await RequireKafkaAsync(request, preflight, worker, token);
-            RequireFresh(request, handoff.ObservedAt);
+            if (!IsFresh(request, handoff.ObservedAt, _time.GetUtcNow()))
+            {
+                return Failure(boundary.Component, CdcDeploymentFailure.Timeout);
+            }
             boundary.Component = CdcDeploymentComponent.Connect;
             var configuration = await CallAsync(
                 request,
@@ -239,7 +242,10 @@ public sealed class CdcConnectorRegistration
                     await CallAsync(request, ct => _worker.InspectAsync(request, ct), token)
                 );
                 RequireSameWorker(request, worker, currentWorker);
-                RequireFresh(request, handoff.ObservedAt);
+                if (!IsFresh(request, handoff.ObservedAt, _time.GetUtcNow()))
+                {
+                    return Failure(boundary.Component, CdcDeploymentFailure.Timeout);
+                }
                 boundary.Component = CdcDeploymentComponent.Connect;
                 // Exactly one attempt. Acknowledgement, conflict and a lost response all require an
                 // independent live read. This code has no config PUT, reset or resnapshot fallback.
@@ -305,12 +311,11 @@ public sealed class CdcConnectorRegistration
                     continue;
                 }
                 var status = Observed(statusEvidence);
-                if (!IsRunningOrAwaitingAssignment(request, status))
+                if (!IsRunningOrAwaitingAssignment(request, worker, status))
                 {
                     await Task.Delay(request.Timing.PollInterval, _time, token);
                     continue;
                 }
-                RequireAssigned(worker, status);
                 var offset = Observed(
                     await CallAsync(request, ct => _connect.ReadOffsetEvidenceAsync(request, ct), token)
                 );
@@ -372,14 +377,13 @@ public sealed class CdcConnectorRegistration
                     continue;
                 }
                 var afterStatus = Observed(afterStatusEvidence);
-                if (!IsRunningOrAwaitingAssignment(request, afterStatus))
+                if (!IsRunningOrAwaitingAssignment(request, afterWorker, afterStatus))
                 {
                     // Assignment can change after the first RUNNING response. Discard the earlier
                     // offset/configuration observations and collect an entirely new startup pass.
                     await Task.Delay(request.Timing.PollInterval, _time, token);
                     continue;
                 }
-                RequireAssigned(afterWorker, afterStatus);
                 boundary.Component = CdcDeploymentComponent.Kafka;
                 await RequireKafkaAsync(request, currentLive, afterWorker, token);
                 // Provider metadata is refreshed after potentially long RUNNING/offset waits, in ValidateOnly mode.
@@ -409,7 +413,12 @@ public sealed class CdcConnectorRegistration
                         )
                         .Outcome == CdcConnectorTemplateOutcome.Rendered
                 );
-                RequireFresh(request, observationStartedAt);
+                if (!IsFresh(request, observationStartedAt, _time.GetUtcNow()))
+                {
+                    // Expiry discards this pass, never registration or the original wait deadline.
+                    await Task.Delay(request.Timing.PollInterval, _time, token);
+                    continue;
+                }
                 boundary.Component = CdcDeploymentComponent.Connect;
                 var finalStatusEvidence = await CallAsync(
                     request,
@@ -427,18 +436,22 @@ public sealed class CdcConnectorRegistration
                     continue;
                 }
                 var finalStatus = Observed(finalStatusEvidence);
-                if (!IsRunningOrAwaitingAssignment(request, finalStatus))
+                if (!IsRunningOrAwaitingAssignment(request, afterWorker, finalStatus))
                 {
                     await Task.Delay(request.Timing.PollInterval, _time, token);
                     continue;
                 }
-                RequireAssigned(afterWorker, finalStatus);
                 boundary.Component = CdcDeploymentComponent.Worker;
                 var finalWorker = Observed(
                     await CallAsync(request, ct => _worker.InspectAsync(request, ct), token)
                 );
                 RequireSameWorker(request, worker, finalWorker);
-                RequireFresh(request, observationStartedAt);
+                if (!IsFresh(request, observationStartedAt, _time.GetUtcNow()))
+                {
+                    // Expiry discards this pass, never registration or the original wait deadline.
+                    await Task.Delay(request.Timing.PollInterval, _time, token);
+                    continue;
+                }
                 boundary.Component = CdcDeploymentComponent.WorkflowState;
                 var establishment = journal.Operations.Single(o =>
                     o.Effect == CdcWorkflowEffect.EstablishConnector
@@ -603,9 +616,14 @@ public sealed class CdcConnectorRegistration
         );
     }
 
-    private bool IsRunningOrAwaitingAssignment(CdcDeploymentRequest request, CdcConnectStatus status)
+    private bool IsRunningOrAwaitingAssignment(
+        CdcDeploymentRequest request,
+        CdcWorkerInspection worker,
+        CdcConnectStatus status
+    )
     {
-        RequireStatusIdentity(request, status);
+        var now = _time.GetUtcNow();
+        RequireStatusIdentity(request, status, now);
         // A failed/stopped/paused task still requires the guarded lifecycle path. Only a valid
         // startup assignment transition can be awaited; it never establishes offset/readiness proof.
         Require(
@@ -624,16 +642,25 @@ public sealed class CdcConnectorRegistration
                         )
                 )
         );
-        return status.IsRunning;
+        if (status.IsRunning)
+        {
+            // Expiry must not hide a contradictory assignment in otherwise valid running evidence.
+            RequireAssigned(worker, status);
+        }
+        return IsFresh(request, status.Runtime.ObservedAt, now) && status.IsRunning;
     }
 
-    private void RequireStatusIdentity(CdcDeploymentRequest request, CdcConnectStatus status)
+    private static void RequireStatusIdentity(
+        CdcDeploymentRequest request,
+        CdcConnectStatus status,
+        DateTimeOffset now
+    )
     {
         var context = new CdcObservationValidationContext(
             status.Runtime.OperationId,
             request.TargetIdentity,
             request.Binding.PhysicalSourceFingerprint,
-            _time.GetUtcNow()
+            now
         );
         var validation = CdcConnectorRuntimeObservationValidator.ValidateForStartup(
             status.Runtime,
@@ -641,7 +668,6 @@ public sealed class CdcConnectorRegistration
             context
         );
         Require(validation.Succeeded && status.Tasks.Count <= 1 && status.Tasks.All(t => t.Id == 0));
-        RequireFresh(request, status.Runtime.ObservedAt);
     }
 
     internal static void RequireAssigned(CdcWorkerInspection worker, CdcConnectStatus status) =>
@@ -653,11 +679,11 @@ public sealed class CdcConnectorRegistration
                 && status.Runtime.SoleTaskState == CdcConnectorRuntimeState.Running
         );
 
-    private void RequireFresh(CdcDeploymentRequest request, DateTimeOffset observedAt) =>
-        Require(
-            observedAt <= _time.GetUtcNow()
-                && _time.GetUtcNow() - observedAt <= request.Timing.MaximumObservationAge
-        );
+    private static bool IsFresh(CdcDeploymentRequest request, DateTimeOffset observedAt, DateTimeOffset now)
+    {
+        Require(observedAt <= now);
+        return now - observedAt <= request.Timing.MaximumObservationAge;
+    }
 
     private static T Observed<T>(CdcTransportResult<T> result)
         where T : notnull =>

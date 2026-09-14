@@ -7,6 +7,7 @@ using System.Text.Json;
 using EdFi.DataManagementService.Core.DocumentCache.Cdc;
 using FakeItEasy;
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
 using Ddl = EdFi.DataManagementService.Backend.Ddl;
 
@@ -17,6 +18,399 @@ namespace EdFi.DataManagementService.Backend.Cdc.Tests.Unit;
 [Platform(Exclude = "Win", Reason = "Local CDC state requires Unix owner-only permissions.")]
 internal class Given_CdcConnectorRegistration(Ddl.CdcProvider provider) : CdcRegistrationTestBase(provider)
 {
+    [TestCase("acls", 1)]
+    [TestCase("worker", 2)]
+    public async Task It_returns_timeout_for_expired_pre_registration_evidence_before_post(
+        string stage,
+        int occurrence
+    )
+    {
+        var clock = await UseRegistrationClockAsync();
+        int calls = 0;
+        _onCall = name =>
+        {
+            if (name == stage && ++calls == occurrence)
+            {
+                clock.Advance(_request.Timing.MaximumObservationAge + TimeSpan.FromSeconds(1));
+            }
+        };
+        var result = await RunAsync();
+        result.Diagnostics.Should().ContainSingle().Which.Failure.Should().Be(CdcDeploymentFailure.Timeout);
+        result
+            .Diagnostics[0]
+            .Component.Should()
+            .Be(stage == "acls" ? CdcDeploymentComponent.Kafka : CdcDeploymentComponent.Worker);
+        _posts.Should().Be(0);
+        _trace.Should().NotContain("status");
+        ReadJournal().Operations.Should().NotContain(o => o.Effect == CdcWorkflowEffect.EstablishConnector);
+        _onCall = _ => { };
+        (await RunAsync()).State.Should().Be(CdcTransportEvidenceState.Observed);
+        _posts.Should().Be(1);
+    }
+
+    [TestCase("provider", 2)]
+    [TestCase("worker", 4)]
+    public async Task It_reobserves_expired_establishment_passes_without_repeating_post(
+        string stage,
+        int occurrence
+    )
+    {
+        var clock = await UseRegistrationClockAsync();
+        int calls = 0;
+        _onCall = name =>
+        {
+            if (name == stage && ++calls == occurrence)
+            {
+                clock.Advance(_request.Timing.MaximumObservationAge + TimeSpan.FromSeconds(1));
+            }
+            if (name == "offset" && _offsetReads == 2)
+            {
+                AssertEstablishmentPending();
+                clock.PollDelays.Should().Be(1);
+            }
+        };
+        (await RunAsync()).State.Should().Be(CdcTransportEvidenceState.Observed);
+        _offsetReads.Should().Be(2);
+        _posts.Should().Be(1);
+        clock.PollDelays.Should().Be(1);
+        ReadJournal()
+            .Operations.Single(o => o.Effect == CdcWorkflowEffect.EstablishConnector)
+            .Completions.Should()
+            .ContainSingle();
+        AssertNoIncident();
+    }
+
+    [TestCase(1)]
+    [TestCase(2)]
+    [TestCase(3)]
+    public async Task It_reobserves_expired_status_at_each_establishment_checkpoint(int expiredRead)
+    {
+        var clock = await UseRegistrationClockAsync();
+        int reads = 0;
+        A.CallTo(() => _connect.ReadStatusAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
+            .ReturnsLazily(() =>
+            {
+                var status = Status();
+                if (++reads > expiredRead)
+                {
+                    AssertEstablishmentPending();
+                    clock.PollDelays.Should().Be(1);
+                }
+                return Observed(
+                    new CdcConnectStatus(
+                        status.Runtime with
+                        {
+                            ObservedAt =
+                                clock.GetUtcNow()
+                                - (
+                                    reads == expiredRead
+                                        ? _request.Timing.MaximumObservationAge + TimeSpan.FromSeconds(1)
+                                        : TimeSpan.Zero
+                                ),
+                        },
+                        status.WorkerId,
+                        status.Tasks
+                    )
+                );
+            });
+        (await RunAsync()).State.Should().Be(CdcTransportEvidenceState.Observed);
+        reads.Should().Be(expiredRead + 3);
+        _offsetReads.Should().Be(expiredRead == 1 ? 1 : 2);
+        _posts.Should().Be(1);
+        AssertNoIncident();
+    }
+
+    [TestCase("provider")]
+    [TestCase("worker")]
+    [TestCase("status")]
+    public async Task It_bounds_persistent_observation_expiry_by_the_original_deadline(string stage)
+    {
+        ShortTiming(100);
+        var clock = await UseRegistrationClockAsync();
+        var timing = _request.Timing;
+        SetPersistentExpiry(clock, stage);
+        var elapsed = System.Diagnostics.Stopwatch.StartNew();
+        var result = await RunAsync().WaitAsync(TimeSpan.FromSeconds(3));
+        result.Diagnostics.Should().ContainSingle().Which.Failure.Should().Be(CdcDeploymentFailure.Timeout);
+        elapsed.Elapsed.Should().BeGreaterThanOrEqualTo(timing.WaitTimeout - TimeSpan.FromMilliseconds(50));
+        elapsed.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(2));
+        clock.PollDelays.Should().BeGreaterThan(1);
+        _request.Timing.Should().Be(timing);
+        _posts.Should().Be(1);
+        AssertEstablishmentPending();
+        AssertNoIncident();
+    }
+
+    [Test]
+    public async Task It_cancels_the_expiry_poll_and_preserves_reconcilable_provenance()
+    {
+        var clock = await UseRegistrationClockAsync();
+        using var cancellation = new CancellationTokenSource();
+        SetPersistentExpiry(clock, "status");
+        clock.OnPoll = cancellation.Cancel;
+        Func<Task> run = () => RunAsync(cancellation.Token).WaitAsync(TimeSpan.FromSeconds(3));
+        await run.Should().ThrowAsync<OperationCanceledException>();
+        AssertEstablishmentPending();
+        _posts.Should().Be(1);
+        AssertNoIncident();
+        await UseRegistrationClockAsync();
+        (await RunAsync()).State.Should().Be(CdcTransportEvidenceState.Observed);
+        _posts.Should().Be(1);
+    }
+
+    [TestCase(1)]
+    [TestCase(2)]
+    [TestCase(3)]
+    public async Task It_rejects_future_status_evidence_without_polling(int futureRead)
+    {
+        var clock = await UseRegistrationClockAsync();
+        int reads = 0;
+        A.CallTo(() => _connect.ReadStatusAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
+            .ReturnsLazily(() =>
+            {
+                var status = Status();
+                return Observed(
+                    new CdcConnectStatus(
+                        status.Runtime with
+                        {
+                            ObservedAt =
+                                clock.GetUtcNow()
+                                + (++reads == futureRead ? TimeSpan.FromMinutes(1) : TimeSpan.Zero),
+                        },
+                        status.WorkerId,
+                        status.Tasks
+                    )
+                );
+            });
+        var result = await RunAsync();
+        result
+            .Diagnostics.Should()
+            .ContainSingle()
+            .Which.Failure.Should()
+            .Be(CdcDeploymentFailure.ValidationFailed);
+        reads.Should().Be(futureRead);
+        clock.PollDelays.Should().Be(0);
+        AssertEstablishmentPending();
+    }
+
+    [TestCase("acls", 1)]
+    [TestCase("worker", 2)]
+    [TestCase("provider", 2)]
+    [TestCase("worker", 4)]
+    public async Task It_rejects_future_pass_evidence_without_polling(string stage, int occurrence)
+    {
+        var clock = await UseRegistrationClockAsync();
+        int calls = 0;
+        _onCall = name =>
+        {
+            if (name == stage && ++calls == occurrence)
+            {
+                clock.Advance(-TimeSpan.FromMinutes(1));
+            }
+        };
+        var result = await RunAsync();
+        result
+            .Diagnostics.Should()
+            .ContainSingle()
+            .Which.Failure.Should()
+            .Be(CdcDeploymentFailure.ValidationFailed);
+        clock.PollDelays.Should().Be(0);
+        _posts.Should().Be(stage == "acls" || stage == "worker" && occurrence == 2 ? 0 : 1);
+        ReadJournal()
+            .Operations.Should()
+            .NotContain(o => o.Effect == CdcWorkflowEffect.EstablishConnector && !o.Completions.IsEmpty);
+    }
+
+    [Test]
+    public async Task It_preserves_established_offset_provenance_across_an_expired_pass()
+    {
+        (await RunAsync()).State.Should().Be(CdcTransportEvidenceState.Observed);
+        var journal = JsonSerializer.Serialize(ReadJournal());
+        var clock = await UseRegistrationClockAsync();
+        int reads = 0;
+        A.CallTo(() => _connect.ReadStatusAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
+            .ReturnsLazily(() =>
+            {
+                var status = Status();
+                return Observed(
+                    new CdcConnectStatus(
+                        status.Runtime with
+                        {
+                            ObservedAt =
+                                clock.GetUtcNow()
+                                - (
+                                    ++reads == 1
+                                        ? _request.Timing.MaximumObservationAge + TimeSpan.FromSeconds(1)
+                                        : TimeSpan.Zero
+                                ),
+                        },
+                        status.WorkerId,
+                        status.Tasks
+                    )
+                );
+            });
+        _offsetState = CdcConnectOffsetState.Missing;
+        _offsetReads = 0;
+        var result = await RunAsync();
+        result
+            .Diagnostics.Should()
+            .ContainSingle()
+            .Which.Failure.Should()
+            .Be(CdcDeploymentFailure.ValidationFailed);
+        reads.Should().Be(2);
+        clock.PollDelays.Should().Be(1);
+        _offsetReads.Should().Be(1);
+        _posts.Should().Be(1);
+        JsonSerializer.Serialize(ReadJournal()).Should().Be(journal);
+        AssertNoIncident();
+    }
+
+    [TestCase(1)]
+    [TestCase(2)]
+    [TestCase(3)]
+    public async Task It_rejects_changed_worker_assignment_even_when_status_has_expired(int changedRead)
+    {
+        var clock = await UseRegistrationClockAsync();
+        int reads = 0;
+        A.CallTo(() => _connect.ReadStatusAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
+            .ReturnsLazily(() =>
+            {
+                var status = Status();
+                bool changed = ++reads == changedRead;
+                return Observed(
+                    new CdcConnectStatus(
+                        status.Runtime with
+                        {
+                            ObservedAt =
+                                clock.GetUtcNow()
+                                - (
+                                    changed
+                                        ? _request.Timing.MaximumObservationAge + TimeSpan.FromSeconds(1)
+                                        : TimeSpan.Zero
+                                ),
+                        },
+                        changed ? "other-worker:8083" : status.WorkerId,
+                        status.Tasks
+                    )
+                );
+            });
+        var result = await RunAsync();
+        result
+            .Diagnostics.Should()
+            .ContainSingle()
+            .Which.Failure.Should()
+            .Be(CdcDeploymentFailure.ValidationFailed);
+        reads.Should().Be(changedRead);
+        clock.PollDelays.Should().Be(0);
+        AssertEstablishmentPending();
+    }
+
+    private async Task<RegistrationClock> UseRegistrationClockAsync()
+    {
+        var clock = new RegistrationClock();
+        var database = await _runtime.ObserveInitialDatabaseAsync(CancellationToken.None);
+        A.CallTo(() => _runtime.ObserveInitialDatabaseAsync(A<CancellationToken>._))
+            .ReturnsLazily(() => database with { ObservedAt = clock.GetUtcNow() });
+        A.CallTo(() => _connect.ReadStatusAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
+            .ReturnsLazily(() =>
+            {
+                Trace("status");
+                var status = Status();
+                return Observed(
+                    new CdcConnectStatus(
+                        status.Runtime with
+                        {
+                            ObservedAt = clock.GetUtcNow(),
+                        },
+                        status.WorkerId,
+                        status.Tasks
+                    )
+                );
+            });
+        _controller = new(
+            _store,
+            _services.GetRequiredService<ICdcBindingLifecycleService>(),
+            _provider,
+            _templates,
+            _kafka,
+            _connect,
+            _worker,
+            clock
+        );
+        return clock;
+    }
+
+    private void SetPersistentExpiry(RegistrationClock clock, string stage)
+    {
+        int workers = 0;
+        _onCall = name =>
+        {
+            if (
+                (stage == "provider" && name == "provider" && _posts > 0)
+                || (stage == "worker" && name == "worker" && ++workers >= 4 && workers % 2 == 0)
+            )
+            {
+                clock.Advance(_request.Timing.MaximumObservationAge + TimeSpan.FromSeconds(1));
+            }
+        };
+        if (stage == "status")
+        {
+            A.CallTo(() => _connect.ReadStatusAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
+                .ReturnsLazily(() =>
+                {
+                    var status = Status();
+                    return Observed(
+                        new CdcConnectStatus(
+                            status.Runtime with
+                            {
+                                ObservedAt =
+                                    clock.GetUtcNow()
+                                    - _request.Timing.MaximumObservationAge
+                                    - TimeSpan.FromSeconds(1),
+                            },
+                            status.WorkerId,
+                            status.Tasks
+                        )
+                    );
+                });
+        }
+    }
+
+    private void AssertEstablishmentPending() =>
+        ReadJournal()
+            .Operations.Single(o => o.Effect == CdcWorkflowEffect.EstablishConnector)
+            .Completions.Should()
+            .BeEmpty();
+
+    private void AssertNoIncident() =>
+        Directory
+            .GetFiles(_root, "*.json", SearchOption.AllDirectories)
+            .Should()
+            .NotContain(path => path.Contains("incidents", StringComparison.Ordinal));
+
+    private sealed class RegistrationClock : TimeProvider
+    {
+        private TimeSpan _advance;
+        public int PollDelays { get; private set; }
+        public Action OnPoll { get; set; } = () => { };
+
+        public override DateTimeOffset GetUtcNow() => DateTimeOffset.UtcNow + _advance;
+
+        public void Advance(TimeSpan elapsed) => _advance += elapsed;
+
+        public override ITimer CreateTimer(
+            TimerCallback callback,
+            object? state,
+            TimeSpan dueTime,
+            TimeSpan period
+        )
+        {
+            PollDelays++;
+            OnPoll();
+            return TimeProvider.System.CreateTimer(callback, state, dueTime, period);
+        }
+    }
+
     [Test]
     public async Task It_establishes_only_after_policy_live_configuration_running_and_streaming_offsets()
     {
