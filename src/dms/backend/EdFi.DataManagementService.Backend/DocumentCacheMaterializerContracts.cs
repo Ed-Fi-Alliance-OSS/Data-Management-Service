@@ -493,8 +493,8 @@ public sealed class DocumentCacheTargetMappingException : Exception
 internal static class DocumentCacheMaterializerDiagnosticFormatting
 {
     public static string FormatTargetKey(DocumentCacheProjectionTargetKey key) =>
-        $"{LogSanitizer.SanitizeForLog(key.TenantKey)}/{key.DataStoreId.Value}";
+        $"{LogSanitizer.SanitizeInternalValueForLog(key.TenantKey)}/{key.DataStoreId.Value}";
 
     public static string FormatMappingSetKey(MappingSetKey key) =>
-        $"{LogSanitizer.SanitizeForLog(key.EffectiveSchemaHash)}/{key.Dialect}/{LogSanitizer.SanitizeForLog(key.RelationalMappingVersion)}";
+        $"{LogSanitizer.SanitizeInternalValueForLog(key.EffectiveSchemaHash)}/{key.Dialect}/{LogSanitizer.SanitizeInternalValueForLog(key.RelationalMappingVersion)}";
 }

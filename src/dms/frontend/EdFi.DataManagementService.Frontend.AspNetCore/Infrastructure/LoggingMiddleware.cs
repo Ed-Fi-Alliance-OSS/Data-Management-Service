@@ -29,12 +29,12 @@ public class LoggingMiddleware
     public async Task Invoke(HttpContext context, ILogger<LoggingMiddleware> logger)
     {
         var stopwatch = Stopwatch.StartNew();
-        var sanitizedMethod = LoggingSanitizer.SanitizeForLogging(context.Request.Method);
-        var sanitizedPath = LoggingSanitizer.SanitizeForLogging(context.Request.Path.Value);
-        var pathBase = LoggingSanitizer.SanitizeForLogging(context.Request.PathBase.Value);
+        var sanitizedMethod = LoggingSanitizer.SanitizeInternalValueForLogging(context.Request.Method);
+        var sanitizedPath = LoggingSanitizer.SanitizeInternalValueForLogging(context.Request.Path.Value);
+        var pathBase = LoggingSanitizer.SanitizeInternalValueForLogging(context.Request.PathBase.Value);
         // Already normalized at the ingestion boundary by AspNetCoreFrontend.ExtractTraceIdFrom,
         // so this middleware deliberately applies no second, differently-shaped normalization of
-        // its own. Method and Path keep the stricter SanitizeForLogging allowlist above.
+        // its own. Method and Path keep the stricter SanitizeInternalValueForLogging allowlist above.
         var traceId = ExtractTraceId(context);
 
         var scopeValues = new Dictionary<string, object>

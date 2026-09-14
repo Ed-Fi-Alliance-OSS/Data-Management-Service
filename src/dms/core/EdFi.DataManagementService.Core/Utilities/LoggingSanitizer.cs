@@ -15,19 +15,26 @@ namespace EdFi.DataManagementService.Core.Utilities;
 public static class LoggingSanitizer
 {
     /// <summary>
-    /// Sanitizes input strings to prevent log injection attacks using an allowlist approach.
-    /// Only allows alphanumeric characters, spaces, and safe punctuation (_-.:/\).
-    /// Explicitly excludes every character <c>char.IsControl</c> reports, which is the whole of
-    /// Unicode category Cc — U+0000–U+001F (including \r, \n, \t) and U+007F–U+009F.
-    /// This prevents log forging, template injection, and other log-based attacks.
+    /// Sanitizes an <b>internally-controlled</b> value - a request method or path, a resource,
+    /// tenant or instance name, a schema hash - for safe logging, with a strict allowlist of
+    /// alphanumeric characters, spaces and the punctuation <c>_-.:/\</c>. <b>Never use this for a
+    /// correlation ID or a <see cref="Core.External.Model.TraceId"/></b>; use
+    /// <see cref="SanitizeCorrelationId"/> instead.
     /// </summary>
     /// <remarks>
-    /// Never use this for a correlation ID or a <see cref="Core.External.Model.TraceId"/> - see
-    /// the rule on <see cref="SanitizeCorrelationId"/>, and use that instead.
+    /// The allowlist explicitly excludes every character <c>char.IsControl</c> reports, which is
+    /// the whole of Unicode category Cc — U+0000–U+001F (including \r, \n, \t) and U+007F–U+009F.
+    /// This prevents log forging, template injection, and other log-based attacks.
+    ///
+    /// The prohibition in the summary is not stylistic: this allowlist strips punctuation an
+    /// upstream identifier scheme legitimately uses, so a correlation ID sanitized here would stop
+    /// matching the value echoed to the client for the same request. See the rule on
+    /// <see cref="SanitizeCorrelationId"/>, and use that instead.
     /// </remarks>
     /// <param name="input">The input string to sanitize</param>
     /// <returns>A sanitized string safe for logging</returns>
-    public static string SanitizeForLogging(string? input) => LogSanitizer.SanitizeForLog(input);
+    public static string SanitizeInternalValueForLogging(string? input) =>
+        LogSanitizer.SanitizeInternalValueForLog(input);
 
     /// <summary>
     /// Sanitizes a correlation ID for logging and for inclusion in an error response body, using
@@ -62,11 +69,12 @@ public static class LoggingSanitizer
     /// direction.
     /// </para>
     /// <para>
-    /// 3. <b>Never use <see cref="SanitizeForLogging"/> for a correlation ID.</b> That strict
+    /// 3. <b>Never use <see cref="SanitizeInternalValueForLogging"/> for a correlation ID.</b> That strict
     /// <c>Method</c>/<c>Path</c> allowlist strips punctuation an upstream identifier scheme
     /// legitimately uses, so the logged value would no longer match the <c>correlationId</c> the
     /// client read from the response body for the same request - which is the single guarantee
-    /// FR-LOG-6 makes. This is the only one of the three spellings that is a defect.
+    /// FR-LOG-6 makes. Of the ways a correlation ID can reach a log event, this is the only one
+    /// that is a defect - the two above are both correct.
     /// </para>
     /// </remarks>
     /// <param name="input">The correlation ID to sanitize</param>
@@ -82,7 +90,7 @@ public static class LoggingSanitizer
     /// <remarks>
     /// This is the method to reach for when logging a value derived from a client or from an
     /// upstream service, per the rule in AGENTS.md. The other three are all wrong for that job:
-    /// <see cref="SanitizeForLogging"/> strips the punctuation a JSON payload is made of;
+    /// <see cref="SanitizeInternalValueForLogging"/> strips the punctuation a JSON payload is made of;
     /// <see cref="SanitizeCorrelationId"/> states the rule for one specific value that is also
     /// echoed to the client, and is not a general-purpose text sanitizer; and
     /// <see cref="SanitizeForConsole"/> deliberately <b>preserves</b> newline and carriage return
@@ -100,7 +108,7 @@ public static class LoggingSanitizer
     /// Sanitizes input for console/stderr output by stripping control characters,
     /// except newline (\n) and carriage return (\r) which are preserved for
     /// multi-line output readability (e.g., diff reports from SeedValidator).
-    /// Unlike <see cref="SanitizeForLogging"/> which uses a strict allowlist to prevent
+    /// Unlike <see cref="SanitizeInternalValueForLogging"/> which uses a strict allowlist to prevent
     /// structured-log template injection, this method preserves all printable characters
     /// (quotes, parentheses, brackets, etc.) so that file paths and exception messages
     /// remain readable in user-facing CLI output.

@@ -66,8 +66,8 @@ internal class ProfileWritePipelineMiddleware(ILogger<ProfileWritePipelineMiddle
         logger.LogDebug(
             "ProfileWritePipelineMiddleware: Executing profile write pipeline for profile {ProfileName}, "
                 + "resource {ResourceName}, method {Method}. TraceId: {TraceId}",
-            LoggingSanitizer.SanitizeForLogging(profileName),
-            LoggingSanitizer.SanitizeForLogging(resourceName),
+            LoggingSanitizer.SanitizeInternalValueForLogging(profileName),
+            LoggingSanitizer.SanitizeInternalValueForLogging(resourceName),
             method,
             LoggingSanitizer.SanitizeCorrelationId(requestInfo.FrontendRequest.TraceId.Value)
         );
@@ -92,7 +92,7 @@ internal class ProfileWritePipelineMiddleware(ILogger<ProfileWritePipelineMiddle
                 ex,
                 "ProfileWritePipelineMiddleware: Write plan not available for resource {ResourceName}. "
                     + "Rejecting writable profile request. TraceId: {TraceId}",
-                LoggingSanitizer.SanitizeForLogging(resourceName),
+                LoggingSanitizer.SanitizeInternalValueForLogging(resourceName),
                 LoggingSanitizer.SanitizeCorrelationId(requestInfo.FrontendRequest.TraceId.Value)
             );
             requestInfo.FrontendResponse = new FrontendResponse(
@@ -158,8 +158,8 @@ internal class ProfileWritePipelineMiddleware(ILogger<ProfileWritePipelineMiddle
                 "ProfileWritePipelineMiddleware: Profile pipeline returned {FailureCount} failures "
                     + "for profile {ProfileName}, resource {ResourceName}. TraceId: {TraceId}",
                 result.Failures.Length,
-                LoggingSanitizer.SanitizeForLogging(profileName),
-                LoggingSanitizer.SanitizeForLogging(resourceName),
+                LoggingSanitizer.SanitizeInternalValueForLogging(profileName),
+                LoggingSanitizer.SanitizeInternalValueForLogging(resourceName),
                 LoggingSanitizer.SanitizeCorrelationId(requestInfo.FrontendRequest.TraceId.Value)
             );
 
@@ -249,12 +249,12 @@ internal class ProfileWritePipelineMiddleware(ILogger<ProfileWritePipelineMiddle
 
             var failureDetail =
                 result.Failures.Length > 0
-                    ? $" Failures ({result.Failures.Length}): {LoggingSanitizer.SanitizeForLogging(string.Join("; ", result.Failures.Select(f => f.Message)))}"
+                    ? $" Failures ({result.Failures.Length}): {LoggingSanitizer.SanitizeInternalValueForLogging(string.Join("; ", result.Failures.Select(f => f.Message)))}"
                     : string.Empty;
 
             throw new InvalidOperationException(
                 $"Profile pipeline did not produce a ProfileAppliedWriteContext for stored-state projection. "
-                    + $"Profile: {LoggingSanitizer.SanitizeForLogging(profileName)}, Resource: {LoggingSanitizer.SanitizeForLogging(resourceName)}, Method: {method}.{failureDetail}"
+                    + $"Profile: {LoggingSanitizer.SanitizeInternalValueForLogging(profileName)}, Resource: {LoggingSanitizer.SanitizeInternalValueForLogging(resourceName)}, Method: {method}.{failureDetail}"
             );
         }
     }

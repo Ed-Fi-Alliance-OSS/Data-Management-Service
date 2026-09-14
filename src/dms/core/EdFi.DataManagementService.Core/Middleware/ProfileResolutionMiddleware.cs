@@ -41,7 +41,7 @@ internal class ProfileResolutionMiddleware(
         {
             logger.LogDebug(
                 "Profile header parse failed: {Error} - {TraceId}",
-                LoggingSanitizer.SanitizeForLogging(parseResult.ErrorMessage ?? "Unknown error"),
+                LoggingSanitizer.SanitizeInternalValueForLogging(parseResult.ErrorMessage ?? "Unknown error"),
                 requestInfo.FrontendRequest.TraceId.Value
             );
 
@@ -100,7 +100,9 @@ internal class ProfileResolutionMiddleware(
         {
             logger.LogDebug(
                 "Profile resolution failed: {Error} - {TraceId}",
-                LoggingSanitizer.SanitizeForLogging(resolutionResult.Error?.Title ?? "Unknown error"),
+                LoggingSanitizer.SanitizeInternalValueForLogging(
+                    resolutionResult.Error?.Title ?? "Unknown error"
+                ),
                 requestInfo.FrontendRequest.TraceId.Value
             );
 
@@ -122,7 +124,7 @@ internal class ProfileResolutionMiddleware(
             requestInfo.ProfileContext = resolutionResult.ProfileContext;
             logger.LogDebug(
                 "Profile resolved successfully. Profile: {ProfileName}, Explicit: {WasExplicit} - {TraceId}",
-                LoggingSanitizer.SanitizeForLogging(resolutionResult.ProfileContext.ProfileName),
+                LoggingSanitizer.SanitizeInternalValueForLogging(resolutionResult.ProfileContext.ProfileName),
                 resolutionResult.ProfileContext.WasExplicitlySpecified,
                 requestInfo.FrontendRequest.TraceId.Value
             );

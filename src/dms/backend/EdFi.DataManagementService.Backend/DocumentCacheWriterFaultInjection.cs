@@ -41,7 +41,7 @@ internal sealed record DocumentCacheWriterFaultInjectionContext
             "Unsupported DocumentCache writer fault-injection hook."
         );
         Provider = BoundLabel(
-            LoggingSanitizer.SanitizeForLogging(
+            LoggingSanitizer.SanitizeInternalValueForLogging(
                 (providerToken ?? throw new ArgumentNullException(nameof(providerToken))).Value
             )
         );
@@ -101,7 +101,9 @@ internal sealed record DocumentCacheWriterFaultInjectionContext
     private static string FormatTargetKey(DocumentCacheProjectionTargetKey targetKey)
     {
         string tenant = targetKey.TenantKey.Length == 0 ? "(default)" : targetKey.TenantKey;
-        return BoundLabel(LoggingSanitizer.SanitizeForLogging($"{tenant}:{targetKey.DataStoreId.Value}"));
+        return BoundLabel(
+            LoggingSanitizer.SanitizeInternalValueForLogging($"{tenant}:{targetKey.DataStoreId.Value}")
+        );
     }
 
     private static string BoundLabel(string value) =>

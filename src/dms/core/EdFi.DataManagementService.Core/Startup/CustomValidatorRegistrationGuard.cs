@@ -198,7 +198,7 @@ internal sealed class CustomValidatorRegistrationGuard(
                     + "throwaway scope failed, which is the check that stands in for the per-request "
                     + "resolution a validator would otherwise fail on the first write reaching it. "
                     + $"Underlying activation exception: {activationException.GetType().FullName}: "
-                    + LoggingSanitizer.SanitizeForLogging(activationException.Message),
+                    + LoggingSanitizer.SanitizeInternalValueForLogging(activationException.Message),
                 activationException
             );
         }
@@ -378,7 +378,7 @@ internal sealed class CustomValidatorRegistrationGuard(
                 unusableValidators.Add(
                     $"'{validatorTypeName}': reading or walking AppliesTo threw "
                         + $"{appliesToException.GetType().FullName}: "
-                        + LoggingSanitizer.SanitizeForLogging(appliesToException.Message)
+                        + LoggingSanitizer.SanitizeInternalValueForLogging(appliesToException.Message)
                 );
             }
         }
@@ -399,8 +399,8 @@ internal sealed class CustomValidatorRegistrationGuard(
         ValidatedResource appliesToEntry
     )
     {
-        string projectName = LoggingSanitizer.SanitizeForLogging(appliesToEntry.ProjectName);
-        string resourceName = LoggingSanitizer.SanitizeForLogging(appliesToEntry.ResourceName);
+        string projectName = LoggingSanitizer.SanitizeInternalValueForLogging(appliesToEntry.ProjectName);
+        string resourceName = LoggingSanitizer.SanitizeInternalValueForLogging(appliesToEntry.ResourceName);
 
         logger.LogInformation(
             "ICustomResourceValidator '{ValidatorType}' AppliesTo entry: ProjectName '{ProjectName}', "

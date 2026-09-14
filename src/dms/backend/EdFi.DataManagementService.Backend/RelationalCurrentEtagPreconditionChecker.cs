@@ -95,7 +95,9 @@ internal sealed class RelationalCurrentEtagPreconditionChecker(
                     + "clientTag={ClientTag}, contentVersion={ContentVersion}, matched={IsMatch}",
                 lockedTargetContext.DocumentId,
                 precondition.IsWildcard,
-                LoggingSanitizer.SanitizeForLogging(precondition.IsWildcard ? "*" : precondition.Value),
+                LoggingSanitizer.SanitizeInternalValueForLogging(
+                    precondition.IsWildcard ? "*" : precondition.Value
+                ),
                 lockedTargetContext.ObservedContentVersion,
                 isSatisfied
             );

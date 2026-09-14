@@ -172,14 +172,14 @@ public class ContentProvider(
                     + $"'{project.DiscoverySpecPath}', but the resolved file '{resolvedPath}' does not exist.";
                 _logger.LogCritical(
                     "Invalid ApiSchema workspace: {Error}",
-                    LoggingSanitizer.SanitizeForLogging(invalidWorkspaceError)
+                    LoggingSanitizer.SanitizeInternalValueForLogging(invalidWorkspaceError)
                 );
                 throw new InvalidOperationException(invalidWorkspaceError);
             }
 
             _logger.LogDebug(
                 "Serving discovery-spec from manifest project {ProjectName}",
-                LoggingSanitizer.SanitizeForLogging(project.ProjectName)
+                LoggingSanitizer.SanitizeInternalValueForLogging(project.ProjectName)
             );
             return File.OpenRead(resolvedPath);
         }

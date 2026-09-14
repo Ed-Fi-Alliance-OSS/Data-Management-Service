@@ -54,7 +54,7 @@ internal class CacheClaimSetsTask(
 
                     _logger.LogInformation(
                         "Caching claim sets for tenant: {TenantName}",
-                        LoggingSanitizer.SanitizeForLogging(tenant)
+                        LoggingSanitizer.SanitizeInternalValueForLogging(tenant)
                     );
 
                     await _claimSetProvider.GetAllClaimSets(tenant);

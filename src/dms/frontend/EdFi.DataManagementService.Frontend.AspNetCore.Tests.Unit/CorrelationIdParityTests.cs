@@ -436,7 +436,7 @@ public class Given_A_Hostile_Correlation_Id_On_Requests_That_Fail_In_Different_L
     [Test]
     public void It_keeps_printable_punctuation_that_the_stricter_allowlist_would_strip()
     {
-        // Guards against the correlation ID being routed through SanitizeForLogging, which is
+        // Guards against the correlation ID being routed through SanitizeInternalValueForLogging, which is
         // correct for Method and Path but violates FR-LOG-3 for a correlation ID.
         _notFoundBody["correlationId"]!.ToString().Should().Contain("{id}");
     }

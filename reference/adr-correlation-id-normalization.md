@@ -20,7 +20,9 @@ silently reintroduce the class of defects found during review (see
 
 Two sanitizers already existed for different purposes:
 
-- A **strict allowlist** (`LogSanitizer.SanitizeForLog` / `LoggingSanitizer.SanitizeForLogging`):
+- A **strict allowlist** (`LogSanitizer.SanitizeInternalValueForLog` /
+  `LoggingSanitizer.SanitizeInternalValueForLogging`, named `SanitizeForLog` /
+  `SanitizeForLogging` at the time of this decision):
   letters, digits, spaces, and a small set of safe punctuation (`_ - . : / \`). Used for
   server-controlled values like `Method` and `Path`.
 - A new **broader allowlist**, added for correlation IDs: all printable non-control characters —

@@ -269,7 +269,7 @@ internal sealed class DocumentCacheProjectionDrainPageProcessor(
             "DocumentCache projection paged {WorkItemCount} durable work rows and selected {SelectedWorkItemCount} eligible rows for target {TargetKey}.",
             page.Items.Length,
             processedItemCount,
-            LoggingSanitizer.SanitizeForLogging(targetContext.TargetKey.ToString())
+            LoggingSanitizer.SanitizeInternalValueForLogging(targetContext.TargetKey.ToString())
         );
 
         return DocumentCacheProjectionDrainPageResult.PageProcessed(

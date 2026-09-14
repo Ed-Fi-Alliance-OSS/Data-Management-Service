@@ -16,10 +16,18 @@ namespace EdFi.DataManagementService.Backend.External;
 public static class LogSanitizer
 {
     /// <summary>
-    /// Sanitizes a string for safe logging with a strict allowlist of safe characters.
-    /// Allows: letters, digits, spaces, and safe punctuation (_-.:/\)
+    /// Sanitizes an <b>internally-controlled</b> value - a request method or path, a resource,
+    /// tenant or instance name, a schema hash - for safe logging, with a strict allowlist of
+    /// letters, digits, spaces and the punctuation <c>_-.:/\</c>. <b>Never use this for a
+    /// correlation ID or a <c>TraceId</c></b>; use <see cref="SanitizeCorrelationId"/> instead.
     /// </summary>
-    public static string SanitizeForLog(string? input) => Sanitize(input, IsAllowedChar);
+    /// <remarks>
+    /// The prohibition is not stylistic. This allowlist strips punctuation an upstream identifier
+    /// scheme legitimately uses, so a correlation ID sanitized here would stop matching the value
+    /// echoed to the client for the same request, which is the parity guarantee FR-LOG-6 makes.
+    /// <see cref="SanitizeCorrelationId"/> carries the canonical statement of that rule.
+    /// </remarks>
+    public static string SanitizeInternalValueForLog(string? input) => Sanitize(input, IsAllowedChar);
 
     /// <summary>
     /// Sanitizes a correlation ID for safe logging and for inclusion in an error response body.
@@ -27,7 +35,7 @@ public static class LogSanitizer
     /// about it in this repository points here rather than restating it.
     /// </summary>
     /// <remarks>
-    /// The allowlist is deliberately broader than <see cref="SanitizeForLog"/>'s and is defined
+    /// The allowlist is deliberately broader than <see cref="SanitizeInternalValueForLog"/>'s and is defined
     /// as a pair of negative tests, with no positive character enumeration: a client-supplied
     /// correlation ID normally originates in an upstream system's own identifier scheme, so
     /// narrowing it to alphanumerics would defeat the purpose of accepting a client-supplied
@@ -55,7 +63,7 @@ public static class LogSanitizer
     ///   log consumer the same way a newline does.
     ///
     /// Both category tests are applied <b>per Unicode code point</b>, not per UTF-16 code unit,
-    /// which is why this method - unlike <see cref="SanitizeForLog"/> - runs on
+    /// which is why this method - unlike <see cref="SanitizeInternalValueForLog"/> - runs on
     /// <see cref="SanitizeByCodePoint"/>. The distinction is load-bearing rather than pedantic:
     /// the whole of the supplementary-plane Cf set is reachable in a header value, and a
     /// per-code-unit test cannot see any of it, because both halves of a non-BMP code point are
@@ -104,7 +112,7 @@ public static class LogSanitizer
     /// free to tighten or loosen without dragging free-form log text along with it - and free-form
     /// text is never echoed back, so the reverse is equally true.
     ///
-    /// <b>Not <see cref="SanitizeForLog"/>:</b> that Method/Path allowlist strips the quotes,
+    /// <b>Not <see cref="SanitizeInternalValueForLog"/>:</b> that Method/Path allowlist strips the quotes,
     /// braces, commas and equals signs a JSON or form-encoded error payload is made of, reducing
     /// it to a run of bare words that no longer identifies what the upstream service objected to.
     ///
@@ -120,7 +128,7 @@ public static class LogSanitizer
         );
 
     /// <summary>
-    /// The two-pass filter behind <see cref="SanitizeForLog"/>, applying its predicate once per
+    /// The two-pass filter behind <see cref="SanitizeInternalValueForLog"/>, applying its predicate once per
     /// UTF-16 code unit.
     /// </summary>
     /// <remarks>
@@ -145,7 +153,7 @@ public static class LogSanitizer
             return string.Empty;
         }
 
-        // Behaviorally redundant for the strict SanitizeForLog allowlist, which independently
+        // Behaviorally redundant for the strict SanitizeInternalValueForLog allowlist, which independently
         // rejects both U+2028 and U+2029 - neither is a letter or a digit. Kept because static
         // log-injection analysis (CodeQL) models ReplaceLineEndings as a sanitizer but not the
         // custom allowlist loop. SanitizeByCodePoint carries the same call, where it is not

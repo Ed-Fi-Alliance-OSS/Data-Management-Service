@@ -110,9 +110,9 @@ internal class ResolveMappingSetMiddleware(
                 "Mapping set unavailable for EffectiveSchemaHash {EffectiveSchemaHash}, "
                     + "Dialect {Dialect}, RelationalMappingVersion {RelationalMappingVersion}. "
                     + "TraceId: {TraceId}",
-                LoggingSanitizer.SanitizeForLogging(key.EffectiveSchemaHash),
+                LoggingSanitizer.SanitizeInternalValueForLogging(key.EffectiveSchemaHash),
                 key.Dialect,
-                LoggingSanitizer.SanitizeForLogging(key.RelationalMappingVersion),
+                LoggingSanitizer.SanitizeInternalValueForLogging(key.RelationalMappingVersion),
                 LoggingSanitizer.SanitizeCorrelationId(requestInfo.FrontendRequest.TraceId.Value)
             );
 
@@ -135,7 +135,7 @@ internal class ResolveMappingSetMiddleware(
                 ex,
                 "Unexpected error resolving mapping set for EffectiveSchemaHash {EffectiveSchemaHash}. "
                     + "TraceId: {TraceId}",
-                LoggingSanitizer.SanitizeForLogging(key.EffectiveSchemaHash),
+                LoggingSanitizer.SanitizeInternalValueForLogging(key.EffectiveSchemaHash),
                 LoggingSanitizer.SanitizeCorrelationId(requestInfo.FrontendRequest.TraceId.Value)
             );
 

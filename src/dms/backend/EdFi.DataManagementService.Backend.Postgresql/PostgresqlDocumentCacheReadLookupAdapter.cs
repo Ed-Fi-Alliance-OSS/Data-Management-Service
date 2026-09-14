@@ -76,7 +76,7 @@ internal sealed class PostgresqlDocumentCacheReadLookupAdapter : DocumentCacheRe
 
         _logger.LogDebug(
             "Executing PostgreSQL DocumentCache read lookup for target {TargetKey} with {ParameterCount} parameters",
-            LogSanitizer.SanitizeForLog(targetContext.TargetKey.ToString()),
+            LogSanitizer.SanitizeInternalValueForLog(targetContext.TargetKey.ToString()),
             command.Parameters.Count
         );
 
