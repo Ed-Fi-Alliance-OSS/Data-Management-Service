@@ -103,8 +103,10 @@ retry only while deployment state proves that the same new database has not left
 workflow. Initial enablement creates or exact-matches the immutable binding before guarded
 tracking activation, so that binding is durable proof of CDC intent across the activation
 crash boundary. A successfully enabled CDC database may later exact-match its binding,
-validate artifacts, restart, and use guarded source-replacement recovery. Those operations
-never modify core E18 schema or clear a possibly published cache-ahead latch.
+validate artifacts, and restart against that same physical source with intact deployment
+provenance. Those operations never modify core E18 schema or clear a possibly published
+cache-ahead latch. Physical-source replacement is deferred from v1 as defined
+[below](#v1-physical-source-replacement-deferral).
 
 Change Queries remain a separate polling API compatibility surface, including
 `/deletes`, `/keyChanges`, and live-resource version filters based on `ContentVersion`,
@@ -603,8 +605,9 @@ The provider source-position barrier proves catch-up only while the source histo
 to resume from the committed connector offset still exists. Connector `RUNNING` state,
 current or quantile lag, a recreated provider artifact with the expected name, and a new
 snapshot do not prove that no source changes were skipped. Deployment automation therefore
-checks source-history continuity before every connector start or resume after initial
-enablement and on every combined-status polling interval.
+checks source-history continuity before every controller-issued connector start, restart,
+or resume after initial enablement and on every combined-status polling interval. Native
+worker recovery and task reassignment follow the explicitly narrower recovery boundary below.
 
 The PostgreSQL check requires the binding-derived logical replication slot and publication
 to exist with their exact expected database, plug-in, and captured-table configuration. It
@@ -635,8 +638,8 @@ The deployment-owned status has three continuity outcomes:
   source artifact;
 - `unknown`: a provider or Connect query is temporarily unavailable, times out, or returns
   no authoritative result without disproving continuity. Combined readiness is false,
-  automation does not start or resume the connector, and an already failed/stopped connector
-  is not automatically restarted. A later check may return to `healthy` only with complete
+  the controller does not start, restart, or resume the connector. Native recovery is subject
+  to the boundary below. A later check may return to `healthy` only with complete
   affirmative evidence; and
 - `lost`: a required artifact was removed or re-created, the committed position fell
   outside retained history, or a successful Connect query proves the established binding's
@@ -657,6 +660,48 @@ public and progress topics, SQL Server schema-history topic when applicable, fre
 state namespace, and snapshot. That baseline-replacing cutover is deferred from v1. The old
 binding remains terminal; provisioning or migrating to a replacement database and namespace
 requires a separately designed workflow.
+
+#### Controller-managed lifecycle and native recovery boundary
+
+V1 guarantees pre-start continuity validation for controller-managed lifecycle operations.
+Before issuing a post-enablement start, restart, or resume, the controller requires intact
+deployment provenance, no retained terminal incident, and fresh affirmative source-history
+evidence. Missing or unknown evidence prevents the operation. This guarantee does not
+intercept Kafka Connect's native worker recovery, task reassignment, or internal recovery.
+
+For a managed stack shutdown, the controller requests `STOPPED` for each managed connector
+on the worker and verifies that its tasks have shut down before stopping that worker.
+It retains the connector configuration and persisted target state in Connect's configuration
+store, committed offsets, provider artifacts, and deployment state. A REST acknowledgement
+alone is not proof that shutdown completed. The workflow journal records the verified
+shutdown outcome; an incomplete or unverified shutdown does not qualify as a managed stop.
+
+On managed startup, the worker exposes REST while retained connectors remain stopped.
+The controller reads back their stopped state and committed offsets, validates provenance
+and source history, and resumes only eligible connectors. Qualification against the pinned
+image must prove that stopped target state survives worker restart and permits offset
+inspection without task consumption. A worker startup that recovers a connector without
+a verified stopped state follows the native recovery boundary, even if startup was requested
+through a bootstrap wrapper.
+
+After an unclean worker exit, unverified shutdown, native task reassignment, or internal
+recovery, records may be consumed and published before the controller revalidates continuity.
+When the controller observes recovery, it invalidates prior readiness observations and
+collects fresh deployment-provenance, provider-history, committed-offset, connector/task,
+and telemetry evidence. Missing or unknown evidence cannot produce readiness or authorize a
+controller-issued restart/resume. Detected terminal history loss is durably latched and
+triggers connector containment; a retained terminal incident remains terminal. Neither
+later healthy observations nor eventual containment certify continuity or absence of
+publication during the unobserved interval. These are post-admission observational checks;
+they do not change initial offline admission or gate ordinary DMS traffic.
+
+Strict pre-consumption fencing across native recovery is deferred. V1 uses the existing
+Kafka Connect stop/resume and offset APIs; it adds no custom worker startup hook, task
+interceptor, or infrastructure fence. DMS-1323 owns managed lifecycle orchestration and
+recovery-boundary qualification using the existing provider adapters and sibling pinned-image
+fixtures. Kafka Connect's [administration API](https://kafka.apache.org/43/kafka-connect/administration/)
+and [persisted target-state behavior](https://cwiki.apache.org/confluence/spaces/KAFKA/pages/263429324/KIP-980%2BAllow%2Bcreating%2Bconnectors%2Bin%2Ba%2Bstopped%2Bstate)
+provide the underlying controls; their presence alone is not qualification evidence.
 
 ## Deployment-Owned CDC Target and Physical Source Binding
 
@@ -702,11 +747,12 @@ Conformance vectors for source identity
 The row is inserted only when absent and ordinary provisioning never changes it. Provider
 replication and failover retain it. Creation of an independent writable data store from a
 template, clone, or copied backup assigns a new UUID before the data store becomes
-available. A rollback or restore that replaces an existing source rotates
-`SourceIdentity` through the explicit CDC recovery workflow and, when CDC state exists,
-uses a new binding generation, public and progress topics, a SQL Server schema-history topic
-when applicable, and consumer state namespace. Rotation is never part of ordinary DDL
-rerun or DMS startup.
+available. A future workflow for rollback or restore that replaces an existing CDC source
+must rotate `SourceIdentity` and use a new binding generation, public and progress topics,
+a SQL Server schema-history topic when applicable, and consumer state namespace. That
+[replacement workflow is deferred from v1](#v1-physical-source-replacement-deferral);
+these identity requirements do not authorize CDC enablement of a clone or restored database.
+Rotation is never part of ordinary DDL rerun or DMS startup.
 Diagnostics identify conflicting opaque data-store IDs without credentials, tenant
 display names, or unsanitized physical identifiers.
 
@@ -868,14 +914,12 @@ Binding creation and cleanup follow a fail-closed order:
    artifact. A record that already exists must match exactly; automation never rewrites its
    binding fields.
 3. If any governed artifact exists without its binding record, or differs from the
-   record, stop and require explicit adoption or cleanup. Do not infer or overwrite a
-   binding from existing topic names or connector configuration. Explicit adoption
-   requires an operator-supplied complete record plus live verification of the physical
-   source and every retained artifact. E19's binding-state operation owns guarded atomic
-   record creation, and bootstrap owns the live provider, connector, topic, offset, ACL, and
-   configuration verification. Adoption repairs missing deployment state around an already
-   complete governed-artifact set; it is not a first-time enablement path. A failed or
-   incomplete adoption changes nothing.
+   record, reject setup, validation, and restart without mutation. V1 does not support
+   adoption of an established generation with missing deployment state, including recovery
+   of only a missing binding. An operator-supplied complete record and healthy live artifacts
+   cannot replace historical evidence. Do not infer, recreate, or overwrite a binding from
+   topic names or connector configuration. Governed retirement remains available only when
+   its independent cleanup requirements can be satisfied; state loss is not cleanup authority.
 4. On retirement, either retain the binding record with every retained governed
    artifact, or delete the connector, every governed topic, offset, ACL, PostgreSQL
    slot/publication, SQL Server capture artifact, and other governed artifact before
@@ -888,6 +932,29 @@ artifacts. A crash may leave an unused record, which safely supports an idempote
 it must never leave surviving artifacts reusable after automatic record deletion.
 An explicit failed-attempt cleanup may retire an unused binding only after proving that no
 governed artifact exists; a crash by itself never triggers that cleanup.
+
+### V1 deployment-state continuity and adoption deferral
+
+Validation and restart of an established generation require the matching binding, workflow
+journal, connector-establishment and retained provider-identity evidence, and source-history
+record for that same target, physical source, and generation. Missing, unreadable, corrupt,
+or contradictory required evidence rejects the operation without mutation. Live artifact
+verification remains necessary but cannot reconstruct missing historical proof. V1 exposes
+no adoption command or operator override for these failures.
+
+A retained terminal incident always prohibits restart. The incident file remains normally
+absent until a loss is latched; that absence is valid only within the supported intact-state
+workflow and is not proof that incident history was never deleted. Suspected incident-history
+deletion or deployment-state rollback is unsupported and rejects validation/restart without
+mutation. V1 relies on the deployment-owned persistent state remaining intact; it does not
+provide rollback detection or certify recovery from an older state backup.
+
+Intact interrupted initial workflows continue through the existing initial-enable retry
+classification. An established generation with lost provenance cannot be reclassified as an
+initial workflow or recovered through source replacement. Retirement does not make a
+surviving database eligible for initial CDC enablement and does not erase downstream
+publication history. Missing-state adoption is deferred until a separately designed durable
+provenance and incident-history recovery contract exists.
 
 Before first-write admission, initial-enable retry classifies durable state as follows:
 
@@ -905,16 +972,39 @@ These rules apply only to a controller-proven, not-yet-admitted initial workflow
 restart after admission exact-matches the binding and validates existing artifacts instead
 of applying the empty-table retry classification.
 
-V1 never reassigns an existing topic or connector generation to a different physical
-database. Guarded source replacement is supported only for a database previously enabled
-through the v1 new-database path. It fences the old connector, rotates `SourceIdentity`
-through the binding-state operation, and creates a new binding generation, connector,
-public topic, progress topic, SQL Server schema-history topic when applicable, consumer
-state namespace, and snapshot. The old generation is retained or explicitly retired; none
-of its governed artifacts is reused. The new generation reports eventual operational status
-rather than another exact baseline. It cannot clear a published cache-ahead latch or recover
-a binding whose source-history loss is terminal. Removing a target requires explicit
-retain-or-delete decisions for every generation.
+### V1 physical-source replacement deferral
+
+V1 supports initial CDC enablement of a controller-proven new physical database and
+subsequent lifecycle operations against that same source with intact deployment provenance.
+Physical-source replacement is deferred. V1 exposes no source-replacement command and
+performs no replacement-driven source-identity rotation, database restore/copy, CMS cutover,
+or new-generation capture setup. Accepting an operator-prepared replacement database is
+also outside this boundary.
+
+An observed physical-source mismatch rejects validation and controller-issued
+start/restart/resume without rebinding or creating replacement artifacts. Status/watch
+uses the existing source-history classification, incident latching, and containment
+contracts; mismatch does not authorize repair or change DMS request routing. Missing
+provenance, terminal source-history loss, and a published cache-ahead latch retain their
+existing rejection behavior.
+
+A separate replacement design must assign database preparation, writer/projector fencing,
+and CMS cutover ownership; define when old-source committed-offset/provider-history proof
+is obtained and retained and how it is tied to the replacement; and establish replacement
+canonical/cache/work integrity evidence, consumer transition, and crash-safe recovery.
+It must respect E18's integrity-scrub requirements after suspected restore rather than
+treating queue emptiness as proof of a valid restored projection.
+
+Any future replacement must fence the old connector before source-identity rotation and
+use a new binding generation, connector, public topic, progress topic, SQL Server
+schema-history topic when applicable, consumer state namespace, and snapshot. V1 never
+reassigns an existing topic or connector generation to a different physical database.
+These constraints do not supply a supported replacement procedure or authorize clearing a
+published cache-ahead latch or recovering a terminal generation. Removing a target requires
+explicit retain-or-delete decisions for every generation. Retirement does not restore a
+surviving database's initial-enable eligibility or erase publication history. Provisioning
+an independent new CDC database does not certify migration or continuity from an existing
+source.
 
 In-place source reset and topic reuse are deferred. The same-source provisioning workflow
 remains idempotent for an exact binding match, and deployment automation rejects separately
@@ -941,9 +1031,9 @@ Production deployments pre-create this topic before starting the worker with
 topic-level `min.insync.replicas` of at least two. Local development and CI may use
 replication factor one and `min.insync.replicas=1`. Deployment automation resolves the
 configured topic name and validates its actual cleanup policy, replica count, and
-topic-level override before accepting a worker, before connector registration or
-start/resume, and during live status checks. It never relies on Connect topic auto-creation
-or broker defaults.
+topic-level override before accepting a worker, before controller-issued connector
+registration/start/restart/resume, and during live status checks. It never relies on Connect
+topic auto-creation or broker defaults.
 
 On this topic, an authorization-enabled deployment grants the Kafka Connect worker service
 principal only literal `READ`, `WRITE`, and `DESCRIBE` access. The deployment control plane
@@ -1031,11 +1121,71 @@ naming strategy, heartbeat topic prefix, or non-empty heartbeat topic name, beca
 `__debezium-heartbeat.<topic-prefix>` when that suffix exactly matches the Debezium
 source-partition `server` value before relational source-metadata validation.
 
-Every connector explicitly sets `statistics.metrics.enabled=true`. Debezium 3.6 then
-exposes minimum, maximum, average, P50, P95, and P99 statistics for
-`MilliSecondsBehindSource`. These quantiles are operational telemetry; current lag still
-participates in combined readiness and neither current nor historical lag substitutes for
-the provider source-position barrier.
+Every connector explicitly sets `statistics.metrics.enabled=true` to enable statistics
+where supported. Both providers must expose current `MilliSecondsBehindSource`.
+Minimum, maximum, average, P50, P95, and P99 are optional operational diagnostics for both
+providers and never prerequisites for readiness. The pinned Debezium 3.6.0.Final
+PostgreSQL connector exposes these statistics; the SQL Server connector does not expose
+them through its streaming JMX interface, even with this setting enabled. See the
+[qualification evidence and scope resolution](sqlserver-lag-qualification.md).
+Unavailable statistics remain absent in exported metrics and null in existing Core
+percentile fields; operator displays show them as unavailable, never zero. Do not synthesize
+replacement statistics from HTTP scrapes. Current lag still participates in combined
+readiness, and neither current nor historical lag substitutes for the provider
+source-position barrier.
+
+### Local and CI Connector Telemetry
+
+The shipped local/CI telemetry adapter supports one explicitly configured Kafka Connect
+worker. Its qualified image includes a version-pinned standard Prometheus JMX Exporter
+Java agent and fixed metric mappings for PostgreSQL and SQL Server. The controller reads
+the worker's `/metrics` HTTP endpoint directly on the management network; this workflow
+requires no Prometheus server, remote JMX/RMI service, or custom exporter implementation.
+The mappings expose current `MilliSecondsBehindSource`, together with the identity
+evidence needed below. They may additionally expose minimum, maximum, average, P50, P95,
+and P99 where available. Image qualification requires a finite, nonnegative current-lag
+gauge in milliseconds for each provider and validates any exported optional statistics
+for identity, types, and units; absence of optional statistics passes qualification for
+either provider. Exporter and mapping changes require image qualification and a new
+immutable image digest.
+
+Each readiness evaluation collects new evidence. The adapter matches the provider and
+the bound connector's validated `topic.prefix`, which is the connector name, and requires
+exactly one matching streaming metric set. It checks Connect status before and after
+collection: the connector and its sole task must be `RUNNING`, with that task assigned to
+the explicitly configured worker. Deployment inspection must also establish that the
+metrics endpoint belongs to that worker and its process identity remains unchanged across
+collection. A worker address or task number alone is not proof of an unchanged process.
+
+The deployment request supplies a positive maximum telemetry observation age, defaulting
+to 10 seconds. The controller records collection start and completion times and measures
+age conservatively from scrape start with a monotonic elapsed-time clock. Each external
+call and the complete observation pass are bounded and cancellable. The evidence must
+still be within the maximum age when used for the readiness decision, including initial
+writer handoff. It is not persisted as reusable readiness evidence or reused in a later
+evaluation. HTTP success timestamps establish collection time, not the time of the last
+source event; a fresh read remains only Debezium's reported lag.
+
+A worker or task restart, reassignment, identity change, or ambiguous collection invalidates
+the observation and requires fresh status and metrics. The qualified runtime must remove
+or replace a task's previous metric state on restart; the adapter cannot accept an old
+task's metric set as the current task's evidence. During initial admission, an interrupted
+readiness sequence also repeats the existing provider barrier and projection observation
+sequence. Missing, duplicate, malformed, expired, or incorrectly attributed metrics,
+exporter collection failure, and unavailable identity evidence produce `unknown` and
+prevent readiness when they affect required current-lag or identity evidence. Optional
+statistics are collected independently: missing, duplicate, malformed, or incorrectly
+attributed optional values are discarded and represented as unavailable, without
+invalidating otherwise valid current-lag evidence. The existing Core percentile fields
+remain nullable (explicit JSON null is valid); their values, when supplied, must be
+nonnegative and consistently ordered. They do not determine the lag state. Current lag
+must independently satisfy its configured threshold; neither REST `RUNNING`, historical
+quantiles, nor a fresh HTTP response substitutes for the provider source-position barrier.
+
+Automatic metrics-endpoint discovery across a distributed worker fleet is outside this
+local/CI adapter. A later deployment adapter may support that topology while preserving
+the same evidence requirements. The single-worker scope does not limit the number of
+bindings hosted by that worker; their metric sets must remain distinguishable.
 
 ### PostgreSQL
 
@@ -1288,6 +1438,39 @@ readiness. A partial, out-of-order, or unverifiable rollout remains not ready. I
 over-budget record already failed the connector, the task resumes from its uncommitted
 source position after the larger policy is effective.
 
+For v1, consumer-capacity confirmation is an explicit structured attestation from the
+operator authorized to administer the CDC deployment, using the existing administrative
+trust boundary. The operator obtains confirmation from every affected consumer owner that
+the deployed `max.partition.fetch.bytes` and `fetch.max.bytes` meet the requested ceiling
+and deserialization capacity has been tested for records at that ceiling. Consumer owners
+must preserve that capacity through rollout completion and subsequent consumption. The
+operator attests that the inventory includes every affected consumer; the controller does
+not discover or certify independently operated consumers.
+
+The acknowledgement records:
+
+- operator identity and confirmation time;
+- the complete binding identity and generation, physical-source fingerprint, public topic,
+  requested `maxRecordBytes`, and increase operation ID; and
+- each affected consumer's deployment identity and revision, confirming owner, and a
+  reference to that owner's capacity evidence, or an explicit declaration that there are
+  no affected consumers. An omitted consumer inventory is not a no-consumers declaration.
+
+The controller validates the acknowledgement's completeness and exact operation scope,
+then durably records it with the operation intent in the deployment workflow journal before
+advancing to broker/topic or producer changes. Evidence references contain no credentials;
+the operator remains responsible for the truth and completeness of the external evidence.
+V1 adds no signing service, separate approval system, or consumer-verification adapter.
+
+Each invocation that resumes an interrupted increase requires renewed operator confirmation
+for that same operation before advancing, including before restoring readiness. The
+controller journals the renewed acknowledgement and reconciles completed infrastructure
+changes from live state; a persisted acknowledgement alone does not authorize a resumed
+invocation. Changed consumer deployments require updated evidence. A different binding,
+source, public topic, or requested ceiling cannot reuse the acknowledgement. Missing or
+mismatched confirmation prevents advancement, and a partially completed increase remains
+not ready. No automatic rollback or lowering of already increased limits is implied.
+
 ### Deferred new-topic cutover
 
 Changing the topic partition count or `partitionerAlgorithm` token creates a new binding
@@ -1404,16 +1587,18 @@ Local bootstrap exposes an explicit opt-in such as `-EnableKafkaCdc`.
   outside the bootstrap manifest. DMS startup itself has no authority to enable tracking.
 - Binding reservation and registration are idempotent for an exact binding match and
   fail closed for missing or mismatched state around existing artifacts.
-- After initial enablement, bootstrap/status automation checks provider source-history
-  continuity before every connector start/resume and on each status interval. It leaves an
-  `unknown` connector stopped until affirmative evidence returns and durably terminates a
-  binding whose continuity is `lost`; it never resets offsets or resnapshots the existing
-  public topic.
+- After initial enablement, bootstrap/status automation follows the
+  [controller-managed lifecycle and native recovery boundary](#controller-managed-lifecycle-and-native-recovery-boundary).
+  It checks provider source-history continuity before every controller-issued connector
+  start/restart/resume and on each status interval. Missing or `unknown` evidence prevents
+  controller-issued starts/restarts/resumes; `lost` durably terminates the binding. Native
+  recovery has no pre-consumption validation guarantee. Automation never resets offsets or
+  resnapshots the existing public topic.
 - Before bootstrap starts local Kafka Connect, it pre-creates and validates the configured
   shared offset topic and its worker-only ACLs using the cluster-scoped contract above. For
   an already-running or externally managed worker, it requires equivalent authoritative
-  validation before registering, starting, or resuming a connector. The shared topic is not
-  a binding-governed artifact and is never removed by per-binding teardown.
+  validation before controller-issued connector registration, start, restart, or resume.
+  The shared topic is not a binding-governed artifact and is never removed by per-binding teardown.
 - Binding-topic provisioning applies the explicit durability profile above to the public and
   progress topics and to the SQL Server schema-history topic when applicable. The local
   single-broker default is replication factor one with `min.insync.replicas=1`;
@@ -1454,9 +1639,12 @@ Local bootstrap exposes an explicit opt-in such as `-EnableKafkaCdc`.
   opens writes as ready.
 - E2E setup creates a fresh database, provisions its current schema, and registers capture
   against that same database before issuing writes it expects to consume.
-- A normal local stop retains the binding, connector, Kafka offsets, ACLs, provider capture
-  artifacts, and every governed topic. Destructive local volume teardown removes the
-  connector; its offsets; public, progress, and SQL Server schema-history topics and ACLs;
+- A managed local stop verifies connectors are stopped before stopping their worker, using
+  the recovery boundary above. It retains the binding, connector configuration and stopped
+  target state, Kafka offsets, ACLs, provider capture artifacts, and every governed topic.
+  An incomplete or unverified stop follows the native recovery boundary on startup.
+  Destructive local volume teardown removes the connector; its offsets; public, progress,
+  and SQL Server schema-history topics and ACLs;
   the PostgreSQL slot/publication or SQL Server capture instances/jobs; and any other
   governed artifact before deleting terminal incident state and the binding record last.
 
@@ -1545,12 +1733,11 @@ Structured logs and metrics cover:
   validation failures.
 
 Deployment-owned CDC status additionally covers binding presence and match, connector
-running state, current lag plus Debezium 3.6 P50/P95/P99 source-lag telemetry, last error,
-snapshot completion, heartbeat/capture progress, the provider barrier and committed
+running state, current lag plus optional P50/P95/P99 source-lag diagnostics where available,
+last error, snapshot completion, heartbeat/capture progress, the provider barrier and committed
 Connect source offset in sanitized form, existing artifacts without binding state, source
 mismatch, shared Connect offset-store durability and ACL health, source-history continuity
-outcome and remaining provider-retention margin, the durable terminal loss latch, and
-guarded source-replacement state.
+outcome and remaining provider-retention margin, and the durable terminal loss latch.
 
 Use provider, safe project/resource identity, failure category, target-resolution state,
 and opaque data-store identity only where cardinality policy permits. Never log
@@ -1571,7 +1758,7 @@ queue backlog, oldest work, poison failures, work-anomaly scrub, activation/deac
 mismatch, enqueue-failure diagnosis, ordinary monotonic projection lag,
 source-history continuity monitoring, progress-topic
 diagnosis, shared Connect offset-store durability and ACL diagnosis, SQL Server
-schema-history diagnosis, target migration/retirement, and provider artifact cleanup. They
+schema-history diagnosis, target removal/retirement, and provider artifact cleanup. They
 also cover sensitive-data disclosure containment and destructive
 binding-generation retirement, require recorded platform purge evidence, and leave CDC
 unavailable rather than republishing into or recreating the affected topic.
@@ -1593,9 +1780,18 @@ They document the shipped projector defaults; how to tune poll interval, page si
 failure backoff, target concurrency, and baseline high-water mark; how to identify
 same-document canonical-write contention; and why projector downtime permits queued
 writes while enqueue-schema failure rejects canonical writes.
-They cover binding-state backup, fail-closed missing-state recovery, guarded explicit
-adoption, cleanup ordering, and guarded new-generation source replacement; they never infer
-or repair a binding by rewriting an immutable record. They state that same-topic baseline
+They cover preservation of intact deployment state, interrupted initial-setup retry,
+intact-state validation/restart, cleanup ordering, and the
+[physical-source replacement deferral](#v1-physical-source-replacement-deferral), including
+source-mismatch rejection and the limits of independent new-database provisioning.
+They distinguish managed stop/start from native worker/task recovery using the
+[recovery boundary](#controller-managed-lifecycle-and-native-recovery-boundary), including
+incomplete shutdown, possible publication before revalidation, and the absence of retrospective
+continuity certification. They link to the
+[v1 deployment-state continuity and adoption deferral](#v1-deployment-state-continuity-and-adoption-deferral)
+for missing-state diagnostics and backup/rollback limitations; they provide no adoption,
+replacement-binding JSON, or stale-backup restoration procedure as recovery. They never
+infer or repair a binding by rewriting an immutable record. They state that same-topic baseline
 replacement and incompatible-contract cutover are deferred until an owned cross-replica/
 external-writer fence exists. The representation-restamp utility is documented only for an
 explicitly offline data store; its lifecycle preflight distinguishes

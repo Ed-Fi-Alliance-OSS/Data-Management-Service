@@ -43,7 +43,8 @@ internal static class CdcProviderSetupContractTestData
         CdcProviderArtifactNames? artifactNames = null,
         ICdcProviderDatabaseExecutor? databaseExecutor = null,
         CdcPostgresqlInitialReplicationSlotProof? postgresqlInitialReplicationSlotProof = null,
-        ICdcConnectorPrincipalProbeFactory? connectorPrincipalProbeFactory = null
+        ICdcConnectorPrincipalProbeFactory? connectorPrincipalProbeFactory = null,
+        bool requireUnconsumedInitialSlot = false
     ) =>
         new(
             provider: CdcProvider.Postgresql,
@@ -59,7 +60,8 @@ internal static class CdcProviderSetupContractTestData
             postgresqlInitialReplicationSlotProof: postgresqlInitialReplicationSlotProof,
             connectorPrincipalProbeFactory: connectorPrincipalProbeFactory
                 ?? new TestConnectorPrincipalProbeFactory(),
-            databaseExecutor: databaseExecutor
+            databaseExecutor: databaseExecutor,
+            requireUnconsumedInitialSlot: requireUnconsumedInitialSlot
         );
 
     internal static CdcProviderSetupRequest BuildSqlServerRequest(

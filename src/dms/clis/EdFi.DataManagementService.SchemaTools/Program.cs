@@ -5,6 +5,7 @@
 
 using System.CommandLine;
 using EdFi.DataManagementService.Core.Startup;
+using EdFi.DataManagementService.SchemaTools.Cdc;
 using EdFi.DataManagementService.SchemaTools.Commands;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -14,9 +15,15 @@ using Serilog.Events;
 // Pre-scan for --verbose before configuring services, since the logger must be
 // created before System.CommandLine parses the full command tree.
 var verbose = Array.Exists(args, a => a is "--verbose" or "-v");
+var cdcInvocation = Array.Find(args, argument => argument is "cdc" or "ddl" or "hash") == "cdc";
 
 var serviceCollection = new ServiceCollection();
-ConfigureServices(serviceCollection, verbose);
+ConfigureServices(serviceCollection, verbose && !cdcInvocation);
+if (cdcInvocation)
+{
+    // Shared schema loaders can log paths/provider details; CDC emits only typed diagnostics.
+    serviceCollection.AddLogging(logging => logging.ClearProviders());
+}
 await using var serviceProvider = serviceCollection.BuildServiceProvider();
 
 try
@@ -25,6 +32,16 @@ try
     var fileLoader = serviceProvider.GetRequiredService<IApiSchemaFileLoader>();
     var hashProvider = serviceProvider.GetRequiredService<IEffectiveSchemaHashProvider>();
     var schemaSetBuilder = serviceProvider.GetRequiredService<EffectiveSchemaSetBuilder>();
+
+    if (cdcInvocation)
+    {
+        return await CdcCommandHost.InvokeAsync(
+            args,
+            new CdcCommandRunner(fileLoader, schemaSetBuilder),
+            Console.Out,
+            Console.Error
+        );
+    }
 
     var rootCommand = new RootCommand("Ed-Fi DMS schema tool for hashing and DDL generation");
 
@@ -45,6 +62,9 @@ try
     ddlCommand.Subcommands.Add(DdlEmitCommand.Create(logger, fileLoader, schemaSetBuilder));
     ddlCommand.Subcommands.Add(DdlProvisionCommand.Create(logger, fileLoader, schemaSetBuilder));
     rootCommand.Subcommands.Add(ddlCommand);
+    rootCommand.Subcommands.Add(
+        CdcCommandHost.Create(new CdcCommandRunner(fileLoader, schemaSetBuilder), Console.Out, Console.Error)
+    );
 
     var parseResult = rootCommand.Parse(args);
     return await parseResult.InvokeAsync();

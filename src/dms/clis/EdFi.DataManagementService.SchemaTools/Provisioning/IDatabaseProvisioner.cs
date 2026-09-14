@@ -42,6 +42,13 @@ public interface IDatabaseProvisioner
     void CheckOrConfigureMvcc(string connectionString, bool databaseWasCreated);
 
     /// <summary>
+    /// Strict CDC projection preflight. SQL Server may configure nested triggers only when the
+    /// managed host supplies separate local-server authority and the original CREATE just succeeded.
+    /// All other calls inspect only. PostgreSQL is a no-op.
+    /// </summary>
+    void CheckCdcProjectionPrerequisites(string connectionString, bool configureOwnedLocalServer);
+
+    /// <summary>
     /// Validates that the contents of dms.ResourceKey and dms.SchemaComponent match
     /// the expected seed data from <paramref name="expectedSchema"/>, and runs the bounded
     /// create-only E18 provisioning guards. If dms.EffectiveSchema does not exist (new database),

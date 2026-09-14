@@ -352,8 +352,10 @@ ad hoc DMS web process or duplicating provider-specific rebuild logic.
 - New lifecycle semantics, table shapes, queue algorithms, baseline cursor persistence, or
   cache writer behavior. Those remain owned by the existing E18 design and implementation
   stories.
-- Kafka connector setup, connector teardown, source replacement, binding retirement, topic
+- Kafka connector setup, connector teardown, binding retirement, topic
   management, or CDC bootstrap orchestration. Those are E19 responsibilities.
+- Physical-source replacement is
+  [deferred from v1](../../design-docs/cdc/cdc-streaming.md#v1-physical-source-replacement-deferral).
 - The representation restamp utility, which remains owned by 18-08.
 - GitHub package/release or PR verification workflows for SBOM, provenance, publish,
   release attachment, release orchestration, feed-view promotion, signing, or

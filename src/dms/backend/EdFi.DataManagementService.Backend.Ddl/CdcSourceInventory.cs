@@ -8,9 +8,9 @@ using EdFi.DataManagementService.Backend.External;
 
 namespace EdFi.DataManagementService.Backend.Ddl;
 
-internal static class CdcSourceInventoryValidator
+public static class CdcSourceInventoryValidator
 {
-    internal static IReadOnlyList<CdcProviderDiagnostic> ValidateLiveSourceInventory(
+    public static IReadOnlyList<CdcProviderDiagnostic> ValidateLiveSourceInventory(
         IReadOnlyList<CdcSourceTableInventory> expectedSourceInventory,
         IReadOnlyList<CdcSourceTableInventory> observedSourceInventory
     )

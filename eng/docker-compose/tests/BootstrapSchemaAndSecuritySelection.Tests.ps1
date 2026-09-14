@@ -1574,6 +1574,25 @@ exit $ExitCode
             $env:SCHEMA_PACKAGES | Should -Be "prior-packages"
         }
 
+        It "restores temporary identity selection before CDC fingerprints the next phase" {
+            Import-Module $script:repo.ManifestModule -Force
+            $names = @('DMS_CONFIG_IDENTITY_PROVIDER', 'OAUTH_TOKEN_ENDPOINT', 'DMS_JWT_AUTHORITY',
+                'DMS_JWT_METADATA_ADDRESS', 'DMS_CONFIG_IDENTITY_AUTHORITY')
+            $original = Get-BootstrapEnvSnapshot
+            try {
+                foreach ($name in $names) { Remove-Item "Env:$name" -ErrorAction SilentlyContinue }
+                $env:DMS_JWT_AUTHORITY = 'prior-authority'
+                $snapshot = Get-BootstrapEnvSnapshot
+                foreach ($name in $names) { Set-Item "Env:$name" 'temporary' }
+                Restore-BootstrapEnvSnapshot $snapshot
+                $env:DMS_JWT_AUTHORITY | Should -Be 'prior-authority'
+                foreach ($name in $names | Where-Object { $_ -ne 'DMS_JWT_AUTHORITY' }) {
+                    Test-Path "Env:$name" | Should -BeFalse
+                }
+            }
+            finally { Restore-BootstrapEnvSnapshot $original }
+        }
+
         It "run.sh materializes a root ApiSchema manifest from current SCHEMA_PACKAGES package manifests" {
             $content = Get-Content -LiteralPath (Join-Path $script:sourceRepoRoot "src/dms/run.sh") -Raw
 

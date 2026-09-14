@@ -884,6 +884,7 @@ public class Given_CdcConnectorTemplateContractTests
         [
             nameof(ICdcConnectorTemplateService.Render),
             nameof(ICdcConnectorTemplateService.ValidateRegistrationPreflight),
+            nameof(ICdcConnectorTemplateService.ValidateLiveConfigurationReadBack),
             nameof(ICdcConnectorTemplateService.ValidateLiveReadBack),
         ];
 

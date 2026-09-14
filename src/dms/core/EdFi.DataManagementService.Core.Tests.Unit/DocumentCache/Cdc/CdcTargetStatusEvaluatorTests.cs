@@ -16,6 +16,30 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.DocumentCache.Cdc;
 public class Given_CdcTargetStatusEvaluator
 {
     [Test]
+    public void It_omits_the_initial_barrier_only_for_post_admission_observation()
+    {
+        var input = CdcTargetStatusFixture.ValidInput(CdcTargetStatusFixture.CreateBinding()) with
+        {
+            ProviderBarrier = null,
+        };
+        var result = CdcTargetStatusEvaluator.EvaluatePostAdmission(input);
+        result.Readiness.Should().Be(CdcReadiness.Ready);
+        result.ProviderBarrier.State.Should().Be(CdcComponentState.NotApplicable);
+        result
+            .Diagnostics.Should()
+            .NotContain(d => d.Path.Contains("providerBarrier", StringComparison.Ordinal));
+        CdcTargetStatusEvaluator.Evaluate(input).Readiness.Should().NotBe(CdcReadiness.Ready);
+        CdcTargetStatusEvaluator
+            .EvaluatePostAdmission(input with { Lag = null })
+            .Readiness.Should()
+            .NotBe(CdcReadiness.Ready);
+        CdcTargetStatusEvaluator
+            .EvaluatePostAdmission(input with { SourceHistory = null })
+            .Readiness.Should()
+            .NotBe(CdcReadiness.Ready);
+    }
+
+    [Test]
     public void It_returns_ready_when_every_required_current_observation_is_satisfied()
     {
         CdcBinding binding = CdcTargetStatusFixture.CreateBinding();

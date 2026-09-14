@@ -13,7 +13,8 @@ internal interface ICdcConnectorTemplateEffectiveConfigValidator
 {
     CdcConnectorTemplateResult ValidateEffectiveConfig(
         CdcConnectorTemplateEffectiveConfigValidationRequest request,
-        CdcConnectorTemplateSourcePhase sourcePhase
+        CdcConnectorTemplateSourcePhase sourcePhase,
+        bool requireSourcePartition = true
     );
 }
 
@@ -27,7 +28,8 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(
 
     public CdcConnectorTemplateResult ValidateEffectiveConfig(
         CdcConnectorTemplateEffectiveConfigValidationRequest request,
-        CdcConnectorTemplateSourcePhase sourcePhase
+        CdcConnectorTemplateSourcePhase sourcePhase,
+        bool requireSourcePartition = true
     )
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -91,7 +93,10 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(
         }
 
         AddEffectiveConfigDiagnostics(request, expectedResult.Config, sourcePhase, diagnostics);
-        AddSourcePartitionDiagnostics(request, expectedResult.Config, sourcePhase, diagnostics);
+        if (requireSourcePartition || request.SourcePartitionEvidence is not null)
+        {
+            AddSourcePartitionDiagnostics(request, expectedResult.Config, sourcePhase, diagnostics);
+        }
 
         if (!HasErrors(diagnostics))
         {
@@ -609,7 +614,7 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(
         }
     }
 
-    private static bool IsAcceptedSecretReadBack(
+    internal static bool IsAcceptedSecretReadBack(
         string expectedValue,
         string observedValue,
         CdcConnectorTemplateSourcePhase sourcePhase

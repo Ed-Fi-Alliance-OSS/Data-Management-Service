@@ -281,7 +281,7 @@ exit $ExitCode
     }
 
     Context "public script contracts" {
-        It "provision-dms-schema.ps1 exposes only the selector, env, engine overlay, and topology parameters" {
+        It "provision-dms-schema.ps1 exposes selectors, environment, topology, and managed provenance parameters" {
             $params = Get-DeclaredScriptParameters -Path $script:repo.ProvisionScript
 
             $params | Should -Contain "EnvironmentFile"
@@ -299,7 +299,13 @@ exit $ExitCode
             # Never a datastore-name parameter: the target comes from CMS, so a caller-authored name
             # here could only disagree with what will actually be provisioned.
             $params | Should -Not -Contain "DataStoreDatabaseName"
-            $params.Count | Should -Be 5
+            $params | Should -Contain "CdcBindingStatePath"
+            $params | Should -Contain "PrepareCdcProjectionPrerequisites"
+            $params | Should -Contain "InitialCdcProvisioning"
+            $params | Should -Contain "DeploymentKey"
+            $params | Should -Contain "InstanceKey"
+            $params | Should -Contain "Generation"
+            $params.Count | Should -Be 11
         }
 
         It "provision-dms-schema.ps1 forwards the topology declaration from its parameter surface into the phase function" {
@@ -422,7 +428,7 @@ exit $ExitCode
                 # gates the kafka.yml/kafka-ui.yml compose files on $DatabaseEngine -eq "postgresql"; that
                 # extra clause is optional here so both start-local-dms.ps1 and start-published-dms.ps1 match.
                 $content | Should -Match 'if \(\$enableKafkaInfrastructure( -and \$DatabaseEngine -eq "postgresql")?\) \{\s*\$files \+= @\("-f", "kafka\.yml"\)\s*\}'
-                $content | Should -Match 'if \(\$EnableKafkaUI( -and \$DatabaseEngine -eq "postgresql")?\) \{\s*\$files \+= @\("-f", "kafka-ui\.yml"\)\s*\}'
+                $content | Should -Match 'if \(\$EnableKafkaUI -and \(\$DatabaseEngine -eq "postgresql" -or \$CdcKafkaInfrastructure\)\) \{\s*\$files \+= @\("-f", "kafka-ui\.yml"\)\s*\}'
                 $content | Should -Match 'docker compose \$files --env-file \$EnvironmentFile -p dms-(local|published) up \$upArgs kafka kafka-postgresql-source'
                 $content | Should -Match '"--remove-orphans"'
             }
@@ -5906,7 +5912,7 @@ if (Test-Path -LiteralPath $ChildCapturePath) {
 [pscustomobject]$outcome | ConvertTo-Json -Compress
 '@ | Set-Content -LiteralPath $childScript -Encoding utf8
 
-                $json = & ([Environment]::ProcessPath) -NoProfile -File $childScript `
+                $json = & ((Get-Command pwsh -CommandType Application | Select-Object -First 1).Source) -NoProfile -File $childScript `
                     -ChildProvisionScript $script:repo.ProvisionScript `
                     -ChildEnvironmentFile $EnvironmentFile `
                     -ChildConnectionString $ConnectionString `
@@ -6705,7 +6711,7 @@ Describe "whole-file module-table ownership (post-Invoke-Pester, isolated childr
     # Both halves of the exact-ownership invariant, proven AFTER Invoke-Pester returns: owned
     # staged instances are gone, and a caller-owned module beneath a LOOKALIKE-named directory
     # survives untouched. The children exclude this tag, so there is no recursion; launches go
-    # through [Environment]::ProcessPath, never a literal executable name.
+    # through the resolved PowerShell launcher, including dotnet-tool installations.
 
     BeforeAll {
         $script:ownershipChildWork = Join-Path ([System.IO.Path]::GetTempPath()) "dms-1151-ownership-child-$([Guid]::NewGuid().ToString('N'))"
@@ -6744,7 +6750,7 @@ Describe "whole-file module-table ownership (post-Invoke-Pester, isolated childr
             "finally { Remove-Item -LiteralPath `$callerRoot -Recurse -Force -ErrorAction SilentlyContinue }"
         ) -join "`n" | Set-Content -LiteralPath $childScript
 
-        $childState = (& ([Environment]::ProcessPath) -NoProfile -File $childScript | Select-Object -Last 1) | ConvertFrom-Json
+        $childState = (& ((Get-Command pwsh -CommandType Application | Select-Object -First 1).Source) -NoProfile -File $childScript | Select-Object -Last 1) | ConvertFrom-Json
         # Execution proof first: the probe must have RUN and PASSED - discovery counts prove
         # nothing, and a probe that never reached its staged import would make survival vacuous.
         $childState.Failed | Should -Be 0 -Because "the staged-import probe must complete cleanly around the caller's module"
@@ -6784,7 +6790,7 @@ Describe "whole-file module-table ownership (post-Invoke-Pester, isolated childr
             "} | ConvertTo-Json -Compress"
         ) -join "`n" | Set-Content -LiteralPath $childScript
 
-        $childState = (& ([Environment]::ProcessPath) -NoProfile -File $childScript | Select-Object -Last 1) | ConvertFrom-Json
+        $childState = (& ((Get-Command pwsh -CommandType Application | Select-Object -First 1).Source) -NoProfile -File $childScript | Select-Object -Last 1) | ConvertFrom-Json
         # Execution proof first: the residue check is meaningful only if the staged-import probe
         # really ran and passed - a run that never imported a staged module has nothing to clean.
         $childState.Failed | Should -Be 0 -Because "the staged-import probe must complete cleanly"

@@ -102,7 +102,7 @@ $script:AllCategoryPathPrefix = @(
     'src/dms/backend/EdFi.DataManagementService.Backend.Ddl/'
     'src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/'
     'src/dms/backend/EdFi.DataManagementService.Backend.Ddl.PublicContract.CompileCheck/'
-    # The SQL Server provider backs every MSSQL lane, and the CDC suite is SQL-Server-only.
+    # The SQL Server provider backs every MSSQL lane, including CDC qualification.
     'src/dms/backend/EdFi.DataManagementService.Backend.Mssql/'
 )
 
@@ -115,24 +115,20 @@ $script:NarrowPathCategory = @(
     # The always-on unit-test job is the only suite that runs Backend.Tests.Unit; no promoted lane
     # builds or runs it.
     @{ Prefix = 'src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/'; Category = @() }
-    @{ Prefix = 'src/dms/backend/EdFi.DataManagementService.Backend.Postgresql/'; Category = @('dms_api_relevant', 'schematools_relevant') }
-    # Also reaches the backend MSSQL lane. The MSSQL integration project references
-    # Backend.Cdc and holds the only DB-backed CDC tests in the suite, because the CDC lane
-    # itself runs with --filter "Category!=DatabaseIntegration". Classifying CDC source as
-    # cdc-only would skip every DB-backed CDC test on a change to CDC source.
+    @{ Prefix = 'src/dms/backend/EdFi.DataManagementService.Backend.Postgresql/'; Category = @('cdc_relevant', 'dms_api_relevant', 'schematools_relevant') }
+    # CDC provider adapters also remain covered by the backend MSSQL lane.
     @{ Prefix = 'src/dms/backend/EdFi.DataManagementService.Backend.Cdc/'; Category = @('cdc_relevant', 'backend_mssql_relevant') }
     @{ Prefix = 'src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/'; Category = @('cdc_relevant') }
     @{ Prefix = 'src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Unit/'; Category = @('cdc_relevant') }
     @{ Prefix = 'src/dms/frontend/'; Category = @('dms_api_relevant') }
     @{ Prefix = 'src/dms/tests/EdFi.DataManagementService.Tests.Integration/'; Category = @('dms_api_relevant') }
-    @{ Prefix = 'src/dms/clis/EdFi.DataManagementService.SchemaTools/'; Category = @('schematools_relevant') }
-    @{ Prefix = 'src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/'; Category = @('schematools_relevant') }
-    @{ Prefix = 'src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/'; Category = @('schematools_relevant') }
-    # No promoted lane builds the other CLIs, the E2E and unit test projects, or the Configuration
-    # Service. They are still DMS-relevant, so the always-on jobs still run, and dedicated lanes
-    # cover some of them: src/config has its own workflow, and the CLI integration matrix runs
-    # exactly ApiSchemaDownloader and OpenApiGenerator. DocumentCacheAdmin.Tests.Integration runs
-    # in no workflow at all.
+    @{ Prefix = 'src/dms/clis/EdFi.DataManagementService.SchemaTools/'; Category = @('cdc_relevant', 'schematools_relevant') }
+    @{ Prefix = 'src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/'; Category = @('cdc_relevant', 'schematools_relevant') }
+    @{ Prefix = 'src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/'; Category = @('cdc_relevant', 'schematools_relevant') }
+    @{ Prefix = 'src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin/'; Category = @('cdc_relevant') }
+    @{ Prefix = 'src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration/'; Category = @('cdc_relevant') }
+    @{ Prefix = 'src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit/'; Category = @('cdc_relevant') }
+    # Other CLIs, E2E/unit projects and Configuration Service retain their dedicated lanes.
     @{ Prefix = 'src/dms/clis/'; Category = @() }
     @{ Prefix = 'src/dms/tests/'; Category = @() }
     @{ Prefix = 'src/config/'; Category = @() }

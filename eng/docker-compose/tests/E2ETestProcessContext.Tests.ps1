@@ -342,11 +342,9 @@ Describe "setup-local-dms.ps1 wires the resolved environment file into teardown 
     # The teardown-guidance call is a non-executed display line, so a source assertion is the
     # appropriate check that production wires the single-resolution output (data-standard then engine
     # overlay) into teardown rather than the pre-overlay base file.
-    It "passes the resolved environment file, not the base, to Get-DirectSetupTeardownCommand" {
+    It "passes the resolved environment file to non-CDC teardown guidance" {
         $script:setupSource |
             Should -Match 'Get-DirectSetupTeardownCommand -DatabaseEngine \$DatabaseEngine -EnvironmentFile \$resolvedEnvironmentFile'
-        $script:setupSource |
-            Should -Not -Match 'Get-DirectSetupTeardownCommand[^\r\n]*-EnvironmentFile \$baseEnvironmentFile'
     }
 }
 

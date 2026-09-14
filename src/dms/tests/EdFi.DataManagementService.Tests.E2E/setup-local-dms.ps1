@@ -57,7 +57,12 @@ param(
 
     # Database engine backing the stack. "postgresql" (default) or "mssql".
     [ValidateSet("postgresql", "mssql")]
-    [string] $DatabaseEngine = "postgresql"
+    [string] $DatabaseEngine = "postgresql",
+
+    [switch] $EnableKafkaCdc,
+    [string] $CdcSettingsPath,
+    [string] $CdcBindingStatePath,
+    [switch] $SkipDockerBuild
 )
 
 function Get-DirectSetupTeardownCommand {
@@ -109,6 +114,8 @@ Write-Host ""
 # Store current location and navigate to docker-compose directory
 $originalLocation = Get-Location
 $dockerComposeDir = Join-Path $PSScriptRoot "../../../../eng/docker-compose"
+if ($CdcSettingsPath) { $CdcSettingsPath = [IO.Path]::GetFullPath($CdcSettingsPath) }
+if ($CdcBindingStatePath) { $CdcBindingStatePath = [IO.Path]::GetFullPath($CdcBindingStatePath) }
 
 try {
     Set-Location $dockerComposeDir
@@ -159,6 +166,17 @@ try {
         throw "E2E_DATABASE_NAME must be set in '$resolvedEnvironmentFile' or the process environment so direct DMS E2E setup creates a CMS data store against the provisioned E2E database."
     }
 
+    Import-Module (Join-Path $dockerComposeDir 'e2e-cdc.psm1')
+    if ($EnableKafkaCdc) {
+        Invoke-E2ECdcSetup -EnvironmentFile $resolvedEnvironmentFile -OriginalEnvironmentFile $baseEnvironmentFile `
+            -DatabaseEngine $DatabaseEngine -DatabaseName $e2eDatabaseName -SnapshotDatabaseName $e2eSnapshotDatabaseName `
+            -CdcSettingsPath $CdcSettingsPath -CdcBindingStatePath $CdcBindingStatePath -SkipDockerBuild:$SkipDockerBuild
+        $teardownCommand = Get-DirectSetupTeardownCommand -DatabaseEngine $DatabaseEngine -EnvironmentFile $baseEnvironmentFile
+        Write-Host "CDC E2E setup complete. Governed teardown: $teardownCommand" -ForegroundColor Green
+        return
+    }
+    if ($CdcSettingsPath -or $CdcBindingStatePath) { throw 'CDC settings/state parameters require -EnableKafkaCdc.' }
+    Assert-E2ECdcWorkspaceAvailable
     $bootstrapDir = Join-Path $dockerComposeDir ".bootstrap"
     if (Test-Path -LiteralPath $bootstrapDir) {
         Write-Output "Removing stale .bootstrap workspace before file-based schema package E2E startup..."

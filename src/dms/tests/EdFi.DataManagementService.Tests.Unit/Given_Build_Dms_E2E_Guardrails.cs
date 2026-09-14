@@ -135,7 +135,7 @@ public class Given_Build_Dms_E2E_Guardrails
         _buildScriptContents
             .Should()
             .Contain("E2ETest { Invoke-TestExecution E2ETests")
-            .And.Contain("-EnvironmentOverlayFile $EnvironmentOverlayFile -DatabaseEngine $DatabaseEngine }");
+            .And.Contain("-EnvironmentOverlayFile $EnvironmentOverlayFile -DatabaseEngine $DatabaseEngine");
 
         ExtractFunctionBody("Invoke-TestExecution")
             .Should()

@@ -238,6 +238,31 @@ exit 0
             }
         }
 
+        It "retains CDC snapshots and nested source history after governed volume cleanup" {
+            $workspace = Join-Path $TestDrive 'retained-cdc-workspace'
+            New-Item -ItemType Directory (Join-Path $workspace 'cdc-runtime') -Force | Out-Null
+            New-Item -ItemType Directory (Join-Path $workspace 'custom-state') -Force | Out-Null
+            'historical' | Set-Content (Join-Path $workspace 'custom-state/source-history.json')
+            Remove-E2EBootstrapWorkspace -BootstrapWorkspacePath $workspace
+            Get-Content (Join-Path $workspace 'custom-state/source-history.json') | Should -Be 'historical'
+        }
+
+        It "blocks recursive cleanup for inventoried nested state after generated files are gone" {
+            $compose = Join-Path $TestDrive 'nested-state-compose'
+            $workspace = Join-Path $compose '.bootstrap'
+            $state = Join-Path $workspace 'private-source-state'
+            New-Item -ItemType Directory $state -Force | Out-Null
+            'historical' | Set-Content (Join-Path $state 'history.json')
+            $inventory = Join-Path $compose '.cdc-deployments'
+            [IO.Directory]::CreateDirectory($inventory, [IO.UnixFileMode]448) | Out-Null
+            $path = Join-Path $inventory 'dms-local.json'
+            @{ Version = 1; Project = 'dms-local'; Phase = 'RuntimeCleanup'; Entries = @(@{ StatePath = $state }) } | ConvertTo-Json -Depth 5 | Set-Content $path
+            [IO.File]::SetUnixFileMode($path, [IO.UnixFileMode]384)
+            { Remove-E2EBootstrapWorkspace -BootstrapWorkspacePath $workspace } | Should -Throw '*surviving protected source-state root*'
+            Test-Path (Join-Path $workspace 'cdc-runtime') | Should -BeFalse
+            Get-Content (Join-Path $state 'history.json') | Should -Be 'historical'
+        }
+
         It "removes the shared bootstrap workspace after every compose project is down" {
             $bootstrapWorkspace = Join-Path $script:composeRoot ".bootstrap"
             New-Item -ItemType Directory -Path (Join-Path $bootstrapWorkspace "ApiSchema") -Force | Out-Null
@@ -337,7 +362,14 @@ exit 0
 
 Describe "Teardown down set keeps every volume-bearing compose file" {
     BeforeAll {
-        $script:realComposeRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+        $sourceComposeRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+        # Execute unchanged primitives in an isolated directory: retained real CDC inventory must
+        # never change a recording-Docker test into a managed lifecycle invocation.
+        $script:realComposeRoot = Join-Path $TestDrive 'compose'
+        New-Item -ItemType Directory -Path $script:realComposeRoot | Out-Null
+        Get-ChildItem -LiteralPath $sourceComposeRoot -File -Force |
+            Where-Object { $_.Name -match '\.(ps1|psm1|yml)$|^\.env' } |
+            Copy-Item -Destination $script:realComposeRoot
         $script:standardE2EEnvironmentFile = Join-Path $script:realComposeRoot ".env.e2e"
 
         # `docker compose down -v` removes the named volumes of the services in the composed set only,

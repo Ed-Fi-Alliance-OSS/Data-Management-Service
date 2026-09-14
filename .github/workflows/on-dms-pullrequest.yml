@@ -1428,6 +1428,55 @@ jobs:
           list-tests: failed
           use-actions-summary: "true"
 
+  run-cdc-qualification:
+    name: CDC Qualification (Contract)
+    needs: detect-fresh-build-changes
+    if: >-
+      github.event_name != 'pull_request' ||
+      (needs.detect-fresh-build-changes.outputs.cdc_relevant == 'true' &&
+      needs.detect-fresh-build-changes.outputs.draft != 'true')
+    runs-on: ubuntu-latest
+    # Fast controller/CLI/offline/wrapper checks remain required before merge.
+    # All live provider and Kafka qualification runs in nightly-cdc-qualification.yml.
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout the Repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Install Pester
+        run: Install-Module Pester -RequiredVersion 5.7.1 -Scope CurrentUser -Force
+
+      - name: Run story-owned CDC qualification
+        run: ./eng/ci/Invoke-CdcQualification.ps1 -Lane Contract -ResultsDirectory TestResults/cdc-qualification
+
+      - name: Record unavailable qualification environment
+        if: failure()
+        run: |
+          if (-not (Test-Path TestResults/cdc-qualification/qualification.json)) {
+            New-Item -ItemType Directory -Force TestResults/cdc-qualification | Out-Null
+            @(@{ Name = 'environment-setup'; Status = 'EnvironmentUnavailable'; Total = 0; Passed = 0; Failed = 0; Skipped = 0 }) |
+              ConvertTo-Json -AsArray | Set-Content TestResults/cdc-qualification/qualification.json
+          }
+
+      - name: Upload structured CDC qualification evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: cdc-qualification-Contract-All-${{ github.run_attempt }}
+          path: TestResults/cdc-qualification/**
+          if-no-files-found: error
+          retention-days: 14
+
   run-backend-cdc-connector-template-smoke-tests:
     name: Run Backend CDC Connector Template Smoke Tests
     needs:
@@ -3722,6 +3771,7 @@ jobs:
       - run-dms-api-mssql-integration-tests
       - run-backend-postgresql-integration-tests
       - run-backend-cdc-integration-tests
+      - run-cdc-qualification
       - run-dms-api-postgresql-integration-tests
       - run-cli-integration-tests
       - run-schematools-cli-integration-tests

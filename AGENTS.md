@@ -1,9 +1,7 @@
 This repository contains the **Ed-Fi Data Management Service (DMS) Platform**, which consists of two main applications:
 
-1. **Ed-Fi Data Management Service (DMS)** - A functional implementation of Ed-Fi Resources API, Ed-Fi Descriptors API, and Ed-Fi Discovery API
- - Code and solution file in `./src/dms`
-2. **Ed-Fi DMS Configuration Service (CMS)** - A functional implementation of the Ed-Fi Management API specification
- - Code and solution file in `./src/config`
+1. **Ed-Fi Data Management Service (DMS)** - An implementation of Ed-Fi Resources API, Ed-Fi Descriptors API, and Ed-Fi Discovery API, in `./src/dms`
+2. **Ed-Fi DMS Configuration Service (CMS)** - An implementation of the Ed-Fi Management API specification, in `./src/config`
 
 ### Code Style
 
@@ -47,7 +45,7 @@ The Data Management Service E2E tests directory is `src/dms/tests/EdFi.DataManag
 
 The Data Management Service E2E tests interact with a Docker stack named dms-local. Examine the docker log files to assist in debugging E2E tests.
 
-If docker is not running, on Linux start it with `systemctl --user start docker-desktop`
+On Linux with Docker Engine, check `systemctl status docker --no-pager` and, if stopped, start it with `sudo systemctl start docker`. Docker Desktop is not required. Verify `docker ps` succeeds in the current execution session.
 
 You must teardown and setup when you switch branches or change debugging code in DMS.
 

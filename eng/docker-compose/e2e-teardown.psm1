@@ -156,6 +156,11 @@ function Remove-E2EBootstrapWorkspace {
         [string] $BootstrapWorkspacePath
     )
 
+    Import-Module (Join-Path $PSScriptRoot 'cdc-lifecycle.psm1')
+    if (Test-CdcBootstrapWorkspaceProtected -BootstrapRoot $BootstrapWorkspacePath) {
+        Write-Output 'Retaining CDC configuration workspace and any nested state roots after governed teardown.'
+        return
+    }
     if ((Test-Path -LiteralPath $BootstrapWorkspacePath) -and
         $PSCmdlet.ShouldProcess($BootstrapWorkspacePath, "Remove staged bootstrap workspace")) {
         # Remove-Item is non-terminating by default; promote to a terminating error so a failed cleanup

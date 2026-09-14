@@ -596,7 +596,14 @@ public sealed record CdcConnectOffsetStorePolicyObservation(
     [property: JsonRequired] int? MinInSyncReplicas,
     [property: JsonRequired] CdcConnectOffsetStoreItemState AclState,
     [property: JsonRequired] IReadOnlyList<CdcDiagnostic> Diagnostics
-) : ICdcObservationContract;
+) : ICdcObservationContract
+{
+    /// <summary>
+    /// Optional adapter evaluation of actual topic policy, including profile-specific durability and
+    /// explicit overrides. Older producers retain structural validation of the original fields.
+    /// </summary>
+    public CdcConnectOffsetStoreItemState? TopicState { get; init; }
+}
 
 public sealed record CdcConnectorConfigurationObservation(
     [property: JsonRequired] int ContractVersion,
@@ -637,6 +644,10 @@ public sealed record CdcConnectorRuntimeObservation(
     [property: JsonRequired] IReadOnlyList<CdcDiagnostic> Diagnostics
 ) : ICdcObservationContract;
 
+/// <summary>
+/// Current lag and its threshold determine lag readiness. Percentiles are optional diagnostic
+/// values; adapters supply null when unavailable or unusable, never fabricated zeroes.
+/// </summary>
 public sealed record CdcConnectorLagObservation(
     [property: JsonRequired] int ContractVersion,
     [property: JsonRequired] string OperationId,
@@ -1397,7 +1408,7 @@ public static class CdcKafkaPolicyObservationValidator
         );
 
         if (
-            recordSizePolicy.State != CdcKafkaPolicyItemState.Unknown
+            recordSizePolicy.State == CdcKafkaPolicyItemState.Satisfied
             && recordSizePolicy.MaxRecordBytes is not null
             && recordSizePolicy.MaxMessageBytes is not null
             && recordSizePolicy.MaxRecordBytes > recordSizePolicy.MaxMessageBytes
@@ -1421,7 +1432,7 @@ public static class CdcKafkaPolicyObservationValidator
     {
         if (value is null)
         {
-            if (state != CdcKafkaPolicyItemState.Unknown)
+            if (state == CdcKafkaPolicyItemState.Satisfied)
             {
                 diagnostics.MissingRequiredField(path, fieldName);
             }
@@ -1448,7 +1459,7 @@ public static class CdcKafkaPolicyObservationValidator
     {
         if (cleanupPolicy is null)
         {
-            if (state != CdcKafkaPolicyItemState.Unknown)
+            if (state == CdcKafkaPolicyItemState.Satisfied)
             {
                 diagnostics.MissingRequiredField(path, "cleanupPolicy");
             }
@@ -1724,17 +1735,21 @@ public static class CdcConnectOffsetStorePolicyObservationValidator
             observation.ReplicationFactor,
             "$.replicationFactor",
             "replicationFactor",
-            observation.PolicyState != CdcConnectOffsetStorePolicyState.Unknown,
+            observation.PolicyState == CdcConnectOffsetStorePolicyState.Satisfied,
             diagnostics
         );
         ValidatePositiveIfRequired(
             observation.MinInSyncReplicas,
             "$.minInSyncReplicas",
             "minInSyncReplicas",
-            observation.PolicyState != CdcConnectOffsetStorePolicyState.Unknown,
+            observation.PolicyState == CdcConnectOffsetStorePolicyState.Satisfied,
             diagnostics
         );
-        ValidateAclState(observation.AclState, diagnostics);
+        ValidateItemState(observation.AclState, "$.aclState", "aclState", diagnostics);
+        if (observation.TopicState is { } topicState)
+        {
+            ValidateItemState(topicState, "$.topicState", "topicState", diagnostics);
+        }
         ValidatePolicyStateConsistency(observation, diagnostics);
 
         return diagnostics.ToValidationResult();
@@ -1761,7 +1776,7 @@ public static class CdcConnectOffsetStorePolicyObservationValidator
     {
         if (observation.CleanupPolicy is null)
         {
-            if (observation.PolicyState != CdcConnectOffsetStorePolicyState.Unknown)
+            if (observation.PolicyState == CdcConnectOffsetStorePolicyState.Satisfied)
             {
                 diagnostics.MissingRequiredField("$.cleanupPolicy", "cleanupPolicy");
             }
@@ -1816,16 +1831,18 @@ public static class CdcConnectOffsetStorePolicyObservationValidator
         }
     }
 
-    private static void ValidateAclState(
-        CdcConnectOffsetStoreItemState aclState,
+    private static void ValidateItemState(
+        CdcConnectOffsetStoreItemState state,
+        string path,
+        string fieldName,
         CdcDiagnosticCollector diagnostics
     )
     {
-        if (!Enum.IsDefined(aclState))
+        if (!Enum.IsDefined(state))
         {
             diagnostics.InvalidEnumValue(
-                "$.aclState",
-                "CDC Connect offset-store observation aclState is unsupported."
+                path,
+                $"CDC Connect offset-store observation {fieldName} is unsupported."
             );
         }
     }
@@ -1859,6 +1876,9 @@ public static class CdcConnectOffsetStorePolicyObservationValidator
                 || minInSyncUnknown
                 || minInSyncInvalid
                 || observation.AclState != CdcConnectOffsetStoreItemState.Satisfied
+                || observation.TopicState
+                    is CdcConnectOffsetStoreItemState.Invalid
+                        or CdcConnectOffsetStoreItemState.Unknown
             )
         )
         {
@@ -1876,6 +1896,7 @@ public static class CdcConnectOffsetStorePolicyObservationValidator
                 || replicationInvalid
                 || minInSyncInvalid
                 || observation.AclState == CdcConnectOffsetStoreItemState.Invalid
+                || observation.TopicState == CdcConnectOffsetStoreItemState.Invalid
             )
         )
         {
@@ -1893,6 +1914,7 @@ public static class CdcConnectOffsetStorePolicyObservationValidator
                 || replicationUnknown
                 || minInSyncUnknown
                 || observation.AclState == CdcConnectOffsetStoreItemState.Unknown
+                || observation.TopicState == CdcConnectOffsetStoreItemState.Unknown
             )
         )
         {
@@ -2228,11 +2250,46 @@ public static class CdcConnectorRuntimeObservationValidator
         return diagnostics.ToValidationResult();
     }
 
+    /// <summary>Validates identity and consistent task counts while a newly registered connector
+    /// awaits assignment. This observation does not establish readiness.</summary>
+    public static CdcContractValidationResult ValidateForStartup(
+        CdcConnectorRuntimeObservation observation,
+        CdcBinding binding,
+        CdcObservationValidationContext context
+    )
+    {
+        ArgumentNullException.ThrowIfNull(observation);
+        ArgumentNullException.ThrowIfNull(binding);
+        ArgumentNullException.ThrowIfNull(context);
+        CdcDiagnosticCollector diagnostics = new();
+        ValidateStructure(observation, context, binding, diagnostics, lifecycle: true, startup: true);
+        return diagnostics.ToValidationResult();
+    }
+
+    /// <summary>Validates live identity and structural consistency before a controller starts a task.
+    /// STOPPED with no tasks and RUNNING with a failed task are valid lifecycle observations;
+    /// the ordinary validator continues to require the running-task readiness contract.</summary>
+    public static CdcContractValidationResult ValidateForLifecycle(
+        CdcConnectorRuntimeObservation observation,
+        CdcBinding binding,
+        CdcObservationValidationContext context
+    )
+    {
+        ArgumentNullException.ThrowIfNull(observation);
+        ArgumentNullException.ThrowIfNull(binding);
+        ArgumentNullException.ThrowIfNull(context);
+        CdcDiagnosticCollector diagnostics = new();
+        ValidateStructure(observation, context, binding, diagnostics, lifecycle: true);
+        return diagnostics.ToValidationResult();
+    }
+
     private static void ValidateStructure(
         CdcConnectorRuntimeObservation observation,
         CdcObservationValidationContext context,
         CdcBinding? binding,
-        CdcDiagnosticCollector diagnostics
+        CdcDiagnosticCollector diagnostics,
+        bool lifecycle = false,
+        bool startup = false
     )
     {
         CdcObservationValidationRules.ValidateEnvelope(observation, context, diagnostics);
@@ -2254,7 +2311,14 @@ public static class CdcConnectorRuntimeObservationValidator
         ValidateRuntimeState(observation.SoleTaskState, "$.soleTaskState", diagnostics);
         ValidateSnapshotState(observation.SnapshotState, diagnostics);
         ValidateLastError(observation, context.NowUtc, diagnostics);
-        ValidateRuntimeStateConsistency(observation, diagnostics);
+        if (lifecycle)
+        {
+            ValidateLifecycleConsistency(observation, diagnostics, startup);
+        }
+        else
+        {
+            ValidateRuntimeStateConsistency(observation, diagnostics);
+        }
 
         if (binding is not null)
         {
@@ -2354,6 +2418,42 @@ public static class CdcConnectorRuntimeObservationValidator
                 CdcDiagnosticCategory.InvalidOrdering,
                 "$.lastErrorObservedAt",
                 "CDC connector runtime lastErrorObservedAt must not be later than observedAt."
+            );
+        }
+    }
+
+    private static void ValidateLifecycleConsistency(
+        CdcConnectorRuntimeObservation observation,
+        CdcDiagnosticCollector diagnostics,
+        bool startup
+    )
+    {
+        bool stopped =
+            observation.ConnectorState == CdcConnectorRuntimeState.Stopped
+            && observation.TaskCount == 0
+            && observation.RunningTaskCount == 0
+            && observation.SoleTaskState
+                is CdcConnectorRuntimeState.Unknown
+                    or CdcConnectorRuntimeState.Stopped;
+        bool single =
+            observation.ConnectorState != CdcConnectorRuntimeState.Stopped
+            && observation.TaskCount == 1
+            && observation.RunningTaskCount
+                == (observation.SoleTaskState == CdcConnectorRuntimeState.Running ? 1 : 0);
+        bool awaitingAssignment =
+            startup
+            && observation.ConnectorState
+                is CdcConnectorRuntimeState.Unassigned
+                    or CdcConnectorRuntimeState.Running
+            && observation.TaskCount == 0
+            && observation.RunningTaskCount == 0
+            && observation.SoleTaskState == CdcConnectorRuntimeState.Unknown;
+        if (!stopped && !single && !awaitingAssignment)
+        {
+            diagnostics.Add(
+                CdcDiagnosticCategory.InvalidObservation,
+                "$.taskCount",
+                "CDC connector lifecycle observation requires verified stopped tasks or one consistent task."
             );
         }
     }
@@ -2481,21 +2581,21 @@ public static class CdcConnectorLagObservationValidator
             observation.P50LagMilliseconds,
             "$.p50LagMilliseconds",
             "p50LagMilliseconds",
-            lagRequired,
+            required: false,
             diagnostics
         );
         ValidateLagValue(
             observation.P95LagMilliseconds,
             "$.p95LagMilliseconds",
             "p95LagMilliseconds",
-            lagRequired,
+            required: false,
             diagnostics
         );
         ValidateLagValue(
             observation.P99LagMilliseconds,
             "$.p99LagMilliseconds",
             "p99LagMilliseconds",
-            lagRequired,
+            required: false,
             diagnostics
         );
         ValidateLagStateConsistency(observation, diagnostics);

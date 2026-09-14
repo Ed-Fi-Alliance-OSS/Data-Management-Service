@@ -2777,6 +2777,9 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                 )
                 SELECT
                     capture_info.capture_instance,
+                    CONVERT(varchar(64), HASHBYTES('SHA2_256', CONCAT(
+                        'sqlserver-capture-identity-v1:', capture_info.object_id, ':',
+                        CONVERT(varchar(33), capture_info.create_date, 126))), 2) AS capture_identity_hash,
                     source_schema.name AS source_schema,
                     source_table.name AS source_name,
                     COALESCE(
@@ -3081,7 +3084,8 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                 ReadBool(first, "heartbeat_capture_sequence_column_present"),
                 ReadBool(first, "heartbeat_capture_at_column_present"),
                 capturedColumns,
-                expectedColumns
+                expectedColumns,
+                ReadOptional(first, "capture_identity_hash")
             )
         );
     }
@@ -3357,10 +3361,12 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         bool heartbeatCaptureSequenceColumnPresent,
         bool heartbeatCaptureAtColumnPresent,
         IReadOnlyList<string> capturedColumns,
-        IReadOnlyList<string> expectedColumns
+        IReadOnlyList<string> expectedColumns,
+        string captureIdentityHash
     ) =>
         new Dictionary<string, string>
         {
+            ["capture_identity_hash"] = captureIdentityHash.ToLowerInvariant(),
             ["capture_instance"] = SafeText(captureInstanceName),
             ["expected_capture_instance"] = SafeText(definition.CaptureInstanceName.Value),
             ["source_table_kind"] = CdcSourceInventoryContract.SourceTableKindToken(definition.TableKind),

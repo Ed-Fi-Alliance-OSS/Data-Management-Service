@@ -5057,7 +5057,7 @@ Add-Content -LiteralPath (Join-Path $PSScriptRoot 'sibling-observations.jsonl') 
         # instance whose $PSScriptRoot is the staging directory - which the cell then deletes - so
         # without restoration a later caller resolves module defaults against a path that is gone.
         # Ordered by dependency: env-utility.psm1 imports database-safety.psm1 internally.
-        $script:ownershipStagedModule = @('database-safety', 'env-utility', 'bootstrap-manifest', 'bootstrap-claims-gate')
+        $script:ownershipStagedModule = @('database-safety', 'env-utility', 'bootstrap-manifest', 'bootstrap-claims-gate', 'cdc-lifecycle')
 
         # Environment variables a cell can change. The first five are written by the start scripts and
         # nothing restores them (Get-BootstrapEnvSnapshot covers only the seven that follow). The seven
@@ -5316,7 +5316,7 @@ foreach ($name in $InterceptedCommand) {
                 # string below uses the canonical container name.
                 foreach ($name in @(
                     $StartScript, 'bootstrap-manifest.psm1', 'bootstrap-claims-gate.psm1',
-                    'env-utility.psm1', 'database-safety.psm1'
+                    'env-utility.psm1', 'database-safety.psm1', 'cdc-lifecycle.psm1'
                 )) {
                     Copy-Item -LiteralPath (Join-Path $script:dockerComposeRoot $name) -Destination (Join-Path $stage $name)
                     if ($FailStaging) { throw "Forced staging failure after copying '$name'." }

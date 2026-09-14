@@ -42,6 +42,7 @@ public class Given_CdcProviderSetupResultMapper
                     {
                         ["restart_lsn"] = "0_16B6C50",
                         ["confirmed_flush_lsn"] = "0_16B6C60",
+                        ["current_wal_lsn"] = "0_16B6C70",
                         ["wal_status"] = "reserved",
                         ["invalidation_reason"] = "",
                     }
@@ -58,7 +59,10 @@ public class Given_CdcProviderSetupResultMapper
             .RetainedRangeState.Should()
             .Be(CoreCdc.CdcProviderRetainedRangeState.CoversCommittedOffset);
         providerHistory.RetainedRangeStart.Should().Be("0/16B6C50");
-        providerHistory.RetainedRangeEnd.Should().Be("0/16B6C60");
+        providerHistory.RetainedRangeEnd.Should().Be("0/16B6C70");
+        providerHistory
+            .PostgresqlSlot.Should()
+            .Be(new CoreCdc.CdcPostgresqlSlotHistoryEvidence("0/16B6C60", "reserved", ObservedAt));
     }
 
     [TestCase(CdcProviderArtifactKind.PostgresqlReplicationSlot)]
@@ -90,6 +94,7 @@ public class Given_CdcProviderSetupResultMapper
                     {
                         ["restart_lsn"] = "0_16B6C50",
                         ["confirmed_flush_lsn"] = "0_16B6C60",
+                        ["current_wal_lsn"] = "0_16B6C70",
                         ["wal_status"] = "reserved",
                         ["invalidation_reason"] = "",
                     }
@@ -213,6 +218,7 @@ public class Given_CdcProviderSetupResultMapper
                     {
                         ["restart_lsn"] = "0_16B6C50",
                         ["confirmed_flush_lsn"] = "0_16B6C60",
+                        ["current_wal_lsn"] = "0_16B6C70",
                         ["wal_status"] = "lost",
                         ["invalidation_reason"] = "",
                     }
@@ -366,6 +372,7 @@ public class Given_CdcProviderSetupResultMapper
                     {
                         ["restart_lsn"] = "0_16B6C50",
                         ["confirmed_flush_lsn"] = "0_16B6C60",
+                        ["current_wal_lsn"] = "0_16B6C70",
                         ["wal_status"] = "reserved",
                         ["invalidation_reason"] = "",
                     }
@@ -467,6 +474,7 @@ public class Given_CdcProviderSetupResultMapper
                     {
                         ["restart_lsn"] = "0_16B6C50",
                         ["confirmed_flush_lsn"] = "0_16B6C60",
+                        ["current_wal_lsn"] = "0_16B6C70",
                         ["wal_status"] = "reserved",
                         ["invalidation_reason"] = "",
                     }

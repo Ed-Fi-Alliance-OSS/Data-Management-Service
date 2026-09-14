@@ -759,7 +759,7 @@ internal sealed class CdcConnectorTemplateInputValidator : ICdcConnectorTemplate
         string value
     )
     {
-        if (!_secretPropertyNames.Contains(propertyName) || IsExternalizedSecretReference(value))
+        if (HasExternalizedSecretReferenceIfRequired(propertyName, value))
         {
             return;
         }
@@ -836,6 +836,9 @@ internal sealed class CdcConnectorTemplateInputValidator : ICdcConnectorTemplate
 
         return CdcConnectorTemplateRedactionClassification.Safe;
     }
+
+    internal static bool HasExternalizedSecretReferenceIfRequired(string propertyName, string value) =>
+        !_secretPropertyNames.Contains(propertyName) || IsExternalizedSecretReference(value);
 
     private static bool IsExternalizedSecretReference(string value) =>
         IsEnvironmentSecretReference(value) || IsFileSecretReference(value);

@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: Apache-2.0
+﻿# SPDX-License-Identifier: Apache-2.0
 # Licensed to the Ed-Fi Alliance under one or more agreements.
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
@@ -56,6 +56,24 @@
 .PARAMETER IdentityProvider
     Forwarded to both phase commands for OAuth endpoint selection.
 
+.PARAMETER EnableKafkaCdc
+    Run the deployment controller after schema provisioning and before DMS or seed writes.
+    Requires -SeparateConfigDatabase, -CdcSettingsPath and a dedicated -DataStoreDatabaseName.
+    The supplied DataManagement:DocumentCache target must match the configure phase's selected ID.
+
+.PARAMETER CdcSettingsPath
+    Explicit DMS and CDC settings JSON. Bootstrap snapshots the settings with the ordinary staged
+    schema and selected Compose environment. DMS_CDC__ environment overrides are rejected so the
+    controller and eventual DMS receive the same target configuration. Protect this credential file.
+
+.PARAMETER CdcBindingStatePath
+    Original durable controller state root (defaults to .cdc-state beside these scripts for CDC).
+    Without -EnableKafkaCdc, opts ordinary provisioning into managed creation/source receipts.
+
+.PARAMETER DataStoreDatabaseName
+    Database name forwarded to configure-local-data-store.ps1. CDC requires a dedicated new name,
+    distinct from the database created by infrastructure initialization and the CMS database.
+
 .PARAMETER EnableKafkaUI
     Forwarded to `start-published-dms.ps1`.
 
@@ -97,6 +115,9 @@
 #>
 [CmdletBinding()]
 param(
+    [Switch]$d,
+    [Switch]$v,
+
     [Switch]$LoadSeedData,
 
     [ValidateSet("Minimal", "Populated")]
@@ -115,6 +136,11 @@ param(
     [string]$IdentityProvider,
 
     [Switch]$EnableKafkaUI,
+
+    [Switch]$EnableKafkaCdc,
+    [string]$CdcBindingStatePath,
+    [string]$CdcSettingsPath,
+    [string]$DataStoreDatabaseName,
 
     [Switch]$EnableSwaggerUI,
 
@@ -161,9 +187,29 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+if ($v -and -not $d) { throw '-v requires -d.' }
+if ((-not $EnableKafkaCdc -or $d) -and (Test-Path -LiteralPath (Join-Path $PSScriptRoot '.cdc-deployments/dms-published.json'))) {
+    Import-Module (Join-Path $PSScriptRoot 'cdc-lifecycle.psm1')
+    $lifecycleArgs = @{} + $PSBoundParameters
+    if ($d -and $v) { $lifecycleArgs.RemoveBootstrap = $true }
+    Invoke-CdcDeploymentLifecycle -Project 'dms-published' -StartScript (Join-Path $PSScriptRoot 'start-published-dms.ps1') -Parameters $lifecycleArgs
+    return
+}
+if ($d) {
+    if ($EnableKafkaCdc -or $CdcBindingStatePath -or $CdcSettingsPath) { throw 'CDC lifecycle requires its original retained deployment inventory.' }
+    $teardownArgs = @{ d = $true; v = $v; RemoveBootstrap = $v }
+    foreach ($name in @('EnvironmentFile', 'IdentityProvider', 'EnableKafkaUI', 'EnableSwaggerUI', 'DatabaseEngine', 'SeparateConfigDatabase')) {
+        if ($PSBoundParameters.ContainsKey($name)) { $teardownArgs[$name] = $PSBoundParameters[$name] }
+    }
+    & "$PSScriptRoot/start-published-dms.ps1" @teardownArgs
+    return
+}
+
 Import-Module "$PSScriptRoot/bootstrap-wrapper.psm1" -Force
 
 $wrapperArgs = @{} + $PSBoundParameters
+$wrapperArgs.Remove("d")
+$wrapperArgs.Remove("v")
 $wrapperArgs["StartScriptName"] = "start-published-dms.ps1"
 
 Invoke-BootstrapWrapper @wrapperArgs

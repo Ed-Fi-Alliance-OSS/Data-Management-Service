@@ -984,9 +984,117 @@ internal static class CdcContinuityFixture
         {
             SqlServerJobs =
                 binding.Provider == CdcProvider.SqlServer ? CdcSqlServerCdcJobEvidence.Healthy : null,
+            PostgresqlSlot =
+                binding.Provider == CdcProvider.Postgresql
+                    ? new("0/16B6C50", "reserved", ObservedAt.AddMilliseconds(-1))
+                    : null,
         };
     }
 
     private static CdcArtifactInventory Inventory(CdcProvider provider) =>
         CdcArtifactNameGenerator.Render(new("dms-local", "edfi.dms", "data-store-1", 1, provider)).Inventory!;
+}
+
+[TestFixture(100L, "0/64", "0/64", "0/B4", "reserved", -1, CdcSourceHistoryContinuity.Healthy)]
+[TestFixture(160L, "0/64", "0/96", "0/B4", "reserved", -1, CdcSourceHistoryContinuity.Healthy)]
+[TestFixture(150L, "0/64", "0/96", "0/B4", "extended", -1, CdcSourceHistoryContinuity.Healthy)]
+[TestFixture(180L, "0/64", "0/96", "0/B4", "reserved", -1, CdcSourceHistoryContinuity.Healthy)]
+[TestFixture(181L, "0/64", "0/96", "0/B4", "reserved", -1, CdcSourceHistoryContinuity.Unknown)]
+[TestFixture(149L, "0/64", "0/96", "0/B4", "reserved", 1, CdcSourceHistoryContinuity.Unknown)]
+[TestFixture(149L, "0/64", "0/96", "0/B4", "reserved", 0, CdcSourceHistoryContinuity.Unknown)]
+[TestFixture(149L, "0/64", "0/96", "0/B4", "reserved", -1, CdcSourceHistoryContinuity.Lost)]
+[TestFixture(99L, "0/64", "0/96", "0/B4", "reserved", -1, CdcSourceHistoryContinuity.Lost)]
+[TestFixture(99L, "0/64", "0/96", "0/B4", "reserved", 1, CdcSourceHistoryContinuity.Unknown)]
+[TestFixture(160L, "0/64", "0/96", "0/B4", "unreserved", -1, CdcSourceHistoryContinuity.Unknown)]
+[TestFixture(160L, "0/64", "0/96", "0/B4", "unavailable", -1, CdcSourceHistoryContinuity.Unknown)]
+[TestFixture(160L, "0/64", "0/96", "0/B4", "missing", -1, CdcSourceHistoryContinuity.Unknown)]
+[TestFixture(160L, "0/97", "0/96", "0/B4", "reserved", -1, CdcSourceHistoryContinuity.Unknown)]
+[TestFixture(160L, "0/64", "0/B5", "0/B4", "reserved", -1, CdcSourceHistoryContinuity.Unknown)]
+[TestFixture(160L, "0/64", "", "0/B4", "reserved", -1, CdcSourceHistoryContinuity.Unknown)]
+[TestFixture(160L, "0/64", "0/96", "", "reserved", -1, CdcSourceHistoryContinuity.Unknown)]
+[Category("CdcSourceHistory")]
+public class Given_Postgresql_resume_evidence(
+    long committed,
+    string restart,
+    string acknowledged,
+    string current,
+    string walStatus,
+    int sourceSecondsAfterOffset,
+    CdcSourceHistoryContinuity expected
+)
+{
+    private CdcSourceHistoryClassificationResult _result = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var input = CdcContinuityFixture.CreateInput(
+            CdcContinuityFixture.CreateBinding(CdcProvider.Postgresql)
+        );
+        _result = CdcSourceHistoryContinuityClassifier.Evaluate(
+            input with
+            {
+                ConnectorOffset = input.ConnectorOffset! with { LsnProc = committed },
+                ProviderHistory = input.ProviderHistory! with
+                {
+                    RetainedRangeStart = restart,
+                    RetainedRangeEnd = current,
+                    PostgresqlSlot =
+                        walStatus == "missing"
+                            ? null
+                            : new(
+                                acknowledged,
+                                walStatus,
+                                input.ConnectorOffset!.ObservedAt.AddSeconds(sourceSecondsAfterOffset)
+                            ),
+                },
+            }
+        );
+    }
+
+    [Test]
+    public void It_classifies_resume_evidence() => _result.Observation.Continuity.Should().Be(expected);
+
+    [Test]
+    public void It_only_creates_an_incident_for_a_proven_gap() =>
+        (_result.IncidentCandidate is not null).Should().Be(expected == CdcSourceHistoryContinuity.Lost);
+}
+
+[TestFixture]
+[Category("CdcSourceHistory")]
+public class Given_Postgresql_continuity_observations_are_refreshed
+{
+    private CdcSourceHistoryClassificationResult _before = null!;
+    private CdcSourceHistoryClassificationResult _after = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var input = CdcContinuityFixture.CreateInput(
+            CdcContinuityFixture.CreateBinding(CdcProvider.Postgresql)
+        );
+        input = input with
+        {
+            ProviderHistory = input.ProviderHistory! with { RetainedRangeEnd = "0/16B6C50" },
+        };
+        _before = CdcSourceHistoryContinuityClassifier.Evaluate(input);
+        _after = CdcSourceHistoryContinuityClassifier.Evaluate(
+            input with
+            {
+                ProviderHistory = input.ProviderHistory with { RetainedRangeEnd = "0/16B6C52" },
+            }
+        );
+    }
+
+    [Test]
+    public void It_blocks_on_the_earlier_wal_sample() =>
+        _before.Observation.Continuity.Should().Be(CdcSourceHistoryContinuity.Unknown);
+
+    [Test]
+    public void It_does_not_latch_loss_from_the_earlier_sample() =>
+        _before.IncidentCandidate.Should().BeNull();
+
+    [Test]
+    public void It_recovers_with_affirmative_current_wal_evidence() =>
+        _after.Observation.Continuity.Should().Be(CdcSourceHistoryContinuity.Healthy);
 }

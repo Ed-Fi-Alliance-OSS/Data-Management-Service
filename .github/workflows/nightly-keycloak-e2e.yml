@@ -181,16 +181,7 @@ jobs:
         with:
           payload: |
             {
-              "text": "Nightly Keycloak DMS E2E passed",
-              "blocks": [
-                {
-                  "type": "section",
-                  "text": {
-                    "type": "mrkdwn",
-                    "text": "*Workflow:* ${{ github.workflow }}\n*Branch/Ref:* ${{ github.ref }}\n*Commit SHA:* ${{ github.sha }}\n*Log URL:* ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-                  }
-                }
-              ]
+              "text": ":heavy_check_mark: DMS CI nightly Keycloak DMS E2E passed, all 4 shards verified"
             }
           webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
           webhook-type: incoming-webhook
@@ -201,16 +192,7 @@ jobs:
         with:
           payload: |
             {
-              "text": "Nightly Keycloak DMS E2E failed",
-              "blocks": [
-                {
-                  "type": "section",
-                  "text": {
-                    "type": "mrkdwn",
-                    "text": "*Workflow:* ${{ github.workflow }}\n*Branch/Ref:* ${{ github.ref }}\n*Commit SHA:* ${{ github.sha }}\n*Result:* ${{ needs.keycloak-e2e.result }}\n*Log URL:* ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-                  }
-                }
-              ]
+              "text": ":x: DMS CI nightly Keycloak DMS E2E failed (result: ${{ needs.keycloak-e2e.result }})"
             }
           webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
           webhook-type: incoming-webhook

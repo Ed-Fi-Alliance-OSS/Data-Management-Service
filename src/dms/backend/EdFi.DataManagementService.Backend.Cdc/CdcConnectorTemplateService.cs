@@ -16,6 +16,11 @@ public interface ICdcConnectorTemplateService
         CdcConnectorTemplateEffectiveConfigValidationRequest request
     );
 
+    /// <summary>Config-only initial registration check; cannot establish source/offset identity.</summary>
+    CdcConnectorTemplateResult ValidateLiveConfigurationReadBack(
+        CdcConnectorTemplateEffectiveConfigValidationRequest request
+    );
+
     CdcConnectorTemplateResult ValidateLiveReadBack(
         CdcConnectorTemplateEffectiveConfigValidationRequest request
     );
@@ -31,6 +36,15 @@ internal sealed class CdcConnectorTemplateService(
     public CdcConnectorTemplateResult ValidateRegistrationPreflight(
         CdcConnectorTemplateEffectiveConfigValidationRequest request
     ) => effectiveConfigValidator.ValidateEffectiveConfig(request, CdcConnectorTemplateSourcePhase.Preflight);
+
+    public CdcConnectorTemplateResult ValidateLiveConfigurationReadBack(
+        CdcConnectorTemplateEffectiveConfigValidationRequest request
+    ) =>
+        effectiveConfigValidator.ValidateEffectiveConfig(
+            request,
+            CdcConnectorTemplateSourcePhase.LiveReadBack,
+            requireSourcePartition: false
+        );
 
     public CdcConnectorTemplateResult ValidateLiveReadBack(
         CdcConnectorTemplateEffectiveConfigValidationRequest request

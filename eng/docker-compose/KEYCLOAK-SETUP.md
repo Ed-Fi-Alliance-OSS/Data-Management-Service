@@ -22,7 +22,7 @@ Keycloak locally using docker-compose.
     ![Start Keycloak](./images/image-12.png)
 
 3. After executing either of the two commands, you can verify that Keycloak is
-   up and running by checking Docker Desktop.
+   up and running with `docker ps` (or in Docker Desktop, if installed).
 
     ![Keycloak setup in docker](./images/image-13.png)
 

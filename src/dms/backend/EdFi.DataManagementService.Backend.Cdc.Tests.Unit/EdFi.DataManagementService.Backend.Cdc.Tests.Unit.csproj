@@ -5,10 +5,13 @@
         <Nullable>enable</Nullable>
         <IsPackable>false</IsPackable>
         <IsTestProject>true</IsTestProject>
+        <OutputType>Exe</OutputType>
+        <GenerateProgramFile>false</GenerateProgramFile>
         <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     </PropertyGroup>
     <ItemGroup>
         <PackageReference Include="FluentAssertions" />
+        <PackageReference Include="FakeItEasy" />
         <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
         <PackageReference Include="Microsoft.NET.Test.Sdk" />
         <PackageReference Include="coverlet.collector">

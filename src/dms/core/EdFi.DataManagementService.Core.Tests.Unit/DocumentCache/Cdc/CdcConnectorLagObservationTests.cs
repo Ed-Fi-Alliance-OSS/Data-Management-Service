@@ -123,3 +123,110 @@ public class Given_CdcConnectorLagObservation
             .And.Contain(CdcDiagnosticCategory.InvalidOrdering);
     }
 }
+
+[TestFixture(CdcProvider.Postgresql, CdcConnectorLagState.WithinThreshold)]
+[TestFixture(CdcProvider.SqlServer, CdcConnectorLagState.WithinThreshold)]
+[TestFixture(CdcProvider.Postgresql, CdcConnectorLagState.Exceeded)]
+[TestFixture(CdcProvider.SqlServer, CdcConnectorLagState.Exceeded)]
+[Category("CdcConnectorLagObservation")]
+public class Given_CdcConnectorLagObservationWithoutStatistics(
+    CdcProvider provider,
+    CdcConnectorLagState lagState
+)
+{
+    private CdcContractReadResult<CdcConnectorLagObservation> _readResult = null!;
+    private CdcContractValidationResult _validation = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        CdcBinding binding = CdcTargetStatusFixture.CreateBinding(provider);
+        CdcConnectorLagObservation observation = CdcTargetStatusFixture.Lag(binding) with
+        {
+            LagState = lagState,
+            CurrentLagMilliseconds = lagState == CdcConnectorLagState.Exceeded ? 2_000 : 250,
+            P50LagMilliseconds = null,
+            P95LagMilliseconds = null,
+            P99LagMilliseconds = null,
+        };
+        _readResult = CdcJsonContract.Deserialize<CdcConnectorLagObservation>(
+            CdcJsonContract.Serialize(observation)
+        );
+        _validation = CdcConnectorLagObservationValidator.Validate(
+            _readResult.Contract!,
+            new(
+                observation.OperationId,
+                observation.TargetIdentity,
+                observation.PhysicalSourceFingerprint!,
+                observation.ObservedAt.AddSeconds(1)
+            )
+        );
+    }
+
+    [Test]
+    public void It_accepts_known_lag_without_percentiles() => _validation.Succeeded.Should().BeTrue();
+
+    [Test]
+    public void It_preserves_unavailable_percentiles_as_null() =>
+        _readResult
+            .Contract.Should()
+            .BeEquivalentTo(
+                new
+                {
+                    P50LagMilliseconds = (long?)null,
+                    P95LagMilliseconds = (long?)null,
+                    P99LagMilliseconds = (long?)null,
+                }
+            );
+
+    [Test]
+    public void It_preserves_the_current_lag_state() => _readResult.Contract!.LagState.Should().Be(lagState);
+}
+
+[TestFixture("missing current", CdcDiagnosticCategory.MissingRequiredField)]
+[TestFixture("negative current", CdcDiagnosticCategory.InvalidObservation)]
+[TestFixture("missing threshold", CdcDiagnosticCategory.MissingRequiredField)]
+[TestFixture("negative threshold", CdcDiagnosticCategory.InvalidObservation)]
+[TestFixture("inconsistent state", CdcDiagnosticCategory.InvalidObservation)]
+[Category("CdcConnectorLagObservation")]
+public class Given_InvalidRequiredLagWithoutStatistics(string scenario, CdcDiagnosticCategory category)
+{
+    private CdcContractValidationResult _validation = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        CdcBinding binding = CdcTargetStatusFixture.CreateBinding();
+        CdcConnectorLagObservation observation = CdcTargetStatusFixture.Lag(binding) with
+        {
+            P50LagMilliseconds = null,
+            P95LagMilliseconds = null,
+            P99LagMilliseconds = null,
+        };
+        observation = scenario switch
+        {
+            "missing current" => observation with { CurrentLagMilliseconds = null },
+            "negative current" => observation with { CurrentLagMilliseconds = -1 },
+            "missing threshold" => observation with { ThresholdMilliseconds = null },
+            "negative threshold" => observation with { ThresholdMilliseconds = -1 },
+            "inconsistent state" => observation with { CurrentLagMilliseconds = 2_000 },
+            _ => throw new InvalidOperationException("Unknown test scenario."),
+        };
+        _validation = CdcConnectorLagObservationValidator.Validate(
+            observation,
+            new(
+                observation.OperationId,
+                observation.TargetIdentity,
+                observation.PhysicalSourceFingerprint!,
+                observation.ObservedAt.AddSeconds(1)
+            )
+        );
+    }
+
+    [Test]
+    public void It_rejects_invalid_required_lag() => _validation.Succeeded.Should().BeFalse();
+
+    [Test]
+    public void It_reports_the_required_lag_failure() =>
+        _validation.Diagnostics.Select(diagnostic => diagnostic.Category).Should().Contain(category);
+}

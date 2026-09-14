@@ -255,6 +255,41 @@ public class Given_MssqlCdcProviderArtifacts
         sourceChangeCounts[HeartbeatCaptureInstanceName].Should().BeGreaterThan(0);
     }
 
+    [Test]
+    public async Task It_returns_stable_capture_identity_and_detects_a_same_named_recreation()
+    {
+        await using var connection = new SqlConnection(_database.ConnectionString);
+        await connection.OpenAsync();
+        var created = await RunSetupAsync(connection, new(false));
+        created
+            .Outcome.Should()
+            .Be(CdcProviderSetupOutcome.CreatedOrMatched, DescribeDiagnostics(created.Diagnostics));
+        var observed = await RunSetupAsync(connection, new(false), CdcProviderSetupMode.ValidateOnly);
+        observed
+            .Outcome.Should()
+            .Be(CdcProviderSetupOutcome.ExactMatch, DescribeDiagnostics(observed.Diagnostics));
+        var original = CaptureIdentities(created);
+        original.Should().HaveCount(3);
+        original.Values.Should().OnlyContain(hash => hash.Length == 64 && hash.All(Uri.IsHexDigit));
+        CaptureIdentities(observed).Should().BeEquivalentTo(original);
+        await ExecuteNonQueryAsync(
+            connection,
+            "EXEC sys.sp_cdc_disable_table @source_schema=N'dms', @source_name=N'Document', @capture_instance=N'dms_binding_document';"
+        );
+        var replaced = await RunSetupAsync(connection, new(false));
+        replaced
+            .Outcome.Should()
+            .Be(CdcProviderSetupOutcome.CreatedOrMatched, DescribeDiagnostics(replaced.Diagnostics));
+        var replacement = CaptureIdentities(replaced);
+        replacement[DocumentCaptureInstanceName].Should().NotBe(original[DocumentCaptureInstanceName]);
+        replacement[DocumentCacheCaptureInstanceName].Should().Be(original[DocumentCacheCaptureInstanceName]);
+    }
+
+    private static Dictionary<string, string> CaptureIdentities(CdcProviderSetupResult result) =>
+        result
+            .ArtifactInventory.Where(a => a.ArtifactKind == CdcProviderArtifactKind.SqlServerCaptureInstance)
+            .ToDictionary(a => a.SafeArtifactName.Value, a => a.SafeObservedValues["capture_identity_hash"]);
+
     private async Task<CdcProviderSetupResult> RunSetupAsync(
         SqlConnection connection,
         CdcProviderArtifactOutputRequest artifactOutput,
