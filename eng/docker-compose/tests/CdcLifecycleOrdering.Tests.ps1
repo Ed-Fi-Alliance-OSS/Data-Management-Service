@@ -668,6 +668,86 @@ Export-ModuleMember -Function Resolve-DmsSchemaTool
             -not $Parameters.ContainsKey('CdcBrokerSizeOverrideFile') -and $Parameters.SuppressWriterGuidance
         }
     }
+    It 'waits for managed <project> <operation> startup evidence: <scenario>' -ForEach @(
+        foreach ($project in @('dms-local', 'dms-published')) {
+            foreach ($operation in @('start', 'retire')) {
+                foreach ($scenario in @('incomplete', 'status-missing', 'connection', 'persistent')) {
+                    @{ project = $project; operation = $operation; scenario = $scenario }
+                }
+            }
+        }
+    ) {
+        Remove-Item (Join-Path $script:root '.cdc-deployments') -Recurse -Force
+        foreach ($id in @(42, 43)) {
+            $handoff = New-TestHandoff -id $id -project $project
+            # Entry 43 deliberately cannot issue a representable HTTP timeout. Startup must
+            # read the first entry, which also owns the start-worker invocation.
+            $handoff.Settings.Cdc.Timing = if ($id -eq 42) {
+                @{ CallMilliseconds = 1000; WaitMilliseconds = 1400; PollMilliseconds = 20 }
+            } else { @{ CallMilliseconds = 1; WaitMilliseconds = 1; PollMilliseconds = 1 } }
+            $handoff.Settings | ConvertTo-Json -Depth 20 | Set-Content $handoff.SettingsPath
+            Register-CdcDeploymentHandoff -Handoff $handoff -StatePath (Join-Path $script:root "custom-state-$id")
+        }
+        Invoke-TestLifecycle @{ d = $true } $project
+        (Read-TestDeployment $project).Phase | Should -Be 'Stopped'
+        $script:trace.Clear()
+        $script:startupScenario = $scenario
+        $script:inventoryPass = 0
+        $script:statusMissing = $false
+        Mock -ModuleName cdc-lifecycle Invoke-CdcLifecycleRest {
+            $script:trace.Add("rest:$Path")
+            & (Get-Module cdc-lifecycle) $script:realRest $Deployment $Path $StartupWait
+        }
+        Mock -ModuleName cdc-lifecycle Invoke-WebRequest {
+            $path = $Uri.AbsolutePath.TrimStart('/')
+            if ($path -eq 'connectors') {
+                $script:inventoryPass++
+                if ($script:startupScenario -eq 'connection' -and $script:inventoryPass -eq 1) {
+                    throw [Net.Http.HttpRequestException]::new([Net.Http.HttpRequestError]::ConnectionError, 'sentinel-secret', $null, $null)
+                }
+                if ($script:startupScenario -eq 'persistent' -or ($script:startupScenario -eq 'incomplete' -and $script:inventoryPass -eq 1)) {
+                    return @{ Content = '["connector-42"]' }
+                }
+                return @{ Content = ConvertTo-Json -InputObject @($script:live) -Compress }
+            }
+            if ($script:startupScenario -eq 'status-missing' -and -not $script:statusMissing -and $path -like '*connector-43/status') {
+                $script:statusMissing = $true
+                throw [Microsoft.PowerShell.Commands.HttpResponseException]::new('sentinel-secret', [Net.Http.HttpResponseMessage]::new([Net.HttpStatusCode]::NotFound))
+            }
+            return @{ Content = (@{ name = $path.Split('/')[1]; connector = @{ state = 'STOPPED' }; tasks = @() } | ConvertTo-Json -Depth 5) }
+        }
+        Mock -ModuleName cdc-lifecycle Invoke-BootstrapCdcKafkaUI { $script:trace.Add('ui') }
+        $parameters = if ($operation -eq 'retire') { @{ d = $true; v = $true } } else { @{ EnableKafkaUI = $true } }
+        if ($scenario -eq 'persistent') {
+            { Invoke-TestLifecycle $parameters $project } | Should -Throw '*startup-readiness timed out*'
+            (Read-TestDeployment $project).Phase | Should -Be 'Transition'
+            $script:trace | Should -Not -Contain 'start:42'
+            $script:trace | Should -Not -Contain 'retire:42'
+            $script:trace | Should -Not -Contain 'dms'
+            $script:trace | Should -Not -Contain 'down-volumes'
+            # The consumed checkpoint cannot authorize an unmanaged second launch.
+            if ($operation -eq 'start') { { Invoke-TestLifecycle $parameters $project } | Should -Throw '*complete verified shutdown*' }
+        }
+        else {
+            Invoke-TestLifecycle $parameters $project
+            if ($operation -eq 'start') {
+                (Read-TestDeployment $project).Phase | Should -Be 'Active'
+                $script:trace[-3..-1] | Should -Be @('start:42', 'start:43', 'dms')
+            }
+            else {
+                Test-CdcDeployment $project | Should -BeFalse
+                $script:trace[-4..-1] | Should -Be @('retire:42', 'retire:43', 'rest:connectors', 'down-volumes')
+            }
+            $lastStatus = $script:trace.LastIndexOf('rest:connectors/connector-43/status')
+            $lastStatus | Should -BeGreaterThan 1
+            $script:trace.IndexOf("$operation`:42") | Should -BeGreaterThan $lastStatus
+        }
+        $script:inventoryPass | Should -BeGreaterThan 1
+        $script:trace[0..1] | Should -Be @('infra', 'start-worker:42')
+        @($script:trace | Where-Object { $_ -eq 'start-worker:42' }).Count | Should -Be 1
+        if ($operation -eq 'start') { $script:trace[2] | Should -Be 'ui' }
+        Should -Invoke -ModuleName cdc-lifecycle Invoke-WebRequest -Times 0 -ParameterFilter { $OperationTimeoutSeconds -and ($TimeoutSec -le 0 -or $TimeoutSec -gt 1) }
+    }
     It 'preserves the managed <project> Swagger handoff for <scenario>' -ForEach @(
         foreach ($project in @('dms-local', 'dms-published')) {
             foreach ($scenario in @('enabled', 'omitted', 'infra-only', 'controller-failure', 'unsupported')) {
@@ -1430,6 +1510,188 @@ Describe 'Live worker REST evidence shape' {
         Import-Module (Join-Path $PSScriptRoot '../cdc-lifecycle.psm1') -Force
     }
     AfterAll { Remove-Module cdc-lifecycle -Force }
+    BeforeEach {
+        $script:deployment = @{
+            ConnectEndpoint = 'http://localhost:8083/'
+            Entries = @(@{ ConnectorName = 'connector-42' }, @{ ConnectorName = 'connector-43' })
+        }
+        $script:budget = @{
+            Clock = [Diagnostics.Stopwatch]::StartNew(); CallMilliseconds = 30000; WaitMilliseconds = 300000
+            TimeoutMessage = 'CDC startup-readiness timed out; retain infrastructure.'
+        }
+    }
+    It 'classifies real HTTP <code> at <path> as startup retryable <retryable>' -ForEach @(
+        foreach ($path in @('connectors', 'connectors/connector-42/status')) {
+            foreach ($code in @(301, 400, 401, 403, 404, 408, 409, 422, 429, 500, 502, 503, 504, 599)) {
+                @{ path = $path; code = $code; retryable = ($code -in @(408, 429) -or $code -ge 500 -or ($code -eq 404 -and $path -ne 'connectors')) }
+            }
+        }
+    ) {
+        $script:httpCode = $code
+        Mock -ModuleName cdc-lifecycle Invoke-WebRequest {
+            throw [Microsoft.PowerShell.Commands.HttpResponseException]::new('sentinel-secret http://physical-source', [Net.Http.HttpResponseMessage]::new([Enum]::ToObject([Net.HttpStatusCode], $script:httpCode)))
+        }
+        $failure = $null
+        try { & (Get-Module cdc-lifecycle) { param($d, $p, $w) Invoke-CdcLifecycleRest $d $p -StartupWait $w } $script:deployment $path $script:budget }
+        catch { $failure = $_.Exception }
+        $failure | Should -Not -BeNullOrEmpty
+        ($failure -is [Net.Http.HttpRequestException]) | Should -Be $retryable
+        $failure.Message | Should -Be 'CDC worker inventory is unavailable; managed shutdown or resume is not authorized.'
+        $failure.InnerException | Should -BeNullOrEmpty
+        Should -Invoke -ModuleName cdc-lifecycle Invoke-WebRequest -Times 1 -Exactly -ParameterFilter {
+            $TimeoutSec -eq 10 -and $OperationTimeoutSeconds -eq 10 -and $MaximumRedirection -eq 0
+        }
+    }
+    It 'classifies real transport <kind> as startup retryable <retryable>' -ForEach @(
+        @{ kind = 'ConnectionError'; retryable = $true }, @{ kind = 'NameResolutionError'; retryable = $true },
+        @{ kind = 'ResponseEnded'; retryable = $true }, @{ kind = 'SecureConnectionError'; retryable = $false },
+        @{ kind = 'InvalidResponse'; retryable = $false }, @{ kind = 'Unknown'; retryable = $false },
+        @{ kind = 'task-timeout'; retryable = $true }, @{ kind = 'timeout'; retryable = $true },
+        @{ kind = 'web-timeout'; retryable = $true }, @{ kind = 'web-auth'; retryable = $false },
+        @{ kind = 'unexpected'; retryable = $false }
+    ) {
+        $script:failureKind = $kind
+        Mock -ModuleName cdc-lifecycle Invoke-WebRequest {
+            switch ($script:failureKind) {
+                'task-timeout' { throw [Threading.Tasks.TaskCanceledException]::new('sentinel-secret') }
+                'timeout' { throw [TimeoutException]::new('sentinel-secret') }
+                'web-timeout' { throw [Net.WebException]::new('sentinel-secret', [Net.WebExceptionStatus]::Timeout) }
+                'web-auth' { throw [Net.WebException]::new('sentinel-secret', [Net.WebExceptionStatus]::TrustFailure) }
+                'unexpected' { throw [InvalidOperationException]::new('sentinel-secret') }
+                default { throw [Net.Http.HttpRequestException]::new([Net.Http.HttpRequestError]$script:failureKind, 'sentinel-secret', $null, $null) }
+            }
+        }
+        $failure = $null
+        try { & (Get-Module cdc-lifecycle) { param($d, $w) Invoke-CdcLifecycleRest $d 'connectors' -StartupWait $w } $script:deployment $script:budget }
+        catch { $failure = $_.Exception }
+        $failure | Should -Not -BeNullOrEmpty
+        ($failure -is [Net.Http.HttpRequestException]) | Should -Be $retryable
+        $failure.Message | Should -Be 'CDC worker inventory is unavailable; managed shutdown or resume is not authorized.'
+        $failure.InnerException | Should -BeNullOrEmpty
+    }
+    It 'rejects unsafe startup evidence immediately: <scenario>' -ForEach @(
+        @{ scenario = 'invalid-json'; inventory = '{sentinel-secret' },
+        @{ scenario = 'null-inventory'; inventory = 'null' },
+        @{ scenario = 'object-inventory'; inventory = '{}' },
+        @{ scenario = 'invalid-live-name'; inventory = '["connector-42",null]' },
+        @{ scenario = 'blank-live-name'; inventory = '["connector-42"," "]' },
+        @{ scenario = 'duplicate-live-name'; inventory = '["connector-42","connector-42"]' },
+        @{ scenario = 'unexpected'; inventory = '["connector-42","unmanaged"]' },
+        @{ scenario = 'duplicate-retained'; retained = @('connector-42', 'connector-42') },
+        @{ scenario = 'blank-retained'; retained = @('connector-42', ' ') },
+        @{ scenario = 'invalid-retained'; retained = @('connector-42', '../sentinel-secret') },
+        @{ scenario = 'nonstring-retained'; retained = @('connector-42', 43) },
+        @{ scenario = 'null-status'; status = 'null' },
+        @{ scenario = 'missing-tasks'; status = '{"name":"connector-42","connector":{"state":"STOPPED"}}' },
+        @{ scenario = 'malformed-tasks'; status = '{"name":"connector-42","connector":{"state":"STOPPED"},"tasks":{}}' },
+        @{ scenario = 'mismatched-status'; status = '{"name":"connector-43","connector":{"state":"STOPPED"},"tasks":[]}' },
+        @{ scenario = 'running'; status = '{"name":"connector-42","connector":{"state":"RUNNING"},"tasks":[]}' },
+        @{ scenario = 'paused'; status = '{"name":"connector-42","connector":{"state":"PAUSED"},"tasks":[]}' },
+        @{ scenario = 'failed'; status = '{"name":"connector-42","connector":{"state":"FAILED"},"tasks":[]}' },
+        @{ scenario = 'tasks'; status = '{"name":"connector-42","connector":{"state":"STOPPED"},"tasks":[{}]}' },
+        @{ scenario = 'incomplete-but-running'; inventory = '["connector-42"]'; status = '{"name":"connector-42","connector":{"state":"RUNNING"},"tasks":[]}' }
+    ) {
+        $script:inventoryBody = if ($inventory) { $inventory } else { '["connector-42","connector-43"]' }
+        $script:statusBody = if ($status) { $status } else { '{"name":"connector-42","connector":{"state":"STOPPED"},"tasks":[]}' }
+        if ($retained) { $script:deployment.Entries = @($retained | ForEach-Object { @{ ConnectorName = $_ } }) }
+        Mock -ModuleName cdc-lifecycle Invoke-WebRequest {
+            @{ Content = $(if ($Uri.AbsolutePath -eq '/connectors') { $script:inventoryBody } else { $script:statusBody }) }
+        }
+        $failure = $null
+        try { & (Get-Module cdc-lifecycle) { param($d, $w) Assert-CdcWorkerInventory $d -Stopped -StartupWait $w } $script:deployment $script:budget }
+        catch { $failure = $_.Exception }
+        $failure | Should -Not -BeNullOrEmpty
+        ($failure -is [Net.Http.HttpRequestException]) | Should -BeFalse
+        $failure.Message | Should -Not -Match 'sentinel-secret'
+        if ($retained) { Should -Invoke -ModuleName cdc-lifecycle Invoke-WebRequest -Times 0 -Exactly }
+        else { Should -Invoke -ModuleName cdc-lifecycle Invoke-WebRequest -Times 1 -Exactly -ParameterFilter { $Uri.AbsolutePath -eq '/connectors' } }
+    }
+    It 'caps startup requests without rounding up: <call>/<remaining> milliseconds' -ForEach @(
+        @{ call = 30000; remaining = 20000; seconds = 10 },
+        @{ call = 2900; remaining = 20000; seconds = 2 },
+        @{ call = 30000; remaining = 1900; seconds = 1 },
+        @{ call = 30000; remaining = 999; seconds = 0 },
+        @{ call = 999; remaining = 20000; seconds = 0 },
+        @{ call = 30000; remaining = 0; seconds = 0 }
+    ) {
+        $script:budget.CallMilliseconds = $call
+        $script:budget.WaitMilliseconds = 30000
+        # A fixed elapsed sample probes the exact whole-second representability boundary.
+        $script:budget.Clock = @{ Elapsed = @{ TotalMilliseconds = 30000 - $remaining } }
+        Mock -ModuleName cdc-lifecycle Invoke-WebRequest { @{ Content = '[]' } }
+        if ($seconds -eq 0) {
+            { & (Get-Module cdc-lifecycle) { param($d, $w) Invoke-CdcLifecycleRest $d 'connectors' -StartupWait $w } $script:deployment $script:budget } | Should -Throw '*startup-readiness timed out*'
+            Should -Invoke -ModuleName cdc-lifecycle Invoke-WebRequest -Times 0 -Exactly
+        }
+        else {
+            & (Get-Module cdc-lifecycle) { param($d, $w) Invoke-CdcLifecycleRest $d 'connectors' -StartupWait $w } $script:deployment $script:budget
+            Should -Invoke -ModuleName cdc-lifecycle Invoke-WebRequest -Times 1 -Exactly -ParameterFilter { $TimeoutSec -eq $seconds -and $OperationTimeoutSeconds -eq $seconds }
+        }
+    }
+    It 'keeps shutdown and retirement inventory checks single-pass (<operation>)' -ForEach @(
+        @{ operation = 'stop' }, @{ operation = 'retire' }
+    ) {
+        Mock -ModuleName cdc-lifecycle Invoke-WebRequest { @{ Content = '["connector-42"]' } }
+        { & (Get-Module cdc-lifecycle) { param($d, $op) Assert-CdcWorkerInventory $d -Stopped:($op -eq 'stop') -Empty:($op -eq 'retire') } $script:deployment $operation } | Should -Throw '*inventory*'
+        Should -Invoke -ModuleName cdc-lifecycle Invoke-WebRequest -Times 1 -Exactly
+    }
+    It 'does not make ordinary transport failures retryable' {
+        Mock -ModuleName cdc-lifecycle Invoke-WebRequest { throw [TimeoutException]::new('sentinel-secret') }
+        $failure = $null
+        try { & (Get-Module cdc-lifecycle) { param($d) Invoke-CdcLifecycleRest $d 'connectors' } $script:deployment }
+        catch { $failure = $_.Exception }
+        ($failure -is [Net.Http.HttpRequestException]) | Should -BeFalse
+        $failure.Message | Should -Be 'CDC worker inventory is unavailable; managed shutdown or resume is not authorized.'
+    }
+    It 'shares the original wait budget across slow status and polling: <scenario>' -ForEach @(
+        @{ scenario = 'slow-status' }, @{ scenario = 'poll' }, @{ scenario = 'expired-success' }, @{ scenario = 'capped-poll' }
+    ) {
+        $script:budgetScenario = $scenario
+        $settingsPath = Join-Path $TestDrive 'timing.json'
+        $poll = if ($scenario -eq 'capped-poll') { 2300 } else { 500 }
+        @{ Cdc = @{ Timing = @{ CallMilliseconds = 2000; WaitMilliseconds = 2300; PollMilliseconds = $poll } } } |
+            ConvertTo-Json -Depth 5 | Set-Content $settingsPath
+        $script:deployment.Entries[0].SettingsPath = $settingsPath
+        $script:requests = [Collections.Generic.List[object]]::new()
+        $script:delays = [Collections.Generic.List[int]]::new()
+        $script:clock = [Diagnostics.Stopwatch]::StartNew()
+        Mock -ModuleName cdc-lifecycle Invoke-WebRequest {
+            $script:requests.Add(@{ Path = $Uri.AbsolutePath; Seconds = $ConnectionTimeoutSeconds; Elapsed = $script:clock.Elapsed.TotalMilliseconds })
+            if ($Uri.AbsolutePath -eq '/connectors') {
+                if ($script:budgetScenario -in @('poll', 'capped-poll')) { return @{ Content = '[]' } }
+                return @{ Content = '["connector-42","connector-43"]' }
+            }
+            if ($script:budgetScenario -eq 'slow-status' -and $Uri.AbsolutePath -like '*connector-42/status') { [Threading.Thread]::Sleep(1400) }
+            if ($script:budgetScenario -eq 'expired-success' -and $Uri.AbsolutePath -like '*connector-43/status') { [Threading.Thread]::Sleep(2400) }
+            return @{ Content = (@{ name = $Uri.AbsolutePath.Split('/')[2]; connector = @{ state = 'STOPPED' }; tasks = @() } | ConvertTo-Json -Depth 5) }
+        }
+        Mock -ModuleName cdc-lifecycle Start-Sleep {
+            $script:delays.Add($Milliseconds)
+            [Threading.Thread]::Sleep($Milliseconds)
+        }
+        { & (Get-Module cdc-lifecycle) { param($d) Wait-CdcWorkerStartup $d } $script:deployment } | Should -Throw '*startup-readiness timed out*'
+        $script:clock.Stop()
+        $script:clock.Elapsed.TotalSeconds | Should -BeLessThan 4
+        @($script:requests | Where-Object { $_.Seconds -le 0 -or $_.Seconds -gt 2 }).Count | Should -Be 0
+        if ($scenario -eq 'poll') {
+            $script:requests.Count | Should -BeGreaterThan 1
+            $script:requests[-1].Seconds | Should -Be 1
+            $script:delays.Count | Should -BeGreaterThan 0
+            @($script:delays | Where-Object { $_ -le 0 -or $_ -gt 500 }).Count | Should -Be 0
+        }
+        elseif ($scenario -eq 'capped-poll') {
+            $script:requests.Count | Should -Be 1
+            $script:delays.Count | Should -Be 1
+            $script:delays[0] | Should -BeGreaterThan 0
+            $script:delays[0] | Should -BeLessThan 2300
+        }
+        else {
+            $expected = @('/connectors', '/connectors/connector-42/status')
+            if ($scenario -eq 'expired-success') { $expected += '/connectors/connector-43/status' }
+            $script:requests.Path | Should -Be $expected
+            $script:delays.Count | Should -Be 0
+        }
+    }
     It 'rejects unknown inventory instead of proving empty (<body>)' -ForEach @(
         @{ body = 'null' }, @{ body = '{}' }, @{ body = '""' }, @{ body = '[null]' }, @{ body = '[{}]' }
     ) {

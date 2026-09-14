@@ -495,11 +495,54 @@ function Invoke-CdcLifecycleCommand {
 }
 
 function Invoke-CdcLifecycleRest {
-    param([hashtable]$Deployment, [string]$Path)
+    param([hashtable]$Deployment, [string]$Path, [hashtable]$StartupWait)
+    $unavailable = 'CDC worker inventory is unavailable; managed shutdown or resume is not authorized.'
     try {
         $uri = [uri]::new([uri]$Deployment.ConnectEndpoint, $Path)
         if (-not $uri.IsLoopback -or $uri.Scheme -ne 'http') { throw 'Unsupported endpoint' }
-        $response = Invoke-WebRequest -Uri $uri -Method Get -TimeoutSec 10 -ErrorAction Stop
+    }
+    catch { throw $unavailable }
+    $timeoutSeconds = 10
+    $startupArguments = @{}
+    if ($null -ne $StartupWait) {
+        # Invoke-WebRequest accepts whole seconds. Floor rather than rounding up or passing
+        # zero (unlimited) when the remaining positive budget cannot support another call.
+        $remaining = $StartupWait.WaitMilliseconds - $StartupWait.Clock.Elapsed.TotalMilliseconds
+        $timeoutSeconds = [int][Math]::Floor([Math]::Min(10000, [Math]::Min($StartupWait.CallMilliseconds, $remaining)) / 1000)
+        if ($timeoutSeconds -lt 1) { throw [TimeoutException]::new($StartupWait.TimeoutMessage) }
+        $startupArguments = @{ OperationTimeoutSeconds = $timeoutSeconds; MaximumRedirection = 0 }
+    }
+    try {
+        $response = Invoke-WebRequest -Uri $uri -Method Get -TimeoutSec $timeoutSeconds @startupArguments -ErrorAction Stop
+    }
+    catch {
+        $failure = $_.Exception
+        $retryable = $false
+        if ($failure -is [Microsoft.PowerShell.Commands.HttpResponseException]) {
+            $code = [int]$failure.Response.StatusCode
+            $retryable = $code -in @(408, 429) -or ($code -ge 500 -and $code -le 599) -or
+                ($code -eq 404 -and $Path -cne 'connectors')
+        }
+        elseif ($failure -is [Net.Http.HttpRequestException]) {
+            $retryable = $null -eq $failure.StatusCode -and
+                $failure.HttpRequestError -in @([Net.Http.HttpRequestError]::ConnectionError,
+                    [Net.Http.HttpRequestError]::NameResolutionError, [Net.Http.HttpRequestError]::ResponseEnded)
+        }
+        elseif ($failure -is [Net.WebException]) {
+            $retryable = $failure.Status -in @([Net.WebExceptionStatus]::ConnectFailure,
+                [Net.WebExceptionStatus]::ConnectionClosed, [Net.WebExceptionStatus]::NameResolutionFailure,
+                [Net.WebExceptionStatus]::ReceiveFailure, [Net.WebExceptionStatus]::SendFailure,
+                [Net.WebExceptionStatus]::KeepAliveFailure, [Net.WebExceptionStatus]::Timeout)
+        }
+        elseif ($failure -is [Threading.Tasks.TaskCanceledException] -or $failure -is [TimeoutException]) {
+            $retryable = $true
+        }
+        # Only this startup boundary receives typed, sanitized transient evidence. Never
+        # retain the original exception, URI, response body, or credentials as an inner error.
+        if ($null -ne $StartupWait -and $retryable) { throw [Net.Http.HttpRequestException]::new($unavailable) }
+        throw $unavailable
+    }
+    try {
         $value = $response.Content | ConvertFrom-Json -AsHashtable -NoEnumerate -ErrorAction Stop
         if ($Path -eq 'connectors') {
             if ($value -isnot [array] -or @($value | Where-Object { $_ -isnot [string] -or -not $_ }).Count -gt 0) { throw 'Unknown inventory' }
@@ -510,26 +553,71 @@ function Invoke-CdcLifecycleRest {
         }
         return $value
     }
-    catch { throw 'CDC worker inventory is unavailable; managed shutdown or resume is not authorized.' }
+    catch { throw $unavailable }
 }
 
 function Assert-CdcWorkerInventory {
-    param([hashtable]$Deployment, [switch]$Stopped, [switch]$Empty)
-    $actual = @(Invoke-CdcLifecycleRest $Deployment 'connectors')
+    param([hashtable]$Deployment, [switch]$Stopped, [switch]$Empty, [hashtable]$StartupWait)
     $expected = @(if (-not $Empty) { $Deployment.Entries | ForEach-Object { $_.ConnectorName } })
+    $mismatch = 'CDC live worker inventory does not match every retained managed binding; retain infrastructure and reconcile missing or unmanaged connectors.'
+    if ($null -ne $StartupWait) {
+        # These retained names must be valid before any missing inventory can be retried.
+        if (@($expected | Where-Object { $_ -isnot [string] -or $_.Length -gt 249 -or $_ -cnotmatch '^[a-z0-9]+([._-][a-z0-9]+)*$' }).Count -gt 0 -or
+            @($expected | Select-Object -Unique).Count -ne $expected.Count) { throw $mismatch }
+    }
+    $actual = @(Invoke-CdcLifecycleRest $Deployment 'connectors' -StartupWait $StartupWait)
     if (@($expected | Where-Object { -not $_ }).Count -gt 0 -or
         @($expected | Select-Object -Unique).Count -ne $expected.Count -or
-        $actual.Count -ne $expected.Count -or @($actual | Where-Object { $_ -cnotin $expected }).Count -gt 0) {
-        throw 'CDC live worker inventory does not match every retained managed binding; retain infrastructure and reconcile missing or unmanaged connectors.'
-    }
+        ($null -eq $StartupWait -and $actual.Count -ne $expected.Count) -or
+        ($null -ne $StartupWait -and @($actual | Select-Object -Unique).Count -ne $actual.Count) -or
+        @($actual | Where-Object { $_ -cnotin $expected }).Count -gt 0) { throw $mismatch }
     if ($Stopped) {
         foreach ($name in $expected) {
-            $status = Invoke-CdcLifecycleRest $Deployment "connectors/$([uri]::EscapeDataString($name))/status"
+            if ($null -ne $StartupWait -and $name -cnotin $actual) { continue }
+            $status = Invoke-CdcLifecycleRest $Deployment "connectors/$([uri]::EscapeDataString($name))/status" -StartupWait $StartupWait
             if ($status.name -cne $name -or $status.connector.state -cne 'STOPPED' -or @($status.tasks).Count -ne 0) {
                 throw 'CDC connector shutdown is not currently verified for every worker assignment.'
             }
         }
     }
+    if ($null -ne $StartupWait) { return $actual.Count -eq $expected.Count }
+}
+
+function Wait-CdcWorkerStartup {
+    param([hashtable]$Deployment)
+    try {
+        $settings = Get-Content -LiteralPath $Deployment.Entries[0].SettingsPath -Raw -ErrorAction Stop | ConvertFrom-Json -AsHashtable -ErrorAction Stop
+        $timing = $settings.Cdc['Timing']
+        $wait = @{}
+        # Match CdcCommandConfiguration defaults and CdcDeploymentTiming bounds.
+        foreach ($limit in @(@('CallMilliseconds', 30000, 300000), @('WaitMilliseconds', 300000, 86400000), @('PollMilliseconds', 1000, 60000))) {
+            $value = $limit[1]
+            if ($null -ne $timing -and $timing.Contains($limit[0])) {
+                if (-not [int]::TryParse([string]$timing[$limit[0]], [ref]$value)) { throw 'Invalid timing' }
+            }
+            if ($value -lt 1 -or $value -gt $limit[2]) { throw 'Invalid timing' }
+            $wait[$limit[0]] = $value
+        }
+        if ($wait.CallMilliseconds -gt $wait.WaitMilliseconds -or $wait.PollMilliseconds -gt $wait.WaitMilliseconds) { throw 'Invalid timing' }
+    }
+    catch { throw 'CDC startup timing is invalid; retain deployment configuration and reconcile before resume.' }
+    $wait.TimeoutMessage = 'CDC startup-readiness timed out; retain infrastructure and reconcile through controller stop before retrying managed startup.'
+    $wait.Clock = [Diagnostics.Stopwatch]::StartNew()
+    while ($wait.Clock.Elapsed.TotalMilliseconds -lt $wait.WaitMilliseconds) {
+        $ready = $false
+        try { $ready = Assert-CdcWorkerInventory $Deployment -Stopped -StartupWait $wait }
+        catch [Net.Http.HttpRequestException] {
+            # The REST adapter emits this sanitized type only for transient startup lookups.
+            $ready = $false
+        }
+        $remaining = $wait.WaitMilliseconds - $wait.Clock.Elapsed.TotalMilliseconds
+        if ($remaining -le 0) { break }
+        if ($ready) { return }
+        $delay = [int][Math]::Floor([Math]::Min($wait.PollMilliseconds, $remaining))
+        if ($delay -lt 1) { break }
+        Start-Sleep -Milliseconds $delay
+    }
+    throw [TimeoutException]::new($wait.TimeoutMessage)
 }
 
 function Invoke-CdcInfrastructure {
@@ -676,7 +764,7 @@ function Invoke-CdcDeploymentLifecycle {
                 $settings = Get-Content -LiteralPath $deployment.Entries[0].SettingsPath -Raw | ConvertFrom-Json -AsHashtable
                 Invoke-BootstrapCdcKafkaUI -Handoff @{ Settings = $settings }
             }
-            Assert-CdcWorkerInventory $deployment -Stopped
+            Wait-CdcWorkerStartup $deployment
             if ($destructive) {
                 $deployment.Phase = 'Retiring'
                 Write-CdcDeployment $Project $deployment
