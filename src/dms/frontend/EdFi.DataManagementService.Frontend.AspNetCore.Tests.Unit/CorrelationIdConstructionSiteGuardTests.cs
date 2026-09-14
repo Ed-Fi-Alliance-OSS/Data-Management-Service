@@ -184,6 +184,117 @@ public class CorrelationIdConstructionSiteGuardTests
             );
     }
 
+    /// <summary>
+    /// The guard above is only worth what its file list is worth. A scan that quietly stops
+    /// reaching production code still passes, so the coverage of the scan is itself asserted.
+    /// </summary>
+    [Test]
+    public void It_scans_production_source_and_no_test_project_source()
+    {
+        string repositoryRoot = FindRepositoryRoot();
+        string[] scanned = [.. ProductionSourceFiles().Select(file => file.RelativePath)];
+
+        scanned
+            .Should()
+            .Contain(
+                "src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/AspNetCoreFrontend.cs",
+                "the scan is meaningless if it does not reach the single ingestion point the whole "
+                    + "normalization contract is built around"
+            );
+
+        scanned
+            .Should()
+            .NotContain(
+                "src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/"
+                    + "CorrelationIdConstructionSiteGuardTests.cs",
+                "a test file is allowed to name the very patterns this fixture forbids, this one "
+                    + "most of all"
+            );
+
+        // The six production files a substring match on "test" - in the file name - used to drop.
+        // Named individually rather than derived, so that deleting or renaming one is a decision
+        // someone makes here rather than a silent narrowing of the scan.
+        string[] namesThatSpellTestAcrossAWordBoundary =
+        [
+            "src/dms/backend/EdFi.DataManagementService.Backend/Composite/RelationalCompositeStatementRewriter.cs",
+            "src/dms/backend/EdFi.DataManagementService.Backend/RelationalCompositeStoredAuthorization.cs",
+            "src/dms/core/EdFi.DataManagementService.Core/DocumentCache/Cdc/CdcAggregateStatusEvaluator.cs",
+            "src/dms/core/EdFi.DataManagementService.Core/DocumentCache/Cdc/CdcBindingStateStore.cs",
+            "src/dms/core/EdFi.DataManagementService.Core/DocumentCache/Cdc/LocalCdcBindingStateStore.cs",
+            "src/dms/core/EdFi.DataManagementService.Core/Startup/ValidateStartupInstancesTask.cs",
+        ];
+
+        string[] missing =
+        [
+            .. namesThatSpellTestAcrossAWordBoundary.Except(scanned).Order(StringComparer.Ordinal),
+        ];
+
+        missing
+            .Should()
+            .BeEmpty(
+                "a production file must be scanned whatever its name spells. If one of these was "
+                    + "renamed or removed, update the list; if the filter dropped it, the filename "
+                    + "hole has reopened. Missing:{0}{1}",
+                Environment.NewLine,
+                string.Join(Environment.NewLine, missing)
+            );
+
+        // Cross-checked against <IsTestProject>, deliberately a different mechanism from the
+        // directory-name match the filter uses, so a test project named outside the convention
+        // fails here loudly instead of quietly joining the scanned set.
+        string[] testProjectDirectories = TestProjectDirectories(repositoryRoot);
+
+        string[] scannedTestProjectFiles =
+        [
+            .. scanned
+                .Where(path =>
+                    Array.Exists(
+                        testProjectDirectories,
+                        directory => path.StartsWith(directory, StringComparison.Ordinal)
+                    )
+                )
+                .Order(StringComparer.Ordinal),
+        ];
+
+        scannedTestProjectFiles
+            .Should()
+            .BeEmpty(
+                "a test project is allowed to construct a raw TraceId and to hand a trace-shaped "
+                    + "value to the strict sanitizer, so scanning one produces noise, not findings. "
+                    + "Teach IsExcludedDirectory about this project's naming. Scanned:{0}{1}",
+                Environment.NewLine,
+                string.Join(Environment.NewLine, scannedTestProjectFiles)
+            );
+
+        testProjectDirectories
+            .Should()
+            .NotBeEmpty("if no test project were found the check above would be vacuously true");
+    }
+
+    /// <summary>
+    /// Repository-relative directories, each with a trailing slash, of every project under
+    /// <c>src/dms</c> declaring <c>&lt;IsTestProject&gt;true&lt;/IsTestProject&gt;</c>.
+    /// </summary>
+    private static string[] TestProjectDirectories(string repositoryRoot) =>
+        [
+            .. Directory
+                .EnumerateFiles(
+                    Path.Combine(repositoryRoot, "src", "dms"),
+                    "*.csproj",
+                    SearchOption.AllDirectories
+                )
+                .Where(project =>
+                    File.ReadAllText(project)
+                        .Replace(" ", string.Empty)
+                        .Replace("\t", string.Empty)
+                        .Contains("<IsTestProject>true</IsTestProject>", StringComparison.OrdinalIgnoreCase)
+                )
+                .Select(project =>
+                    Path.GetRelativePath(repositoryRoot, Path.GetDirectoryName(project)!).Replace('\\', '/')
+                    + "/"
+                ),
+        ];
+
     private static bool LooksLikeACorrelationId(string argument) =>
         argument.Contains("trace", StringComparison.OrdinalIgnoreCase)
         || argument.Contains("correlation", StringComparison.OrdinalIgnoreCase);
@@ -246,12 +357,43 @@ public class CorrelationIdConstructionSiteGuardTests
     /// <c>TraceId</c> - most of them must, to exercise the code under test - and is allowed to
     /// pass a trace-shaped value to the strict sanitizer to prove what that sanitizer does to it.
     /// </summary>
-    private static bool IsExcluded(string relativePath) =>
-        Array.Exists(
-            relativePath.Split('/'),
-            segment =>
-                segment is "bin" or "obj" || segment.Contains("test", StringComparison.OrdinalIgnoreCase)
-        );
+    /// <remarks>
+    /// The decision is made on the <b>directories</b> a file sits in, never on the file's own
+    /// name. An earlier spelling asked whether any segment - the file name included - contained
+    /// the substring "test", which silently dropped production files whose names happen to spell
+    /// those four letters across a word boundary: <c>ValidateStartupInstancesTask</c>,
+    /// <c>CdcAggregateStatusEvaluator</c>, <c>RelationalCompositeStoredAuthorization</c>,
+    /// <c>RelationalCompositeStatementRewriter</c>, <c>CdcBindingStateStore</c> and
+    /// <c>LocalCdcBindingStateStore</c>. A guard that quietly stops looking at production code is
+    /// worse than no guard, because it still reports success.
+    /// <see cref="It_scans_production_source_and_no_test_project_source"/> holds this to its word.
+    /// </remarks>
+    private static bool IsExcluded(string relativePath)
+    {
+        string[] segments = relativePath.Split('/');
+
+        // Length - 1 stops before the file name, which is never a directory.
+        for (int index = 0; index < segments.Length - 1; index++)
+        {
+            if (IsExcludedDirectory(segments[index]))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Build output, the <c>src/dms/tests</c> container directory, and any project directory named
+    /// for a test assembly - <c>*.Tests</c>, <c>*.Tests.Unit</c>, <c>*.Tests.Integration</c>,
+    /// <c>*.Tests.E2E</c>, and the shared <c>*.Tests.Common</c> helper libraries.
+    /// </summary>
+    private static bool IsExcludedDirectory(string segment) =>
+        segment is "bin" or "obj"
+        || segment.Equals("tests", StringComparison.OrdinalIgnoreCase)
+        || segment.EndsWith(".Tests", StringComparison.Ordinal)
+        || segment.Contains(".Tests.", StringComparison.Ordinal);
 
     /// <summary>
     /// Replaces every comment and literal with spaces, leaving all other characters and every
