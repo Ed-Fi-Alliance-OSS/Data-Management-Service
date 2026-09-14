@@ -68,9 +68,9 @@ Export-ModuleMember -Function Resolve-BootstrapSchemaWorkspace
                     ($n -is [Management.Automation.Language.IfStatementAst] -and $n.Extent.Text.StartsWith('if (-not $databaseOnlyStartup -and -not $DmsOnly'))
             }, $true)
             $nodes.Count | Should -Be 2
-            $databaseOnlyStartup = [bool]$parameters.DbOnly
+            $databaseOnlyStartup = [bool]$parameters['DbOnly']
             $DmsOnly = $false
-            $CdcDatabaseInfrastructure = [bool]$parameters.CdcDatabaseInfrastructure
+            $CdcDatabaseInfrastructure = [bool]$parameters['CdcDatabaseInfrastructure']
             $files = @('-f', "$flavor-dms.yml")
             $EnvironmentFile = $parameters.EnvironmentFile
             $commands = [Collections.Generic.List[string]]::new()
@@ -78,7 +78,7 @@ Export-ModuleMember -Function Resolve-BootstrapSchemaWorkspace
             . ([scriptblock]::Create(($nodes.Extent.Text -join "`n")))
             # Execute the actual database/CMS commands with the production arguments, using
             # the database-only command for DbOnly and the full-start command for its control.
-            $services = if ($databaseOnlyStartup) { @('db') } elseif ($parameters.InfraOnly) { @('db', 'config') } else { @('db', '') }
+            $services = if ($databaseOnlyStartup) { @('db') } elseif ($parameters['InfraOnly']) { @('db', 'config') } else { @('db', '') }
             foreach ($service in $services) {
                 $text = 'docker compose $files --env-file $EnvironmentFile -p dms-' + $flavor + ' up $upArgs'
                 if ($service) { $text += " $service" }
@@ -1646,6 +1646,8 @@ Describe 'Live worker REST evidence shape' {
         @{ scenario = 'tasks'; status = '{"name":"connector-42","connector":{"state":"STOPPED"},"tasks":[{}]}' },
         @{ scenario = 'incomplete-but-running'; inventory = '["connector-42"]'; status = '{"name":"connector-42","connector":{"state":"RUNNING"},"tasks":[]}' }
     ) {
+        param([string]$inventory = '', [string]$status = '', [object[]]$retained = @())
+
         $script:inventoryBody = if ($inventory) { $inventory } else { '["connector-42","connector-43"]' }
         $script:statusBody = if ($status) { $status } else { '{"name":"connector-42","connector":{"state":"STOPPED"},"tasks":[]}' }
         if ($retained) { $script:deployment.Entries = @($retained | ForEach-Object { @{ ConnectorName = $_ } }) }
