@@ -656,6 +656,7 @@ schemas on-demand only when first requested.
     "AutomaticRefreshIntervalHours": 24
   },
   "AppSettings": {
+    "EnableManagementEndpoints": false,
     "EnableClaimsetReload": false,
     "ManagementEndpoints": {
       "RequiredRole": ""
