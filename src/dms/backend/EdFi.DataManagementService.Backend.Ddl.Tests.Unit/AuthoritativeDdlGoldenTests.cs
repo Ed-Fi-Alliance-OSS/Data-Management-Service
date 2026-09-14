@@ -419,6 +419,15 @@ public class Given_AuthoritativeDdl_With_Ds52Core_And_SampleExtension : DdlGolde
         var idType = mssql ? "uniqueidentifier" : "uuid";
         block.Should().Contain($"{open}Id{close} {idType} NOT NULL");
         block.Should().Contain($"{open}ChangeVersion{close} bigint NOT NULL");
+
+        // DocumentId (DMS-1193): the tracked document's dms.Document.DocumentId, rendered between
+        // ChangeVersion and CreatedAt in system-column order, with no index of its own.
+        block.Should().Contain($"{open}DocumentId{close} bigint NOT NULL");
+        var changeVersionIndex = block.IndexOf($"{open}ChangeVersion{close} ", StringComparison.Ordinal);
+        var documentIdIndex = block.IndexOf($"{open}DocumentId{close} ", StringComparison.Ordinal);
+        var createdAtIndex = block.IndexOf($"{open}CreatedAt{close} ", StringComparison.Ordinal);
+        documentIdIndex.Should().BeGreaterThan(changeVersionIndex, "DocumentId follows ChangeVersion");
+        createdAtIndex.Should().BeGreaterThan(documentIdIndex, "CreatedAt follows DocumentId");
         if (mssql)
         {
             // CreatedAt carries a named DF_* default constraint (consistent with the core DDL convention),
@@ -448,6 +457,14 @@ public class Given_AuthoritativeDdl_With_Ds52Core_And_SampleExtension : DdlGolde
             ? $"PRIMARY KEY CLUSTERED ({open}ChangeVersion{close})"
             : $"PRIMARY KEY ({open}ChangeVersion{close})";
         block.Should().Contain(primaryKey);
+    }
+
+    [Test]
+    public void It_should_not_index_the_tracked_change_document_id_column()
+    {
+        // Opt-in implementers index the basis tombstone tables they probe; DMS emits no index for it.
+        ReadActual("pgsql.sql").Should().NotContain("\"tracked_changes_edfi\".\"Student\" (\"DocumentId\")");
+        ReadActual("mssql.sql").Should().NotContain("[tracked_changes_edfi].[Student] ([DocumentId])");
     }
 
     /// <summary>

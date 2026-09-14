@@ -198,4 +198,76 @@ public class Given_CustomViewAuthorization
         first.RootTable.Should().Be(new DbTableName(new DbSchemaName("edfi"), "CourseTranscript"));
         first.RootDocumentIdColumn.Should().Be(new DbColumnName("DocumentId"));
     }
+
+    [Test]
+    public void It_should_plan_a_non_identifying_non_securable_first_hop_on_the_live_read_paths()
+    {
+        // Section's locationReference is optional, not part of Section's identity, and not a securable
+        // element. The live page planner joins the stored Location DocumentId, so the view plans here; the
+        // same view fails ReadChanges planning (CustomViewBasisNotIdentifyingOrSecurable), proving the
+        // restriction is ReadChanges-only, as in ODS.
+        var (modelSet, mappingSet) = Ds52FixtureHelper.BuildAndCompile();
+        var subjectResource = new QualifiedResourceName("Ed-Fi", "Section");
+        var subject = modelSet.ConcreteResourcesInNameOrder.Single(resource =>
+            resource.ResourceKey.Resource == subjectResource
+        );
+        var strategy = new SupportedCustomViewAuthorizationStrategy(
+            new ConfiguredAuthorizationStrategy("LocationWithX", 0),
+            0,
+            new QualifiedResourceName("Ed-Fi", "Location")
+        );
+
+        var outcome = CustomViewAuthorizationPlanner.Plan(mappingSet, subject, [strategy]);
+
+        var check = outcome
+            .Should()
+            .BeOfType<CustomViewAuthorizationPlanOutcome.Plan>()
+            .Subject.Checks.Should()
+            .ContainSingle()
+            .Subject;
+        check.ConfiguredStrategy.StrategyName.Should().Be("LocationWithX");
+    }
+
+    [Test]
+    public void It_should_report_no_join_path_for_a_get_many_basis_reached_only_through_a_collection()
+    {
+        // In DS 5.2 CourseTranscript reaches Section only through `$.sections[*].sectionReference`, a child
+        // collection table; none of its root-table references (Course, StudentAcademicRecord, Staff,
+        // EducationOrganization) lead to Section. ODS matches basis identifier properties by name on the
+        // subject root entity only, so the GET-many planner must fail closed with NoCustomViewJoinPath
+        // rather than filter the page through the collection rows. The root-reachable Course basis in the
+        // same plan proves the failure comes from the collection rule, not from the fixture.
+        var (modelSet, mappingSet) = Ds52FixtureHelper.BuildAndCompile();
+        var subjectResource = new QualifiedResourceName("Ed-Fi", "CourseTranscript");
+        var subject = modelSet.ConcreteResourcesInNameOrder.Single(resource =>
+            resource.ResourceKey.Resource == subjectResource
+        );
+        var rootReachable = new SupportedCustomViewAuthorizationStrategy(
+            new ConfiguredAuthorizationStrategy("CourseWithX", 0),
+            0,
+            new QualifiedResourceName("Ed-Fi", "Course")
+        );
+        var collectionOnly = new SupportedCustomViewAuthorizationStrategy(
+            new ConfiguredAuthorizationStrategy("SectionWithX", 1),
+            1,
+            new QualifiedResourceName("Ed-Fi", "Section")
+        );
+
+        var outcome = CustomViewAuthorizationPlanner.Plan(
+            mappingSet,
+            subject,
+            [rootReachable, collectionOnly]
+        );
+
+        var sec = outcome
+            .Should()
+            .BeOfType<CustomViewAuthorizationPlanOutcome.SecurityConfiguration>()
+            .Subject;
+        sec.Failures.Should().ContainSingle();
+        sec.Failures[0].FailureKind.Should().Be(RelationshipAuthorizationFailureKind.NoCustomViewJoinPath);
+        sec.Failures[0].ConfiguredStrategy!.StrategyName.Should().Be("SectionWithX");
+        sec.Failures[0].Location!.AuthorizationObjectName.Should().Be("auth.SectionWithX");
+        sec.PlannedChecks.Should().ContainSingle();
+        sec.PlannedChecks[0].ConfiguredStrategy.StrategyName.Should().Be("CourseWithX");
+    }
 }

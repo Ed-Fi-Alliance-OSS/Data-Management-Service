@@ -367,12 +367,12 @@ public enum RelationshipAuthorizationFailureKind
     NoCustomViewJoinPath,
 
     /// <summary>
-    /// A custom view's basis resource is reachable only through a child collection table, so a write's
-    /// proposed-value check has no root-table value to bind. Stored-value-only operations can still walk
-    /// such a path; an operation that must authorize proposed data fails closed instead of skipping the
-    /// strategy, because auth.md restricts authorization checks to the resource or descriptor root table.
+    /// ReadChanges only: the subject-to-basis path resolves, but its first hop is neither an identifying
+    /// reference nor a securable element of the subject, so the tombstone stores none of the basis key
+    /// values the live seek needs. The DMS counterpart of the ODS "Non-identifying properties"
+    /// <c>SecurityConfigurationException</c>, widened by the securable allowance.
     /// </summary>
-    MissingProposedCustomViewRootBinding,
+    CustomViewBasisNotIdentifyingOrSecurable,
 }
 
 public sealed record RelationshipAuthorizationFailureLocation(

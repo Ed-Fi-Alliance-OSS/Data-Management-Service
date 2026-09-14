@@ -26,8 +26,12 @@ namespace EdFi.DataManagementService.Backend.RelationalModel.SetPasses;
 /// Value columns combine the resource's identity paths and securable-element paths into <c>Old</c>/<c>New</c>
 /// pairs. Descriptor reference paths materialize <c>Namespace</c>/<c>CodeValue</c> and reference a table-level
 /// descriptor join; Student/Contact/Staff securable paths materialize the person <c>DocumentId</c> and
-/// reference a table-level person join. Key-unification canonical columns are de-duplicated, merging origin
-/// flags and widening nullability.
+/// reference a table-level person join. Each person join records a natural-key seek (person root table,
+/// person unique-id column, and the subject root binding column carrying that unique id) so triggers read the
+/// old person from the old row itself instead of hopping through live intermediates, which a cascading key
+/// change has already re-pointed. A person resource's own (zero-hop) person path materializes no value
+/// column: the <c>DocumentId</c> system column already carries it. Key-unification canonical columns are
+/// de-duplicated, merging origin flags and widening nullability.
 /// </para>
 /// <para>
 /// This pass owns semantic derivation only; dialect emitters render the inventory mechanically (DMS-1177).
@@ -42,6 +46,7 @@ public sealed class DeriveTrackedChangeInventoryPass : IRelationalModelSetPass
 
     private static readonly DbColumnName _idColumn = new("Id");
     private static readonly DbColumnName _changeVersionColumn = new("ChangeVersion");
+    private static readonly DbColumnName _documentIdColumn = new("DocumentId");
     private static readonly DbColumnName _createdAtColumn = new("CreatedAt");
     private static readonly DbColumnName _discriminatorColumn = new("Discriminator");
 
@@ -620,11 +625,11 @@ public sealed class DeriveTrackedChangeInventoryPass : IRelationalModelSetPass
             if (chain is null || chain.Count == 0)
             {
                 // A null/empty chain is expected only for the zero-hop self person identity path (anchored
-                // on the resource's own DocumentId, materializing no person-join column) and for array-nested
-                // paths (unsupported, accumulated into `skipped`). Any other unresolved root-level path is an
-                // authorization-completeness defect — fail loudly, mirroring DeriveAuthorizationIndexInventoryPass
-                // and the identity/securable guard in BuildResourceTrackedChangeTable rather than silently
-                // dropping the person securable.
+                // on the resource's own DocumentId, which the DocumentId system column already carries, so
+                // no value column is materialized) and for array-nested paths (unsupported, accumulated into
+                // `skipped`). Any other unresolved root-level path is an authorization-completeness defect —
+                // fail loudly, mirroring DeriveAuthorizationIndexInventoryPass and the identity/securable
+                // guard in BuildResourceTrackedChangeTable rather than silently dropping the person securable.
                 foreach (var unresolvedPath in unresolvedRootLevelPaths)
                 {
                     if (
@@ -635,12 +640,6 @@ public sealed class DeriveTrackedChangeInventoryPass : IRelationalModelSetPass
                         )
                     )
                     {
-                        AddSelfPersonDocumentIdColumn(
-                            personResourceName,
-                            unresolvedPath,
-                            valueColumns,
-                            valueColumnsByOldName
-                        );
                         continue;
                     }
 
@@ -657,6 +656,7 @@ public sealed class DeriveTrackedChangeInventoryPass : IRelationalModelSetPass
 
             var joinBaseName = BuildPersonJoinBaseName(chain);
             var joinName = joinBaseName;
+            var seek = ResolvePersonSeek(concreteModel, personPath, chain, resourceLookup);
             if (personJoins.TryGetValue(joinName, out var existingJoin))
             {
                 // Two person paths can legitimately collapse to the same join name when they resolve to the
@@ -665,7 +665,11 @@ public sealed class DeriveTrackedChangeInventoryPass : IRelationalModelSetPass
                 // currently produce two distinct chains that concatenate to the same BuildPersonJoinBaseName,
                 // so no fixture exercises this branch; it guards against a future regression in chain
                 // resolution or join-name construction rather than a reachable input.
-                if (existingJoin.PersonKind != personKind || !existingJoin.JoinPath.SequenceEqual(chain))
+                if (
+                    existingJoin.PersonKind != personKind
+                    || !existingJoin.JoinPath.SequenceEqual(chain)
+                    || !existingJoin.SourceBindingColumn.Equals(seek.SourceBindingColumn)
+                )
                 {
                     throw new InvalidOperationException(
                         $"Tracked-change derivation for resource "
@@ -677,7 +681,17 @@ public sealed class DeriveTrackedChangeInventoryPass : IRelationalModelSetPass
             }
             else
             {
-                personJoins.Add(joinName, new TrackedChangePersonJoinInfo(joinName, personKind, chain));
+                personJoins.Add(
+                    joinName,
+                    new TrackedChangePersonJoinInfo(
+                        joinName,
+                        personKind,
+                        chain,
+                        seek.PersonTable,
+                        seek.PersonIdentityColumn,
+                        seek.SourceBindingColumn
+                    )
+                );
             }
 
             // Nullability follows whether any source FK in the resolved chain is optional.
@@ -699,26 +713,114 @@ public sealed class DeriveTrackedChangeInventoryPass : IRelationalModelSetPass
         }
     }
 
-    private static void AddSelfPersonDocumentIdColumn(
-        string personResourceName,
+    /// <summary>
+    /// Resolves the natural-key seek for a person join: the subject root column that carries the person's
+    /// unique id, the person root table, and the person's unique-id column. Walks the chain of reference
+    /// identity bindings starting at the declared securable path — at every hop the path must be an identity
+    /// part the reference stores, and the binding's <see cref="ReferenceIdentityBinding.IdentityJsonPath"/>
+    /// becomes the path on the next resource — so the value the subject row stores is provably the person's
+    /// natural key (every root-level reference stores binding columns for all of the target's flattened
+    /// identity parts, kept consistent by composite FKs with <c>ON UPDATE CASCADE</c>). Fails loudly when a
+    /// hop does not carry the path: such a path cannot authorize the person, and silently dropping it or
+    /// mis-joining would be an authorization-completeness defect.
+    /// </summary>
+    private static (
+        DbTableName PersonTable,
+        DbColumnName PersonIdentityColumn,
+        DbColumnName SourceBindingColumn
+    ) ResolvePersonSeek(
+        ConcreteResourceModel subject,
         string personPath,
-        List<TrackedChangeColumnInfo> valueColumns,
-        Dictionary<string, int> valueColumnsByOldName
+        IReadOnlyList<ColumnPathStep> chain,
+        IReadOnlyDictionary<QualifiedResourceName, ConcreteResourceModel> resourceLookup
     )
     {
-        var personColumn = BuildValueColumn(
-            personResourceName + DocumentIdSuffix,
-            personPath,
-            new RelationalScalarType(ScalarKind.Int64),
-            isOldNullable: false,
-            TrackedChangeColumnRole.PersonDocumentId,
-            TrackedChangeColumnOrigin.SecurableElement
-        ) with
-        {
-            CanonicalStorageColumn = new DbColumnName("DocumentId"),
-        };
+        var subjectName =
+            $"{subject.ResourceKey.Resource.ProjectName}.{subject.ResourceKey.Resource.ResourceName}";
+        var currentModel = subject;
+        var currentPath = personPath;
+        DbColumnName? sourceBindingColumn = null;
 
-        MergeOrAdd(personColumn, valueColumns, valueColumnsByOldName);
+        for (var hop = 0; hop < chain.Count; hop++)
+        {
+            var step = chain[hop];
+            var root = currentModel.RelationalModel.Root;
+            var binding = currentModel.RelationalModel.DocumentReferenceBindings.FirstOrDefault(candidate =>
+                candidate.Table.Equals(step.SourceTable)
+                && (
+                    candidate.FkColumn.Equals(step.SourceColumnName)
+                    || PersonJoinPathResolver
+                        .ResolveToCanonicalColumn(root, candidate.FkColumn)
+                        .Equals(step.SourceColumnName)
+                )
+            );
+            if (binding is null)
+            {
+                throw new InvalidOperationException(
+                    $"Tracked-change derivation for resource '{subjectName}': person securable path "
+                        + $"'{personPath}' resolved a join chain whose hop {hop} "
+                        + $"('{step.SourceTable.Schema.Value}.{step.SourceTable.Name}.{step.SourceColumnName.Value}') "
+                        + "matches no document reference binding."
+                );
+            }
+
+            var identityBinding = binding.IdentityBindings.FirstOrDefault(candidate =>
+                string.Equals(candidate.ReferenceJsonPath.Canonical, currentPath, StringComparison.Ordinal)
+            );
+            if (identityBinding is null)
+            {
+                throw new InvalidOperationException(
+                    $"Tracked-change derivation for resource '{subjectName}': person securable path "
+                        + $"'{personPath}' cannot seek the person by natural key. At hop {hop} the path "
+                        + $"'{currentPath}' is not an identity part stored by reference "
+                        + $"'{binding.ReferenceObjectPath.Canonical}' on "
+                        + $"'{currentModel.ResourceKey.Resource.ProjectName}."
+                        + $"{currentModel.ResourceKey.Resource.ResourceName}', so the subject row does not "
+                        + "carry the person's unique id along this path."
+                );
+            }
+
+            if (hop == 0)
+            {
+                sourceBindingColumn = PersonJoinPathResolver.ResolveToCanonicalColumn(
+                    root,
+                    identityBinding.Column
+                );
+            }
+
+            currentPath = identityBinding.IdentityJsonPath.Canonical;
+
+            if (!resourceLookup.TryGetValue(binding.TargetResource, out var nextModel))
+            {
+                throw new InvalidOperationException(
+                    $"Tracked-change derivation for resource '{subjectName}': person securable path "
+                        + $"'{personPath}' reaches resource '{binding.TargetResource.ProjectName}."
+                        + $"{binding.TargetResource.ResourceName}' at hop {hop}, which is not a concrete resource."
+                );
+            }
+
+            currentModel = nextModel;
+        }
+
+        var personRoot = currentModel.RelationalModel.Root;
+        var identityColumn = personRoot.Columns.FirstOrDefault(column =>
+            column.SourceJsonPath is { } sourcePath
+            && string.Equals(sourcePath.Canonical, currentPath, StringComparison.Ordinal)
+        );
+        if (identityColumn is null || sourceBindingColumn is null)
+        {
+            throw new InvalidOperationException(
+                $"Tracked-change derivation for resource '{subjectName}': person securable path "
+                    + $"'{personPath}' reaches person root '{personRoot.Table.Schema.Value}.{personRoot.Table.Name}' "
+                    + $"but no root column stores identity path '{currentPath}'."
+            );
+        }
+
+        return (
+            personRoot.Table,
+            PersonJoinPathResolver.ResolveToCanonicalColumn(personRoot, identityColumn.ColumnName),
+            sourceBindingColumn.Value
+        );
     }
 
     /// <summary>
@@ -817,6 +919,15 @@ public sealed class DeriveTrackedChangeInventoryPass : IRelationalModelSetPass
                 new RelationalScalarType(ScalarKind.Int64),
                 IsNullable: false,
                 IsPrimaryKey: true
+            )
+        );
+        columns.Add(
+            new TrackedChangeSystemColumnInfo(
+                TrackedChangeSystemColumnRole.DocumentId,
+                _documentIdColumn,
+                new RelationalScalarType(ScalarKind.Int64),
+                IsNullable: false,
+                IsPrimaryKey: false
             )
         );
         columns.Add(

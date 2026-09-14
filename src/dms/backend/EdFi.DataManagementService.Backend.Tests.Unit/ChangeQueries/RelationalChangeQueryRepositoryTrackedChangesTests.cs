@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data.Common;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
@@ -204,6 +205,247 @@ public class Given_RelationalChangeQueryRepositoryTrackedChanges
             )
             .MustNotHaveHappened();
     }
+
+    // ---- DMS-1193 Task 47: custom view-based strategies are validated, rendered, and executed ------------
+
+    [Test]
+    public async Task It_validates_a_self_basis_custom_view_before_executing_the_deletes_query()
+    {
+        // Two commands, in order: the per-request view validation (no rows), then the deletes query whose
+        // authorization predicate reads the DocumentId system column against the view.
+        var executor = new InMemoryRelationalCommandExecutor([
+            new InMemoryRelationalCommandExecution([]),
+            new InMemoryRelationalCommandExecution([
+                InMemoryRelationalResultSet.Create(
+                    RelationalAccessTestData.CreateRow(
+                        ("__Id", "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"),
+                        ("__ChangeVersion", 42L),
+                        ("schoolId__old", 255901)
+                    )
+                ),
+            ]),
+        ]);
+        IRelationalTrackedChangeQueryRequest request = CreateRequest(
+            ChangeQueryEndpointOperation.Deletes,
+            totalCount: false,
+            trackedChangeTable: WithDocumentIdSystemColumn(CreateSchoolTrackedTable()),
+            resourceInfo: CreateResourceInfo(_schoolResource, isDescriptor: false),
+            resourceModel: CreateRegularResourceModel(),
+            evaluators:
+            [
+                new AuthorizationStrategyEvaluator("SchoolWithAlternativeType", [], FilterOperator.Or),
+            ]
+        );
+
+        TrackedChangeQueryResult result = await new RelationalChangeQueryRepository(
+            executor,
+            A.Fake<IRelationalParameterConfigurator>()
+        ).QueryTrackedChanges(request);
+
+        result.AuthorizationFailure.Should().BeNull();
+        result.Items.Should().ContainSingle();
+        executor.Commands.Should().HaveCount(2);
+        executor.Commands[0].CommandText.Should().Contain("\"auth\".\"SchoolWithAlternativeType\"");
+        executor
+            .Commands[0]
+            .CommandText.Should()
+            .Contain("Invalid custom authorization view DocumentId contract.");
+        executor
+            .Commands[1]
+            .CommandText.Should()
+            .Contain(
+                "c.\"DocumentId\" IN (SELECT \"DocumentId\" FROM \"auth\".\"SchoolWithAlternativeType\")"
+            );
+    }
+
+    [Test]
+    public async Task It_surfaces_a_missing_custom_view_as_the_validation_exception_without_executing_the_query()
+    {
+        var executor = A.Fake<IRelationalCommandExecutor>();
+        A.CallTo(() => executor.Dialect).Returns(SqlDialect.Pgsql);
+        A.CallTo(() =>
+                executor.ExecuteReaderAsync(
+                    A<RelationalCommand>._,
+                    A<Func<IRelationalCommandReader, CancellationToken, Task<bool>>>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Throws(new FakeDbException("relation \"auth.SchoolWithAlternativeType\" does not exist"));
+        IRelationalTrackedChangeQueryRequest request = CreateRequest(
+            ChangeQueryEndpointOperation.Deletes,
+            totalCount: false,
+            trackedChangeTable: WithDocumentIdSystemColumn(CreateSchoolTrackedTable()),
+            resourceInfo: CreateResourceInfo(_schoolResource, isDescriptor: false),
+            resourceModel: CreateRegularResourceModel(),
+            evaluators:
+            [
+                new AuthorizationStrategyEvaluator("SchoolWithAlternativeType", [], FilterOperator.Or),
+            ]
+        );
+
+        Func<Task> act = () =>
+            new RelationalChangeQueryRepository(
+                executor,
+                A.Fake<IRelationalParameterConfigurator>()
+            ).QueryTrackedChanges(request);
+
+        // The same urn:ed-fi:api:system 500 path the live read paths use for a broken view.
+        await act.Should().ThrowAsync<CustomViewAuthorizationValidationException>();
+        A.CallTo(() =>
+                executor.ExecuteReaderAsync(
+                    A<RelationalCommand>._,
+                    A<Func<IRelationalCommandReader, CancellationToken, Task<TrackedChangeQueryResult>>>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+    }
+
+    [Test]
+    public async Task It_validates_the_custom_view_configured_ahead_of_an_unknown_basis_before_reporting_it()
+    {
+        // Custom views are AND filters in CMS order: the first view must surface its own validation error
+        // rather than being masked by the second strategy's planning failure, so it is validated first.
+        var executor = new InMemoryRelationalCommandExecutor([new InMemoryRelationalCommandExecution([])]);
+        IRelationalTrackedChangeQueryRequest request = CreateRequest(
+            ChangeQueryEndpointOperation.Deletes,
+            totalCount: false,
+            trackedChangeTable: WithDocumentIdSystemColumn(CreateSchoolTrackedTable()),
+            resourceInfo: CreateResourceInfo(_schoolResource, isDescriptor: false),
+            resourceModel: CreateRegularResourceModel(),
+            evaluators:
+            [
+                new AuthorizationStrategyEvaluator("SchoolWithAlternativeType", [], FilterOperator.Or),
+                new AuthorizationStrategyEvaluator("FooWithBar", [], FilterOperator.Or),
+            ]
+        );
+
+        TrackedChangeQueryResult result = await new RelationalChangeQueryRepository(
+            executor,
+            A.Fake<IRelationalParameterConfigurator>()
+        ).QueryTrackedChanges(request);
+
+        var failure = result
+            .AuthorizationFailure.Should()
+            .BeOfType<ChangeQueryAuthorizationFailure.SecurityConfiguration>()
+            .Subject;
+        failure.UnavailableStrategyNames.Should().Equal("FooWithBar");
+        failure
+            .Errors.Should()
+            .Equal(SecurityConfigurationFailureMessages.UnknownAuthorizationStrategies(["FooWithBar"]));
+        executor.Commands.Should().ContainSingle();
+        executor.Commands[0].CommandText.Should().Contain("\"auth\".\"SchoolWithAlternativeType\"");
+        executor.Commands[0].CommandText.Should().NotContain("FooWithBar");
+    }
+
+    [Test]
+    public async Task It_does_not_validate_a_custom_view_configured_after_an_unknown_basis()
+    {
+        var executor = new InMemoryRelationalCommandExecutor([]);
+        IRelationalTrackedChangeQueryRequest request = CreateRequest(
+            ChangeQueryEndpointOperation.Deletes,
+            totalCount: false,
+            trackedChangeTable: WithDocumentIdSystemColumn(CreateSchoolTrackedTable()),
+            resourceInfo: CreateResourceInfo(_schoolResource, isDescriptor: false),
+            resourceModel: CreateRegularResourceModel(),
+            evaluators:
+            [
+                new AuthorizationStrategyEvaluator("FooWithBar", [], FilterOperator.Or),
+                new AuthorizationStrategyEvaluator("SchoolWithAlternativeType", [], FilterOperator.Or),
+            ]
+        );
+
+        TrackedChangeQueryResult result = await new RelationalChangeQueryRepository(
+            executor,
+            A.Fake<IRelationalParameterConfigurator>()
+        ).QueryTrackedChanges(request);
+
+        result
+            .AuthorizationFailure.Should()
+            .BeOfType<ChangeQueryAuthorizationFailure.SecurityConfiguration>()
+            .Which.UnavailableStrategyNames.Should()
+            .Equal("FooWithBar");
+        executor.Commands.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task It_reports_only_the_unsupported_strategy_when_a_resolved_custom_view_is_configured_with_it()
+    {
+        // RelationshipsWithPeopleOnly has no ReadChanges implementation; the resolved custom view is not an
+        // unavailable strategy and must not be listed with it. Nothing is validated or executed.
+        var executor = new InMemoryRelationalCommandExecutor([]);
+        IRelationalTrackedChangeQueryRequest request = CreateRequest(
+            ChangeQueryEndpointOperation.Deletes,
+            totalCount: false,
+            trackedChangeTable: WithDocumentIdSystemColumn(CreateSchoolTrackedTable()),
+            resourceInfo: CreateResourceInfo(_schoolResource, isDescriptor: false),
+            resourceModel: CreateRegularResourceModel(),
+            evaluators:
+            [
+                new AuthorizationStrategyEvaluator("SchoolWithAlternativeType", [], FilterOperator.Or),
+                new AuthorizationStrategyEvaluator("RelationshipsWithPeopleOnly", [], FilterOperator.Or),
+            ]
+        );
+
+        TrackedChangeQueryResult result = await new RelationalChangeQueryRepository(
+            executor,
+            A.Fake<IRelationalParameterConfigurator>()
+        ).QueryTrackedChanges(request);
+
+        var failure = result
+            .AuthorizationFailure.Should()
+            .BeOfType<ChangeQueryAuthorizationFailure.SecurityConfiguration>()
+            .Subject;
+        failure.UnavailableStrategyNames.Should().Equal("RelationshipsWithPeopleOnly");
+        failure.Errors.Should().BeEmpty();
+        executor.Commands.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task It_validates_custom_views_before_returning_the_empty_keychanges_result_for_descriptors()
+    {
+        // Descriptors have no key changes, but a misconfigured view must still surface its own 500 instead of
+        // a silent empty 200 — the same rule the live paths apply ahead of their terminals.
+        var executor = new InMemoryRelationalCommandExecutor([new InMemoryRelationalCommandExecution([])]);
+        IRelationalTrackedChangeQueryRequest request = CreateRequest(
+            ChangeQueryEndpointOperation.KeyChanges,
+            totalCount: true,
+            trackedChangeTable: WithDocumentIdSystemColumn(CreateSharedDescriptorTrackedTable()),
+            resourceInfo: CreateResourceInfo(_programTypeDescriptorResource, isDescriptor: true),
+            resourceModel: CreateSharedDescriptorResourceModel(),
+            evaluators:
+            [
+                new AuthorizationStrategyEvaluator("ProgramTypeDescriptorWithX", [], FilterOperator.Or),
+            ]
+        );
+
+        TrackedChangeQueryResult result = await new RelationalChangeQueryRepository(
+            executor,
+            A.Fake<IRelationalParameterConfigurator>()
+        ).QueryTrackedChanges(request);
+
+        result.AuthorizationFailure.Should().BeNull();
+        result.Items.Should().BeEmpty();
+        result.TotalCount.Should().Be(0L);
+        executor.Commands.Should().ContainSingle();
+        executor.Commands[0].CommandText.Should().Contain("\"auth\".\"ProgramTypeDescriptorWithX\"");
+    }
+
+    private static TrackedChangeTableInfo WithDocumentIdSystemColumn(TrackedChangeTableInfo table) =>
+        table with
+        {
+            SystemColumns =
+            [
+                .. table.SystemColumns,
+                SystemColumn(
+                    TrackedChangeSystemColumnRole.DocumentId,
+                    "DocumentId",
+                    new RelationalScalarType(ScalarKind.Int64)
+                ),
+            ],
+        };
+
+    private sealed class FakeDbException(string message) : DbException(message);
 
     [Test]
     public async Task It_returns_security_configuration_when_mssql_authorization_parameters_exceed_command_limit()

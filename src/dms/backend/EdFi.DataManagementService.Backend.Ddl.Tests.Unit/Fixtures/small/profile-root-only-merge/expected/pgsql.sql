@@ -756,14 +756,16 @@ BEGIN
             "OldNamespace",
             "OldCodeValue",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."Discriminator",
             OLD."Namespace",
             OLD."CodeValue",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -1100,6 +1102,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Descriptor"
     "Discriminator" varchar(128) NOT NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_Descriptor" PRIMARY KEY ("ChangeVersion")
 );
@@ -1110,6 +1113,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."ProfileRootOnlyMergeItem"
     "NewProfileRootOnlyMergeItemId" integer NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_ProfileRootOnlyMergeItem" PRIMARY KEY ("ChangeVersion")
 );
@@ -1120,6 +1124,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Student"
     "NewStudentUniqueId" varchar(32) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
+    "DocumentId" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_tracked_changes_edfi_Student" PRIMARY KEY ("ChangeVersion")
 );
@@ -1236,12 +1241,14 @@ BEGIN
         INSERT INTO "tracked_changes_edfi"."ProfileRootOnlyMergeItem" (
             "OldProfileRootOnlyMergeItemId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."ProfileRootOnlyMergeItemId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -1269,13 +1276,15 @@ BEGIN
             "OldProfileRootOnlyMergeItemId",
             "NewProfileRootOnlyMergeItemId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."ProfileRootOnlyMergeItemId",
             NEW."ProfileRootOnlyMergeItemId",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -1321,12 +1330,14 @@ BEGIN
         INSERT INTO "tracked_changes_edfi"."Student" (
             "OldStudentUniqueId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."StudentUniqueId",
             doc."DocumentUuid",
-            doc."ContentVersion"
+            doc."ContentVersion",
+            OLD."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -1354,13 +1365,15 @@ BEGIN
             "OldStudentUniqueId",
             "NewStudentUniqueId",
             "Id",
-            "ChangeVersion"
+            "ChangeVersion",
+            "DocumentId"
         )
         SELECT
             OLD."StudentUniqueId",
             NEW."StudentUniqueId",
             doc."DocumentUuid",
-            _stampedContentVersion
+            _stampedContentVersion,
+            NEW."DocumentId"
         FROM "dms"."Document" doc
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;

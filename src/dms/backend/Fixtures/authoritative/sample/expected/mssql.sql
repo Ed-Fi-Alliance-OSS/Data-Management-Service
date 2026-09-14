@@ -634,14 +634,16 @@ BEGIN
             [OldNamespace],
             [OldCodeValue],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[Discriminator],
             del.[Namespace],
             del.[CodeValue],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -9753,6 +9755,7 @@ CREATE TABLE [tracked_changes_edfi].[AcademicWeek]
     [NewWeekIdentifier] nvarchar(80) NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_AcademicWeek_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_AcademicWeek] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -9768,6 +9771,7 @@ CREATE TABLE [tracked_changes_edfi].[AccountabilityRating]
     [NewSchoolYear_SchoolYear] int NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_AccountabilityRating_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_AccountabilityRating] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -9781,6 +9785,7 @@ CREATE TABLE [tracked_changes_edfi].[Assessment]
     [NewNamespace] nvarchar(255) NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_Assessment_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_Assessment] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -9798,6 +9803,7 @@ CREATE TABLE [tracked_changes_edfi].[AssessmentAdministration]
     [NewAssigningEducationOrganization_EducationOrganizationId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_AssessmentAdministration_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_AssessmentAdministration] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -9817,6 +9823,7 @@ CREATE TABLE [tracked_changes_edfi].[AssessmentAdministrationParticipation]
     [NewParticipatingEducationOrganization_EducationOrganizationId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_AssessmentAdministrationParticipation_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_AssessmentAdministrationParticipation] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -9832,6 +9839,7 @@ CREATE TABLE [tracked_changes_edfi].[AssessmentBatteryPart]
     [NewAssessment_Namespace] nvarchar(255) NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_AssessmentBatteryPart_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_AssessmentBatteryPart] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -9847,6 +9855,7 @@ CREATE TABLE [tracked_changes_edfi].[AssessmentItem]
     [NewIdentificationCode] nvarchar(60) NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_AssessmentItem_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_AssessmentItem] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -9862,6 +9871,7 @@ CREATE TABLE [tracked_changes_edfi].[AssessmentScoreRangeLearningStandard]
     [NewScoreRangeId] nvarchar(60) NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_AssessmentScoreRangeLearningStandard_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_AssessmentScoreRangeLearningStandard] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -9875,6 +9885,7 @@ CREATE TABLE [tracked_changes_edfi].[BalanceSheetDimension]
     [NewFiscalYear] int NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_BalanceSheetDimension_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_BalanceSheetDimension] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -9888,6 +9899,7 @@ CREATE TABLE [tracked_changes_edfi].[BellSchedule]
     [NewSchool_SchoolId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_BellSchedule_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_BellSchedule] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -9903,6 +9915,7 @@ CREATE TABLE [tracked_changes_edfi].[Calendar]
     [NewSchoolYear_SchoolYear] int NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_Calendar_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_Calendar] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -9920,6 +9933,7 @@ CREATE TABLE [tracked_changes_edfi].[CalendarDate]
     [NewDate] date NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_CalendarDate_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_CalendarDate] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -9935,6 +9949,7 @@ CREATE TABLE [tracked_changes_edfi].[ChartOfAccount]
     [NewFiscalYear_Unified] int NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_ChartOfAccount_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_ChartOfAccount] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -9948,6 +9963,7 @@ CREATE TABLE [tracked_changes_edfi].[ClassPeriod]
     [NewSchool_SchoolId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_ClassPeriod_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_ClassPeriod] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -9961,6 +9977,7 @@ CREATE TABLE [tracked_changes_edfi].[Cohort]
     [NewEducationOrganization_EducationOrganizationId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_Cohort_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_Cohort] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -9972,6 +9989,7 @@ CREATE TABLE [tracked_changes_edfi].[CommunityOrganization]
     [NewCommunityOrganizationId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_CommunityOrganization_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_CommunityOrganization] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -9983,6 +10001,7 @@ CREATE TABLE [tracked_changes_edfi].[CommunityProvider]
     [NewCommunityProviderId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_CommunityProvider_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_CommunityProvider] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -9998,6 +10017,7 @@ CREATE TABLE [tracked_changes_edfi].[CommunityProviderLicense]
     [NewLicensingOrganization] nvarchar(75) NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_CommunityProviderLicense_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_CommunityProviderLicense] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -10015,6 +10035,7 @@ CREATE TABLE [tracked_changes_edfi].[CompetencyObjective]
     [NewObjectiveGradeLevelDescriptor_CodeValue] nvarchar(50) NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_CompetencyObjective_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_CompetencyObjective] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -10024,10 +10045,9 @@ CREATE TABLE [tracked_changes_edfi].[Contact]
 (
     [OldContactUniqueId] nvarchar(32) NOT NULL,
     [NewContactUniqueId] nvarchar(32) NULL,
-    [OldContact_DocumentId] bigint NOT NULL,
-    [NewContact_DocumentId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_Contact_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_Contact] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -10041,6 +10061,7 @@ CREATE TABLE [tracked_changes_edfi].[Course]
     [NewEducationOrganization_EducationOrganizationId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_Course_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_Course] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -10058,6 +10079,7 @@ CREATE TABLE [tracked_changes_edfi].[CourseOffering]
     [NewSession_SessionName] nvarchar(60) NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_CourseOffering_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_CourseOffering] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -10087,6 +10109,7 @@ CREATE TABLE [tracked_changes_edfi].[CourseTranscript]
     [NewStudentAcademicRecord_Student_DocumentId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_CourseTranscript_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_CourseTranscript] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -10104,6 +10127,7 @@ CREATE TABLE [tracked_changes_edfi].[Credential]
     [NewNamespace] nvarchar(255) NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_Credential_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_Credential] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -10115,6 +10139,7 @@ CREATE TABLE [tracked_changes_edfi].[CrisisEvent]
     [NewCrisisEventName] nvarchar(100) NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_CrisisEvent_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_CrisisEvent] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -10129,6 +10154,7 @@ CREATE TABLE [tracked_changes_edfi].[Descriptor]
     [Discriminator] nvarchar(128) NOT NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_Descriptor_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_Descriptor] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -10146,6 +10172,7 @@ CREATE TABLE [tracked_changes_edfi].[DescriptorMapping]
     [NewValue] nvarchar(50) NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_DescriptorMapping_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_DescriptorMapping] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -10165,6 +10192,7 @@ CREATE TABLE [tracked_changes_edfi].[DisciplineAction]
     [NewStudent_DocumentId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_DisciplineAction_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_DisciplineAction] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -10178,6 +10206,7 @@ CREATE TABLE [tracked_changes_edfi].[DisciplineIncident]
     [NewSchool_SchoolId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_DisciplineIncident_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_DisciplineIncident] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -10191,6 +10220,7 @@ CREATE TABLE [tracked_changes_edfi].[EducationContent]
     [NewNamespace] nvarchar(255) NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_EducationContent_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_EducationContent] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -10206,6 +10236,7 @@ CREATE TABLE [tracked_changes_edfi].[EducationOrganizationInterventionPrescripti
     [NewInterventionPrescriptionInterventionPrescription_InterventionPrescriptionIdentificationCode] nvarchar(60) NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_EducationOrganizationInterventionPrescriptionAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_EducationOrganizationInterventionPrescriptionAssociation] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -10217,6 +10248,7 @@ CREATE TABLE [tracked_changes_edfi].[EducationOrganizationNetwork]
     [NewEducationOrganizationNetworkId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_EducationOrganizationNetwork_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_EducationOrganizationNetwork] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -10230,6 +10262,7 @@ CREATE TABLE [tracked_changes_edfi].[EducationOrganizationNetworkAssociation]
     [NewMemberEducationOrganization_EducationOrganizationId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_EducationOrganizationNetworkAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_EducationOrganizationNetworkAssociation] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -10243,6 +10276,7 @@ CREATE TABLE [tracked_changes_edfi].[EducationOrganizationPeerAssociation]
     [NewPeerEducationOrganization_EducationOrganizationId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_EducationOrganizationPeerAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_EducationOrganizationPeerAssociation] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -10254,6 +10288,7 @@ CREATE TABLE [tracked_changes_edfi].[EducationServiceCenter]
     [NewEducationServiceCenterId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_EducationServiceCenter_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_EducationServiceCenter] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -10285,6 +10320,7 @@ CREATE TABLE [tracked_changes_edfi].[EvaluationRubricDimension]
     [NewProgramEvaluationElement_ProgramTypeDescriptor_CodeValue] nvarchar(50) NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_EvaluationRubricDimension_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_EvaluationRubricDimension] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -10300,6 +10336,7 @@ CREATE TABLE [tracked_changes_edfi].[FeederSchoolAssociation]
     [NewSchool_SchoolId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_FeederSchoolAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_FeederSchoolAssociation] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -10313,6 +10350,7 @@ CREATE TABLE [tracked_changes_edfi].[FunctionDimension]
     [NewFiscalYear] int NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_FunctionDimension_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_FunctionDimension] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -10326,6 +10364,7 @@ CREATE TABLE [tracked_changes_edfi].[FundDimension]
     [NewFiscalYear] int NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_FundDimension_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_FundDimension] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -10361,6 +10400,7 @@ CREATE TABLE [tracked_changes_edfi].[Grade]
     [NewStudentSectionAssociation_Student_DocumentId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_Grade_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_Grade] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -10374,6 +10414,7 @@ CREATE TABLE [tracked_changes_edfi].[GradebookEntry]
     [NewNamespace] nvarchar(255) NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_GradebookEntry_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_GradebookEntry] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -10393,6 +10434,7 @@ CREATE TABLE [tracked_changes_edfi].[GradingPeriod]
     [NewSchoolYear_SchoolYear] int NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_GradingPeriod_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_GradingPeriod] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -10410,6 +10452,7 @@ CREATE TABLE [tracked_changes_edfi].[GraduationPlan]
     [NewGraduationSchoolYear_GraduationSchoolYear] int NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_GraduationPlan_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_GraduationPlan] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -10423,6 +10466,7 @@ CREATE TABLE [tracked_changes_edfi].[Intervention]
     [NewInterventionIdentificationCode] nvarchar(60) NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_Intervention_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_Intervention] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -10436,6 +10480,7 @@ CREATE TABLE [tracked_changes_edfi].[InterventionPrescription]
     [NewInterventionPrescriptionIdentificationCode] nvarchar(60) NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_InterventionPrescription_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_InterventionPrescription] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -10449,6 +10494,7 @@ CREATE TABLE [tracked_changes_edfi].[InterventionStudy]
     [NewInterventionStudyIdentificationCode] nvarchar(60) NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_InterventionStudy_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_InterventionStudy] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -10462,6 +10508,7 @@ CREATE TABLE [tracked_changes_edfi].[LearningStandard]
     [NewNamespace] nvarchar(255) NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_LearningStandard_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_LearningStandard] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -10477,6 +10524,7 @@ CREATE TABLE [tracked_changes_edfi].[LearningStandardEquivalenceAssociation]
     [NewTargetLearningStandard_LearningStandardId] nvarchar(60) NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_LearningStandardEquivalenceAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_LearningStandardEquivalenceAssociation] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -10492,6 +10540,7 @@ CREATE TABLE [tracked_changes_edfi].[LocalAccount]
     [NewFiscalYear_Unified] int NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_LocalAccount_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_LocalAccount] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -10509,6 +10558,7 @@ CREATE TABLE [tracked_changes_edfi].[LocalActual]
     [NewLocalAccount_FiscalYear] int NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_LocalActual_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_LocalActual] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -10526,6 +10576,7 @@ CREATE TABLE [tracked_changes_edfi].[LocalBudget]
     [NewLocalAccount_FiscalYear] int NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_LocalBudget_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_LocalBudget] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -10547,6 +10598,7 @@ CREATE TABLE [tracked_changes_edfi].[LocalContractedStaff]
     [NewStaff_DocumentId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_LocalContractedStaff_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_LocalContractedStaff] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -10558,6 +10610,7 @@ CREATE TABLE [tracked_changes_edfi].[LocalEducationAgency]
     [NewLocalEducationAgencyId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_LocalEducationAgency_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_LocalEducationAgency] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -10575,6 +10628,7 @@ CREATE TABLE [tracked_changes_edfi].[LocalEncumbrance]
     [NewLocalAccount_FiscalYear] int NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_LocalEncumbrance_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_LocalEncumbrance] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -10596,6 +10650,7 @@ CREATE TABLE [tracked_changes_edfi].[LocalPayroll]
     [NewStaff_DocumentId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_LocalPayroll_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_LocalPayroll] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -10609,6 +10664,7 @@ CREATE TABLE [tracked_changes_edfi].[Location]
     [NewSchool_SchoolId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_Location_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_Location] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -10622,6 +10678,7 @@ CREATE TABLE [tracked_changes_edfi].[ObjectDimension]
     [NewFiscalYear] int NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_ObjectDimension_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_ObjectDimension] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -10637,6 +10694,7 @@ CREATE TABLE [tracked_changes_edfi].[ObjectiveAssessment]
     [NewIdentificationCode] nvarchar(60) NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_ObjectiveAssessment_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_ObjectiveAssessment] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -10650,6 +10708,7 @@ CREATE TABLE [tracked_changes_edfi].[OpenStaffPosition]
     [NewRequisitionNumber] nvarchar(20) NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_OpenStaffPosition_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_OpenStaffPosition] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -10663,6 +10722,7 @@ CREATE TABLE [tracked_changes_edfi].[OperationalUnitDimension]
     [NewFiscalYear] int NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_OperationalUnitDimension_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_OperationalUnitDimension] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -10676,6 +10736,7 @@ CREATE TABLE [tracked_changes_edfi].[OrganizationDepartment]
     [NewParentEducationOrganization_EducationOrganizationId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_OrganizationDepartment_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_OrganizationDepartment] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -10691,6 +10752,7 @@ CREATE TABLE [tracked_changes_edfi].[Person]
     [NewSourceSystemDescriptor_CodeValue] nvarchar(50) NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_Person_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_Person] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -10710,6 +10772,7 @@ CREATE TABLE [tracked_changes_edfi].[PostSecondaryEvent]
     [NewStudent_DocumentId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_PostSecondaryEvent_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_PostSecondaryEvent] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -10721,6 +10784,7 @@ CREATE TABLE [tracked_changes_edfi].[PostSecondaryInstitution]
     [NewPostSecondaryInstitutionId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_PostSecondaryInstitution_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_PostSecondaryInstitution] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -10738,6 +10802,7 @@ CREATE TABLE [tracked_changes_edfi].[Program]
     [NewProgramTypeDescriptor_CodeValue] nvarchar(50) NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_Program_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_Program] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -10751,6 +10816,7 @@ CREATE TABLE [tracked_changes_edfi].[ProgramDimension]
     [NewFiscalYear] int NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_ProgramDimension_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_ProgramDimension] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -10778,6 +10844,7 @@ CREATE TABLE [tracked_changes_edfi].[ProgramEvaluation]
     [NewProgramProgram_ProgramTypeDescriptor_CodeValue] nvarchar(50) NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_ProgramEvaluation_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_ProgramEvaluation] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -10807,6 +10874,7 @@ CREATE TABLE [tracked_changes_edfi].[ProgramEvaluationElement]
     [NewProgramEvaluation_ProgramTypeDescriptor_CodeValue] nvarchar(50) NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_ProgramEvaluationElement_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_ProgramEvaluationElement] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -10836,6 +10904,7 @@ CREATE TABLE [tracked_changes_edfi].[ProgramEvaluationObjective]
     [NewProgramEvaluation_ProgramTypeDescriptor_CodeValue] nvarchar(50) NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_ProgramEvaluationObjective_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_ProgramEvaluationObjective] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -10849,6 +10918,7 @@ CREATE TABLE [tracked_changes_edfi].[ProjectDimension]
     [NewFiscalYear] int NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_ProjectDimension_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_ProjectDimension] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -10874,6 +10944,7 @@ CREATE TABLE [tracked_changes_edfi].[ReportCard]
     [NewStudent_DocumentId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_ReportCard_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_ReportCard] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -10891,6 +10962,7 @@ CREATE TABLE [tracked_changes_edfi].[RestraintEvent]
     [NewStudent_DocumentId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_RestraintEvent_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_RestraintEvent] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -10902,6 +10974,7 @@ CREATE TABLE [tracked_changes_edfi].[School]
     [NewSchoolId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_School_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_School] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -10913,6 +10986,7 @@ CREATE TABLE [tracked_changes_edfi].[SchoolYearType]
     [NewSchoolYear] int NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_SchoolYearType_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_SchoolYearType] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -10932,6 +11006,7 @@ CREATE TABLE [tracked_changes_edfi].[Section]
     [NewSectionIdentifier] nvarchar(255) NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_Section_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_Section] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -10955,6 +11030,7 @@ CREATE TABLE [tracked_changes_edfi].[SectionAttendanceTakenEvent]
     [NewSection_SessionName] nvarchar(60) NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_SectionAttendanceTakenEvent_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_SectionAttendanceTakenEvent] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -10970,6 +11046,7 @@ CREATE TABLE [tracked_changes_edfi].[Session]
     [NewSessionName] nvarchar(60) NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_Session_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_Session] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -10983,6 +11060,7 @@ CREATE TABLE [tracked_changes_edfi].[SourceDimension]
     [NewFiscalYear] int NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_SourceDimension_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_SourceDimension] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -10992,10 +11070,9 @@ CREATE TABLE [tracked_changes_edfi].[Staff]
 (
     [OldStaffUniqueId] nvarchar(32) NOT NULL,
     [NewStaffUniqueId] nvarchar(32) NULL,
-    [OldStaff_DocumentId] bigint NOT NULL,
-    [NewStaff_DocumentId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_Staff_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_Staff] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -11015,6 +11092,7 @@ CREATE TABLE [tracked_changes_edfi].[StaffAbsenceEvent]
     [NewStaff_DocumentId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_StaffAbsenceEvent_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_StaffAbsenceEvent] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -11034,6 +11112,7 @@ CREATE TABLE [tracked_changes_edfi].[StaffCohortAssociation]
     [NewStaff_DocumentId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_StaffCohortAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_StaffCohortAssociation] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -11051,6 +11130,7 @@ CREATE TABLE [tracked_changes_edfi].[StaffDisciplineIncidentAssociation]
     [NewStaff_DocumentId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_StaffDisciplineIncidentAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_StaffDisciplineIncidentAssociation] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -11072,6 +11152,7 @@ CREATE TABLE [tracked_changes_edfi].[StaffEducationOrganizationAssignmentAssocia
     [NewStaff_DocumentId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_StaffEducationOrganizationAssignmentAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_StaffEducationOrganizationAssignmentAssociation] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -11089,6 +11170,7 @@ CREATE TABLE [tracked_changes_edfi].[StaffEducationOrganizationContactAssociatio
     [NewStaff_DocumentId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_StaffEducationOrganizationContactAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_StaffEducationOrganizationContactAssociation] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -11110,6 +11192,7 @@ CREATE TABLE [tracked_changes_edfi].[StaffEducationOrganizationEmploymentAssocia
     [NewStaff_DocumentId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_StaffEducationOrganizationEmploymentAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_StaffEducationOrganizationEmploymentAssociation] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -11129,6 +11212,7 @@ CREATE TABLE [tracked_changes_edfi].[StaffLeave]
     [NewStaff_DocumentId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_StaffLeave_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_StaffLeave] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -11152,6 +11236,7 @@ CREATE TABLE [tracked_changes_edfi].[StaffProgramAssociation]
     [NewStaff_DocumentId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_StaffProgramAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_StaffProgramAssociation] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -11171,6 +11256,7 @@ CREATE TABLE [tracked_changes_edfi].[StaffSchoolAssociation]
     [NewStaff_DocumentId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_StaffSchoolAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_StaffSchoolAssociation] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -11196,6 +11282,7 @@ CREATE TABLE [tracked_changes_edfi].[StaffSectionAssociation]
     [NewStaff_DocumentId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_StaffSectionAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_StaffSectionAssociation] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -11207,6 +11294,7 @@ CREATE TABLE [tracked_changes_edfi].[StateEducationAgency]
     [NewStateEducationAgencyId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_StateEducationAgency_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_StateEducationAgency] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -11216,10 +11304,9 @@ CREATE TABLE [tracked_changes_edfi].[Student]
 (
     [OldStudentUniqueId] nvarchar(32) NOT NULL,
     [NewStudentUniqueId] nvarchar(32) NULL,
-    [OldStudent_DocumentId] bigint NOT NULL,
-    [NewStudent_DocumentId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_Student_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_Student] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -11241,6 +11328,7 @@ CREATE TABLE [tracked_changes_edfi].[StudentAcademicRecord]
     [NewStudent_DocumentId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_StudentAcademicRecord_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_StudentAcademicRecord] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -11262,6 +11350,7 @@ CREATE TABLE [tracked_changes_edfi].[StudentAssessment]
     [NewStudent_DocumentId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_StudentAssessment_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_StudentAssessment] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -11287,6 +11376,7 @@ CREATE TABLE [tracked_changes_edfi].[StudentAssessmentEducationOrganizationAssoc
     [NewStudentAssessment_Student_DocumentId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_StudentAssessmentEducationOrganizationAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_StudentAssessmentEducationOrganizationAssociation] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -11310,6 +11400,7 @@ CREATE TABLE [tracked_changes_edfi].[StudentAssessmentRegistration]
     [NewStudentEducationOrganizationAssociation_Student_DocumentId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_StudentAssessmentRegistration_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_StudentAssessmentRegistration] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -11335,6 +11426,7 @@ CREATE TABLE [tracked_changes_edfi].[StudentAssessmentRegistrationBatteryPartAss
     [NewStudentAssessmentRegistration_StudentEducationOrganizationAssociation_Student_DocumentId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_StudentAssessmentRegistrationBatteryPartAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_StudentAssessmentRegistrationBatteryPartAssociation] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -11360,6 +11452,7 @@ CREATE TABLE [tracked_changes_edfi].[StudentCTEProgramAssociation]
     [NewStudent_DocumentId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_StudentCTEProgramAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_StudentCTEProgramAssociation] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -11379,6 +11472,7 @@ CREATE TABLE [tracked_changes_edfi].[StudentCohortAssociation]
     [NewStudent_DocumentId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_StudentCohortAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_StudentCohortAssociation] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -11410,6 +11504,7 @@ CREATE TABLE [tracked_changes_edfi].[StudentCompetencyObjective]
     [NewStudent_DocumentId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_StudentCompetencyObjective_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_StudentCompetencyObjective] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -11427,6 +11522,7 @@ CREATE TABLE [tracked_changes_edfi].[StudentContactAssociation]
     [NewContact_DocumentId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_StudentContactAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_StudentContactAssociation] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -11448,6 +11544,7 @@ CREATE TABLE [tracked_changes_edfi].[StudentDisciplineIncidentBehaviorAssociatio
     [NewStudent_DocumentId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_StudentDisciplineIncidentBehaviorAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_StudentDisciplineIncidentBehaviorAssociation] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -11465,6 +11562,7 @@ CREATE TABLE [tracked_changes_edfi].[StudentDisciplineIncidentNonOffenderAssocia
     [NewStudent_DocumentId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_StudentDisciplineIncidentNonOffenderAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_StudentDisciplineIncidentNonOffenderAssociation] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -11480,6 +11578,7 @@ CREATE TABLE [tracked_changes_edfi].[StudentEducationOrganizationAssessmentAccom
     [NewStudent_DocumentId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_StudentEducationOrganizationAssessmentAccommodation_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_StudentEducationOrganizationAssessmentAccommodation] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -11495,6 +11594,7 @@ CREATE TABLE [tracked_changes_edfi].[StudentEducationOrganizationAssociation]
     [NewStudent_DocumentId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_StudentEducationOrganizationAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_StudentEducationOrganizationAssociation] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -11516,6 +11616,7 @@ CREATE TABLE [tracked_changes_edfi].[StudentEducationOrganizationResponsibilityA
     [NewStudent_DocumentId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_StudentEducationOrganizationResponsibilityAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_StudentEducationOrganizationResponsibilityAssociation] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -11533,6 +11634,7 @@ CREATE TABLE [tracked_changes_edfi].[StudentGradebookEntry]
     [NewStudent_DocumentId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_StudentGradebookEntry_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_StudentGradebookEntry] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -11548,6 +11650,7 @@ CREATE TABLE [tracked_changes_edfi].[StudentHealth]
     [NewStudent_DocumentId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_StudentHealth_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_StudentHealth] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -11573,6 +11676,7 @@ CREATE TABLE [tracked_changes_edfi].[StudentHomelessProgramAssociation]
     [NewStudent_DocumentId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_StudentHomelessProgramAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_StudentHomelessProgramAssociation] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -11590,6 +11694,7 @@ CREATE TABLE [tracked_changes_edfi].[StudentInterventionAssociation]
     [NewStudent_DocumentId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_StudentInterventionAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_StudentInterventionAssociation] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -11613,6 +11718,7 @@ CREATE TABLE [tracked_changes_edfi].[StudentInterventionAttendanceEvent]
     [NewStudent_DocumentId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_StudentInterventionAttendanceEvent_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_StudentInterventionAttendanceEvent] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -11638,6 +11744,7 @@ CREATE TABLE [tracked_changes_edfi].[StudentLanguageInstructionProgramAssociatio
     [NewStudent_DocumentId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_StudentLanguageInstructionProgramAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_StudentLanguageInstructionProgramAssociation] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -11663,6 +11770,7 @@ CREATE TABLE [tracked_changes_edfi].[StudentMigrantEducationProgramAssociation]
     [NewStudent_DocumentId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_StudentMigrantEducationProgramAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_StudentMigrantEducationProgramAssociation] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -11688,6 +11796,7 @@ CREATE TABLE [tracked_changes_edfi].[StudentNeglectedOrDelinquentProgramAssociat
     [NewStudent_DocumentId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_StudentNeglectedOrDelinquentProgramAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_StudentNeglectedOrDelinquentProgramAssociation] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -11713,6 +11822,7 @@ CREATE TABLE [tracked_changes_edfi].[StudentProgramAssociation]
     [NewStudent_DocumentId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_StudentProgramAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_StudentProgramAssociation] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -11742,6 +11852,7 @@ CREATE TABLE [tracked_changes_edfi].[StudentProgramAttendanceEvent]
     [NewStudent_DocumentId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_StudentProgramAttendanceEvent_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_StudentProgramAttendanceEvent] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -11775,6 +11886,7 @@ CREATE TABLE [tracked_changes_edfi].[StudentProgramEvaluation]
     [NewStudent_DocumentId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_StudentProgramEvaluation_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_StudentProgramEvaluation] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -11792,6 +11904,7 @@ CREATE TABLE [tracked_changes_edfi].[StudentSchoolAssociation]
     [NewStudent_DocumentId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_StudentSchoolAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_StudentSchoolAssociation] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -11817,6 +11930,7 @@ CREATE TABLE [tracked_changes_edfi].[StudentSchoolAttendanceEvent]
     [NewStudent_DocumentId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_StudentSchoolAttendanceEvent_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_StudentSchoolAttendanceEvent] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -11842,6 +11956,7 @@ CREATE TABLE [tracked_changes_edfi].[StudentSchoolFoodServiceProgramAssociation]
     [NewStudent_DocumentId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_StudentSchoolFoodServiceProgramAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_StudentSchoolFoodServiceProgramAssociation] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -11867,6 +11982,7 @@ CREATE TABLE [tracked_changes_edfi].[StudentSection504ProgramAssociation]
     [NewStudent_DocumentId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_StudentSection504ProgramAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_StudentSection504ProgramAssociation] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -11892,6 +12008,7 @@ CREATE TABLE [tracked_changes_edfi].[StudentSectionAssociation]
     [NewStudent_DocumentId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_StudentSectionAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_StudentSectionAssociation] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -11921,6 +12038,7 @@ CREATE TABLE [tracked_changes_edfi].[StudentSectionAttendanceEvent]
     [NewStudent_DocumentId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_StudentSectionAttendanceEvent_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_StudentSectionAttendanceEvent] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -11946,6 +12064,7 @@ CREATE TABLE [tracked_changes_edfi].[StudentSpecialEducationProgramAssociation]
     [NewStudent_DocumentId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_StudentSpecialEducationProgramAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_StudentSpecialEducationProgramAssociation] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -11971,6 +12090,7 @@ CREATE TABLE [tracked_changes_edfi].[StudentSpecialEducationProgramEligibilityAs
     [NewStudent_DocumentId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_StudentSpecialEducationProgramEligibilityAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_StudentSpecialEducationProgramEligibilityAssociation] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -11996,6 +12116,7 @@ CREATE TABLE [tracked_changes_edfi].[StudentTitleIPartAProgramAssociation]
     [NewStudent_DocumentId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_StudentTitleIPartAProgramAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_StudentTitleIPartAProgramAssociation] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -12011,6 +12132,7 @@ CREATE TABLE [tracked_changes_edfi].[StudentTransportation]
     [NewStudent_DocumentId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_StudentTransportation_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_StudentTransportation] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -12024,6 +12146,7 @@ CREATE TABLE [tracked_changes_edfi].[Survey]
     [NewSurveyIdentifier] nvarchar(60) NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_Survey_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_Survey] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -12041,6 +12164,7 @@ CREATE TABLE [tracked_changes_edfi].[SurveyCourseAssociation]
     [NewSurvey_SurveyIdentifier] nvarchar(60) NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_SurveyCourseAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_SurveyCourseAssociation] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -12062,6 +12186,7 @@ CREATE TABLE [tracked_changes_edfi].[SurveyProgramAssociation]
     [NewSurvey_SurveyIdentifier] nvarchar(60) NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_SurveyProgramAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_SurveyProgramAssociation] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -12077,6 +12202,7 @@ CREATE TABLE [tracked_changes_edfi].[SurveyQuestion]
     [NewSurveyIdentifier_Unified] nvarchar(60) NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_SurveyQuestion_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_SurveyQuestion] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -12094,6 +12220,7 @@ CREATE TABLE [tracked_changes_edfi].[SurveyQuestionResponse]
     [NewSurveyResponse_SurveyResponseIdentifier] nvarchar(60) NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_SurveyQuestionResponse_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_SurveyQuestionResponse] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -12109,6 +12236,7 @@ CREATE TABLE [tracked_changes_edfi].[SurveyResponse]
     [NewSurveyResponseIdentifier] nvarchar(60) NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_SurveyResponse_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_SurveyResponse] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -12126,6 +12254,7 @@ CREATE TABLE [tracked_changes_edfi].[SurveyResponseEducationOrganizationTargetAs
     [NewSurveyResponse_SurveyResponseIdentifier] nvarchar(60) NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_SurveyResponseEducationOrganizationTargetAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_SurveyResponseEducationOrganizationTargetAssociation] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -12145,6 +12274,7 @@ CREATE TABLE [tracked_changes_edfi].[SurveyResponseStaffTargetAssociation]
     [NewStaff_DocumentId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_SurveyResponseStaffTargetAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_SurveyResponseStaffTargetAssociation] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -12160,6 +12290,7 @@ CREATE TABLE [tracked_changes_edfi].[SurveySection]
     [NewSurveySectionTitle] nvarchar(255) NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_SurveySection_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_SurveySection] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -12183,6 +12314,7 @@ CREATE TABLE [tracked_changes_edfi].[SurveySectionAssociation]
     [NewSurvey_SurveyIdentifier] nvarchar(60) NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_SurveySectionAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_SurveySectionAssociation] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -12200,6 +12332,7 @@ CREATE TABLE [tracked_changes_edfi].[SurveySectionResponse]
     [NewSurveySection_SurveySectionTitle] nvarchar(255) NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_SurveySectionResponse_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_SurveySectionResponse] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -12219,6 +12352,7 @@ CREATE TABLE [tracked_changes_edfi].[SurveySectionResponseEducationOrganizationT
     [NewSurveySectionResponse_SurveySectionTitle] nvarchar(255) NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_SurveySectionResponseEducationOrganizationTargetAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_SurveySectionResponseEducationOrganizationTargetAssociation] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -12240,6 +12374,7 @@ CREATE TABLE [tracked_changes_edfi].[SurveySectionResponseStaffTargetAssociation
     [NewStaff_DocumentId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_SurveySectionResponseStaffTargetAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_SurveySectionResponseStaffTargetAssociation] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -12251,6 +12386,7 @@ CREATE TABLE [tracked_changes_sample].[Bus]
     [NewBusId] nvarchar(60) NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_sample_Bus_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_sample_Bus] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -12264,6 +12400,7 @@ CREATE TABLE [tracked_changes_sample].[BusRoute]
     [NewBusRouteNumber] int NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_sample_BusRoute_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_sample_BusRoute] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -12289,6 +12426,7 @@ CREATE TABLE [tracked_changes_sample].[StudentArtProgramAssociation]
     [NewStudent_DocumentId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_sample_StudentArtProgramAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_sample_StudentArtProgramAssociation] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -12310,6 +12448,7 @@ CREATE TABLE [tracked_changes_sample].[StudentGraduationPlanAssociation]
     [NewStudent_DocumentId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
+    [DocumentId] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_sample_StudentGraduationPlanAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_sample_StudentGraduationPlanAssociation] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
@@ -39150,13 +39289,15 @@ BEGIN
             [OldSchool_SchoolId],
             [OldWeekIdentifier],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[School_SchoolId],
             del.[WeekIdentifier],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -39175,7 +39316,8 @@ BEGIN
                 [NewSchool_SchoolId],
                 [NewWeekIdentifier],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[School_SchoolId],
@@ -39183,7 +39325,8 @@ BEGIN
                 i.[School_SchoolId],
                 i.[WeekIdentifier],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -39277,14 +39420,16 @@ BEGIN
             [OldRatingTitle],
             [OldSchoolYear_SchoolYear],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[EducationOrganization_EducationOrganizationId],
             del.[RatingTitle],
             del.[SchoolYear_SchoolYear],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -39305,7 +39450,8 @@ BEGIN
                 [NewRatingTitle],
                 [NewSchoolYear_SchoolYear],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[EducationOrganization_EducationOrganizationId],
@@ -39315,7 +39461,8 @@ BEGIN
                 i.[RatingTitle],
                 i.[SchoolYear_SchoolYear],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -39408,13 +39555,15 @@ BEGIN
             [OldAssessmentIdentifier],
             [OldNamespace],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[AssessmentIdentifier],
             del.[Namespace],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -39433,7 +39582,8 @@ BEGIN
                 [NewAssessmentIdentifier],
                 [NewNamespace],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[AssessmentIdentifier],
@@ -39441,7 +39591,8 @@ BEGIN
                 i.[AssessmentIdentifier],
                 i.[Namespace],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -39575,7 +39726,8 @@ BEGIN
             [OldAssessment_Namespace],
             [OldAssigningEducationOrganization_EducationOrganizationId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[AdministrationIdentifier],
@@ -39583,7 +39735,8 @@ BEGIN
             del.[Assessment_Namespace],
             del.[AssigningEducationOrganization_EducationOrganizationId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -39606,7 +39759,8 @@ BEGIN
                 [NewAssessment_Namespace],
                 [NewAssigningEducationOrganization_EducationOrganizationId],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[AdministrationIdentifier],
@@ -39618,7 +39772,8 @@ BEGIN
                 i.[Assessment_Namespace],
                 i.[AssigningEducationOrganization_EducationOrganizationId],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -39753,7 +39908,8 @@ BEGIN
             [OldAssessmentAdministration_Namespace],
             [OldParticipatingEducationOrganization_EducationOrganizationId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[AssessmentAdministration_AdministrationIdentifier],
@@ -39762,7 +39918,8 @@ BEGIN
             del.[AssessmentAdministration_Namespace],
             del.[ParticipatingEducationOrganization_EducationOrganizationId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -39787,7 +39944,8 @@ BEGIN
                 [NewAssessmentAdministration_Namespace],
                 [NewParticipatingEducationOrganization_EducationOrganizationId],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[AssessmentAdministration_AdministrationIdentifier],
@@ -39801,7 +39959,8 @@ BEGIN
                 i.[AssessmentAdministration_Namespace],
                 i.[ParticipatingEducationOrganization_EducationOrganizationId],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -40051,14 +40210,16 @@ BEGIN
             [OldAssessment_AssessmentIdentifier],
             [OldAssessment_Namespace],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[AssessmentBatteryPartName],
             del.[Assessment_AssessmentIdentifier],
             del.[Assessment_Namespace],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -40079,7 +40240,8 @@ BEGIN
                 [NewAssessment_AssessmentIdentifier],
                 [NewAssessment_Namespace],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[AssessmentBatteryPartName],
@@ -40089,7 +40251,8 @@ BEGIN
                 i.[Assessment_AssessmentIdentifier],
                 i.[Assessment_Namespace],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -40261,14 +40424,16 @@ BEGIN
             [OldAssessment_Namespace],
             [OldIdentificationCode],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[Assessment_AssessmentIdentifier],
             del.[Assessment_Namespace],
             del.[IdentificationCode],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -40289,7 +40454,8 @@ BEGIN
                 [NewAssessment_Namespace],
                 [NewIdentificationCode],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[Assessment_AssessmentIdentifier],
@@ -40299,7 +40465,8 @@ BEGIN
                 i.[Assessment_Namespace],
                 i.[IdentificationCode],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -40705,14 +40872,16 @@ BEGIN
             [OldNamespace_Unified],
             [OldScoreRangeId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[AssessmentIdentifier_Unified],
             del.[Namespace_Unified],
             del.[ScoreRangeId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -40733,7 +40902,8 @@ BEGIN
                 [NewNamespace_Unified],
                 [NewScoreRangeId],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[AssessmentIdentifier_Unified],
@@ -40743,7 +40913,8 @@ BEGIN
                 i.[Namespace_Unified],
                 i.[ScoreRangeId],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -40914,13 +41085,15 @@ BEGIN
             [OldCode],
             [OldFiscalYear],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[Code],
             del.[FiscalYear],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -40939,7 +41112,8 @@ BEGIN
                 [NewCode],
                 [NewFiscalYear],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[Code],
@@ -40947,7 +41121,8 @@ BEGIN
                 i.[Code],
                 i.[FiscalYear],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -41079,13 +41254,15 @@ BEGIN
             [OldBellScheduleName],
             [OldSchool_SchoolId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[BellScheduleName],
             del.[School_SchoolId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -41104,7 +41281,8 @@ BEGIN
                 [NewBellScheduleName],
                 [NewSchool_SchoolId],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[BellScheduleName],
@@ -41112,7 +41290,8 @@ BEGIN
                 i.[BellScheduleName],
                 i.[School_SchoolId],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -41323,14 +41502,16 @@ BEGIN
             [OldSchool_SchoolId],
             [OldSchoolYear_SchoolYear],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[CalendarCode],
             del.[School_SchoolId],
             del.[SchoolYear_SchoolYear],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -41351,7 +41532,8 @@ BEGIN
                 [NewSchool_SchoolId],
                 [NewSchoolYear_SchoolYear],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[CalendarCode],
@@ -41361,7 +41543,8 @@ BEGIN
                 i.[School_SchoolId],
                 i.[SchoolYear_SchoolYear],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -41456,7 +41639,8 @@ BEGIN
             [OldCalendar_SchoolYear],
             [OldDate],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[Calendar_CalendarCode],
@@ -41464,7 +41648,8 @@ BEGIN
             del.[Calendar_SchoolYear],
             del.[Date],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -41487,7 +41672,8 @@ BEGIN
                 [NewCalendar_SchoolYear],
                 [NewDate],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[Calendar_CalendarCode],
@@ -41499,7 +41685,8 @@ BEGIN
                 i.[Calendar_SchoolYear],
                 i.[Date],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -41671,14 +41858,16 @@ BEGIN
             [OldEducationOrganization_EducationOrganizationId],
             [OldFiscalYear_Unified],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[AccountIdentifier],
             del.[EducationOrganization_EducationOrganizationId],
             del.[FiscalYear_Unified],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -41699,7 +41888,8 @@ BEGIN
                 [NewEducationOrganization_EducationOrganizationId],
                 [NewFiscalYear_Unified],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[AccountIdentifier],
@@ -41709,7 +41899,8 @@ BEGIN
                 i.[EducationOrganization_EducationOrganizationId],
                 i.[FiscalYear_Unified],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -41841,13 +42032,15 @@ BEGIN
             [OldClassPeriodName],
             [OldSchool_SchoolId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[ClassPeriodName],
             del.[School_SchoolId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -41866,7 +42059,8 @@ BEGIN
                 [NewClassPeriodName],
                 [NewSchool_SchoolId],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[ClassPeriodName],
@@ -41874,7 +42068,8 @@ BEGIN
                 i.[ClassPeriodName],
                 i.[School_SchoolId],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -42006,13 +42201,15 @@ BEGIN
             [OldCohortIdentifier],
             [OldEducationOrganization_EducationOrganizationId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[CohortIdentifier],
             del.[EducationOrganization_EducationOrganizationId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -42031,7 +42228,8 @@ BEGIN
                 [NewCohortIdentifier],
                 [NewEducationOrganization_EducationOrganizationId],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[CohortIdentifier],
@@ -42039,7 +42237,8 @@ BEGIN
                 i.[CohortIdentifier],
                 i.[EducationOrganization_EducationOrganizationId],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -42252,12 +42451,14 @@ BEGIN
         INSERT INTO [tracked_changes_edfi].[CommunityOrganization] (
             [OldCommunityOrganizationId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[CommunityOrganizationId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -42853,12 +43054,14 @@ BEGIN
         INSERT INTO [tracked_changes_edfi].[CommunityProvider] (
             [OldCommunityProviderId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[CommunityProviderId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -43261,14 +43464,16 @@ BEGIN
             [OldLicenseIdentifier],
             [OldLicensingOrganization],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[CommunityProvider_CommunityProviderId],
             del.[LicenseIdentifier],
             del.[LicensingOrganization],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -43289,7 +43494,8 @@ BEGIN
                 [NewLicenseIdentifier],
                 [NewLicensingOrganization],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[CommunityProvider_CommunityProviderId],
@@ -43299,7 +43505,8 @@ BEGIN
                 i.[LicenseIdentifier],
                 i.[LicensingOrganization],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -43394,7 +43601,8 @@ BEGIN
             [OldObjectiveGradeLevelDescriptor_Namespace],
             [OldObjectiveGradeLevelDescriptor_CodeValue],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[EducationOrganization_EducationOrganizationId],
@@ -43402,7 +43610,8 @@ BEGIN
             oldDj0.[Namespace],
             oldDj0.[CodeValue],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ObjectiveGradeLevelDescriptor_DescriptorId];
@@ -43426,7 +43635,8 @@ BEGIN
                 [NewObjectiveGradeLevelDescriptor_Namespace],
                 [NewObjectiveGradeLevelDescriptor_CodeValue],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[EducationOrganization_EducationOrganizationId],
@@ -43438,7 +43648,8 @@ BEGIN
                 newDj0.[Namespace],
                 newDj0.[CodeValue],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -43531,15 +43742,15 @@ BEGIN
     BEGIN
         INSERT INTO [tracked_changes_edfi].[Contact] (
             [OldContactUniqueId],
-            [OldContact_DocumentId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[ContactUniqueId],
-            del.[DocumentId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -43554,19 +43765,17 @@ BEGIN
         BEGIN
             INSERT INTO [tracked_changes_edfi].[Contact] (
                 [OldContactUniqueId],
-                [OldContact_DocumentId],
                 [NewContactUniqueId],
-                [NewContact_DocumentId],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[ContactUniqueId],
-                del.[DocumentId],
                 i.[ContactUniqueId],
-                i.[DocumentId],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -44010,13 +44219,15 @@ BEGIN
             [OldCourseCode],
             [OldEducationOrganization_EducationOrganizationId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[CourseCode],
             del.[EducationOrganization_EducationOrganizationId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -44035,7 +44246,8 @@ BEGIN
                 [NewCourseCode],
                 [NewEducationOrganization_EducationOrganizationId],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[CourseCode],
@@ -44043,7 +44255,8 @@ BEGIN
                 i.[CourseCode],
                 i.[EducationOrganization_EducationOrganizationId],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -44372,7 +44585,8 @@ BEGIN
             [OldSession_SchoolYear],
             [OldSession_SessionName],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[LocalCourseCode],
@@ -44380,7 +44594,8 @@ BEGIN
             del.[Session_SchoolYear],
             del.[Session_SessionName],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -44403,7 +44618,8 @@ BEGIN
                 [NewSession_SchoolYear],
                 [NewSession_SessionName],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[LocalCourseCode],
@@ -44415,7 +44631,8 @@ BEGIN
                 i.[Session_SchoolYear],
                 i.[Session_SessionName],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -44633,7 +44850,8 @@ BEGIN
             [OldStudentAcademicRecord_TermDescriptor_CodeValue],
             [OldStudentAcademicRecord_Student_DocumentId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             oldDj0.[Namespace],
@@ -44645,15 +44863,15 @@ BEGIN
             del.[StudentAcademicRecord_StudentUniqueId],
             oldDj1.[Namespace],
             oldDj1.[CodeValue],
-            oldPj0s1.[DocumentId],
+            oldPj0.[DocumentId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[CourseAttemptResultDescriptor_DescriptorId]
         INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DocumentId] = del.[StudentAcademicRecord_TermDescriptor_DescriptorId]
-        INNER JOIN [edfi].[StudentAcademicRecord] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[StudentAcademicRecord_DocumentId]
-        INNER JOIN [edfi].[Student] oldPj0s1 ON oldPj0s1.[DocumentId] = oldPj0s0.[Student_DocumentId];
+        INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[StudentAcademicRecord_StudentUniqueId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -44686,7 +44904,8 @@ BEGIN
                 [NewStudentAcademicRecord_TermDescriptor_CodeValue],
                 [NewStudentAcademicRecord_Student_DocumentId],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 oldDj0.[Namespace],
@@ -44698,7 +44917,7 @@ BEGIN
                 del.[StudentAcademicRecord_StudentUniqueId],
                 oldDj1.[Namespace],
                 oldDj1.[CodeValue],
-                oldPj0s1.[DocumentId],
+                oldPj0.[DocumentId],
                 newDj0.[Namespace],
                 newDj0.[CodeValue],
                 i.[CourseCourse_CourseCode],
@@ -44708,21 +44927,20 @@ BEGIN
                 i.[StudentAcademicRecord_StudentUniqueId],
                 newDj1.[Namespace],
                 newDj1.[CodeValue],
-                newPj0s1.[DocumentId],
+                newPj0.[DocumentId],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[CourseAttemptResultDescriptor_DescriptorId]
             INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DocumentId] = del.[StudentAcademicRecord_TermDescriptor_DescriptorId]
-            INNER JOIN [edfi].[StudentAcademicRecord] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[StudentAcademicRecord_DocumentId]
-            INNER JOIN [edfi].[Student] oldPj0s1 ON oldPj0s1.[DocumentId] = oldPj0s0.[Student_DocumentId]
+            INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[StudentAcademicRecord_StudentUniqueId]
             INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[CourseAttemptResultDescriptor_DescriptorId]
             INNER JOIN [dms].[Descriptor] newDj1 ON newDj1.[DocumentId] = i.[StudentAcademicRecord_TermDescriptor_DescriptorId]
-            INNER JOIN [edfi].[StudentAcademicRecord] newPj0s0 ON newPj0s0.[DocumentId] = i.[StudentAcademicRecord_DocumentId]
-            INNER JOIN [edfi].[Student] newPj0s1 ON newPj0s1.[DocumentId] = newPj0s0.[Student_DocumentId];
+            INNER JOIN [edfi].[Student] newPj0 ON newPj0.[StudentUniqueId] = i.[StudentAcademicRecord_StudentUniqueId];
         END
     END
 END;
@@ -45086,7 +45304,8 @@ BEGIN
             [OldStateOfIssueStateAbbreviationDescriptor_CodeValue],
             [OldNamespace],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[CredentialIdentifier],
@@ -45094,7 +45313,8 @@ BEGIN
             oldDj0.[CodeValue],
             del.[Namespace],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[StateOfIssueStateAbbreviationDescriptor_DescriptorId];
@@ -45118,7 +45338,8 @@ BEGIN
                 [NewStateOfIssueStateAbbreviationDescriptor_CodeValue],
                 [NewNamespace],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[CredentialIdentifier],
@@ -45130,7 +45351,8 @@ BEGIN
                 newDj0.[CodeValue],
                 i.[Namespace],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -45341,12 +45563,14 @@ BEGIN
         INSERT INTO [tracked_changes_edfi].[CrisisEvent] (
             [OldCrisisEventName],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[CrisisEventName],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -45363,13 +45587,15 @@ BEGIN
                 [OldCrisisEventName],
                 [NewCrisisEventName],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[CrisisEventName],
                 i.[CrisisEventName],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -45464,7 +45690,8 @@ BEGIN
             [OldNamespace],
             [OldValue],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[MappedNamespace],
@@ -45472,7 +45699,8 @@ BEGIN
             del.[Namespace],
             del.[Value],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -45495,7 +45723,8 @@ BEGIN
                 [NewNamespace],
                 [NewValue],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[MappedNamespace],
@@ -45507,7 +45736,8 @@ BEGIN
                 i.[Namespace],
                 i.[Value],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -45642,19 +45872,21 @@ BEGIN
             [OldResponsibilitySchool_SchoolId],
             [OldStudent_DocumentId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[DisciplineActionIdentifier],
             del.[DisciplineDate],
             del.[Student_StudentUniqueId],
             del.[ResponsibilitySchool_SchoolId],
-            oldPj0s0.[DocumentId],
+            oldPj0.[DocumentId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
-        INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
+        INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -45677,27 +45909,29 @@ BEGIN
                 [NewResponsibilitySchool_SchoolId],
                 [NewStudent_DocumentId],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[DisciplineActionIdentifier],
                 del.[DisciplineDate],
                 del.[Student_StudentUniqueId],
                 del.[ResponsibilitySchool_SchoolId],
-                oldPj0s0.[DocumentId],
+                oldPj0.[DocumentId],
                 i.[DisciplineActionIdentifier],
                 i.[DisciplineDate],
                 i.[Student_StudentUniqueId],
                 i.[ResponsibilitySchool_SchoolId],
-                newPj0s0.[DocumentId],
+                newPj0.[DocumentId],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
-            INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId]
-            INNER JOIN [edfi].[Student] newPj0s0 ON newPj0s0.[DocumentId] = i.[Student_DocumentId];
+            INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId]
+            INNER JOIN [edfi].[Student] newPj0 ON newPj0.[StudentUniqueId] = i.[Student_StudentUniqueId];
         END
     END
 END;
@@ -45903,13 +46137,15 @@ BEGIN
             [OldIncidentIdentifier],
             [OldSchool_SchoolId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[IncidentIdentifier],
             del.[School_SchoolId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -45928,7 +46164,8 @@ BEGIN
                 [NewIncidentIdentifier],
                 [NewSchool_SchoolId],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[IncidentIdentifier],
@@ -45936,7 +46173,8 @@ BEGIN
                 i.[IncidentIdentifier],
                 i.[School_SchoolId],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -46146,13 +46384,15 @@ BEGIN
             [OldContentIdentifier],
             [OldNamespace],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[ContentIdentifier],
             del.[Namespace],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -46171,7 +46411,8 @@ BEGIN
                 [NewContentIdentifier],
                 [NewNamespace],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[ContentIdentifier],
@@ -46179,7 +46420,8 @@ BEGIN
                 i.[ContentIdentifier],
                 i.[Namespace],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -46546,14 +46788,16 @@ BEGIN
             [OldInterventionPrescriptionInterventionPrescription_EducationOrganizationId],
             [OldInterventionPrescriptionInterventionPrescription_InterventionPrescriptionIdentificationCode],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[EducationOrganization_EducationOrganizationId],
             del.[InterventionPrescriptionInterventionPrescription_EducationOrganizationId],
             del.[InterventionPrescriptionInterventionPrescription_InterventionPrescriptionIdentificationCode],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -46574,7 +46818,8 @@ BEGIN
                 [NewInterventionPrescriptionInterventionPrescription_EducationOrganizationId],
                 [NewInterventionPrescriptionInterventionPrescription_InterventionPrescriptionIdentificationCode],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[EducationOrganization_EducationOrganizationId],
@@ -46584,7 +46829,8 @@ BEGIN
                 i.[InterventionPrescriptionInterventionPrescription_EducationOrganizationId],
                 i.[InterventionPrescriptionInterventionPrescription_InterventionPrescriptionIdentificationCode],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -46758,12 +47004,14 @@ BEGIN
         INSERT INTO [tracked_changes_edfi].[EducationOrganizationNetwork] (
             [OldEducationOrganizationNetworkId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[EducationOrganizationNetworkId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -46931,13 +47179,15 @@ BEGIN
             [OldEducationOrganizationNetwork_EducationOrganizationNetworkId],
             [OldMemberEducationOrganization_EducationOrganizationId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[EducationOrganizationNetwork_EducationOrganizationNetworkId],
             del.[MemberEducationOrganization_EducationOrganizationId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -46956,7 +47206,8 @@ BEGIN
                 [NewEducationOrganizationNetwork_EducationOrganizationNetworkId],
                 [NewMemberEducationOrganization_EducationOrganizationId],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[EducationOrganizationNetwork_EducationOrganizationNetworkId],
@@ -46964,7 +47215,8 @@ BEGIN
                 i.[EducationOrganizationNetwork_EducationOrganizationNetworkId],
                 i.[MemberEducationOrganization_EducationOrganizationId],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -47291,13 +47543,15 @@ BEGIN
             [OldEducationOrganization_EducationOrganizationId],
             [OldPeerEducationOrganization_EducationOrganizationId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[EducationOrganization_EducationOrganizationId],
             del.[PeerEducationOrganization_EducationOrganizationId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -47316,7 +47570,8 @@ BEGIN
                 [NewEducationOrganization_EducationOrganizationId],
                 [NewPeerEducationOrganization_EducationOrganizationId],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[EducationOrganization_EducationOrganizationId],
@@ -47324,7 +47579,8 @@ BEGIN
                 i.[EducationOrganization_EducationOrganizationId],
                 i.[PeerEducationOrganization_EducationOrganizationId],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -47611,12 +47867,14 @@ BEGIN
         INSERT INTO [tracked_changes_edfi].[EducationServiceCenter] (
             [OldEducationServiceCenterId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[EducationServiceCenterId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -48027,7 +48285,8 @@ BEGIN
             [OldProgramEvaluationElement_ProgramTypeDescriptor_Namespace],
             [OldProgramEvaluationElement_ProgramTypeDescriptor_CodeValue],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[EvaluationRubricRating],
@@ -48042,7 +48301,8 @@ BEGIN
             oldDj2.[Namespace],
             oldDj2.[CodeValue],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramEvaluationElement_ProgramEvaluationPeriodDescriptor_DescriptorId]
@@ -48082,7 +48342,8 @@ BEGIN
                 [NewProgramEvaluationElement_ProgramTypeDescriptor_Namespace],
                 [NewProgramEvaluationElement_ProgramTypeDescriptor_CodeValue],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[EvaluationRubricRating],
@@ -48108,7 +48369,8 @@ BEGIN
                 newDj2.[Namespace],
                 newDj2.[CodeValue],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -48208,14 +48470,16 @@ BEGIN
             [OldFeederSchool_SchoolId],
             [OldSchool_SchoolId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[BeginDate],
             del.[FeederSchool_SchoolId],
             del.[School_SchoolId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -48236,7 +48500,8 @@ BEGIN
                 [NewFeederSchool_SchoolId],
                 [NewSchool_SchoolId],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[BeginDate],
@@ -48246,7 +48511,8 @@ BEGIN
                 i.[FeederSchool_SchoolId],
                 i.[School_SchoolId],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -48339,13 +48605,15 @@ BEGIN
             [OldCode],
             [OldFiscalYear],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[Code],
             del.[FiscalYear],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -48364,7 +48632,8 @@ BEGIN
                 [NewCode],
                 [NewFiscalYear],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[Code],
@@ -48372,7 +48641,8 @@ BEGIN
                 i.[Code],
                 i.[FiscalYear],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -48504,13 +48774,15 @@ BEGIN
             [OldCode],
             [OldFiscalYear],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[Code],
             del.[FiscalYear],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -48529,7 +48801,8 @@ BEGIN
                 [NewCode],
                 [NewFiscalYear],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[Code],
@@ -48537,7 +48810,8 @@ BEGIN
                 i.[Code],
                 i.[FiscalYear],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -48680,7 +48954,8 @@ BEGIN
             [OldStudentSectionAssociation_StudentUniqueId],
             [OldStudentSectionAssociation_Student_DocumentId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             oldDj0.[Namespace],
@@ -48695,15 +48970,15 @@ BEGIN
             del.[StudentSectionAssociation_SectionIdentifier],
             del.[StudentSectionAssociation_SessionName],
             del.[StudentSectionAssociation_StudentUniqueId],
-            oldPj0s1.[DocumentId],
+            oldPj0.[DocumentId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[GradeTypeDescriptor_DescriptorId]
         INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DocumentId] = del.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId]
-        INNER JOIN [edfi].[StudentSectionAssociation] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[StudentSectionAssociation_DocumentId]
-        INNER JOIN [edfi].[Student] oldPj0s1 ON oldPj0s1.[DocumentId] = oldPj0s0.[Student_DocumentId];
+        INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[StudentSectionAssociation_StudentUniqueId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -48742,7 +49017,8 @@ BEGIN
                 [NewStudentSectionAssociation_StudentUniqueId],
                 [NewStudentSectionAssociation_Student_DocumentId],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 oldDj0.[Namespace],
@@ -48757,7 +49033,7 @@ BEGIN
                 del.[StudentSectionAssociation_SectionIdentifier],
                 del.[StudentSectionAssociation_SessionName],
                 del.[StudentSectionAssociation_StudentUniqueId],
-                oldPj0s1.[DocumentId],
+                oldPj0.[DocumentId],
                 newDj0.[Namespace],
                 newDj0.[CodeValue],
                 newDj1.[Namespace],
@@ -48770,21 +49046,20 @@ BEGIN
                 i.[StudentSectionAssociation_SectionIdentifier],
                 i.[StudentSectionAssociation_SessionName],
                 i.[StudentSectionAssociation_StudentUniqueId],
-                newPj0s1.[DocumentId],
+                newPj0.[DocumentId],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[GradeTypeDescriptor_DescriptorId]
             INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DocumentId] = del.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId]
-            INNER JOIN [edfi].[StudentSectionAssociation] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[StudentSectionAssociation_DocumentId]
-            INNER JOIN [edfi].[Student] oldPj0s1 ON oldPj0s1.[DocumentId] = oldPj0s0.[Student_DocumentId]
+            INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[StudentSectionAssociation_StudentUniqueId]
             INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[GradeTypeDescriptor_DescriptorId]
             INNER JOIN [dms].[Descriptor] newDj1 ON newDj1.[DocumentId] = i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId]
-            INNER JOIN [edfi].[StudentSectionAssociation] newPj0s0 ON newPj0s0.[DocumentId] = i.[StudentSectionAssociation_DocumentId]
-            INNER JOIN [edfi].[Student] newPj0s1 ON newPj0s1.[DocumentId] = newPj0s0.[Student_DocumentId];
+            INNER JOIN [edfi].[Student] newPj0 ON newPj0.[StudentUniqueId] = i.[StudentSectionAssociation_StudentUniqueId];
         END
     END
 END;
@@ -48912,13 +49187,15 @@ BEGIN
             [OldGradebookEntryIdentifier],
             [OldNamespace],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[GradebookEntryIdentifier],
             del.[Namespace],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -48937,7 +49214,8 @@ BEGIN
                 [NewGradebookEntryIdentifier],
                 [NewNamespace],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[GradebookEntryIdentifier],
@@ -48945,7 +49223,8 @@ BEGIN
                 i.[GradebookEntryIdentifier],
                 i.[Namespace],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -49080,7 +49359,8 @@ BEGIN
             [OldSchool_SchoolId],
             [OldSchoolYear_SchoolYear],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             oldDj0.[Namespace],
@@ -49089,7 +49369,8 @@ BEGIN
             del.[School_SchoolId],
             del.[SchoolYear_SchoolYear],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[GradingPeriodDescriptor_DescriptorId];
@@ -49115,7 +49396,8 @@ BEGIN
                 [NewSchool_SchoolId],
                 [NewSchoolYear_SchoolYear],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 oldDj0.[Namespace],
@@ -49129,7 +49411,8 @@ BEGIN
                 i.[School_SchoolId],
                 i.[SchoolYear_SchoolYear],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -49226,7 +49509,8 @@ BEGIN
             [OldGraduationPlanTypeDescriptor_CodeValue],
             [OldGraduationSchoolYear_GraduationSchoolYear],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[EducationOrganization_EducationOrganizationId],
@@ -49234,7 +49518,8 @@ BEGIN
             oldDj0.[CodeValue],
             del.[GraduationSchoolYear_GraduationSchoolYear],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[GraduationPlanTypeDescriptor_DescriptorId];
@@ -49258,7 +49543,8 @@ BEGIN
                 [NewGraduationPlanTypeDescriptor_CodeValue],
                 [NewGraduationSchoolYear_GraduationSchoolYear],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[EducationOrganization_EducationOrganizationId],
@@ -49270,7 +49556,8 @@ BEGIN
                 newDj0.[CodeValue],
                 i.[GraduationSchoolYear_GraduationSchoolYear],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -49599,13 +49886,15 @@ BEGIN
             [OldEducationOrganization_EducationOrganizationId],
             [OldInterventionIdentificationCode],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[EducationOrganization_EducationOrganizationId],
             del.[InterventionIdentificationCode],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -49624,7 +49913,8 @@ BEGIN
                 [NewEducationOrganization_EducationOrganizationId],
                 [NewInterventionIdentificationCode],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[EducationOrganization_EducationOrganizationId],
@@ -49632,7 +49922,8 @@ BEGIN
                 i.[EducationOrganization_EducationOrganizationId],
                 i.[InterventionIdentificationCode],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -50037,13 +50328,15 @@ BEGIN
             [OldEducationOrganization_EducationOrganizationId],
             [OldInterventionPrescriptionIdentificationCode],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[EducationOrganization_EducationOrganizationId],
             del.[InterventionPrescriptionIdentificationCode],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -50062,7 +50355,8 @@ BEGIN
                 [NewEducationOrganization_EducationOrganizationId],
                 [NewInterventionPrescriptionIdentificationCode],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[EducationOrganization_EducationOrganizationId],
@@ -50070,7 +50364,8 @@ BEGIN
                 i.[EducationOrganization_EducationOrganizationId],
                 i.[InterventionPrescriptionIdentificationCode],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -50475,13 +50770,15 @@ BEGIN
             [OldEducationOrganization_EducationOrganizationId],
             [OldInterventionStudyIdentificationCode],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[EducationOrganization_EducationOrganizationId],
             del.[InterventionStudyIdentificationCode],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -50500,7 +50797,8 @@ BEGIN
                 [NewEducationOrganization_EducationOrganizationId],
                 [NewInterventionStudyIdentificationCode],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[EducationOrganization_EducationOrganizationId],
@@ -50508,7 +50806,8 @@ BEGIN
                 i.[EducationOrganization_EducationOrganizationId],
                 i.[InterventionStudyIdentificationCode],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -50952,13 +51251,15 @@ BEGIN
             [OldLearningStandardId],
             [OldNamespace],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[LearningStandardId],
             del.[Namespace],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -50977,7 +51278,8 @@ BEGIN
                 [NewLearningStandardId],
                 [NewNamespace],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[LearningStandardId],
@@ -50985,7 +51287,8 @@ BEGIN
                 i.[LearningStandardId],
                 i.[Namespace],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -51157,14 +51460,16 @@ BEGIN
             [OldSourceLearningStandard_LearningStandardId],
             [OldTargetLearningStandard_LearningStandardId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[Namespace],
             del.[SourceLearningStandard_LearningStandardId],
             del.[TargetLearningStandard_LearningStandardId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -51185,7 +51490,8 @@ BEGIN
                 [NewSourceLearningStandard_LearningStandardId],
                 [NewTargetLearningStandard_LearningStandardId],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[Namespace],
@@ -51195,7 +51501,8 @@ BEGIN
                 i.[SourceLearningStandard_LearningStandardId],
                 i.[TargetLearningStandard_LearningStandardId],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -51367,14 +51674,16 @@ BEGIN
             [OldEducationOrganization_EducationOrganizationId],
             [OldFiscalYear_Unified],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[AccountIdentifier],
             del.[EducationOrganization_EducationOrganizationId],
             del.[FiscalYear_Unified],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -51395,7 +51704,8 @@ BEGIN
                 [NewEducationOrganization_EducationOrganizationId],
                 [NewFiscalYear_Unified],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[AccountIdentifier],
@@ -51405,7 +51715,8 @@ BEGIN
                 i.[EducationOrganization_EducationOrganizationId],
                 i.[FiscalYear_Unified],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -51539,7 +51850,8 @@ BEGIN
             [OldLocalAccount_EducationOrganizationId],
             [OldLocalAccount_FiscalYear],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[AsOfDate],
@@ -51547,7 +51859,8 @@ BEGIN
             del.[LocalAccount_EducationOrganizationId],
             del.[LocalAccount_FiscalYear],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -51570,7 +51883,8 @@ BEGIN
                 [NewLocalAccount_EducationOrganizationId],
                 [NewLocalAccount_FiscalYear],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[AsOfDate],
@@ -51582,7 +51896,8 @@ BEGIN
                 i.[LocalAccount_EducationOrganizationId],
                 i.[LocalAccount_FiscalYear],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -51677,7 +51992,8 @@ BEGIN
             [OldLocalAccount_EducationOrganizationId],
             [OldLocalAccount_FiscalYear],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[AsOfDate],
@@ -51685,7 +52001,8 @@ BEGIN
             del.[LocalAccount_EducationOrganizationId],
             del.[LocalAccount_FiscalYear],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -51708,7 +52025,8 @@ BEGIN
                 [NewLocalAccount_EducationOrganizationId],
                 [NewLocalAccount_FiscalYear],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[AsOfDate],
@@ -51720,7 +52038,8 @@ BEGIN
                 i.[LocalAccount_EducationOrganizationId],
                 i.[LocalAccount_FiscalYear],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -51817,7 +52136,8 @@ BEGIN
             [OldStaff_StaffUniqueId],
             [OldStaff_DocumentId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[AsOfDate],
@@ -51825,12 +52145,13 @@ BEGIN
             del.[LocalAccount_EducationOrganizationId],
             del.[LocalAccount_FiscalYear],
             del.[Staff_StaffUniqueId],
-            oldPj0s0.[DocumentId],
+            oldPj0.[DocumentId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
-        INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId];
+        INNER JOIN [edfi].[Staff] oldPj0 ON oldPj0.[StaffUniqueId] = del.[Staff_StaffUniqueId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -51855,7 +52176,8 @@ BEGIN
                 [NewStaff_StaffUniqueId],
                 [NewStaff_DocumentId],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[AsOfDate],
@@ -51863,21 +52185,22 @@ BEGIN
                 del.[LocalAccount_EducationOrganizationId],
                 del.[LocalAccount_FiscalYear],
                 del.[Staff_StaffUniqueId],
-                oldPj0s0.[DocumentId],
+                oldPj0.[DocumentId],
                 i.[AsOfDate],
                 i.[LocalAccount_AccountIdentifier],
                 i.[LocalAccount_EducationOrganizationId],
                 i.[LocalAccount_FiscalYear],
                 i.[Staff_StaffUniqueId],
-                newPj0s0.[DocumentId],
+                newPj0.[DocumentId],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
-            INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId]
-            INNER JOIN [edfi].[Staff] newPj0s0 ON newPj0s0.[DocumentId] = i.[Staff_DocumentId];
+            INNER JOIN [edfi].[Staff] oldPj0 ON oldPj0.[StaffUniqueId] = del.[Staff_StaffUniqueId]
+            INNER JOIN [edfi].[Staff] newPj0 ON newPj0.[StaffUniqueId] = i.[Staff_StaffUniqueId];
         END
     END
 END;
@@ -52250,12 +52573,14 @@ BEGIN
         INSERT INTO [tracked_changes_edfi].[LocalEducationAgency] (
             [OldLocalEducationAgencyId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[LocalEducationAgencyId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -52737,7 +53062,8 @@ BEGIN
             [OldLocalAccount_EducationOrganizationId],
             [OldLocalAccount_FiscalYear],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[AsOfDate],
@@ -52745,7 +53071,8 @@ BEGIN
             del.[LocalAccount_EducationOrganizationId],
             del.[LocalAccount_FiscalYear],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -52768,7 +53095,8 @@ BEGIN
                 [NewLocalAccount_EducationOrganizationId],
                 [NewLocalAccount_FiscalYear],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[AsOfDate],
@@ -52780,7 +53108,8 @@ BEGIN
                 i.[LocalAccount_EducationOrganizationId],
                 i.[LocalAccount_FiscalYear],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -52877,7 +53206,8 @@ BEGIN
             [OldStaff_StaffUniqueId],
             [OldStaff_DocumentId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[AsOfDate],
@@ -52885,12 +53215,13 @@ BEGIN
             del.[LocalAccount_EducationOrganizationId],
             del.[LocalAccount_FiscalYear],
             del.[Staff_StaffUniqueId],
-            oldPj0s0.[DocumentId],
+            oldPj0.[DocumentId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
-        INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId];
+        INNER JOIN [edfi].[Staff] oldPj0 ON oldPj0.[StaffUniqueId] = del.[Staff_StaffUniqueId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -52915,7 +53246,8 @@ BEGIN
                 [NewStaff_StaffUniqueId],
                 [NewStaff_DocumentId],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[AsOfDate],
@@ -52923,21 +53255,22 @@ BEGIN
                 del.[LocalAccount_EducationOrganizationId],
                 del.[LocalAccount_FiscalYear],
                 del.[Staff_StaffUniqueId],
-                oldPj0s0.[DocumentId],
+                oldPj0.[DocumentId],
                 i.[AsOfDate],
                 i.[LocalAccount_AccountIdentifier],
                 i.[LocalAccount_EducationOrganizationId],
                 i.[LocalAccount_FiscalYear],
                 i.[Staff_StaffUniqueId],
-                newPj0s0.[DocumentId],
+                newPj0.[DocumentId],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
-            INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId]
-            INNER JOIN [edfi].[Staff] newPj0s0 ON newPj0s0.[DocumentId] = i.[Staff_DocumentId];
+            INNER JOIN [edfi].[Staff] oldPj0 ON oldPj0.[StaffUniqueId] = del.[Staff_StaffUniqueId]
+            INNER JOIN [edfi].[Staff] newPj0 ON newPj0.[StaffUniqueId] = i.[Staff_StaffUniqueId];
         END
     END
 END;
@@ -53026,13 +53359,15 @@ BEGIN
             [OldClassroomIdentificationCode],
             [OldSchool_SchoolId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[ClassroomIdentificationCode],
             del.[School_SchoolId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -53051,7 +53386,8 @@ BEGIN
                 [NewClassroomIdentificationCode],
                 [NewSchool_SchoolId],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[ClassroomIdentificationCode],
@@ -53059,7 +53395,8 @@ BEGIN
                 i.[ClassroomIdentificationCode],
                 i.[School_SchoolId],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -53152,13 +53489,15 @@ BEGIN
             [OldCode],
             [OldFiscalYear],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[Code],
             del.[FiscalYear],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -53177,7 +53516,8 @@ BEGIN
                 [NewCode],
                 [NewFiscalYear],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[Code],
@@ -53185,7 +53525,8 @@ BEGIN
                 i.[Code],
                 i.[FiscalYear],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -53318,14 +53659,16 @@ BEGIN
             [OldNamespace_Unified],
             [OldIdentificationCode],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[AssessmentIdentifier_Unified],
             del.[Namespace_Unified],
             del.[IdentificationCode],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -53346,7 +53689,8 @@ BEGIN
                 [NewNamespace_Unified],
                 [NewIdentificationCode],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[AssessmentIdentifier_Unified],
@@ -53356,7 +53700,8 @@ BEGIN
                 i.[Namespace_Unified],
                 i.[IdentificationCode],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -53605,13 +53950,15 @@ BEGIN
             [OldEducationOrganization_EducationOrganizationId],
             [OldRequisitionNumber],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[EducationOrganization_EducationOrganizationId],
             del.[RequisitionNumber],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -53630,7 +53977,8 @@ BEGIN
                 [NewEducationOrganization_EducationOrganizationId],
                 [NewRequisitionNumber],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[EducationOrganization_EducationOrganizationId],
@@ -53638,7 +53986,8 @@ BEGIN
                 i.[EducationOrganization_EducationOrganizationId],
                 i.[RequisitionNumber],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -53809,13 +54158,15 @@ BEGIN
             [OldCode],
             [OldFiscalYear],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[Code],
             del.[FiscalYear],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -53834,7 +54185,8 @@ BEGIN
                 [NewCode],
                 [NewFiscalYear],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[Code],
@@ -53842,7 +54194,8 @@ BEGIN
                 i.[Code],
                 i.[FiscalYear],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -54169,13 +54522,15 @@ BEGIN
             [OldOrganizationDepartmentId],
             [OldParentEducationOrganization_EducationOrganizationId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[OrganizationDepartmentId],
             del.[ParentEducationOrganization_EducationOrganizationId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -54578,14 +54933,16 @@ BEGIN
             [OldSourceSystemDescriptor_Namespace],
             [OldSourceSystemDescriptor_CodeValue],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[PersonId],
             oldDj0.[Namespace],
             oldDj0.[CodeValue],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[SourceSystemDescriptor_DescriptorId];
@@ -54607,7 +54964,8 @@ BEGIN
                 [NewSourceSystemDescriptor_Namespace],
                 [NewSourceSystemDescriptor_CodeValue],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[PersonId],
@@ -54617,7 +54975,8 @@ BEGIN
                 newDj0.[Namespace],
                 newDj0.[CodeValue],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -54715,20 +55074,22 @@ BEGIN
             [OldStudent_StudentUniqueId],
             [OldStudent_DocumentId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[EventDate],
             oldDj0.[Namespace],
             oldDj0.[CodeValue],
             del.[Student_StudentUniqueId],
-            oldPj0s0.[DocumentId],
+            oldPj0.[DocumentId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[PostSecondaryEventCategoryDescriptor_DescriptorId]
-        INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
+        INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -54751,29 +55112,31 @@ BEGIN
                 [NewStudent_StudentUniqueId],
                 [NewStudent_DocumentId],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[EventDate],
                 oldDj0.[Namespace],
                 oldDj0.[CodeValue],
                 del.[Student_StudentUniqueId],
-                oldPj0s0.[DocumentId],
+                oldPj0.[DocumentId],
                 i.[EventDate],
                 newDj0.[Namespace],
                 newDj0.[CodeValue],
                 i.[Student_StudentUniqueId],
-                newPj0s0.[DocumentId],
+                newPj0.[DocumentId],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[PostSecondaryEventCategoryDescriptor_DescriptorId]
-            INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId]
+            INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId]
             INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[PostSecondaryEventCategoryDescriptor_DescriptorId]
-            INNER JOIN [edfi].[Student] newPj0s0 ON newPj0s0.[DocumentId] = i.[Student_DocumentId];
+            INNER JOIN [edfi].[Student] newPj0 ON newPj0.[StudentUniqueId] = i.[Student_StudentUniqueId];
         END
     END
 END;
@@ -54943,12 +55306,14 @@ BEGIN
         INSERT INTO [tracked_changes_edfi].[PostSecondaryInstitution] (
             [OldPostSecondaryInstitutionId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[PostSecondaryInstitutionId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -55391,7 +55756,8 @@ BEGIN
             [OldProgramTypeDescriptor_Namespace],
             [OldProgramTypeDescriptor_CodeValue],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[EducationOrganization_EducationOrganizationId],
@@ -55399,7 +55765,8 @@ BEGIN
             oldDj0.[Namespace],
             oldDj0.[CodeValue],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramTypeDescriptor_DescriptorId];
@@ -55423,7 +55790,8 @@ BEGIN
                 [NewProgramTypeDescriptor_Namespace],
                 [NewProgramTypeDescriptor_CodeValue],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[EducationOrganization_EducationOrganizationId],
@@ -55435,7 +55803,8 @@ BEGIN
                 newDj0.[Namespace],
                 newDj0.[CodeValue],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -55569,13 +55938,15 @@ BEGIN
             [OldCode],
             [OldFiscalYear],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[Code],
             del.[FiscalYear],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -55594,7 +55965,8 @@ BEGIN
                 [NewCode],
                 [NewFiscalYear],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[Code],
@@ -55602,7 +55974,8 @@ BEGIN
                 i.[Code],
                 i.[FiscalYear],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -55741,7 +56114,8 @@ BEGIN
             [OldProgramProgram_ProgramTypeDescriptor_Namespace],
             [OldProgramProgram_ProgramTypeDescriptor_CodeValue],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             oldDj0.[Namespace],
@@ -55754,7 +56128,8 @@ BEGIN
             oldDj2.[Namespace],
             oldDj2.[CodeValue],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramEvaluationPeriodDescriptor_DescriptorId]
@@ -55790,7 +56165,8 @@ BEGIN
                 [NewProgramProgram_ProgramTypeDescriptor_Namespace],
                 [NewProgramProgram_ProgramTypeDescriptor_CodeValue],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 oldDj0.[Namespace],
@@ -55812,7 +56188,8 @@ BEGIN
                 newDj2.[Namespace],
                 newDj2.[CodeValue],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -55919,7 +56296,8 @@ BEGIN
             [OldProgramEvaluation_ProgramTypeDescriptor_Namespace],
             [OldProgramEvaluation_ProgramTypeDescriptor_CodeValue],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[ProgramEvaluationElementTitle],
@@ -55933,7 +56311,8 @@ BEGIN
             oldDj2.[Namespace],
             oldDj2.[CodeValue],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId]
@@ -55971,7 +56350,8 @@ BEGIN
                 [NewProgramEvaluation_ProgramTypeDescriptor_Namespace],
                 [NewProgramEvaluation_ProgramTypeDescriptor_CodeValue],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[ProgramEvaluationElementTitle],
@@ -55995,7 +56375,8 @@ BEGIN
                 newDj2.[Namespace],
                 newDj2.[CodeValue],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -56180,7 +56561,8 @@ BEGIN
             [OldProgramEvaluation_ProgramTypeDescriptor_Namespace],
             [OldProgramEvaluation_ProgramTypeDescriptor_CodeValue],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[ProgramEvaluationObjectiveTitle],
@@ -56194,7 +56576,8 @@ BEGIN
             oldDj2.[Namespace],
             oldDj2.[CodeValue],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId]
@@ -56232,7 +56615,8 @@ BEGIN
                 [NewProgramEvaluation_ProgramTypeDescriptor_Namespace],
                 [NewProgramEvaluation_ProgramTypeDescriptor_CodeValue],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[ProgramEvaluationObjectiveTitle],
@@ -56256,7 +56640,8 @@ BEGIN
                 newDj2.[Namespace],
                 newDj2.[CodeValue],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -56472,13 +56857,15 @@ BEGIN
             [OldCode],
             [OldFiscalYear],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[Code],
             del.[FiscalYear],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -56497,7 +56884,8 @@ BEGIN
                 [NewCode],
                 [NewFiscalYear],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[Code],
@@ -56505,7 +56893,8 @@ BEGIN
                 i.[Code],
                 i.[FiscalYear],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -56643,7 +57032,8 @@ BEGIN
             [OldStudent_StudentUniqueId],
             [OldStudent_DocumentId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[EducationOrganization_EducationOrganizationId],
@@ -56653,13 +57043,14 @@ BEGIN
             del.[GradingPeriodGradingPeriod_SchoolId],
             del.[GradingPeriodGradingPeriod_SchoolYear],
             del.[Student_StudentUniqueId],
-            oldPj0s0.[DocumentId],
+            oldPj0.[DocumentId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId]
-        INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
+        INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -56688,7 +57079,8 @@ BEGIN
                 [NewStudent_StudentUniqueId],
                 [NewStudent_DocumentId],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[EducationOrganization_EducationOrganizationId],
@@ -56698,7 +57090,7 @@ BEGIN
                 del.[GradingPeriodGradingPeriod_SchoolId],
                 del.[GradingPeriodGradingPeriod_SchoolYear],
                 del.[Student_StudentUniqueId],
-                oldPj0s0.[DocumentId],
+                oldPj0.[DocumentId],
                 i.[EducationOrganization_EducationOrganizationId],
                 newDj0.[Namespace],
                 newDj0.[CodeValue],
@@ -56706,17 +57098,18 @@ BEGIN
                 i.[GradingPeriodGradingPeriod_SchoolId],
                 i.[GradingPeriodGradingPeriod_SchoolYear],
                 i.[Student_StudentUniqueId],
-                newPj0s0.[DocumentId],
+                newPj0.[DocumentId],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId]
-            INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId]
+            INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId]
             INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId]
-            INNER JOIN [edfi].[Student] newPj0s0 ON newPj0s0.[DocumentId] = i.[Student_DocumentId];
+            INNER JOIN [edfi].[Student] newPj0 ON newPj0.[StudentUniqueId] = i.[Student_StudentUniqueId];
         END
     END
 END;
@@ -56924,18 +57317,20 @@ BEGIN
             [OldStudent_StudentUniqueId],
             [OldStudent_DocumentId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[RestraintEventIdentifier],
             del.[SchoolId_Unified],
             del.[Student_StudentUniqueId],
-            oldPj0s0.[DocumentId],
+            oldPj0.[DocumentId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
-        INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
+        INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -56956,25 +57351,27 @@ BEGIN
                 [NewStudent_StudentUniqueId],
                 [NewStudent_DocumentId],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[RestraintEventIdentifier],
                 del.[SchoolId_Unified],
                 del.[Student_StudentUniqueId],
-                oldPj0s0.[DocumentId],
+                oldPj0.[DocumentId],
                 i.[RestraintEventIdentifier],
                 i.[SchoolId_Unified],
                 i.[Student_StudentUniqueId],
-                newPj0s0.[DocumentId],
+                newPj0.[DocumentId],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
-            INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId]
-            INNER JOIN [edfi].[Student] newPj0s0 ON newPj0s0.[DocumentId] = i.[Student_DocumentId];
+            INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId]
+            INNER JOIN [edfi].[Student] newPj0 ON newPj0.[StudentUniqueId] = i.[Student_StudentUniqueId];
         END
     END
 END;
@@ -57335,12 +57732,14 @@ BEGIN
         INSERT INTO [tracked_changes_edfi].[School] (
             [OldSchoolId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[SchoolId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -57819,12 +58218,14 @@ BEGIN
         INSERT INTO [tracked_changes_edfi].[SchoolYearType] (
             [OldSchoolYear],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[SchoolYear],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -57841,13 +58242,15 @@ BEGIN
                 [OldSchoolYear],
                 [NewSchoolYear],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[SchoolYear],
                 i.[SchoolYear],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -57943,7 +58346,8 @@ BEGIN
             [OldCourseOffering_SessionName],
             [OldSectionIdentifier],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[CourseOffering_LocalCourseCode],
@@ -57952,7 +58356,8 @@ BEGIN
             del.[CourseOffering_SessionName],
             del.[SectionIdentifier],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -57977,7 +58382,8 @@ BEGIN
                 [NewCourseOffering_SessionName],
                 [NewSectionIdentifier],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[CourseOffering_LocalCourseCode],
@@ -57991,7 +58397,8 @@ BEGIN
                 i.[CourseOffering_SessionName],
                 i.[SectionIdentifier],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -58089,7 +58496,8 @@ BEGIN
             [OldSection_SectionIdentifier],
             [OldSection_SessionName],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[CalendarDate_CalendarCode],
@@ -58100,7 +58508,8 @@ BEGIN
             del.[Section_SectionIdentifier],
             del.[Section_SessionName],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -58129,7 +58538,8 @@ BEGIN
                 [NewSection_SectionIdentifier],
                 [NewSection_SessionName],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[CalendarDate_CalendarCode],
@@ -58147,7 +58557,8 @@ BEGIN
                 i.[Section_SectionIdentifier],
                 i.[Section_SessionName],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -58436,14 +58847,16 @@ BEGIN
             [OldSchoolYear_SchoolYear],
             [OldSessionName],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[School_SchoolId],
             del.[SchoolYear_SchoolYear],
             del.[SessionName],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -58464,7 +58877,8 @@ BEGIN
                 [NewSchoolYear_SchoolYear],
                 [NewSessionName],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[School_SchoolId],
@@ -58474,7 +58888,8 @@ BEGIN
                 i.[SchoolYear_SchoolYear],
                 i.[SessionName],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -58645,13 +59060,15 @@ BEGIN
             [OldCode],
             [OldFiscalYear],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[Code],
             del.[FiscalYear],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -58670,7 +59087,8 @@ BEGIN
                 [NewCode],
                 [NewFiscalYear],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[Code],
@@ -58678,7 +59096,8 @@ BEGIN
                 i.[Code],
                 i.[FiscalYear],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -58808,15 +59227,15 @@ BEGIN
     BEGIN
         INSERT INTO [tracked_changes_edfi].[Staff] (
             [OldStaffUniqueId],
-            [OldStaff_DocumentId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[StaffUniqueId],
-            del.[DocumentId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -58831,19 +59250,17 @@ BEGIN
         BEGIN
             INSERT INTO [tracked_changes_edfi].[Staff] (
                 [OldStaffUniqueId],
-                [OldStaff_DocumentId],
                 [NewStaffUniqueId],
-                [NewStaff_DocumentId],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[StaffUniqueId],
-                del.[DocumentId],
                 i.[StaffUniqueId],
-                i.[DocumentId],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -58939,20 +59356,22 @@ BEGIN
             [OldStaff_StaffUniqueId],
             [OldStaff_DocumentId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             oldDj0.[Namespace],
             oldDj0.[CodeValue],
             del.[EventDate],
             del.[Staff_StaffUniqueId],
-            oldPj0s0.[DocumentId],
+            oldPj0.[DocumentId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[AbsenceEventCategoryDescriptor_DescriptorId]
-        INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId];
+        INNER JOIN [edfi].[Staff] oldPj0 ON oldPj0.[StaffUniqueId] = del.[Staff_StaffUniqueId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -58975,29 +59394,31 @@ BEGIN
                 [NewStaff_StaffUniqueId],
                 [NewStaff_DocumentId],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 oldDj0.[Namespace],
                 oldDj0.[CodeValue],
                 del.[EventDate],
                 del.[Staff_StaffUniqueId],
-                oldPj0s0.[DocumentId],
+                oldPj0.[DocumentId],
                 newDj0.[Namespace],
                 newDj0.[CodeValue],
                 i.[EventDate],
                 i.[Staff_StaffUniqueId],
-                newPj0s0.[DocumentId],
+                newPj0.[DocumentId],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[AbsenceEventCategoryDescriptor_DescriptorId]
-            INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId]
+            INNER JOIN [edfi].[Staff] oldPj0 ON oldPj0.[StaffUniqueId] = del.[Staff_StaffUniqueId]
             INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[AbsenceEventCategoryDescriptor_DescriptorId]
-            INNER JOIN [edfi].[Staff] newPj0s0 ON newPj0s0.[DocumentId] = i.[Staff_DocumentId];
+            INNER JOIN [edfi].[Staff] newPj0 ON newPj0.[StaffUniqueId] = i.[Staff_StaffUniqueId];
         END
     END
 END;
@@ -59206,19 +59627,21 @@ BEGIN
             [OldStaff_StaffUniqueId],
             [OldStaff_DocumentId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[BeginDate],
             del.[Cohort_CohortIdentifier],
             del.[Cohort_EducationOrganizationId],
             del.[Staff_StaffUniqueId],
-            oldPj0s0.[DocumentId],
+            oldPj0.[DocumentId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
-        INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId];
+        INNER JOIN [edfi].[Staff] oldPj0 ON oldPj0.[StaffUniqueId] = del.[Staff_StaffUniqueId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -59241,27 +59664,29 @@ BEGIN
                 [NewStaff_StaffUniqueId],
                 [NewStaff_DocumentId],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[BeginDate],
                 del.[Cohort_CohortIdentifier],
                 del.[Cohort_EducationOrganizationId],
                 del.[Staff_StaffUniqueId],
-                oldPj0s0.[DocumentId],
+                oldPj0.[DocumentId],
                 i.[BeginDate],
                 i.[Cohort_CohortIdentifier],
                 i.[Cohort_EducationOrganizationId],
                 i.[Staff_StaffUniqueId],
-                newPj0s0.[DocumentId],
+                newPj0.[DocumentId],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
-            INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId]
-            INNER JOIN [edfi].[Staff] newPj0s0 ON newPj0s0.[DocumentId] = i.[Staff_DocumentId];
+            INNER JOIN [edfi].[Staff] oldPj0 ON oldPj0.[StaffUniqueId] = del.[Staff_StaffUniqueId]
+            INNER JOIN [edfi].[Staff] newPj0 ON newPj0.[StaffUniqueId] = i.[Staff_StaffUniqueId];
         END
     END
 END;
@@ -59391,18 +59816,20 @@ BEGIN
             [OldStaff_StaffUniqueId],
             [OldStaff_DocumentId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[DisciplineIncident_IncidentIdentifier],
             del.[DisciplineIncident_SchoolId],
             del.[Staff_StaffUniqueId],
-            oldPj0s0.[DocumentId],
+            oldPj0.[DocumentId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
-        INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId];
+        INNER JOIN [edfi].[Staff] oldPj0 ON oldPj0.[StaffUniqueId] = del.[Staff_StaffUniqueId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -59423,25 +59850,27 @@ BEGIN
                 [NewStaff_StaffUniqueId],
                 [NewStaff_DocumentId],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[DisciplineIncident_IncidentIdentifier],
                 del.[DisciplineIncident_SchoolId],
                 del.[Staff_StaffUniqueId],
-                oldPj0s0.[DocumentId],
+                oldPj0.[DocumentId],
                 i.[DisciplineIncident_IncidentIdentifier],
                 i.[DisciplineIncident_SchoolId],
                 i.[Staff_StaffUniqueId],
-                newPj0s0.[DocumentId],
+                newPj0.[DocumentId],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
-            INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId]
-            INNER JOIN [edfi].[Staff] newPj0s0 ON newPj0s0.[DocumentId] = i.[Staff_DocumentId];
+            INNER JOIN [edfi].[Staff] oldPj0 ON oldPj0.[StaffUniqueId] = del.[Staff_StaffUniqueId]
+            INNER JOIN [edfi].[Staff] newPj0 ON newPj0.[StaffUniqueId] = i.[Staff_StaffUniqueId];
         END
     END
 END;
@@ -59573,7 +60002,8 @@ BEGIN
             [OldStaffUniqueId_Unified],
             [OldStaff_DocumentId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[BeginDate],
@@ -59581,13 +60011,14 @@ BEGIN
             oldDj0.[Namespace],
             oldDj0.[CodeValue],
             del.[StaffUniqueId_Unified],
-            oldPj0s0.[DocumentId],
+            oldPj0.[DocumentId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[StaffClassificationDescriptor_DescriptorId]
-        INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId];
+        INNER JOIN [edfi].[Staff] oldPj0 ON oldPj0.[StaffUniqueId] = del.[StaffUniqueId_Unified];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -59612,7 +60043,8 @@ BEGIN
                 [NewStaffUniqueId_Unified],
                 [NewStaff_DocumentId],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[BeginDate],
@@ -59620,23 +60052,24 @@ BEGIN
                 oldDj0.[Namespace],
                 oldDj0.[CodeValue],
                 del.[StaffUniqueId_Unified],
-                oldPj0s0.[DocumentId],
+                oldPj0.[DocumentId],
                 i.[BeginDate],
                 i.[EducationOrganization_EducationOrganizationId],
                 newDj0.[Namespace],
                 newDj0.[CodeValue],
                 i.[StaffUniqueId_Unified],
-                newPj0s0.[DocumentId],
+                newPj0.[DocumentId],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[StaffClassificationDescriptor_DescriptorId]
-            INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId]
+            INNER JOIN [edfi].[Staff] oldPj0 ON oldPj0.[StaffUniqueId] = del.[StaffUniqueId_Unified]
             INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[StaffClassificationDescriptor_DescriptorId]
-            INNER JOIN [edfi].[Staff] newPj0s0 ON newPj0s0.[DocumentId] = i.[Staff_DocumentId];
+            INNER JOIN [edfi].[Staff] newPj0 ON newPj0.[StaffUniqueId] = i.[StaffUniqueId_Unified];
         END
     END
 END;
@@ -59727,18 +60160,20 @@ BEGIN
             [OldStaff_StaffUniqueId],
             [OldStaff_DocumentId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[ContactTitle],
             del.[EducationOrganization_EducationOrganizationId],
             del.[Staff_StaffUniqueId],
-            oldPj0s0.[DocumentId],
+            oldPj0.[DocumentId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
-        INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId];
+        INNER JOIN [edfi].[Staff] oldPj0 ON oldPj0.[StaffUniqueId] = del.[Staff_StaffUniqueId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -59759,25 +60194,27 @@ BEGIN
                 [NewStaff_StaffUniqueId],
                 [NewStaff_DocumentId],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[ContactTitle],
                 del.[EducationOrganization_EducationOrganizationId],
                 del.[Staff_StaffUniqueId],
-                oldPj0s0.[DocumentId],
+                oldPj0.[DocumentId],
                 i.[ContactTitle],
                 i.[EducationOrganization_EducationOrganizationId],
                 i.[Staff_StaffUniqueId],
-                newPj0s0.[DocumentId],
+                newPj0.[DocumentId],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
-            INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId]
-            INNER JOIN [edfi].[Staff] newPj0s0 ON newPj0s0.[DocumentId] = i.[Staff_DocumentId];
+            INNER JOIN [edfi].[Staff] oldPj0 ON oldPj0.[StaffUniqueId] = del.[Staff_StaffUniqueId]
+            INNER JOIN [edfi].[Staff] newPj0 ON newPj0.[StaffUniqueId] = i.[Staff_StaffUniqueId];
         END
     END
 END;
@@ -59948,7 +60385,8 @@ BEGIN
             [OldStaff_StaffUniqueId],
             [OldStaff_DocumentId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[EducationOrganization_EducationOrganizationId],
@@ -59956,13 +60394,14 @@ BEGIN
             oldDj0.[CodeValue],
             del.[HireDate],
             del.[Staff_StaffUniqueId],
-            oldPj0s0.[DocumentId],
+            oldPj0.[DocumentId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[EmploymentStatusDescriptor_DescriptorId]
-        INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId];
+        INNER JOIN [edfi].[Staff] oldPj0 ON oldPj0.[StaffUniqueId] = del.[Staff_StaffUniqueId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -59987,7 +60426,8 @@ BEGIN
                 [NewStaff_StaffUniqueId],
                 [NewStaff_DocumentId],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[EducationOrganization_EducationOrganizationId],
@@ -59995,23 +60435,24 @@ BEGIN
                 oldDj0.[CodeValue],
                 del.[HireDate],
                 del.[Staff_StaffUniqueId],
-                oldPj0s0.[DocumentId],
+                oldPj0.[DocumentId],
                 i.[EducationOrganization_EducationOrganizationId],
                 newDj0.[Namespace],
                 newDj0.[CodeValue],
                 i.[HireDate],
                 i.[Staff_StaffUniqueId],
-                newPj0s0.[DocumentId],
+                newPj0.[DocumentId],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[EmploymentStatusDescriptor_DescriptorId]
-            INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId]
+            INNER JOIN [edfi].[Staff] oldPj0 ON oldPj0.[StaffUniqueId] = del.[Staff_StaffUniqueId]
             INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[EmploymentStatusDescriptor_DescriptorId]
-            INNER JOIN [edfi].[Staff] newPj0s0 ON newPj0s0.[DocumentId] = i.[Staff_DocumentId];
+            INNER JOIN [edfi].[Staff] newPj0 ON newPj0.[StaffUniqueId] = i.[Staff_StaffUniqueId];
         END
     END
 END;
@@ -60337,20 +60778,22 @@ BEGIN
             [OldStaff_StaffUniqueId],
             [OldStaff_DocumentId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[BeginDate],
             oldDj0.[Namespace],
             oldDj0.[CodeValue],
             del.[Staff_StaffUniqueId],
-            oldPj0s0.[DocumentId],
+            oldPj0.[DocumentId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[StaffLeaveEventCategoryDescriptor_DescriptorId]
-        INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId];
+        INNER JOIN [edfi].[Staff] oldPj0 ON oldPj0.[StaffUniqueId] = del.[Staff_StaffUniqueId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -60373,29 +60816,31 @@ BEGIN
                 [NewStaff_StaffUniqueId],
                 [NewStaff_DocumentId],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[BeginDate],
                 oldDj0.[Namespace],
                 oldDj0.[CodeValue],
                 del.[Staff_StaffUniqueId],
-                oldPj0s0.[DocumentId],
+                oldPj0.[DocumentId],
                 i.[BeginDate],
                 newDj0.[Namespace],
                 newDj0.[CodeValue],
                 i.[Staff_StaffUniqueId],
-                newPj0s0.[DocumentId],
+                newPj0.[DocumentId],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[StaffLeaveEventCategoryDescriptor_DescriptorId]
-            INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId]
+            INNER JOIN [edfi].[Staff] oldPj0 ON oldPj0.[StaffUniqueId] = del.[Staff_StaffUniqueId]
             INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[StaffLeaveEventCategoryDescriptor_DescriptorId]
-            INNER JOIN [edfi].[Staff] newPj0s0 ON newPj0s0.[DocumentId] = i.[Staff_DocumentId];
+            INNER JOIN [edfi].[Staff] newPj0 ON newPj0.[StaffUniqueId] = i.[Staff_StaffUniqueId];
         END
     END
 END;
@@ -60567,7 +61012,8 @@ BEGIN
             [OldStaff_StaffUniqueId],
             [OldStaff_DocumentId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[BeginDate],
@@ -60576,13 +61022,14 @@ BEGIN
             oldDj0.[Namespace],
             oldDj0.[CodeValue],
             del.[Staff_StaffUniqueId],
-            oldPj0s0.[DocumentId],
+            oldPj0.[DocumentId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
-        INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId];
+        INNER JOIN [edfi].[Staff] oldPj0 ON oldPj0.[StaffUniqueId] = del.[Staff_StaffUniqueId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -60609,7 +61056,8 @@ BEGIN
                 [NewStaff_StaffUniqueId],
                 [NewStaff_DocumentId],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[BeginDate],
@@ -60618,24 +61066,25 @@ BEGIN
                 oldDj0.[Namespace],
                 oldDj0.[CodeValue],
                 del.[Staff_StaffUniqueId],
-                oldPj0s0.[DocumentId],
+                oldPj0.[DocumentId],
                 i.[BeginDate],
                 i.[ProgramProgram_EducationOrganizationId],
                 i.[ProgramProgram_ProgramName],
                 newDj0.[Namespace],
                 newDj0.[CodeValue],
                 i.[Staff_StaffUniqueId],
-                newPj0s0.[DocumentId],
+                newPj0.[DocumentId],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
-            INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId]
+            INNER JOIN [edfi].[Staff] oldPj0 ON oldPj0.[StaffUniqueId] = del.[Staff_StaffUniqueId]
             INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
-            INNER JOIN [edfi].[Staff] newPj0s0 ON newPj0s0.[DocumentId] = i.[Staff_DocumentId];
+            INNER JOIN [edfi].[Staff] newPj0 ON newPj0.[StaffUniqueId] = i.[Staff_StaffUniqueId];
         END
     END
 END;
@@ -60805,20 +61254,22 @@ BEGIN
             [OldStaff_StaffUniqueId],
             [OldStaff_DocumentId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             oldDj0.[Namespace],
             oldDj0.[CodeValue],
             del.[SchoolId_Unified],
             del.[Staff_StaffUniqueId],
-            oldPj0s0.[DocumentId],
+            oldPj0.[DocumentId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramAssignmentDescriptor_DescriptorId]
-        INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId];
+        INNER JOIN [edfi].[Staff] oldPj0 ON oldPj0.[StaffUniqueId] = del.[Staff_StaffUniqueId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -60841,29 +61292,31 @@ BEGIN
                 [NewStaff_StaffUniqueId],
                 [NewStaff_DocumentId],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 oldDj0.[Namespace],
                 oldDj0.[CodeValue],
                 del.[SchoolId_Unified],
                 del.[Staff_StaffUniqueId],
-                oldPj0s0.[DocumentId],
+                oldPj0.[DocumentId],
                 newDj0.[Namespace],
                 newDj0.[CodeValue],
                 i.[SchoolId_Unified],
                 i.[Staff_StaffUniqueId],
-                newPj0s0.[DocumentId],
+                newPj0.[DocumentId],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramAssignmentDescriptor_DescriptorId]
-            INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId]
+            INNER JOIN [edfi].[Staff] oldPj0 ON oldPj0.[StaffUniqueId] = del.[Staff_StaffUniqueId]
             INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[ProgramAssignmentDescriptor_DescriptorId]
-            INNER JOIN [edfi].[Staff] newPj0s0 ON newPj0s0.[DocumentId] = i.[Staff_DocumentId];
+            INNER JOIN [edfi].[Staff] newPj0 ON newPj0.[StaffUniqueId] = i.[Staff_StaffUniqueId];
         END
     END
 END;
@@ -61036,7 +61489,8 @@ BEGIN
             [OldStaff_StaffUniqueId],
             [OldStaff_DocumentId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[BeginDate],
@@ -61046,12 +61500,13 @@ BEGIN
             del.[Section_SectionIdentifier],
             del.[Section_SessionName],
             del.[Staff_StaffUniqueId],
-            oldPj0s0.[DocumentId],
+            oldPj0.[DocumentId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
-        INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId];
+        INNER JOIN [edfi].[Staff] oldPj0 ON oldPj0.[StaffUniqueId] = del.[Staff_StaffUniqueId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -61080,7 +61535,8 @@ BEGIN
                 [NewStaff_StaffUniqueId],
                 [NewStaff_DocumentId],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[BeginDate],
@@ -61090,7 +61546,7 @@ BEGIN
                 del.[Section_SectionIdentifier],
                 del.[Section_SessionName],
                 del.[Staff_StaffUniqueId],
-                oldPj0s0.[DocumentId],
+                oldPj0.[DocumentId],
                 i.[BeginDate],
                 i.[Section_LocalCourseCode],
                 i.[Section_SchoolId],
@@ -61098,15 +61554,16 @@ BEGIN
                 i.[Section_SectionIdentifier],
                 i.[Section_SessionName],
                 i.[Staff_StaffUniqueId],
-                newPj0s0.[DocumentId],
+                newPj0.[DocumentId],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
-            INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId]
-            INNER JOIN [edfi].[Staff] newPj0s0 ON newPj0s0.[DocumentId] = i.[Staff_DocumentId];
+            INNER JOIN [edfi].[Staff] oldPj0 ON oldPj0.[StaffUniqueId] = del.[Staff_StaffUniqueId]
+            INNER JOIN [edfi].[Staff] newPj0 ON newPj0.[StaffUniqueId] = i.[Staff_StaffUniqueId];
         END
     END
 END;
@@ -61393,12 +61850,14 @@ BEGIN
         INSERT INTO [tracked_changes_edfi].[StateEducationAgency] (
             [OldStateEducationAgencyId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[StateEducationAgencyId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -61876,15 +62335,15 @@ BEGIN
     BEGIN
         INSERT INTO [tracked_changes_edfi].[Student] (
             [OldStudentUniqueId],
-            [OldStudent_DocumentId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[StudentUniqueId],
-            del.[DocumentId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -61899,19 +62358,17 @@ BEGIN
         BEGIN
             INSERT INTO [tracked_changes_edfi].[Student] (
                 [OldStudentUniqueId],
-                [OldStudent_DocumentId],
                 [NewStudentUniqueId],
-                [NewStudent_DocumentId],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[StudentUniqueId],
-                del.[DocumentId],
                 i.[StudentUniqueId],
-                i.[DocumentId],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -62008,7 +62465,8 @@ BEGIN
             [OldTermDescriptor_CodeValue],
             [OldStudent_DocumentId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[EducationOrganization_EducationOrganizationId],
@@ -62016,13 +62474,14 @@ BEGIN
             del.[Student_StudentUniqueId],
             oldDj0.[Namespace],
             oldDj0.[CodeValue],
-            oldPj0s0.[DocumentId],
+            oldPj0.[DocumentId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[TermDescriptor_DescriptorId]
-        INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
+        INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -62047,7 +62506,8 @@ BEGIN
                 [NewTermDescriptor_CodeValue],
                 [NewStudent_DocumentId],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[EducationOrganization_EducationOrganizationId],
@@ -62055,23 +62515,24 @@ BEGIN
                 del.[Student_StudentUniqueId],
                 oldDj0.[Namespace],
                 oldDj0.[CodeValue],
-                oldPj0s0.[DocumentId],
+                oldPj0.[DocumentId],
                 i.[EducationOrganization_EducationOrganizationId],
                 i.[SchoolYear_SchoolYear],
                 i.[Student_StudentUniqueId],
                 newDj0.[Namespace],
                 newDj0.[CodeValue],
-                newPj0s0.[DocumentId],
+                newPj0.[DocumentId],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[TermDescriptor_DescriptorId]
-            INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId]
+            INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId]
             INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[TermDescriptor_DescriptorId]
-            INNER JOIN [edfi].[Student] newPj0s0 ON newPj0s0.[DocumentId] = i.[Student_DocumentId];
+            INNER JOIN [edfi].[Student] newPj0 ON newPj0.[StudentUniqueId] = i.[Student_StudentUniqueId];
         END
     END
 END;
@@ -62359,7 +62820,8 @@ BEGIN
             [OldReportedSchool_SchoolId],
             [OldStudent_DocumentId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[Assessment_AssessmentIdentifier],
@@ -62367,12 +62829,13 @@ BEGIN
             del.[StudentAssessmentIdentifier],
             del.[Student_StudentUniqueId],
             del.[ReportedSchool_SchoolId],
-            oldPj0s0.[DocumentId],
+            oldPj0.[DocumentId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
-        INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
+        INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -62397,7 +62860,8 @@ BEGIN
                 [NewReportedSchool_SchoolId],
                 [NewStudent_DocumentId],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[Assessment_AssessmentIdentifier],
@@ -62405,21 +62869,22 @@ BEGIN
                 del.[StudentAssessmentIdentifier],
                 del.[Student_StudentUniqueId],
                 del.[ReportedSchool_SchoolId],
-                oldPj0s0.[DocumentId],
+                oldPj0.[DocumentId],
                 i.[Assessment_AssessmentIdentifier],
                 i.[Assessment_Namespace],
                 i.[StudentAssessmentIdentifier],
                 i.[Student_StudentUniqueId],
                 i.[ReportedSchool_SchoolId],
-                newPj0s0.[DocumentId],
+                newPj0.[DocumentId],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
-            INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId]
-            INNER JOIN [edfi].[Student] newPj0s0 ON newPj0s0.[DocumentId] = i.[Student_DocumentId];
+            INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId]
+            INNER JOIN [edfi].[Student] newPj0 ON newPj0.[StudentUniqueId] = i.[Student_StudentUniqueId];
         END
     END
 END;
@@ -62553,7 +63018,8 @@ BEGIN
             [OldStudentAssessment_StudentUniqueId],
             [OldStudentAssessment_Student_DocumentId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             oldDj0.[Namespace],
@@ -62563,14 +63029,14 @@ BEGIN
             del.[StudentAssessment_Namespace],
             del.[StudentAssessment_StudentAssessmentIdentifier],
             del.[StudentAssessment_StudentUniqueId],
-            oldPj0s1.[DocumentId],
+            oldPj0.[DocumentId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[EducationOrganizationAssociationTypeDescriptor_DescriptorId]
-        INNER JOIN [edfi].[StudentAssessment] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[StudentAssessment_DocumentId]
-        INNER JOIN [edfi].[Student] oldPj0s1 ON oldPj0s1.[DocumentId] = oldPj0s0.[Student_DocumentId];
+        INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[StudentAssessment_StudentUniqueId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -62599,7 +63065,8 @@ BEGIN
                 [NewStudentAssessment_StudentUniqueId],
                 [NewStudentAssessment_Student_DocumentId],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 oldDj0.[Namespace],
@@ -62609,7 +63076,7 @@ BEGIN
                 del.[StudentAssessment_Namespace],
                 del.[StudentAssessment_StudentAssessmentIdentifier],
                 del.[StudentAssessment_StudentUniqueId],
-                oldPj0s1.[DocumentId],
+                oldPj0.[DocumentId],
                 newDj0.[Namespace],
                 newDj0.[CodeValue],
                 i.[EducationOrganization_EducationOrganizationId],
@@ -62617,19 +63084,18 @@ BEGIN
                 i.[StudentAssessment_Namespace],
                 i.[StudentAssessment_StudentAssessmentIdentifier],
                 i.[StudentAssessment_StudentUniqueId],
-                newPj0s1.[DocumentId],
+                newPj0.[DocumentId],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[EducationOrganizationAssociationTypeDescriptor_DescriptorId]
-            INNER JOIN [edfi].[StudentAssessment] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[StudentAssessment_DocumentId]
-            INNER JOIN [edfi].[Student] oldPj0s1 ON oldPj0s1.[DocumentId] = oldPj0s0.[Student_DocumentId]
+            INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[StudentAssessment_StudentUniqueId]
             INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[EducationOrganizationAssociationTypeDescriptor_DescriptorId]
-            INNER JOIN [edfi].[StudentAssessment] newPj0s0 ON newPj0s0.[DocumentId] = i.[StudentAssessment_DocumentId]
-            INNER JOIN [edfi].[Student] newPj0s1 ON newPj0s1.[DocumentId] = newPj0s0.[Student_DocumentId];
+            INNER JOIN [edfi].[Student] newPj0 ON newPj0.[StudentUniqueId] = i.[StudentAssessment_StudentUniqueId];
         END
     END
 END;
@@ -62801,7 +63267,8 @@ BEGIN
             [OldStudentUniqueId_Unified],
             [OldStudentEducationOrganizationAssociation_Student_DocumentId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[AssessmentAdministration_AdministrationIdentifier],
@@ -62810,13 +63277,13 @@ BEGIN
             del.[AssessmentAdministration_Namespace],
             del.[StudentEducationOrganizationAssociation_EducationOrganizationId],
             del.[StudentUniqueId_Unified],
-            oldPj0s1.[DocumentId],
+            oldPj0.[DocumentId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
-        INNER JOIN [edfi].[StudentEducationOrganizationAssociation] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[StudentEducationOrganizationAssociation_DocumentId]
-        INNER JOIN [edfi].[Student] oldPj0s1 ON oldPj0s1.[DocumentId] = oldPj0s0.[Student_DocumentId];
+        INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[StudentUniqueId_Unified];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -62843,7 +63310,8 @@ BEGIN
                 [NewStudentUniqueId_Unified],
                 [NewStudentEducationOrganizationAssociation_Student_DocumentId],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[AssessmentAdministration_AdministrationIdentifier],
@@ -62852,24 +63320,23 @@ BEGIN
                 del.[AssessmentAdministration_Namespace],
                 del.[StudentEducationOrganizationAssociation_EducationOrganizationId],
                 del.[StudentUniqueId_Unified],
-                oldPj0s1.[DocumentId],
+                oldPj0.[DocumentId],
                 i.[AssessmentAdministration_AdministrationIdentifier],
                 i.[AssessmentAdministration_AssessmentIdentifier],
                 i.[AssessmentAdministration_AssigningEducationOrganizationId],
                 i.[AssessmentAdministration_Namespace],
                 i.[StudentEducationOrganizationAssociation_EducationOrganizationId],
                 i.[StudentUniqueId_Unified],
-                newPj0s1.[DocumentId],
+                newPj0.[DocumentId],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
-            INNER JOIN [edfi].[StudentEducationOrganizationAssociation] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[StudentEducationOrganizationAssociation_DocumentId]
-            INNER JOIN [edfi].[Student] oldPj0s1 ON oldPj0s1.[DocumentId] = oldPj0s0.[Student_DocumentId]
-            INNER JOIN [edfi].[StudentEducationOrganizationAssociation] newPj0s0 ON newPj0s0.[DocumentId] = i.[StudentEducationOrganizationAssociation_DocumentId]
-            INNER JOIN [edfi].[Student] newPj0s1 ON newPj0s1.[DocumentId] = newPj0s0.[Student_DocumentId];
+            INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[StudentUniqueId_Unified]
+            INNER JOIN [edfi].[Student] newPj0 ON newPj0.[StudentUniqueId] = i.[StudentUniqueId_Unified];
         END
     END
 END;
@@ -63042,7 +63509,8 @@ BEGIN
             [OldStudentAssessmentRegistration_StudentUniqueId],
             [OldStudentAssessmentRegistration_StudentEducationOrganizationAssociation_Student_DocumentId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[AssessmentBatteryPart_AssessmentBatteryPartName],
@@ -63052,14 +63520,13 @@ BEGIN
             del.[StudentAssessmentRegistration_AssigningEducationOrganizationId],
             del.[StudentAssessmentRegistration_EducationOrganizationId],
             del.[StudentAssessmentRegistration_StudentUniqueId],
-            oldPj0s2.[DocumentId],
+            oldPj0.[DocumentId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
-        INNER JOIN [edfi].[StudentAssessmentRegistration] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[StudentAssessmentRegistration_DocumentId]
-        INNER JOIN [edfi].[StudentEducationOrganizationAssociation] oldPj0s1 ON oldPj0s1.[DocumentId] = oldPj0s0.[StudentEducationOrganizationAssociation_DocumentId]
-        INNER JOIN [edfi].[Student] oldPj0s2 ON oldPj0s2.[DocumentId] = oldPj0s1.[Student_DocumentId];
+        INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[StudentAssessmentRegistration_StudentUniqueId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -63088,7 +63555,8 @@ BEGIN
                 [NewStudentAssessmentRegistration_StudentUniqueId],
                 [NewStudentAssessmentRegistration_StudentEducationOrganizationAssociation_Student_DocumentId],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[AssessmentBatteryPart_AssessmentBatteryPartName],
@@ -63098,7 +63566,7 @@ BEGIN
                 del.[StudentAssessmentRegistration_AssigningEducationOrganizationId],
                 del.[StudentAssessmentRegistration_EducationOrganizationId],
                 del.[StudentAssessmentRegistration_StudentUniqueId],
-                oldPj0s2.[DocumentId],
+                oldPj0.[DocumentId],
                 i.[AssessmentBatteryPart_AssessmentBatteryPartName],
                 i.[AssessmentIdentifier_Unified],
                 i.[Namespace_Unified],
@@ -63106,19 +63574,16 @@ BEGIN
                 i.[StudentAssessmentRegistration_AssigningEducationOrganizationId],
                 i.[StudentAssessmentRegistration_EducationOrganizationId],
                 i.[StudentAssessmentRegistration_StudentUniqueId],
-                newPj0s2.[DocumentId],
+                newPj0.[DocumentId],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
-            INNER JOIN [edfi].[StudentAssessmentRegistration] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[StudentAssessmentRegistration_DocumentId]
-            INNER JOIN [edfi].[StudentEducationOrganizationAssociation] oldPj0s1 ON oldPj0s1.[DocumentId] = oldPj0s0.[StudentEducationOrganizationAssociation_DocumentId]
-            INNER JOIN [edfi].[Student] oldPj0s2 ON oldPj0s2.[DocumentId] = oldPj0s1.[Student_DocumentId]
-            INNER JOIN [edfi].[StudentAssessmentRegistration] newPj0s0 ON newPj0s0.[DocumentId] = i.[StudentAssessmentRegistration_DocumentId]
-            INNER JOIN [edfi].[StudentEducationOrganizationAssociation] newPj0s1 ON newPj0s1.[DocumentId] = newPj0s0.[StudentEducationOrganizationAssociation_DocumentId]
-            INNER JOIN [edfi].[Student] newPj0s2 ON newPj0s2.[DocumentId] = newPj0s1.[Student_DocumentId];
+            INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[StudentAssessmentRegistration_StudentUniqueId]
+            INNER JOIN [edfi].[Student] newPj0 ON newPj0.[StudentUniqueId] = i.[StudentAssessmentRegistration_StudentUniqueId];
         END
     END
 END;
@@ -63464,7 +63929,8 @@ BEGIN
             [OldStudent_StudentUniqueId],
             [OldStudent_DocumentId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[BeginDate],
@@ -63474,13 +63940,14 @@ BEGIN
             oldDj0.[Namespace],
             oldDj0.[CodeValue],
             del.[Student_StudentUniqueId],
-            oldPj0s0.[DocumentId],
+            oldPj0.[DocumentId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
-        INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
+        INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId];
     END
 END;
 GO
@@ -63649,19 +64116,21 @@ BEGIN
             [OldStudent_StudentUniqueId],
             [OldStudent_DocumentId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[BeginDate],
             del.[Cohort_CohortIdentifier],
             del.[Cohort_EducationOrganizationId],
             del.[Student_StudentUniqueId],
-            oldPj0s0.[DocumentId],
+            oldPj0.[DocumentId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
-        INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
+        INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -63684,27 +64153,29 @@ BEGIN
                 [NewStudent_StudentUniqueId],
                 [NewStudent_DocumentId],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[BeginDate],
                 del.[Cohort_CohortIdentifier],
                 del.[Cohort_EducationOrganizationId],
                 del.[Student_StudentUniqueId],
-                oldPj0s0.[DocumentId],
+                oldPj0.[DocumentId],
                 i.[BeginDate],
                 i.[Cohort_CohortIdentifier],
                 i.[Cohort_EducationOrganizationId],
                 i.[Student_StudentUniqueId],
-                newPj0s0.[DocumentId],
+                newPj0.[DocumentId],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
-            INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId]
-            INNER JOIN [edfi].[Student] newPj0s0 ON newPj0s0.[DocumentId] = i.[Student_DocumentId];
+            INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId]
+            INNER JOIN [edfi].[Student] newPj0 ON newPj0.[StudentUniqueId] = i.[Student_StudentUniqueId];
         END
     END
 END;
@@ -63841,7 +64312,8 @@ BEGIN
             [OldStudent_StudentUniqueId],
             [OldStudent_DocumentId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             oldDj0.[Namespace],
@@ -63854,14 +64326,15 @@ BEGIN
             oldDj1.[Namespace],
             oldDj1.[CodeValue],
             del.[Student_StudentUniqueId],
-            oldPj0s0.[DocumentId],
+            oldPj0.[DocumentId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId]
         INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DocumentId] = del.[ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId]
-        INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
+        INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -63896,7 +64369,8 @@ BEGIN
                 [NewStudent_StudentUniqueId],
                 [NewStudent_DocumentId],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 oldDj0.[Namespace],
@@ -63909,7 +64383,7 @@ BEGIN
                 oldDj1.[Namespace],
                 oldDj1.[CodeValue],
                 del.[Student_StudentUniqueId],
-                oldPj0s0.[DocumentId],
+                oldPj0.[DocumentId],
                 newDj0.[Namespace],
                 newDj0.[CodeValue],
                 i.[GradingPeriodGradingPeriod_GradingPeriodName],
@@ -63920,19 +64394,20 @@ BEGIN
                 newDj1.[Namespace],
                 newDj1.[CodeValue],
                 i.[Student_StudentUniqueId],
-                newPj0s0.[DocumentId],
+                newPj0.[DocumentId],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId]
             INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DocumentId] = del.[ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId]
-            INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId]
+            INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId]
             INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId]
             INNER JOIN [dms].[Descriptor] newDj1 ON newDj1.[DocumentId] = i.[ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId]
-            INNER JOIN [edfi].[Student] newPj0s0 ON newPj0s0.[DocumentId] = i.[Student_DocumentId];
+            INNER JOIN [edfi].[Student] newPj0 ON newPj0.[StudentUniqueId] = i.[Student_StudentUniqueId];
         END
     END
 END;
@@ -64101,19 +64576,21 @@ BEGIN
             [OldStudent_DocumentId],
             [OldContact_DocumentId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[Contact_ContactUniqueId],
             del.[Student_StudentUniqueId],
-            oldPj1s0.[DocumentId],
-            oldPj0s0.[DocumentId],
+            oldPj1.[DocumentId],
+            oldPj0.[DocumentId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
-        INNER JOIN [edfi].[Contact] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Contact_DocumentId]
-        INNER JOIN [edfi].[Student] oldPj1s0 ON oldPj1s0.[DocumentId] = del.[Student_DocumentId];
+        INNER JOIN [edfi].[Contact] oldPj0 ON oldPj0.[ContactUniqueId] = del.[Contact_ContactUniqueId]
+        INNER JOIN [edfi].[Student] oldPj1 ON oldPj1.[StudentUniqueId] = del.[Student_StudentUniqueId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -64134,27 +64611,29 @@ BEGIN
                 [NewStudent_DocumentId],
                 [NewContact_DocumentId],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[Contact_ContactUniqueId],
                 del.[Student_StudentUniqueId],
-                oldPj1s0.[DocumentId],
-                oldPj0s0.[DocumentId],
+                oldPj1.[DocumentId],
+                oldPj0.[DocumentId],
                 i.[Contact_ContactUniqueId],
                 i.[Student_StudentUniqueId],
-                newPj1s0.[DocumentId],
-                newPj0s0.[DocumentId],
+                newPj1.[DocumentId],
+                newPj0.[DocumentId],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
-            INNER JOIN [edfi].[Contact] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Contact_DocumentId]
-            INNER JOIN [edfi].[Student] oldPj1s0 ON oldPj1s0.[DocumentId] = del.[Student_DocumentId]
-            INNER JOIN [edfi].[Contact] newPj0s0 ON newPj0s0.[DocumentId] = i.[Contact_DocumentId]
-            INNER JOIN [edfi].[Student] newPj1s0 ON newPj1s0.[DocumentId] = i.[Student_DocumentId];
+            INNER JOIN [edfi].[Contact] oldPj0 ON oldPj0.[ContactUniqueId] = del.[Contact_ContactUniqueId]
+            INNER JOIN [edfi].[Student] oldPj1 ON oldPj1.[StudentUniqueId] = del.[Student_StudentUniqueId]
+            INNER JOIN [edfi].[Contact] newPj0 ON newPj0.[ContactUniqueId] = i.[Contact_ContactUniqueId]
+            INNER JOIN [edfi].[Student] newPj1 ON newPj1.[StudentUniqueId] = i.[Student_StudentUniqueId];
         END
     END
 END;
@@ -64247,7 +64726,8 @@ BEGIN
             [OldStudent_StudentUniqueId],
             [OldStudent_DocumentId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             oldDj0.[Namespace],
@@ -64255,13 +64735,14 @@ BEGIN
             del.[DisciplineIncident_IncidentIdentifier],
             del.[DisciplineIncident_SchoolId],
             del.[Student_StudentUniqueId],
-            oldPj0s0.[DocumentId],
+            oldPj0.[DocumentId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[BehaviorDescriptor_DescriptorId]
-        INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
+        INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -64286,7 +64767,8 @@ BEGIN
                 [NewStudent_StudentUniqueId],
                 [NewStudent_DocumentId],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 oldDj0.[Namespace],
@@ -64294,23 +64776,24 @@ BEGIN
                 del.[DisciplineIncident_IncidentIdentifier],
                 del.[DisciplineIncident_SchoolId],
                 del.[Student_StudentUniqueId],
-                oldPj0s0.[DocumentId],
+                oldPj0.[DocumentId],
                 newDj0.[Namespace],
                 newDj0.[CodeValue],
                 i.[DisciplineIncident_IncidentIdentifier],
                 i.[DisciplineIncident_SchoolId],
                 i.[Student_StudentUniqueId],
-                newPj0s0.[DocumentId],
+                newPj0.[DocumentId],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[BehaviorDescriptor_DescriptorId]
-            INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId]
+            INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId]
             INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[BehaviorDescriptor_DescriptorId]
-            INNER JOIN [edfi].[Student] newPj0s0 ON newPj0s0.[DocumentId] = i.[Student_DocumentId];
+            INNER JOIN [edfi].[Student] newPj0 ON newPj0.[StudentUniqueId] = i.[Student_StudentUniqueId];
         END
     END
 END;
@@ -64479,18 +64962,20 @@ BEGIN
             [OldStudent_StudentUniqueId],
             [OldStudent_DocumentId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[DisciplineIncident_IncidentIdentifier],
             del.[DisciplineIncident_SchoolId],
             del.[Student_StudentUniqueId],
-            oldPj0s0.[DocumentId],
+            oldPj0.[DocumentId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
-        INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
+        INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -64511,25 +64996,27 @@ BEGIN
                 [NewStudent_StudentUniqueId],
                 [NewStudent_DocumentId],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[DisciplineIncident_IncidentIdentifier],
                 del.[DisciplineIncident_SchoolId],
                 del.[Student_StudentUniqueId],
-                oldPj0s0.[DocumentId],
+                oldPj0.[DocumentId],
                 i.[DisciplineIncident_IncidentIdentifier],
                 i.[DisciplineIncident_SchoolId],
                 i.[Student_StudentUniqueId],
-                newPj0s0.[DocumentId],
+                newPj0.[DocumentId],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
-            INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId]
-            INNER JOIN [edfi].[Student] newPj0s0 ON newPj0s0.[DocumentId] = i.[Student_DocumentId];
+            INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId]
+            INNER JOIN [edfi].[Student] newPj0 ON newPj0.[StudentUniqueId] = i.[Student_StudentUniqueId];
         END
     END
 END;
@@ -64658,17 +65145,19 @@ BEGIN
             [OldStudent_StudentUniqueId],
             [OldStudent_DocumentId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[EducationOrganization_EducationOrganizationId],
             del.[Student_StudentUniqueId],
-            oldPj0s0.[DocumentId],
+            oldPj0.[DocumentId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
-        INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
+        INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -64687,23 +65176,25 @@ BEGIN
                 [NewStudent_StudentUniqueId],
                 [NewStudent_DocumentId],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[EducationOrganization_EducationOrganizationId],
                 del.[Student_StudentUniqueId],
-                oldPj0s0.[DocumentId],
+                oldPj0.[DocumentId],
                 i.[EducationOrganization_EducationOrganizationId],
                 i.[Student_StudentUniqueId],
-                newPj0s0.[DocumentId],
+                newPj0.[DocumentId],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
-            INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId]
-            INNER JOIN [edfi].[Student] newPj0s0 ON newPj0s0.[DocumentId] = i.[Student_DocumentId];
+            INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId]
+            INNER JOIN [edfi].[Student] newPj0 ON newPj0.[StudentUniqueId] = i.[Student_StudentUniqueId];
         END
     END
 END;
@@ -64832,17 +65323,19 @@ BEGIN
             [OldStudent_StudentUniqueId],
             [OldStudent_DocumentId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[EducationOrganization_EducationOrganizationId],
             del.[Student_StudentUniqueId],
-            oldPj0s0.[DocumentId],
+            oldPj0.[DocumentId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
-        INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
+        INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -64861,23 +65354,25 @@ BEGIN
                 [NewStudent_StudentUniqueId],
                 [NewStudent_DocumentId],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[EducationOrganization_EducationOrganizationId],
                 del.[Student_StudentUniqueId],
-                oldPj0s0.[DocumentId],
+                oldPj0.[DocumentId],
                 i.[EducationOrganization_EducationOrganizationId],
                 i.[Student_StudentUniqueId],
-                newPj0s0.[DocumentId],
+                newPj0.[DocumentId],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
-            INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId]
-            INNER JOIN [edfi].[Student] newPj0s0 ON newPj0s0.[DocumentId] = i.[Student_DocumentId];
+            INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId]
+            INNER JOIN [edfi].[Student] newPj0 ON newPj0.[StudentUniqueId] = i.[Student_StudentUniqueId];
         END
     END
 END;
@@ -65711,7 +66206,8 @@ BEGIN
             [OldStudent_StudentUniqueId],
             [OldStudent_DocumentId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[BeginDate],
@@ -65719,13 +66215,14 @@ BEGIN
             oldDj0.[Namespace],
             oldDj0.[CodeValue],
             del.[Student_StudentUniqueId],
-            oldPj0s0.[DocumentId],
+            oldPj0.[DocumentId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ResponsibilityDescriptor_DescriptorId]
-        INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
+        INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -65750,7 +66247,8 @@ BEGIN
                 [NewStudent_StudentUniqueId],
                 [NewStudent_DocumentId],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[BeginDate],
@@ -65758,23 +66256,24 @@ BEGIN
                 oldDj0.[Namespace],
                 oldDj0.[CodeValue],
                 del.[Student_StudentUniqueId],
-                oldPj0s0.[DocumentId],
+                oldPj0.[DocumentId],
                 i.[BeginDate],
                 i.[EducationOrganization_EducationOrganizationId],
                 newDj0.[Namespace],
                 newDj0.[CodeValue],
                 i.[Student_StudentUniqueId],
-                newPj0s0.[DocumentId],
+                newPj0.[DocumentId],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ResponsibilityDescriptor_DescriptorId]
-            INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId]
+            INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId]
             INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[ResponsibilityDescriptor_DescriptorId]
-            INNER JOIN [edfi].[Student] newPj0s0 ON newPj0s0.[DocumentId] = i.[Student_DocumentId];
+            INNER JOIN [edfi].[Student] newPj0 ON newPj0.[StudentUniqueId] = i.[Student_StudentUniqueId];
         END
     END
 END;
@@ -65865,18 +66364,20 @@ BEGIN
             [OldStudent_StudentUniqueId],
             [OldStudent_DocumentId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[GradebookEntry_GradebookEntryIdentifier],
             del.[GradebookEntry_Namespace],
             del.[Student_StudentUniqueId],
-            oldPj0s0.[DocumentId],
+            oldPj0.[DocumentId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
-        INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
+        INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -65897,25 +66398,27 @@ BEGIN
                 [NewStudent_StudentUniqueId],
                 [NewStudent_DocumentId],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[GradebookEntry_GradebookEntryIdentifier],
                 del.[GradebookEntry_Namespace],
                 del.[Student_StudentUniqueId],
-                oldPj0s0.[DocumentId],
+                oldPj0.[DocumentId],
                 i.[GradebookEntry_GradebookEntryIdentifier],
                 i.[GradebookEntry_Namespace],
                 i.[Student_StudentUniqueId],
-                newPj0s0.[DocumentId],
+                newPj0.[DocumentId],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
-            INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId]
-            INNER JOIN [edfi].[Student] newPj0s0 ON newPj0s0.[DocumentId] = i.[Student_DocumentId];
+            INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId]
+            INNER JOIN [edfi].[Student] newPj0 ON newPj0.[StudentUniqueId] = i.[Student_StudentUniqueId];
         END
     END
 END;
@@ -66005,17 +66508,19 @@ BEGIN
             [OldStudent_StudentUniqueId],
             [OldStudent_DocumentId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[EducationOrganization_EducationOrganizationId],
             del.[Student_StudentUniqueId],
-            oldPj0s0.[DocumentId],
+            oldPj0.[DocumentId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
-        INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
+        INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -66034,23 +66539,25 @@ BEGIN
                 [NewStudent_StudentUniqueId],
                 [NewStudent_DocumentId],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[EducationOrganization_EducationOrganizationId],
                 del.[Student_StudentUniqueId],
-                oldPj0s0.[DocumentId],
+                oldPj0.[DocumentId],
                 i.[EducationOrganization_EducationOrganizationId],
                 i.[Student_StudentUniqueId],
-                newPj0s0.[DocumentId],
+                newPj0.[DocumentId],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
-            INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId]
-            INNER JOIN [edfi].[Student] newPj0s0 ON newPj0s0.[DocumentId] = i.[Student_DocumentId];
+            INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId]
+            INNER JOIN [edfi].[Student] newPj0 ON newPj0.[StudentUniqueId] = i.[Student_StudentUniqueId];
         END
     END
 END;
@@ -66357,7 +66864,8 @@ BEGIN
             [OldStudent_StudentUniqueId],
             [OldStudent_DocumentId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[BeginDate],
@@ -66367,13 +66875,14 @@ BEGIN
             oldDj0.[Namespace],
             oldDj0.[CodeValue],
             del.[Student_StudentUniqueId],
-            oldPj0s0.[DocumentId],
+            oldPj0.[DocumentId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
-        INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
+        INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId];
     END
 END;
 GO
@@ -66580,18 +67089,20 @@ BEGIN
             [OldStudent_StudentUniqueId],
             [OldStudent_DocumentId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[Intervention_EducationOrganizationId],
             del.[Intervention_InterventionIdentificationCode],
             del.[Student_StudentUniqueId],
-            oldPj0s0.[DocumentId],
+            oldPj0.[DocumentId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
-        INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
+        INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -66612,25 +67123,27 @@ BEGIN
                 [NewStudent_StudentUniqueId],
                 [NewStudent_DocumentId],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[Intervention_EducationOrganizationId],
                 del.[Intervention_InterventionIdentificationCode],
                 del.[Student_StudentUniqueId],
-                oldPj0s0.[DocumentId],
+                oldPj0.[DocumentId],
                 i.[Intervention_EducationOrganizationId],
                 i.[Intervention_InterventionIdentificationCode],
                 i.[Student_StudentUniqueId],
-                newPj0s0.[DocumentId],
+                newPj0.[DocumentId],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
-            INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId]
-            INNER JOIN [edfi].[Student] newPj0s0 ON newPj0s0.[DocumentId] = i.[Student_DocumentId];
+            INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId]
+            INNER JOIN [edfi].[Student] newPj0 ON newPj0.[StudentUniqueId] = i.[Student_StudentUniqueId];
         END
     END
 END;
@@ -66763,7 +67276,8 @@ BEGIN
             [OldStudent_StudentUniqueId],
             [OldStudent_DocumentId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             oldDj0.[Namespace],
@@ -66772,13 +67286,14 @@ BEGIN
             del.[Intervention_EducationOrganizationId],
             del.[Intervention_InterventionIdentificationCode],
             del.[Student_StudentUniqueId],
-            oldPj0s0.[DocumentId],
+            oldPj0.[DocumentId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[AttendanceEventCategoryDescriptor_DescriptorId]
-        INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
+        INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -66805,7 +67320,8 @@ BEGIN
                 [NewStudent_StudentUniqueId],
                 [NewStudent_DocumentId],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 oldDj0.[Namespace],
@@ -66814,24 +67330,25 @@ BEGIN
                 del.[Intervention_EducationOrganizationId],
                 del.[Intervention_InterventionIdentificationCode],
                 del.[Student_StudentUniqueId],
-                oldPj0s0.[DocumentId],
+                oldPj0.[DocumentId],
                 newDj0.[Namespace],
                 newDj0.[CodeValue],
                 i.[EventDate],
                 i.[Intervention_EducationOrganizationId],
                 i.[Intervention_InterventionIdentificationCode],
                 i.[Student_StudentUniqueId],
-                newPj0s0.[DocumentId],
+                newPj0.[DocumentId],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[AttendanceEventCategoryDescriptor_DescriptorId]
-            INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId]
+            INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId]
             INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[AttendanceEventCategoryDescriptor_DescriptorId]
-            INNER JOIN [edfi].[Student] newPj0s0 ON newPj0s0.[DocumentId] = i.[Student_DocumentId];
+            INNER JOIN [edfi].[Student] newPj0 ON newPj0.[StudentUniqueId] = i.[Student_StudentUniqueId];
         END
     END
 END;
@@ -66982,7 +67499,8 @@ BEGIN
             [OldStudent_StudentUniqueId],
             [OldStudent_DocumentId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[BeginDate],
@@ -66992,13 +67510,14 @@ BEGIN
             oldDj0.[Namespace],
             oldDj0.[CodeValue],
             del.[Student_StudentUniqueId],
-            oldPj0s0.[DocumentId],
+            oldPj0.[DocumentId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
-        INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
+        INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId];
     END
 END;
 GO
@@ -67265,7 +67784,8 @@ BEGIN
             [OldStudent_StudentUniqueId],
             [OldStudent_DocumentId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[BeginDate],
@@ -67275,13 +67795,14 @@ BEGIN
             oldDj0.[Namespace],
             oldDj0.[CodeValue],
             del.[Student_StudentUniqueId],
-            oldPj0s0.[DocumentId],
+            oldPj0.[DocumentId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
-        INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
+        INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId];
     END
 END;
 GO
@@ -67509,7 +68030,8 @@ BEGIN
             [OldStudent_StudentUniqueId],
             [OldStudent_DocumentId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[BeginDate],
@@ -67519,13 +68041,14 @@ BEGIN
             oldDj0.[Namespace],
             oldDj0.[CodeValue],
             del.[Student_StudentUniqueId],
-            oldPj0s0.[DocumentId],
+            oldPj0.[DocumentId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
-        INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
+        INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId];
     END
 END;
 GO
@@ -67831,7 +68354,8 @@ BEGIN
             [OldStudent_StudentUniqueId],
             [OldStudent_DocumentId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[BeginDate],
@@ -67841,13 +68365,14 @@ BEGIN
             oldDj0.[Namespace],
             oldDj0.[CodeValue],
             del.[Student_StudentUniqueId],
-            oldPj0s0.[DocumentId],
+            oldPj0.[DocumentId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
-        INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
+        INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId];
     END
 END;
 GO
@@ -68021,7 +68546,8 @@ BEGIN
             [OldStudent_StudentUniqueId],
             [OldStudent_DocumentId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             oldDj0.[Namespace],
@@ -68033,14 +68559,15 @@ BEGIN
             oldDj1.[Namespace],
             oldDj1.[CodeValue],
             del.[Student_StudentUniqueId],
-            oldPj0s0.[DocumentId],
+            oldPj0.[DocumentId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[AttendanceEventCategoryDescriptor_DescriptorId]
         INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
-        INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
+        INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -68073,7 +68600,8 @@ BEGIN
                 [NewStudent_StudentUniqueId],
                 [NewStudent_DocumentId],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 oldDj0.[Namespace],
@@ -68085,7 +68613,7 @@ BEGIN
                 oldDj1.[Namespace],
                 oldDj1.[CodeValue],
                 del.[Student_StudentUniqueId],
-                oldPj0s0.[DocumentId],
+                oldPj0.[DocumentId],
                 newDj0.[Namespace],
                 newDj0.[CodeValue],
                 i.[EducationOrganization_EducationOrganizationId],
@@ -68095,19 +68623,20 @@ BEGIN
                 newDj1.[Namespace],
                 newDj1.[CodeValue],
                 i.[Student_StudentUniqueId],
-                newPj0s0.[DocumentId],
+                newPj0.[DocumentId],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[AttendanceEventCategoryDescriptor_DescriptorId]
             INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
-            INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId]
+            INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId]
             INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[AttendanceEventCategoryDescriptor_DescriptorId]
             INNER JOIN [dms].[Descriptor] newDj1 ON newDj1.[DocumentId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
-            INNER JOIN [edfi].[Student] newPj0s0 ON newPj0s0.[DocumentId] = i.[Student_DocumentId];
+            INNER JOIN [edfi].[Student] newPj0 ON newPj0.[StudentUniqueId] = i.[Student_StudentUniqueId];
         END
     END
 END;
@@ -68206,7 +68735,8 @@ BEGIN
             [OldStudent_StudentUniqueId],
             [OldStudent_DocumentId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[EvaluationDate],
@@ -68220,15 +68750,16 @@ BEGIN
             oldDj2.[Namespace],
             oldDj2.[CodeValue],
             del.[Student_StudentUniqueId],
-            oldPj0s0.[DocumentId],
+            oldPj0.[DocumentId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId]
         INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DocumentId] = del.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId]
         INNER JOIN [dms].[Descriptor] oldDj2 ON oldDj2.[DocumentId] = del.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId]
-        INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
+        INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -68265,7 +68796,8 @@ BEGIN
                 [NewStudent_StudentUniqueId],
                 [NewStudent_DocumentId],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[EvaluationDate],
@@ -68279,7 +68811,7 @@ BEGIN
                 oldDj2.[Namespace],
                 oldDj2.[CodeValue],
                 del.[Student_StudentUniqueId],
-                oldPj0s0.[DocumentId],
+                oldPj0.[DocumentId],
                 i.[EvaluationDate],
                 i.[ProgramEvaluation_ProgramEducationOrganizationId],
                 newDj0.[Namespace],
@@ -68291,9 +68823,10 @@ BEGIN
                 newDj2.[Namespace],
                 newDj2.[CodeValue],
                 i.[Student_StudentUniqueId],
-                newPj0s0.[DocumentId],
+                newPj0.[DocumentId],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -68301,11 +68834,11 @@ BEGIN
             INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId]
             INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DocumentId] = del.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId]
             INNER JOIN [dms].[Descriptor] oldDj2 ON oldDj2.[DocumentId] = del.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId]
-            INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId]
+            INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId]
             INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId]
             INNER JOIN [dms].[Descriptor] newDj1 ON newDj1.[DocumentId] = i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId]
             INNER JOIN [dms].[Descriptor] newDj2 ON newDj2.[DocumentId] = i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId]
-            INNER JOIN [edfi].[Student] newPj0s0 ON newPj0s0.[DocumentId] = i.[Student_DocumentId];
+            INNER JOIN [edfi].[Student] newPj0 ON newPj0.[StudentUniqueId] = i.[Student_StudentUniqueId];
         END
     END
 END;
@@ -68513,18 +69046,20 @@ BEGIN
             [OldStudent_StudentUniqueId],
             [OldStudent_DocumentId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[EntryDate],
             del.[SchoolId_Unified],
             del.[Student_StudentUniqueId],
-            oldPj0s0.[DocumentId],
+            oldPj0.[DocumentId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
-        INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
+        INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -68545,25 +69080,27 @@ BEGIN
                 [NewStudent_StudentUniqueId],
                 [NewStudent_DocumentId],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[EntryDate],
                 del.[SchoolId_Unified],
                 del.[Student_StudentUniqueId],
-                oldPj0s0.[DocumentId],
+                oldPj0.[DocumentId],
                 i.[EntryDate],
                 i.[SchoolId_Unified],
                 i.[Student_StudentUniqueId],
-                newPj0s0.[DocumentId],
+                newPj0.[DocumentId],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
-            INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId]
-            INNER JOIN [edfi].[Student] newPj0s0 ON newPj0s0.[DocumentId] = i.[Student_DocumentId];
+            INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId]
+            INNER JOIN [edfi].[Student] newPj0 ON newPj0.[StudentUniqueId] = i.[Student_StudentUniqueId];
         END
     END
 END;
@@ -68736,7 +69273,8 @@ BEGIN
             [OldStudent_StudentUniqueId],
             [OldStudent_DocumentId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             oldDj0.[Namespace],
@@ -68746,13 +69284,14 @@ BEGIN
             del.[Session_SchoolYear],
             del.[Session_SessionName],
             del.[Student_StudentUniqueId],
-            oldPj0s0.[DocumentId],
+            oldPj0.[DocumentId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[AttendanceEventCategoryDescriptor_DescriptorId]
-        INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
+        INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -68781,7 +69320,8 @@ BEGIN
                 [NewStudent_StudentUniqueId],
                 [NewStudent_DocumentId],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 oldDj0.[Namespace],
@@ -68791,7 +69331,7 @@ BEGIN
                 del.[Session_SchoolYear],
                 del.[Session_SessionName],
                 del.[Student_StudentUniqueId],
-                oldPj0s0.[DocumentId],
+                oldPj0.[DocumentId],
                 newDj0.[Namespace],
                 newDj0.[CodeValue],
                 i.[EventDate],
@@ -68799,17 +69339,18 @@ BEGIN
                 i.[Session_SchoolYear],
                 i.[Session_SessionName],
                 i.[Student_StudentUniqueId],
-                newPj0s0.[DocumentId],
+                newPj0.[DocumentId],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[AttendanceEventCategoryDescriptor_DescriptorId]
-            INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId]
+            INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId]
             INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[AttendanceEventCategoryDescriptor_DescriptorId]
-            INNER JOIN [edfi].[Student] newPj0s0 ON newPj0s0.[DocumentId] = i.[Student_DocumentId];
+            INNER JOIN [edfi].[Student] newPj0 ON newPj0.[StudentUniqueId] = i.[Student_StudentUniqueId];
         END
     END
 END;
@@ -68960,7 +69501,8 @@ BEGIN
             [OldStudent_StudentUniqueId],
             [OldStudent_DocumentId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[BeginDate],
@@ -68970,13 +69512,14 @@ BEGIN
             oldDj0.[Namespace],
             oldDj0.[CodeValue],
             del.[Student_StudentUniqueId],
-            oldPj0s0.[DocumentId],
+            oldPj0.[DocumentId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
-        INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
+        INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId];
     END
 END;
 GO
@@ -69204,7 +69747,8 @@ BEGIN
             [OldStudent_StudentUniqueId],
             [OldStudent_DocumentId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[BeginDate],
@@ -69214,13 +69758,14 @@ BEGIN
             oldDj0.[Namespace],
             oldDj0.[CodeValue],
             del.[Student_StudentUniqueId],
-            oldPj0s0.[DocumentId],
+            oldPj0.[DocumentId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
-        INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
+        INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId];
     END
 END;
 GO
@@ -69353,7 +69898,8 @@ BEGIN
             [OldStudent_StudentUniqueId],
             [OldStudent_DocumentId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[BeginDate],
@@ -69363,12 +69909,13 @@ BEGIN
             del.[Section_SectionIdentifier],
             del.[Section_SessionName],
             del.[Student_StudentUniqueId],
-            oldPj0s0.[DocumentId],
+            oldPj0.[DocumentId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
-        INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
+        INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -69397,7 +69944,8 @@ BEGIN
                 [NewStudent_StudentUniqueId],
                 [NewStudent_DocumentId],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[BeginDate],
@@ -69407,7 +69955,7 @@ BEGIN
                 del.[Section_SectionIdentifier],
                 del.[Section_SessionName],
                 del.[Student_StudentUniqueId],
-                oldPj0s0.[DocumentId],
+                oldPj0.[DocumentId],
                 i.[BeginDate],
                 i.[Section_LocalCourseCode],
                 i.[Section_SchoolId],
@@ -69415,15 +69963,16 @@ BEGIN
                 i.[Section_SectionIdentifier],
                 i.[Section_SessionName],
                 i.[Student_StudentUniqueId],
-                newPj0s0.[DocumentId],
+                newPj0.[DocumentId],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
-            INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId]
-            INNER JOIN [edfi].[Student] newPj0s0 ON newPj0s0.[DocumentId] = i.[Student_DocumentId];
+            INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId]
+            INNER JOIN [edfi].[Student] newPj0 ON newPj0.[StudentUniqueId] = i.[Student_StudentUniqueId];
         END
     END
 END;
@@ -69559,7 +70108,8 @@ BEGIN
             [OldStudent_StudentUniqueId],
             [OldStudent_DocumentId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             oldDj0.[Namespace],
@@ -69571,13 +70121,14 @@ BEGIN
             del.[Section_SectionIdentifier],
             del.[Section_SessionName],
             del.[Student_StudentUniqueId],
-            oldPj0s0.[DocumentId],
+            oldPj0.[DocumentId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[AttendanceEventCategoryDescriptor_DescriptorId]
-        INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
+        INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -69610,7 +70161,8 @@ BEGIN
                 [NewStudent_StudentUniqueId],
                 [NewStudent_DocumentId],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 oldDj0.[Namespace],
@@ -69622,7 +70174,7 @@ BEGIN
                 del.[Section_SectionIdentifier],
                 del.[Section_SessionName],
                 del.[Student_StudentUniqueId],
-                oldPj0s0.[DocumentId],
+                oldPj0.[DocumentId],
                 newDj0.[Namespace],
                 newDj0.[CodeValue],
                 i.[EventDate],
@@ -69632,17 +70184,18 @@ BEGIN
                 i.[Section_SectionIdentifier],
                 i.[Section_SessionName],
                 i.[Student_StudentUniqueId],
-                newPj0s0.[DocumentId],
+                newPj0.[DocumentId],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[AttendanceEventCategoryDescriptor_DescriptorId]
-            INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId]
+            INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId]
             INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[AttendanceEventCategoryDescriptor_DescriptorId]
-            INNER JOIN [edfi].[Student] newPj0s0 ON newPj0s0.[DocumentId] = i.[Student_DocumentId];
+            INNER JOIN [edfi].[Student] newPj0 ON newPj0.[StudentUniqueId] = i.[Student_StudentUniqueId];
         END
     END
 END;
@@ -69832,7 +70385,8 @@ BEGIN
             [OldStudent_StudentUniqueId],
             [OldStudent_DocumentId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[BeginDate],
@@ -69842,13 +70396,14 @@ BEGIN
             oldDj0.[Namespace],
             oldDj0.[CodeValue],
             del.[Student_StudentUniqueId],
-            oldPj0s0.[DocumentId],
+            oldPj0.[DocumentId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
-        INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
+        INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId];
     END
 END;
 GO
@@ -70176,7 +70731,8 @@ BEGIN
             [OldStudent_StudentUniqueId],
             [OldStudent_DocumentId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[ConsentToEvaluationReceivedDate],
@@ -70186,13 +70742,14 @@ BEGIN
             oldDj0.[Namespace],
             oldDj0.[CodeValue],
             del.[Student_StudentUniqueId],
-            oldPj0s0.[DocumentId],
+            oldPj0.[DocumentId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
-        INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
+        INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -70221,7 +70778,8 @@ BEGIN
                 [NewStudent_StudentUniqueId],
                 [NewStudent_DocumentId],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[ConsentToEvaluationReceivedDate],
@@ -70231,7 +70789,7 @@ BEGIN
                 oldDj0.[Namespace],
                 oldDj0.[CodeValue],
                 del.[Student_StudentUniqueId],
-                oldPj0s0.[DocumentId],
+                oldPj0.[DocumentId],
                 i.[ConsentToEvaluationReceivedDate],
                 i.[EducationOrganization_EducationOrganizationId],
                 i.[ProgramProgram_EducationOrganizationId],
@@ -70239,17 +70797,18 @@ BEGIN
                 newDj0.[Namespace],
                 newDj0.[CodeValue],
                 i.[Student_StudentUniqueId],
-                newPj0s0.[DocumentId],
+                newPj0.[DocumentId],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
-            INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId]
+            INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId]
             INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
-            INNER JOIN [edfi].[Student] newPj0s0 ON newPj0s0.[DocumentId] = i.[Student_DocumentId];
+            INNER JOIN [edfi].[Student] newPj0 ON newPj0.[StudentUniqueId] = i.[Student_StudentUniqueId];
         END
     END
 END;
@@ -70400,7 +70959,8 @@ BEGIN
             [OldStudent_StudentUniqueId],
             [OldStudent_DocumentId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[BeginDate],
@@ -70410,13 +70970,14 @@ BEGIN
             oldDj0.[Namespace],
             oldDj0.[CodeValue],
             del.[Student_StudentUniqueId],
-            oldPj0s0.[DocumentId],
+            oldPj0.[DocumentId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
-        INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
+        INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId];
     END
 END;
 GO
@@ -70583,17 +71144,19 @@ BEGIN
             [OldTransportationEducationOrganization_EducationOrganizationId],
             [OldStudent_DocumentId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[Student_StudentUniqueId],
             del.[TransportationEducationOrganization_EducationOrganizationId],
-            oldPj0s0.[DocumentId],
+            oldPj0.[DocumentId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
-        INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
+        INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -70612,23 +71175,25 @@ BEGIN
                 [NewTransportationEducationOrganization_EducationOrganizationId],
                 [NewStudent_DocumentId],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[Student_StudentUniqueId],
                 del.[TransportationEducationOrganization_EducationOrganizationId],
-                oldPj0s0.[DocumentId],
+                oldPj0.[DocumentId],
                 i.[Student_StudentUniqueId],
                 i.[TransportationEducationOrganization_EducationOrganizationId],
-                newPj0s0.[DocumentId],
+                newPj0.[DocumentId],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
-            INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId]
-            INNER JOIN [edfi].[Student] newPj0s0 ON newPj0s0.[DocumentId] = i.[Student_DocumentId];
+            INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId]
+            INNER JOIN [edfi].[Student] newPj0 ON newPj0.[StudentUniqueId] = i.[Student_StudentUniqueId];
         END
     END
 END;
@@ -70834,13 +71399,15 @@ BEGIN
             [OldNamespace],
             [OldSurveyIdentifier],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[Namespace],
             del.[SurveyIdentifier],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -70859,7 +71426,8 @@ BEGIN
                 [NewNamespace],
                 [NewSurveyIdentifier],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[Namespace],
@@ -70867,7 +71435,8 @@ BEGIN
                 i.[Namespace],
                 i.[SurveyIdentifier],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -70962,7 +71531,8 @@ BEGIN
             [OldSurvey_Namespace],
             [OldSurvey_SurveyIdentifier],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[Course_CourseCode],
@@ -70970,7 +71540,8 @@ BEGIN
             del.[Survey_Namespace],
             del.[Survey_SurveyIdentifier],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -70993,7 +71564,8 @@ BEGIN
                 [NewSurvey_Namespace],
                 [NewSurvey_SurveyIdentifier],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[Course_CourseCode],
@@ -71005,7 +71577,8 @@ BEGIN
                 i.[Survey_Namespace],
                 i.[Survey_SurveyIdentifier],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -71102,7 +71675,8 @@ BEGIN
             [OldSurvey_Namespace],
             [OldSurvey_SurveyIdentifier],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[Program_EducationOrganizationId],
@@ -71112,7 +71686,8 @@ BEGIN
             del.[Survey_Namespace],
             del.[Survey_SurveyIdentifier],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[Program_ProgramTypeDescriptor_DescriptorId];
@@ -71140,7 +71715,8 @@ BEGIN
                 [NewSurvey_Namespace],
                 [NewSurvey_SurveyIdentifier],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[Program_EducationOrganizationId],
@@ -71156,7 +71732,8 @@ BEGIN
                 i.[Survey_Namespace],
                 i.[Survey_SurveyIdentifier],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -71252,14 +71829,16 @@ BEGIN
             [OldNamespace_Unified],
             [OldSurveyIdentifier_Unified],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[QuestionCode],
             del.[Namespace_Unified],
             del.[SurveyIdentifier_Unified],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -71280,7 +71859,8 @@ BEGIN
                 [NewNamespace_Unified],
                 [NewSurveyIdentifier_Unified],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[QuestionCode],
@@ -71290,7 +71870,8 @@ BEGIN
                 i.[Namespace_Unified],
                 i.[SurveyIdentifier_Unified],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -71424,7 +72005,8 @@ BEGIN
             [OldSurveyIdentifier_Unified],
             [OldSurveyResponse_SurveyResponseIdentifier],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[Namespace_Unified],
@@ -71432,7 +72014,8 @@ BEGIN
             del.[SurveyIdentifier_Unified],
             del.[SurveyResponse_SurveyResponseIdentifier],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -71455,7 +72038,8 @@ BEGIN
                 [NewSurveyIdentifier_Unified],
                 [NewSurveyResponse_SurveyResponseIdentifier],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[Namespace_Unified],
@@ -71467,7 +72051,8 @@ BEGIN
                 i.[SurveyIdentifier_Unified],
                 i.[SurveyResponse_SurveyResponseIdentifier],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -71678,14 +72263,16 @@ BEGIN
             [OldSurvey_SurveyIdentifier],
             [OldSurveyResponseIdentifier],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[Survey_Namespace],
             del.[Survey_SurveyIdentifier],
             del.[SurveyResponseIdentifier],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -71706,7 +72293,8 @@ BEGIN
                 [NewSurvey_SurveyIdentifier],
                 [NewSurveyResponseIdentifier],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[Survey_Namespace],
@@ -71716,7 +72304,8 @@ BEGIN
                 i.[Survey_SurveyIdentifier],
                 i.[SurveyResponseIdentifier],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -71811,7 +72400,8 @@ BEGIN
             [OldSurveyResponse_SurveyIdentifier],
             [OldSurveyResponse_SurveyResponseIdentifier],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[EducationOrganization_EducationOrganizationId],
@@ -71819,7 +72409,8 @@ BEGIN
             del.[SurveyResponse_SurveyIdentifier],
             del.[SurveyResponse_SurveyResponseIdentifier],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -71842,7 +72433,8 @@ BEGIN
                 [NewSurveyResponse_SurveyIdentifier],
                 [NewSurveyResponse_SurveyResponseIdentifier],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[EducationOrganization_EducationOrganizationId],
@@ -71854,7 +72446,8 @@ BEGIN
                 i.[SurveyResponse_SurveyIdentifier],
                 i.[SurveyResponse_SurveyResponseIdentifier],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -71950,19 +72543,21 @@ BEGIN
             [OldSurveyResponse_SurveyResponseIdentifier],
             [OldStaff_DocumentId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[Staff_StaffUniqueId],
             del.[SurveyResponse_Namespace],
             del.[SurveyResponse_SurveyIdentifier],
             del.[SurveyResponse_SurveyResponseIdentifier],
-            oldPj0s0.[DocumentId],
+            oldPj0.[DocumentId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
-        INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId];
+        INNER JOIN [edfi].[Staff] oldPj0 ON oldPj0.[StaffUniqueId] = del.[Staff_StaffUniqueId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -71985,27 +72580,29 @@ BEGIN
                 [NewSurveyResponse_SurveyResponseIdentifier],
                 [NewStaff_DocumentId],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[Staff_StaffUniqueId],
                 del.[SurveyResponse_Namespace],
                 del.[SurveyResponse_SurveyIdentifier],
                 del.[SurveyResponse_SurveyResponseIdentifier],
-                oldPj0s0.[DocumentId],
+                oldPj0.[DocumentId],
                 i.[Staff_StaffUniqueId],
                 i.[SurveyResponse_Namespace],
                 i.[SurveyResponse_SurveyIdentifier],
                 i.[SurveyResponse_SurveyResponseIdentifier],
-                newPj0s0.[DocumentId],
+                newPj0.[DocumentId],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
-            INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId]
-            INNER JOIN [edfi].[Staff] newPj0s0 ON newPj0s0.[DocumentId] = i.[Staff_DocumentId];
+            INNER JOIN [edfi].[Staff] oldPj0 ON oldPj0.[StaffUniqueId] = del.[Staff_StaffUniqueId]
+            INNER JOIN [edfi].[Staff] newPj0 ON newPj0.[StaffUniqueId] = i.[Staff_StaffUniqueId];
         END
     END
 END;
@@ -72134,14 +72731,16 @@ BEGIN
             [OldSurvey_SurveyIdentifier],
             [OldSurveySectionTitle],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[Survey_Namespace],
             del.[Survey_SurveyIdentifier],
             del.[SurveySectionTitle],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -72162,7 +72761,8 @@ BEGIN
                 [NewSurvey_SurveyIdentifier],
                 [NewSurveySectionTitle],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[Survey_Namespace],
@@ -72172,7 +72772,8 @@ BEGIN
                 i.[Survey_SurveyIdentifier],
                 i.[SurveySectionTitle],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -72270,7 +72871,8 @@ BEGIN
             [OldSurvey_Namespace],
             [OldSurvey_SurveyIdentifier],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[Section_LocalCourseCode],
@@ -72281,7 +72883,8 @@ BEGIN
             del.[Survey_Namespace],
             del.[Survey_SurveyIdentifier],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -72310,7 +72913,8 @@ BEGIN
                 [NewSurvey_Namespace],
                 [NewSurvey_SurveyIdentifier],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[Section_LocalCourseCode],
@@ -72328,7 +72932,8 @@ BEGIN
                 i.[Survey_Namespace],
                 i.[Survey_SurveyIdentifier],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -72423,7 +73028,8 @@ BEGIN
             [OldSurveyResponse_SurveyResponseIdentifier],
             [OldSurveySection_SurveySectionTitle],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[Namespace_Unified],
@@ -72431,7 +73037,8 @@ BEGIN
             del.[SurveyResponse_SurveyResponseIdentifier],
             del.[SurveySection_SurveySectionTitle],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -72454,7 +73061,8 @@ BEGIN
                 [NewSurveyResponse_SurveyResponseIdentifier],
                 [NewSurveySection_SurveySectionTitle],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[Namespace_Unified],
@@ -72466,7 +73074,8 @@ BEGIN
                 i.[SurveyResponse_SurveyResponseIdentifier],
                 i.[SurveySection_SurveySectionTitle],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -72562,7 +73171,8 @@ BEGIN
             [OldSurveySectionResponse_SurveyResponseIdentifier],
             [OldSurveySectionResponse_SurveySectionTitle],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[EducationOrganization_EducationOrganizationId],
@@ -72571,7 +73181,8 @@ BEGIN
             del.[SurveySectionResponse_SurveyResponseIdentifier],
             del.[SurveySectionResponse_SurveySectionTitle],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -72596,7 +73207,8 @@ BEGIN
                 [NewSurveySectionResponse_SurveyResponseIdentifier],
                 [NewSurveySectionResponse_SurveySectionTitle],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[EducationOrganization_EducationOrganizationId],
@@ -72610,7 +73222,8 @@ BEGIN
                 i.[SurveySectionResponse_SurveyResponseIdentifier],
                 i.[SurveySectionResponse_SurveySectionTitle],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -72707,7 +73320,8 @@ BEGIN
             [OldSurveySectionResponse_SurveySectionTitle],
             [OldStaff_DocumentId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[Staff_StaffUniqueId],
@@ -72715,12 +73329,13 @@ BEGIN
             del.[SurveyIdentifier_Unified],
             del.[SurveySectionResponse_SurveyResponseIdentifier],
             del.[SurveySectionResponse_SurveySectionTitle],
-            oldPj0s0.[DocumentId],
+            oldPj0.[DocumentId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
-        INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId];
+        INNER JOIN [edfi].[Staff] oldPj0 ON oldPj0.[StaffUniqueId] = del.[Staff_StaffUniqueId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -72745,7 +73360,8 @@ BEGIN
                 [NewSurveySectionResponse_SurveySectionTitle],
                 [NewStaff_DocumentId],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[Staff_StaffUniqueId],
@@ -72753,21 +73369,22 @@ BEGIN
                 del.[SurveyIdentifier_Unified],
                 del.[SurveySectionResponse_SurveyResponseIdentifier],
                 del.[SurveySectionResponse_SurveySectionTitle],
-                oldPj0s0.[DocumentId],
+                oldPj0.[DocumentId],
                 i.[Staff_StaffUniqueId],
                 i.[Namespace_Unified],
                 i.[SurveyIdentifier_Unified],
                 i.[SurveySectionResponse_SurveyResponseIdentifier],
                 i.[SurveySectionResponse_SurveySectionTitle],
-                newPj0s0.[DocumentId],
+                newPj0.[DocumentId],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
-            INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId]
-            INNER JOIN [edfi].[Staff] newPj0s0 ON newPj0s0.[DocumentId] = i.[Staff_DocumentId];
+            INNER JOIN [edfi].[Staff] oldPj0 ON oldPj0.[StaffUniqueId] = del.[Staff_StaffUniqueId]
+            INNER JOIN [edfi].[Staff] newPj0 ON newPj0.[StaffUniqueId] = i.[Staff_StaffUniqueId];
         END
     END
 END;
@@ -72855,12 +73472,14 @@ BEGIN
         INSERT INTO [tracked_changes_sample].[Bus] (
             [OldBusId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[BusId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -72877,13 +73496,15 @@ BEGIN
                 [OldBusId],
                 [NewBusId],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[BusId],
                 i.[BusId],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -72976,13 +73597,15 @@ BEGIN
             [OldBus_BusId],
             [OldBusRouteNumber],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[Bus_BusId],
             del.[BusRouteNumber],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
@@ -73001,7 +73624,8 @@ BEGIN
                 [NewBus_BusId],
                 [NewBusRouteNumber],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[Bus_BusId],
@@ -73009,7 +73633,8 @@ BEGIN
                 i.[Bus_BusId],
                 i.[BusRouteNumber],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -73905,7 +74530,8 @@ BEGIN
             [OldStudent_StudentUniqueId],
             [OldStudent_DocumentId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[BeginDate],
@@ -73915,13 +74541,14 @@ BEGIN
             oldDj0.[Namespace],
             oldDj0.[CodeValue],
             del.[Student_StudentUniqueId],
-            oldPj0s0.[DocumentId],
+            oldPj0.[DocumentId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
-        INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
+        INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId];
     END
 END;
 GO
@@ -74949,7 +75576,8 @@ BEGIN
             [OldStudent_StudentUniqueId],
             [OldStudent_DocumentId],
             [Id],
-            [ChangeVersion]
+            [ChangeVersion],
+            [DocumentId]
         )
         SELECT
             del.[GraduationPlan_EducationOrganizationId],
@@ -74957,13 +75585,14 @@ BEGIN
             oldDj0.[CodeValue],
             del.[GraduationPlan_GraduationSchoolYear],
             del.[Student_StudentUniqueId],
-            oldPj0s0.[DocumentId],
+            oldPj0.[DocumentId],
             doc.[DocumentUuid],
-            doc.[ContentVersion]
+            doc.[ContentVersion],
+            del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId]
-        INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
+        INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -74988,7 +75617,8 @@ BEGIN
                 [NewStudent_StudentUniqueId],
                 [NewStudent_DocumentId],
                 [Id],
-                [ChangeVersion]
+                [ChangeVersion],
+                [DocumentId]
             )
             SELECT
                 del.[GraduationPlan_EducationOrganizationId],
@@ -74996,23 +75626,24 @@ BEGIN
                 oldDj0.[CodeValue],
                 del.[GraduationPlan_GraduationSchoolYear],
                 del.[Student_StudentUniqueId],
-                oldPj0s0.[DocumentId],
+                oldPj0.[DocumentId],
                 i.[GraduationPlan_EducationOrganizationId],
                 newDj0.[Namespace],
                 newDj0.[CodeValue],
                 i.[GraduationPlan_GraduationSchoolYear],
                 i.[Student_StudentUniqueId],
-                newPj0s0.[DocumentId],
+                newPj0.[DocumentId],
                 doc.[DocumentUuid],
-                doc.[ContentVersion]
+                doc.[ContentVersion],
+                i.[DocumentId]
             FROM @changedDocs cd
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId]
-            INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId]
+            INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId]
             INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId]
-            INNER JOIN [edfi].[Student] newPj0s0 ON newPj0s0.[DocumentId] = i.[Student_DocumentId];
+            INNER JOIN [edfi].[Student] newPj0 ON newPj0.[StudentUniqueId] = i.[Student_StudentUniqueId];
         END
     END
 END;

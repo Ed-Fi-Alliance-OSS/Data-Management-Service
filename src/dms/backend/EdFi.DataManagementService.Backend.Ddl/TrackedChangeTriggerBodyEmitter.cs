@@ -68,11 +68,17 @@ internal sealed record TrackedChangeValueSource(
 /// <param name="ChangeVersionColumn">
 /// The physical column name of the <c>ChangeVersion</c> system column.
 /// </param>
+/// <param name="DocumentIdColumn">
+/// The physical column name of the <c>DocumentId</c> system column. Bound to the key column the
+/// statement already joins <c>dms.Document</c> on (the old row for tombstones, the new row for key
+/// changes; both hold the same DocumentId).
+/// </param>
 internal sealed record TrackedChangeInsertPlan(
     TrackedChangeTableInfo Table,
     IReadOnlyList<TrackedChangeValueSource> Values,
     DbColumnName IdColumn,
-    DbColumnName ChangeVersionColumn
+    DbColumnName ChangeVersionColumn,
+    DbColumnName DocumentIdColumn
 );
 
 /// <summary>
@@ -86,7 +92,8 @@ internal static class TrackedChangeTriggerBodyEmitter
     /// <summary>
     /// Builds a <see cref="TrackedChangeInsertPlan"/> by resolving each value column in
     /// <paramref name="tableInfo"/>.<see cref="TrackedChangeTableInfo.ValueColumnsInTableOrder"/> to its
-    /// physical data source, and by locating the <c>Id</c> and <c>ChangeVersion</c> system columns.
+    /// physical data source, and by locating the <c>Id</c>, <c>ChangeVersion</c>, and <c>DocumentId</c>
+    /// system columns.
     /// </summary>
     /// <param name="tableInfo">The derived tracked-change table inventory entry.</param>
     /// <param name="sourceTableModel">
@@ -97,8 +104,10 @@ internal static class TrackedChangeTriggerBodyEmitter
     /// Thrown when a scalar column's <see cref="TrackedChangeColumnInfo.SourceJsonPath"/> matches zero or
     /// more than one source column; when a descriptor join name or person join name is not found in the
     /// table-level join lists; when a person join path step has a null
-    /// <see cref="ColumnPathStep.TargetTable"/> or <see cref="ColumnPathStep.TargetColumnName"/>; or
-    /// when the <c>Id</c> or <c>ChangeVersion</c> system column is absent.
+    /// <see cref="ColumnPathStep.TargetTable"/> or <see cref="ColumnPathStep.TargetColumnName"/>; when a
+    /// person join's natural-key seek metadata is unset or its
+    /// <see cref="TrackedChangePersonJoinInfo.SourceBindingColumn"/> is not on the source table; or
+    /// when the <c>Id</c>, <c>ChangeVersion</c>, or <c>DocumentId</c> system column is absent.
     /// </exception>
     internal static TrackedChangeInsertPlan BuildPlan(
         TrackedChangeTableInfo tableInfo,
@@ -108,11 +117,11 @@ internal static class TrackedChangeTriggerBodyEmitter
         ArgumentNullException.ThrowIfNull(tableInfo);
         ArgumentNullException.ThrowIfNull(sourceTableModel);
 
-        // Validate every person join path up-front so errors surface regardless of
+        // Validate every person join up-front so errors surface regardless of
         // which columns happen to reference a given join.
         foreach (var personJoin in tableInfo.PersonJoins)
         {
-            ValidatePersonJoinPath(personJoin, tableInfo);
+            ValidatePersonJoin(personJoin, tableInfo, sourceTableModel);
         }
 
         var values = new List<TrackedChangeValueSource>(tableInfo.ValueColumnsInTableOrder.Count);
@@ -125,8 +134,15 @@ internal static class TrackedChangeTriggerBodyEmitter
 
         var idColumn = RequireSystemColumn(tableInfo, TrackedChangeSystemColumnRole.Id);
         var changeVersionColumn = RequireSystemColumn(tableInfo, TrackedChangeSystemColumnRole.ChangeVersion);
+        var documentIdColumn = RequireSystemColumn(tableInfo, TrackedChangeSystemColumnRole.DocumentId);
 
-        return new TrackedChangeInsertPlan(tableInfo, values, idColumn, changeVersionColumn);
+        return new TrackedChangeInsertPlan(
+            tableInfo,
+            values,
+            idColumn,
+            changeVersionColumn,
+            documentIdColumn
+        );
     }
 
     // ── Per-column resolution ───────────────────────────────────────
@@ -147,11 +163,6 @@ internal static class TrackedChangeTriggerBodyEmitter
                 return ResolveDescriptorJoin(column, tableInfo);
 
             case TrackedChangeColumnRole.PersonDocumentId:
-                if (IsDirectSelfPersonDocumentId(column))
-                {
-                    return ResolveScalar(column, tableInfo, sourceTableModel);
-                }
-
                 return ResolvePersonJoin(column, tableInfo);
 
             default:
@@ -161,11 +172,6 @@ internal static class TrackedChangeTriggerBodyEmitter
                 );
         }
     }
-
-    private static bool IsDirectSelfPersonDocumentId(TrackedChangeColumnInfo column) =>
-        column.PersonJoinName is null
-        && column.CanonicalStorageColumn is { } canonicalColumn
-        && canonicalColumn.Equals(new DbColumnName("DocumentId"));
 
     private static TrackedChangeValueSource ResolveScalar(
         TrackedChangeColumnInfo column,
@@ -297,9 +303,15 @@ internal static class TrackedChangeTriggerBodyEmitter
         );
     }
 
-    private static void ValidatePersonJoinPath(
+    /// <summary>
+    /// Validates a person join: the chain must be non-empty with fully-specified steps (it still names the
+    /// column and drives planner matching), and the natural-key seek metadata must be populated with a
+    /// binding column that exists on the source table (the trigger joins on it).
+    /// </summary>
+    private static void ValidatePersonJoin(
         TrackedChangePersonJoinInfo join,
-        TrackedChangeTableInfo tableInfo
+        TrackedChangeTableInfo tableInfo,
+        DbTableModel sourceTableModel
     )
     {
         if (join.JoinPath.Count == 0)
@@ -308,6 +320,29 @@ internal static class TrackedChangeTriggerBodyEmitter
                 $"Tracked-change plan for table '{tableInfo.Table.Schema.Value}.{tableInfo.Table.Name}': "
                     + $"person join '{join.PersonJoinName}' has an empty join path; "
                     + "every step must have a non-null target."
+            );
+        }
+
+        if (
+            string.IsNullOrEmpty(join.PersonTable.Name)
+            || string.IsNullOrEmpty(join.PersonIdentityColumn.Value)
+            || string.IsNullOrEmpty(join.SourceBindingColumn.Value)
+        )
+        {
+            throw new InvalidOperationException(
+                $"Tracked-change plan for table '{tableInfo.Table.Schema.Value}.{tableInfo.Table.Name}': "
+                    + $"person join '{join.PersonJoinName}' is missing its natural-key seek metadata "
+                    + "(PersonTable, PersonIdentityColumn, SourceBindingColumn must all be set)."
+            );
+        }
+
+        if (!sourceTableModel.Columns.Any(c => c.ColumnName.Equals(join.SourceBindingColumn)))
+        {
+            throw new InvalidOperationException(
+                $"Tracked-change plan for table '{tableInfo.Table.Schema.Value}.{tableInfo.Table.Name}': "
+                    + $"person join '{join.PersonJoinName}' seeks the person through source binding column "
+                    + $"'{join.SourceBindingColumn.Value}', which was not found on source table "
+                    + $"'{sourceTableModel.Table.Schema.Value}.{sourceTableModel.Table.Name}'."
             );
         }
 
@@ -421,7 +456,8 @@ internal static class TrackedChangeTriggerBodyEmitter
             plan,
             oldImage: MssqlOldImage,
             newImage: null,
-            changeVersionSql: $"doc.{dialect.QuoteIdentifier("ContentVersion")}"
+            changeVersionSql: $"doc.{dialect.QuoteIdentifier("ContentVersion")}",
+            documentIdSql: $"{MssqlOldImage.RowRef}.{dialect.QuoteIdentifier(keyColumn.Value)}"
         );
 
         // FROM deleted del … INNER JOIN dms.Document doc … optional old-image joins
@@ -461,7 +497,8 @@ internal static class TrackedChangeTriggerBodyEmitter
             plan,
             oldImage: MssqlOldImage,
             newImage: MssqlNewImage,
-            changeVersionSql: $"doc.{dialect.QuoteIdentifier("ContentVersion")}"
+            changeVersionSql: $"doc.{dialect.QuoteIdentifier("ContentVersion")}",
+            documentIdSql: $"{MssqlNewImage.RowRef}.{dialect.QuoteIdentifier(keyColumn.Value)}"
         );
 
         // FROM @changedDocs cd … fixed joins … old-image and new-image joins
@@ -532,21 +569,21 @@ internal static class TrackedChangeTriggerBodyEmitter
             yield return $"{joinKeyword} {qualifiedDescriptor} {alias} ON {alias}.{dialect.QuoteIdentifier("DocumentId")} = {image.RowRef}.{dialect.QuoteIdentifier(join.SourceColumn.Value)}";
         }
 
-        // Person joins
+        // Person joins: one natural-key seek on the person root per join. The row image itself carries
+        // the person's unique id (a root binding column of the reference), so the old image yields the old
+        // person even under a cascading key change that has already re-pointed the live intermediates.
         for (int i = 0; i < plan.Table.PersonJoins.Count; i++)
         {
             var join = plan.Table.PersonJoins[i];
             var joinKeyword = JoinKeyword(PersonJoinIsNullable(plan, i));
-            for (int j = 0; j < join.JoinPath.Count; j++)
-            {
-                var step = join.JoinPath[j];
-                var alias = $"{image.AliasPrefix}Pj{i}s{j}";
-                var leftRef = j == 0 ? image.RowRef : $"{image.AliasPrefix}Pj{i}s{j - 1}";
-                var qualifiedTarget = dialect.QualifyTable(step.TargetTable!.Value);
-                yield return $"{joinKeyword} {qualifiedTarget} {alias} ON {alias}.{dialect.QuoteIdentifier(step.TargetColumnName!.Value.Value)} = {leftRef}.{dialect.QuoteIdentifier(step.SourceColumnName.Value)}";
-            }
+            var alias = PersonJoinAlias(image, i);
+            var qualifiedPerson = dialect.QualifyTable(join.PersonTable);
+            yield return $"{joinKeyword} {qualifiedPerson} {alias} ON {alias}.{dialect.QuoteIdentifier(join.PersonIdentityColumn.Value)} = {image.RowRef}.{dialect.QuoteIdentifier(join.SourceBindingColumn.Value)}";
         }
     }
+
+    private static string PersonJoinAlias(ImageBinding image, int joinIndex) =>
+        $"{image.AliasPrefix}Pj{joinIndex}";
 
     private static string JoinKeyword(bool nullableJoin) => nullableJoin ? "LEFT JOIN" : "INNER JOIN";
 
@@ -597,7 +634,8 @@ internal static class TrackedChangeTriggerBodyEmitter
             plan,
             oldImage: PgsqlOldImage,
             newImage: newImage,
-            changeVersionSql: changeVersionSql
+            changeVersionSql: changeVersionSql,
+            documentIdSql: $"{filterImage.RowRef}.{dialect.QuoteIdentifier(keyColumn.Value)}"
         );
 
         // FROM dms.Document doc
@@ -623,9 +661,9 @@ internal static class TrackedChangeTriggerBodyEmitter
     /// Emits the column list and SELECT list sections shared by all INSERT renderers.
     /// Called directly after the <c>INSERT INTO … (</c> header line; manages its own
     /// indentation scopes for the column list and SELECT list.
-    /// Emits: indented Old* columns, optional New* columns, Id column, ChangeVersion column;
-    /// then closing paren, SELECT keyword, and indented old-image expressions, optional new-image
-    /// expressions, doc.DocumentUuid, and the ChangeVersion expression.
+    /// Emits: indented Old* columns, optional New* columns, Id column, ChangeVersion column, DocumentId
+    /// column; then closing paren, SELECT keyword, and indented old-image expressions, optional new-image
+    /// expressions, doc.DocumentUuid, the ChangeVersion expression, and the DocumentId expression.
     /// </summary>
     /// <param name="writer">The <see cref="SqlWriter"/> to write into.</param>
     /// <param name="dialect">The SQL dialect for identifier quoting.</param>
@@ -633,13 +671,18 @@ internal static class TrackedChangeTriggerBodyEmitter
     /// <param name="oldImage">The image binding for old values (e.g. <c>OLD</c> / <c>del</c>).</param>
     /// <param name="newImage">The image binding for new values, or <c>null</c> for a tombstone.</param>
     /// <param name="changeVersionSql">The SQL expression for the ChangeVersion value in the SELECT list.</param>
+    /// <param name="documentIdSql">
+    /// The SQL expression for the DocumentId system column value: the row key the statement joins
+    /// <c>dms.Document</c> on.
+    /// </param>
     private static void EmitInsertColumnsAndSelect(
         SqlWriter writer,
         ISqlDialect dialect,
         TrackedChangeInsertPlan plan,
         ImageBinding oldImage,
         ImageBinding? newImage,
-        string changeVersionSql
+        string changeVersionSql,
+        string documentIdSql
     )
     {
         var idSql = dialect.QuoteIdentifier(plan.IdColumn.Value);
@@ -664,8 +707,11 @@ internal static class TrackedChangeTriggerBodyEmitter
             // Id column
             writer.AppendLine($"{idSql},");
 
-            // ChangeVersion column — no trailing comma
-            writer.AppendLine($"{dialect.QuoteIdentifier(plan.ChangeVersionColumn.Value)}");
+            // ChangeVersion column
+            writer.AppendLine($"{dialect.QuoteIdentifier(plan.ChangeVersionColumn.Value)},");
+
+            // DocumentId column — no trailing comma
+            writer.AppendLine($"{dialect.QuoteIdentifier(plan.DocumentIdColumn.Value)}");
         }
 
         // Close the column list, open SELECT
@@ -677,7 +723,7 @@ internal static class TrackedChangeTriggerBodyEmitter
             // Old-image value expressions
             foreach (var value in plan.Values)
             {
-                var expr = ValueExpression(dialect, plan, value, oldImage);
+                var expr = ValueExpression(dialect, value, oldImage);
                 writer.AppendLine($"{expr},");
             }
 
@@ -686,7 +732,7 @@ internal static class TrackedChangeTriggerBodyEmitter
             {
                 foreach (var value in plan.Values)
                 {
-                    var expr = ValueExpression(dialect, plan, value, newImage);
+                    var expr = ValueExpression(dialect, value, newImage);
                     writer.AppendLine($"{expr},");
                 }
             }
@@ -694,8 +740,11 @@ internal static class TrackedChangeTriggerBodyEmitter
             // doc.DocumentUuid
             writer.AppendLine($"doc.{dialect.QuoteIdentifier("DocumentUuid")},");
 
-            // ChangeVersion expression — no trailing comma
-            writer.AppendLine(changeVersionSql);
+            // ChangeVersion expression
+            writer.AppendLine($"{changeVersionSql},");
+
+            // DocumentId expression — no trailing comma
+            writer.AppendLine(documentIdSql);
         }
     }
 
@@ -706,7 +755,6 @@ internal static class TrackedChangeTriggerBodyEmitter
     /// </summary>
     private static string ValueExpression(
         ISqlDialect dialect,
-        TrackedChangeInsertPlan plan,
         TrackedChangeValueSource value,
         ImageBinding image
     )
@@ -721,7 +769,7 @@ internal static class TrackedChangeTriggerBodyEmitter
                 ? $"{image.AliasPrefix}Dj{value.JoinIndex}.{dialect.QuoteIdentifier("Namespace")}"
                 : $"{image.AliasPrefix}Dj{value.JoinIndex}.{dialect.QuoteIdentifier("CodeValue")}",
 
-            TrackedChangeValueSourceKind.PersonJoin => PersonValueExpression(dialect, plan, value, image),
+            TrackedChangeValueSourceKind.PersonJoin => PersonValueExpression(dialect, value, image),
 
             _ => throw new InvalidOperationException(
                 $"Unrecognized TrackedChangeValueSourceKind '{value.Kind}'."
@@ -730,21 +778,17 @@ internal static class TrackedChangeTriggerBodyEmitter
     }
 
     /// <summary>
-    /// Returns the SQL expression for a PersonJoin value source: the last step's target column
-    /// on the deepest join alias.
+    /// Returns the SQL expression for a PersonJoin value source: the seeked person root row's
+    /// <c>DocumentId</c> on that join's alias.
     /// </summary>
     private static string PersonValueExpression(
         ISqlDialect dialect,
-        TrackedChangeInsertPlan plan,
         TrackedChangeValueSource value,
         ImageBinding image
     )
     {
-        var join = plan.Table.PersonJoins[value.JoinIndex];
-        var lastStepIndex = join.JoinPath.Count - 1;
-        var lastStep = join.JoinPath[lastStepIndex];
-        var alias = $"{image.AliasPrefix}Pj{value.JoinIndex}s{lastStepIndex}";
-        return $"{alias}.{dialect.QuoteIdentifier(lastStep.TargetColumnName!.Value.Value)}";
+        // The seeked person root row's DocumentId.
+        return $"{PersonJoinAlias(image, value.JoinIndex)}.{dialect.QuoteIdentifier("DocumentId")}";
     }
 
     /// <summary>
@@ -802,7 +846,8 @@ internal static class TrackedChangeTriggerBodyEmitter
     /// </param>
     /// <exception cref="InvalidOperationException">
     /// Thrown when the <see cref="TrackedChangeSystemColumnRole.Id"/>,
-    /// <see cref="TrackedChangeSystemColumnRole.ChangeVersion"/>, or
+    /// <see cref="TrackedChangeSystemColumnRole.ChangeVersion"/>,
+    /// <see cref="TrackedChangeSystemColumnRole.DocumentId"/>, or
     /// <see cref="TrackedChangeSystemColumnRole.Discriminator"/> system column is absent, or when a
     /// value column has a role other than <see cref="TrackedChangeColumnRole.Scalar"/> or a
     /// <see cref="TrackedChangeColumnInfo.SourceJsonPath"/> not present in
@@ -819,6 +864,7 @@ internal static class TrackedChangeTriggerBodyEmitter
         var discriminatorColumn = RequireSystemColumn(tableInfo, TrackedChangeSystemColumnRole.Discriminator);
         var idColumn = RequireSystemColumn(tableInfo, TrackedChangeSystemColumnRole.Id);
         var changeVersionColumn = RequireSystemColumn(tableInfo, TrackedChangeSystemColumnRole.ChangeVersion);
+        var documentIdColumn = RequireSystemColumn(tableInfo, TrackedChangeSystemColumnRole.DocumentId);
 
         // INSERT INTO <qualified tracked table> (
         writer.AppendLine($"INSERT INTO {dialect.QualifyTable(tableInfo.Table)} (");
@@ -836,8 +882,11 @@ internal static class TrackedChangeTriggerBodyEmitter
             // Id column
             writer.AppendLine($"{dialect.QuoteIdentifier(idColumn.Value)},");
 
-            // ChangeVersion — no trailing comma
-            writer.AppendLine($"{dialect.QuoteIdentifier(changeVersionColumn.Value)}");
+            // ChangeVersion
+            writer.AppendLine($"{dialect.QuoteIdentifier(changeVersionColumn.Value)},");
+
+            // DocumentId — no trailing comma
+            writer.AppendLine($"{dialect.QuoteIdentifier(documentIdColumn.Value)}");
         }
 
         writer.AppendLine(")");
@@ -879,8 +928,11 @@ internal static class TrackedChangeTriggerBodyEmitter
             // doc.DocumentUuid (Id)
             writer.AppendLine($"doc.{dialect.QuoteIdentifier("DocumentUuid")},");
 
-            // doc.ContentVersion (ChangeVersion) — no trailing comma
-            writer.AppendLine($"doc.{dialect.QuoteIdentifier("ContentVersion")}");
+            // doc.ContentVersion (ChangeVersion)
+            writer.AppendLine($"doc.{dialect.QuoteIdentifier("ContentVersion")},");
+
+            // The deleted row's DocumentId — no trailing comma
+            writer.AppendLine($"{imageRef}.{dialect.QuoteIdentifier("DocumentId")}");
         }
 
         if (fromDeletedSet)

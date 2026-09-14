@@ -43,4 +43,25 @@ internal static class CustomViewAuthorizationTerminalOrdering
             ),
         ];
     }
+
+    /// <summary>
+    /// The ReadChanges counterpart of <see cref="ChecksBeforeTerminal(IReadOnlyList{CustomViewAuthorizationCheckSpec}, int)"/>:
+    /// the planned <c>/deletes</c> and <c>/keyChanges</c> custom-view checks configured strictly before
+    /// <paramref name="terminalRawConfiguredIndex"/>, which are the only ones validated ahead of a planning
+    /// failure at that index.
+    /// </summary>
+    public static IReadOnlyList<ReadChangesCustomViewCheckSpec> ChecksBeforeTerminal(
+        IReadOnlyList<ReadChangesCustomViewCheckSpec> checks,
+        int terminalRawConfiguredIndex
+    )
+    {
+        ArgumentNullException.ThrowIfNull(checks);
+
+        return
+        [
+            .. checks.Where(check =>
+                check.ConfiguredStrategy.RawConfiguredIndex < terminalRawConfiguredIndex
+            ),
+        ];
+    }
 }

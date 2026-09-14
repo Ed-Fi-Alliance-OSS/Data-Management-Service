@@ -95,25 +95,9 @@ public static class SingleRecordCustomViewAuthorizationPlanner
                 continue;
             }
 
-            // A path whose first hop leaves the root through the root's own DocumentId reaches the basis
-            // through a child collection table. Stored checks can still walk it — the root DocumentId is
-            // known — but a proposed check cannot: it would have to bind a value from child rows that the
-            // request has not written yet. auth.md is explicit that authorization checks apply to the
-            // resource or descriptor root table and not to collection items, so an operation that needs a
-            // proposed check fails closed rather than silently skipping this strategy.
-            var startsFromRootDocumentId = IsRootDocumentIdSourced(
-                resolvedPath.Steps[0],
-                rootTable,
-                rootDocumentIdColumn
-            );
-            var isSelfBasis = resolvedPath.Steps.Count == 1 && startsFromRootDocumentId;
-            var reachesBasisThroughChildTable = resolvedPath.Steps.Count > 1 && startsFromRootDocumentId;
-
-            if (plansProposedChecks && reachesBasisThroughChildTable)
-            {
-                failures.Add(BuildChildTablePathFailure(subjectResource, strategy, resolvedPath));
-                continue;
-            }
+            var isSelfBasis =
+                resolvedPath.Steps.Count == 1
+                && IsRootDocumentIdSourced(resolvedPath.Steps[0], rootTable, rootDocumentIdColumn);
 
             plannedStrategies.Add(
                 new PlannedStrategy(
@@ -225,9 +209,8 @@ public static class SingleRecordCustomViewAuthorizationPlanner
 
     /// <summary>
     /// Whether <paramref name="step"/> leaves the subject root through the root's own <c>DocumentId</c>
-    /// rather than through a basis-bearing foreign key. The resolver builds exactly that step both for a
-    /// self-basis path (as the only step) and as the prefix hop of a path that reaches the basis through a
-    /// child collection table.
+    /// rather than through a basis-bearing foreign key. The resolver builds exactly that step only for a
+    /// self-basis path, as the path's single step.
     /// </summary>
     private static bool IsRootDocumentIdSourced(
         ColumnPathStep step,
@@ -343,26 +326,6 @@ public static class SingleRecordCustomViewAuthorizationPlanner
                 AuthorizationObjectName: $"auth.{strategy.ConfiguredStrategy.StrategyName}"
             ),
             Hint: $"No DocumentId join path could be resolved from subject resource '{subjectResource.ProjectName}.{subjectResource.ResourceName}' to custom view basis resource '{strategy.BasisResource.ProjectName}.{strategy.BasisResource.ResourceName}'."
-        );
-
-    private static RelationshipAuthorizationFailureMetadata BuildChildTablePathFailure(
-        QualifiedResourceName subjectResource,
-        SupportedCustomViewAuthorizationStrategy strategy,
-        ResolvedBasisResourcePath resolvedPath
-    ) =>
-        new(
-            RelationshipAuthorizationFailureKind.MissingProposedCustomViewRootBinding,
-            subjectResource,
-            strategy.ConfiguredStrategy,
-            strategy.AuthorizationLocalOrder,
-            // Both taken from the terminal step so the pair names a column on the table it lives on; mixing
-            // steps would point diagnostics at a table.column combination that does not exist for 3+ hop paths.
-            Location: new RelationshipAuthorizationFailureLocation(
-                Table: resolvedPath.Steps[^1].SourceTable,
-                Column: resolvedPath.Steps[^1].SourceColumnName,
-                AuthorizationObjectName: $"auth.{strategy.ConfiguredStrategy.StrategyName}"
-            ),
-            Hint: $"Custom view basis resource '{strategy.BasisResource.ProjectName}.{strategy.BasisResource.ResourceName}' is reached from subject resource '{subjectResource.ProjectName}.{subjectResource.ResourceName}' through a child collection table, so no root-table value can authorize proposed data for a write."
         );
 
     private sealed record PlannedStrategy(

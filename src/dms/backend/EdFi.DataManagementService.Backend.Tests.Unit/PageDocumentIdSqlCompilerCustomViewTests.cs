@@ -179,9 +179,9 @@ public class Given_CustomView_Wiring_And_Sql_Emission
         string expectedPredicate
     )
     {
-        // The basis reference lives on a child collection table, so the resolver prefixes a root-to-child
-        // step. That child's locator column is not DocumentId, so the JOIN must key on the locator column
-        // rather than assuming the child mirrors the root's DocumentId.
+        // Compiler contract: the JOIN keys on each step's target column verbatim rather than assuming the
+        // joined table mirrors the root's DocumentId. The resolver no longer emits child-table steps (the
+        // basis path is root-table-only), so this pins the compiler's own contract with a hand-built chain.
         var childTable = new DbTableName(_edfiSchema, "StudentSchoolAssociationProgram");
         var check = new PageDocumentIdAuthorizationCustomViewCheck(
             "ProgramWithCTE",
