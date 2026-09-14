@@ -116,7 +116,8 @@ public static class CdcCommandHost
             };
             var json = new Option<bool>("--json")
             {
-                Description = "One structured stdout result. Diagnostics and watch progress use stderr.",
+                Description =
+                    "CDC commands always emit one JSON result on stdout; --json is accepted for compatibility. Diagnostics and watch progress use stderr.",
             };
             command.Options.Add(settings);
             command.Options.Add(state);
