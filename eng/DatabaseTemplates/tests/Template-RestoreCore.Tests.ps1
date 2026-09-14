@@ -1132,7 +1132,7 @@ Describe "Assert-DmsOnlyInventory" {
 Describe "Get-RelationalMappingVersionFromSource" {
     It "reads the authoritative constant from the real repo source file" {
         $constantsPath = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../../src/dms/core/EdFi.DataManagementService.Core/Utilities/SchemaHashConstants.cs"))
-        Get-RelationalMappingVersionFromSource -SchemaHashConstantsPath $constantsPath | Should -Be "v2"
+        Get-RelationalMappingVersionFromSource -SchemaHashConstantsPath $constantsPath | Should -Be "v3"
     }
 
     It "fails on a missing file or an ambiguous constant" {

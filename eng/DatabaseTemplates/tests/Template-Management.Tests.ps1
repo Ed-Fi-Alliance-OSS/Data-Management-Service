@@ -1433,7 +1433,7 @@ Describe "Build-TemplateNuGetPackage restore gate and manifest" {
                 $manifest.contentProfile | Should -Be "DmsDatastoreOnly"
                 @($manifest.projects) | Should -Be @("edfi")
                 $manifest.effectiveSchemaHash | Should -Be ("ab" * 32)
-                $manifest.relationalMappingVersion | Should -Be "v2"
+                $manifest.relationalMappingVersion | Should -Be "v3"
                 $manifest.documentJsonColumnType | Should -Be "jsonb"
                 $manifest.artifactFileName | Should -Be "EdFi.Api.Minimal.Template.PostgreSql.5.2.0.sql"
                 $manifest.artifactSha256 | Should -Be (Get-FileSha256Hex -Path "./EdFi.Api.Minimal.Template.PostgreSql.5.2.0.sql")
