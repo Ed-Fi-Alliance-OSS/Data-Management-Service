@@ -101,16 +101,6 @@ public class ManagementEndpointModule(
     }
 
     /// <summary>
-    /// Derives the normalized correlation ID for the current request. Each handler calls this
-    /// exactly once and threads the result through <see cref="AuthorizeAsync"/> and
-    /// <see cref="NotFoundProblem"/>, so every response this module can produce - 401, 403 and
-    /// 404 alike - reports the same value the request-logging middleware recorded (FR-LOG-6),
-    /// and the value is derived once per request rather than once per response shape.
-    /// </summary>
-    private static TraceId TraceIdFor(HttpContext httpContext, IOptions<FrontendAppSettings> options) =>
-        AspNetCoreFrontend.ExtractTraceIdFrom(httpContext.Request, options);
-
-    /// <summary>
     /// Returns the failure result to send, or null when the caller is authorized. Every protected
     /// handler calls this before touching <see cref="IApiService"/>, so a denied request never
     /// invalidates the claimset cache and never reaches the Configuration Service.
@@ -118,7 +108,7 @@ public class ManagementEndpointModule(
     private static async Task<IResult?> AuthorizeAsync(
         HttpContext httpContext,
         IManagementEndpointAuthorizationService authorizationService,
-        TraceId traceId
+        IOptions<FrontendAppSettings> options
     )
     {
         string? authorizationHeader = httpContext.Request.Headers.TryGetValue(
@@ -137,6 +127,8 @@ public class ManagementEndpointModule(
         {
             return null;
         }
+
+        TraceId traceId = AspNetCoreFrontend.ExtractTraceIdFrom(httpContext.Request, options);
 
         if (authorizationResult.Outcome == EndpointRoleAuthorizationOutcome.Unauthorized)
         {
@@ -168,18 +160,15 @@ public class ManagementEndpointModule(
             _ => Results.StatusCode(response.StatusCode),
         };
 
-    /// <summary>
-    /// The Ed-Fi not-found problem details for this module, built by the same
-    /// <see cref="FailureResponse"/> factory that <c>Program.cs</c>'s <c>MapFallback</c> and the
-    /// rest of the API use. Reusing the factory rather than hand-rolling the envelope is what
-    /// guarantees the <c>correlationId</c> member is present and spelled identically here
-    /// (FR-LOG-6); a duplicated anonymous object had silently omitted it.
-    /// </summary>
-    private static IResult NotFoundProblem(TraceId traceId) =>
-        Results.Text(
-            FailureResponse.ForNotFound("The specified resource could not be found.", traceId).ToJsonString(),
-            "application/problem+json",
-            statusCode: StatusCodes.Status404NotFound
+    private static IResult NotFoundProblem() =>
+        Results.NotFound(
+            new
+            {
+                detail = "The specified resource could not be found.",
+                type = "urn:ed-fi:api:not-found",
+                title = "Not Found",
+                status = 404,
+            }
         );
 
     /// <summary>
@@ -193,8 +182,7 @@ public class ManagementEndpointModule(
         ILogger<ManagementEndpointModule> logger
     )
     {
-        TraceId traceId = TraceIdFor(httpContext, options);
-        IResult? authorizationFailure = await AuthorizeAsync(httpContext, authorizationService, traceId);
+        IResult? authorizationFailure = await AuthorizeAsync(httpContext, authorizationService, options);
         if (authorizationFailure is not null)
         {
             return authorizationFailure;
@@ -219,8 +207,7 @@ public class ManagementEndpointModule(
     )
     {
         // Authorization precedes tenant validation so an anonymous caller cannot probe tenant existence.
-        TraceId traceId = TraceIdFor(httpContext, options);
-        IResult? authorizationFailure = await AuthorizeAsync(httpContext, authorizationService, traceId);
+        IResult? authorizationFailure = await AuthorizeAsync(httpContext, authorizationService, options);
         if (authorizationFailure is not null)
         {
             return authorizationFailure;
@@ -228,7 +215,7 @@ public class ManagementEndpointModule(
 
         if (!await tenantValidator.ValidateTenantAsync(tenant))
         {
-            return NotFoundProblem(traceId);
+            return NotFoundProblem();
         }
 
         logger.LogInformation("Claimsets reload requested via management endpoint for tenant");
@@ -245,9 +232,8 @@ public class ManagementEndpointModule(
         IOptions<FrontendAppSettings> options
     )
     {
-        TraceId traceId = TraceIdFor(httpContext, options);
-        IResult? authorizationFailure = await AuthorizeAsync(httpContext, authorizationService, traceId);
-        return authorizationFailure ?? NotFoundProblem(traceId);
+        IResult? authorizationFailure = await AuthorizeAsync(httpContext, authorizationService, options);
+        return authorizationFailure ?? NotFoundProblem();
     }
 
     /// <summary>
@@ -261,8 +247,7 @@ public class ManagementEndpointModule(
         ILogger<ManagementEndpointModule> logger
     )
     {
-        TraceId traceId = TraceIdFor(httpContext, options);
-        IResult? authorizationFailure = await AuthorizeAsync(httpContext, authorizationService, traceId);
+        IResult? authorizationFailure = await AuthorizeAsync(httpContext, authorizationService, options);
         if (authorizationFailure is not null)
         {
             return authorizationFailure;
@@ -287,8 +272,7 @@ public class ManagementEndpointModule(
     )
     {
         // Authorization precedes tenant validation so an anonymous caller cannot probe tenant existence.
-        TraceId traceId = TraceIdFor(httpContext, options);
-        IResult? authorizationFailure = await AuthorizeAsync(httpContext, authorizationService, traceId);
+        IResult? authorizationFailure = await AuthorizeAsync(httpContext, authorizationService, options);
         if (authorizationFailure is not null)
         {
             return authorizationFailure;
@@ -296,7 +280,7 @@ public class ManagementEndpointModule(
 
         if (!await tenantValidator.ValidateTenantAsync(tenant))
         {
-            return NotFoundProblem(traceId);
+            return NotFoundProblem();
         }
 
         logger.LogInformation("View claimsets requested via management endpoint for tenant");
