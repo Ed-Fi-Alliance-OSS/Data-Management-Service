@@ -60,23 +60,44 @@ public class CorrelationIdConstructionSiteGuardTests
 {
     /// <summary>
     /// The only two production files allowed to construct a <see cref="Core.External.Model.TraceId"/>,
-    /// as repository-relative paths.
+    /// as repository-relative paths, each mapped to the exact number of constructions it is
+    /// permitted to contain.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// <c>AspNetCoreFrontend.cs</c> is the single ingestion point: it is the one place a
     /// correlation ID is normalized, and every other production path reaches a <c>TraceId</c>
     /// through it. <c>No.cs</c> is the null-object factory - <c>No.CreateFrontendRequest</c>,
     /// whose only caller is <c>No.RequestInfo</c>, which has no production callers at all, so it
     /// is unreachable from an HTTP request and cannot carry client input (declined finding D-3).
-    ///
-    /// Adding an entry here is a deliberate act: it asserts that the new site either normalizes
-    /// its input or cannot receive client input.
+    /// </para>
+    /// <para>
+    /// <b>Why a count and not just a file.</b> A permission recorded as a bare path is a permission
+    /// for the whole file, so a <i>second</i> raw <c>new TraceId(...)</c> added next to the first -
+    /// in <c>AspNetCoreFrontend.cs</c> above all, the file most likely to grow one - would change
+    /// nothing the guard could see, and would ship without a failing test. The count is what makes
+    /// the second one visible. It is not a stylistic cap: each construction below was read and
+    /// found to normalize its input, and a new one is not covered by that reading.
+    /// </para>
+    /// <para>
+    /// <b>Why AspNetCoreFrontend.cs is 2.</b> Measured, not assumed. One is the ingestion path in
+    /// <c>ExtractTraceIdFrom</c>, which normalizes the header or falls back to the server-generated
+    /// identifier; the other is <c>CorrelationIdIngestion.ForServerGeneratedIdentifier</c>, which
+    /// exists in this file precisely so that no other file has to construct a <c>TraceId</c> and
+    /// whose parameter is already normalized by its caller.
+    /// </para>
+    /// <para>
+    /// Adding or raising an entry here is a deliberate act: it asserts that the new site either
+    /// normalizes its input or cannot receive client input.
+    /// </para>
     /// </remarks>
-    private static readonly string[] PermittedTraceIdConstructionSites =
-    [
-        "src/dms/core/EdFi.DataManagementService.Core/Model/No.cs",
-        "src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/AspNetCoreFrontend.cs",
-    ];
+    private static readonly Dictionary<string, int> PermittedTraceIdConstructionSites = new(
+        StringComparer.Ordinal
+    )
+    {
+        ["src/dms/core/EdFi.DataManagementService.Core/Model/No.cs"] = 1,
+        ["src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/AspNetCoreFrontend.cs"] = 2,
+    };
 
     /// <summary>
     /// <c>new TraceId(...)</c>, optionally namespace-qualified.
@@ -128,7 +149,7 @@ public class CorrelationIdConstructionSiteGuardTests
         string[] offendingSites =
         [
             .. matches
-                .Where(match => !PermittedTraceIdConstructionSites.Contains(match.File.RelativePath))
+                .Where(match => !PermittedTraceIdConstructionSites.ContainsKey(match.File.RelativePath))
                 .Select(match => match.Describe())
                 .Order(StringComparer.Ordinal),
         ];
@@ -145,21 +166,69 @@ public class CorrelationIdConstructionSiteGuardTests
                 string.Join(Environment.NewLine, offendingSites)
             );
 
-        // A permitted-list entry that no longer matches anything is stale and would silently stop
-        // guarding anything, so the list is held to being exactly the set of real sites.
-        string[] matchedFiles =
+        // An entry here permits an exact number of constructions in that file, so the check is on
+        // the count and not merely on the set of files. Distincting on the path - the earlier
+        // spelling - made a second construction added beside an already-permitted one invisible:
+        // the set of files was unchanged, so the guard passed while a site that may normalize
+        // nothing shipped. Counting closes that, and still fails on the opposite staleness, an
+        // entry that matches nothing at all.
+        Dictionary<string, SourceMatch[]> constructionsByFile = matches
+            .GroupBy(match => match.File.RelativePath, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.ToArray(), StringComparer.Ordinal);
+
+        string[] countDiscrepancies =
         [
-            .. matches.Select(match => match.File.RelativePath).Distinct().Order(StringComparer.Ordinal),
+            .. PermittedTraceIdConstructionSites
+                .Select(site =>
+                    (
+                        Path: site.Key,
+                        Expected: site.Value,
+                        Found: constructionsByFile.TryGetValue(site.Key, out SourceMatch[]? found)
+                            ? found
+                            : []
+                    )
+                )
+                .Where(site => site.Found.Length != site.Expected)
+                .Select(site => DescribeCountDiscrepancy(site.Path, site.Expected, site.Found))
+                .Order(StringComparer.Ordinal),
         ];
 
-        matchedFiles
+        countDiscrepancies
             .Should()
-            .BeEquivalentTo(
-                PermittedTraceIdConstructionSites,
-                "every entry in {0} must still name a file that constructs a TraceId, or the entry "
-                    + "is stale and is quietly permitting a file that no longer needs permission",
-                nameof(PermittedTraceIdConstructionSites)
+            .BeEmpty(
+                "each entry in {0} permits an exact number of TraceId constructions in the file it "
+                    + "names, not the file as a whole. Read the site before changing the count: the "
+                    + "count is the record that someone confirmed every construction in that file "
+                    + "either normalizes its input or cannot receive client input, and editing it to "
+                    + "match reality is how that record is lost. Discrepancies:{1}{2}",
+                nameof(PermittedTraceIdConstructionSites),
+                Environment.NewLine,
+                string.Join(Environment.NewLine, countDiscrepancies)
             );
+    }
+
+    /// <summary>
+    /// One permitted file whose construction count no longer matches, named together with the
+    /// direction it moved in and every construction actually found, so the failure can be acted on
+    /// without re-running the scan by hand.
+    /// </summary>
+    private static string DescribeCountDiscrepancy(string relativePath, int expected, SourceMatch[] found)
+    {
+        string verdict = found.Length switch
+        {
+            _ when found.Length > expected => "a NEW TraceId construction has appeared inside an "
+                + "ALREADY-PERMITTED file. The file's entry did not have to change for this to "
+                + "land, which is why nothing else caught it. Confirm the new site normalizes its "
+                + "input through AspNetCoreFrontend.ExtractTraceIdFrom - or cannot receive client "
+                + "input at all - and only then raise the count",
+            0 => "this file no longer constructs a TraceId at all, so the entry is stale and is "
+                + "quietly permitting a file that no longer needs permission. Remove it",
+            _ => "a permitted TraceId construction has been removed. Lower the count so the entry "
+                + "keeps naming reality rather than covering a site that is gone",
+        };
+
+        return $"{relativePath}: expected {expected}, found {found.Length} - {verdict}."
+            + string.Concat(found.Select(match => $"{Environment.NewLine}    {match.Describe()}"));
     }
 
     [Test]
