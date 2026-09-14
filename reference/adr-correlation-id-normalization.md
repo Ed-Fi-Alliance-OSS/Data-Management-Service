@@ -110,6 +110,63 @@ back to the server-generated trace identifier). Downstream code should read the 
 value; it must not re-derive or re-sanitize it with a different allowlist. See
 [Defects found](#defects-found-and-their-lessons) for what happens when this rule is violated.
 
+"Once" is enforced rather than merely intended. The request-logging middleware is registered ahead
+of routing, the rate limiter and every endpoint, so it is the first component in the pipeline to
+ingest the correlation ID; the result is cached on `HttpContext.Items` and every later call site
+reads the cache. A cache miss still computes, so a call site that ever ran ahead of that middleware
+behaves exactly as it would without the cache — it simply becomes the one that populates it.
+
+Relying instead on the ingestion function being pure and idempotent was considered and rejected.
+It is true today, and it does make every call site agree, but it makes parity a property nobody
+maintains deliberately: the day a non-deterministic step is added — a hash, a counter, a timestamp
+suffix — parity breaks at every call site at once, silently, and the only thing that had been
+holding it was an accident of the implementation.
+
+### An adjusted value is reported, but the original is never logged
+
+Normalization is silent from the client's point of view: the value that comes back in the
+`correlationId` of an error response is not the value the client sent, and nothing in the request
+says so. Without a record of the adjustment, an operator handed a client's original ID finds
+nothing in the logs and has no event explaining why.
+
+DMS therefore emits **one Information-level event** — `1228003` / `CorrelationIdModified`, DMS-only
+— when, and only when, a client actually supplied a value and that value is not the one the request
+is correlated by. It carries the supplied and normalized lengths, three booleans (characters
+removed, truncated, fell back to the server-generated identifier), and the resulting normalized
+`TraceId`.
+
+**The original value is not logged in any form — not raw, not sanitized, not truncated.** The
+client-supplied correlation ID is precisely the hostile input this whole contract exists to defang.
+Writing it to a log sink would reopen the log-forging vector the allowlist closes, and would do so
+on the one code path guaranteed to be reached by a value that has already been found malformed. A
+sanitized copy is not a way around this: in most cases it would simply reproduce the normalized
+value that is already on the line, so it adds risk without adding information. A truncated copy is
+still reflected client content.
+
+**Silence on the normal path is part of the decision, not an optimization.** Nothing is emitted
+when the host configures no correlation header, when the request sends none or sends it empty, or
+when the supplied value survives normalization unchanged. Those cases are the overwhelming majority
+of requests, and a per-request line on them would be a volume cost paid forever for a notice about
+an exceptional condition.
+
+**The fallback case is reported distinctly.** A value that normalizes to blank is discarded in full
+rather than adjusted, so the client's identifier is not recoverable from the request at all. That
+is the sharpest signal and the one most likely to confuse an integrator, so it is a dedicated
+boolean (`FellBackToServerIdentifier`) rather than something to be inferred from a length of zero.
+
+**Accepted consequence.** Because the original is never written, the event is discoverable by the
+*normalized* ID, not by the value the client sent. Reverse lookup from a client's original ID is
+therefore not possible, and an operator has to work forward from the client's own record of the
+request or from the normalized ID the client received. This limitation is accepted, not engineered
+around: any mechanism that made reverse lookup work would have to store the original somewhere,
+which is the one thing this decision rules out.
+
+Placement follows from the same reasoning as the single normalization point. `ExtractTraceIdFrom`
+is static, has no logger, and has seven call sites; threading an `ILogger` through all of them to
+report a fact that is true once per request would spread the concern across the whole frontend. The
+request-logging middleware already holds a logger, already reads the correlation ID, and already
+runs before every other call site, so it is where the notice belongs.
+
 ### Empty-after-normalization is treated as absent
 
 A header that is present but normalizes to empty (for example, a value made up entirely of control
@@ -140,10 +197,26 @@ forging.
   consolidating DMS's two competing 500 response shapes, is explicitly out of scope for this
   contract.** Both are real, tracked follow-ups (see the project's issue tracker for the
   successor ticket), but are a client-visible contract change beyond normalization itself.
-- **Consolidating the three duplicate copies of the strict allowlist** (`Backend.External/LogSanitizer.cs`,
-  the CMS-side logging utility, and a test-only copy) is a pre-existing condition, not introduced
-  by this contract, and was accepted as-is rather than fixed here because doing so would require
-  touching `src/config`.
+- **Consolidating the duplicate copies of the strict allowlist** is a pre-existing condition, not
+  introduced by this contract, and was accepted as-is rather than fixed here because doing so
+  would require touching `src/config`. Tracked as DMS-1538. There are six copies, and they have
+  already diverged into three distinct character sets - the invariant is stated only as prose in
+  `LoggingUtility.cs` and nothing enforces it:
+
+  | Copy | Punctuation | `!IsControl` | `ReplaceLineEndings` |
+  | --- | --- | --- | --- |
+  | `Backend.External/LogSanitizer.cs` (canonical) | `- . / : \ _` | yes | yes |
+  | CMS `DataModel/LoggingUtility.cs` | `- . / : \ _` | yes | yes |
+  | CMS `Middleware/TenantResolutionMiddleware.cs` | `- . / : _` | no | no |
+  | CMS `Modules/TenantModule.cs` | `- . / : _` | no | no |
+  | `Backend/RelationshipAuthorizationProviderFailureMapper.cs` | `, - . / : \ _ \|` | yes | no |
+  | `InstanceManagement.Tests.E2E/Infrastructure/LogSanitizer.cs` | `- . / : \ _` | yes | no |
+
+  The divergence is not a log-forging hole: every copy drops control characters, either through
+  the explicit guard or - in the two CMS tenant copies - by omission, since a control character is
+  neither a letter, a digit, nor listed punctuation. What it does cost is inconsistent output for
+  a backslash, and the loss of the `ReplaceLineEndings` marker that CodeQL models as a sanitizer
+  in the four copies lacking it.
 - **Client-facing documentation** (as opposed to the host-facing `docs/CONFIGURATION.md` and
   `docs/LOGGING.md`) belongs in the separate Ed-Fi documentation repository, not this one.
 
