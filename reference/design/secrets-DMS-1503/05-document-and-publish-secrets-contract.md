@@ -1,0 +1,42 @@
+---
+jira: TBD
+jira_url: TBD
+epic: DMS-1504
+source_spike: DMS-1503
+---
+
+# Story: Document and Publish `EdFi.Api.Secrets`
+
+## Description
+
+Every story before this one proves the packaged path against a local folder feed.
+This one writes the documentation an operator and an implementer actually use, and publishes the package an external implementer cannot work without, per:
+
+- `reference/design/secrets-DMS-1503/design.md` ("### Trust Model Notes", "### Configuration Surface", "## Level of Effort" for what the documentation owes)
+- `reference/design/plugins-DMS-1462/design.md` ("### The Plugin Contract" for the publish policy and the promotion rule)
+
+Publishing is the last ticket rather than the first.
+It is blocked by every other story and blocks none of them, and it burns a package id permanently, so it wants its own review.
+
+The documentation is not a footnote on the mechanism, it is the deliverable.
+The Ed-Fi Alliance ships no vault plugin, for any vault, because doing so would commit it to a cloud SDK's release cadence, its authentication surface, and its CVEs for a component every deployment configures differently.
+What it ships instead is what the ODS documentation ships for the same problem: worked examples an implementer copies.
+The ODS page this design answers carries an Azure Key Vault example and an AWS Systems Manager Parameter Store example, each written against `IHostConfigurationActivity.ConfigureHost(IHostBuilder)`; the DMS equivalents are written against `EdFiApiPlugin.ContributeConfiguration`, which hands the plugin an `IConfigurationBuilder` and nothing else.
+
+## Acceptance Criteria
+
+- **The operator chapter**, in `docs/`, covers: what a secrets plugin is and the two things it can do; the eight process-global configuration secrets Phase A serves, named individually, two in DMS and six in CMS, with the two certificate passwords marked as read by the binder without appearing in `appsettings.json`; the secret reference syntax and where it may appear; `SecretsSettings:CacheExpirationSeconds` and the rotation window it defines; the instruction to restart CMS when a rotation must take effect immediately; and the statement that rotating any of the eight configuration secrets needs a restart regardless of the cache, because every one of them is captured into a singleton at startup.
+- The chapter states the trust position in the operator's terms and in both halves rather than only the flattering one: a loaded plugin runs with full process trust and nothing contains it; the operator named it themselves in a configuration value no plugin can reach; and a plugin authenticating to a vault with a static credential has reduced the problem from eight secrets to one rather than to zero, while one authenticating through an ambient workload identity, which is what both worked examples use, has reduced it to none.
+- It also states the hashing consequence plainly, because this is the chapter an operator reads before changing it: raising `IdentitySettings:ClientSecretHashingIterations` invalidates every client secret already hashed at the old count, and the remedy is to re-issue them.
+- **The implementer guide**, shipped as the contract package's readme and cross-linked from `src/plugins/EdFi.Api.Plugins/PLUGINS.md`, covers: the two contracts and their members; that both are replace-cardinality and are registered with a plain `Add` and never a `TryAdd`, with the reason, which is that the recording wrapper cannot see a candidate a declined `TryAdd` carried; that both must be singletons and what the host does when they are not; that a resolver takes its tenant as an argument because a plugin instance outlives every tenant; that a resolver must be safe to call concurrently; and what the host does with a resolver that throws, cancels, or returns nothing.
+- It states the two things a resolver must not do and that nothing enforces: block indefinitely, since CMS applies its own timeout and reports the read as failed rather than hanging; and log what it resolved.
+- **Two worked configuration-source examples**, Azure Key Vault and AWS Systems Manager Parameter Store, each a complete `EdFiApiPlugin` subclass overriding `ContributeConfiguration`, reading its own vault address from `bootstrapConfiguration`, and adding one source. Each names the package an implementer references and says that the source is placed by the host rather than by where `Add` put it, so an implementer does not try to control precedence from inside the hook. Each carries the ambient-credential note, matching the two the ODS page carries for the same two services.
+- **One worked resolver example**, over the same vault client the configuration-source example builds, showing the `(name, tenant)` pair turned into a vault path and showing a tenant-agnostic deployment ignoring the tenant. It states that the host caches and that the plugin need not.
+- Both guides link to `PLUGINS.md` for packaging, delivery, the allowlist, and the trust model rather than restating any of it, and `PLUGINS.md` links back. This story depends on DMS-1500, which is the story that turns `PLUGINS.md` from a placeholder into the delivery guide; linking to a placeholder would ship a guide whose delivery chapter does not exist.
+- **Publication.** `EdFi.Api.Secrets` is packed and pushed by the prerelease lane under the policy the spine states: publish when the version is absent from the feed, skip when it is present and the content is unchanged, and fail when it is present and the content differs. The CMS lane does not implement that policy today, so this story adds it rather than inheriting it: `build-config.ps1`'s `PushPackage` runs `dotnet nuget push` with no `--skip-duplicate` (`:444`), and the prerelease workflow fires on every prerelease while this contract's version deliberately does not move with the release, so an unconditional push would fail every prerelease after the first. DMS-1501 is doing the same work on the DMS side for `EdFi.Api.Plugins` and is the implementation to follow. The comparison is three-way over the normalized public surface, the XML documentation file, and the nuspec dependency list, because this contract ships its implementer rules in `///` comments and declares dependencies an implementer inherits.
+- Release promotion queries the release view first, skips when the version is already there, promotes when it is in the prerelease view, and **fails naming the package when it is in neither**. A version that was never published is absent from the prerelease view too, so a skip-on-absence rule would report "nothing to do" for a contract that never reached the feed.
+- The package's version is passed explicitly rather than derived from the release tag, because this contract's version deliberately does not move with the release.
+- A test asserts the `AssemblyVersion` of the assembly inside the published nupkg equals the package version, and that running the build with an explicit version leaves the packed contract version untouched, which is what proves no release-stamping lane reaches it.
+- The scratch consumer from the contract story is extended to compile against the **published** package rather than only the locally packed one, once a version exists on the feed.
+- `docs/OPERATIONS.md`'s plugin chapter gains the Configuration Service alongside the Data Management Service: the same two acquisition recipes, the CMS mount target, and the `plugins-config.yml` overlay, asserted equal to the committed file by the same document-versus-file check DMS-1500 established. No test pastes a recipe out of Markdown.
+- `dotnet test src/config/EdFi.DmsConfigurationService.sln` passes and the packed package installs into the scratch consumer.
