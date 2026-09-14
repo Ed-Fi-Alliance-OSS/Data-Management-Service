@@ -74,6 +74,29 @@ public static class LoggingSanitizer
     public static string SanitizeCorrelationId(string? input) => LogSanitizer.SanitizeCorrelationId(input);
 
     /// <summary>
+    /// Sanitizes free-form text - an upstream service's error payload, or any other
+    /// client-influenced value that is not an identifier - before it is written to a structured
+    /// log event. Delegates to <see cref="LogSanitizer.SanitizeFreeTextForLog"/>, which carries
+    /// the canonical description of the rule; this is only the Core-side facade over it.
+    /// </summary>
+    /// <remarks>
+    /// This is the method to reach for when logging a value derived from a client or from an
+    /// upstream service, per the rule in AGENTS.md. The other three are all wrong for that job:
+    /// <see cref="SanitizeForLogging"/> strips the punctuation a JSON payload is made of;
+    /// <see cref="SanitizeCorrelationId"/> states the rule for one specific value that is also
+    /// echoed to the client, and is not a general-purpose text sanitizer; and
+    /// <see cref="SanitizeForConsole"/> deliberately <b>preserves</b> newline and carriage return
+    /// for multi-line CLI output, which is exactly what must not survive into a log line.
+    ///
+    /// Callers that log an attacker-influenceable payload must also bound its length; this method
+    /// does not, because no single cap suits every call site.
+    /// </remarks>
+    /// <param name="input">The free-form text to sanitize</param>
+    /// <returns>A sanitized string safe for a structured log event</returns>
+    public static string SanitizeFreeTextForLogging(string? input) =>
+        LogSanitizer.SanitizeFreeTextForLog(input);
+
+    /// <summary>
     /// Sanitizes input for console/stderr output by stripping control characters,
     /// except newline (\n) and carriage return (\r) which are preserved for
     /// multi-line output readability (e.g., diff reports from SeedValidator).

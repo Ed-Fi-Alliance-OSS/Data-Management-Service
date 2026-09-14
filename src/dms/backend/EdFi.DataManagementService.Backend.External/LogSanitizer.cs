@@ -86,6 +86,40 @@ public static class LogSanitizer
         );
 
     /// <summary>
+    /// Sanitizes free-form text - an upstream service's error payload, an exception message, any
+    /// value that is not an identifier - for safe inclusion in a structured log event.
+    /// </summary>
+    /// <remarks>
+    /// Applies the same negative-test allowlist as <see cref="SanitizeCorrelationId"/> - remove
+    /// Unicode categories Cc and Cf plus the line/paragraph separators U+2028 and U+2029, keep
+    /// everything else - because the two have the same requirement: strip everything that can
+    /// break or forge a log line, or smuggle invisible text past the operator reading it, while
+    /// preserving the printable punctuation that makes the value worth logging at all. The
+    /// canonical description of that allowlist lives on <see cref="SanitizeCorrelationId"/> and is
+    /// deliberately not restated here.
+    ///
+    /// The two are separate entry points rather than one shared method because they answer to
+    /// different contracts. A correlation ID is also echoed to the client in the error response
+    /// body and has to match the logged value character for character (FR-LOG-6), so its rule is
+    /// free to tighten or loosen without dragging free-form log text along with it - and free-form
+    /// text is never echoed back, so the reverse is equally true.
+    ///
+    /// <b>Not <see cref="SanitizeForLog"/>:</b> that Method/Path allowlist strips the quotes,
+    /// braces, commas and equals signs a JSON or form-encoded error payload is made of, reducing
+    /// it to a run of bare words that no longer identifies what the upstream service objected to.
+    ///
+    /// <b>Length is the caller's responsibility.</b> Free-form text is usually attacker-influenced
+    /// in size as well as in content, and no single cap suits every call site. A caller that bounds
+    /// length should sanitize first and truncate second, so the budget is spent on characters that
+    /// survive rather than on padding the sanitizer is about to remove.
+    /// </remarks>
+    public static string SanitizeFreeTextForLog(string? input) =>
+        SanitizeByCodePoint(
+            input,
+            static r => !Rune.IsControl(r) && Rune.GetUnicodeCategory(r) != UnicodeCategory.Format
+        );
+
+    /// <summary>
     /// The two-pass filter behind <see cref="SanitizeForLog"/>, applying its predicate once per
     /// UTF-16 code unit.
     /// </summary>
