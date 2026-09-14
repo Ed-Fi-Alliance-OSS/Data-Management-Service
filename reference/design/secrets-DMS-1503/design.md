@@ -297,7 +297,7 @@ That is what makes "cannot disagree" a construction rather than a convention: th
 That method's own summary records the limitation this inherits, that "a setting that names the target provider per data store replaces this method and nothing else", so this adds no new coupling and is removed by the same future change, at which point both the validator and this seam read it and the derivative projections are what that change has to carry.
 
 **Re-emitting normalizes the text, and that is accepted.**
-The string a reader receives may differ from the operator's in keyword naming, casing, ordering, and quoting, because it has been through the provider's builder: measured on `net10.0`, `SqlConnectionStringBuilder` canonicalizes the keyword names themselves, re-emitting `Server=db;Database=edfi;User Id=sa` as `Data Source=db;Initial Catalog=edfi;User ID=sa`, while `NpgsqlConnectionStringBuilder` returns the same text unchanged.
+The string a reader receives may differ from the operator's in keyword naming, casing, ordering, and quoting, because it has been through the provider's builder: measured on `net10.0`, both engines canonicalize the keyword names themselves, `SqlConnectionStringBuilder` re-emitting `Server=db;Database=edfi;User Id=sa` as `Data Source=db;Initial Catalog=edfi;User ID=sa` and `NpgsqlConnectionStringBuilder` re-emitting it as `Host=db;Database=edfi;Username=sa`.
 Every consumer opens the string with the provider that emitted it. DMS does key caches on the text, so re-emission changes those keys once, the way a rotation changes them each time; see [Freshness, Caching, and the Tenant Set](#freshness-caching-and-the-tenant-set).
 
 ### Where Resolution Happens
@@ -544,7 +544,7 @@ The rule is enforced the way custom validation enforces its own transient-only r
 
 **The same check refuses a keyed registration of either contract, and that closes a hole the shared audit deliberately leaves open.**
 The audit supports a declared contract registered under a concrete service key and counts it as an ordinary claim (`src/plugins/EdFi.Api.Plugins.Hosting/PluginRegistrationAudit.cs:231`, `:88`), because keyed registration is a capability some host may want.
-CMS is not that host: both of its consumers resolve unkeyed, `OpenIddictClientRepository` taking `IClientSecretHasher` by plain constructor injection (`Backend.OpenIddict/Repositories/OpenIddictClientRepository.cs:21`) and the resolution seam taking `ISecretResolver` the same way.
+CMS is not that host: every consumer of either contract resolves unkeyed, `OpenIddictClientRepository` and `OpenIddictTokenManager` taking `IClientSecretHasher` by plain constructor injection (`Backend.OpenIddict/Repositories/OpenIddictClientRepository.cs:21`, `Backend.OpenIddict/Services/OpenIddictTokenManager.cs:28`) and the resolution seam taking `ISecretResolver` the same way.
 A plugin that registered either contract under a key would therefore boot green, emit an inventory event saying it registered the contract, and displace nothing, which is the silent no-op this design refuses everywhere else.
 So a keyed registration of a declared CMS contract is refused at the same CMS-side check, naming the plugin and the key.
 
@@ -618,7 +618,7 @@ The model property is renamed to `ClientSecretHashingIterations` in the same pas
 The binder gains the assignment; the two compose files change to `IdentitySettings__ClientSecretHashingIterations`; and `IdentitySettings:HashingIterations` remains unbound, which is what it already is.
 
 **The variable feeding those two compose lines, `DMS_CONFIG_IDENTITY_HASHING_ITERATIONS`, stays, because the host was never its only consumer.**
-`eng/docker-compose/setup-openiddict.ps1` takes it as `$HashIterations` (`:36`) and hashes every client secret the self-contained identity bootstrap creates with it (`:212`), through a resolver that throws when the value is configured nowhere, and the `.env*` files under `eng/docker-compose/` all define it.
+`eng/docker-compose/setup-openiddict.ps1` takes it as `$HashIterations` (`:36`) and hashes every client secret the self-contained identity bootstrap creates with it (`:212`), through a resolver that throws when the value is configured nowhere, and every base `.env*` file under `eng/docker-compose/` defines it; the few that omit it are overlays composed onto one that does.
 Removing the variable would fail that bootstrap outright.
 The re-point is also what finally makes the bootstrap's hash count and the host's verify count read one knob, instead of agreeing only when both happen to sit at the default.
 
