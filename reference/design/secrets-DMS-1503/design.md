@@ -50,6 +50,24 @@ The remaining fourteen are corrections rather than decisions and are folded in w
 Two are outright reversals of sentences that contradicted their own paragraphs: a heading read "changing the work factor does not invalidate stored secrets" two lines above the explanation that it does, and the inherited-and-not-reopened list still named the read-only nature of `bootstrapConfiguration` four sections before the document revises exactly that claim.
 Beside them: the seam's lifetime is stated as "not a singleton" with the repositories' actual **transient** registration named, because Revision 1's "scoped, like the repositories that call it" described a precedent that does not exist; "bound once through `IOptions<T>`" becomes three routes, since DMS captures its two into singleton instances directly and both OTLP sections are bound explicitly; `OpenIddictTokenManager`'s lifetime is qualified, since self-contained identity re-registers `ITokenManager` as a singleton after the transient registration; the `SecretsSettings` prose introduces both keys instead of letting one sentence dangle off the other, and story 04 adds both to `appsettings.json`; the `build-config.ps1` copyright defect is recorded in both places it occurs, the second of which reaches the **shipped** package's nuspec; the derivative-swallow arms are four rather than two; story 01 names the compatibility assertion that actually breaks, which is the subset test and not the exactly-one test; story 01 and the README stop saying "eight" after the inventory went to ten; story 03 stops citing `plugins-dms.yml` and its `.env.example` entries in the present tense, since they are DMS-1499's output; the `Plugins` section joins the keys Phase A cannot supply; and the solution citation names the loader's test project as the third entry it was already pointing at.
 
+**Revision 3 (2026-09-14, panel review round 3).**
+A third round, blind in its brief, found fifteen findings, every one re-verified and none refuted.
+Five of the seven majors were residual in Revision 2's own corrections rather than in the mechanism, which is the shape this document's revisions have now settled into.
+A reviewer re-ran the connection-string probes for the second independent time and reproduced every measured claim again.
+
+Two needed a decision.
+
+- **The standalone derivative endpoints fail the read; the nested rule does not reach them.** Revision 2 adopted DMS's treatment of an undecryptable derivative as "not configured", and stated it categorically. Four of the twelve seam sites serve `GET /v3/dataStoreDerivatives/` and `GET /v3/dataStoreDerivatives/{id}` (`Config.Frontend/Modules/DataStoreDerivativeModule.cs:21-22`), which appear nowhere in the earlier revisions, and the precedent does not cover them: DMS's rule is about a derivative nested inside a parent it was loading, and on a standalone read the derivative is the requested resource, so a `200` with a null connection string cannot be told apart from one that was never configured. The seam takes an argument naming which kind of read it is serving. See [Where Resolution Happens](#where-resolution-happens).
+- **Undecryptable stored bytes are their own failure.** Making every read decrypt, which Revision 1 required, reaches a state no read reached before: a value too short, corrupt, or written under a different `DatabaseSettings:EncryptionKey`. It fails with a message that mentions neither secrets nor resolvers, so the first operator to meet it is not sent hunting for a vault problem they do not have. See [Failure Semantics](#failure-semantics).
+
+Two more are corrections that add a rule rather than restate one.
+Concurrent misses on one cache key now collapse into a single resolver call, without which the stated bound was on distinct keys per window rather than on calls.
+And story 02's version-stamping proof reads the `Compile` lane's output as well as the published one, because they are separate builds and asserting only the second can pass while the first still stamps.
+
+The remaining eleven are corrections.
+Five are residual from Revision 2: a heading still read "the seam is scoped" above a body that says otherwise; one sentence still had CMS "return and log" a message the endpoint does not return; a Level of Effort row still required the parent read to stop swallowing derivative failures, which the derivative decision withdrew; story 04's failure bullet still failed every unresolved token; and story 03 still had `docs/CONFIGURATION.md` say CMS reads no configuration before the loader, which contradicts the `Plugins` surface Revision 2 added.
+The other six are original: a bold lead claimed one out-of-reach key where its own paragraph names two; `/v3/dataStores/` was described as one endpoint while its citation maps two; the trust-model retrieval path named one endpoint where four are gated by that policy; the hashing repair was costed at three files where its own story names six; the call-site count check was called a reflection test, which cannot see call sites, and is a source scan; `SecretsSettings` reached `appsettings.json` and the documentation but neither compose file; and story 01 named two of the three compatibility tests the version move touches, the third hardcoding both version literals, while the reverse-skew fixture is built against a separate `2.0.0` contract rather than the versions that sentence implied.
+
 **What is inherited and not reopened.**
 Every Phase A statement in the spine is a decision this document builds on rather than revisits: the `ContributeConfiguration(IConfigurationBuilder, IConfiguration bootstrapConfiguration)` hook shape, the placement of plugin sources immediately below the last environment variable source, the additive `Sources` guard, the presence of `bootstrapConfiguration` as a second parameter the plugin reads, and `Replace` cardinality for the secret resolver and the secret hasher.
 One characterization of an inherited item is corrected rather than inherited, and it is named here rather than buried: the spine describes `bootstrapConfiguration` as offering no way to mutate what it read, and `IConfiguration` exposes a settable indexer, so that property does not hold.
@@ -221,7 +239,7 @@ It adds `AddAzureKeyVault`, `AddSystemsManager`, or any other `IConfigurationSou
 The hook shape is inherited from the spine and is not reopened here.
 What changes is only the claim made about it: a write through that parameter is a documented trust assumption rather than something the additive `Sources` guard catches, exactly as mutation of a pre-existing source object already is, and `PLUGINS.md` states it to implementers in the same sentence it states the other.
 
-**One key is out of reach, and it is out of reach in CMS as well as in DMS.**
+**Two surfaces are out of reach, and only one of them exists in both hosts.**
 DMS reads `AppSettings:StartupStatusFilePath` at `src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Program.cs:30-33`, before plugins load, because that file is how a loader fatal is reported.
 CMS has no equivalent, since `Config.Frontend/Program.cs` is a plain minimal-API startup with no bootstrap status signal, so in CMS the exception is that there is no exception.
 The `Plugins` section itself is out of reach for the same structural reason and in both hosts: `PluginLoader.Load` binds `Plugins:Directory` and `Plugins:Allowed` to decide what loads before any Phase A hook runs, which is what makes the allowlist a surface no plugin can reach and is asserted as a test rather than assumed.
@@ -374,18 +392,25 @@ The cost is one AES-CBC decrypt per non-null row per read, stated rather than hi
 It is a symmetric operation over a string bounded at 1000 characters (`DataModel/Infrastructure/ConnectionStringRuleBuilderExtensions.cs:17`), on a path that already makes a database round trip.
 
 **Resolution happens on every read, including an administrator's.**
-`/v3/dataStores/` is one endpoint with one shape, gated by `MapLimitedAccess` (`Config.Frontend/Modules/DataStoreModule.cs:23-24`), and DMS is one of its clients rather than a distinguished one.
+The data store reads are a collection and a single-row endpoint sharing one response shape, both gated by `MapLimitedAccess` (`Config.Frontend/Modules/DataStoreModule.cs:23-24`), and DMS is one of their clients rather than a distinguished one.
 Resolving only for DMS would mean either a second endpoint or a caller-dependent response body, and both are worse than the exposure they would avoid, which is not in fact an exposure: the value a read returns today is cipher text under a key every reader of that endpoint already needs in order to use it.
 What changes is where the plain text came from, not who can obtain it.
 
 **Derivative connection strings resolve on the same rule and are not resolved twice.**
 `DataStoreRepository` obtains derivative rows through `IDataStoreDerivativeRepository` and nests the already-projected items (`Backend.Postgresql/Repositories/DataStoreRepository.cs:164-182`, `:244-255`), so each of the twelve sites resolves the bytes it read and no site resolves a value another site already resolved.
 
-**A derivative whose secret cannot be resolved is treated as not configured, and the parent is unaffected.**
+**A derivative whose secret cannot be resolved is treated as not configured when it is read as part of a parent, and the parent is unaffected.**
 This is the one place the design follows an existing DMS decision rather than its own general rule, and it does so deliberately, because DMS already made this exact call for this exact data.
 When DMS cannot decrypt a derivative's connection string it treats that derivative as absent and says so in a comment: the parent data store and its remaining derivatives are unaffected (`src/dms/core/EdFi.DataManagementService.Core/Configuration/ConfigurationServiceDataStoreProvider.cs:576`, `:588-612`).
 A derivative is optional by construction on that path, and a read replica or snapshot that is not configured is an ordinary state rather than an error.
-So an unresolvable derivative token yields a null connection string for that derivative, a log line naming the parent data store, the tenant, the derivative type, and the token name, and nothing else.
+So an unresolvable derivative token read through a data store yields a null connection string for that derivative, a log line naming the parent data store, the tenant, the derivative type, and the token name, and nothing else.
+
+**The rule does not extend to the standalone derivative endpoints, and the boundary is where the precedent stops.**
+Four of the twelve sites serve `GET /v3/dataStoreDerivatives/` and `GET /v3/dataStoreDerivatives/{id}` (`Config.Frontend/Modules/DataStoreDerivativeModule.cs:21-22`), where the derivative is the resource the client asked for rather than an optional part of another one.
+DMS's precedent says nothing about that case: it is about a derivative nested inside a parent DMS was loading, which is exactly when "absent" is a meaningful answer.
+On a standalone read, returning `200` with a null connection string is indistinguishable from a derivative that was never configured, which is the silent degradation this design refuses.
+So those four sites fail the read, as a parent's does, and the two nested sites do not.
+The seam therefore takes one argument the call site supplies, whether this row is being read as a resource or as part of one, and that argument is the only thing that differs between the two behaviours.
 
 **A parent data store's token is not treated that way, and the asymmetry is the point.**
 A parent's connection string is the data store; a null one is a data store DMS accepts into its cache and then fails to open, one request at a time, with an error naming a missing configuration rather than an unresolved secret.
@@ -398,7 +423,7 @@ The one DMS-touching story is the Phase A composition point, which the spine des
 
 ### Freshness, Caching, and the Tenant Set
 
-**The seam is scoped and the cache is a singleton it depends on, and stating that is not a detail.**
+**The seam is not a singleton, the cache is, and stating that is not a detail.**
 The seam reads the request's tenant, which comes from `ITenantContextProvider`, registered **scoped** (`Config.Frontend/Infrastructure/WebApplicationBuilderExtensions.cs:126`).
 An implementer who reads "host-owned cache" as "singleton seam" lands on a trap the file already documents four lines above that registration: a singleton depending on the scoped tenant provider "fails DI scope validation at startup in the Development environment" (`:116-119`).
 So the split is specified.
@@ -412,6 +437,8 @@ A resolver is a pure function of a name and a tenant, which is what makes a host
 A plugin-owned cache would make rotation latency a per-vendor property with no configuration surface and no way to observe it.
 
 The cache is keyed by the pair `(tenant, name)` with an absolute expiration, `SecretsSettings:CacheExpirationSeconds`, defaulting to 300.
+Concurrent misses on one key collapse into one resolver call, and the waiters take its result.
+Without that, the bound below is on distinct keys per window and not on calls, because a cold start or an expiry under load calls the resolver once per in-flight request rather than once.
 Absolute rather than sliding, because the question an operator asks about a rotated secret is "how long until it takes effect", and only an absolute window answers it with a number.
 Three hundred seconds is chosen against the interval already in the system rather than by preference: DMS caches data stores for `CacheSettings:DataStoreCacheExpirationSeconds`, 600 by default (`src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/appsettings.json`), and the ODS documentation's own worked examples use a ten-minute vault reload.
 **The two windows add rather than overlap, and the documentation states the sum rather than this number alone.**
@@ -451,7 +478,9 @@ That is the silent-degradation failure mode the spine refuses everywhere, arrivi
 | Condition | Result |
 | --- | --- |
 | A **parent** token is present and no resolver is registered | The read fails, and the log names the data store and the token and says that a secret reference needs a plugin registering `ISecretResolver` |
-| A **derivative** token cannot be resolved, for any of the reasons in this table | That derivative's connection string is null, the log names the parent, the tenant, the derivative type, and the token, and the read succeeds. This follows DMS's own handling of a derivative it cannot decrypt |
+| A **derivative** token cannot be resolved while the row is read **as part of a data store** | That derivative's connection string is null, the log names the parent, the tenant, the derivative type, and the token, and the read succeeds. This follows DMS's own handling of a derivative it cannot decrypt |
+| A **derivative** token cannot be resolved while the row is read **through `/v3/dataStoreDerivatives/`** | The read fails, as a parent's does. The derivative is the requested resource there, so "not configured" is not an answer the caller can tell apart from a real one |
+| The stored bytes cannot be decrypted at all, because they are too short, corrupt, or were written under a different `DatabaseSettings:EncryptionKey` | The read fails, naming the row and saying the stored value could not be decrypted, and it does so on every path uniformly. This is a state that predates this design and that CMS never looked at before, because a read only ever Base64-encoded the bytes; making every read decrypt is what surfaces it, and surfacing it as its own failure rather than as a resolution failure is what keeps an operator from hunting for a vault problem they do not have |
 | The resolver throws or returns null or empty, for a **parent** token | The read fails, the log names the data store and the token, and the resolver's failure is the inner exception, its message never surfaced to the client |
 | The resolver does not return within `SecretsSettings:ResolveTimeoutSeconds` | The read fails the same way, naming the timeout. The seam **races** the returned `ValueTask` against the deadline rather than only cancelling a token, because a token is a request a plugin may ignore and the host's promise is that the read terminates. It passes a cancellation token too, so a cooperative resolver stops work it no longer needs to do, and it abandons an uncooperative one rather than waiting on it |
 | The token is malformed, that is `${secret:` opens and no well-formed name closes it | The stored text is left alone and no read fails, because this is not a token; see [The Secret Reference](#the-secret-reference-runtime-data-secrets) |
@@ -482,7 +511,7 @@ That blast radius is accepted rather than mitigated, and the alternatives are wo
 Returning the affected row with a null connection string is the silent degradation this section exists to refuse, one step further along: DMS would cache a data store it cannot open and report it as configured.
 Omitting the row from the collection is the same thing with the evidence removed.
 A per-row error field in the response is a change to a shipped API contract, taken on behalf of a failure mode that means an operator's secret store is down, which is an outage they are already handling.
-What the design does instead is make the failure loud, name the data store and the token in the message CMS returns and logs, and say here that the tenant's whole fetch is what fails, so nobody reads "the read of the affected data store fails" and expects the rest to keep working.
+What the design does instead is make the failure loud, name the data store and the token in the log line, and say here that the tenant's whole fetch is what fails, so nobody reads "the read of the affected data store fails" and expects the rest to keep working.
 
 ### The Contract Package
 
@@ -717,7 +746,7 @@ An operator who uses a static credential has reduced the problem to one secret r
 The documentation says both halves.
 
 **Resolving a secret adds a retrieval path for it, and an operator should know that before they adopt this.**
-The value the vault holds is returned, re-encrypted under `DatabaseSettings:EncryptionKey`, on every read of `/v3/dataStores/` that the `MapLimitedAccess` policy admits (`Config.Frontend/Infrastructure/Authorization/EndpointBuilderExtensions.cs:71`), and it sits in CMS process memory in the host cache for up to `SecretsSettings:CacheExpirationSeconds`.
+The value the vault holds is returned, re-encrypted under `DatabaseSettings:EncryptionKey`, on every read that the `MapLimitedAccess` policy admits (`Config.Frontend/Infrastructure/Authorization/EndpointBuilderExtensions.cs:71`), which is four endpoints rather than one: the data store collection and single row (`Config.Frontend/Modules/DataStoreModule.cs:23-24`) and the derivative collection and single row (`Config.Frontend/Modules/DataStoreDerivativeModule.cs:21-22`). It also sits in CMS process memory in the host cache for up to `SecretsSettings:CacheExpirationSeconds`.
 Neither is new machinery, because that endpoint and that key are how DMS obtains connection strings today.
 What is new is what the path now leads to: it used to end at whatever the operator typed into CMS, and it now ends at whatever the vault currently holds.
 The gain this design offers is that the value is no longer at rest in CMS's database or its backups, and it is not that CMS becomes unable to produce the value.
@@ -810,10 +839,21 @@ Fatal cases assert on the exception escaping host creation, because plugin loadi
 A boot with `Plugins:Allowed` empty and no plugin root present is asserted to behave exactly as the existing CMS suites expect, by those suites passing unchanged.
 One test asserts a key supplied both by a Phase A source and by an environment variable resolves to the environment value, which is the spine's precedence rule arriving in the second host.
 
+**Unit, over the single-flight cache.**
+Concurrent misses on one key are asserted to produce one resolver call and the same value to every waiter, driven by a resolver that blocks until the test releases it.
+A miss on a second key concurrently is asserted not to be serialized behind the first.
+A resolver that fails is asserted to fail every waiter on that key rather than one, and to leave nothing cached.
+
+**Unit, over undecryptable stored bytes.**
+A row whose stored value is too short, is not the encryption service's output, or was written under a different key is asserted to fail the read with its own message, distinct from every resolution failure, on the parent path and on both derivative paths.
+That case exists on main and is invisible there, because a read Base64-encodes the bytes without looking at them; the test exists so that making every read decrypt does not surface it as a vault problem.
+
 **Unit, over the parent-versus-derivative asymmetry.**
 A **parent** whose token cannot be resolved is asserted to fail the read.
 A **derivative** whose token cannot be resolved is asserted to produce a null connection string for that derivative while the parent and every sibling derivative resolve normally, with the log naming the parent, the tenant, the derivative type, and the token.
-Both single-row and collection paths get the derivative case, because the two read shapes reach derivatives by different arms, and a rule applied to one and not the other is exactly the drift the seam exists to prevent.
+Both single-row and collection paths get the nested derivative case, because the two read shapes reach derivatives by different arms, and a rule applied to one and not the other is exactly the drift the seam exists to prevent.
+The standalone derivative endpoints get their own pair of cases, asserting that the same unresolvable token that returns a null connection string through a data store **fails** through `GET /v3/dataStoreDerivatives/` and `GET /v3/dataStoreDerivatives/{id}`.
+That pair is what pins the argument the seam takes, and a seam that ignored it would pass every nested test and fail these.
 One case asserts what the design deliberately does **not** change: the pre-existing arms that map a failed derivative *lookup* to an empty collection (`Backend.Postgresql/Repositories/DataStoreRepository.cs:164-182` and `:244-255`, and their SQL Server counterparts) still behave as they do today, because a lookup failure is a different thing from a resolution failure and this design touches only the second.
 
 **Integration, over the read path.**
@@ -893,10 +933,10 @@ The delivery mechanism, the loader, the recording wrapper, and the cardinality g
 | --- | --- | --- |
 | Phase A on the contract: `ContributeConfiguration`, the loader's invocation, source placement below the last environment variable source, the additive `Sources` guard, the `Contribute` cardinality row and its exemption in the no-contract check, the `docs/CONFIGURATION.md` precedence order, and the Phase A test rows | Small | The spine designed every line of it and assigned it here. One list move in the loader plus the test cases. The contract's version moves `1.0.0` to `1.1.0`, which is the first exercise of the additive-only policy and the reason the base class was chosen |
 | `EdFi.Api.Secrets`: the new project, `ISecretResolver`, `SecretReference`, the relocated `IClientSecretHasher`, the solution entry, the lock file, and the pack-and-consumer-verify lane | Small | Follows the DMS-1432 and DMS-1496 pack-and-assert lanes exactly. The relocation is a namespace move across four registration sites and two consumers, one of the four unreachable |
-| The hashing-iterations key: bind `IdentitySettings:ClientSecretHashingIterations`, rename the model property, move the two compose files | Small | Three files plus tests. Its value today equals the model default, so the behavior change on a stock deployment is nil, which is what makes it safe to take in the same story as the relocation |
+| The hashing-iterations key: bind `IdentitySettings:ClientSecretHashingIterations`, rename the model property, move the two compose files | Small | Six files plus tests: the model, the hasher's two reads, the binder, the two compose files, and `docs/CONFIGURATION.md`. Its value today equals the model default, so the behavior change on a stock deployment is nil, which is what makes it safe to take in the same story as the relocation |
 | CMS host integration: the loader call, the Phase A invocation, `AddServices` taking the aggregate, `CmsPluginContracts`, the direct audit call, the lifetime check, the inventory event, the `Plugins` section, the frontend's `ProjectReference` | Small | `Config.Frontend/Program.cs` is a plain minimal-API startup and no scaffolding is ported. The registry and the audit function are host-agnostic and merged |
 | `src/config/Dockerfile` build stage: the `pluginsource` filtering stage, the plugin project and lock file copies, the `WORKDIR` move, the extended restore, and the post-restore source copy | Small | Mechanical but load-bearing, and the DMS Dockerfile carries a worked version of every line of it with the measurements that produced each one. Both plugin projects already have committed lock files, or `--locked-mode` would already be failing the DMS image build |
-| The resolution seam: the token grammar, builder-mediated substitution, the host cache, the resolve timeout, the failure semantics, and the twelve call sites | Medium | The grammar, the substitution, and the cache are the genuinely new code, and the substitution is the part where the obvious implementation is measurably wrong, so it carries its own test table. Twelve call sites in two shapes are mechanical, and the reflection test that pins the count is what keeps a thirteenth from appearing unwatched. `Backend/Services/ConnectionStringWrite.cs` is the precedent for where the rule lives and why. One change reaches beyond the seam: the parent read must stop swallowing a derivative failure |
+| The resolution seam: the token grammar, builder-mediated substitution, the host cache, the resolve timeout, the failure semantics, and the twelve call sites | Medium | The grammar, the substitution, and the cache are the genuinely new code, and the substitution is the part where the obvious implementation is measurably wrong, so it carries its own test table. Twelve call sites in two shapes are mechanical, and the reflection test that pins the count is what keeps a thirteenth from appearing unwatched. `Backend/Services/ConnectionStringWrite.cs` is the precedent for where the rule lives and why. No change reaches beyond the seam: the pre-existing arms that map a failed derivative lookup to an empty collection are untouched |
 | `SecretsSettings`, the `Plugins` section in CMS, and their `docs/CONFIGURATION.md` entries | Small | One key of this design's own |
 | Documentation: the operator chapter, the implementer guide, the worked vault examples, and the work-factor warning | Medium | The examples are the deliverable an implementer actually uses, and the ODS documentation is the model: source for an Azure Key Vault source and an AWS Parameter Store source, written against `ContributeConfiguration` instead of `ConfigureHost` |
 | Publish `EdFi.Api.Secrets` | Small, **release-gated** | Blocked by every other row and blocking none. Burns a package id permanently, so it wants its own review |
