@@ -25,11 +25,17 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit;
 /// FR-LOG-6: the normalized correlation ID must be identical in every log event and every
 /// error response body, whatever the status code and whichever layer produced the response.
 /// This fixture boots the real DMS HTTP pipeline in-process with WebApplicationFactory and
-/// asserts parity across four status codes produced by three different layers:
+/// asserts parity across four status codes produced by four different layers:
 /// <list type="bullet">
 /// <item>404 from <c>Program.cs</c>'s <c>MapFallback</c> catch-all</item>
 /// <item>401 from <c>HealthCheckEndpointModule</c> via <c>FailureResponse.ForAuthenticationFailure</c></item>
 /// <item>403 from <c>HealthCheckEndpointModule</c> via <c>FailureResponse.ForForbidden</c></item>
+/// <item>
+/// 401 from <c>ManagementEndpointModule.AuthorizeAsync</c>, the single shared authorization gate
+/// that all five <c>/management/*</c> handlers funnel through. That module extracts its
+/// <c>TraceId</c> from the request rather than from <c>HttpContext.TraceIdentifier</c>, so a
+/// client-supplied correlation header is honored there too; nothing else in the suite covers it.
+/// </item>
 /// <item>429 from <c>WebApplicationBuilderExtensions</c> via <c>FailureResponse.ForTooManyRequests</c></item>
 /// </list>
 /// A fifth request - the permitted <c>/health</c> call that opens the rate-limited arm - carries
@@ -49,6 +55,19 @@ public class Given_A_Hostile_Correlation_Id_On_Requests_That_Fail_In_Different_L
     private const string ValidRequiredRole = "dms-document-cache-operator";
     private const string RoleClaimType = "operator_role";
     private const string ValidBearerToken = "valid-token";
+
+    /// <summary>
+    /// <c>ManagementEndpointModule</c> refuses to map the <c>/management/*</c> claimset routes at
+    /// all unless a usable required role is configured, so this has to be set for the management
+    /// request below to reach <c>AuthorizeAsync</c> rather than the <c>MapFallback</c> 404.
+    /// </summary>
+    private const string ManagementRequiredRole = "dms-management-operator";
+
+    /// <summary>
+    /// Single-tenant deployments (<c>AppSettings:MultiTenancy</c> defaults to false, which the Test
+    /// environment does not override) map the unscoped GET form of this route.
+    /// </summary>
+    private const string ManagementRoute = "/management/view-claimsets";
 
     /// <summary>
     /// Over-length (49 characters against a configured cap of 24) and carrying control
@@ -95,18 +114,21 @@ public class Given_A_Hostile_Correlation_Id_On_Requests_That_Fail_In_Different_L
     private HttpResponseMessage _notFoundResponse = default!;
     private HttpResponseMessage _unauthorizedResponse = default!;
     private HttpResponseMessage _forbiddenResponse = default!;
+    private HttpResponseMessage _managementUnauthorizedResponse = default!;
     private HttpResponseMessage _permittedHealthResponse = default!;
     private HttpResponseMessage _tooManyRequestsResponse = default!;
 
     private HttpResponseMessage _cleanNotFoundResponse = default!;
     private HttpResponseMessage _cleanUnauthorizedResponse = default!;
     private HttpResponseMessage _cleanForbiddenResponse = default!;
+    private HttpResponseMessage _cleanManagementUnauthorizedResponse = default!;
     private HttpResponseMessage _cleanPermittedHealthResponse = default!;
     private HttpResponseMessage _cleanTooManyRequestsResponse = default!;
 
     private JsonNode _notFoundBody = default!;
     private JsonNode _unauthorizedBody = default!;
     private JsonNode _forbiddenBody = default!;
+    private JsonNode _managementUnauthorizedBody = default!;
     private JsonNode _tooManyRequestsBody = default!;
 
     private string[] _loggedTraceIds = [];
@@ -146,6 +168,18 @@ public class Given_A_Hostile_Correlation_Id_On_Requests_That_Fail_In_Different_L
             ValidBearerToken
         );
         _forbiddenBody = await ReadBody(_forbiddenResponse);
+
+        // No Authorization header, so ManagementEndpointModule.AuthorizeAsync answers 401 from
+        // FailureResponse.ForAuthenticationFailure before any handler touches IApiService. Sent on
+        // the same client and before the log snapshot below, so this request's log event is
+        // included in the hostile arm the same way its siblings' are.
+        _managementUnauthorizedResponse = await SendWithCorrelationId(
+            client,
+            ManagementRoute,
+            HostileCorrelationId,
+            token: null
+        );
+        _managementUnauthorizedBody = await ReadBody(_managementUnauthorizedResponse);
 
         using HttpClient rateLimitedClient = _rateLimitedFactory.CreateClient();
 
@@ -199,6 +233,12 @@ public class Given_A_Hostile_Correlation_Id_On_Requests_That_Fail_In_Different_L
             CleanCorrelationId,
             ValidBearerToken
         );
+        _cleanManagementUnauthorizedResponse = await SendWithCorrelationId(
+            client,
+            ManagementRoute,
+            CleanCorrelationId,
+            token: null
+        );
 
         // The control arm gets its own rate-limited host. Sharing the hostile arm's host would
         // make the control result depend on a single sixty-second window still being open after
@@ -233,11 +273,13 @@ public class Given_A_Hostile_Correlation_Id_On_Requests_That_Fail_In_Different_L
         _notFoundResponse.Dispose();
         _unauthorizedResponse.Dispose();
         _forbiddenResponse.Dispose();
+        _managementUnauthorizedResponse.Dispose();
         _permittedHealthResponse.Dispose();
         _tooManyRequestsResponse.Dispose();
         _cleanNotFoundResponse.Dispose();
         _cleanUnauthorizedResponse.Dispose();
         _cleanForbiddenResponse.Dispose();
+        _cleanManagementUnauthorizedResponse.Dispose();
         _cleanPermittedHealthResponse.Dispose();
         _cleanTooManyRequestsResponse.Dispose();
         await _factory.DisposeAsync();
@@ -257,6 +299,12 @@ public class Given_A_Hostile_Correlation_Id_On_Requests_That_Fail_In_Different_L
         _notFoundResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
         _unauthorizedResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
         _forbiddenResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+        // Also pins that the management route was mapped and reached AuthorizeAsync: an unmapped
+        // /management/view-claimsets would fall through to MapFallback and answer 404, whose body
+        // carries a correlationId too, so the parity assertion below would otherwise still pass
+        // while proving nothing about ManagementEndpointModule.
+        _managementUnauthorizedResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
         _tooManyRequestsResponse.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
     }
 
@@ -282,6 +330,9 @@ public class Given_A_Hostile_Correlation_Id_On_Requests_That_Fail_In_Different_L
         _notFoundResponse.StatusCode.Should().Be(_cleanNotFoundResponse.StatusCode);
         _unauthorizedResponse.StatusCode.Should().Be(_cleanUnauthorizedResponse.StatusCode);
         _forbiddenResponse.StatusCode.Should().Be(_cleanForbiddenResponse.StatusCode);
+        _managementUnauthorizedResponse
+            .StatusCode.Should()
+            .Be(_cleanManagementUnauthorizedResponse.StatusCode);
         _tooManyRequestsResponse.StatusCode.Should().Be(_cleanTooManyRequestsResponse.StatusCode);
     }
 
@@ -301,6 +352,18 @@ public class Given_A_Hostile_Correlation_Id_On_Requests_That_Fail_In_Different_L
     public void It_normalizes_the_correlation_id_in_the_403_body()
     {
         _forbiddenBody["correlationId"]!.ToString().Should().Be(ExpectedCorrelationId);
+    }
+
+    [Test]
+    public void It_normalizes_the_correlation_id_in_the_management_endpoint_authorization_failure_body()
+    {
+        // ManagementEndpointModule.AuthorizeAsync is the one gate every /management/* handler
+        // funnels through, and it builds its TraceId with AspNetCoreFrontend.ExtractTraceIdFrom
+        // rather than from HttpContext.TraceIdentifier. Asserting the exact normalized literal is
+        // what makes this catch a regression to TraceIdentifier: the framework's identifier is
+        // non-null, non-empty and differs from what the client sent, so any weaker assertion would
+        // pass against precisely the bug this covers.
+        _managementUnauthorizedBody["correlationId"]!.ToString().Should().Be(ExpectedCorrelationId);
     }
 
     [Test]
@@ -349,6 +412,7 @@ public class Given_A_Hostile_Correlation_Id_On_Requests_That_Fail_In_Different_L
             _notFoundBody["correlationId"]!.ToString(),
             _unauthorizedBody["correlationId"]!.ToString(),
             _forbiddenBody["correlationId"]!.ToString(),
+            _managementUnauthorizedBody["correlationId"]!.ToString(),
             _tooManyRequestsBody["correlationId"]!.ToString(),
             .. _loggedTraceIds,
         ];
@@ -410,6 +474,9 @@ public class Given_A_Hostile_Correlation_Id_On_Requests_That_Fail_In_Different_L
                         ["AppSettings:CorrelationIdHeader"] = CorrelationHeader,
                         ["AppSettings:CorrelationIdMaxLength"] = ConfiguredMaxLength.ToString(),
                         ["DataManagement:DocumentCache:Status:RequiredRole"] = ValidRequiredRole,
+                        // Without this the /management/* routes are never mapped and the request
+                        // would be answered by MapFallback instead of by AuthorizeAsync.
+                        ["AppSettings:ManagementEndpoints:RequiredRole"] = ManagementRequiredRole,
                         ["JwtAuthentication:RoleClaimType"] = RoleClaimType,
                         ["JwtAuthentication:ClientRole"] = "legacy-service",
                     };
