@@ -127,13 +127,39 @@ public class CorrelationIdNormalizerTests
         [Test]
         public void It_does_not_truncate_at_the_boundary()
         {
-            // The truncation test is `value.Length > effectiveMaxLength`, so a value of exactly
-            // the maximum length passes through whole. An off-by-one that made it `>=` would
-            // silently shorten every conforming identifier by one character, and no other test
-            // in this file would notice: the over-length cases all overshoot by many characters.
+            // The readable statement of the rule - `value.Length > effectiveMaxLength`, so a
+            // value of exactly the maximum length passes through whole - but on its own it
+            // cannot fail: `value[..MaxLength]` of a MaxLength-long string is that same string,
+            // so `>` and `>=` produce an identical result for this input. The test below is the
+            // one that discriminates between them.
             string atTheBound = new('c', MaxLength);
 
             CorrelationIdNormalizer.Normalize(atTheBound, MaxLength).Should().Be(atTheBound);
+        }
+
+        [Test]
+        public void It_does_not_enter_the_truncation_path_at_the_boundary()
+        {
+            // The single input on which the two forms of the length test differ observably: a
+            // value of exactly MaxLength code units whose last unit is an unpaired high
+            // surrogate. Under the greater-than test the comparison is false, no truncation
+            // runs, and the value is returned whole, because a surrogate is Unicode category Cs
+            // and the correlation-ID allowlist does not remove it. Under a greater-than-or-equal
+            // test the comparison is true, the truncation path runs with the retained count at
+            // MaxLength, the surrogate back-off in Normalize finds a high surrogate at the last
+            // retained position and decrements, and the result comes back one unit shorter.
+            //
+            // For any other MaxLength-long value the truncation path is a no-op, which is why
+            // the off-by-one survives every other test in this file: they would all still pass.
+            // A lone high surrogate cannot arrive over a real socket, but the fixture below on
+            // lone surrogates already pins that such a value is preserved, so this leans on
+            // documented behavior rather than on an accident.
+            string atTheBoundEndingInAHighSurrogate = new string('c', MaxLength - 1) + '\ud83d';
+
+            CorrelationIdNormalizer
+                .Normalize(atTheBoundEndingInAHighSurrogate, MaxLength)
+                .Should()
+                .Be(atTheBoundEndingInAHighSurrogate);
         }
 
         [Test]

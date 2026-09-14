@@ -556,10 +556,23 @@ public class Given_An_Unmatched_Route_And_No_Configured_Correlation_Header
 {
     private const string ClientSuppliedValue = "client-supplied-value";
 
+    /// <summary>
+    /// The shape <c>HttpRequestIdentifierFeature</c> renders, which is what supplies
+    /// <c>HttpContext.TraceIdentifier</c> under <c>TestServer</c>: thirteen characters drawn from
+    /// its base-32 alphabet, for example <c>0HNOIJ9S29C6I</c>. Measured from this very fixture,
+    /// not assumed - Kestrel's <c>{connectionId}:{counter:X8}</c> form gets its colon and suffix
+    /// from the connection layer that <c>TestServer</c> does not have, so the production shape is
+    /// not what arrives here. The value varies per run, so its alphabet and length are the most
+    /// that can be pinned; that is still enough to fail a blanked or placeholder identifier.
+    /// </summary>
+    private const string TestServerTraceIdentifierPattern = "^[0-9A-V]{13}$";
+
     private CorrelationIdRecordingLoggerProvider _loggerProvider = default!;
     private WebApplicationFactory<Program> _factory = default!;
     private HttpResponseMessage _response = default!;
     private JsonNode _body = default!;
+    private string _bodyCorrelationId = string.Empty;
+    private bool _headerWasActuallySent;
     private string[] _loggedTraceIds = [];
 
     [OneTimeSetUp]
@@ -578,10 +591,18 @@ public class Given_An_Unmatched_Route_And_No_Configured_Correlation_Header
 
         using HttpClient client = _factory.CreateClient();
         using HttpRequestMessage request = new(HttpMethod.Get, "/no-such-route");
-        request.Headers.TryAddWithoutValidation("correlationid", ClientSuppliedValue);
+
+        // The return value is kept and asserted below: if the header were never added - a typo
+        // in the name, or a future HttpClient that refused it - every "the hardcoded name is
+        // ignored" assertion here would pass without the pipeline having had anything to ignore.
+        _headerWasActuallySent = request.Headers.TryAddWithoutValidation(
+            "correlationid",
+            ClientSuppliedValue
+        );
 
         _response = await client.SendAsync(request);
         _body = JsonNode.Parse(await _response.Content.ReadAsStringAsync())!;
+        _bodyCorrelationId = _body["correlationId"]!.ToString();
         _loggedTraceIds = _loggerProvider.LoggedTraceIds;
     }
 
@@ -602,19 +623,43 @@ public class Given_An_Unmatched_Route_And_No_Configured_Correlation_Header
     }
 
     [Test]
+    public void It_really_did_send_the_hardcoded_header()
+    {
+        // The arrange-step guard the assertion below depends on. Without it, a request that
+        // never carried the header at all would satisfy "the value was not honored".
+        _headerWasActuallySent.Should().BeTrue();
+    }
+
+    [Test]
     public void It_ignores_the_hardcoded_correlationid_header_name()
     {
-        _body["correlationId"]!.ToString().Should().NotBe(ClientSuppliedValue);
+        _bodyCorrelationId.Should().NotBe(ClientSuppliedValue);
     }
 
     [Test]
     public void It_uses_the_server_generated_trace_identifier_instead()
     {
-        // Asserting against the TraceId the request-logging middleware actually emitted, not
-        // merely against non-emptiness: a literal placeholder such as "unknown", or an
-        // unrelated GUID, would satisfy non-emptiness while leaving the 404 uncorrelatable to
-        // its log line. The framework's identifier format is deliberately not asserted.
+        // Non-blankness is asserted on the identifier itself, not just on the recorded array.
+        // Blanking the operational identifier on every unmatched route is the regression this
+        // fixture exists to prevent, and it is precisely what the previous form could not see:
+        // with both the body value and the logged value the empty string, "not the client's
+        // value", "the log recorded something" and "the two agree" all still held.
+        _bodyCorrelationId.Should().NotBeNullOrWhiteSpace();
+
+        // And the TraceId the request-logging middleware actually emitted has to be that same
+        // value: a literal placeholder such as "unknown", or an unrelated GUID, would be
+        // non-blank while leaving the 404 uncorrelatable to its log line.
         _loggedTraceIds.Should().NotBeEmpty();
-        _loggedTraceIds.Should().OnlyContain(traceId => traceId == _body["correlationId"]!.ToString());
+        _loggedTraceIds.Should().OnlyContain(traceId => traceId == _bodyCorrelationId);
+    }
+
+    [Test]
+    public void It_emits_the_frameworks_own_request_identifier_shape()
+    {
+        // What "server-generated" means here, to the extent a per-run value allows: the
+        // identifier is the framework's, not a constant this code invented. Pinned by alphabet
+        // and length rather than by a literal, and measured from this fixture rather than
+        // carried over from Kestrel's production format - see the pattern's own note.
+        _bodyCorrelationId.Should().MatchRegex(TestServerTraceIdentifierPattern);
     }
 }
