@@ -57,6 +57,11 @@ services:
       rm -rf "/out/$$PLUGIN_NAME" &&
       unzip -q /tmp/plugin.nupkg "contentFiles/any/any/$$PLUGIN_NAME/*" -d /tmp/x &&
       mv "/tmp/x/contentFiles/any/any/$$PLUGIN_NAME" /out/'
+    logging:
+      driver: json-file
+      options:
+        max-size: "${DOCKER_LOG_MAX_SIZE:-50m}"
+        max-file: "${DOCKER_LOG_MAX_FILE:-5}"
   dms:
     depends_on:
       fetch-plugins:

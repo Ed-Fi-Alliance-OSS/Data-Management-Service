@@ -21,6 +21,11 @@ services:
     command: httpd -f -v -p 8080 -h /feed
     volumes:
       - ${PLUGIN_FEED_SOURCE:?set the host path holding the PackageBaseAddress layout}:/feed:ro
+    logging:
+      driver: json-file
+      options:
+        max-size: "${DOCKER_LOG_MAX_SIZE:-50m}"
+        max-file: "${DOCKER_LOG_MAX_FILE:-5}"
   # fetch-plugins is declared by the committed plugins-fetch-dms.yml, which knows nothing about a
   # feed. Ordering it after the server is this file's business, not that file's.
   fetch-plugins:
