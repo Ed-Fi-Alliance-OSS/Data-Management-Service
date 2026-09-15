@@ -190,8 +190,16 @@ public sealed class Given_Cdc_Controller_Managed_Lifecycle(CdcProvider provider)
         // SQL Server's live preflight is slower; leave time for completed resume and catch-up
         // observations within this one deadline, as in the fixture's provider-specific defaults.
         var wait = TimeSpan.FromSeconds(provider == CdcProvider.SqlServer ? 60 : 20);
+        // Bound backlog waiting without shortening the fixture's observation freshness window.
         var request = persistent
-            ? _fixture.WithTiming(new(wait / 2, wait, TimeSpan.FromMilliseconds(250)))
+            ? _fixture.WithTiming(
+                new(
+                    wait / 2,
+                    wait,
+                    TimeSpan.FromMilliseconds(250),
+                    _fixture.Request.Timing.MaximumObservationAge
+                )
+            )
             : _fixture.Request;
         var elapsed = System.Diagnostics.Stopwatch.StartNew();
         try
@@ -213,10 +221,11 @@ public sealed class Given_Cdc_Controller_Managed_Lifecycle(CdcProvider provider)
             result.Succeeded.Should().Be(!persistent, "{0}", JsonSerializer.Serialize(result));
             result.Ready.Should().Be(!persistent);
             resumes.Should().Be(1);
-            postResumePasses.Should().BeGreaterThan(3);
             (await _fixture.JournalAsync(Token)).Operations.Last().Completions.Should().ContainSingle();
             if (persistent)
             {
+                // The deadline, not machine-dependent poll throughput, bounds persistent backlog.
+                postResumePasses.Should().BeGreaterThan(1);
                 elapsed
                     .Elapsed.Should()
                     .BeGreaterThanOrEqualTo(request.Timing.WaitTimeout - TimeSpan.FromMilliseconds(50))
@@ -230,6 +239,7 @@ public sealed class Given_Cdc_Controller_Managed_Lifecycle(CdcProvider provider)
             }
             else
             {
+                postResumePasses.Should().BeGreaterThan(3);
                 result.Observation.Status.Projection.State.Should().Be(CoreCdc.CdcComponentState.Satisfied);
                 result.Diagnostics.Should().BeEmpty();
             }

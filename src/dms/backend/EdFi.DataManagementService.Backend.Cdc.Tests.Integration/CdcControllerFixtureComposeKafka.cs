@@ -34,7 +34,6 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
             directory =
                 directory.Parent ?? throw new DirectoryNotFoundException("Repository root unavailable.");
         }
-        string shipped = Path.Combine(directory.FullName, "eng", "docker-compose", "kafka-cdc.yml");
         _controllerComposeDirectory = Path.Combine(Path.GetTempPath(), _resourcePrefix + "-compose");
         Directory.CreateDirectory(_controllerComposeDirectory);
         if (!OperatingSystem.IsWindows())
@@ -44,6 +43,20 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
                 UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute
             );
         }
+        // Retained wrapper handoffs inventory the neighboring broker file. Keep both
+        // shipped Compose files together so their relative inheritance and CDC overrides survive.
+        foreach (string file in new[] { "kafka-broker.yml", "kafka-cdc.yml" })
+        {
+            await File.WriteAllTextAsync(
+                Path.Combine(_controllerComposeDirectory, file),
+                await File.ReadAllTextAsync(
+                    Path.Combine(directory.FullName, "eng", "docker-compose", file),
+                    token
+                ),
+                token
+            );
+        }
+        string shipped = Path.Combine(_controllerComposeDirectory, "kafka-cdc.yml");
         // Only isolate names, network and ports and select a small initial size. Inherit the
         // shipped broker image, storage layout, startup command and worker deployment.
         var services = new Dictionary<string, object>
@@ -52,6 +65,9 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
             {
                 extends = new { file = shipped, service = "kafka" },
                 container_name = BrokerContainerName,
+                // Compose 2.x can drop inherited !override ports through this extra extends layer.
+                // Restate the isolated host endpoint while retaining the shipped broker service.
+                ports = new[] { $"127.0.0.1:{_controllerBrokerPort}:19092" },
                 environment = new Dictionary<string, string>
                 {
                     ["KAFKA_ADVERTISED_LISTENERS"] =

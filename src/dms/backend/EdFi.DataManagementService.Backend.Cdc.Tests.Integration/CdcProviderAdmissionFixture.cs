@@ -75,6 +75,7 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
     public List<string> Preparation { get; } = [];
     private readonly ConcurrentQueue<ValidationFailure> _validationFailures = new();
     private readonly ConcurrentQueue<DatabaseFailure> _databaseFailures = new();
+    private readonly ConcurrentQueue<TelemetryFailure> _telemetryFailures = new();
     private readonly EventHandler<FirstChanceExceptionEventArgs> _observeValidationFailure;
 
     private CdcProviderAdmissionFixture(CdcProvider provider)
@@ -82,7 +83,7 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
         _provider = provider;
         _observeValidationFailure = (sender, args) =>
         {
-            if (args.Exception is not (CdcWorkflowStateException or DbException))
+            if (args.Exception is not (CdcWorkflowStateException or DbException or InvalidDataException))
             {
                 return;
             }
@@ -104,6 +105,24 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
                     $"{frame.GetMethod()!.DeclaringType!.FullName}.{frame.GetMethod()!.Name}:{frame.GetFileLineNumber()}"
                 )
                 .ToArray();
+            if (
+                args.Exception is InvalidDataException
+                && Array.Exists(
+                    locations,
+                    location =>
+                        location.StartsWith(
+                            "EdFi.DataManagementService.Backend.Cdc.CdcConnectorTelemetry",
+                            StringComparison.Ordinal
+                        )
+                )
+            )
+            {
+                _telemetryFailures.Enqueue(new(DateTimeOffset.UtcNow, locations));
+                while (_telemetryFailures.Count > 128)
+                {
+                    _telemetryFailures.TryDequeue(out _);
+                }
+            }
             if (args.Exception is CdcWorkflowStateException failure)
             {
                 _validationFailures.Enqueue(new(DateTimeOffset.UtcNow, failure.Failure, locations));
@@ -145,6 +164,8 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
         bool IsTransient,
         string[] Locations
     );
+
+    private sealed record TelemetryFailure(DateTimeOffset ObservedAt, string[] Locations);
 
     private CoreCdc.CdcProvider CoreProvider =>
         _provider == CdcProvider.Postgresql ? CoreCdc.CdcProvider.Postgresql : CoreCdc.CdcProvider.SqlServer;
@@ -855,10 +876,19 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
                             o.Effect,
                             o.IntendedAt,
                             Completions = o.Completions.Length,
+                            RetirementSteps = o
+                                .Retirement.SelectMany(retirement => retirement.Steps)
+                                .Select(step => new
+                                {
+                                    step.Kind,
+                                    step.IntendedAt,
+                                    step.VerifiedAt,
+                                }),
                         }),
                         Preparation,
                         ValidationFailures = _validationFailures.ToArray(),
                         DatabaseFailures = _databaseFailures.ToArray(),
+                        TelemetryFailures = _telemetryFailures.ToArray(),
                         ConnectObservations = Hooks.ConnectObservations,
                         ProviderModes,
                         ProviderResults = ProviderResults.Select(r => new
@@ -1105,7 +1135,8 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
                             cancellationToken
                         ),
                         await owner.ScalarAsync<bool>(
-                            "SELECT active AND wal_status IN ('reserved', 'extended') AND invalidation_reason IS NULL FROM pg_replication_slots WHERE database = current_database()",
+                            // PostgreSQL 16 lacks invalidation_reason; follow the production provider's JSON lookup.
+                            "SELECT active AND wal_status IN ('reserved', 'extended') AND (to_jsonb(slot)->>'invalidation_reason') IS NULL FROM pg_replication_slots AS slot WHERE database = current_database()",
                             cancellationToken
                         )
                     )
