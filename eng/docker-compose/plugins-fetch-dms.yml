@@ -1,0 +1,72 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+# Plugin acquisition, recipe 2: a pinned package fetched, digest-verified and extracted by a
+# one-shot service that runs to completion before DMS starts.
+#
+# Add with its own -f. It is an alternative to plugins-dms.yml rather than an addition to it:
+# /app/plugins is one mount target and two overlays cannot both claim it.
+#
+# All three deployment-supplied values are declared with :? rather than defaults. The package
+# address, its SHA-256 and the plugin directory name inside it are facts about one operator's
+# plugin, and a committed file carrying any of them as a literal could not be run by a second
+# deployment without being edited.
+#
+# Acquiring the bytes does not enable them. Nothing here writes Plugins:Allowed; the allowlist
+# is a separate deployment-owned setting. See eng/docker-compose/README.md, "Loading plugins".
+#
+# Repeat deployments are stop, fetch, start. service_completed_successfully orders container
+# startup and nothing more: it does not keep a completed one-shot service away from the files of a
+# container already running. Composing this file again over a stack that is up starts the fetcher
+# while DMS keeps running on the same volume, and the fetcher clears the plugin directory before it
+# extracts. Because assemblies load lazily, a request arriving afterwards can find a declared file
+# missing or load a dependency from a version other than the one the startup inventory recorded.
+# Take the stack down before fetching again. See the same README section.
+services:
+  fetch-plugins:
+    # Pinned by digest, as every third-party image in this directory already is. An operator may
+    # re-pin to an image they have approved; a mutable tag would leave the step that verifies the
+    # package digest running on bytes nobody pinned. This one is alpine:3.22, carrying BusyBox
+    # 1.37.0, whose wget, sha256sum and unzip are the four commands below.
+    image: alpine@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce
+    environment:
+      PLUGIN_PACKAGE_URL: ${PLUGIN_PACKAGE_URL:?set the .nupkg download address}
+      PLUGIN_PACKAGE_SHA256: ${PLUGIN_PACKAGE_SHA256:?set the SHA-256 of the pinned .nupkg}
+      PLUGIN_NAME: ${PLUGIN_NAME:?set the plugin directory name inside the package}
+    volumes:
+      - plugins:/out
+    # PLUGIN_NAME is checked before it reaches rm or mv, and the check is the same single-path-
+    # segment rule the loader applies to an allowlist entry. Without it a name of ".." would make
+    # this recipe delete the volume root. Both destructive commands stay inside /out, which is the
+    # named volume below.
+    #
+    # Clearing the directory before extracting is part of the recipe rather than tidiness: it is
+    # what makes the digest a statement about what is on disk rather than only about what was
+    # downloaded. Without it, changing a pinned version leaves files from the previous version
+    # beside the new ones, covered by no digest and named by no .deps.json.
+    #
+    # A PLUGIN_NAME matching nothing leaves unzip exiting zero over an empty directory, and the
+    # chained mv is what fails the service loudly under sh -ec.
+    command: >
+      sh -ec '
+      case "$$PLUGIN_NAME" in "" | "." | ".." | [!A-Za-z0-9]* | *[!A-Za-z0-9._-]*) echo "PLUGIN_NAME must be a single path segment matching [A-Za-z0-9][A-Za-z0-9._-]*" >&2; exit 2;; esac;
+      wget -qO /tmp/plugin.nupkg "$$PLUGIN_PACKAGE_URL" &&
+      echo "$$PLUGIN_PACKAGE_SHA256  /tmp/plugin.nupkg" | sha256sum -c - &&
+      rm -rf "/out/$$PLUGIN_NAME" &&
+      unzip -q /tmp/plugin.nupkg "contentFiles/any/any/$$PLUGIN_NAME/*" -d /tmp/x &&
+      mv "/tmp/x/contentFiles/any/any/$$PLUGIN_NAME" /out/'
+    logging:
+      driver: json-file
+      options:
+        max-size: "${DOCKER_LOG_MAX_SIZE:-50m}"
+        max-file: "${DOCKER_LOG_MAX_FILE:-5}"
+  dms:
+    depends_on:
+      fetch-plugins:
+        condition: service_completed_successfully
+    volumes:
+      - plugins:/app/plugins:ro
+volumes:
+  plugins:

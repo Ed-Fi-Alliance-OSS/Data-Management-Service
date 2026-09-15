@@ -109,16 +109,22 @@ COPY clis/EdFi.DataManagementService.ApiSchemaDownloader/ ./clis/EdFi.DataManage
 COPY --from=pluginsource /plugins/ /source/plugins/
 
 ARG VERSION=""
-ARG ASSEMBLY_VERSION=""
 
 # Version-stamp arguments are accumulated as positional parameters so the expansion below
 # stays quoted ("$@" preserves one argument per parameter; ShellCheck SC2086).
+#
+# Version and InformationalVersion only. AssemblyVersion and FileVersion are deliberately not
+# passed, and nothing replaces them. They are global properties, so they reach every project
+# reference: a contract assembly that declares its own version in src/plugins/Directory.Build.props
+# would otherwise ship carrying the DMS release version inside a locally built image. The plugin
+# loader's newer-plugin-on-older-host preflight compares exactly that value, so a contract has to
+# carry the same version in an image as it does in its published package. The consequence is
+# accepted: a locally built image's DMS assemblies carry whatever src/dms/Directory.Build.props
+# declares, which nothing reads out of a development image, while the release lane still stamps
+# them through BuildAndPublish.
 RUN set -- ; \
     if [ -n "$VERSION" ]; then \
         set -- "$@" "/p:Version=$VERSION" "/p:InformationalVersion=$VERSION"; \
-    fi; \
-    if [ -n "$ASSEMBLY_VERSION" ]; then \
-        set -- "$@" "/p:AssemblyVersion=$ASSEMBLY_VERSION" "/p:FileVersion=$ASSEMBLY_VERSION"; \
     fi; \
     dotnet publish frontend/EdFi.DataManagementService.Frontend.AspNetCore/EdFi.DataManagementService.Frontend.AspNetCore.csproj \
     -c Release --no-restore --self-contained false -o /app/Frontend "$@" && \

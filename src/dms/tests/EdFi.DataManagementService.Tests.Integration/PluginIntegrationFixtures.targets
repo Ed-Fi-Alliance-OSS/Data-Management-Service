@@ -1,0 +1,97 @@
+<Project>
+    <!--
+        Publishes the fixture plugins the host-integration cases load into this project's output as real
+        plugin directories. Their sources live beside the plugin hosting tests' own fixtures, because
+        that is where fixture plugins live and because that tree carries the props keeping a deliberately
+        odd test asset out of the analyzer set; only the staging happens here.
+
+        Three fixtures rather than an import of the hosting project's list: that list is dozens of
+        directories and publishing all of them into a third project's output would lengthen a long build
+        for assets no test here reads.
+
+        This file is the two lists and nothing else. Deciding freshness, pruning and publishing are in
+        src/dms/PluginFixtureStaging.targets, imported at the bottom, which is where those mechanics are
+        explained.
+    -->
+    <ItemGroup>
+        <PluginStagedFixture
+            Include="$(MSBuildThisFileDirectory)../../../plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Plugins/Acme.DmsContributor/Acme.DmsContributor.csproj"
+        >
+            <StagedName>Acme.DmsContributor</StagedName>
+        </PluginStagedFixture>
+        <PluginStagedFixture
+            Include="$(MSBuildThisFileDirectory)../../../plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Plugins/Acme.DmsHookTouch/Acme.DmsHookTouch.csproj"
+        >
+            <StagedName>Acme.DmsHookTouch</StagedName>
+        </PluginStagedFixture>
+        <PluginStagedFixture
+            Include="$(MSBuildThisFileDirectory)../../../plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Plugins/Acme.HookThrows/Acme.HookThrows.csproj"
+        >
+            <StagedName>Acme.HookThrows</StagedName>
+        </PluginStagedFixture>
+    </ItemGroup>
+
+    <!--
+        Everything the staged bytes can depend on, as directories rather than as a hand-written list of
+        files, which is the conclusion both existing staging files reached. An enumeration of the files a
+        closure happens to reach today silently omits the next one somebody adds. bin/ and obj/ are
+        excluded everywhere, because generated sources change on every build and would leave the tree
+        permanently out of date.
+
+        $(PluginIntegrationFixtureRepositoryRoot) is this file's directory walked up to src/, so each
+        root below is one readable path rather than four parent steps.
+    -->
+    <PropertyGroup>
+        <PluginIntegrationFixtureRepositoryRoot
+        >$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)', '..', '..', '..'))</PluginIntegrationFixtureRepositoryRoot>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <!-- The staging rules themselves. -->
+        <PluginStagedFixtureInput Include="$(MSBuildThisFileFullPath)" />
+
+        <!--
+            Every staged fixture's own directory, and every support project they reference. Written out
+            rather than derived from the item list above, because an item transform does not glob:
+            '%(Directory)**/*' arrives as one item whose identity is that literal string, so a transform
+            here would watch nothing at all.
+
+            A fixture added to the list above therefore needs its directory added here too.
+        -->
+        <PluginStagedFixtureInput
+            Include="$(PluginIntegrationFixtureRepositoryRoot)plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Plugins/Acme.DmsContributor/**/*;$(PluginIntegrationFixtureRepositoryRoot)plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Plugins/Acme.DmsHookTouch/**/*;$(PluginIntegrationFixtureRepositoryRoot)plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Plugins/Acme.HookThrows/**/*;$(PluginIntegrationFixtureRepositoryRoot)plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Support/AcmePrivate/**/*;$(PluginIntegrationFixtureRepositoryRoot)plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Support/AcmeFixtureContracts/**/*"
+            Exclude="$(PluginIntegrationFixtureRepositoryRoot)plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Plugins/Acme.DmsContributor/bin/**;$(PluginIntegrationFixtureRepositoryRoot)plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Plugins/Acme.DmsContributor/obj/**;$(PluginIntegrationFixtureRepositoryRoot)plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Plugins/Acme.DmsHookTouch/bin/**;$(PluginIntegrationFixtureRepositoryRoot)plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Plugins/Acme.DmsHookTouch/obj/**;$(PluginIntegrationFixtureRepositoryRoot)plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Plugins/Acme.HookThrows/bin/**;$(PluginIntegrationFixtureRepositoryRoot)plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Plugins/Acme.HookThrows/obj/**;$(PluginIntegrationFixtureRepositoryRoot)plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Support/AcmePrivate/bin/**;$(PluginIntegrationFixtureRepositoryRoot)plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Support/AcmePrivate/obj/**;$(PluginIntegrationFixtureRepositoryRoot)plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Support/AcmeFixtureContracts/bin/**;$(PluginIntegrationFixtureRepositoryRoot)plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Support/AcmeFixtureContracts/obj/**"
+        />
+
+        <!-- The props those fixtures inherit from the fixture tree they sit in. -->
+        <PluginStagedFixtureInput
+            Include="$(PluginIntegrationFixtureRepositoryRoot)plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Directory.Build.props;$(PluginIntegrationFixtureRepositoryRoot)plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Directory.Packages.props"
+        />
+
+        <!--
+            Every production project the fixtures reference, directly or through another of them: the
+            plugin contract, the plugin hosting assembly one of them names the audit input from, the
+            custom validation contract, the backend repository contract, and the core external contract
+            that last one references in turn.
+        -->
+        <PluginStagedFixtureInput
+            Include="$(PluginIntegrationFixtureRepositoryRoot)plugins/EdFi.Api.Plugins/**/*;$(PluginIntegrationFixtureRepositoryRoot)plugins/EdFi.Api.Plugins.Hosting/**/*"
+            Exclude="$(PluginIntegrationFixtureRepositoryRoot)plugins/EdFi.Api.Plugins/bin/**;$(PluginIntegrationFixtureRepositoryRoot)plugins/EdFi.Api.Plugins/obj/**;$(PluginIntegrationFixtureRepositoryRoot)plugins/EdFi.Api.Plugins.Hosting/bin/**;$(PluginIntegrationFixtureRepositoryRoot)plugins/EdFi.Api.Plugins.Hosting/obj/**"
+        />
+        <PluginStagedFixtureInput
+            Include="$(PluginIntegrationFixtureRepositoryRoot)dms/core/EdFi.DataManagementService.CustomValidation/**/*;$(PluginIntegrationFixtureRepositoryRoot)dms/core/EdFi.DataManagementService.Core.External/**/*;$(PluginIntegrationFixtureRepositoryRoot)dms/backend/EdFi.DataManagementService.Backend.External/**/*"
+            Exclude="$(PluginIntegrationFixtureRepositoryRoot)dms/core/EdFi.DataManagementService.CustomValidation/bin/**;$(PluginIntegrationFixtureRepositoryRoot)dms/core/EdFi.DataManagementService.CustomValidation/obj/**;$(PluginIntegrationFixtureRepositoryRoot)dms/core/EdFi.DataManagementService.Core.External/bin/**;$(PluginIntegrationFixtureRepositoryRoot)dms/core/EdFi.DataManagementService.Core.External/obj/**;$(PluginIntegrationFixtureRepositoryRoot)dms/backend/EdFi.DataManagementService.Backend.External/bin/**;$(PluginIntegrationFixtureRepositoryRoot)dms/backend/EdFi.DataManagementService.Backend.External/obj/**"
+        />
+
+        <!--
+            The build metadata every one of those inherits: the props each tree carries, the central
+            package versions the fixture tree's own props chain to, and the NuGet configuration a restore
+            of any of them reads.
+        -->
+        <PluginStagedFixtureInput
+            Include="$(PluginIntegrationFixtureRepositoryRoot)Directory.Packages.props;$(PluginIntegrationFixtureRepositoryRoot)nuget.config;$(PluginIntegrationFixtureRepositoryRoot)plugins/Directory.Build.props;$(PluginIntegrationFixtureRepositoryRoot)dms/Directory.Build.props;$(PluginIntegrationFixtureRepositoryRoot)dms/Directory.Build.targets"
+        />
+    </ItemGroup>
+
+    <Import Project="$(MSBuildThisFileDirectory)../../PluginFixtureStaging.targets" />
+</Project>

@@ -15,10 +15,12 @@ namespace EdFi.DataManagementService.CustomValidation;
 /// audits those registrations before DMS serves traffic: it aborts startup if a validator is
 /// registered in a shape DMS would not resolve, and warns if a declared <see cref="AppliesTo"/> entry
 /// names no resource in the effective schema.
-/// No supported registration seam ships yet, so an implementer has no documented way to register one
-/// and in practice nothing runs today. This declares the shape that support will be built against.
-/// How an implementation reaches DMS's composition is decided by the plugin work, not by this
-/// contract. See CUSTOM-VALIDATION.md for the registration shape the startup guard accepts.
+/// An implementation is delivered as a plugin rather than compiled into the host deployment: it ships
+/// as a published directory placed under the plugin root, named in <c>Plugins:Allowed</c>, whose
+/// <c>EdFiApiPlugin</c> registers the implementation into DMS's service composition while the host is
+/// starting. DMS loads that directory's assemblies at run time; nothing about this contract requires
+/// rebuilding DMS. See CUSTOM-VALIDATION.md for the registration shape the startup guard accepts, and
+/// the Plugins section of CONFIGURATION.md for the allowlist that decides what loads.
 /// </summary>
 public interface ICustomResourceValidator
 {

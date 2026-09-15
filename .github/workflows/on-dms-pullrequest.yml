@@ -1375,6 +1375,57 @@ jobs:
         if: always()
         run: docker rm -f dms-ci-postgresql
 
+  run-dms-api-plugin-integration-tests:
+    name: Run DMS API Plugin Integration Tests
+    needs: build-integration-test-assemblies
+    # Not path-promoted and not database-gated. These cases boot the production host over a plugin
+    # root of their own against external doubles, so the lane needs no container and finishes in
+    # well under a minute; and the two database lanes filter on Category=ApiIntegration, which no
+    # plugin fixture carries, so without this job nothing runs them at all.
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      TEST_ASSEMBLY: ./TestArtifacts/integration-test-assemblies/dms-api/EdFi.DataManagementService.Tests.Integration.dll
+    steps:
+      - name: Checkout the Repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Download Integration Test Assemblies
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: dms-integration-test-assemblies
+          path: TestArtifacts/integration-test-assemblies
+
+      - name: Run DMS API Plugin Integration Tests
+        run: |
+          dotnet test ${{ env.TEST_ASSEMBLY }} `
+            -v normal `
+            --results-directory "./src/dms/tests/EdFi.DataManagementService.Tests.Integration/TestResults" `
+            --filter "Category=PluginIntegration" `
+            --logger "trx;LogFileName=EdFi.DataManagementService.Tests.Integration.Plugins.trx" `
+            --logger "console" `
+            --nologo
+
+      - name: Upload DMS API Plugin Integration Test Results
+        uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2 # v3.0.0
+        if: (success() || failure())
+        with:
+          name: DMS API Plugin Integration Tests
+          path: "**/*.trx"
+          path-replace-backslashes: "true"
+          reporter: dotnet-trx
+          list-tests: failed
+          use-actions-summary: "true"
+
   run-backend-cdc-integration-tests:
     name: Run Backend CDC Integration Tests
     needs: [detect-fresh-build-changes, build-integration-test-assemblies]
@@ -3773,6 +3824,7 @@ jobs:
       - run-backend-cdc-integration-tests
       - run-cdc-qualification
       - run-dms-api-postgresql-integration-tests
+      - run-dms-api-plugin-integration-tests
       - run-cli-integration-tests
       - run-schematools-cli-integration-tests
       - run-schematools-postgresql-integration-tests

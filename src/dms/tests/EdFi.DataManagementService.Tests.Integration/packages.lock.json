@@ -130,6 +130,22 @@
         "resolved": "4.6.0",
         "contentHash": "R7e1+a4vuV/YS+ItfL7f//rG+JBvVeVLX4mHzFEZo4W1qEKl8Zz27AqvQSAqo+BtIzUCo4aAJMYa56VXS4hudw=="
       },
+      "Serilog": {
+        "type": "Direct",
+        "requested": "[4.2.0, )",
+        "resolved": "4.2.0",
+        "contentHash": "gmoWVOvKgbME8TYR+gwMf7osROiWAURterc6Rt2dQyX7wtjZYpqFiA/pY6ztjGQKKV62GGCyOcmtP1UKMHgSmA=="
+      },
+      "Serilog.Extensions.Logging": {
+        "type": "Direct",
+        "requested": "[8.0.0, )",
+        "resolved": "8.0.0",
+        "contentHash": "YEAMWu1UnWgf1c1KP85l1SgXGfiVo0Rz6x08pCiPOIBt2Qe18tcZLvdBUuV5o1QHvrs8FAry9wTIhgBRtjIlEg==",
+        "dependencies": {
+          "Microsoft.Extensions.Logging": "8.0.0",
+          "Serilog": "3.1.1"
+        }
+      },
       "SonarAnalyzer.CSharp": {
         "type": "Direct",
         "requested": "[9.32.0.97167, )",
@@ -1064,22 +1080,6 @@
         "requested": "[1.0.0, )",
         "resolved": "1.0.0",
         "contentHash": "OJEAm5kik+51yBaDfDuSD9+bx3dI23IvcfFcSL+H6v/YfAYtHbiMkAn5aOljNlkHSig3uakMRGhCTYr3lDKrEA=="
-      },
-      "Serilog": {
-        "type": "CentralTransitive",
-        "requested": "[4.2.0, )",
-        "resolved": "4.2.0",
-        "contentHash": "gmoWVOvKgbME8TYR+gwMf7osROiWAURterc6Rt2dQyX7wtjZYpqFiA/pY6ztjGQKKV62GGCyOcmtP1UKMHgSmA=="
-      },
-      "Serilog.Extensions.Logging": {
-        "type": "CentralTransitive",
-        "requested": "[8.0.0, )",
-        "resolved": "8.0.0",
-        "contentHash": "YEAMWu1UnWgf1c1KP85l1SgXGfiVo0Rz6x08pCiPOIBt2Qe18tcZLvdBUuV5o1QHvrs8FAry9wTIhgBRtjIlEg==",
-        "dependencies": {
-          "Microsoft.Extensions.Logging": "8.0.0",
-          "Serilog": "3.1.1"
-        }
       },
       "Serilog.Settings.Configuration": {
         "type": "CentralTransitive",

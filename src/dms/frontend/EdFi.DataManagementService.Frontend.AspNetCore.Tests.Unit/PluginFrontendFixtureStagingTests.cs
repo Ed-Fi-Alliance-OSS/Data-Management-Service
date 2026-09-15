@@ -82,11 +82,11 @@ internal sealed class FrontendStagingProbe : IDisposable
             """
             <Project>
                 <Import Project="$(PluginFrontendFixtureTargetsFile)" />
-                <Target Name="ReportStaging" DependsOnTargets="PrunePluginFrontendFixtureStaging">
+                <Target Name="ReportStaging" DependsOnTargets="PrunePluginFixtureStaging">
                     <WriteLinesToFile
                         File="$(PluginFrontendFixtureStagingReportFile)"
                         Overwrite="true"
-                        Lines="stale=$(PluginFrontendFixtureStale);fingerprint=$(PluginFrontendFixtureFingerprint);inputs=$(PluginFrontendFixtureInputPaths)"
+                        Lines="stale=$(PluginStagedFixtureStale);fingerprint=$(PluginStagedFixtureFingerprint);inputs=$(PluginStagedFixtureInputPaths)"
                     />
                 </Target>
             </Project>

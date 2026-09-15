@@ -20,6 +20,7 @@ internal sealed class EnvironmentStartupProcessExit : IStartupProcessExit
 
 internal static class DmsStartupPhases
 {
+    public const string LoadPlugins = "LoadPlugins";
     public const string ConfigureServices = "ConfigureServices";
     public const string BuildApplication = "BuildApplication";
     public const string LoadDataStores = "LoadDataStores";

@@ -2314,13 +2314,13 @@ function DockerBuild {
     $versionArgs = @()
     if (-not [string]::IsNullOrEmpty($DMSVersion))
     {
-        # AssemblyVersion/FileVersion must be strictly numeric, so derive a numeric
-        # assembly version from the (possibly prerelease) package version.
-        $assemblyVersion = Convert-ToAssemblyVersion $DMSVersion
+        # VERSION only. The image build deliberately does not stamp AssemblyVersion or FileVersion,
+        # and nothing replaces that stamping; see the note above the publish step in src/dms/Dockerfile.
+        # SetDMSAssemblyInfo is deliberately not called from here either: it regenerates the tracked
+        # src/dms/Directory.Build.props, and this command is reached from E2ETest and StartEnvironment
+        # on every local run that does not pass -SkipDockerBuild.
         $versionArgs += "--build-arg"
         $versionArgs += "VERSION=$DMSVersion"
-        $versionArgs += "--build-arg"
-        $versionArgs += "ASSEMBLY_VERSION=$assemblyVersion"
     }
 
     Push-Location src/dms/

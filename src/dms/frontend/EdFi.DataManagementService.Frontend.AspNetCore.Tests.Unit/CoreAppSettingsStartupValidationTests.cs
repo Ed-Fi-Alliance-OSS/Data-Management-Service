@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
+using EdFi.Api.Plugins.Hosting;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 using FluentAssertions;
 using Microsoft.AspNetCore.Builder;
@@ -128,7 +129,7 @@ public class Given_The_Core_App_Settings_Startup_Validator
             }
         );
 
-        builder.AddServices();
+        builder.AddServices(LoadedPlugins.Empty);
 
         return builder.Services.BuildServiceProvider();
     }

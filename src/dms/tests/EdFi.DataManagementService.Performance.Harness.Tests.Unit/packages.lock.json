@@ -726,7 +726,9 @@
           "Microsoft.NET.Test.Sdk": "[17.11.1, )",
           "NUnit": "[4.2.2, )",
           "NUnit3TestAdapter": "[4.6.0, )",
-          "Npgsql": "[8.0.4, )"
+          "Npgsql": "[8.0.4, )",
+          "Serilog": "[4.2.0, )",
+          "Serilog.Extensions.Logging": "[8.0.0, )"
         }
       },
       "AspNetCore.HealthChecks.NpgSql": {
