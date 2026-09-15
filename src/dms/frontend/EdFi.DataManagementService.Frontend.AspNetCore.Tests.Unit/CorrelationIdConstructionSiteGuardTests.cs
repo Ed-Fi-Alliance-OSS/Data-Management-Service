@@ -46,12 +46,35 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit;
 /// walk up to the solution file, load repository files, assert on their contents.
 /// </para>
 /// <para>
-/// <b>Known blind spot.</b> The scan is textual. A <c>TraceId</c> produced by a target-typed
+/// <b>Known blind spot.</b> The scan is textual, and the construction it misses most easily is
+/// the one this repository writes most often: <c>return new(...);</c> inside a member whose
+/// declared return type is <c>TraceId</c>. Neither pattern mentions <c>return</c>, so neither
+/// sees it. <c>TraceId Foo() =&gt; new(...)</c> is missed for a closely related reason -
+/// <see cref="TargetTypedTraceIdConstruction"/> runs from the type name straight to <c>=</c> or
+/// <c>=&gt;</c>, so a parameter list breaks the match and only parameterless members such as
+/// <c>TraceId Foo =&gt; new(</c> are caught. That is not a hypothetical style: <c>return new(</c>
+/// appears 127 times in the production source under <c>src/dms/core</c> alone.
+/// </para>
+/// <para>
+/// Nothing is escaping the guard through it today. At the time of writing the only production
+/// member in the repository whose return type is <c>TraceId</c> is
+/// <c>AspNetCoreFrontend.ExtractTraceIdFrom</c>, which delegates to the ingestion point rather
+/// than constructing anything; every other <c>TraceId</c>-typed production member is a
+/// <c>{ get; init; }</c> property on a backend contract record, which constructs nothing. The
+/// exposure is that the first factory to return a freshly built <c>TraceId</c> would be the first
+/// one, and would add no failing test - which is precisely the regression the permitted-site
+/// counts exist to make visible. Closing it means matching on the declared return type rather
+/// than on a declarator, which in practice means a Roslyn walk over
+/// <c>ObjectCreationExpressionSyntax</c> and <c>ImplicitObjectCreationExpressionSyntax</c> with
+/// the semantic model to hand. This paragraph is the disclosure, not the fix.
+/// </para>
+/// <para>
+/// The remaining blind spots are narrower. A <c>TraceId</c> produced by a target-typed
 /// <c>new(...)</c> in an argument position - <c>Method(new(raw))</c>, where only the parameter
-/// type names <c>TraceId</c> - is invisible to it, as is a value reaching a sanitizer through a
-/// variable whose name says nothing about correlation, and as is a sanitizer call on a string
-/// literal (literals are blanked along with comments, and a literal is not a correlation ID).
-/// It catches the shapes a regression realistically takes, not every shape one could take.
+/// type names <c>TraceId</c> - is invisible to the scan, as is a value reaching a sanitizer
+/// through a variable whose name says nothing about correlation, and as is a sanitizer call on a
+/// string literal (literals are blanked along with comments, and a literal is not a correlation
+/// ID). It catches the shapes a regression realistically takes, not every shape one could take.
 /// </para>
 /// </remarks>
 [TestFixture]
