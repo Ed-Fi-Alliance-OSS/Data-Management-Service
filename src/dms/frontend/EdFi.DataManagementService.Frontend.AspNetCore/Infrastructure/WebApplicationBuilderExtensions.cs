@@ -7,6 +7,7 @@ using System.Globalization;
 using System.Net;
 using System.Text.Json;
 using System.Threading.RateLimiting;
+using EdFi.Api.Plugins.Hosting;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Mssql;
@@ -31,8 +32,20 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 
 public static class WebApplicationBuilderExtensions
 {
-    public static void AddServices(this WebApplicationBuilder webAppBuilder)
+    /// <summary>
+    /// Registers everything the host owns, then invokes the plugin service-contribution phase over
+    /// <paramref name="loadedPlugins"/>.
+    /// </summary>
+    /// <param name="webAppBuilder">The builder being configured.</param>
+    /// <param name="loadedPlugins">
+    /// What the plugin loader returned for this process. Required rather than defaulted, so that a
+    /// caller cannot silently compose against no plugins on a deployment that allowlisted some; a test
+    /// with nothing to contribute passes <see cref="LoadedPlugins.Empty"/> explicitly.
+    /// </param>
+    public static void AddServices(this WebApplicationBuilder webAppBuilder, LoadedPlugins loadedPlugins)
     {
+        ArgumentNullException.ThrowIfNull(loadedPlugins);
+
         var logger = ConfigureLogging();
 
         // Debug logging
@@ -158,7 +171,7 @@ public static class WebApplicationBuilderExtensions
         // last registration of that type. With no plugin loaded the contribution phase is a no-op and
         // the checks run and find nothing, which is what keeps a plugin-free deployment on the same
         // path as any other.
-        webAppBuilder.Services.AddPluginServiceContributions(webAppBuilder.Configuration);
+        webAppBuilder.Services.AddPluginServiceContributions(webAppBuilder.Configuration, loadedPlugins);
     }
 
     private static void ConfigureDatastore(WebApplicationBuilder webAppBuilder, Serilog.ILogger logger)

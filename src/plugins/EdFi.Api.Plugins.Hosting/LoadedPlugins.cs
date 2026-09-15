@@ -23,21 +23,32 @@ public sealed class LoadedPlugins
     /// Creates an aggregate over the given plugins, in allowlist order. Internal because the loader is
     /// the only thing that has plugins to put in one.
     /// </summary>
-    internal LoadedPlugins(IReadOnlyList<LoadedPlugin> plugins)
+    internal LoadedPlugins(IReadOnlyList<LoadedPlugin> plugins, IReadOnlyList<PluginLoadWarning> warnings)
     {
         Plugins = plugins;
+        Warnings = warnings;
     }
 
     /// <summary>
     /// The value returned when no plugin was asked for, which is the shipped default.
     /// </summary>
-    public static LoadedPlugins Empty { get; } = new([]);
+    public static LoadedPlugins Empty { get; } = new([], []);
 
     /// <summary>
     /// The loaded plugins, in the order the operator wrote them, which is the invocation order for
     /// both composition phases.
     /// </summary>
     public IReadOnlyList<LoadedPlugin> Plugins { get; }
+
+    /// <summary>
+    /// What the loader warned about, carried forward so the host can replay it through a real logger.
+    /// </summary>
+    /// <remarks>
+    /// The loader's own channel is <see cref="Console.Error"/>, because it runs before any logging
+    /// pipeline exists. A deployment collecting application logs rather than container stdout sees
+    /// nothing written there, so these travel as data to the point where a logger exists.
+    /// </remarks>
+    public IReadOnlyList<PluginLoadWarning> Warnings { get; }
 
     /// <summary>
     /// Invokes every plugin's service contribution hook, in allowlist order, and returns what each one
@@ -111,7 +122,7 @@ public sealed class LoadedPlugins
             records.Add(RecordOf(plugin, before, services));
         }
 
-        return new PluginAuditInput(registry, records, [.. services]);
+        return new PluginAuditInput(registry, records, [.. services], Warnings);
     }
 
     private static void Invoke(
@@ -228,7 +239,7 @@ public sealed class LoadedPlugins
                 removals.Add(
                     new PluginDescriptorDisplacement(
                         descriptor.ServiceType,
-                        ImplementationTypeOf(descriptor),
+                        PluginDescriptorFacts.ImplementationTypeOf(descriptor),
                         descriptor
                     )
                 );
@@ -265,9 +276,4 @@ public sealed class LoadedPlugins
 
         return occurrences;
     }
-
-    private static Type? ImplementationTypeOf(ServiceDescriptor descriptor) =>
-        descriptor.IsKeyedService
-            ? descriptor.KeyedImplementationType ?? descriptor.KeyedImplementationInstance?.GetType()
-            : descriptor.ImplementationType ?? descriptor.ImplementationInstance?.GetType();
 }

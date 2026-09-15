@@ -1,0 +1,145 @@
+<Project>
+    <!--
+        The staging mechanics shared by every project that publishes fixture plugins into its own
+        output: decide whether the staged tree is stale, remove it if it is, publish each fixture, and
+        record what was produced.
+
+        What each project supplies is its own two item lists, and nothing else:
+
+          PluginStagedFixture       one item per fixture project, with a StagedName metadata naming
+                                    the directory it is published into under the stage root.
+          PluginStagedFixtureInput  every file whose change can alter what those publishes produce.
+
+        The lists differ per project on purpose. The plugin hosting tests' own fixture list is dozens
+        of directories, and publishing all of them into a second project's output would lengthen a
+        long build for assets no test there reads. The mechanics below do not differ, so they live
+        here rather than once per importer.
+
+        This file is itself one of the inputs, because a change to these rules changes what they
+        produce. Each importer adds its own file the same way.
+
+        The plugin hosting test project does not import this. Its staging publishes several kinds of
+        fixture into two roots and sweeps directories no fixture accounts for, which is a different
+        shape rather than a longer list, and generalizing over it would put every one of those
+        special cases into the two projects that need none of them.
+
+        Freshness is a recorded fingerprint rather than an Inputs/Outputs comparison against the
+        staged files. A publish copies files, a copy carries the source file's modification time, so a
+        staged file is routinely older than an input that has just been edited and the comparison
+        would find the tree out of date forever.
+
+        Paths are composed from $(MSBuildProjectDirectory) rather than from this file's own directory,
+        because the stage root, the freshness record and the publish working directory all belong to
+        the importing project.
+    -->
+    <ItemGroup>
+        <!-- The shared staging rules themselves. -->
+        <PluginStagedFixtureInput Include="$(MSBuildThisFileFullPath)" />
+    </ItemGroup>
+
+    <Target
+        Name="PrunePluginFixtureStaging"
+        Condition="'$(BuildingPluginFixtures)' != 'true' AND '$(DesignTimeBuild)' != 'true'"
+    >
+        <PropertyGroup>
+            <PluginStagedFixtureStageRoot
+            >$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', '$(OutDir)', 'PluginFixtures'))</PluginStagedFixtureStageRoot>
+            <PluginStagedFixtureStampDir
+            >$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', '$(IntermediateOutputPath)', 'pluginfixtures'))</PluginStagedFixtureStampDir>
+            <PluginStagedFixtureFingerprintFile
+            >$(PluginStagedFixtureStampDir)staging.fingerprint</PluginStagedFixtureFingerprintFile>
+            <PluginStagedFixtureInputList>@(PluginStagedFixtureInput->'%(Identity)@%(ModifiedTime)', '|')</PluginStagedFixtureInputList>
+            <PluginStagedFixtureFingerprintPrefix
+            >$(Configuration)+$(NETCoreSdkRuntimeIdentifier)+@(PluginStagedFixture->'%(StagedName)', '&amp;')+$([MSBuild]::StableStringHash($(PluginStagedFixtureInputList)))</PluginStagedFixtureFingerprintPrefix>
+        </PropertyGroup>
+
+        <ItemGroup Condition="Exists('$(PluginStagedFixtureStageRoot)')">
+            <PluginStagedFixtureStagedFile Include="$(PluginStagedFixtureStageRoot)**/*" />
+        </ItemGroup>
+
+        <PropertyGroup>
+            <PluginStagedFixtureStagedList>@(PluginStagedFixtureStagedFile->'%(RecursiveDir)%(Filename)%(Extension)', '|')</PluginStagedFixtureStagedList>
+            <PluginStagedFixtureFingerprint
+            >$(PluginStagedFixtureFingerprintPrefix)+$([MSBuild]::StableStringHash($(PluginStagedFixtureStagedList)))</PluginStagedFixtureFingerprint>
+            <!--
+                The evaluated input set, so a test can assert what the rules actually watch rather than
+                reading this file and believing it.
+            -->
+            <PluginStagedFixtureInputPaths>@(PluginStagedFixtureInput->'%(Identity)', ';')</PluginStagedFixtureInputPaths>
+        </PropertyGroup>
+
+        <ReadLinesFromFile
+            File="$(PluginStagedFixtureFingerprintFile)"
+            Condition="Exists('$(PluginStagedFixtureFingerprintFile)')"
+        >
+            <Output TaskParameter="Lines" ItemName="PluginStagedFixturePreviousLine" />
+        </ReadLinesFromFile>
+
+        <PropertyGroup>
+            <PluginStagedFixturePrevious>@(PluginStagedFixturePreviousLine)</PluginStagedFixturePrevious>
+            <PluginStagedFixtureStale
+                Condition="'$(PluginStagedFixturePrevious)' != '$(PluginStagedFixtureFingerprint)'"
+            >true</PluginStagedFixtureStale>
+        </PropertyGroup>
+
+        <!--
+            Removed wholesale rather than patched, so a file dropped from a fixture's closure cannot
+            survive as a leftover: dotnet publish overwrites what it produces and removes nothing it no
+            longer produces. The path is composed from OutDir and a literal, so it is always inside the
+            importing project's own output.
+        -->
+        <RemoveDir
+            Directories="$(PluginStagedFixtureStageRoot)"
+            Condition="'$(PluginStagedFixtureStale)' == 'true' AND '$(PluginStagedFixtureStageRoot)' != '' AND Exists('$(PluginStagedFixtureStageRoot)')"
+        />
+        <Delete
+            Files="$(PluginStagedFixtureFingerprintFile)"
+            Condition="'$(PluginStagedFixtureStale)' == 'true'"
+        />
+    </Target>
+
+    <Target
+        Name="PublishPluginFixtures"
+        AfterTargets="Build"
+        DependsOnTargets="PrunePluginFixtureStaging"
+        Condition="'$(BuildingPluginFixtures)' != 'true' AND '$(DesignTimeBuild)' != 'true'"
+        Inputs="@(PluginStagedFixtureInput)"
+        Outputs="$(PluginStagedFixtureFingerprintFile)"
+    >
+        <RemoveDir
+            Directories="@(PluginStagedFixture->'$(PluginStagedFixtureStageRoot)%(StagedName)')"
+            Condition="'$(PluginStagedFixtureStageRoot)' != ''"
+        />
+
+        <!--
+            BuildingPluginFixtures is passed down so an inner publish can never re-enter this target,
+            and each fixture project is named explicitly so nothing walks back up to the importing test
+            project. No runtime identifier, deliberately: a runtime-specific publish restores its
+            project references with that identifier too, and NuGet then rewrites their committed lock
+            files.
+        -->
+        <Exec
+            Command="&quot;$(DOTNET_HOST_PATH)&quot; publish &quot;%(PluginStagedFixture.FullPath)&quot; --configuration $(Configuration) --no-self-contained --output &quot;$(PluginStagedFixtureStageRoot)%(PluginStagedFixture.StagedName)&quot; -p:BuildingPluginFixtures=true --nologo --verbosity quiet"
+            EnvironmentVariables="DOTNET_CLI_DO_NOT_USE_MSBUILD_SERVER=1;MSBUILDDISABLENODEREUSE=1"
+            WorkingDirectory="$(MSBuildProjectDirectory)"
+        />
+
+        <ItemGroup>
+            <PluginStagedFixtureAfterPublish Include="$(PluginStagedFixtureStageRoot)**/*" />
+        </ItemGroup>
+
+        <PropertyGroup>
+            <PluginStagedFixtureStagedListAfterPublish>@(PluginStagedFixtureAfterPublish->'%(RecursiveDir)%(Filename)%(Extension)', '|')</PluginStagedFixtureStagedListAfterPublish>
+            <PluginStagedFixtureFingerprintAfterPublish
+            >$(PluginStagedFixtureFingerprintPrefix)+$([MSBuild]::StableStringHash($(PluginStagedFixtureStagedListAfterPublish)))</PluginStagedFixtureFingerprintAfterPublish>
+        </PropertyGroup>
+
+        <MakeDir Directories="$(PluginStagedFixtureStampDir)" />
+        <WriteLinesToFile
+            File="$(PluginStagedFixtureFingerprintFile)"
+            Lines="$(PluginStagedFixtureFingerprintAfterPublish)"
+            Overwrite="true"
+            WriteOnlyWhenDifferent="true"
+        />
+    </Target>
+</Project>

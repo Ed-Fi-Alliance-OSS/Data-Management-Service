@@ -104,13 +104,22 @@ Describe "Docker Compose logging defaults (DMS-1407)" {
     }
 
     function script:Get-ComposeServiceFileUnderTest {
+        # Files carrying overlay service blocks, which add keys to a service another file
+        # declares. An overlay block has no image or build of its own, so there is no container
+        # for a logging cap to bound. Two of these also declare a container of their own,
+        # fetch-plugins and plugin-feed; those services keep the cap, and the file is listed here
+        # only for the overlay blocks beside them.
         $excludedOverrideFiles = @(
             "eng/docker-compose/bootstrap-dms.yml",
             "eng/docker-compose/local-dms-document-cache.yml",
             "eng/docker-compose/local-dms-diagnostics.yml",
             "eng/docker-compose/mssql-cdc.yml",
             "eng/docker-compose/mssql-tmpfs.yml",
-            "eng/docker-compose/postgresql-tmpfs.yml"
+            "eng/docker-compose/plugins-dms.yml",
+            "eng/docker-compose/plugins-fetch-dms.yml",
+            "eng/docker-compose/postgresql-tmpfs.yml",
+            "eng/docker-compose/tests/plugin-deployment/plugins-allowed-dms.yml",
+            "eng/docker-compose/tests/plugin-deployment/plugins-feed-dms.yml"
         )
 
         return @(

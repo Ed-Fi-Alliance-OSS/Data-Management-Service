@@ -917,6 +917,149 @@ cd eng/docker-compose
 pwsh ./start-local-dms.ps1 -d -v
 ```
 
+## Loading plugins
+
+A plugin is an already-published directory of assemblies that DMS loads at startup.
+DMS ships no fetcher: getting a plugin directory under the plugin root is a
+deployment step that happens before the process starts, and it comes in two
+recipes. Each is an overlay added with its own `-f`, and they are **alternatives**
+rather than additions: `/app/plugins` is one mount target and two overlays cannot
+both claim it. `local-dms.yml` and `published-dms.yml` are unchanged by either.
+
+Add the overlays by naming them in `DMS_PLUGINS_COMPOSE_FILES` and starting the
+stack through `bootstrap-local-dms.ps1`. That variable is a semicolon-delimited
+list, added in the order written, each entry either absolute or relative to
+`eng/docker-compose`. Leave it unset and nothing changes; a path that does not
+exist, or an empty entry from a stray separator, fails the launcher by name before
+it touches Docker.
+
+**`DMS_PLUGINS_COMPOSE_FILES` is read from the environment file only.** The launcher
+reads it the same way it reads every other setting that shapes the compose command,
+and that reader deliberately ignores the process environment so a phase invoked
+directly cannot depend on ambient shell state. Exporting the variable therefore adds
+no overlay at all, and DMS starts successfully with no plugins. Put it in the
+environment file `bootstrap-local-dms.ps1` uses, which is `.env` unless you pass
+`-EnvironmentFile`. The four variables the overlays themselves declare are
+interpolated by Compose rather than read by the launcher, so those do honour an
+exported value; keeping all of them in one file is still the recipe below, because a
+deployment described in two places is a deployment nobody can read back.
+
+The launcher is the entry point rather than a convenience. An overlay only adds a
+mount and a fetch step to the DMS service; it provisions no schema and configures
+no Configuration Service, and DMS validates at startup that both were done. A bare
+`docker compose up` of `postgresql.yml` and `local-dms.yml` with an overlay added
+therefore cannot produce a working deployment on a fresh environment. Compose those
+files directly only against an environment already provisioned and configured by a
+previous `bootstrap-local-dms.ps1` run.
+
+### Recipe 1: a pre-populated plugin root
+
+`plugins-dms.yml` bind-mounts a directory of plugin directories read-only.
+
+```powershell
+cd eng/docker-compose
+
+# In the environment file the launcher reads (.env by default):
+#   DMS_PLUGINS_COMPOSE_FILES=plugins-dms.yml;my-plugins-allowed-dms.yml
+#   DMS_PLUGINS_MOUNT_SOURCE=C:/plugins
+
+pwsh ./bootstrap-local-dms.ps1
+```
+
+Nothing in this recipe writes into the mounted directory. The plugin directories are
+whatever you put there, so replacing one is your own step and DMS reads the bytes
+that are there when it starts.
+
+### Recipe 2: a pinned package fetched by the deployment
+
+`plugins-fetch-dms.yml` adds a one-shot `fetch-plugins` service that downloads a
+`.nupkg`, verifies it against a digest the operator pinned, extracts the plugin
+directory into a named volume and exits. `depends_on: service_completed_successfully`
+orders it ahead of DMS, which then mounts that volume read-only.
+
+```powershell
+cd eng/docker-compose
+
+# In the environment file the launcher reads (.env by default):
+#   DMS_PLUGINS_COMPOSE_FILES=plugins-fetch-dms.yml;my-plugins-allowed-dms.yml
+#   PLUGIN_PACKAGE_URL=https://feed.example/v3-flatcontainer/acme.dms.identity/1.2.0/acme.dms.identity.1.2.0.nupkg
+#   PLUGIN_PACKAGE_SHA256=9f2c...the digest you pinned...
+#   PLUGIN_NAME=Acme.Dms.Identity
+
+pwsh ./bootstrap-local-dms.ps1
+```
+
+`PLUGIN_PACKAGE_URL` is the package's download address in the feed's
+`PackageBaseAddress` form, `<base>/<id>/<version>/<id>.<version>.nupkg` in lower
+case, where `<base>` is what the feed's `index.json` publishes for that resource.
+It differs between feed hosts, which is one more reason the address belongs to the
+deployment rather than to DMS.
+
+#### Re-fetching requires stop, fetch, start
+
+**Stop DMS before fetching again.** The fetcher clears and rewrites the plugin
+directory inside the volume DMS mounts, and `service_completed_successfully` orders
+container *startup*; it does not keep a completed one-shot service away from the
+files of a container that is already running. Re-running the launcher against a
+stack that is already up starts the fetcher while DMS keeps running on the same
+volume, and because assemblies load lazily, a request arriving afterwards can find
+a file missing or load a dependency from a version other than the one the startup
+inventory recorded.
+
+Tear the stack down and bring it back up, which is what makes the inventory event a
+statement about the bytes the process is serving:
+
+```powershell
+cd eng/docker-compose
+pwsh ./bootstrap-local-dms.ps1 -d
+pwsh ./bootstrap-local-dms.ps1
+```
+
+`-d` without `-v` is deliberate. What a re-fetch needs is DMS stopped, and `down`
+alone does that; `-v` would additionally delete every volume in the stack, the
+PostgreSQL data volume included, so a routine plugin update would destroy the
+deployment's data. Keeping the `plugins` volume is safe, because the fetcher clears
+the plugin directory before it extracts. Add `-v` only when you actually want the
+whole environment reset.
+
+### Required variables
+
+All four are declared with `:?` rather than defaults, so composing an overlay in
+without setting its variables fails immediately instead of starting a deployment
+that silently loads nothing. They are listed, commented out, in `.env.example`.
+
+| Variable | Overlay | Meaning |
+| -------- | ------- | ------- |
+| `DMS_PLUGINS_MOUNT_SOURCE` | `plugins-dms.yml` | Host path holding the plugin directories. |
+| `PLUGIN_PACKAGE_URL` | `plugins-fetch-dms.yml` | `.nupkg` download address, `PackageBaseAddress` form. |
+| `PLUGIN_PACKAGE_SHA256` | `plugins-fetch-dms.yml` | SHA-256 of the pinned `.nupkg`. |
+| `PLUGIN_NAME` | `plugins-fetch-dms.yml` | Plugin directory name inside the package. Must be a single path segment matching `[A-Za-z0-9][A-Za-z0-9._-]*`; anything else fails the fetch before it deletes or moves anything. |
+
+### Enabling a plugin is a separate step
+
+**Neither overlay allowlists anything.** Acquiring the bytes and deciding which of
+them may load are separate decisions, and `Plugins:Allowed` is the only switch:
+a plugin runs if and only if its directory name appears there. It ships empty, so a
+deployment that adds an overlay and nothing else mounts a plugin root and loads
+nothing from it.
+
+The DMS service's environment is declared in the base compose files, which stay
+unchanged, so the allowlist arrives in a small deployment-owned overlay of its own.
+Write it once and name it in `DMS_PLUGINS_COMPOSE_FILES` after the acquisition
+overlay, as the two recipes above do:
+
+```yaml
+# my-plugins-allowed-dms.yml
+services:
+  dms:
+    environment:
+      Plugins__Allowed: Acme.Dms.Identity
+```
+
+The order written is the order plugins are invoked in. See the `Plugins` section of
+[docs/CONFIGURATION.md](../../docs/CONFIGURATION.md) for the full configuration
+surface.
+
 ## Kafka UI
 
 ```powershell

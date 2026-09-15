@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text;
+using EdFi.Api.Plugins.Hosting;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Mssql;
@@ -66,7 +67,7 @@ public class WebApplicationBuilderExtensionsTests
         configureConfigurationBeforeAddServices?.Invoke(builder.Configuration);
         configureServicesBeforeAddServices?.Invoke(builder.Services);
 
-        builder.AddServices();
+        builder.AddServices(LoadedPlugins.Empty);
 
         return builder.Services;
     }

@@ -32,10 +32,15 @@ public sealed class PluginAuditInput
     /// Creates an input over the contracts a host declares, what each plugin contributed, and the
     /// descriptors on the collection when composition finished.
     /// </summary>
+    /// <param name="warnings">
+    /// What the loader warned about, which the host replays through its logger. Optional, because a
+    /// caller composing a collection it assembled itself has no loading phase to warn about.
+    /// </param>
     public PluginAuditInput(
         PluginContractRegistry registry,
         IReadOnlyList<PluginContributionRecord> records,
-        IReadOnlyList<ServiceDescriptor> descriptorsAfterContribution
+        IReadOnlyList<ServiceDescriptor> descriptorsAfterContribution,
+        IReadOnlyList<PluginLoadWarning>? warnings = null
     )
     {
         ArgumentNullException.ThrowIfNull(registry);
@@ -47,6 +52,7 @@ public sealed class PluginAuditInput
         DescriptorsAfterContribution = new ReadOnlyCollection<ServiceDescriptor>([
             .. descriptorsAfterContribution,
         ]);
+        Warnings = new ReadOnlyCollection<PluginLoadWarning>([.. warnings ?? []]);
     }
 
     /// <summary>The contracts the host declares, with the cardinality it holds for each.</summary>
@@ -54,6 +60,16 @@ public sealed class PluginAuditInput
 
     /// <summary>One record per plugin whose hook ran, in allowlist order.</summary>
     public IReadOnlyList<PluginContributionRecord> Records { get; }
+
+    /// <summary>
+    /// What the loader warned about while it ran, in the order it noticed.
+    /// </summary>
+    /// <remarks>
+    /// Carried here because this is the one thing the host already holds at the moment a logger first
+    /// exists. Nothing checks these: a warning is not a finding, and a boot that produced one is a boot
+    /// that otherwise succeeded.
+    /// </remarks>
+    public IReadOnlyList<PluginLoadWarning> Warnings { get; }
 
     /// <summary>
     /// The descriptors on the service collection at the moment the last hook returned, in order.
