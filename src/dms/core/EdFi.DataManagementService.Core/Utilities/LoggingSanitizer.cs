@@ -49,10 +49,12 @@ public static class LoggingSanitizer
     /// <para>
     /// <b>What is removed:</b> control characters (Unicode category Cc), format characters
     /// (category Cf - the bidirectional overrides and isolates, the zero-width characters, SOFT
-    /// HYPHEN and the BYTE ORDER MARK), and the Unicode line/paragraph separators U+2028 and
-    /// U+2029. Everything else survives, including printable punctuation, non-ASCII letters and
-    /// internal whitespace. <see cref="LogSanitizer.SanitizeCorrelationId"/> states the rule and
-    /// the rationale in full; do not restate it here or anywhere else.
+    /// HYPHEN and the BYTE ORDER MARK), the Unicode line/paragraph separators U+2028 and U+2029,
+    /// and any unpaired surrogate (category Cs), so the result is always well-formed UTF-16.
+    /// Everything else survives, including printable punctuation, non-ASCII letters, astral
+    /// characters written as a well-formed surrogate pair, and internal whitespace.
+    /// <see cref="LogSanitizer.SanitizeCorrelationId"/> states the rule and the rationale in
+    /// full; do not restate it here or anywhere else.
     /// </para>
     /// <para>
     /// 1. <b>A correlation ID is already normalized before it is logged</b>, once, at the

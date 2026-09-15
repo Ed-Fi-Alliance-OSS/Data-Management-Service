@@ -207,16 +207,21 @@ normalization is three adjustments, applied in this order:
    to that length. See [Configuration](./CONFIGURATION.md).
 2. **Back the cut off a split surrogate pair.** The cut in step 1 is made on a
    UTF-16 code unit, so it can land between the two halves of a non-BMP
-   character. When it does, the orphaned leading half is dropped as well, one
-   character short of the cap. Without this, JSON serialization would write
-   `U+FFFD` into the response body while a log sink received the raw unpaired
-   unit, and the two values would no longer be identical.
+   character. When it does — and only when the two halves really are a
+   well-formed pair — the orphaned leading half is dropped as well, one
+   character short of the cap. This step exists so that truncation cannot
+   *create* an unpaired surrogate that was not in the value to begin with. A
+   half that was already unpaired in the input is left for step 3 to remove, so
+   that it is reported as a character the allowlist removed rather than as an
+   effect of truncation.
 3. **Remove characters outside the allowlist.** The correlation ID allowlist
    removes **control characters (category `Cc`)**, **format characters (category
-   `Cf`)**, and the **Unicode line and paragraph separators** (`U+2028` and
-   `U+2029`, categories `Zl` and `Zp`). Every other character is preserved,
-   including punctuation such as `+ = { } @ | , # ( ) [ ] < > " '`, non-ASCII
-   letters, digits and symbols, and internal whitespace.
+   `Cf`)**, the **Unicode line and paragraph separators** (`U+2028` and
+   `U+2029`, categories `Zl` and `Zp`), and any **unpaired surrogate** (category
+   `Cs`). Every other character is preserved, including punctuation such as
+   `+ = { } @ | , # ( ) [ ] < > " '`, non-ASCII letters, digits and symbols,
+   internal whitespace, and non-BMP characters written as a well-formed
+   surrogate pair.
 
    Removing the control characters — carriage return, line feed, tab and null
    included — together with the line and paragraph separators is what prevents
@@ -243,6 +248,21 @@ normalization is three adjustments, applied in this order:
    The rule is expressed as a Unicode **category** test, not a list of code
    points, so it stays a single coherent negative test and does not drift as new
    format characters are assigned.
+
+   The unpaired surrogates are the one part of the removed set that is not a
+   category test, and cannot be: an unpaired surrogate is not a Unicode code
+   point, so a per-code-point rule never sees one. They are removed on the UTF-16
+   decoder's own report that the input is not well-formed. The reason is the
+   parity guarantee itself: `System.Text.Json` writes `U+FFFD` in place of an
+   unpaired surrogate when it serializes the response body, while a log sink
+   receives the raw code unit, so a correlation ID carrying one would reach the
+   client and the logs as two different strings. Removing it makes the guarantee
+   unconditional — **the normalized value is always well-formed UTF-16, whatever
+   arrived** — rather than resting on the fact that Kestrel's default header
+   decoding happens not to produce one. (It does not; but that is host
+   configuration, and `RequestHeaderEncodingSelector` with a non-replacement
+   fallback changes it.) A non-BMP character written as a well-formed pair is
+   unaffected and survives intact.
 
 This allowlist is scoped to correlation IDs and is deliberately broader than the
 stricter one applied to internally-controlled logged values such as `Method` and
