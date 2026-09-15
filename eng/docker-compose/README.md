@@ -997,6 +997,23 @@ The order written is the order plugins are invoked in. See the `Plugins` section
 [docs/CONFIGURATION.md](../../docs/CONFIGURATION.md) for the full configuration
 surface.
 
+### Adding the overlays through the launcher scripts
+
+The `docker compose` lines above add the files with their own `-f`. When you are
+starting the stack through `start-local-dms.ps1` or `bootstrap-local-dms.ps1`
+instead, name them in `DMS_PLUGINS_COMPOSE_FILES` in your environment file. It is
+a semicolon-delimited list, added in the order written, each entry either absolute
+or relative to `eng/docker-compose`:
+
+```
+DMS_PLUGINS_COMPOSE_FILES=plugins-dms.yml;my-plugins-allowed-dms.yml
+```
+
+Leave it unset and nothing changes. A path that does not exist, or an empty entry
+from a stray separator, fails the launcher by name before it touches Docker. This
+is a launcher convenience and not part of either recipe: the acquisition overlays
+still declare exactly the four variables above.
+
 ## Kafka UI
 
 ```powershell

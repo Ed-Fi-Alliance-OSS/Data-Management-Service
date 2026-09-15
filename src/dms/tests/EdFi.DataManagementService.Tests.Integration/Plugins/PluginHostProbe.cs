@@ -151,8 +151,9 @@ internal static class PluginHostProbe
     /// Best effort rather than strict, because a plugin loads into a non-collectible load context that
     /// is never unloaded, so on Windows its assemblies stay mapped for the life of the test process and
     /// the directory holding them cannot be removed. Failing a teardown over that would turn a passing
-    /// case into a red one for a reason that has nothing to do with what it asserted; the operating
-    /// system reclaims the temporary tree afterwards.
+    /// case into a red one for a reason that has nothing to do with what it asserted. Process exit
+    /// releases the lock but deletes nothing, so these trees do accumulate under the temporary
+    /// directory until something else clears it.
     /// </remarks>
     public static void DeleteIfPresent(string? directoryOrFile)
     {
