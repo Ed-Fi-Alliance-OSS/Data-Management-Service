@@ -311,10 +311,7 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
         {
             try
             {
-                if (composeKafka)
-                {
-                    await fixture.WriteStartupFailureEvidenceAsync(ex, fixture._startupStage);
-                }
+                await fixture.WriteStartupFailureEvidenceAsync(ex, fixture._startupStage);
             }
             finally
             {
@@ -375,7 +372,7 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
                 }
             )
         );
-        TestContext.AddTestAttachment(path, "Sanitized Compose fixture startup failure locations");
+        TestContext.AddTestAttachment(path, "Sanitized pinned-image fixture startup failure locations");
     }
 
     public async Task<CdcConnectorTemplateRequest> CreateRequestAsync(CancellationToken cancellationToken)
