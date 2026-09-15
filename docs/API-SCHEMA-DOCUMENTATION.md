@@ -165,6 +165,15 @@ The object contains two properties:
 * `resources`: Complete OpenAPI specification for resource endpoints
 * `descriptors`: Complete OpenAPI specification for descriptor endpoints
 
+Since ApiSchema `1.0.334` these base documents also carry the snapshot
+contract: a reusable boolean `Use-Snapshot` header parameter defaulting to
+`false`, and the Snapshot Not Found `404` and snapshot `405` response
+components, referenced from the operations that serve them. Each
+independently served document defines the components it references, because
+a document cannot resolve a reference out of a sibling document. DMS serves
+them as supplied; a profile document is derived by filtering an assembled
+resource document and inherits the contract through that.
+
 Example:
 
 ```json
