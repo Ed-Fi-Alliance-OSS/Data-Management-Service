@@ -64,7 +64,7 @@ public class CorrelationIdParityTests
         /// <summary>
         /// The floor <c>AppSettingsValidator</c> enforces. Anything lower is rejected as invalid
         /// configuration, which would drop this fixture's host into invalid-configuration mode and
-        /// answer every request below with a bodiless 500 instead of the response under test.
+        /// answer every request below with the generic short-circuit 500 instead of the response under test.
         /// </summary>
         private const int ConfiguredMaxLength = AppSettings.MinimumCorrelationIdMaxLength;
         private const string ValidRequiredRole = "dms-document-cache-operator";
