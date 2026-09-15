@@ -124,8 +124,8 @@ public static class Utility
         logger.LogError(
             "Backend reported an unknown failure for {Method} {Path}: {FailureMessage} - {TraceId}",
             requestInfo.Method,
-            LoggingSanitizer.SanitizeForLogging(requestInfo.FrontendRequest.Path),
-            LoggingSanitizer.SanitizeForLogging(failureMessage),
+            LoggingSanitizer.SanitizeInternalValueForLogging(requestInfo.FrontendRequest.Path),
+            LoggingSanitizer.SanitizeInternalValueForLogging(failureMessage),
             requestInfo.FrontendRequest.TraceId.Value
         );
 

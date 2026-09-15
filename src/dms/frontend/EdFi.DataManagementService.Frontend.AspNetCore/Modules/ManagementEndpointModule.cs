@@ -13,6 +13,7 @@ using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
 using Microsoft.Extensions.Options;
 using FrontendAppSettings = EdFi.DataManagementService.Frontend.AspNetCore.Configuration.AppSettings;
+using AspNetCoreFrontend = EdFi.DataManagementService.Frontend.AspNetCore.AspNetCoreFrontend;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Modules;
 
@@ -106,7 +107,8 @@ public class ManagementEndpointModule(
     /// </summary>
     private static async Task<IResult?> AuthorizeAsync(
         HttpContext httpContext,
-        IManagementEndpointAuthorizationService authorizationService
+        IManagementEndpointAuthorizationService authorizationService,
+        IOptions<FrontendAppSettings> options
     )
     {
         string? authorizationHeader = httpContext.Request.Headers.TryGetValue(
@@ -126,7 +128,7 @@ public class ManagementEndpointModule(
             return null;
         }
 
-        TraceId traceId = new(httpContext.TraceIdentifier);
+        TraceId traceId = AspNetCoreFrontend.ExtractTraceIdFrom(httpContext.Request, options);
 
         if (authorizationResult.Outcome == EndpointRoleAuthorizationOutcome.Unauthorized)
         {
@@ -175,11 +177,12 @@ public class ManagementEndpointModule(
     internal static async Task<IResult> ReloadClaimsets(
         HttpContext httpContext,
         IManagementEndpointAuthorizationService authorizationService,
+        IOptions<FrontendAppSettings> options,
         IApiService apiService,
         ILogger<ManagementEndpointModule> logger
     )
     {
-        IResult? authorizationFailure = await AuthorizeAsync(httpContext, authorizationService);
+        IResult? authorizationFailure = await AuthorizeAsync(httpContext, authorizationService, options);
         if (authorizationFailure is not null)
         {
             return authorizationFailure;
@@ -197,13 +200,14 @@ public class ManagementEndpointModule(
         string tenant,
         HttpContext httpContext,
         IManagementEndpointAuthorizationService authorizationService,
+        IOptions<FrontendAppSettings> options,
         IApiService apiService,
         ITenantValidator tenantValidator,
         ILogger<ManagementEndpointModule> logger
     )
     {
         // Authorization precedes tenant validation so an anonymous caller cannot probe tenant existence.
-        IResult? authorizationFailure = await AuthorizeAsync(httpContext, authorizationService);
+        IResult? authorizationFailure = await AuthorizeAsync(httpContext, authorizationService, options);
         if (authorizationFailure is not null)
         {
             return authorizationFailure;
@@ -224,10 +228,11 @@ public class ManagementEndpointModule(
     /// </summary>
     internal static async Task<IResult> ClaimsetsNotFound(
         HttpContext httpContext,
-        IManagementEndpointAuthorizationService authorizationService
+        IManagementEndpointAuthorizationService authorizationService,
+        IOptions<FrontendAppSettings> options
     )
     {
-        IResult? authorizationFailure = await AuthorizeAsync(httpContext, authorizationService);
+        IResult? authorizationFailure = await AuthorizeAsync(httpContext, authorizationService, options);
         return authorizationFailure ?? NotFoundProblem();
     }
 
@@ -237,11 +242,12 @@ public class ManagementEndpointModule(
     internal static async Task<IResult> ViewClaimsets(
         HttpContext httpContext,
         IManagementEndpointAuthorizationService authorizationService,
+        IOptions<FrontendAppSettings> options,
         IApiService apiService,
         ILogger<ManagementEndpointModule> logger
     )
     {
-        IResult? authorizationFailure = await AuthorizeAsync(httpContext, authorizationService);
+        IResult? authorizationFailure = await AuthorizeAsync(httpContext, authorizationService, options);
         if (authorizationFailure is not null)
         {
             return authorizationFailure;
@@ -259,13 +265,14 @@ public class ManagementEndpointModule(
         string tenant,
         HttpContext httpContext,
         IManagementEndpointAuthorizationService authorizationService,
+        IOptions<FrontendAppSettings> options,
         IApiService apiService,
         ITenantValidator tenantValidator,
         ILogger<ManagementEndpointModule> logger
     )
     {
         // Authorization precedes tenant validation so an anonymous caller cannot probe tenant existence.
-        IResult? authorizationFailure = await AuthorizeAsync(httpContext, authorizationService);
+        IResult? authorizationFailure = await AuthorizeAsync(httpContext, authorizationService, options);
         if (authorizationFailure is not null)
         {
             return authorizationFailure;

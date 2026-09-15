@@ -139,6 +139,27 @@ public class Given_Requests_That_Exceed_The_Configured_Rate_Limit
     }
 
     [Test]
+    public void It_leaves_the_permitted_response_storable()
+    {
+        // The other half of the rule, through the same real pipeline: a 2xx keeps no Cache-Control
+        // from this middleware. HealthCheckEndpointModule's own /health handler sets none either,
+        // so a no-store appearing here could only have come from the security headers middleware
+        // over-reaching onto success responses - which is what would break etag revalidation on
+        // resource GETs.
+        _permittedResponse.Headers.CacheControl.Should().BeNull();
+    }
+
+    [Test]
+    public void It_marks_the_rejected_response_no_store()
+    {
+        // Exercised through the real pipeline rather than the middleware in isolation: the 429 body
+        // echoes the client-supplied correlation ID asserted above, so a shared cache in front of
+        // DMS must not be allowed to store it and replay it to a different caller.
+        _rejectedResponse.Headers.CacheControl.Should().NotBeNull();
+        _rejectedResponse.Headers.CacheControl!.NoStore.Should().BeTrue();
+    }
+
+    [Test]
     public void It_preserves_the_security_headers_on_the_rejected_response()
     {
         _rejectedResponse

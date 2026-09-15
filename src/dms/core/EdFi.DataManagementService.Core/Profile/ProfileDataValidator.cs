@@ -75,7 +75,9 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
         IEffectiveApiSchemaProvider effectiveApiSchemaProvider
     )
     {
-        string sanitizedProfileName = LoggingSanitizer.SanitizeForLogging(profileDefinition.ProfileName);
+        string sanitizedProfileName = LoggingSanitizer.SanitizeInternalValueForLogging(
+            profileDefinition.ProfileName
+        );
 
         using var scope = logger.BeginScope("Profile validation for '{ProfileName}'", sanitizedProfileName);
 
@@ -106,10 +108,16 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
         foreach (var failure in failures)
         {
             var logLevel = failure.Severity == ValidationSeverity.Error ? LogLevel.Error : LogLevel.Warning;
-            string sanitizedMessage = LoggingSanitizer.SanitizeForLogging(failure.Message);
-            string sanitizedFailureProfile = LoggingSanitizer.SanitizeForLogging(failure.ProfileName);
-            string sanitizedResource = LoggingSanitizer.SanitizeForLogging(failure.ResourceName ?? "N/A");
-            string sanitizedMember = LoggingSanitizer.SanitizeForLogging(failure.MemberName ?? "N/A");
+            string sanitizedMessage = LoggingSanitizer.SanitizeInternalValueForLogging(failure.Message);
+            string sanitizedFailureProfile = LoggingSanitizer.SanitizeInternalValueForLogging(
+                failure.ProfileName
+            );
+            string sanitizedResource = LoggingSanitizer.SanitizeInternalValueForLogging(
+                failure.ResourceName ?? "N/A"
+            );
+            string sanitizedMember = LoggingSanitizer.SanitizeInternalValueForLogging(
+                failure.MemberName ?? "N/A"
+            );
             logger.Log(
                 logLevel,
                 "Profile validation {Severity}: {Message} (Profile: {ProfileName}, Resource: {ResourceName}, Member: {MemberName})",

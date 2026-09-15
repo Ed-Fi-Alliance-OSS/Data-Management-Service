@@ -429,7 +429,7 @@ internal static class CdcContractText
 
     public static string SanitizeRequired(string? value)
     {
-        string sanitized = LoggingSanitizer.SanitizeForLogging(value);
+        string sanitized = LoggingSanitizer.SanitizeInternalValueForLogging(value);
         if (string.IsNullOrWhiteSpace(sanitized))
         {
             return EvidenceUnavailable;

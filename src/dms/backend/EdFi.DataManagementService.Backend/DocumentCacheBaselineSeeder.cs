@@ -192,7 +192,9 @@ internal sealed class DocumentCacheBaselineSeeder(
 
                 logger.LogInformation(
                     "DocumentCache baseline seeding for target {TargetKey} is relieving high-water backpressure with {ObservedWorkRows} observed work rows.",
-                    LoggingSanitizer.SanitizeForLogging(context.TargetContext.TargetKey.ToString()),
+                    LoggingSanitizer.SanitizeInternalValueForLogging(
+                        context.TargetContext.TargetKey.ToString()
+                    ),
                     highWater.ObservedWorkRows
                 );
 

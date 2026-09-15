@@ -27,9 +27,11 @@ internal class RequestResponseLoggingMiddleware(ILogger _logger) : IPipelineStep
         var stopwatch = Stopwatch.StartNew();
         // RequestInfo.MethodName resolves the real verb of an unsupported-method request. It is
         // client-supplied on that path, so it must keep flowing through LoggingSanitizer.
-        string method = LoggingSanitizer.SanitizeForLogging(requestInfo.MethodName);
-        string path = LoggingSanitizer.SanitizeForLogging(requestInfo.FrontendRequest.Path);
-        string sanitizedTraceId = LoggingSanitizer.SanitizeForLogging(traceId);
+        string method = LoggingSanitizer.SanitizeInternalValueForLogging(requestInfo.MethodName);
+        string path = LoggingSanitizer.SanitizeInternalValueForLogging(requestInfo.FrontendRequest.Path);
+        // The trace id takes the correlation-ID allowlist, not the stricter Method/Path one used
+        // two lines above. See LoggingSanitizer.SanitizeCorrelationId for the rule.
+        string sanitizedTraceId = LoggingSanitizer.SanitizeCorrelationId(traceId);
 
         var scopeValues = new Dictionary<string, object>
         {

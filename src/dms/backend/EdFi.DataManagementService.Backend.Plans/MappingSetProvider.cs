@@ -54,11 +54,11 @@ public sealed class MappingSetProvider : IMappingSetProvider
     // Sanitized single-line format for Exception.Message and log entries.
     // Distinct from BuildKeyDiagnostics which produces structured unsanitized entries.
     private static string FormatKeyForMessage(MappingSetKey key) =>
-        $"EffectiveSchemaHash '{SanitizeForLog(key.EffectiveSchemaHash)}', "
-        + $"Dialect '{key.Dialect}', RelationalMappingVersion '{SanitizeForLog(key.RelationalMappingVersion)}'";
+        $"EffectiveSchemaHash '{SanitizeInternalValueForLog(key.EffectiveSchemaHash)}', "
+        + $"Dialect '{key.Dialect}', RelationalMappingVersion '{SanitizeInternalValueForLog(key.RelationalMappingVersion)}'";
 
     // Diagnostics are intentionally unsanitized: they carry verbatim key fields for
-    // operator troubleshooting in the HTTP response body. Log messages use SanitizeForLog.
+    // operator troubleshooting in the HTTP response body. Log messages use SanitizeInternalValueForLog.
     private static string[] BuildKeyDiagnostics(MappingSetKey key) =>
         [
             $"EffectiveSchemaHash: {key.EffectiveSchemaHash}",
@@ -76,9 +76,9 @@ public sealed class MappingSetProvider : IMappingSetProvider
             {
                 _logger.LogInformation(
                     "Loaded mapping pack for EffectiveSchemaHash {EffectiveSchemaHash}, Dialect {Dialect}, RelationalMappingVersion {RelationalMappingVersion}",
-                    SanitizeForLog(key.EffectiveSchemaHash),
+                    SanitizeInternalValueForLog(key.EffectiveSchemaHash),
                     key.Dialect,
-                    SanitizeForLog(key.RelationalMappingVersion)
+                    SanitizeInternalValueForLog(key.RelationalMappingVersion)
                 );
 
                 try
@@ -104,9 +104,9 @@ public sealed class MappingSetProvider : IMappingSetProvider
             {
                 _logger.LogWarning(
                     "Mapping pack required but not found for EffectiveSchemaHash {EffectiveSchemaHash}, Dialect {Dialect}, RelationalMappingVersion {RelationalMappingVersion}",
-                    SanitizeForLog(key.EffectiveSchemaHash),
+                    SanitizeInternalValueForLog(key.EffectiveSchemaHash),
                     key.Dialect,
-                    SanitizeForLog(key.RelationalMappingVersion)
+                    SanitizeInternalValueForLog(key.RelationalMappingVersion)
                 );
 
                 throw new MappingSetUnavailableException(
@@ -123,7 +123,7 @@ public sealed class MappingSetProvider : IMappingSetProvider
             {
                 _logger.LogWarning(
                     "Mapping pack not found and runtime compilation fallback is disabled for EffectiveSchemaHash {EffectiveSchemaHash}, Dialect {Dialect}",
-                    SanitizeForLog(key.EffectiveSchemaHash),
+                    SanitizeInternalValueForLog(key.EffectiveSchemaHash),
                     key.Dialect
                 );
 
@@ -140,7 +140,7 @@ public sealed class MappingSetProvider : IMappingSetProvider
 
             _logger.LogInformation(
                 "Mapping pack not found for EffectiveSchemaHash {EffectiveSchemaHash}, Dialect {Dialect}; falling back to runtime compilation",
-                SanitizeForLog(key.EffectiveSchemaHash),
+                SanitizeInternalValueForLog(key.EffectiveSchemaHash),
                 key.Dialect
             );
         }
@@ -164,9 +164,9 @@ public sealed class MappingSetProvider : IMappingSetProvider
 
         _logger.LogInformation(
             "Compiling runtime mapping set for EffectiveSchemaHash {EffectiveSchemaHash}, Dialect {Dialect}, RelationalMappingVersion {RelationalMappingVersion}",
-            SanitizeForLog(key.EffectiveSchemaHash),
+            SanitizeInternalValueForLog(key.EffectiveSchemaHash),
             key.Dialect,
-            SanitizeForLog(key.RelationalMappingVersion)
+            SanitizeInternalValueForLog(key.RelationalMappingVersion)
         );
 
         try
@@ -175,9 +175,9 @@ public sealed class MappingSetProvider : IMappingSetProvider
 
             _logger.LogInformation(
                 "Runtime mapping set compiled successfully for EffectiveSchemaHash {EffectiveSchemaHash}, Dialect {Dialect}, RelationalMappingVersion {RelationalMappingVersion}",
-                SanitizeForLog(key.EffectiveSchemaHash),
+                SanitizeInternalValueForLog(key.EffectiveSchemaHash),
                 key.Dialect,
-                SanitizeForLog(key.RelationalMappingVersion)
+                SanitizeInternalValueForLog(key.RelationalMappingVersion)
             );
 
             return result;

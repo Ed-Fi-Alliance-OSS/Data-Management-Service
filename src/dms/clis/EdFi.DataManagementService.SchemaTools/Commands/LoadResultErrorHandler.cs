@@ -26,7 +26,7 @@ public static class LoadResultErrorHandler
             case ApiSchemaFileLoadResult.FileNotFoundResult failure:
                 logger.LogError(
                     "File not found: {FilePath}",
-                    LoggingSanitizer.SanitizeForLogging(failure.FilePath)
+                    LoggingSanitizer.SanitizeInternalValueForLogging(failure.FilePath)
                 );
                 Console.Error.WriteLine(
                     $"Error: File not found: {LoggingSanitizer.SanitizeForConsole(failure.FilePath)}"
@@ -36,8 +36,8 @@ public static class LoadResultErrorHandler
             case ApiSchemaFileLoadResult.FileReadErrorResult failure:
                 logger.LogError(
                     "Failed to read file {FilePath}: {Error}",
-                    LoggingSanitizer.SanitizeForLogging(failure.FilePath),
-                    LoggingSanitizer.SanitizeForLogging(failure.ErrorMessage)
+                    LoggingSanitizer.SanitizeInternalValueForLogging(failure.FilePath),
+                    LoggingSanitizer.SanitizeInternalValueForLogging(failure.ErrorMessage)
                 );
                 Console.Error.WriteLine(
                     $"Error: Failed to read file {LoggingSanitizer.SanitizeForConsole(failure.FilePath)}: {LoggingSanitizer.SanitizeForConsole(failure.ErrorMessage)}"
@@ -47,8 +47,8 @@ public static class LoadResultErrorHandler
             case ApiSchemaFileLoadResult.InvalidJsonResult failure:
                 logger.LogError(
                     "Invalid JSON in file {FilePath}: {Error}",
-                    LoggingSanitizer.SanitizeForLogging(failure.FilePath),
-                    LoggingSanitizer.SanitizeForLogging(failure.ErrorMessage)
+                    LoggingSanitizer.SanitizeInternalValueForLogging(failure.FilePath),
+                    LoggingSanitizer.SanitizeInternalValueForLogging(failure.ErrorMessage)
                 );
                 Console.Error.WriteLine(
                     $"Error: Invalid JSON in file {LoggingSanitizer.SanitizeForConsole(failure.FilePath)}: {LoggingSanitizer.SanitizeForConsole(failure.ErrorMessage)}"
@@ -68,7 +68,7 @@ public static class LoadResultErrorHandler
                 };
                 logger.LogError(
                     "Schema normalization failed: {Message}",
-                    LoggingSanitizer.SanitizeForLogging(message)
+                    LoggingSanitizer.SanitizeInternalValueForLogging(message)
                 );
                 Console.Error.WriteLine($"Error: {LoggingSanitizer.SanitizeForConsole(message)}");
                 return 1;

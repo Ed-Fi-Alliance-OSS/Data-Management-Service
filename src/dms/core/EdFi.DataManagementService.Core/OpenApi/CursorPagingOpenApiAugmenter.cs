@@ -717,7 +717,7 @@ internal static class CursorPagingOpenApiAugmenter
     /// </summary>
     private static string PathDiagnostic(string pathKey) => $"{PathsPath}['{Sanitize(pathKey)}']";
 
-    private static string Sanitize(string value) => LoggingSanitizer.SanitizeForLogging(value);
+    private static string Sanitize(string value) => LoggingSanitizer.SanitizeInternalValueForLogging(value);
 
     private static FrozenSet<string> BuildChangeVersionParameterNames()
     {

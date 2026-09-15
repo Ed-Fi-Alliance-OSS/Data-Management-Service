@@ -8,6 +8,7 @@ using System.Text;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Response;
+using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Core.OAuth;
@@ -18,6 +19,55 @@ namespace EdFi.DataManagementService.Core.OAuth;
 /// <param name="logger"></param>
 public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
 {
+    /// <summary>
+    /// The client-facing <c>detail</c> of every 502 this class produces, used by both the
+    /// upstream-error branch and the <c>catch</c> branch so that the two are indistinguishable
+    /// from outside.
+    /// </summary>
+    /// <remarks>
+    /// <c>/oauth/token</c> is unauthenticated, so anything placed here is readable by any caller
+    /// that can reach the endpoint. The upstream identity service's own response body must
+    /// therefore never appear in it: its wording, error taxonomy, internal hostnames, realm names
+    /// and any stack trace it carries are all disclosure, and its length is bounded only by what
+    /// the upstream chooses to send. The body's <c>correlationId</c> is the supported way to
+    /// reach the detail - it appears verbatim on the log entry that does record the upstream
+    /// content, which is what FR-LOG-6 guarantees.
+    /// </remarks>
+    private const string GatewayErrorDetail =
+        "The upstream identity service did not return a usable response. Contact your system "
+        + "administrator with the correlationId from this response, which identifies the "
+        + "corresponding server log entry.";
+
+    /// <summary>
+    /// The client-facing <c>detail</c> of a 401 whose upstream body carried no
+    /// <c>error_description</c>, replacing what used to be the raw upstream body. Same disclosure
+    /// argument as <see cref="GatewayErrorDetail"/>; the two parsed OAuth fields are passed
+    /// through when present because they are part of the OAuth 2.0 error contract the client is
+    /// entitled to, but an arbitrary body that merely failed to contain them is not.
+    /// </summary>
+    private const string UnauthorizedFallbackDetail =
+        "The upstream identity service rejected the request credentials.";
+
+    /// <summary>
+    /// Upper bound, in characters, on how much of an upstream error body reaches the log.
+    /// </summary>
+    /// <remarks>
+    /// The body is attacker-influenceable in size as well as in content - a caller that can
+    /// provoke a large upstream error can otherwise write an unbounded amount of text into the
+    /// log on every unauthenticated request. 2048 was chosen as roughly an order of magnitude
+    /// above a realistic OAuth error payload (an <c>error</c>/<c>error_description</c> pair runs
+    /// to a couple of hundred characters, and a verbose identity provider's stack-trace-bearing
+    /// body to a few hundred more), so a genuine diagnostic arrives intact while a padded one is
+    /// cut off well before it can dominate a log line.
+    /// </remarks>
+    private const int MaxLoggedUpstreamContentLength = 2048;
+
+    /// <summary>
+    /// Appended when <see cref="MaxLoggedUpstreamContentLength"/> is applied, so an operator can
+    /// tell a short upstream body from a truncated one.
+    /// </summary>
+    private const string LoggedContentTruncationSuffix = "...[truncated]";
+
     public async Task<HttpResponseMessage> GetAccessTokenAsync(
         IHttpClientWrapper httpClient,
         string grantType,
@@ -68,12 +118,12 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
                     var content = await response.Content.ReadAsStringAsync();
                     logger.LogWarning(
                         "Error from upstream identity service - {TraceId} - {Content}",
-                        traceId,
-                        content
+                        traceId.Value,
+                        SanitizeAndBoundForLogging(content)
                     );
                     return GenerateProblemDetailResponse(
                         HttpStatusCode.BadGateway,
-                        FailureResponse.ForGatewayError(traceId, content)
+                        FailureResponse.ForGatewayError(traceId, GatewayErrorDetail)
                     );
             }
         }
@@ -82,7 +132,7 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
             logger.LogError(ex, "Error from upstream identity service - {TraceId}", traceId.Value);
             return GenerateProblemDetailResponse(
                 HttpStatusCode.BadGateway,
-                FailureResponse.ForGatewayError(traceId)
+                FailureResponse.ForGatewayError(traceId, GatewayErrorDetail)
             );
         }
 
@@ -95,7 +145,10 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
         {
             var body = await response.Content.ReadAsStringAsync();
             var error = "Unauthorized";
-            var errorDescription = body;
+            // Not `body`: the fallback used to hand the raw upstream body to the caller whenever
+            // it parsed as a JSON object but happened not to carry an `error_description`, which
+            // is the same unauthenticated disclosure as the 502 branch above.
+            var errorDescription = UnauthorizedFallbackDetail;
 
             JsonNode? parsed = JsonNode.Parse(body);
             if (parsed is not null)
@@ -115,6 +168,23 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
                 HttpStatusCode.Unauthorized,
                 FailureResponse.ForUnauthorized(traceId, error, errorDescription)
             );
+        }
+
+        // Sanitize first and truncate second. The order is observable: an upstream body padded
+        // with control characters would, under truncate-then-sanitize, spend the whole budget on
+        // characters the sanitizer then removes, so the diagnostic content that follows the
+        // padding would never reach the log even though the logged value came in far under the
+        // cap.
+        static string SanitizeAndBoundForLogging(string? content)
+        {
+            string sanitized = LoggingSanitizer.SanitizeFreeTextForLogging(content);
+
+            return sanitized.Length <= MaxLoggedUpstreamContentLength
+                ? sanitized
+                : string.Concat(
+                    sanitized.AsSpan(0, MaxLoggedUpstreamContentLength),
+                    LoggedContentTruncationSuffix
+                );
         }
 
         static HttpResponseMessage GenerateProblemDetailResponse(

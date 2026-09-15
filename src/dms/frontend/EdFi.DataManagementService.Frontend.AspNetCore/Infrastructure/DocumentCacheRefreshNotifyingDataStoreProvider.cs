@@ -115,7 +115,7 @@ internal sealed class DocumentCacheRefreshNotifyingDataStoreProvider : IDataStor
             _logger.LogWarning(
                 exception,
                 "DocumentCache target refresh notification failed after data store metadata refresh for tenant {Tenant}. Request data-store refresh will continue.",
-                LoggingSanitizer.SanitizeForLogging(tenant ?? "(default)")
+                LoggingSanitizer.SanitizeInternalValueForLogging(tenant ?? "(default)")
             );
         }
     }

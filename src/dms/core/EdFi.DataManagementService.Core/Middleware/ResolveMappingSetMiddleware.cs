@@ -40,7 +40,7 @@ internal class ResolveMappingSetMiddleware(
             logger.LogError(
                 "DatabaseFingerprint was not resolved before mapping set resolution. "
                     + "ValidateDatabaseFingerprintMiddleware must run before ResolveMappingSetMiddleware. TraceId: {TraceId}",
-                LoggingSanitizer.SanitizeForLogging(requestInfo.FrontendRequest.TraceId.Value)
+                LoggingSanitizer.SanitizeCorrelationId(requestInfo.FrontendRequest.TraceId.Value)
             );
 
             requestInfo.FrontendResponse = new FrontendResponse(
@@ -67,7 +67,7 @@ internal class ResolveMappingSetMiddleware(
                 "No runtime mapping set compiler is registered. "
                     + "Ensure a relational backend (PostgreSQL or MSSQL) is configured. "
                     + "TraceId: {TraceId}",
-                LoggingSanitizer.SanitizeForLogging(requestInfo.FrontendRequest.TraceId.Value)
+                LoggingSanitizer.SanitizeCorrelationId(requestInfo.FrontendRequest.TraceId.Value)
             );
 
             requestInfo.FrontendResponse = new FrontendResponse(
@@ -110,10 +110,10 @@ internal class ResolveMappingSetMiddleware(
                 "Mapping set unavailable for EffectiveSchemaHash {EffectiveSchemaHash}, "
                     + "Dialect {Dialect}, RelationalMappingVersion {RelationalMappingVersion}. "
                     + "TraceId: {TraceId}",
-                LoggingSanitizer.SanitizeForLogging(key.EffectiveSchemaHash),
+                LoggingSanitizer.SanitizeInternalValueForLogging(key.EffectiveSchemaHash),
                 key.Dialect,
-                LoggingSanitizer.SanitizeForLogging(key.RelationalMappingVersion),
-                LoggingSanitizer.SanitizeForLogging(requestInfo.FrontendRequest.TraceId.Value)
+                LoggingSanitizer.SanitizeInternalValueForLogging(key.RelationalMappingVersion),
+                LoggingSanitizer.SanitizeCorrelationId(requestInfo.FrontendRequest.TraceId.Value)
             );
 
             requestInfo.FrontendResponse = new FrontendResponse(
@@ -135,8 +135,8 @@ internal class ResolveMappingSetMiddleware(
                 ex,
                 "Unexpected error resolving mapping set for EffectiveSchemaHash {EffectiveSchemaHash}. "
                     + "TraceId: {TraceId}",
-                LoggingSanitizer.SanitizeForLogging(key.EffectiveSchemaHash),
-                LoggingSanitizer.SanitizeForLogging(requestInfo.FrontendRequest.TraceId.Value)
+                LoggingSanitizer.SanitizeInternalValueForLogging(key.EffectiveSchemaHash),
+                LoggingSanitizer.SanitizeCorrelationId(requestInfo.FrontendRequest.TraceId.Value)
             );
 
             requestInfo.FrontendResponse = new FrontendResponse(
