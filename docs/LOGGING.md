@@ -262,24 +262,60 @@ Normalization is applied identically everywhere a correlation ID appears: every
 request log event, and the `correlationId` (or `traceId`) of every error response
 body that carries a correlation ID, whatever the status code and whichever layer
 produced it — including the catch-all `404` for an unmatched route, the `429`
-rate-limit rejection, and the `500` written when an unhandled exception escapes
-the pipeline. The ID a client reads from such a response is therefore always the
-ID to search for in the logs. The value really is normalized once per request:
-the request-logging middleware is registered ahead of routing, the rate limiter
-and every endpoint, so it is the first component to read the correlation ID, and
-the result it computes is cached on `HttpContext.Items` for every later use. No
-individual response path re-derives it, so none can drift from the logged value.
+rate-limit rejection, the `500` written when an unhandled exception escapes the
+pipeline, and the `500` a host short-circuited by invalid configuration answers
+every request with. The ID a client reads from such a response is therefore
+always the ID to search for in the logs. The value really is normalized once per
+request: the request-logging middleware is registered ahead of routing, the rate
+limiter and every endpoint, so it is the first component to read the correlation
+ID, and the result it computes is cached on `HttpContext.Items` for every later
+use. No individual response path re-derives it, so none can drift from the
+logged value.
 (A call site that ever ran ahead of that middleware would compute and cache the
 value itself; normalization is pure and idempotent, so the result would be the
 same.)
 
 Not every error response carries one. The `413` answer to an oversized request
 body writes no response body at all, and the management, metadata and XSD
-metadata endpoints answer an unrecognized path with a `404` whose body is either
-absent or a bare message carrying no `correlationId` field. Those
-requests are still logged with their normalized correlation ID; there is simply
-no body for it to appear in, so a client correlating one of them must use the
-request log or the configured correlation header it sent.
+metadata endpoints answer an unrecognized path with a `404` that carries no
+`correlationId`. What those three families *do* return differs, and the
+differences matter to whatever is parsing the response:
+
+* **Management endpoints.** An unknown tenant is answered by
+  `ManagementEndpointModule.NotFoundProblem()` with a complete problem-details
+  envelope — `detail`, `type`, `title` and `status` — from which only
+  `correlationId` is missing. That is the most confusing of the three for a
+  client parser: the parse succeeds and the read yields `undefined` rather than
+  failing, so the absence looks like a null correlation ID rather than like a
+  different response shape. A `404` reached instead through `ToResult`, when the
+  core layer answers a management request with that status, is `Results.NotFound()`
+  with no value: no body at all.
+* **Metadata endpoints.** An unmatched path or an unrecognized section is
+  answered with the bare text `Invalid resource path`, which is not JSON and has
+  no fields. A request for an OpenAPI specification that does not exist is
+  answered with a `404` and no body.
+* **XSD metadata endpoints.** An unrecognized section, or a request for an XSD
+  file that does not exist, is answered with the same bare `Invalid resource
+  path` message. An invalid tenant is answered with the same four-member
+  problem-details envelope the management endpoints use, likewise without
+  `correlationId`.
+
+Every one of those requests is still logged with its normalized correlation ID,
+so the value exists — it is simply not in the response. Correlating one of them
+from the client side therefore means searching the request log, and the header
+value the client sent is a dependable search key **only if normalization left it
+unchanged**. That is precisely what cannot be assumed on these paths, because
+they return no normalized value to compare the sent one against: if the value
+contained anything outside the allowlist, or exceeded `CorrelationIdMaxLength`,
+the logs hold the normalized form and a search for what was sent finds nothing.
+The fallback that always works is to correlate on timestamp together with the
+request method and path, all of which every request log event carries.
+
+The `CorrelationIdModified` notice described below (`1228003`) does not close
+this gap. It records *that* a client-supplied value was altered, which lets an
+operator recognize the situation, but it deliberately carries no form of the
+original value — so it does not make what the client believes it sent
+searchable.
 
 A client-supplied header whose value normalizes to nothing but whitespace — one
 made up only of removed characters, such as a lone horizontal tab or a lone
