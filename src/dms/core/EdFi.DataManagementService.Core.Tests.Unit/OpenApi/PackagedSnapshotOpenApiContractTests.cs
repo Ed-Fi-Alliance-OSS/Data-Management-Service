@@ -5,8 +5,11 @@
 
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
+using EdFi.DataManagementService.Core.OpenApi;
+using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Core.Tests.Unit.ApiSchema;
 using FluentAssertions;
+using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 using static EdFi.DataManagementService.Core.Tests.Unit.OpenApi.OpenApiSnapshotContractAssertions;
 
@@ -643,4 +646,190 @@ public class Given_the_served_DataStandard61_documents : PackagedSnapshotOpenApi
     /// <inheritdoc />
     protected override ApiSchemaDocumentNodes LoadApiSchemaNodes() =>
         new(PackagedApiSchemaContract.LoadPackagedRootNode("DataStandard61ApiSchemaPackageRoot"), []);
+}
+
+/// <summary>
+/// The snapshot contract in a profile document derived from the real Data Standard 5.2 package.
+/// </summary>
+/// <remarks>
+/// <para>
+/// The filter fixtures assert the filter's behavior on a hand-built specification; this asserts the
+/// result on the document DMS actually assembles, where the paths, components, and schema graph are
+/// whatever the package published rather than whatever a fixture found convenient.
+/// </para>
+/// <para>
+/// One profile covers a resource for both reading and writing and another for reading only, so both
+/// halves of the contract and the boundary between them are exercised in a single document.
+/// </para>
+/// </remarks>
+[TestFixture]
+public class Given_a_profile_document_derived_from_the_DataStandard52_package
+{
+    private const string ReadWriteResource = "School";
+    private const string ReadOnlyResource = "Student";
+
+    /// <summary>
+    /// A resource the profile does not cover, used to prove filtering still removes what it should.
+    /// </summary>
+    private const string ExcludedResourcePath = "/ed-fi/staffs";
+
+    private JsonNode _profileDocument = null!;
+    private IReadOnlyList<Operation> _operations = null!;
+
+    [OneTimeSetUp]
+    public void OneTimeSetUp()
+    {
+        ApiSchemaDocumentNodes nodes = new(
+            PackagedApiSchemaContract.LoadPackagedRootNode("DataStandard52ApiSchemaPackageRoot"),
+            []
+        );
+
+        // Assembled the way ApiService assembles the base specification it hands to profile filtering.
+        JsonNode assembled = new OpenApiDocument(NullLogger.Instance).CreateDocument(
+            nodes,
+            OpenApiDocument.OpenApiDocumentType.Resource
+        );
+
+        _profileDocument = new ProfileOpenApiSpecificationFilter(
+            NullLogger.Instance
+        ).CreateProfileSpecification(assembled, CreateProfileDefinition());
+
+        _operations = EnumerateOperations(_profileDocument);
+    }
+
+    [Test]
+    public void It_serves_the_snapshot_parameter_on_every_surviving_read()
+    {
+        foreach (string pathKey in ProfiledReadPaths())
+        {
+            OperationAt(pathKey, "get")
+                .ReferencesUseSnapshotParameter.Should()
+                .BeTrue("{0} survives the profile as a read", pathKey);
+        }
+    }
+
+    [Test]
+    public void It_serves_the_snapshot_not_found_response_on_every_surviving_read()
+    {
+        foreach (string pathKey in ProfiledReadPaths())
+        {
+            OperationAt(pathKey, "get")
+                .ReferencesSnapshotNotFound.Should()
+                .BeTrue("{0} survives the profile as a read", pathKey);
+        }
+    }
+
+    [Test]
+    public void It_serves_the_snapshot_405_on_every_surviving_mutation()
+    {
+        foreach (
+            (string pathKey, string method) in new[]
+            {
+                ("/ed-fi/schools", "post"),
+                ("/ed-fi/schools/{id}", "put"),
+                ("/ed-fi/schools/{id}", "delete"),
+            }
+        )
+        {
+            OperationAt(pathKey, method)
+                .ReferencesSnapshotMethodNotAllowed.Should()
+                .BeTrue("{0} {1} survives the profile as a mutation", method, pathKey);
+        }
+    }
+
+    [Test]
+    public void It_removes_the_mutations_the_read_only_resource_does_not_allow()
+    {
+        _operations
+            .Where(operation =>
+                operation.PathKey.StartsWith("/ed-fi/students", StringComparison.Ordinal)
+                && operation.Method is "post" or "put" or "delete"
+            )
+            .Should()
+            .BeEmpty("the profile covers {0} for reading only", ReadOnlyResource);
+    }
+
+    [Test]
+    public void It_retains_the_components_the_surviving_operations_resolve_to()
+    {
+        Component(_profileDocument, "parameters", UseSnapshotParameterName).Should().NotBeNull();
+        Component(_profileDocument, "responses", SnapshotNotFoundResponseName).Should().NotBeNull();
+        Component(_profileDocument, "responses", SnapshotMethodNotAllowedResponseName).Should().NotBeNull();
+        Component(_profileDocument, "schemas", ProblemDetailsSchemaName).Should().NotBeNull();
+    }
+
+    [Test]
+    public void It_produces_a_self_resolving_profile_document()
+    {
+        AssertSelfResolves(_profileDocument, "Data Standard 5.2 profile");
+    }
+
+    [Test]
+    public void It_does_not_carry_the_standalone_change_queries_path()
+    {
+        _operations
+            .Should()
+            .NotContain(
+                operation => operation.PathKind == OperationPathKind.AvailableChangeVersions,
+                "the standalone Change Queries document is unprofiled and is served separately"
+            );
+    }
+
+    [Test]
+    public void It_still_removes_the_resources_the_profile_excludes()
+    {
+        // The counterweight to the response-reachability change in the filter. That change preserves
+        // schemas a retained response points at, and this proves it did not widen a real profile
+        // document: a resource outside the profile keeps losing its paths and its schema graph.
+        _operations
+            .Select(operation => operation.PathKey)
+            .Should()
+            .NotContain(pathKey => pathKey.StartsWith(ExcludedResourcePath, StringComparison.Ordinal));
+
+        Component(_profileDocument, "schemas", "EdFi_Staff")
+            .Should()
+            .BeNull("no surviving path or retained response reaches the excluded resource's schema");
+        Component(_profileDocument, "schemas", "EdFi_Staff_readable").Should().BeNull();
+        Component(_profileDocument, "schemas", "EdFi_Staff_writable").Should().BeNull();
+    }
+
+    /// <summary>
+    /// The four snapshot-eligible reads of each profiled resource, enumerated by path so a document that
+    /// preserved the tracked-change feeds without the contract fails here rather than passing on the
+    /// live reads alone.
+    /// </summary>
+    private static IEnumerable<string> ProfiledReadPaths()
+    {
+        foreach (string collection in new[] { "/ed-fi/schools", "/ed-fi/students" })
+        {
+            yield return collection;
+            yield return $"{collection}/{{id}}";
+            yield return $"{collection}/deletes";
+            yield return $"{collection}/keyChanges";
+        }
+    }
+
+    private Operation OperationAt(string pathKey, string method) =>
+        _operations
+            .Should()
+            .ContainSingle(
+                operation => operation.PathKey == pathKey && operation.Method == method,
+                "the profile document must retain {0} {1}",
+                method,
+                pathKey
+            )
+            .Subject;
+
+    private static ProfileDefinition CreateProfileDefinition()
+    {
+        ContentTypeDefinition everything = new(MemberSelection.IncludeAll, [], [], [], []);
+
+        return new ProfileDefinition(
+            "SnapshotProfile",
+            [
+                new ResourceProfile(ReadWriteResource, null, everything, everything),
+                new ResourceProfile(ReadOnlyResource, null, everything, null),
+            ]
+        );
+    }
 }
