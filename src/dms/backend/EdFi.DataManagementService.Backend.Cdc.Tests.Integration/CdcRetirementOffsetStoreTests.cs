@@ -331,6 +331,7 @@ public sealed class Given_Cdc_Retirement_Offset_Store(CdcProvider provider)
         }
         var retirement = Retirement(fixture);
         var rejected = await retirement.RetireAsync(request, request.Binding.Generation, true, token);
+        await RecordRetirementResultAsync("retained-offsets", rejected);
         rejected.Succeeded.Should().BeFalse();
         (await fixture.Infrastructure.Bindings.ExactMatchBindingAsync(request.Binding, token))
             .Status.Should()
@@ -342,10 +343,33 @@ public sealed class Given_Cdc_Retirement_Offset_Store(CdcProvider provider)
         }
         var tombstoned = await CdcRetirementOffsetStoreProbe.ReadAsync(config, topic, token);
         var result = await retirement.RetireAsync(request, request.Binding.Generation, true, token);
+        await RecordRetirementResultAsync("tombstoned-offsets", result);
         result.Succeeded.Should().BeTrue(JsonSerializer.Serialize(result.Diagnostics));
         (await CdcRetirementOffsetStoreProbe.ReadAsync(config, topic, token))
             .Should()
             .BeEquivalentTo(tombstoned);
+    }
+
+    private static async Task RecordRetirementResultAsync(string phase, CdcBindingRetirementResult result)
+    {
+        // The published TRX omits assertion output. Retain only fixed phase names and diagnostic codes,
+        // never raw offset keys, values, artifact names, or transport messages.
+        string path = Path.Combine(
+            TestContext.CurrentContext.WorkDirectory,
+            "admission-evidence-retirement-" + Guid.NewGuid().ToString("N") + ".json"
+        );
+        await File.WriteAllTextAsync(
+            path,
+            JsonSerializer.Serialize(
+                new
+                {
+                    Phase = phase,
+                    result.Succeeded,
+                    Diagnostics = result.Diagnostics.Select(d => new { d.Component, d.Failure }),
+                }
+            )
+        );
+        TestContext.AddTestAttachment(path, "Sanitized offset retirement outcome");
     }
 
     private CdcBindingRetirement Retirement(CdcProviderAdmissionFixture fixture) =>
