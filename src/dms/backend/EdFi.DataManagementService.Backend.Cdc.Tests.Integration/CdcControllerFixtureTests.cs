@@ -55,6 +55,121 @@ public sealed class Given_CdcControllerFixtureHooks
             _hooks.InvokeAsync(boundary, _ => Task.FromResult(++effects), CancellationToken.None);
     }
 
+    [Test]
+    public async Task It_records_bounded_topic_policy_evidence_without_exposing_supplied_text()
+    {
+        CdcKafkaTopicEvidence topic = new(
+            "secret-topic",
+            new Dictionary<int, IReadOnlyList<int>> { [0] = new[] { 1 } },
+            new Dictionary<string, CdcKafkaConfigurationValue>
+            {
+                ["cleanup.policy"] = new("compact", true),
+                ["min.insync.replicas"] = new("1", true),
+                ["retention.ms"] = new("password=sentinel", true),
+                ["secret-key"] = new("secret-value", true),
+            }
+        );
+        var original = new CdcTransportResult<CdcKafkaTopicEvidence>.Observed(topic);
+        for (int index = 0; index < 129; index++)
+        {
+            (
+                await _hooks.InvokeAsync(
+                    CdcControllerBoundary.Observation,
+                    _ => Task.FromResult(original),
+                    CancellationToken.None
+                )
+            )
+                .Should()
+                .BeSameAs(original);
+        }
+        await _hooks.InvokeAsync(
+            CdcControllerBoundary.Observation,
+            _ => Task.FromResult(new CdcTransportResult<CdcKafkaTopicEvidence>.Absent()),
+            CancellationToken.None
+        );
+        await _hooks.InvokeAsync(
+            CdcControllerBoundary.Observation,
+            _ =>
+                Task.FromResult(
+                    new CdcTransportResult<CdcKafkaTopicEvidence>.Unavailable(
+                        new(CdcDeploymentComponent.Kafka, CdcDeploymentFailure.Unavailable)
+                    )
+                ),
+            CancellationToken.None
+        );
+        _hooks.KafkaTopics.Should().HaveCount(128);
+        string text = System.Text.Json.JsonSerializer.Serialize(_hooks.KafkaTopics);
+        text.Should().NotContain("secret").And.NotContain("sentinel");
+        using var document = System.Text.Json.JsonDocument.Parse(text);
+        document.RootElement[126].GetProperty("State").GetString().Should().Be("Absent");
+        document.RootElement[127].GetProperty("State").GetString().Should().Be("Unavailable");
+        var configuration = document.RootElement[0].GetProperty("Configuration");
+        configuration[0].GetProperty("Compact").GetBoolean().Should().BeTrue();
+        configuration[1].GetProperty("Number").GetInt64().Should().Be(1);
+        configuration[1].GetProperty("IsTopicOverride").GetBoolean().Should().BeTrue();
+        configuration[4].GetProperty("Numeric").GetBoolean().Should().BeFalse();
+    }
+
+    [TestCase("-1", true, true, true, false)]
+    [TestCase("-2", true, true, false, false)]
+    [TestCase("5", true, false, false, false)]
+    [TestCase("NaN", false, false, false, false)]
+    [TestCase("9223372036854775808", true, false, false, true)]
+    public async Task It_preserves_the_consumed_metrics_response_and_records_only_numeric_classification(
+        string value,
+        bool finite,
+        bool negative,
+        bool uninitialized,
+        bool overflow
+    )
+    {
+        string body =
+            "# TYPE edfi_cdc_source_lag_current_milliseconds gauge\n"
+            + "edfi_cdc_source_lag_current_milliseconds{connector=\"secret-source\",provider=\"postgres\"} "
+            + value
+            + "\n";
+        using var evidence = new CdcControllerFixtureMetrics(new MetricsResponse(body));
+        using var client = new HttpClient(evidence);
+        (await client.GetStringAsync("http://fixture/metrics")).Should().Be(body);
+        string text = System.Text.Json.JsonSerializer.Serialize(evidence.Observations);
+        text.Should().NotContain("secret-source").And.NotContain("postgres");
+        using var document = System.Text.Json.JsonDocument.Parse(text);
+        var observation = document.RootElement[0];
+        observation.GetProperty("GaugeTypeCount").GetInt32().Should().Be(1);
+        observation.GetProperty("SampleCount").GetInt32().Should().Be(1);
+        var sample = observation.GetProperty("Samples")[0];
+        sample.GetProperty("Finite").GetBoolean().Should().Be(finite);
+        sample.GetProperty("Negative").GetBoolean().Should().Be(negative);
+        sample.GetProperty("Uninitialized").GetBoolean().Should().Be(uninitialized);
+        sample.GetProperty("Overflow").GetBoolean().Should().Be(overflow);
+    }
+
+    [Test]
+    public void It_bounds_metric_evidence_and_distinguishes_an_absent_current_sample()
+    {
+        using var evidence = new CdcControllerFixtureMetrics();
+        for (int index = 0; index < 129; index++)
+        {
+            evidence.Record("private-unrelated-metric{source=\"secret\"} 0");
+        }
+        evidence.Observations.Should().HaveCount(128);
+        string text = System.Text.Json.JsonSerializer.Serialize(evidence.Observations);
+        text.Should().NotContain("private").And.NotContain("secret");
+        using var document = System.Text.Json.JsonDocument.Parse(text);
+        document.RootElement[0].GetProperty("SampleCount").GetInt32().Should().Be(0);
+    }
+
+    private sealed class MetricsResponse(string body) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken
+        ) =>
+            Task.FromResult(
+                new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new StringContent(body) }
+            );
+    }
+
     private static IEnumerable<CdcControllerBoundary> Boundaries() => Enum.GetValues<CdcControllerBoundary>();
 
     [Test]
