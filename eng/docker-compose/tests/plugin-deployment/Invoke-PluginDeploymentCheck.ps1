@@ -49,10 +49,6 @@
     The version to build the image with. Deliberately unlike the committed assembly versions, so
     that "the frontend did not take the version the build was given" is a distinguishable claim.
 
-.PARAMETER SkipImageBuild
-    Reuses an already-built local/ed-fi-api. Only for iterating on the deployment phases; a real run
-    builds.
-
 .PARAMETER WorkspaceRoot
     Where the scratch feed, the published plugin and the packed package are written. Defaults to a
     directory under .ai-work, which is excluded from the repository. Everything this script deletes
@@ -64,9 +60,6 @@
 param(
     [string]
     $DmsVersion = "9.9.9-pre.0.7",
-
-    [switch]
-    $SkipImageBuild,
 
     [string]
     $WorkspaceRoot
@@ -200,6 +193,12 @@ function New-DeploymentEnvironmentFile {
 
     $lines.Add("")
     $lines.Add("# Per-run values for this deployment.")
+
+    # The image Phase 1 built from the current source and read the assembly versions out of.
+    # local-dms.yml already reads this setting and falls back to ed-fi-api-local, which Compose builds
+    # only when absent and otherwise reuses from whenever it was last built. Pinning here is what makes
+    # the stamping proof and the deployment proof statements about one artifact rather than two.
+    $lines.Add("DMS_DOCKER_IMAGE=local/ed-fi-api")
 
     foreach ($key in $Values.Keys) {
         $lines.Add("$key=$($Values[$key])")
@@ -447,16 +446,17 @@ function Invoke-ImageVersionProof {
         ($DmsVersion -notlike "$dmsDeclared*") `
         "the build version '$DmsVersion' differs from the committed DMS assembly version '$dmsDeclared', so the two are distinguishable"
 
-    if (-not $SkipImageBuild) {
-        Push-Location $repositoryRoot
-        try {
-            Invoke-Checked -What "build-dms.ps1 DockerBuild" -Command {
-                & "$repositoryRoot/build-dms.ps1" DockerBuild -DMSVersion $DmsVersion
-            }
+    # Always, with no way to skip it. The image this probes is also the image the deployments run,
+    # so a switch that reused an earlier build would put a stale artifact under every assertion
+    # below. The build is cached, so it costs little when nothing changed.
+    Push-Location $repositoryRoot
+    try {
+        Invoke-Checked -What "build-dms.ps1 DockerBuild" -Command {
+            & "$repositoryRoot/build-dms.ps1" DockerBuild -DMSVersion $DmsVersion
         }
-        finally {
-            Pop-Location
-        }
+    }
+    finally {
+        Pop-Location
     }
 
     # SetDMSAssemblyInfo is deliberately not called from DockerBuild, and this is the assertion that
@@ -513,12 +513,27 @@ function Invoke-ImageVersionProof {
         (-not [string]::IsNullOrWhiteSpace($probedImageId)) `
         "the assemblies above were read out of image local/ed-fi-api $probedImageId"
 
+    # The tag local-dms.yml would select on its own, recorded rather than used. Compose builds it
+    # only when it is absent and silently reuses it when it is not, so a machine that has run this
+    # before carries one built from whatever the source said then. The deployments below are pinned
+    # away from it through DMS_DOCKER_IMAGE, and this is the value that makes the pin checkable: if
+    # it is present and differs from the probe, a deployment matching the probe cannot have taken it.
+    $defaultTagImageId = Get-ImageId "ed-fi-api-local"
+
+    if ([string]::IsNullOrWhiteSpace($defaultTagImageId)) {
+        Write-Detail "note: ed-fi-api-local is absent on this host, so there is no stale tag to avoid"
+    }
+    else {
+        Write-Detail "note: ed-fi-api-local is present at $defaultTagImageId and is not what the deployments will run"
+    }
+
     $script:results.imageVersionProof = [ordered]@{
         dmsVersionArgument       = $DmsVersion
         committedDmsVersion      = $dmsDeclared
         committedContractVersion = $pluginsDeclared
         probedImageReference     = "local/ed-fi-api"
         probedImageId            = $probedImageId
+        defaultTagImageId        = $defaultTagImageId
         contract                 = $contract
         frontend                 = $frontend
         propsUnchanged           = $true
@@ -733,6 +748,14 @@ function Invoke-PluginDeployment {
     Assert-True `
         ($null -ne $image -and -not [string]::IsNullOrWhiteSpace($image.ImageId)) `
         "the DMS container ran image $($image.Reference) $($image.ImageId)"
+
+    # The gate, not an observation. The probed id moves whenever the source does, so an image built
+    # at some earlier candidate cannot satisfy this, and neither can the ed-fi-api-local tag Compose
+    # would otherwise have selected.
+    Assert-True `
+        ($image.ImageId -eq $script:probedImageId) `
+        ("the deployment ran the image Phase 1 built and verified: expected " +
+            "$($script:probedImageId), actual $($image.ImageId) from $($image.Reference)")
 
     $record = [ordered]@{
         readyPhase           = $status.Phase
