@@ -12,6 +12,7 @@ using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 using FakeItEasy;
 using FluentAssertions;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -876,6 +877,8 @@ public class ConfigurationTests
         private WebApplicationFactory<Program> _factory = null!;
         private RecordingLoggerProvider _logs = null!;
         private CorrelationIdRecordingLoggerProvider _requestLog = null!;
+        private ItemsObservingStartupFilter _items = null!;
+        private CountingOptions<AppSettings> _appSettingsReads = null!;
         private string _statusDirectory = null!;
 
         [SetUp]
@@ -883,6 +886,7 @@ public class ConfigurationTests
         {
             _logs = new RecordingLoggerProvider();
             _requestLog = new CorrelationIdRecordingLoggerProvider();
+            _items = new ItemsObservingStartupFilter();
             _statusDirectory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
 
             _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
@@ -909,9 +913,25 @@ public class ConfigurationTests
                     logging.AddProvider(_requestLog);
                 });
                 // AppSettingsValidator is registered by the application itself, so - unlike the
-                // fixtures above - nothing is added here. A second registration would produce a
-                // second copy of the same failure and make the "logged once" count below read 2.
-                builder.ConfigureServices(TestMockHelper.AddEssentialMocks);
+                // fixtures above - no validator is added here. A second registration would produce
+                // a second copy of the same failure and make the "logged once" count below read 2.
+                builder.ConfigureServices(services =>
+                {
+                    TestMockHelper.AddEssentialMocks(services);
+                    services.AddSingleton<IStartupFilter>(_items);
+
+                    // The application's own IOptions<AppSettings> behavior, with a read counter
+                    // around it. OptionsManager is what the framework would have resolved anyway,
+                    // and it caches nothing when validation fails, so every read still runs the
+                    // validator and still throws - which is precisely the cost being counted.
+                    services.AddSingleton<IOptions<AppSettings>>(serviceProvider =>
+                        _appSettingsReads = new CountingOptions<AppSettings>(
+                            new OptionsManager<AppSettings>(
+                                serviceProvider.GetRequiredService<IOptionsFactory<AppSettings>>()
+                            )
+                        )
+                    );
+                });
             });
         }
 
@@ -1029,6 +1049,103 @@ public class ConfigurationTests
 
             string correlationId = JsonNode.Parse(content)!["correlationId"]!.GetValue<string>();
             _requestLog.LoggedTraceIds.Should().ContainSingle().Which.Should().Be(correlationId);
+        }
+
+        /// <summary>
+        /// The fallback ingestion is cached on <c>HttpContext.Items</c> like any other, so this
+        /// path has the same single ingestion result every later call site reads - here, the
+        /// invalid-configuration middleware writing the response body. Nothing is cached when
+        /// <c>LoggingMiddleware</c> only computes the value and returns it.
+        /// </summary>
+        [Test]
+        public async Task It_caches_the_fallback_ingestion_on_http_context_items()
+        {
+            using HttpClient client = _factory.CreateClient();
+
+            HttpResponseMessage response = await client.GetAsync("/");
+            string content = await response.Content.ReadAsStringAsync();
+
+            string correlationId = JsonNode.Parse(content)!["correlationId"]!.GetValue<string>();
+            _items
+                .CachedIngestion.Should()
+                .BeOfType<AspNetCoreFrontend.CorrelationIdIngestion>()
+                .Which.TraceId.Value.Should()
+                .Be(correlationId);
+        }
+
+        /// <summary>
+        /// That the body's <c>correlationId</c> equals the logged <c>TraceId</c> cannot by itself
+        /// show the body read the cached value: both sides derive it from the same pure function,
+        /// so they agree whether or not anything is cached. What distinguishes the two is the cost
+        /// of the second derivation - reading <c>IOptions&lt;AppSettings&gt;</c>, whose validation
+        /// is what failed, so the read throws <c>OptionsValidationException</c> and the middleware
+        /// falls back. One read per request is <c>LoggingMiddleware</c> ingesting; a second is the
+        /// invalid-configuration middleware deriving the same value again, at the price of a second
+        /// thrown exception on every request a host stuck in this mode answers.
+        /// </summary>
+        [Test]
+        public async Task It_reads_the_cached_ingestion_rather_than_deriving_the_correlation_id_again()
+        {
+            using HttpClient client = _factory.CreateClient();
+
+            // Startup reads AppSettings too, so the count is taken as a delta across one request.
+            int readsBeforeRequest = _appSettingsReads.Reads;
+
+            HttpResponseMessage response = await client.GetAsync("/");
+
+            response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+            (_appSettingsReads.Reads - readsBeforeRequest).Should().Be(1);
+        }
+
+        /// <summary>
+        /// Runs ahead of the application's own middleware and reads <c>HttpContext.Items</c> on the
+        /// way back out, once the pipeline behind it has answered. That is the only vantage point
+        /// from which the cache is observable: the invalid-configuration middleware short-circuits
+        /// the request, so nothing appended behind it ever runs.
+        /// </summary>
+        private sealed class ItemsObservingStartupFilter : IStartupFilter
+        {
+            public object? CachedIngestion { get; private set; }
+
+            public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next) =>
+                app =>
+                {
+                    app.Use(
+                        async (context, nextMiddleware) =>
+                        {
+                            await nextMiddleware();
+
+                            CachedIngestion = context.Items.TryGetValue(
+                                AspNetCoreFrontend.CorrelationIdItemsKey,
+                                out object? cached
+                            )
+                                ? cached
+                                : null;
+                        }
+                    );
+                    next(app);
+                };
+        }
+
+        /// <summary>
+        /// The framework's own <c>IOptions&lt;T&gt;</c> behavior with a count of how many times the
+        /// value was read.
+        /// </summary>
+        private sealed class CountingOptions<TOptions>(IOptions<TOptions> inner) : IOptions<TOptions>
+            where TOptions : class
+        {
+            private int _reads;
+
+            public int Reads => Volatile.Read(ref _reads);
+
+            public TOptions Value
+            {
+                get
+                {
+                    Interlocked.Increment(ref _reads);
+                    return inner.Value;
+                }
+            }
         }
 
         /// <summary>

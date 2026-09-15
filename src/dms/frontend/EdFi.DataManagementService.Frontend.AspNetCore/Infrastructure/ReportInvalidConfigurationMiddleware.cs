@@ -83,19 +83,22 @@ public class ReportInvalidConfigurationMiddleware
     /// </summary>
     /// <remarks>
     /// <para>
-    /// The ordinary path is a cache hit: <c>LoggingMiddleware</c> is registered ahead of this
-    /// middleware and has already ingested and cached the value on <c>HttpContext.Items</c>. It is
-    /// reached through <c>ExtractTraceIdFrom</c> rather than read from <c>Items</c> directly so that
-    /// this stays one more ordinary caller of the single ingestion point.
+    /// Every path here is a cache hit, including the one where <c>CorrelationIdMaxLength</c> is
+    /// itself the rejected setting. <c>LoggingMiddleware</c> is registered ahead of this middleware
+    /// and caches its ingestion on <c>HttpContext.Items</c> either way: from validated
+    /// configuration when it can read it, and from
+    /// <see cref="AppSettings.DefaultCorrelationIdMaxLength"/> when reading it is what failed. The
+    /// value is reached through <c>ExtractTraceIdFrom</c> rather than read from <c>Items</c>
+    /// directly so that this stays one more ordinary caller of the single ingestion point.
     /// </para>
     /// <para>
-    /// The catch is not defensive: <c>CorrelationIdMaxLength</c> is itself one of the settings whose
-    /// rejection lands a host here, and in that case there is no validated cap to normalize against
-    /// and nothing cached to read. <c>LoggingMiddleware</c> answers the same condition by
-    /// normalizing the server-generated identifier against
-    /// <see cref="AppSettings.DefaultCorrelationIdMaxLength"/>; doing the identical thing here is
-    /// what keeps the body's <c>correlationId</c> equal to the logged <c>TraceId</c> on the very
-    /// path where the two are most likely to drift apart.
+    /// The catch is therefore a backstop rather than the expected route through the unreadable-
+    /// configuration case. It fires only if this middleware ever answers a request that
+    /// <c>LoggingMiddleware</c> did not ingest first - a pipeline reordering in <c>Program.cs</c>,
+    /// say - and it falls back the way <c>LoggingMiddleware</c> does for the same condition, so
+    /// even then the body's <c>correlationId</c> is the value that would have been logged. Leaving
+    /// it in place costs nothing per request: it is the cache hit above, not this, that the
+    /// ordinary invalid-configuration request takes.
     /// </para>
     /// </remarks>
     private static TraceId CorrelationIdFor(HttpContext context)
