@@ -25,7 +25,7 @@ namespace EdFi.DataManagementService.Tests.Integration.Plugins;
 /// same state, and booting the host once per assertion would multiply a slow arrange for no added
 /// evidence.
 /// </remarks>
-public sealed class Given_TwoPluginsAreAllowlisted
+public sealed class Given_TwoPluginsAreAllowlisted : PluginIntegrationTestBase
 {
     private const string ContributorPlugin = "Acme.DmsContributor";
     private const string HookTouchPlugin = "Acme.DmsHookTouch";

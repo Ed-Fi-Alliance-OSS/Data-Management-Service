@@ -933,6 +933,17 @@ list, added in the order written, each entry either absolute or relative to
 exist, or an empty entry from a stray separator, fails the launcher by name before
 it touches Docker.
 
+**`DMS_PLUGINS_COMPOSE_FILES` is read from the environment file only.** The launcher
+reads it the same way it reads every other setting that shapes the compose command,
+and that reader deliberately ignores the process environment so a phase invoked
+directly cannot depend on ambient shell state. Exporting the variable therefore adds
+no overlay at all, and DMS starts successfully with no plugins. Put it in the
+environment file `bootstrap-local-dms.ps1` uses, which is `.env` unless you pass
+`-EnvironmentFile`. The four variables the overlays themselves declare are
+interpolated by Compose rather than read by the launcher, so those do honour an
+exported value; keeping all of them in one file is still the recipe below, because a
+deployment described in two places is a deployment nobody can read back.
+
 The launcher is the entry point rather than a convenience. An overlay only adds a
 mount and a fetch step to the DMS service; it provisions no schema and configures
 no Configuration Service, and DMS validates at startup that both were done. A bare
@@ -948,7 +959,7 @@ previous `bootstrap-local-dms.ps1` run.
 ```powershell
 cd eng/docker-compose
 
-# In your environment file, or exported before the run:
+# In the environment file the launcher reads (.env by default):
 #   DMS_PLUGINS_COMPOSE_FILES=plugins-dms.yml;my-plugins-allowed-dms.yml
 #   DMS_PLUGINS_MOUNT_SOURCE=C:/plugins
 
@@ -969,7 +980,7 @@ orders it ahead of DMS, which then mounts that volume read-only.
 ```powershell
 cd eng/docker-compose
 
-# In your environment file, or exported before the run:
+# In the environment file the launcher reads (.env by default):
 #   DMS_PLUGINS_COMPOSE_FILES=plugins-fetch-dms.yml;my-plugins-allowed-dms.yml
 #   PLUGIN_PACKAGE_URL=https://feed.example/v3-flatcontainer/acme.dms.identity/1.2.0/acme.dms.identity.1.2.0.nupkg
 #   PLUGIN_PACKAGE_SHA256=9f2c...the digest you pinned...
@@ -1000,13 +1011,16 @@ statement about the bytes the process is serving:
 
 ```powershell
 cd eng/docker-compose
-pwsh ./bootstrap-local-dms.ps1 -d -v
+pwsh ./bootstrap-local-dms.ps1 -d
 pwsh ./bootstrap-local-dms.ps1
 ```
 
-`-v` removes the `plugins` volume along with the rest, so the next start fetches
-into an empty one. Keeping the volume is safe too, because the fetcher clears the
-plugin directory before extracting; what is not safe is fetching while DMS is up.
+`-d` without `-v` is deliberate. What a re-fetch needs is DMS stopped, and `down`
+alone does that; `-v` would additionally delete every volume in the stack, the
+PostgreSQL data volume included, so a routine plugin update would destroy the
+deployment's data. Keeping the `plugins` volume is safe, because the fetcher clears
+the plugin directory before it extracts. Add `-v` only when you actually want the
+whole environment reset.
 
 ### Required variables
 

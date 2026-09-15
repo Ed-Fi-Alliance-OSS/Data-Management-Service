@@ -224,17 +224,14 @@ internal sealed class PluginLogCapture : ILogEventSink
     /// </summary>
     public const string InventoryTemplatePrefix = "Plugin inventory for ";
 
-    /// <summary>The index of the first event whose rendered message contains <paramref name="text"/>.</summary>
+    /// <summary>The index of the first event whose message or exception contains <paramref name="text"/>.</summary>
     public int IndexOfMessageContaining(string text)
     {
         IReadOnlyList<LogEvent> events = Events;
 
         for (int index = 0; index < events.Count; index++)
         {
-            if (
-                events[index].RenderMessage().Contains(text, StringComparison.Ordinal)
-                || events[index].Exception?.ToString().Contains(text, StringComparison.Ordinal) == true
-            )
+            if (TextOf(events[index]).Contains(text, StringComparison.Ordinal))
             {
                 return index;
             }
@@ -242,6 +239,27 @@ internal sealed class PluginLogCapture : ILogEventSink
 
         return -1;
     }
+
+    /// <summary>The first event whose message or exception contains <paramref name="text"/>, or null.</summary>
+    /// <remarks>
+    /// Returning the event rather than its index is what lets a case assert against that one event
+    /// instead of against everything logged. Several events can carry the same type name for
+    /// unrelated reasons - the inventory renders every implementation type it reports - so an
+    /// assertion that only asks whether some event mentions a name is satisfied by the wrong one.
+    /// </remarks>
+    public LogEvent? FirstEventContaining(string text) =>
+        Events.FirstOrDefault(logEvent => TextOf(logEvent).Contains(text, StringComparison.Ordinal));
+
+    /// <summary>An event's rendered message and its exception, when it has one, as one string.</summary>
+    /// <remarks>
+    /// Both halves, because the startup orchestrator logs a failed task's exception rather than
+    /// flattening it into the message: the offense text a startup guard built lives on the exception
+    /// and nowhere else.
+    /// </remarks>
+    public static string TextOf(LogEvent logEvent) =>
+        logEvent.Exception is null
+            ? logEvent.RenderMessage()
+            : $"{logEvent.RenderMessage()}{Environment.NewLine}{logEvent.Exception}";
 
     public int IndexOfInventoryEventFor(string pluginName)
     {

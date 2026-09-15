@@ -239,7 +239,7 @@ public sealed class LoadedPlugins
                 removals.Add(
                     new PluginDescriptorDisplacement(
                         descriptor.ServiceType,
-                        ImplementationTypeOf(descriptor),
+                        PluginDescriptorFacts.ImplementationTypeOf(descriptor),
                         descriptor
                     )
                 );
@@ -276,7 +276,4 @@ public sealed class LoadedPlugins
 
         return occurrences;
     }
-
-    private static Type? ImplementationTypeOf(ServiceDescriptor descriptor) =>
-        PluginDescriptorFacts.ImplementationTypeOf(descriptor);
 }

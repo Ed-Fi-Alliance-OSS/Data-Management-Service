@@ -760,12 +760,17 @@ function Assert-InventoryDigest([string]$inventoryLine) {
     }
 }
 
+# Every deployment in this harness, including the one that expects Compose to refuse. It owns the
+# environment file, the pre-run teardown, and start-to-teardown as one shape; what varies is the
+# body, which is Invoke-DeployedDmsCheck unless the caller supplies its own through -Scenario. The
+# scenario receives the environment file and returns the record the caller keeps as evidence.
 function Invoke-PluginDeployment {
     param(
         [Parameter(Mandatory)] [string] $Title,
         [Parameter(Mandatory)] [string] $Name,
         [Parameter(Mandatory)] [hashtable] $EnvironmentValues,
-        [Parameter(Mandatory)] [int] $ExpectedInventoryEvents
+        [int] $ExpectedInventoryEvents = 0,
+        [scriptblock] $Scenario
     )
 
     Write-Phase $Title
@@ -780,8 +785,13 @@ function Invoke-PluginDeployment {
     # tears the stack down on the way out. This harness uses the ordinary local project name and
     # ports, so containers left behind are not just untidy: they are the local stack.
     try {
-        $record = Invoke-DeployedDmsCheck -ExpectedInventoryEvents $ExpectedInventoryEvents `
-            -EnvironmentFile $environmentFile
+        $record = if ($null -eq $Scenario) {
+            Invoke-DeployedDmsCheck -ExpectedInventoryEvents $ExpectedInventoryEvents `
+                -EnvironmentFile $environmentFile
+        }
+        else {
+            & $Scenario $environmentFile
+        }
     }
     catch {
         $failure = $_
@@ -874,9 +884,9 @@ function Invoke-DeployedDmsCheck {
     return $record
 }
 
-# The wrong-digest deployment's own body: start it, expect Compose to refuse, and assert the refusal
-# was the checksum comparison and nothing incidental. In a function only so that its caller owns
-# start-to-teardown as one shape, and defined here because a script defines a function when the
+# The wrong-digest deployment's body, in the shape Invoke-PluginDeployment's -Scenario expects: start
+# it, expect Compose to refuse, assert the refusal was the checksum comparison and nothing
+# incidental, and return the record. Defined here because a script defines a function when the
 # definition executes, which has to be before the call.
 function Invoke-WrongDigestCheck([string]$environmentFile) {
     $deploymentCFailed = $false
@@ -917,7 +927,7 @@ function Invoke-WrongDigestCheck([string]$environmentFile) {
 
     $dmsImageC = Get-ContainerImage $dmsContainerC
 
-    $script:results.deploymentC = [ordered]@{
+    return [ordered]@{
         recipe            = "2"
         dmsImageReference = if ($null -ne $dmsImageC) { $dmsImageC.Reference } else { $null }
         packageSha256     = ("0" * 64)
@@ -989,45 +999,17 @@ $script:results.deploymentB = Invoke-PluginDeployment `
 # Deployment C: Recipe 2 with a digest that does not match
 # -------------------------------------------------------------------------------------------------
 
-Write-Phase "Deployment C: Recipe 2, deliberately wrong digest, fresh deployment"
-
-$envC = New-DeploymentEnvironmentFile -Name "recipe2-baddigest" -Values @{
+$script:results.deploymentC = Invoke-PluginDeployment `
+    -Title "Deployment C: Recipe 2, deliberately wrong digest, fresh deployment" `
+    -Name "recipe2-baddigest" `
+    -Scenario { param($environmentFile) Invoke-WrongDigestCheck $environmentFile } `
+    -EnvironmentValues @{
     DMS_PLUGINS_COMPOSE_FILES = "$fetchOverlay;$feedOverlay;$allowedOverlay"
     PLUGIN_FEED_SOURCE        = $feedRoot
     PLUGIN_PACKAGE_URL        = $packageUrl
     PLUGIN_PACKAGE_SHA256     = ("0" * 64)
     PLUGIN_NAME               = $pluginName
     DMS_PLUGINS_ALLOWED       = $pluginName
-}
-Remove-Deployment $envC
-
-# Same shape as the deployments above: everything from the start onwards runs under a teardown that
-# happens whether or not the assertions hold. This one expects Compose to fail, so the assertions
-# below are the part that can leave a stack behind.
-$deploymentCFailure = $null
-
-try {
-    Invoke-WrongDigestCheck $envC
-}
-catch {
-    $deploymentCFailure = $_
-    Save-FailureEvidence -Name "recipe2-baddigest"
-}
-finally {
-    try {
-        Remove-Deployment $envC
-    }
-    catch {
-        if ($null -eq $deploymentCFailure) {
-            throw
-        }
-
-        Write-Detail "teardown after the failure above also failed: $($_.Exception.Message)"
-    }
-}
-
-if ($null -ne $deploymentCFailure) {
-    throw $deploymentCFailure
 }
 
 # -------------------------------------------------------------------------------------------------

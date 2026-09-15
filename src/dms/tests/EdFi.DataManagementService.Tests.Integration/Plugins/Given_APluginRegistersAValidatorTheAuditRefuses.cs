@@ -35,7 +35,7 @@ namespace EdFi.DataManagementService.Tests.Integration.Plugins;
 /// keeps the failure inside the test process while both real guards still run.
 /// </para>
 /// </remarks>
-public sealed class Given_APluginRegistersAValidatorTheAuditRefuses
+public sealed class Given_APluginRegistersAValidatorTheAuditRefuses : PluginIntegrationTestBase
 {
     /// <summary>The plugin whose registration the audit accepts.</summary>
     private const string AcceptedPlugin = "Acme.DmsContributor";
@@ -47,6 +47,18 @@ public sealed class Given_APluginRegistersAValidatorTheAuditRefuses
     private const string RefusedImplementation = "Acme.DmsHookTouch.HookTouchResourceValidator";
     private const string ContractServiceType =
         "EdFi.DataManagementService.CustomValidation.ICustomResourceValidator";
+
+    /// <summary>
+    /// The opening of the message the validator audit throws, as a literal, and the only thing here
+    /// that selects the audit's own failure out of everything the boot logged.
+    /// </summary>
+    /// <remarks>
+    /// Matching on the refused implementation's name instead would select the inventory event: the
+    /// inventory renders the implementation type of every registration it reports, and it is emitted
+    /// first. An assertion written that way holds even if the audit stops naming the offender, which
+    /// is the whole thing this case exists to prove.
+    /// </remarks>
+    private const string AuditFailureMarker = "ICustomResourceValidator registration(s) are invalid";
 
     private WebApplicationFactory<Program>? _factory;
     private PluginLogCapture _capture = new();
@@ -123,7 +135,7 @@ public sealed class Given_APluginRegistersAValidatorTheAuditRefuses
     [Test]
     public void It_emitted_those_events_before_the_validator_audit_reported_the_failure()
     {
-        int failureIndex = _capture.IndexOfMessageContaining("ICustomResourceValidator registration");
+        int failureIndex = _capture.IndexOfMessageContaining(AuditFailureMarker);
 
         failureIndex
             .Should()
@@ -160,13 +172,26 @@ public sealed class Given_APluginRegistersAValidatorTheAuditRefuses
     [Test]
     public void It_reported_the_implementation_class_the_validator_audit_names()
     {
-        _capture
-            .IndexOfMessageContaining(RefusedImplementation)
+        LogEvent? auditFailure = _capture.FirstEventContaining(AuditFailureMarker);
+
+        auditFailure.Should().NotBeNull("the audit refuses the non-transient registration");
+
+        string auditText = PluginLogCapture.TextOf(auditFailure!);
+
+        auditText
             .Should()
-            .BeGreaterThanOrEqualTo(
-                0,
+            .Contain(
+                RefusedImplementation,
                 "the audit identifies the offending registration by its implementation class, which "
                     + "is the name an operator has to start from"
+            );
+
+        auditText
+            .Should()
+            .NotContain(
+                AcceptedImplementation,
+                "the other plugin's registration is valid, so naming it here would send an operator "
+                    + "to the blameless plugin"
             );
     }
 
@@ -202,9 +227,7 @@ public sealed class Given_APluginRegistersAValidatorTheAuditRefuses
         PluginLogCapture.Member(refused, "IsKeyed").Should().Be("False");
 
         LogEventPropertyValue accepted = RegisteredServices(AcceptedPlugin)
-            .Single(entry =>
-                PluginLogCapture.Member(entry, "ImplementationType") == AcceptedImplementation
-            );
+            .Single(entry => PluginLogCapture.Member(entry, "ImplementationType") == AcceptedImplementation);
 
         PluginLogCapture
             .Member(accepted, "Lifetime")
