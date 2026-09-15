@@ -24,6 +24,8 @@ namespace EdFi.DataManagementService.Backend.Cdc.Tests.Integration;
 
 internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
 {
+    private string _startupStage = "configure-resources";
+
     private const string ConnectorPasswordEnvironmentVariable = "CDC_DATABASE_PASSWORD";
     internal const string ConnectorDatabasePassword = "EdFi_Dms1!";
     private const string ConnectorDatabaseUser = "dms_connector";
@@ -294,17 +296,30 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
                 fixture._httpClient.BaseAddress = fixture.ControllerConnectEndpoint;
                 return fixture;
             }
+            fixture._startupStage = "start-docker-resources";
             await fixture.StartDockerResourcesAsync(cancellationToken, beforeWorker);
+            fixture._startupStage = "read-connect-port";
             Uri connectBaseUri = await fixture.ReadMappedConnectBaseUriAsync(cancellationToken);
 
             fixture._httpClient.BaseAddress = connectBaseUri;
+            fixture._startupStage = "wait-for-connect";
             await fixture.WaitForKafkaConnectAsync(cancellationToken);
 
             return fixture;
         }
         catch (Exception ex)
         {
-            await fixture.DisposeAfterStartupFailureAsync();
+            try
+            {
+                if (composeKafka)
+                {
+                    await fixture.WriteStartupFailureEvidenceAsync(ex, fixture._startupStage);
+                }
+            }
+            finally
+            {
+                await fixture.DisposeAfterStartupFailureAsync();
+            }
             if (ex is OperationCanceledException or AssertionException)
             {
                 throw;
@@ -321,6 +336,46 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
             );
             throw;
         }
+    }
+
+    private async Task WriteStartupFailureEvidenceAsync(Exception exception, string stage)
+    {
+        // Qualification strips raw exceptions. Publish only code locations and fixed metadata,
+        // never exception messages, Docker arguments, container logs, or machine paths.
+        string path = Path.Combine(
+            TestContext.CurrentContext.WorkDirectory,
+            "admission-evidence-startup-" + Guid.NewGuid().ToString("N") + ".json"
+        );
+        var locations = new StackTrace(exception, true)
+            .GetFrames()
+            .Where(frame =>
+                frame
+                    .GetMethod()
+                    ?.DeclaringType?.Namespace?.StartsWith(
+                        "EdFi.DataManagementService.",
+                        StringComparison.Ordinal
+                    ) == true
+            )
+            .Take(8)
+            .Select(frame => new
+            {
+                Type = frame.GetMethod()!.DeclaringType!.FullName,
+                Method = frame.GetMethod()!.Name,
+                Line = frame.GetFileLineNumber(),
+            });
+        await File.WriteAllTextAsync(
+            path,
+            JsonSerializer.Serialize(
+                new
+                {
+                    Provider = Provider.ToString(),
+                    Stage = stage,
+                    ExceptionType = exception.GetType().Name,
+                    Locations = locations,
+                }
+            )
+        );
+        TestContext.AddTestAttachment(path, "Sanitized Compose fixture startup failure locations");
     }
 
     public async Task<CdcConnectorTemplateRequest> CreateRequestAsync(CancellationToken cancellationToken)
