@@ -404,6 +404,49 @@ Switching an existing stack between modes re-points CMS but does not move data: 
 already written in one database stays there. For a clean switch, tear down with `-d -v` and start
 fresh, or migrate the CMS data yourself.
 
+## Restoring the datastore from a database template (bootstrap restore)
+
+`-RestoreTemplate Minimal|Populated` on either bootstrap wrapper replaces the DMS datastore
+from a trusted database-template package instead of provisioning an empty schema. The flow is
+deliberately paranoid: the exact `.nupkg` bytes are authenticated against the template trust
+policy (fail-closed - there is no unsigned or local-origin bypass), the package's restore
+manifest is cross-checked against a freshly prepared candidate workspace, the artifact is first
+replayed into a throwaway scratch database and validated (schema inventory, effective-schema
+facts, physical baseline), and only then is the target database replaced - behind stop proofs,
+with the `.bootstrap` workspace committed as a whole tree. `provision-dms-schema.ps1` is
+skipped in restore mode: the restored artifact already carries the schema and data.
+
+```powershell
+# Restore the Populated template from the configured feed
+# (requires DATABASE_TEMPLATE_NUGET_VERSION in the effective env; never floats to latest)
+./bootstrap-local-dms.ps1 -RestoreTemplate Populated
+
+# Restore from a local directory holding exactly one matching template .nupkg
+# plus its sibling .nupkg.attestation.json (no NuGet version key needed)
+./bootstrap-local-dms.ps1 -RestoreTemplate Minimal -PackageDirectory C:\path\to\packages
+
+# Same through the build script, which lives at the repository root
+../../build-dms.ps1 StartEnvironment -RestoreTemplate Populated
+
+# Optional supplemental seed AFTER the restored stack is up (explicit source required;
+# a bare -LoadSeedData is rejected in restore mode - the template already carries data)
+./bootstrap-local-dms.ps1 -RestoreTemplate Minimal -LoadSeedData -SeedTemplate Minimal
+```
+
+Restore works on both database engines (`-DatabaseEngine`) and on both wrappers
+(`bootstrap-local-dms.ps1` and `bootstrap-published-dms.ps1`). It rejects `-InfraOnly`,
+`-NoDataStore`, and `-SchoolYearRange`: one restore invocation replaces exactly one
+route-unqualified physical target.
+
+The package identity comes from the effective env's `DATABASE_TEMPLATE_PACKAGE`, with the
+`Minimal|Populated` and engine segments swapped to match the request; see `.env.example` for
+the three version concepts (package ID's Data Standard segment, the manifest's
+`dataStandardVersion`, and `DATABASE_TEMPLATE_NUGET_VERSION` - the package's own NuGet
+version). Trusted producers are declared in `template-trust-policy.json` plus the git-ignored
+`template-trust-policy.local.json` overlay; for locally built packages, create a development
+trust chain with `../DatabaseTemplates/new-template-dev-trust.ps1 -Purpose Dev` and build the
+package with attestation.
+
 ## Selecting a Data Standard version (bootstrap)
 
 `bootstrap-local-dms.ps1` (and `bootstrap-published-dms.ps1`) accept `-DataStandardVersion` to
