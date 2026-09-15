@@ -522,7 +522,7 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
     public CdcKafkaProvisioning KafkaProvisioning() =>
         new(
             Infrastructure.StateRoot,
-            Kafka,
+            Hooks.Decorate<ICdcKafkaAdminAdapter>(Kafka, _ => CdcControllerBoundary.Observation),
             Runtime,
             new CdcKafkaProducerInspection(Infrastructure.Connect, Infrastructure.Worker)
         );
@@ -889,6 +889,8 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
                         ValidationFailures = _validationFailures.ToArray(),
                         DatabaseFailures = _databaseFailures.ToArray(),
                         TelemetryFailures = _telemetryFailures.ToArray(),
+                        MetricsResponses = Infrastructure.MetricsEvidence.Observations,
+                        KafkaTopics = Hooks.KafkaTopics,
                         ConnectObservations = Hooks.ConnectObservations,
                         ProviderModes,
                         ProviderResults = ProviderResults.Select(r => new
