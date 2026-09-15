@@ -89,8 +89,9 @@ CMS registers one only in the self-contained branch (`Config.Frontend/Infrastruc
 - A `${` not followed by a well-formed token is left verbatim and fails nothing.
 - There is no escape sequence.
 - Multiple tokens in one value resolve independently.
-- A grammar table test carries one case per permitted punctuation character and one per excluded character.
-- The table covers an empty name, an embedded space, an embedded brace, and an unterminated `${secret:`, each left verbatim and failing nothing.
+- A grammar table test carries:
+  - one case per permitted punctuation character and one per excluded character
+  - an empty name, an embedded space, an embedded brace, and an unterminated `${secret:`, each left verbatim and failing nothing
 
 **Call sites**
 
@@ -142,13 +143,15 @@ CMS registers one only in the self-contained branch (`Config.Frontend/Infrastruc
 
 - The cache is keyed `(tenant, name)` with absolute expiration from `SecretsSettings:CacheExpirationSeconds`, default `300`.
 - `CacheExpirationSeconds` of `0` disables caching.
-- Two reads inside the window call the resolver once.
-- A read after the window calls the resolver again.
-- Two tenants resolving the same name are two cache entries.
-- With `0`, every read calls the resolver.
-- Concurrent misses on one key collapse to one resolver call whose result every waiter takes.
-- A second key is not serialized behind the first.
-- A failing call fails every waiter and caches nothing.
+- Cache behavior is asserted:
+  - two reads inside the window call the resolver once
+  - a read after the window calls the resolver again
+  - two tenants resolving the same name are two cache entries
+  - with `0`, every read calls the resolver
+- Single-flight behavior is asserted:
+  - concurrent misses on one key collapse to one resolver call whose result every waiter takes
+  - a second key is not serialized behind the first
+  - a failing call fails every waiter and caches nothing
 - Time is taken through a `TimeProvider` optional constructor parameter defaulting to `TimeProvider.System`.
 - A new tenant's first read populates the cache.
 - A removed tenant's entries are unreachable and expire, asserted directly against the cache because tenant administration exposes no removal today (`Config.Frontend/Modules/TenantModule.cs:21-23`).
@@ -158,18 +161,20 @@ CMS registers one only in the self-contained branch (`Config.Frontend/Infrastruc
 - `SecretsSettings:ResolveTimeoutSeconds` defaults to `10`.
 - The seam invokes the resolver on a task it owns and races that task, not the returned `ValueTask`.
 - The seam passes a cancellation token to the resolver.
-- A resolver returning an incomplete `ValueTask` and ignoring the token fails within the window.
-- A resolver blocking before returning its `ValueTask` fails within the window.
+- Each of these fails within the window:
+  - a resolver returning an incomplete `ValueTask` and ignoring the token
+  - a resolver blocking before returning its `ValueTask`
 - A cooperative resolver's cancellation token is observed as cancelled.
 - A resolver returning just inside the window succeeds.
 
 **Failure semantics**
 
 - A token with no `ISecretResolver` registered fails the read, naming the data store, the token, and the missing contract.
-- A resolver that throws fails the read.
-- A resolver that cancels fails the read.
-- A resolver that returns null fails the read.
-- A resolver that returns an empty string fails the read.
+- A resolver fails the read when it:
+  - throws
+  - cancels
+  - returns null
+  - returns an empty string
 - The no-resolver message and the resolver-failed message are distinct.
 - The log carries the exception type and never the exception message.
 - No response ever carries a decrypted value still containing `${secret:`.
@@ -182,8 +187,9 @@ CMS registers one only in the self-contained branch (`Config.Frontend/Infrastruc
 - That case logs the parent, tenant, derivative type, and token.
 - The case is covered on both the collection and single-row paths, which reach derivatives through different arms.
 - An unresolvable parent token fails the read, and one test asserts this asymmetry directly.
-- The same unresolvable token fails through `GET /v3/dataStoreDerivatives/` (`Config.Frontend/Modules/DataStoreDerivativeModule.cs:21`).
-- The same unresolvable token fails through `GET /v3/dataStoreDerivatives/{id}` (`:22`).
+- The same unresolvable token fails through each standalone derivative endpoint:
+  - `GET /v3/dataStoreDerivatives/` (`Config.Frontend/Modules/DataStoreDerivativeModule.cs:21`)
+  - `GET /v3/dataStoreDerivatives/{id}` (`:22`)
 - The seam takes an argument saying whether the row is read as a resource or as part of one.
 - Pre-existing derivative-lookup-failure behavior is unchanged: the arms mapping a failed lookup to an empty collection still behave as today.
 
@@ -196,8 +202,7 @@ CMS registers one only in the self-contained branch (`Config.Frontend/Infrastruc
 **Configuration**
 
 - `SecretsSettings` is added to `Config.Frontend/appsettings.json` with both keys, bound and validated like its neighbors.
-- `docs/CONFIGURATION.md` documents both keys with their defaults.
-- Both compose files carry `DMS_CONFIG_*` overrides for both keys.
+- Both keys are documented in `docs/CONFIGURATION.md` with their defaults, and carry `DMS_CONFIG_*` overrides in both compose files.
 
 **Integration and end-to-end**
 
@@ -209,8 +214,9 @@ CMS registers one only in the self-contained branch (`Config.Frontend/Infrastruc
 
 **Build**
 
-- `dotnet test src/config/EdFi.DmsConfigurationService.sln` passes.
-- `build-config.ps1 E2ETest` passes.
+- These pass:
+  - `dotnet test src/config/EdFi.DmsConfigurationService.sln`
+  - `build-config.ps1 E2ETest`
 
 ## Tasks
 

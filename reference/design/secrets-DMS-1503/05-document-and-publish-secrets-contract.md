@@ -55,32 +55,36 @@ Each is captured once and never re-read, so rotating one takes a restart regardl
 
 **Operator chapter**
 
-- A chapter in `docs/` states what a secrets plugin is and the two things it can do.
-- It names individually the process-global secrets Phase A serves: two in DMS, six in CMS, and `OtlpLogging:Headers` in each host.
-- It marks `IdentitySettings:CertificatePassword` and `IdentitySettings:DevCertificatePassword` as absent from `appsettings.json`.
-- It names `DATABASE_CONNECTION_STRING_ADMIN` as the one deployment credential Phase A structurally cannot serve, and states that `src/dms/run.sh:14-16` parses it before the .NET host exists.
-- It states the secret reference syntax and where it may appear.
-- It documents `SecretsSettings:CacheExpirationSeconds` and the rotation window it defines.
-- It states that rotating any process-global secret takes a restart regardless of the cache, because each is captured once and never re-read.
-- It states the rotation order: rotate first, revoke after the propagation window.
-- It states that an immediate rotation takes a restart of both hosts, citing `src/dms/core/EdFi.DataManagementService.Core/Configuration/ConfigurationServiceDataStoreProvider.cs:155-165`.
-- It states that a rotation retires and rebuilds DMS's connection pool for that data store.
-- It states the trust position: full process trust, an operator-controlled allowlist, a static vault credential reducing the problem to one secret, and ambient workload identity reducing it to none.
-- It states that CMS can still produce the resolved value, cached in process and returned re-encrypted on every limited-access read across the four endpoints (`Config.Frontend/Modules/DataStoreModule.cs:23-24`, `Config.Frontend/Modules/DataStoreDerivativeModule.cs:21-22`).
-- It states plainly that an operator whose requirement is that nothing but the vault can produce the secret is not served.
-- It states that raising `IdentitySettings:ClientSecretHashingIterations` invalidates every client secret hashed at the old count, with re-issue as the remedy.
+- A chapter in `docs/` states what a secrets plugin is and the two things it can do, and states:
+  - the process-global secrets Phase A serves, named individually: two in DMS, six in CMS, and `OtlpLogging:Headers` in each host
+  - that `IdentitySettings:CertificatePassword` and `IdentitySettings:DevCertificatePassword` are absent from `appsettings.json`
+  - that `DATABASE_CONNECTION_STRING_ADMIN` is the one deployment credential Phase A structurally cannot serve, because `src/dms/run.sh:14-16` parses it before the .NET host exists
+  - the secret reference syntax and where it may appear
+  - `SecretsSettings:CacheExpirationSeconds` and the rotation window it defines
+  - that rotating any process-global secret takes a restart regardless of the cache, because each is captured once and never re-read
+- The chapter states the rotation rules:
+  - rotate first, revoke after the propagation window
+  - an immediate rotation takes a restart of both hosts, citing `src/dms/core/EdFi.DataManagementService.Core/Configuration/ConfigurationServiceDataStoreProvider.cs:155-165`
+  - a rotation retires and rebuilds DMS's connection pool for that data store
+- The chapter states the trust position in every half:
+  - full process trust and an operator-controlled allowlist
+  - a static vault credential reduces the problem to one secret, and ambient workload identity reduces it to none
+  - CMS can still produce the resolved value, cached in process and returned re-encrypted on every limited-access read across the four endpoints (`Config.Frontend/Modules/DataStoreModule.cs:23-24`, `Config.Frontend/Modules/DataStoreDerivativeModule.cs:21-22`)
+  - plainly, that an operator whose requirement is that nothing but the vault can produce the secret is not served
+- The chapter states that raising `IdentitySettings:ClientSecretHashingIterations` invalidates every client secret hashed at the old count, with re-issue as the remedy.
 
 **Implementer guide**
 
 - The guide ships as the contract package's readme and is cross-linked from `src/plugins/EdFi.Api.Plugins/PLUGINS.md`, which links back.
-- It documents both contracts and their members.
-- It states replace cardinality with a plain `Add` and never a `TryAdd`, giving the recording-wrapper reason.
-- It states singleton and unkeyed registration, and what the host does otherwise.
-- It states that the tenant is an argument and why.
-- It states the concurrency-safety obligation.
-- It states what the host does with a resolver that throws, cancels, or returns nothing.
-- It states that the resolve timeout bounds one call, that a hung resolver fails a read rather than a request thread, the unreclaimed-thread residual, and the obligation to honour the cancellation token.
-- It states that nothing enforces that a resolver not log what it resolved, as an implementer obligation.
+- The guide documents both contracts and their members, and states:
+  - replace cardinality with a plain `Add` and never a `TryAdd`, with the recording-wrapper reason
+  - singleton and unkeyed registration, and what the host does otherwise
+  - that the tenant is an argument, and why
+  - the concurrency-safety obligation
+  - what the host does with a resolver that throws, cancels, or returns nothing
+- The guide states what CMS cannot enforce:
+  - the resolve timeout bounds one call, a hung resolver fails a read rather than a request thread, the unreclaimed-thread residual, and the obligation to honour the cancellation token
+  - nothing enforces that a resolver not log what it resolved, stated as an implementer obligation
 - Both guides link to `PLUGINS.md` for packaging, delivery, the allowlist, and the trust model rather than restating any of it.
 
 **Worked examples**
@@ -91,17 +95,19 @@ Each is captured once and never re-read, so rotating one takes a restart regardl
 
 **Publication**
 
-- The prerelease lane packs and pushes `EdFi.Api.Secrets`.
-- The lane publishes when the id and version are absent from the feed.
-- The lane skips, exiting zero, when present and unchanged.
-- The lane fails when present and different, naming the id, the version, and which comparison differed.
+- The prerelease lane packs and pushes `EdFi.Api.Secrets`, with three outcomes:
+  - publishes when the id and version are absent from the feed
+  - skips, exiting zero, when present and unchanged
+  - fails when present and different, naming the id, the version, and which comparison differed
 - The comparison covers three things, each normalized: the assembly's public surface, the XML documentation file, and the nuspec dependency list.
 - The package version is passed explicitly rather than derived from the release tag.
-- The release lane queries the release view first and skips when the version is present there.
-- The release lane promotes from the prerelease view when the version is absent from the release view.
-- The release lane fails, naming the package and version, when the version is in neither view.
-- A test asserts the `AssemblyVersion` inside the published nupkg equals the package version.
-- A test asserts a build with an explicit release version leaves the packed contract version untouched.
+- The release lane has three outcomes:
+  - skips when the version is present in the release view, which it queries first
+  - promotes from the prerelease view when the version is absent from the release view
+  - fails, naming the package and version, when the version is in neither view
+- Tests assert the version independence:
+  - the `AssemblyVersion` inside the published nupkg equals the package version
+  - a build with an explicit release version leaves the packed contract version untouched
 - The scratch consumer from story 02 is extended to compile against the published package once a version exists on the feed.
 
 **Operations documentation**
@@ -111,8 +117,7 @@ Each is captured once and never re-read, so rotating one takes a restart regardl
 
 **Build**
 
-- `dotnet test src/config/EdFi.DmsConfigurationService.sln` passes.
-- The packed package installs into the scratch consumer.
+- `dotnet test src/config/EdFi.DmsConfigurationService.sln` passes, and the packed package installs into the scratch consumer.
 
 ## Tasks
 

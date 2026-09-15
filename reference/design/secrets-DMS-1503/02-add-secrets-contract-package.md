@@ -96,8 +96,9 @@ A deployment that had set the variable to something else was already broken, bec
 
 **Version stamping**
 
-- A test runs `build-config.ps1 BuildAndPublish` with explicit `-DmsCSVersion` and `-DmsCSAssemblyVersion` and asserts `EdFi.DmsConfigurationService.Secrets.dll` carries `1.0.0.0` in the `Compile` output.
-- The same test asserts `1.0.0.0` in the `PublishApi` output.
+- A test runs `build-config.ps1 BuildAndPublish` with explicit `-DmsCSVersion` and `-DmsCSAssemblyVersion` and asserts `EdFi.DmsConfigurationService.Secrets.dll` carries `1.0.0.0` in:
+  - the `Compile` output
+  - the `PublishApi` output
 - The pull request names the exclusion mechanism used and confirms it also holds for a direct solution build.
 - `src/config/Dockerfile` no longer declares `ASSEMBLY_VERSION` (`:33`) and no longer expands `/p:AssemblyVersion` or `/p:FileVersion` (`:39-40`), with nothing replacing them.
 - `build-config.ps1`'s `DockerBuild` no longer passes the matching build-arg pair (`:463-467`).
@@ -122,10 +123,11 @@ A deployment that had set the variable to something else was already broken, bec
 - The model property at `Backend.OpenIddict/Models/IdentityOptions.cs:73` is renamed from `HashingIterations` to `ClientSecretHashingIterations`.
 - `eng/docker-compose/published-config.yml:54` and `eng/docker-compose/local-config.yml:58` re-point `IdentitySettings__HashingIterations` to `IdentitySettings__ClientSecretHashingIterations`, still fed by `DMS_CONFIG_IDENTITY_HASHING_ITERATIONS`.
 - `DMS_CONFIG_IDENTITY_HASHING_ITERATIONS` remains defined in every `.env*` file that defines it today, and `eng/docker-compose/setup-openiddict.ps1` is unchanged.
-- A test asserts `IdentitySettings:HashingIterations` set alone leaves the hasher at the default, so the two keys are never both live.
-- A test asserts a non-default `IdentitySettings:ClientSecretHashingIterations` reaches `ClientSecretHasher`. This test fails on main today.
-- A test asserts the value at `Config.Frontend/appsettings.json:45` equals the model default.
-- A test asserts a secret hashed at one iteration count fails verification at another.
+- Tests pin the repair:
+  - `IdentitySettings:HashingIterations` set alone leaves the hasher at the default, so the two keys are never both live
+  - a non-default `IdentitySettings:ClientSecretHashingIterations` reaches `ClientSecretHasher` (this assertion fails on main today)
+  - the value at `Config.Frontend/appsettings.json:45` equals the model default
+  - a secret hashed at one iteration count fails verification at another
 
 **Verification lane**
 
@@ -135,8 +137,9 @@ A deployment that had set the variable to something else was already broken, bec
 
 **Build**
 
-- `dotnet build --no-restore src/config/EdFi.DmsConfigurationService.sln` passes.
-- `dotnet test src/config/EdFi.DmsConfigurationService.sln` passes.
+- These pass:
+  - `dotnet build --no-restore src/config/EdFi.DmsConfigurationService.sln`
+  - `dotnet test src/config/EdFi.DmsConfigurationService.sln`
 - The existing CMS unit and end-to-end suites pass unchanged for a deployment that sets neither iteration key.
 
 **Documentation**

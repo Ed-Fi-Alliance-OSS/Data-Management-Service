@@ -92,8 +92,9 @@ A test against an invented key would pass without exercising that.
 - `LoadedPlugins` declares `public void ContributeConfiguration(ConfigurationManager configuration)` and invokes each plugin's hook in allowlist order, passing its argument as both parameters.
 - The loader writes `invoking ContributeConfiguration on <plugin>` to its diagnostics channel before each hook, matching `ContributeServices`.
 - The loader snapshots `configurationBuilder.Sources` before each hook and compares after.
-- A plugin that removes a pre-existing source fails the boot, naming the plugin.
-- A plugin that reorders a pre-existing source fails the boot, naming the plugin.
+- Each of these fails the boot, naming the plugin:
+  - a plugin that removes a pre-existing source
+  - a plugin that reorders a pre-existing source
 - A plugin that only appends sources completes without error.
 - After each hook returns and the guard passes, the loader moves that plugin's appended sources immediately below the last `EnvironmentVariablesConfigurationSource` present when Phase A began, preserving their relative order.
 - The loader adds no configuration source of its own.
@@ -121,28 +122,32 @@ A test against an invented key would pass without exercising that.
 
 **Tests**
 
-- A unit test over the host's real source list asserts a plugin-supplied key wins over the empty string `appsettings.json` ships.
-- The same test asserts an environment value wins over a plugin-supplied value.
-- The same test asserts a command-line value wins over a plugin-supplied value.
+- A unit test over the host's real source list asserts all three precedence outcomes:
+  - a plugin-supplied key wins over the empty string `appsettings.json` ships
+  - an environment value wins over a plugin-supplied value
+  - a command-line value wins over a plugin-supplied value
 - A test asserts the diagnostics announcement is on the channel when a fixture hook throws.
 - A test asserts a Phase A source cannot change `Plugins:Allowed`.
 - A test asserts `Acme.OldContract`, which overrides only `ContributeServices`, loads and runs on the `1.1.0` host.
 - `Acme.NewerContract` is unchanged, remaining built against `Acme.Contract2`.
-- An integration test boots `WebApplicationFactory<Program>` with a fixture plugin whose Phase A source supplies `ConfigurationServiceSettings:EncryptionKey`, and asserts DMS resolves the plugin's value.
-- A second integration case asserts a key also set in the environment resolves to the environment's value.
-- A third integration case asserts the loader added no source of its own.
+- An integration test boots `WebApplicationFactory<Program>` with a fixture plugin whose Phase A source supplies `ConfigurationServiceSettings:EncryptionKey`, asserting:
+  - DMS resolves the plugin's value
+  - a key also set in the environment resolves to the environment's value
+  - the loader added no source of its own
 
 **Documentation**
 
-- `docs/CONFIGURATION.md` states the precedence order: environment variables, command-line arguments, plugin sources in allowlist order, then `appsettings.json` and the other JSON sources.
-- `docs/CONFIGURATION.md` states that the environment outranks the command line only for keys read after `Infrastructure/WebApplicationBuilderExtensions.cs:44`, and names Serilog's configuration and `Plugins:Allowed` as the two reads where the command line wins.
-- `docs/CONFIGURATION.md` lists the three values Phase A cannot supply: `AppSettings:StartupStatusFilePath`, the `Plugins` section, and `DATABASE_CONNECTION_STRING_ADMIN`.
+- `docs/CONFIGURATION.md` states:
+  - the precedence order: environment variables, command-line arguments, plugin sources in allowlist order, then `appsettings.json` and the other JSON sources
+  - that the environment outranks the command line only for keys read after `Infrastructure/WebApplicationBuilderExtensions.cs:44`, naming Serilog's configuration and `Plugins:Allowed` as the two reads where the command line wins
+  - the three values Phase A cannot supply: `AppSettings:StartupStatusFilePath`, the `Plugins` section, and `DATABASE_CONNECTION_STRING_ADMIN`
 - `src/plugins/EdFi.Api.Plugins/PLUGINS.md` states the Phase A implementer rules: the two parameters, additive-only contribution, what the guard does and does not catch, and that allowlist order is contractual.
 
 **Build**
 
-- `dotnet test src/plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/EdFi.Api.Plugins.Hosting.Tests.Unit.csproj` passes.
-- `dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration` passes.
+- These pass:
+  - `dotnet test src/plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/EdFi.Api.Plugins.Hosting.Tests.Unit.csproj`
+  - `dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration`
 
 ## Tasks
 
