@@ -7,6 +7,6 @@
         "**/*.woff2",
         "**/*.ttf",
         "**/*.eot",
-        "src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/Utilities/LoggingSanitizerTests.cs"
+        "**/src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/Utilities/LoggingSanitizerTests.cs"
     ]
 }
