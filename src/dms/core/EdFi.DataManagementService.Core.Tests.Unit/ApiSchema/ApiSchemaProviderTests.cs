@@ -1105,6 +1105,41 @@ internal static class PackagedApiSchemaContract
     /// </summary>
     public static JsonObject LoadPackagedResourceSchemas(string packageRootMetadataKey)
     {
+        string apiSchemaPath = ResolvePackagedApiSchemaPath(packageRootMetadataKey);
+
+        if (
+            JsonNode.Parse(File.ReadAllText(apiSchemaPath))?["projectSchema"]?["resourceSchemas"]
+            is not JsonObject resourceSchemas
+        )
+        {
+            throw new InvalidOperationException(
+                $"Packaged ApiSchema is missing projectSchema.resourceSchemas: {apiSchemaPath}"
+            );
+        }
+
+        return resourceSchemas;
+    }
+
+    /// <summary>
+    /// Parses the entire packaged <c>ApiSchema.json</c> of the package whose restored root the build
+    /// recorded under <paramref name="packageRootMetadataKey"/>. Callers needing more than
+    /// <c>resourceSchemas</c> - the OpenAPI payloads, for one - read it through here, so exactly one
+    /// place knows the restored package layout.
+    /// </summary>
+    public static JsonNode LoadPackagedRootNode(string packageRootMetadataKey)
+    {
+        string apiSchemaPath = ResolvePackagedApiSchemaPath(packageRootMetadataKey);
+
+        return JsonNode.Parse(File.ReadAllText(apiSchemaPath))
+            ?? throw new InvalidOperationException($"Packaged ApiSchema parsed to null: {apiSchemaPath}");
+    }
+
+    /// <summary>
+    /// Resolves the packaged <c>ApiSchema.json</c> path from the restored package root the build
+    /// recorded under <paramref name="packageRootMetadataKey"/>.
+    /// </summary>
+    private static string ResolvePackagedApiSchemaPath(string packageRootMetadataKey)
+    {
         string? packageRoot = typeof(PackagedApiSchemaContract)
             .Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
             .SingleOrDefault(attribute =>
@@ -1137,17 +1172,7 @@ internal static class PackagedApiSchemaContract
             );
         }
 
-        if (
-            JsonNode.Parse(File.ReadAllText(apiSchemaPath))?["projectSchema"]?["resourceSchemas"]
-            is not JsonObject resourceSchemas
-        )
-        {
-            throw new InvalidOperationException(
-                $"Packaged ApiSchema is missing projectSchema.resourceSchemas: {apiSchemaPath}"
-            );
-        }
-
-        return resourceSchemas;
+        return apiSchemaPath;
     }
 
     /// <summary>
