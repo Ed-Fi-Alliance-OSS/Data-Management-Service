@@ -255,6 +255,166 @@ public partial class ProfileOpenApiSpecificationFilterTests
         };
 
     /// <summary>
+    /// A response that outlives every operation referencing it, which is the failure mode the snapshot
+    /// design names as the filter's residual hazard.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The filter prunes schemas nothing reachable from a surviving path references, and separately
+    /// replaces base schemas with profile-suffixed ones. Neither step knows about
+    /// <c>components.responses</c>, which is never pruned. A response entry can therefore survive while
+    /// the schema it points at is removed underneath it, leaving a served profile document that no
+    /// longer resolves.
+    /// </para>
+    /// <para>
+    /// Today's packages do not trigger this: the only responses carrying a schema reference are the two
+    /// snapshot ones, both point at the shared ProblemDetails envelope, and any profile retaining an
+    /// operation also retains a reference to one of them. The hazard is latent rather than live, which is
+    /// exactly why it needs a test rather than a bug report.
+    /// </para>
+    /// </remarks>
+    [TestFixture]
+    public class Given_A_Retained_Response_Referencing_An_Otherwise_Unreachable_Schema
+        : ProfileOpenApiSpecificationFilterTests
+    {
+        [Test]
+        public void It_retains_a_schema_reachable_only_from_a_retained_response()
+        {
+            JsonNode specification = GetBaseSpecWithSnapshotContract();
+            JsonObject components = specification["components"]!.AsObject();
+
+            components["responses"]!.AsObject()["OrphanedProblem"] = ResponseReferencingSchema(
+                "OrphanedPayload"
+            );
+            components["schemas"]!.AsObject()["OrphanedPayload"] = SchemaWithProperties("id");
+
+            JsonNode result = CreateFilter()
+                .CreateProfileSpecification(
+                    specification,
+                    Given_Profile_With_Change_Query_Paths.CreateReadableStudentProfile()
+                );
+
+            Component(result, "responses", "OrphanedProblem")
+                .Should()
+                .NotBeNull("the filter never prunes responses");
+            Component(result, "schemas", "OrphanedPayload")
+                .Should()
+                .NotBeNull(
+                    "the retained response is the only thing that reaches this schema, and a retained "
+                        + "response pointing at a removed schema does not resolve"
+                );
+            AssertRetainedResponsesResolve(result);
+        }
+
+        [Test]
+        public void It_retains_a_base_schema_a_retained_response_points_at_when_a_suffixed_twin_is_created()
+        {
+            // The other direction: the schema is not orphaned, it is replaced. A profiled operation
+            // causes EdFi_Student_readable to be created and the base schema to be dropped, but the
+            // retained response still points at the base.
+            JsonNode specification = GetBaseSpec();
+
+            specification["components"]!.AsObject()["responses"] = new JsonObject
+            {
+                ["StudentEcho"] = ResponseReferencingSchema("EdFi_Student"),
+            };
+
+            JsonNode result = CreateFilter()
+                .CreateProfileSpecification(
+                    specification,
+                    Given_Profile_With_Change_Query_Paths.CreateReadableStudentProfile()
+                );
+
+            Component(result, "schemas", "EdFi_Student_readable")
+                .Should()
+                .NotBeNull("the profiled operation still gets its suffixed schema");
+            Component(result, "schemas", "EdFi_Student")
+                .Should()
+                .NotBeNull("the retained response points at the base schema, not the suffixed one");
+            AssertRetainedResponsesResolve(result);
+        }
+
+        [Test]
+        public void It_does_not_retain_schemas_reachable_only_from_request_bodies_or_component_parameters()
+        {
+            // The guard on the fix above. Reachability is seeded from responses only. Seeding from the
+            // other two component collections would drag write-side and off-profile schemas back into
+            // documents that deliberately exclude them, which is broader than the hazard being closed.
+            //
+            // The two halves are load-bearing to different degrees, and saying so is more useful than
+            // implying otherwise. Request bodies are never pruned, exactly like responses, so a request
+            // body can outlive the paths that used it and a seed from there would be observable - that
+            // half is a real guard. Component parameters are pruned first, by RemoveUnusedParameters,
+            // so by the time schemas are pruned every surviving parameter is already referenced from a
+            // surviving path and seeding from them could add nothing. That half is included because the
+            // whole point is that a later change to either collection has to trip a test; a reader
+            // should not have to re-derive which one currently could.
+            JsonNode specification = GetBaseSpec();
+            JsonObject components = specification["components"]!.AsObject();
+
+            components["requestBodies"] = new JsonObject
+            {
+                ["SchoolWrite"] = new JsonObject
+                {
+                    ["content"] = new JsonObject
+                    {
+                        ["application/json"] = new JsonObject
+                        {
+                            ["schema"] = new JsonObject { ["$ref"] = "#/components/schemas/EdFi_School" },
+                        },
+                    },
+                },
+            };
+
+            components["parameters"] = new JsonObject
+            {
+                ["SchoolFilter"] = new JsonObject
+                {
+                    ["name"] = "schoolId",
+                    ["in"] = "query",
+                    ["schema"] = new JsonObject { ["$ref"] = "#/components/schemas/EdFi_School" },
+                },
+            };
+
+            JsonNode result = CreateFilter()
+                .CreateProfileSpecification(
+                    specification,
+                    Given_Profile_With_Change_Query_Paths.CreateReadableStudentProfile()
+                );
+
+            Paths(result).Should().NotContainKey("/ed-fi/schools", "School is outside this profile");
+            Component(result, "requestBodies", "SchoolWrite")
+                .Should()
+                .NotBeNull("request bodies are never pruned, so this entry outlives the paths that used it");
+            Component(result, "parameters", "SchoolFilter")
+                .Should()
+                .BeNull("no surviving path references it, so parameter pruning removes it first");
+
+            Component(result, "schemas", "EdFi_School")
+                .Should()
+                .BeNull(
+                    "a schema reachable only from a request body or a component parameter must not be "
+                        + "pulled back into a profile document that excludes the resource"
+                );
+            Component(result, "schemas", "EdFi_School_readable").Should().BeNull();
+            Component(result, "schemas", "EdFi_School_writable").Should().BeNull();
+        }
+
+        private static JsonObject ResponseReferencingSchema(string schemaName) =>
+            new()
+            {
+                ["description"] = $"A response carrying {schemaName}.",
+                ["content"] = new JsonObject
+                {
+                    ["application/json"] = new JsonObject
+                    {
+                        ["schema"] = new JsonObject { ["$ref"] = $"#/components/schemas/{schemaName}" },
+                    },
+                },
+            };
+    }
+
+    /// <summary>
     /// The snapshot contract through profile filtering for a readable profile.
     /// </summary>
     [TestFixture]
