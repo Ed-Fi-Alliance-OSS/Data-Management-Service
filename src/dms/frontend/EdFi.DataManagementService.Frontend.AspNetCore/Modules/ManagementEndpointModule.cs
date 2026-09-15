@@ -12,6 +12,7 @@ using EdFi.DataManagementService.Core.Response;
 using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
 using Microsoft.Extensions.Options;
+using CoreAppSettings = EdFi.DataManagementService.Core.Configuration.AppSettings;
 using FrontendAppSettings = EdFi.DataManagementService.Frontend.AspNetCore.Configuration.AppSettings;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Modules;
@@ -21,7 +22,8 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Modules;
 /// In multi-tenant deployments, claimset endpoints require a tenant segment in the route.
 /// </summary>
 public class ManagementEndpointModule(
-    IOptions<FrontendAppSettings> options,
+    IOptions<FrontendAppSettings> frontendOptions,
+    IOptions<CoreAppSettings> coreOptions,
     IOptions<ManagementEndpointsOptions> managementEndpointsOptions,
     IOptions<JwtAuthenticationOptions> jwtAuthenticationOptions,
     ILogger<ManagementEndpointModule> logger
@@ -29,7 +31,12 @@ public class ManagementEndpointModule(
 {
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
-        bool multiTenancy = options.Value.MultiTenancy;
+        if (!coreOptions.Value.EnableManagementEndpoints)
+        {
+            return;
+        }
+
+        bool multiTenancy = frontendOptions.Value.MultiTenancy;
 
         var managementEndpoints = endpoints.MapGroup("/management");
 
