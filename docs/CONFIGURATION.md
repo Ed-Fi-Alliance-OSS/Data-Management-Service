@@ -345,8 +345,10 @@ acquisition recipes.
 
 `Allowed` is the only switch. A plugin runs if and only if its directory name
 appears here, and there is no per-feature switch of any kind. A directory present
-under the root but absent from `Allowed` is never opened, and produces one warning
-naming it.
+under the root but absent from `Allowed` is never opened. When `Allowed` names at
+least one plugin, each such directory also produces one warning naming it; an empty
+`Allowed` asks for nothing and does not inspect the root at all, so it produces no
+warning.
 
 The order written is the invocation order, so it is what decides the order in which
 plugins contribute.
