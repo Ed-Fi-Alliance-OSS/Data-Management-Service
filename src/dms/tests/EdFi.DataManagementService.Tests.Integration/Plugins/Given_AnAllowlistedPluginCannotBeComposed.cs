@@ -28,7 +28,8 @@ namespace EdFi.DataManagementService.Tests.Integration.Plugins;
 /// plugin or why. Each case below names the value that distinguishes it from the other two.
 /// </para>
 /// </remarks>
-public sealed class Given_AnAllowlistedPluginCannotBeComposed : PluginIntegrationTestBase
+[Category("PluginIntegration")]
+public sealed class Given_AnAllowlistedPluginCannotBeComposed
 {
     /// <summary>
     /// What the <c>Acme.HookThrows</c> fixture throws from its hook, as a literal.

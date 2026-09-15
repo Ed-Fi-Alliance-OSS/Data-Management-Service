@@ -23,7 +23,8 @@ namespace EdFi.DataManagementService.Tests.Integration.Plugins;
 /// below its meaning. The unallowlisted directory's entry assembly is deliberately unloadable, which
 /// is what makes "never opened" observable rather than assumed.
 /// </remarks>
-public sealed class Given_NoPluginIsAllowlisted : PluginIntegrationTestBase
+[Category("PluginIntegration")]
+public sealed class Given_NoPluginIsAllowlisted
 {
     private WebApplicationFactory<Program>? _factory;
     private PluginLogCapture _capture = new();

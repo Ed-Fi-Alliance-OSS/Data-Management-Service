@@ -35,7 +35,8 @@ namespace EdFi.DataManagementService.Tests.Integration.Plugins;
 /// keeps the failure inside the test process while both real guards still run.
 /// </para>
 /// </remarks>
-public sealed class Given_APluginRegistersAValidatorTheAuditRefuses : PluginIntegrationTestBase
+[Category("PluginIntegration")]
+public sealed class Given_APluginRegistersAValidatorTheAuditRefuses
 {
     /// <summary>The plugin whose registration the audit accepts.</summary>
     private const string AcceptedPlugin = "Acme.DmsContributor";

@@ -75,7 +75,7 @@ internal static class PluginInventoryLog
                     + "{@DeclaredFiles}; registered service types {@RegisteredServiceTypes}; removed "
                     + "descriptors {@RemovedDescriptors}; host-first substitutions "
                     + "{@HostFirstSubstitutions}",
-                PluginLogText.Loggable(record.PluginName),
+                Loggable(record.PluginName),
                 record.Plugin.EntryAssemblyVersion.ToString(),
                 inventory.Select(DeclaredFileOf).ToArray(),
                 record.Additions.Select(RegisteredServiceOf).ToArray(),
@@ -102,23 +102,23 @@ internal static class PluginInventoryLog
                 "Plugin loader warning {PluginLoadWarningKind}: directories {@IgnoredDirectories}; "
                     + "detail {WarningDetail}",
                 warning.Kind.ToString(),
-                warning.Directories.Select(PluginLogText.Loggable).ToArray(),
-                PluginLogText.Loggable(warning.Detail)
+                warning.Directories.Select(Loggable).ToArray(),
+                Loggable(warning.Detail)
             );
         }
     }
 
     private static PluginInventoryFileEntry DeclaredFileOf(PluginInventoryRow row) =>
         new(
-            PluginLogText.Loggable(row.FileName)!,
-            PluginLogText.Loggable(row.DeclaredPath)!,
-            PluginLogText.Loggable(row.ResolvedRelativePath),
+            Loggable(row.FileName)!,
+            Loggable(row.DeclaredPath)!,
+            Loggable(row.ResolvedRelativePath),
             row.Kind.ToString(),
             row.DeclaredAssemblyVersion?.ToString(),
             row.EffectiveVersion?.ToString(),
             row.EffectiveVersionSource.ToString(),
             row.Availability.ToString(),
-            PluginLogText.Loggable(row.Sha256),
+            Loggable(row.Sha256),
             row.LoadState.ToString()
         );
 
@@ -127,8 +127,8 @@ internal static class PluginInventoryLog
         Type? implementationType = PluginDescriptorFacts.ImplementationTypeOf(descriptor);
 
         return new PluginRegisteredServiceEntry(
-            PluginLogText.TypeName(descriptor.ServiceType),
-            implementationType is null ? null : PluginLogText.TypeName(implementationType),
+            TypeName(descriptor.ServiceType),
+            implementationType is null ? null : TypeName(implementationType),
             descriptor.Lifetime.ToString(),
             descriptor.IsKeyedService
         );
@@ -139,20 +139,35 @@ internal static class PluginInventoryLog
         HashSet<Type> replacedServiceTypes
     ) =>
         new(
-            PluginLogText.TypeName(removal.ServiceType),
+            TypeName(removal.ServiceType),
             removal.DisplacedImplementationType is null
                 ? null
-                : PluginLogText.TypeName(removal.DisplacedImplementationType),
+                : TypeName(removal.DisplacedImplementationType),
             replacedServiceTypes.Contains(removal.ServiceType)
         );
 
     private static PluginSubstitutionEntry SubstitutionOf(HostFirstSubstitution substitution) =>
         new(
-            PluginLogText.Loggable(substitution.AssemblyName)!,
+            Loggable(substitution.AssemblyName)!,
             substitution.RequestedVersion?.ToString(),
             substitution.HostVersion.ToString(),
             substitution.DeclaredVersion?.ToString()
         );
+
+    /// <summary>
+    /// A value from outside the process, rendered so it cannot forge a log record.
+    /// </summary>
+    /// <remarks>
+    /// Plugin names, file names and assembly names all originate in a directory a third party
+    /// published, and log records are line-oriented. Only control characters are stripped: a nested or
+    /// generic type name stays searchable in the source it came from, which a heavier escaping would
+    /// destroy.
+    /// </remarks>
+    private static string? Loggable(string? value) =>
+        value is null ? null : string.Concat(value.Where(static character => !char.IsControl(character)));
+
+    /// <summary>A type name for a log record, from the same metadata the loader read.</summary>
+    private static string TypeName(Type type) => Loggable(type.FullName ?? type.Name)!;
 }
 
 /// <summary>
