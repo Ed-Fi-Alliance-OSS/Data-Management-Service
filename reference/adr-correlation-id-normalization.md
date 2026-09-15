@@ -97,11 +97,14 @@ scheme while bounding that amplification.
 is not a startup crash. `Program.cs` resolves `IOptions<AppSettings>` eagerly, catches the
 resulting `OptionsValidationException`, and registers `ReportInvalidConfigurationMiddleware` ahead
 of routing and endpoint configuration — which is then skipped in full. The host starts and
-listens; every request, `/health` included (it is never mapped), is short-circuited with a
-bodiless `500`, and the validation failure is logged at `Critical`. The setting has to be
-corrected and the service restarted. That failure message is passed to `ILogger` as the message
-*template*, so it is written brace-free: the template is parsed by the logging pipeline, and a
-brace in it would be read as a property hole rather than as literal text.
+listens; every request, `/health` included (it is never mapped), is short-circuited with the
+generic Ed-Fi `500` body — `FailureResponse.ForSystemError`, carrying the same `correlationId` the
+request is logged under — and the validation failure is logged at `Critical`. It is logged once,
+when the pipeline is built, rather than on every request: the failures are a startup-time fact that
+cannot change while the process runs. The setting has to be corrected and the service restarted.
+Each failure message is passed to `ILogger` as a `{ConfigurationError}` parameter of a constant
+template, never as the template itself, so a brace in a validation message is logged literally
+instead of being parsed as a property hole.
 
 ### Single point of normalization
 

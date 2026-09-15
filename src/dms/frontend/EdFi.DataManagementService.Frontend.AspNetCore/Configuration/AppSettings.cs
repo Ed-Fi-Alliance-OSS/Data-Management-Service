@@ -104,10 +104,12 @@ public class AppSettingsValidator : IValidateOptions<AppSettings>
             || options.CorrelationIdMaxLength > AppSettings.MaximumCorrelationIdMaxLength
         )
         {
-            // The message is brace-free on purpose. ReportInvalidConfigurationMiddleware passes
-            // each failure straight to ILogger.LogCritical as the *message template* argument, and
-            // Serilog re-reads that template from {OriginalFormat} and parses it, so a brace here
-            // would be taken for a property hole rather than logged literally.
+            // The message is brace-free, but it no longer has to be:
+            // ReportInvalidConfigurationMiddleware now logs each failure as a {ConfigurationError}
+            // parameter of a constant template rather than as the template itself, so a brace here
+            // is logged literally instead of being taken for a property hole. It stays brace-free
+            // because a failure message reads better without braces, not because the logging
+            // pipeline depends on it.
             return ValidateOptionsResult.Fail(
                 "AppSettings value CorrelationIdMaxLength was "
                     + options.CorrelationIdMaxLength.ToString(CultureInfo.InvariantCulture)

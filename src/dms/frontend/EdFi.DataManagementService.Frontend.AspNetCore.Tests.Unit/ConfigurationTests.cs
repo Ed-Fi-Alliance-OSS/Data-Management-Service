@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.Concurrent;
 using System.Globalization;
 using System.Net;
 using System.Text.Json.Nodes;
@@ -20,6 +21,8 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NUnit.Framework;
 
@@ -122,7 +125,12 @@ public class ConfigurationTests
 
                 // Assert
                 response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
-                content.Should().Be(string.Empty);
+                // The short-circuit response carries the generic Ed-Fi 500 body rather than nothing
+                // at all; Given_A_Host_Short_Circuited_By_Invalid_Configuration asserts its shape.
+                JsonNode.Parse(content)!["status"]!
+                    .GetValue<int>()
+                    .Should()
+                    .Be(500);
             }
 
             [Test]
@@ -301,7 +309,7 @@ public class ConfigurationTests
 
             // Assert
             response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
-            content.Should().Be(string.Empty);
+            JsonNode.Parse(content)!["status"]!.GetValue<int>().Should().Be(500);
             File.Exists(_statusFilePath).Should().BeTrue();
 
             var startupStatus = JsonNode.Parse(await File.ReadAllTextAsync(_statusFilePath))!.AsObject();
@@ -830,6 +838,256 @@ public class ConfigurationTests
         public void Teardown()
         {
             _factory!.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// A host whose configuration failed validation still listens and still answers: every request,
+    /// <c>/health</c> included, is short-circuited by <c>ReportInvalidConfigurationMiddleware</c>.
+    /// This fixture covers what that answer owes the two audiences that see it - a body the client
+    /// can correlate, and a critical log line the operator is not buried in.
+    /// </summary>
+    /// <remarks>
+    /// The trigger is an out-of-range <c>CorrelationIdMaxLength</c> rather than, say, a missing
+    /// AuthenticationService, because it is the failure that makes the correlation ID assertions
+    /// below mean something: the setting that just failed validation is the very one the correlation
+    /// ID pipeline reads, so there is no validated cap to normalize against and nothing cached on
+    /// <c>HttpContext.Items</c> to reuse. The request log and the response body have to arrive at
+    /// the same value independently, each through the documented default. 32 is also the shape of a
+    /// realistic operator typo: it was accepted before the floor of 64 was introduced, which is what
+    /// makes this short-circuit path materially more reachable than it was.
+    /// </remarks>
+    [TestFixture]
+    [NonParallelizable]
+    public class Given_A_Host_Short_Circuited_By_Invalid_Configuration
+    {
+        private const int OutOfRangeCorrelationIdMaxLength = 32;
+
+        /// <summary>
+        /// The constant template <c>ReportInvalidConfigurationMiddleware</c> logs under. Spelled out
+        /// rather than referenced, so that moving the failure message back into the template
+        /// position fails this test instead of quietly rewriting what it asserts.
+        /// </summary>
+        private const string ExpectedLogTemplate = "Invalid DMS configuration: {ConfigurationError}";
+
+        private static readonly string _middlewareCategory =
+            typeof(ReportInvalidConfigurationMiddleware).FullName!;
+
+        private WebApplicationFactory<Program> _factory = null!;
+        private RecordingLoggerProvider _logs = null!;
+        private CorrelationIdRecordingLoggerProvider _requestLog = null!;
+        private string _statusDirectory = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _logs = new RecordingLoggerProvider();
+            _requestLog = new CorrelationIdRecordingLoggerProvider();
+            _statusDirectory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+
+            _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.ConfigureAppConfiguration(
+                    (context, configuration) =>
+                        configuration.AddInMemoryCollection(
+                            new Dictionary<string, string?>
+                            {
+                                ["AppSettings:AuthenticationService"] = "http://localhost:5126/connect/token",
+                                ["AppSettings:CorrelationIdMaxLength"] =
+                                    OutOfRangeCorrelationIdMaxLength.ToString(CultureInfo.InvariantCulture),
+                                ["AppSettings:StartupStatusFilePath"] = Path.Combine(
+                                    _statusDirectory,
+                                    "dms-startup-status.json"
+                                ),
+                            }
+                        )
+                );
+                builder.ConfigureLogging(logging =>
+                {
+                    logging.AddProvider(_logs);
+                    logging.AddProvider(_requestLog);
+                });
+                // AppSettingsValidator is registered by the application itself, so - unlike the
+                // fixtures above - nothing is added here. A second registration would produce a
+                // second copy of the same failure and make the "logged once" count below read 2.
+                builder.ConfigureServices(TestMockHelper.AddEssentialMocks);
+            });
+        }
+
+        [TearDown]
+        public void Teardown()
+        {
+            _factory.Dispose();
+            _logs.Dispose();
+            _requestLog.Dispose();
+
+            if (Directory.Exists(_statusDirectory))
+            {
+                Directory.Delete(_statusDirectory, recursive: true);
+            }
+        }
+
+        [Test]
+        public async Task It_answers_with_the_generic_ed_fi_problem_details_body()
+        {
+            using HttpClient client = _factory.CreateClient();
+
+            HttpResponseMessage response = await client.GetAsync("/");
+            string content = await response.Content.ReadAsStringAsync();
+
+            response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+            response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+
+            JsonObject body = JsonNode.Parse(content)!.AsObject();
+            body["status"]!.GetValue<int>().Should().Be(500);
+            body["title"]!.GetValue<string>().Should().Be("System Error");
+            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:system");
+            body["detail"]!.GetValue<string>().Should().Be("An unexpected problem has occurred.");
+            body["correlationId"]!.GetValue<string>().Should().NotBeNullOrWhiteSpace();
+        }
+
+        /// <summary>
+        /// The half of the contract the body shape alone does not pin: a configuration failure
+        /// message describes the host's own settings and belongs in the log, never in a response an
+        /// unauthenticated client can read.
+        /// </summary>
+        [Test]
+        public async Task It_keeps_the_validation_messages_out_of_the_response_body()
+        {
+            using HttpClient client = _factory.CreateClient();
+
+            HttpResponseMessage response = await client.GetAsync("/");
+            string content = await response.Content.ReadAsStringAsync();
+
+            // Parsed first so this fails, rather than passing vacuously, if the body regresses to
+            // being absent: an empty body names no setting either.
+            JsonNode.Parse(content)!["detail"]!
+                .GetValue<string>()
+                .Should()
+                .NotBeNullOrWhiteSpace();
+            content.Should().NotContain(nameof(AppSettings.CorrelationIdMaxLength));
+        }
+
+        /// <summary>
+        /// The configuration errors are a startup-time fact that cannot change while the process
+        /// runs, so they are reported once, when the pipeline is built. Two requests are what
+        /// distinguishes that from re-reporting them at traffic rate: per-request logging would leave
+        /// nothing recorded before the first request and three events after the second.
+        /// </summary>
+        [Test]
+        public async Task It_logs_each_configuration_failure_once_however_many_requests_arrive()
+        {
+            using HttpClient client = _factory.CreateClient();
+
+            _logs.CriticalEventsFrom(_middlewareCategory).Should().HaveCount(1);
+
+            (await client.GetAsync("/")).StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+            (await client.GetAsync("/health")).StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+
+            _logs.CriticalEventsFrom(_middlewareCategory).Should().HaveCount(1);
+        }
+
+        /// <summary>
+        /// The structured event has to carry the failure as data. Passing it as the message template
+        /// instead would let any brace a future validation message contains be parsed as a property
+        /// hole, so the event would lose the message and gain a bogus property - which is why this
+        /// asserts on <c>{OriginalFormat}</c> and the named property rather than on rendered text.
+        /// </summary>
+        [Test]
+        public void It_logs_the_failure_message_as_a_parameter_rather_than_as_the_template()
+        {
+            // Creating the client is what builds the pipeline, which is where the middleware - and
+            // so the log event under test - is constructed.
+            using HttpClient client = _factory.CreateClient();
+
+            RecordedLogEvent logged = _logs.CriticalEventsFrom(_middlewareCategory).Single();
+
+            logged.Properties["{OriginalFormat}"].Should().Be(ExpectedLogTemplate);
+            logged
+                .Properties["ConfigurationError"]
+                .Should()
+                .BeOfType<string>()
+                .Which.Should()
+                .Contain(nameof(AppSettings.CorrelationIdMaxLength));
+        }
+
+        /// <summary>
+        /// FR-LOG-6 on the one path where the correlation ID pipeline cannot read its own
+        /// configuration. The middleware and <c>LoggingMiddleware</c> each fall back to normalizing
+        /// the server-generated identifier against <c>DefaultCorrelationIdMaxLength</c>, so the
+        /// <c>correlationId</c> the client reads is still the <c>TraceId</c> it can search the logs
+        /// for. A bodiless 500 offered the client nothing to search with at all.
+        /// </summary>
+        [Test]
+        public async Task It_carries_the_correlation_id_the_request_was_logged_under()
+        {
+            using HttpClient client = _factory.CreateClient();
+
+            HttpResponseMessage response = await client.GetAsync("/");
+            string content = await response.Content.ReadAsStringAsync();
+
+            string correlationId = JsonNode.Parse(content)!["correlationId"]!.GetValue<string>();
+            _requestLog.LoggedTraceIds.Should().ContainSingle().Which.Should().Be(correlationId);
+        }
+
+        /// <summary>
+        /// One recorded log event, reduced to the three things the assertions above read.
+        /// </summary>
+        private sealed record RecordedLogEvent(
+            LogLevel Level,
+            string Category,
+            IReadOnlyDictionary<string, object?> Properties
+        );
+
+        /// <summary>
+        /// Records every event, with its structured state intact.
+        /// <see cref="CorrelationIdRecordingLoggerProvider"/> cannot stand in: it is deliberately
+        /// narrowed to the two request-logging event ids and discards the state of everything else.
+        /// </summary>
+        private sealed class RecordingLoggerProvider : ILoggerProvider
+        {
+            private readonly ConcurrentQueue<RecordedLogEvent> _events = new();
+
+            public RecordedLogEvent[] CriticalEventsFrom(string category) =>
+                [
+                    .. _events.Where(recorded =>
+                        recorded.Level == LogLevel.Critical
+                        && string.Equals(recorded.Category, category, StringComparison.Ordinal)
+                    ),
+                ];
+
+            public ILogger CreateLogger(string categoryName) => new Recorder(categoryName, _events);
+
+            public void Dispose() { }
+
+            private sealed class Recorder(string category, ConcurrentQueue<RecordedLogEvent> events) : ILogger
+            {
+                public IDisposable BeginScope<TState>(TState state)
+                    where TState : notnull => NullLogger.Instance.BeginScope(state);
+
+                public bool IsEnabled(LogLevel logLevel) => true;
+
+                public void Log<TState>(
+                    LogLevel logLevel,
+                    EventId eventId,
+                    TState state,
+                    Exception? exception,
+                    Func<TState, Exception?, string> formatter
+                )
+                {
+                    Dictionary<string, object?> properties = new(StringComparer.Ordinal);
+                    if (state is IReadOnlyList<KeyValuePair<string, object?>> values)
+                    {
+                        foreach (KeyValuePair<string, object?> value in values)
+                        {
+                            properties[value.Key] = value.Value;
+                        }
+                    }
+
+                    events.Enqueue(new RecordedLogEvent(logLevel, category, properties));
+                }
+            }
         }
     }
 }

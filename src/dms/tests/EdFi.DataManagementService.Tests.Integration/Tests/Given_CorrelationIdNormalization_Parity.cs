@@ -52,7 +52,7 @@ public class Given_CorrelationIdNormalization_Parity
 
     /// <summary>
     /// The lowest cap <c>AppSettingsValidator</c> accepts. Anything lower would fail validation
-    /// and every request below would be answered with a bodiless 500 instead of the response
+    /// and every request below would be answered with the generic short-circuit 500 instead of the response
     /// under test.
     /// </summary>
     private const int CorrelationIdMaxLength = 64;
