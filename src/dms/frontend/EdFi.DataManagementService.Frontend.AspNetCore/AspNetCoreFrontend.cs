@@ -502,8 +502,34 @@ public static class AspNetCoreFrontend
             FellBackToServerIdentifier: clientSuppliedAValue && fellBack
         );
 
-        items[CorrelationIdItemsKey] = result;
-        return result;
+        return CacheIngestionOn(request.HttpContext, result);
+    }
+
+    /// <summary>
+    /// Records <paramref name="ingestion"/> as this request's one ingestion result, so that every
+    /// later correlation ID call site reads it rather than deriving its own.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Exists so that <see cref="CorrelationIdItemsKey"/> is written in exactly one place. The
+    /// other caller is <c>LoggingMiddleware</c>, which on one path - a host whose
+    /// <c>AppSettings</c> validation failed - cannot reach <see cref="IngestCorrelationIdFrom"/>
+    /// at all, because reading the configuration is what throws there. It builds its ingestion
+    /// from <see cref="Configuration.AppSettings.DefaultCorrelationIdMaxLength"/> instead and
+    /// caches it through here, which is what lets the invalid-configuration response body carry
+    /// the value the request was logged under without re-deriving it.
+    /// </para>
+    /// <para>
+    /// Returns what it stored so a caller can cache and return in one expression.
+    /// </para>
+    /// </remarks>
+    internal static CorrelationIdIngestion CacheIngestionOn(
+        HttpContext context,
+        CorrelationIdIngestion ingestion
+    )
+    {
+        context.Items[CorrelationIdItemsKey] = ingestion;
+        return ingestion;
     }
 
     /// <summary>

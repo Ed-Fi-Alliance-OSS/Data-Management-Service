@@ -271,15 +271,31 @@ public class LoggingMiddleware
             // which also keeps a host stuck in invalid-configuration mode from adding a second
             // log line to every short-circuited request.
             //
-            // Nothing is cached on HttpContext.Items here either, because in this mode every
-            // request is short-circuited by the invalid-configuration middleware ahead of
-            // routing, so no other correlation ID call site runs. Caching a value derived from
-            // the documented default rather than from validated configuration would only matter
-            // if that stopped being true, and then it ought to be recomputed rather than reused.
-            return AspNetCoreFrontend.CorrelationIdIngestion.ForServerGeneratedIdentifier(
-                CorrelationIdNormalizer.Normalize(
-                    context.TraceIdentifier,
-                    AppSettings.DefaultCorrelationIdMaxLength
+            // The result is cached on HttpContext.Items exactly as an ordinary ingestion is,
+            // because this mode does have a second correlation ID call site:
+            // ReportInvalidConfigurationMiddleware, registered behind this middleware, short-
+            // circuits the request with a 500 whose body carries the correlation ID, and it reaches
+            // that value through ExtractTraceIdFrom. The cache is what makes that read a hit on
+            // this very value, so the body a client can read and the TraceId it can search the logs
+            // for are one value rather than two that happen to agree. Without the cache the
+            // middleware re-derives it on every request a host in this mode answers - reaching
+            // IOptions.Value, taking the same OptionsValidationException and falling back the same
+            // way - so the "normalized once per request" property would hold only by virtue of
+            // normalization being pure, and a thrown exception per request would be paid for it.
+            //
+            // Worth recognizing for what it is: the cached value derives from the documented
+            // default rather than from validated configuration, because on this path there is no
+            // validated configuration to derive it from. Reuse is still what is wanted. Every
+            // consumer of it is answering the same short-circuited request, and each of them would
+            // otherwise reach that same default by the same route; recomputing could only arrive
+            // at the same string, at the cost of another exception.
+            return AspNetCoreFrontend.CacheIngestionOn(
+                context,
+                AspNetCoreFrontend.CorrelationIdIngestion.ForServerGeneratedIdentifier(
+                    CorrelationIdNormalizer.Normalize(
+                        context.TraceIdentifier,
+                        AppSettings.DefaultCorrelationIdMaxLength
+                    )
                 )
             );
         }
