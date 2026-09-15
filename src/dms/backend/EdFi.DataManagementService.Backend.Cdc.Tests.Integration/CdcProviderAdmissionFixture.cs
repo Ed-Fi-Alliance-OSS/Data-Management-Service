@@ -1105,7 +1105,8 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
                             cancellationToken
                         ),
                         await owner.ScalarAsync<bool>(
-                            "SELECT active AND wal_status IN ('reserved', 'extended') AND invalidation_reason IS NULL FROM pg_replication_slots WHERE database = current_database()",
+                            // PostgreSQL 16 lacks invalidation_reason; follow the production provider's JSON lookup.
+                            "SELECT active AND wal_status IN ('reserved', 'extended') AND (to_jsonb(slot)->>'invalidation_reason') IS NULL FROM pg_replication_slots AS slot WHERE database = current_database()",
                             cancellationToken
                         )
                     )
