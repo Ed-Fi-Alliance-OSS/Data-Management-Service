@@ -19,7 +19,8 @@ public class SecurityHeadersMiddlewareTests
     // DefaultHttpContext's response feature ignores OnStarting, so a fake captures the callback
     // and the response start is simulated by invoking it after the middleware runs.
     private static async Task<IHeaderDictionary> RunAndStartResponseAsync(
-        Action<IHeaderDictionary>? seedUpstreamHeaders = null
+        Action<IHeaderDictionary>? seedUpstreamHeaders = null,
+        int statusCode = StatusCodes.Status200OK
     )
     {
         var headers = new HeaderDictionary();
@@ -28,6 +29,11 @@ public class SecurityHeadersMiddlewareTests
 
         var responseFeature = A.Fake<IHttpResponseFeature>();
         A.CallTo(() => responseFeature.Headers).Returns(headers);
+
+        // The status the pipeline settled on by the time the response starts. A fake returns 0 for
+        // an unconfigured int, which is not a status any predicate should be reasoning about, so it
+        // is set explicitly on every run.
+        A.CallTo(() => responseFeature.StatusCode).Returns(statusCode);
         A.CallTo(() => responseFeature.OnStarting(A<Func<object, Task>>._, A<object>._))
             .Invokes(
                 (Func<object, Task> callback, object state) =>
@@ -76,5 +82,59 @@ public class SecurityHeadersMiddlewareTests
             h["X-Content-Type-Options"] = "custom"
         );
         headers["X-Content-Type-Options"].ToString().Should().Be("custom");
+    }
+
+    [Test]
+    public async Task It_does_not_add_cache_control_to_a_success_response()
+    {
+        // A 200 is served with an etag and is what conditional GET revalidates against, so it must
+        // stay storable. Asserting absence of the header, not just a different value, because the
+        // middleware's only contribution here would be the no-store.
+        IHeaderDictionary headers = await RunAndStartResponseAsync(statusCode: StatusCodes.Status200OK);
+        headers.ContainsKey("Cache-Control").Should().BeFalse();
+    }
+
+    [Test]
+    public async Task It_adds_cache_control_no_store_to_a_not_found_response()
+    {
+        // The catch-all 404 in Program.cs reflects a client-supplied correlation ID and is one of
+        // the statuses RFC 9111 lets a shared cache store heuristically.
+        IHeaderDictionary headers = await RunAndStartResponseAsync(statusCode: StatusCodes.Status404NotFound);
+        headers["Cache-Control"].ToString().Should().Be("no-store");
+    }
+
+    [Test]
+    public async Task It_adds_cache_control_no_store_to_a_server_error_response()
+    {
+        IHeaderDictionary headers = await RunAndStartResponseAsync(
+            statusCode: StatusCodes.Status500InternalServerError
+        );
+        headers["Cache-Control"].ToString().Should().Be("no-store");
+    }
+
+    [Test]
+    public async Task It_does_not_add_cache_control_to_a_not_modified_response()
+    {
+        // The regression guard for the 304 exclusion: a 304 tells a cache its stored copy is still
+        // good, so no-store here would discard that copy and defeat the If-None-Match handling in
+        // GetByIdHandler. This test fails if the predicate is ever simplified to a bare "not 2xx"
+        // or ">= 300".
+        IHeaderDictionary headers = await RunAndStartResponseAsync(
+            statusCode: StatusCodes.Status304NotModified
+        );
+        headers.ContainsKey("Cache-Control").Should().BeFalse();
+    }
+
+    [Test]
+    public async Task It_does_not_overwrite_a_cache_control_already_present()
+    {
+        // TryAdd semantics for Cache-Control specifically: a handler that has chosen its own
+        // directive - GetTokenInfoHandler sets no-cache - keeps it. Run on a failing status so the
+        // middleware would otherwise have written no-store here.
+        IHeaderDictionary headers = await RunAndStartResponseAsync(
+            h => h["Cache-Control"] = "no-cache",
+            StatusCodes.Status404NotFound
+        );
+        headers["Cache-Control"].ToString().Should().Be("no-cache");
     }
 }
