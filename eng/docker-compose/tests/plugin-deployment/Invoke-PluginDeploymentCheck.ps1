@@ -99,6 +99,7 @@ New-Item -ItemType Directory -Path $evidenceRoot -Force | Out-Null
 $script:results = [ordered]@{}
 $script:fixture = $null
 $script:package = $null
+$script:probedImageId = $null
 
 # Diagnostics go to the information stream rather than to the success stream, so that a function
 # returning a value cannot hand its caller a mixture of the value and everything it printed.
@@ -320,6 +321,37 @@ function Get-DmsLog {
     return ((& docker logs $dmsContainer 2>&1) -join "`n")
 }
 
+# The image an image reference currently resolves to, and the image a container actually ran. These
+# are separate facts and the whole point of recording them: build-dms.ps1 DockerBuild tags
+# local/ed-fi-api, while Compose builds ed-fi-api-local from the same Dockerfile through
+# local-dms.yml. Without the ids, the assembly versions asserted in Phase 1 and the deployments below
+# are claims about two artifacts nothing ties together.
+function Get-ImageId([string]$reference) {
+    $id = & docker image inspect $reference --format '{{.Id}}' 2>$null
+
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($id)) {
+        return $null
+    }
+
+    return ($id -join "").Trim()
+}
+
+function Get-ContainerImage([string]$container) {
+    if ([string]::IsNullOrWhiteSpace($container)) {
+        return $null
+    }
+
+    $raw = & docker inspect $container --format '{{.Config.Image}}|{{.Image}}' 2>$null
+
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($raw)) {
+        return $null
+    }
+
+    $parts = (($raw -join "").Trim() -split '\|', 2)
+
+    return [ordered]@{ Reference = $parts[0]; ImageId = $parts[1] }
+}
+
 function Get-PluginMountIsReadOnly([string]$container) {
     $raw = & docker inspect $container --format '{{json .Mounts}}' 2>$null
 
@@ -476,14 +508,22 @@ function Invoke-ImageVersionProof {
         ($frontend.ProductVersion -eq $DmsVersion) `
         "Version and InformationalVersion still record what the image was built for: $($frontend.ProductVersion)"
 
+    $probedImageId = Get-ImageId "local/ed-fi-api"
+    Assert-True `
+        (-not [string]::IsNullOrWhiteSpace($probedImageId)) `
+        "the assemblies above were read out of image local/ed-fi-api $probedImageId"
+
     $script:results.imageVersionProof = [ordered]@{
         dmsVersionArgument       = $DmsVersion
         committedDmsVersion      = $dmsDeclared
         committedContractVersion = $pluginsDeclared
+        probedImageReference     = "local/ed-fi-api"
+        probedImageId            = $probedImageId
         contract                 = $contract
         frontend                 = $frontend
         propsUnchanged           = $true
     }
+    $script:probedImageId = $probedImageId
 }
 
 # ---------------------------------------------------------------------------------------------
@@ -685,13 +725,25 @@ function Invoke-PluginDeployment {
 
     $state = Get-ContainerState $dmsContainer
 
+    # Which image actually served this deployment. Compose builds ed-fi-api-local from the same
+    # Dockerfile that DockerBuild tags local/ed-fi-api, so the two ids are recorded side by side and
+    # the reader can see for themselves whether they are the same artifact rather than take it on
+    # trust. They are routinely different, because the two builds happen at different moments.
+    $image = Get-ContainerImage $dmsContainer
+    Assert-True `
+        ($null -ne $image -and -not [string]::IsNullOrWhiteSpace($image.ImageId)) `
+        "the DMS container ran image $($image.Reference) $($image.ImageId)"
+
     $record = [ordered]@{
-        readyPhase          = $status.Phase
-        readyState          = $status.State
-        dmsStartedAt        = $state.StartedAt
-        inventoryEvents     = $inventory.Count
-        pluginMountReadOnly = $true
-        inventoryLine       = ""
+        readyPhase           = $status.Phase
+        readyState           = $status.State
+        dmsStartedAt         = $state.StartedAt
+        dmsImageReference    = $image.Reference
+        dmsImageId           = $image.ImageId
+        dmsImageMatchesProbe = ($image.ImageId -eq $script:probedImageId)
+        inventoryEvents      = $inventory.Count
+        pluginMountReadOnly  = $true
+        inventoryLine        = ""
     }
 
     if ($ExpectedInventoryEvents -gt 0) {
@@ -814,8 +866,11 @@ Assert-True `
     $dmsNeverStarted `
     "the DMS container never started (status '$(if ($null -ne $dmsState) { $dmsState.Status } else { 'absent' })', StartedAt '$dmsStartedAtRaw')"
 
+$dmsImageC = Get-ContainerImage $dmsContainerC
+
 $script:results.deploymentC = [ordered]@{
     recipe          = "2"
+    dmsImageReference = if ($null -ne $dmsImageC) { $dmsImageC.Reference } else { $null }
     packageSha256   = ("0" * 64)
     fetchExitCode   = $fetchState.ExitCode
     fetchLogExcerpt = (($fetchLog -split "`n" | Select-Object -Last 5) -join " | ")
