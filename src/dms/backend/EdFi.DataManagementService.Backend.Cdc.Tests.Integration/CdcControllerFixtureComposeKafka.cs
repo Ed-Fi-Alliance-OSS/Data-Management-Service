@@ -65,6 +65,9 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
             {
                 extends = new { file = shipped, service = "kafka" },
                 container_name = BrokerContainerName,
+                // Compose 2.x can drop inherited !override ports through this extra extends layer.
+                // Restate the isolated host endpoint while retaining the shipped broker service.
+                ports = new[] { $"127.0.0.1:{_controllerBrokerPort}:19092" },
                 environment = new Dictionary<string, string>
                 {
                     ["KAFKA_ADVERTISED_LISTENERS"] =

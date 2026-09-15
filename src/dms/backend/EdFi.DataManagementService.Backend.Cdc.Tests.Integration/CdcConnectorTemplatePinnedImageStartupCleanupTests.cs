@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json;
 using EdFi.DataManagementService.Backend.Ddl;
 using FluentAssertions;
 using FluentAssertions.Execution;
@@ -96,6 +97,44 @@ public sealed class Given_PinnedImageFixtureMappedPortParsing
 public sealed class Given_PinnedImageFixtureStartupFailureCleanup
 {
     private const string ResourcePrefix = "dms-cdc-startup-test";
+
+    [Test]
+    [NonParallelizable]
+    public async Task It_records_compose_startup_locations_without_exception_details_and_still_cleans_up()
+    {
+        string directory = TestContext.CurrentContext.WorkDirectory;
+        const string pattern = "admission-evidence-startup-*.json";
+        string[] before = Directory.GetFiles(directory, pattern);
+        const string privateDetails = "private-docker-command-password-and-output";
+        var startupException = new InvalidOperationException(privateDetails);
+        var docker = new RecordingDockerCli(arguments => arguments[0] == "network" ? startupException : null);
+        var exception = Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await CdcConnectorTemplatePinnedImageFixture.StartAsync(
+                CdcProvider.Postgresql,
+                BuildSettings(),
+                docker,
+                ResourcePrefix,
+                CancellationToken.None,
+                applyPrerequisitePolicy: false,
+                composeKafka: true
+            )
+        );
+        exception.Should().BeSameAs(startupException);
+        AssertCleanupCommandsWereRun(docker);
+        string path = Directory.GetFiles(directory, pattern).Except(before).Should().ContainSingle().Subject;
+        string text = await File.ReadAllTextAsync(path);
+        text.Should().NotContain(privateDetails);
+        text.Should().NotContain(ResourcePrefix);
+        using var evidence = JsonDocument.Parse(text);
+        evidence.RootElement.GetProperty("Stage").GetString().Should().Be("start-docker-resources");
+        evidence
+            .RootElement.GetProperty("ExceptionType")
+            .GetString()
+            .Should()
+            .Be("InvalidOperationException");
+        evidence.RootElement.GetProperty("Locations").GetArrayLength().Should().BeGreaterThan(0);
+        evidence.RootElement.TryGetProperty("Message", out _).Should().BeFalse();
+    }
 
     [Test]
     public void It_disposes_partially_started_resources_when_start_docker_resources_fails()
