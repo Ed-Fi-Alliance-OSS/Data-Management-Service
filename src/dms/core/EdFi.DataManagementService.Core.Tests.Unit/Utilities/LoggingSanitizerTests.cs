@@ -338,26 +338,69 @@ public class LoggingSanitizerTests
     [TestFixture]
     public class Given_SanitizeCorrelationId_With_A_Lone_Surrogate : LoggingSanitizerTests
     {
-        // A surrogate is category Cs, which is neither Cc nor Cf, so the allowlist keeps it.
-        // CorrelationIdNormalizer.Normalize documents that a pre-existing lone surrogate is
-        // preserved rather than repaired; this pins the sanitizer half of that promise, which
-        // code-point iteration could otherwise break by substituting U+FFFD for it.
+        // An unpaired surrogate is removed. It is the one thing in the removed set that is not a
+        // Unicode category test - it cannot be, because an unpaired surrogate is not a code
+        // point and so never reaches the predicate - and it is removed to make the FR-LOG-6
+        // parity guarantee unconditional: System.Text.Json writes U+FFFD for one while a
+        // structured-log sink receives the raw code unit, so a value carrying one reaches the
+        // client and the log as two different strings. Every position is pinned separately
+        // because the decoder reports InvalidData for an interior half and NeedMoreData for a
+        // high half that ends the string, and an implementation can easily handle one and not
+        // the other.
+
         [Test]
-        public void It_preserves_a_lone_high_surrogate()
+        public void It_removes_a_lone_high_surrogate_at_the_start()
         {
-            LoggingSanitizer.SanitizeCorrelationId("ab\uD83Dcd").Should().Be("ab\uD83Dcd");
+            LoggingSanitizer.SanitizeCorrelationId("\uD83Dabcd").Should().Be("abcd");
         }
 
         [Test]
-        public void It_preserves_a_lone_low_surrogate()
+        public void It_removes_a_lone_high_surrogate_in_the_middle()
         {
-            LoggingSanitizer.SanitizeCorrelationId("ab\uDC00cd").Should().Be("ab\uDC00cd");
+            LoggingSanitizer.SanitizeCorrelationId("ab\uD83Dcd").Should().Be("abcd");
         }
 
         [Test]
-        public void It_preserves_a_trailing_lone_high_surrogate_while_removing_format_characters()
+        public void It_removes_a_lone_high_surrogate_at_the_end()
         {
-            LoggingSanitizer.SanitizeCorrelationId("a​b\uD83D").Should().Be("ab\uD83D");
+            // The NeedMoreData case: the decoder cannot tell a truncated pair from an orphan
+            // when the string ends, and both are removed.
+            LoggingSanitizer.SanitizeCorrelationId("abcd\uD83D").Should().Be("abcd");
+        }
+
+        [Test]
+        public void It_removes_a_lone_low_surrogate()
+        {
+            LoggingSanitizer.SanitizeCorrelationId("ab\uDC00cd").Should().Be("abcd");
+        }
+
+        [Test]
+        public void It_removes_a_trailing_lone_high_surrogate_while_removing_format_characters()
+        {
+            LoggingSanitizer.SanitizeCorrelationId("a​b\uD83D").Should().Be("ab");
+        }
+
+        [Test]
+        public void It_returns_empty_string_when_the_value_is_only_a_lone_surrogate()
+        {
+            LoggingSanitizer.SanitizeCorrelationId("\uD83D").Should().Be(string.Empty);
+        }
+
+        [Test]
+        public void It_keeps_a_well_formed_pair_that_immediately_follows_a_lone_surrogate()
+        {
+            // The resynchronization case, and the reason the drop advances by exactly one code
+            // unit rather than skipping to the next character. U+1F600 is written here as its
+            // two halves following a third, unpaired high surrogate; consuming two units on the
+            // failure would swallow the pair's high half and orphan its low half, turning one
+            // bad character into two.
+            LoggingSanitizer.SanitizeCorrelationId("a\uD83D\uD83D\uDE00b").Should().Be("a\U0001F600b");
+        }
+
+        [Test]
+        public void It_keeps_a_well_formed_pair_that_immediately_precedes_a_lone_surrogate()
+        {
+            LoggingSanitizer.SanitizeCorrelationId("a\U0001F600\uDE00b").Should().Be("a\U0001F600b");
         }
     }
 

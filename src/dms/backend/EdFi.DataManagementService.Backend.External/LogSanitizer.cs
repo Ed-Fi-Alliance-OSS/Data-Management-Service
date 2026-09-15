@@ -60,7 +60,18 @@ public static class LogSanitizer
     /// - LINE SEPARATOR (U+2028) and PARAGRAPH SEPARATOR (U+2029), which neither test reports
     ///   (they are categories Zl and Zp) and which the <c>ReplaceLineEndings</c> call in
     ///   <see cref="SanitizeByCodePoint"/> removes instead, because they break a line-oriented
-    ///   log consumer the same way a newline does.
+    ///   log consumer the same way a newline does;
+    /// - every <b>unpaired surrogate</b>, Unicode category Cs - a high surrogate not followed by
+    ///   a low one, or a low surrogate not preceded by a high one. This is not a category test
+    ///   like the two above and cannot be written as one: a predicate over decoded code points
+    ///   never sees an unpaired surrogate at all, because it is not a code point. It is
+    ///   <see cref="SanitizeByCodePoint"/> that drops it, on the decoder's own report that the
+    ///   input is not well-formed UTF-16. Removal is what makes the FR-LOG-6 parity guarantee
+    ///   unconditional: <c>System.Text.Json</c> writes U+FFFD for an unpaired surrogate while a
+    ///   structured-log sink receives the raw code unit, so any value carrying one reaches the
+    ///   client and the log as two different strings. The two halves of a <em>well-formed</em>
+    ///   pair are not surrogates for this purpose - they decode to a single astral code point
+    ///   and are kept or removed on that code point's category, like any other character.
     ///
     /// Both category tests are applied <b>per Unicode code point</b>, not per UTF-16 code unit,
     /// which is why this method - unlike <see cref="SanitizeInternalValueForLog"/> - runs on
@@ -79,13 +90,11 @@ public static class LogSanitizer
     /// Everything else is preserved, and that deliberately includes printable punctuation and
     /// symbols, non-ASCII letters (Lu/Ll/Lo) whether BMP or astral, emoji and other supplementary
     /// symbols (So), and whitespace of category Zs - both SPACE and U+00A0 NO-BREAK SPACE - so
-    /// internal spacing in an upstream identifier survives. An <b>unpaired surrogate</b> is also
-    /// preserved, verbatim and unrepaired, per the contract stated on
-    /// <c>CorrelationIdNormalizer.Normalize</c>: category Cs is neither Cc nor Cf, so nothing here
-    /// removes it, and <see cref="SanitizeByCodePoint"/> deliberately does not substitute U+FFFD
-    /// for it the way rune decoding otherwise would. The ingestion point separately falls back to
-    /// the server-generated identifier when the supplied header is null, empty or entirely
-    /// whitespace.
+    /// internal spacing in an upstream identifier survives. The result is therefore always
+    /// well-formed UTF-16, whatever the input was, which is the property
+    /// <c>CorrelationIdNormalizer.Normalize</c> hands on to its own callers. The ingestion point
+    /// separately falls back to the server-generated identifier when the supplied header is null,
+    /// empty or entirely whitespace.
     /// </remarks>
     public static string SanitizeCorrelationId(string? input) =>
         SanitizeByCodePoint(
@@ -99,12 +108,19 @@ public static class LogSanitizer
     /// </summary>
     /// <remarks>
     /// Applies the same negative-test allowlist as <see cref="SanitizeCorrelationId"/> - remove
-    /// Unicode categories Cc and Cf plus the line/paragraph separators U+2028 and U+2029, keep
-    /// everything else - because the two have the same requirement: strip everything that can
-    /// break or forge a log line, or smuggle invisible text past the operator reading it, while
-    /// preserving the printable punctuation that makes the value worth logging at all. The
-    /// canonical description of that allowlist lives on <see cref="SanitizeCorrelationId"/> and is
-    /// deliberately not restated here.
+    /// Unicode categories Cc and Cf, the line/paragraph separators U+2028 and U+2029, and any
+    /// unpaired surrogate, keep everything else - because the two have the same requirement:
+    /// strip everything that can break or forge a log line, or smuggle invisible text past the
+    /// operator reading it, while preserving the printable punctuation that makes the value worth
+    /// logging at all. The canonical description of that allowlist lives on
+    /// <see cref="SanitizeCorrelationId"/> and is deliberately not restated here.
+    ///
+    /// Unpaired-surrogate removal reaches this method because both entry points run on
+    /// <see cref="SanitizeByCodePoint"/>, and it is wanted here on its own merits rather than
+    /// merely tolerated: free-form text is not echoed to a client, so FR-LOG-6 parity is not at
+    /// stake, but an unpaired surrogate in a log parameter still renders as U+FFFD in a
+    /// JSON-formatted log event while a plain-text sink receives the raw unit, so two sinks
+    /// reading the same event disagree about what the upstream service actually said.
     ///
     /// The two are separate entry points rather than one shared method because they answer to
     /// different contracts. A correlation ID is also echoed to the client in the error response
@@ -221,12 +237,18 @@ public static class LogSanitizer
     /// <c>string.Create</c> buffer is measured in; counting runes would under-size the buffer by
     /// one for every astral character that survives.
     ///
-    /// An unpaired surrogate is copied through verbatim rather than being decoded. Left to itself
-    /// <c>Rune.DecodeFromUtf16</c> reports InvalidData (or NeedMoreData for a high surrogate that
-    /// ends the string) and hands back U+FFFD, which would silently repair a value the documented
-    /// contract on <c>CorrelationIdNormalizer.Normalize</c> promises to preserve. Both statuses
-    /// consume exactly one code unit here - NeedMoreData only arises when the remaining span is
-    /// that single trailing surrogate - so the copy is always one char wide.
+    /// An unpaired surrogate is dropped, and dropped here rather than in either predicate,
+    /// because a predicate over runes cannot express the rule: an unpaired surrogate is not a
+    /// code point, so it never reaches <paramref name="isAllowedRune"/> as itself.
+    /// <c>Rune.DecodeFromUtf16</c> reports InvalidData for one (or NeedMoreData for a high
+    /// surrogate that ends the string) and hands back U+FFFD; both statuses are treated as
+    /// "remove", and neither the raw code unit nor the substituted U+FFFD is emitted. Emitting
+    /// U+FFFD would be a silent repair that changes the value's length and content without
+    /// saying so; emitting the raw unit would leave the result malformed UTF-16, which is the
+    /// FR-LOG-6 parity break described on <see cref="SanitizeCorrelationId"/>. Both statuses
+    /// consume exactly one code unit - NeedMoreData only arises when the remaining span is that
+    /// single trailing surrogate - so each drop advances by exactly one char, and a well-formed
+    /// pair immediately following an unpaired half still decodes and survives intact.
     /// </remarks>
     private static string SanitizeByCodePoint(string? input, Func<Rune, bool> isAllowedRune)
     {
@@ -251,9 +273,13 @@ public static class LogSanitizer
         {
             OperationStatus status = Rune.DecodeFromUtf16(remaining, out Rune rune, out int unitsConsumed);
 
-            if (status != OperationStatus.Done || isAllowedRune(rune))
+            if (status != OperationStatus.Done)
             {
-                // A decode failure is an unpaired surrogate, kept as-is; see the remarks.
+                // A decode failure is an unpaired surrogate, which is removed; see the remarks.
+                needsSanitization = true;
+            }
+            else if (isAllowedRune(rune))
+            {
                 safeUnitCount += unitsConsumed;
             }
             else
@@ -293,13 +319,9 @@ public static class LogSanitizer
                         out int unitsConsumed
                     );
 
-                    if (status != OperationStatus.Done)
-                    {
-                        // Copy the raw code unit, not the U+FFFD the decoder substituted.
-                        source[..unitsConsumed].CopyTo(span[index..]);
-                        index += unitsConsumed;
-                    }
-                    else if (state.IsAllowedRune(rune))
+                    // A decode failure is an unpaired surrogate: emit nothing at all, neither
+                    // the raw code unit nor the U+FFFD the decoder substituted for it.
+                    if (status == OperationStatus.Done && state.IsAllowedRune(rune))
                     {
                         index += rune.EncodeToUtf16(span[index..]);
                     }

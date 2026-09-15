@@ -28,7 +28,8 @@ Two sanitizers already existed for different purposes:
 - A new **broader allowlist**, added for correlation IDs: all printable non-control characters —
   effectively `!char.IsControl(c)`, with no positive character enumeration, plus removal of
   `U+2028`/`U+2029` (LINE SEPARATOR / PARAGRAPH SEPARATOR), which are not control characters but
-  break line-oriented log consumers the same way a line feed does.
+  break line-oriented log consumers the same way a line feed does, plus removal of any unpaired
+  surrogate (see [Unpaired surrogates](#unpaired-surrogates-are-removed-unconditionally)).
 
 The broader allowlist exists because a client-supplied correlation ID normally originates in an
 upstream system's own identifier scheme (base64, W3C `traceparent`, JSON-ish keys, RFC 5322
@@ -44,17 +45,59 @@ Normalization is exactly three steps, in this order:
 1. **Truncate** to `AppSettings:CorrelationIdMaxLength` (default `255`, constrained to the
    inclusive range `64`–`1024`; see [Bounds on the length cap](#bounds-on-the-length-cap)).
 2. **Back the truncation cut off a split UTF-16 surrogate pair.** Truncating at a raw code-unit
-   boundary can land between the two halves of a non-BMP character; when it does, the orphaned
-   leading half is dropped as well, one character short of the cap. Without this, JSON
-   serialization would emit `U+FFFD` in the response body while the raw unpaired unit reached a log
-   sink, and the two would no longer be identical.
-3. **Remove characters outside the allowlist** (see above).
+   boundary can land between the two halves of a non-BMP character; when it does — and only when
+   the two halves really are a well-formed pair — the orphaned leading half is dropped as well,
+   one character short of the cap. This step's job is narrow: truncation must not *create* an
+   unpaired surrogate. A half that was already unpaired in the input is left to step 3, which is
+   what keeps the `CharactersRemoved` fact on the `CorrelationIdModified` event meaning "the
+   allowlist removed something the client sent" rather than "truncation broke a character in
+   half."
+3. **Remove characters outside the allowlist** (see above), which includes any unpaired surrogate
+   the value already carried.
 
 **Order matters, and it is deliberate:** truncating first means a long hostile value retains less
 trailing content than it would if characters were removed first. A consequence teams should
 expect, not "fix": an over-length value can normalize to something **shorter** than
 `CorrelationIdMaxLength` — either because it also contained excluded characters, or because the
 cut landed inside a surrogate pair.
+
+### Unpaired surrogates are removed unconditionally
+
+The normalized value is **always well-formed UTF-16**, whatever arrived. Every unpaired surrogate
+is removed, wherever it occurs — not only one manufactured by the truncation cut.
+
+This is the guarantee FR-LOG-6 needs. `System.Text.Json` substitutes `U+FFFD` for an unpaired
+surrogate when it writes the response body, while a structured-log sink receives the raw code unit,
+so a correlation ID carrying one reaches the client and the logs as two different strings. That is
+precisely the divergence the parity requirement exists to exclude.
+
+An earlier version of this contract guaranteed only that *truncation* would not introduce one, and
+documented that a lone surrogate already present in the value was preserved rather than repaired.
+The argument was that an HTTP header value cannot carry one, which was true in fact — Kestrel's
+default header decoding replaces malformed input — but it rested on a host setting rather than on
+anything the normalizer does. `RequestHeaderEncodingSelector` configured with a non-replacement
+fallback reopens it, and the normalizer is also reachable from values that never came from a header.
+A guarantee conditional on host configuration is not one a caller can rely on, so it was made
+absolute.
+
+**Where it is implemented, and what that cost.** In `LogSanitizer.SanitizeByCodePoint`, which
+already decodes per code point and already distinguishes an unpaired surrogate from a decodable
+character — `Rune.DecodeFromUtf16` reports `InvalidData` for it, or `NeedMoreData` for a high half
+that ends the string. Neither the raw code unit nor the decoder's `U+FFFD` substitute is emitted.
+It could not live in either allowlist predicate, because an unpaired surrogate is not a code point
+and so never reaches a `Func<Rune, bool>` as itself; and putting it in `CorrelationIdNormalizer`
+instead would have made that type a second character filter, which its own contract says it is not.
+
+Two consequences were accepted:
+
+- The correlation-ID allowlist is no longer describable purely as "remove `Cc`, `Cf`, `Zl` and
+  `Zp`". Unpaired surrogates are category `Cs`, and their removal is a well-formedness rule rather
+  than a category rule.
+- `SanitizeFreeTextForLog` shares `SanitizeByCodePoint`, so free-form log text gets the same
+  treatment. This is wanted rather than merely tolerated: free-form text is not echoed to a client,
+  so FR-LOG-6 is not at stake, but an unpaired surrogate still renders as `U+FFFD` in a
+  JSON-formatted log event while a plain-text sink receives the raw unit, so two sinks reading the
+  same event disagree about what the upstream service said.
 
 ### Bounds on the length cap
 

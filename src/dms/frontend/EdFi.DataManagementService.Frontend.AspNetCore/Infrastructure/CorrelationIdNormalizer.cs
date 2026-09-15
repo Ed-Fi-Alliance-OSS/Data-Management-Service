@@ -31,7 +31,9 @@ public static class CorrelationIdNormalizer
     /// Truncates to <paramref name="maxLength"/> and then applies
     /// <see cref="LoggingSanitizer.SanitizeCorrelationId"/>, which defines exactly which
     /// characters are removed. If truncation would split a surrogate pair, the orphaned high
-    /// half is dropped as well, so truncation never introduces a lone surrogate.
+    /// half is dropped as well, so truncation never introduces a lone surrogate; and the
+    /// allowlist removes any unpaired surrogate the value already carried, so the result never
+    /// contains one however it got there.
     /// </summary>
     /// <remarks>
     /// The order is deliberate and must not be swapped: truncating first means a long hostile
@@ -61,12 +63,25 @@ public static class CorrelationIdNormalizer
     /// <see cref="LoggingSanitizer.SanitizeCorrelationId"/> retains. The result is an empty
     /// string when the input is null, empty, or made up entirely of removed characters - and
     /// also when the input's retained prefix is empty, as for a single astral character
-    /// truncated to a maximum length of 1. Surrogates are guaranteed only to the extent that
-    /// truncation never splits a pair; a lone surrogate already present in
-    /// <paramref name="value"/> is preserved rather than repaired, because a surrogate is
-    /// Unicode category Cs and the allowlist removes only Cc, Cf, Zl and Zp. A caller whose
-    /// correlation IDs can carry lone surrogates - which an HTTP header value cannot - must check for that
-    /// itself.
+    /// truncated to a maximum length of 1.
+    ///
+    /// <b>The result never contains an unpaired surrogate, whatever
+    /// <paramref name="value"/> contained.</b> The guarantee is unconditional and holds for both
+    /// ways one can arise: truncation cutting a well-formed pair in half, which the guard below
+    /// prevents, and a half already present in the input, which
+    /// <see cref="LoggingSanitizer.SanitizeCorrelationId"/> removes. A well-formed pair - a
+    /// genuine astral character - is not touched by either and survives intact.
+    ///
+    /// The guarantee is unconditional because FR-LOG-6 is. An unpaired surrogate reaches the
+    /// response body as U+FFFD, written by <c>System.Text.Json</c>, and reaches a log sink as
+    /// the raw code unit, so the client and the operator hold two different strings for the same
+    /// request - the one failure the parity guarantee exists to exclude. A previous version of
+    /// this contract instead promised to preserve a pre-existing lone surrogate, on the argument
+    /// that an HTTP header value cannot carry one. That argument was correct in fact but rested
+    /// on a Kestrel default rather than on anything this method does: a
+    /// <c>RequestHeaderEncodingSelector</c> configured with a non-replacement fallback reopens
+    /// it, as does any caller that is not an HTTP header at all. A guarantee conditional on host
+    /// configuration is not one a caller can rely on, so it was made absolute instead.
     /// </returns>
     public static string Normalize(string? value, int maxLength) =>
         NormalizeWithDetail(value, maxLength).Value;
@@ -93,8 +108,9 @@ public static class CorrelationIdNormalizer
 
         // A non-positive cap falls back to the documented default rather than throwing, so a
         // misconfigured host still gets a bounded identifier. This is a policy choice, not the
-        // guard that keeps the surrogate probe below in bounds - that guard is `retained > 0`,
-        // stated at the hazard so removing this fallback cannot reintroduce an index-out-of-range.
+        // guard that keeps the surrogate probe below in bounds - those guards are `retained > 0`
+        // and `retained < value.Length`, both stated at the hazard so removing this fallback
+        // cannot reintroduce an index-out-of-range.
         int effectiveMaxLength = maxLength > 0 ? maxLength : AppSettings.DefaultCorrelationIdMaxLength;
 
         string truncated = value;
@@ -104,24 +120,54 @@ public static class CorrelationIdNormalizer
             int retained = effectiveMaxLength;
 
             // The cut is on a UTF-16 code unit, so it can land between the halves of a
-            // surrogate pair. A surrogate is Unicode category Cs, which the allowlist below
-            // does not remove, so it would keep the orphaned high half; System.Text.Json then
-            // writes U+FFFD into the response body while a log sink receives the raw unpaired
-            // unit, and the two values are no longer byte-identical - the one thing FR-LOG-6
-            // guarantees. Drop the orphan instead.
+            // surrogate pair - turning a well-formed astral character into an orphaned high
+            // half that was never in the input. Back the cut off by one when that is what is
+            // about to happen.
             //
-            // `retained > 0` is load-bearing: an effective maximum length of zero would
-            // otherwise index value[-1]. It is tested here, where the hazard is, rather than
-            // relying on the fallback above to make zero unreachable.
+            // This guard is deliberately kept even though the allowlist below now removes every
+            // unpaired surrogate and would therefore delete such an orphan anyway. The two are
+            // different events and only one of them is this method's doing:
             //
-            // The analyzer is right that the fallback makes this condition true today - that is
-            // precisely why it is written out. The bound and the fallback are two separate
-            // concerns twenty lines apart, and a future simplification of the fallback (which its
-            // own comment invites, since it is documented as guarding a misconfiguration rather
-            // than an index) would turn an unreachable branch into an IndexOutOfRangeException on
-            // a production request. The suppression is cheaper than that failure mode.
-#pragma warning disable S2589 // Condition is redundant only because of a distant, separately-motivated clamp
-            if (retained > 0 && char.IsHighSurrogate(value[retained - 1]))
+            //   - Truncation manufacturing an orphan is an artifact of where the cut landed.
+            //     Not creating it in the first place keeps the truncation step independently
+            //     well-formed, so the guarantee does not depend on the allowlist running
+            //     afterwards. The ADR fixes the order as truncate-then-filter; a guard that is
+            //     only correct in that order would be a silent trap for anyone revisiting it.
+            //   - An orphan the client actually sent is a character the allowlist removes, like
+            //     any other. Letting the allowlist do that - rather than widening this guard to
+            //     cover it - is what keeps `CharactersRemoved` below honest: it reports that the
+            //     allowlist removed something from the value, not that truncation broke a
+            //     character in half. The two show up differently on the CorrelationIdModified
+            //     event, and they are genuinely different facts about the request.
+            //
+            // Hence both halves of the test. `IsHighSurrogate(value[retained - 1])` alone would
+            // also back off from a lone high surrogate sitting at the cut, spending a code unit
+            // of the budget to remove something the allowlist is about to remove for free and
+            // reporting it as a truncation effect rather than as a removal.
+            //
+            // Both bounds are stated here, at the hazard, rather than inferred from conditions
+            // elsewhere in the method:
+            //
+            //   - `retained > 0` - an effective maximum length of zero would otherwise index
+            //     value[-1]. The fallback above makes zero unreachable today; the bound does not
+            //     rely on that, because the fallback is documented as guarding a
+            //     misconfiguration rather than an index and could be simplified away.
+            //   - `retained < value.Length` - value[retained] is the code unit the cut discards.
+            //     It exists because this block only runs when value.Length > effectiveMaxLength,
+            //     but that test is twenty lines up and reads as a question about truncation, not
+            //     about indexing.
+            //
+            // The analyzer is right that both conditions are true today for exactly those
+            // distant reasons - which is precisely why they are written out. The suppression is
+            // cheaper than turning an unreachable branch into an IndexOutOfRangeException on a
+            // production request.
+#pragma warning disable S2589 // Conditions are redundant only because of distant, separately-motivated tests
+            if (
+                retained > 0
+                && retained < value.Length
+                && char.IsHighSurrogate(value[retained - 1])
+                && char.IsLowSurrogate(value[retained])
+            )
 #pragma warning restore S2589
             {
                 retained--;
