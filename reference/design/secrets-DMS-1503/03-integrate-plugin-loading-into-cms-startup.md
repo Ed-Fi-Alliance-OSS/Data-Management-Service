@@ -9,48 +9,178 @@ source_spike: DMS-1503
 
 ## Description
 
-The loader is host-agnostic and CMS does not call it.
+The plugin loader is host-agnostic and the Configuration Service does not call it.
 The spine showed that CMS can have the whole mechanism for very little and deferred it on one ground only: no consuming epic drove it.
+
 This spike is that epic, and this story is where CMS gains both composition phases, per:
 
 - `reference/design/secrets-DMS-1503/design.md` ("### CMS Host Integration", "### Configuration Surface", "### Contract Cardinality")
 - `reference/design/plugins-DMS-1462/design.md` ("### Applicability to the Configuration Service", "### The Two Composition Phases", "### Startup Failure Semantics", "### Observability")
 
-The integration is the minimal one the spine described and no bootstrap scaffolding is ported: `Config.Frontend/Program.cs` is a plain minimal-API startup (`CreateBuilder` at `:14`, `AddServices()` at `:16`, `Build()` at `:53`, `RunAsync()` at `:113`), the loader reports its own outcomes to `Console.Error` and throws, and the plugin audit is a direct call rather than a startup task.
+Both contracts the registry declares exist after story 02, and neither is called yet.
+A resolver registered here resolves nothing until the read seam lands in story 04.
 
-Both contracts the registry declares exist and neither is called yet; a resolver registered here resolves nothing until the read seam lands in the next story.
-The image change is the load-bearing risk: the frontend's project reference into `src/plugins/` cannot land in a build stage that cannot restore it, and `src/dms/Dockerfile` already carries the worked solution.
+## Technical Implementation
+
+**Citation convention.**
+Unprefixed paths are relative to the repository root.
+`Config.Frontend/` names `src/config/frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore/`.
+`Backend.OpenIddict/` names `src/config/backend/EdFi.DmsConfigurationService.Backend.OpenIddict/`.
+
+**No bootstrap scaffolding is ported, and that is the spine's instruction rather than a shortcut.**
+`Config.Frontend/Program.cs` is a plain minimal-API startup: `CreateBuilder` at `:14`, `AddServices()` at `:16`, `Build()` at `:53`, `RunAsync()` at `:113`.
+It has no `FileStartupStatusSignal`, no `RunBootstrapPhase`, and no `StartupPhaseExecutor`, and none is added.
+The loader reports its own outcomes to `Console.Error` and throws, which is fail-loud behavior with nothing to build first.
+
+**The plugin audit is a direct call rather than a startup task.**
+CMS has no startup-task machinery, and inventing an interface, an executor, and an ordering convention to serve one call site is exactly the scaffolding the spine said not to port.
+`PluginRegistrationAudit.AuditAsync` returns findings rather than throwing precisely so a caller can report all of them, and the CMS call site does.
+
+**Phase A has to finish before `AddServices` is entered.**
+`AddServices` reads configuration from its first statements, so the loader call and the Phase A invocation both sit between `CreateBuilder(args)` at `:14` and `builder.AddServices()` at `:16`.
+
+**The audit input is registered as an instance, after every hook has run.**
+Registering an instance activates nothing, and registering it last is what stops a plugin that registered its own from displacing it, because a single-service resolve takes the last registration.
+
+**The lifetime-and-keyedness check is CMS-side because the registry does not carry that metadata.**
+A lifetime rule is per-contract metadata the host holds, which is the same reason DMS-1434's transient-only rule for `ICustomResourceValidator` lives on the DMS side.
+The keyedness half closes a hole the shared audit deliberately leaves open: it admits a declared contract under a concrete key and counts it as one ordinary claim (`src/plugins/EdFi.Api.Plugins.Hosting/PluginRegistrationAudit.cs:231`, `:88`), while every CMS consumer resolves unkeyed (`Backend.OpenIddict/Repositories/OpenIddictClientRepository.cs:21`).
+An unchecked keyed registration would therefore boot green, emit an inventory event saying it registered the contract, and displace nothing.
+
+**The inventory event runs before the audit for an attribution reason.**
+An audit failure names a service type, and only the inventory maps that type back to the plugin that registered it.
+
+**The hasher's host-default count is a runtime question, not a source-site count.**
+There are four registration sites in source and never four descriptors in one process.
+A self-contained PostgreSQL deployment registers the host default twice, once in `ConfigureDatastore` (`Config.Frontend/Infrastructure/WebApplicationBuilderExtensions.cs:206`) and once inside the OpenIddict extension `ConfigureIdentityProvider` calls immediately after it (`:90-91`, `:376`); a Keycloak deployment registers it once.
+The engine-specific sites are mutually exclusive and the fourth sits in an overload nothing calls.
+The replace-conflict rule is indifferent to the number because it counts only descriptors the per-hook diffs attribute to plugins, and a host default is in nobody's record.
+
+**The image change is the load-bearing risk in this story.**
+`.github/workflows/on-config-pullrequest.yml` builds `src/config/Dockerfile` in three places, and the frontend's project reference into `src/plugins/` cannot land in a build stage that cannot restore it.
+`src/dms/Dockerfile` already solved this and its solution transfers line for line, with the measurements that produced each line recorded in that file's own comments.
+The `parentdir` named context the staging stage reads already exists on every lane that builds this file: `.github/workflows/on-config-pullrequest.yml:395`, `:489`, and `:583`, and `--build-context parentdir=../` in `build-config.ps1`'s `DockerBuild` (`:470`).
+
+**The staging stage cannot be replaced by a `.dockerignore`.**
+`src/dms/.dockerignore` filters the DMS build context, and a named context is filtered only by a `.dockerignore` of its own, which `src/` does not have.
+A direct copy of the tree would therefore carry a local build's `bin/`, `obj/`, and `results.sarif` into the image, and an `obj/` arriving after the restore lands on top of the Linux-generated `project.assets.json`.
+Adding `src/.dockerignore` would change both images' contexts at once, which is why it was rejected for the DMS image and is rejected again here.
+
+**The compose overlay's precedent may not exist yet.**
+`eng/docker-compose/plugins-dms.yml` is DMS-1499's output and is not on main, as are the mount variable's entries in `eng/docker-compose/README.md` and `.env.example`.
+So this story either lands after DMS-1499 and mirrors a file it can read, or it writes the CMS overlay first and DMS-1499 mirrors this one.
+An unconditional mount in the base compose files is rejected because Compose cannot make a bind mount conditional inside one file, so Docker would materialize an empty root-owned directory beside every deployment that never asked for a plugin.
+
+**`HostOwnedServiceTypes` already covers CMS, and the criterion is a test rather than a code change.**
+Its prefix list carries `EdFi.DmsConfigurationService.` beside `EdFi.DataManagementService.` (`src/plugins/EdFi.Api.Plugins.Hosting/HostOwnedServiceTypes.cs:38-42`).
+The assertion is that a rule written for one host already holds for the other, and the way that stops holding is silently.
 
 ## Acceptance Criteria
 
-- `Config.Frontend` takes a `ProjectReference` on `src/plugins/EdFi.Api.Plugins.Hosting/EdFi.Api.Plugins.Hosting.csproj` with a regenerated `packages.lock.json`. Both plugin projects are already in `src/config/EdFi.DmsConfigurationService.sln` (`:42`, `:44`, `:46`).
-- **`src/config/Dockerfile` gains the plugin tree**, mirroring `src/dms/Dockerfile`: the `pluginsource` filtering stage (`src/dms/Dockerfile:22-30`), the plugin `Directory.Build.props`, project files, and lock files copied ahead of the restore (`:53-57`), `WORKDIR` moved down one level so both trees sit under the common parent holding `.editorconfig`, `Directory.Packages.props`, and `nuget.config` (`:33-43`, `:59`), the restore extended to `EdFi.Api.Plugins.Hosting` (`:87`), and the plugin sources copied after the restore (`:109`). The `parentdir` named context already exists on every lane (`.github/workflows/on-config-pullrequest.yml:395`, `:489`, `:583`; `build-config.ps1:470`).
-- The staging stage is not replaced by a `src/.dockerignore` or `COPY --exclude`, and the pull request records why: a named context is filtered only by its own `.dockerignore`, which `src/` does not have, and adding one would change both images' contexts at once.
-- `.github/workflows/on-config-pullrequest.yml:119` gains `src/plugins/*` in the case that sets `fresh_build_required`; `:124` already names it for `config_relevant`.
-- `CmsPluginContracts` is a frontend-owned static holding CMS's `PluginContractRegistry` with two `Replace` entries, `ISecretResolver` and `IClientSecretHasher`. `ContractAssemblyNames` yields `EdFi.Api.Plugins` and `EdFi.DmsConfigurationService.Secrets`; a test asserts the package id `EdFi.Api.Secrets` is not among them.
-- `Config.Frontend/Program.cs` calls `PluginLoader.Load(builder.Configuration, CmsPluginContracts.Registry.ContractAssemblyNames)` between `:14` and `:16`, then `loadedPlugins.ContributeConfiguration(builder.Configuration)` immediately after, because `AddServices` reads configuration from its first statements.
-- `AddServices` takes the `LoadedPlugins` aggregate, invokes `ContributeServices` with the registry after its own registrations and before `Build()`, and registers the returned `PluginAuditInput` as a singleton instance in the same call. A test asserts a plugin registering its own `PluginAuditInput` does not displace the host's.
-- **The plugin audit is a direct call** between `Build()` and `RunAsync()`: CMS resolves the registered input, calls `PluginRegistrationAudit.AuditAsync(input, app.Services)` (`src/plugins/EdFi.Api.Plugins.Hosting/PluginRegistrationAudit.cs:47`), writes every finding, and throws if there is one.
-- **The lifetime-and-keyedness check is a CMS-side check beside the audit, over the same input.** Both declared contracts must be registered as singletons and unkeyed; a plugin registering either as scoped or transient, or under a service key, is refused with the plugin and the lifetime or key named. The shared audit deliberately admits a declared contract under a concrete key as one ordinary claim (`PluginRegistrationAudit.cs:231`, `:88`), while every CMS consumer resolves unkeyed (`Backend.OpenIddict/Repositories/OpenIddictClientRepository.cs:21`), so an unchecked keyed registration would boot green and displace nothing. A test asserts each refusal, including a plugin registering `IClientSecretHasher` under a key failing startup rather than loading inert.
-- **The inventory event is emitted before the audit runs**: one structured `Information` event per loaded plugin with `PluginName`, `AssemblyVersion`, `DeclaredFiles`, `RegisteredServiceTypes`, `RemovedDescriptors`, and `HostFirstSubstitutions`, matching DMS's shape. A test asserts the event precedes the audit's failure in a failing boot's captured log.
-- No configuration key or value contributed by a Phase A source appears in the log, asserted with a fixture source carrying a secret-looking value: the captured output contains the source type and neither the key nor the value.
-- `Config.Frontend/appsettings.json` gains `"Plugins": { "Directory": "/app/plugins", "Allowed": "" }`; the existing CMS suites pass unchanged with no plugin root present.
-- A fixture plugin exercising both phases proves the integration: its Phase A source supplies a value CMS reads and its `ContributeServices` registers an `ISecretResolver`; an integration test boots CMS against it via `Plugins:Directory` and `Plugins:Allowed` and asserts both effects. No fixture in the spine exercises both phases, so this one is new.
-- Fatal cases assert on the exception escaping host creation and on the `Console.Error` output: a misspelled allowlist entry, a plugin allowlisted on a missing root, a throwing `ContributeConfiguration`, and a throwing `ContributeServices` each fail the boot with no request served.
-- Cardinality: two plugins each registering `ISecretResolver` is fatal naming both; one plugin registering it twice is fatal with the count; one plugin registering `IClientSecretHasher` once loads with the host's own registrations present, asserted on both reachable shapes - self-contained, where the host registers the default twice (`Config.Frontend/Infrastructure/WebApplicationBuilderExtensions.cs:206` and via `:90-91`/`:376`), and Keycloak, where it registers once. The fourth source site sits in an overload nothing calls.
-- A plugin registering a CMS-owned type that is no declared contract is fatal at the audit's displacement check, naming plugin and type; one removing or overwriting a pre-existing CMS descriptor is fatal at the wrapper; one registering its own types, `Microsoft.Extensions.*` options, and an `IHostedService` beside a declared contract loads unaffected, with the hosted service in its inventory event.
-- **`HostOwnedServiceTypes` needs no change for CMS, proven rather than assumed**: its prefix list already carries `EdFi.DmsConfigurationService.` (`src/plugins/EdFi.Api.Plugins.Hosting/HostOwnedServiceTypes.cs:38-42`), and the criterion is a test, because the way that stops holding is silently.
-- `eng/docker-compose/published-config.yml` and `local-config.yml` are unchanged; a `plugins-config.yml` overlay carries the `:ro` mount at `/app/plugins`, added with its own `-f`, following the shape of DMS-1499's `plugins-dms.yml` - which does not exist on main yet, so the pull request states which overlay lands first and which mirrors. The mount variable gets the same documentation homes the DMS one has: `eng/docker-compose/README.md` and the tracked `.env.example`, commented out, with the `:?` note.
-- `docs/CONFIGURATION.md` gains the CMS `Plugins` section: `Allowed` ships empty and is the only switch, its order is invocation order and contractual for Phase A, CMS has no `AppSettings:StartupStatusFilePath` equivalent, and the `Plugins` section itself is out of any plugin's reach.
-- `dotnet build --no-restore src/config/EdFi.DmsConfigurationService.sln`, `dotnet test src/config/EdFi.DmsConfigurationService.sln`, and `build-config.ps1 E2ETest` pass.
+**Project and image**
+
+- `Config.Frontend` takes a `ProjectReference` on `src/plugins/EdFi.Api.Plugins.Hosting/EdFi.Api.Plugins.Hosting.csproj` with a regenerated `packages.lock.json`.
+- No solution change is needed: both plugin projects are already in `src/config/EdFi.DmsConfigurationService.sln` (`:42`, `:44`, `:46`), which DMS-1496 did so this story would not have to.
+- `src/config/Dockerfile` has a `pluginsource` stage that copies `plugins/` from the `parentdir` named context and removes `bin/`, `obj/`, and `results.sarif`, mirroring `src/dms/Dockerfile:22-30`.
+- `src/config/Dockerfile` copies the plugin `Directory.Build.props`, project files, and lock files ahead of the restore, mirroring `src/dms/Dockerfile:53-57`.
+- `src/config/Dockerfile`'s `WORKDIR` moves down one level so the CMS and plugin trees sit beside each other under the common parent holding `.editorconfig`, `Directory.Packages.props`, and `nuget.config`, mirroring `src/dms/Dockerfile:33-43` and `:59`.
+- The Dockerfile restore is extended to `EdFi.Api.Plugins.Hosting`, mirroring `src/dms/Dockerfile:87`.
+- The plugin sources are copied from the staged tree after the restore, mirroring `src/dms/Dockerfile:109`.
+- No `src/.dockerignore` is added and no `COPY --exclude` replaces the staging stage.
+- The pull request records why the staging stage is used instead of either alternative.
+- `.github/workflows/on-config-pullrequest.yml:119` names `src/plugins/*` in the case that sets `fresh_build_required`.
+- `:124` is unchanged, already naming `src/plugins/*` for `config_relevant`.
+
+**Contract registry**
+
+- `CmsPluginContracts` is a frontend-owned static holding CMS's one `PluginContractRegistry`.
+- The registry declares `ISecretResolver` as `Replace` and `IClientSecretHasher` as `Replace`.
+- `ContractAssemblyNames` is the registry's derived property, not a second list, and yields `EdFi.Api.Plugins` and `EdFi.DmsConfigurationService.Secrets`.
+- A test asserts the package id `EdFi.Api.Secrets` is not among `ContractAssemblyNames`.
+
+**Startup wiring**
+
+- `Config.Frontend/Program.cs` calls `PluginLoader.Load(builder.Configuration, CmsPluginContracts.Registry.ContractAssemblyNames)` between `:14` and `:16`.
+- `Program.cs` calls `loadedPlugins.ContributeConfiguration(builder.Configuration)` immediately after the loader returns and before `builder.AddServices()`.
+- `AddServices` takes the `LoadedPlugins` aggregate and invokes `ContributeServices` with `CmsPluginContracts.Registry` after its own registrations and before `Build()`.
+- `AddServices` registers the returned `PluginAuditInput` as a singleton instance in the same call.
+- Between `Build()` and `RunAsync()`, CMS resolves the registered `PluginAuditInput`, calls `PluginRegistrationAudit.AuditAsync(input, app.Services)` (`src/plugins/EdFi.Api.Plugins.Hosting/PluginRegistrationAudit.cs:47`), writes every finding, and throws if there is one.
+- A test asserts a plugin registering its own `PluginAuditInput` does not displace the host's.
+
+**Lifetime and keyedness check**
+
+- A CMS-side check runs beside the audit over the same input.
+- A plugin registering either declared contract as scoped fails the boot, naming the plugin and the lifetime.
+- A plugin registering either declared contract as transient fails the boot, naming the plugin and the lifetime.
+- A plugin registering either declared contract under a service key fails the boot, naming the plugin and the key.
+
+**Observability**
+
+- One structured `Information` event is emitted per loaded plugin, carrying `PluginName`, `AssemblyVersion`, `DeclaredFiles`, `RegisteredServiceTypes`, `RemovedDescriptors`, and `HostFirstSubstitutions`.
+- A test asserts the inventory event for a fixture plugin appears in the captured log before the audit's failure for the same boot.
+- A test with a fixture Phase A source carrying a secret-looking value asserts the captured output contains the source type and neither the configuration key nor its value.
+
+**Configuration**
+
+- `Config.Frontend/appsettings.json` gains `"Plugins": { "Directory": "/app/plugins", "Allowed": "" }`.
+- The existing CMS unit and end-to-end suites pass unchanged with no plugin root present.
+
+**Fatal cases**
+
+- A misspelled allowlist entry fails host creation with no request served, and the failure is written to `Console.Error`.
+- A plugin allowlisted on a missing root fails host creation with no request served, and the failure is written to `Console.Error`.
+- A plugin whose `ContributeConfiguration` throws fails host creation with no request served, and the failure is written to `Console.Error`.
+- A plugin whose `ContributeServices` throws fails host creation with no request served, and the failure is written to `Console.Error`.
+
+**Cardinality**
+
+- Two plugins each registering `ISecretResolver` fails the boot, naming both.
+- One plugin registering `ISecretResolver` twice fails the boot, naming the plugin and its registration count.
+- One plugin registering `IClientSecretHasher` once loads successfully on a self-contained PostgreSQL deployment, where the host registers its own default twice.
+- One plugin registering `IClientSecretHasher` once loads successfully on a Keycloak deployment, where the host registers its own default once.
+
+**Guard behavior**
+
+- A plugin registering a CMS-owned service type that is no declared contract fails at the audit's displacement check, naming the plugin and the type.
+- A plugin removing or overwriting a pre-existing CMS-owned descriptor fails at the wrapper, before the call reaches the real collection.
+- A plugin registering its own types, `Microsoft.Extensions.*` options, and an `IHostedService` alongside a declared contract loads unaffected, and its inventory event lists the hosted service.
+- A test asserts `HostOwnedServiceTypes.IsHostOwned` returns true for a CMS service type, with no change to `HostOwnedServiceTypes.cs`.
+
+**Integration proof**
+
+- A fixture plugin exercises both phases: its `ContributeConfiguration` adds a source supplying a value CMS reads, and its `ContributeServices` registers an `ISecretResolver`.
+- An integration test boots CMS with `Plugins:Directory` pointed at that fixture and `Plugins:Allowed` naming it, and asserts the configuration value resolved to the plugin's.
+- The same test asserts the `ISecretResolver` is resolvable from the container.
+
+**Deployment**
+
+- `eng/docker-compose/published-config.yml` and `local-config.yml` are unchanged.
+- `eng/docker-compose/plugins-config.yml` carries the `:ro` mount at `/app/plugins` for the CMS service and is added with its own `-f`.
+- The mount variable is documented in `eng/docker-compose/README.md` and in the tracked `.env.example`, commented out, carrying the same `:?` note the DMS one has.
+- The pull request states whether this overlay lands before or after DMS-1499's `plugins-dms.yml`, and which mirrors which.
+
+**Documentation**
+
+- `docs/CONFIGURATION.md` gains the CMS `Plugins` section stating that `Allowed` ships empty and is the only switch, and that its order is invocation order and contractual for Phase A.
+- That section states which keys Phase A cannot supply in CMS, and that CMS has no `AppSettings:StartupStatusFilePath` equivalent.
+- That section states that `PluginLoader.Load` binds `Plugins:Directory` and `Plugins:Allowed` before any Phase A hook runs, so no plugin source can supply either.
+
+**Build**
+
+- `dotnet build --no-restore src/config/EdFi.DmsConfigurationService.sln` passes.
+- `dotnet test src/config/EdFi.DmsConfigurationService.sln` passes.
+- `build-config.ps1 E2ETest` passes.
 
 ## Tasks
 
-1. Add the frontend's project reference, `CmsPluginContracts`, and the `Program.cs` loader call with the Phase A invocation.
-2. Extend `AddServices` to take the aggregate, invoke `ContributeServices`, and register the audit input; add the direct audit call after `Build()`.
-3. Add the CMS-side lifetime-and-keyedness check over the audit input.
-4. Add the inventory event and the log-hygiene assertion.
-5. Extend `src/config/Dockerfile` with the plugin tree and update the workflow's fresh-build filter.
-6. Add the `Plugins` configuration section, the `plugins-config.yml` overlay, and the compose documentation entries.
-7. Add the both-phases fixture plugin and the fatal, cardinality, displacement, and integration test suites.
-8. Update `docs/CONFIGURATION.md` with the CMS `Plugins` chapter.
+1. Add the frontend's project reference and `CmsPluginContracts`.
+2. Add the `PluginLoader.Load` call and the Phase A invocation to `Config.Frontend/Program.cs`.
+3. Extend `AddServices` to take the aggregate, invoke `ContributeServices`, and register the audit input as an instance.
+4. Add the direct audit call between `Build()` and `RunAsync()`.
+5. Add the CMS-side lifetime-and-keyedness check over the audit input.
+6. Add the inventory event and the log-hygiene assertion.
+7. Extend `src/config/Dockerfile` with the plugin tree and update the workflow's fresh-build filter.
+8. Add the `Plugins` configuration section and the `plugins-config.yml` overlay with its documentation entries.
+9. Add the both-phases fixture plugin.
+10. Add the fatal, cardinality, guard-behavior, and integration test suites.
+11. Update `docs/CONFIGURATION.md` with the CMS `Plugins` chapter.

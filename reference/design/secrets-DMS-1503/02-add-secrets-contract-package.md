@@ -10,43 +10,147 @@ source_spike: DMS-1503
 ## Description
 
 A plugin cannot claim a contract that does not exist, and it cannot compile against one that ships from an assembly named for an identity provider half the deployments do not use.
+
 This story creates the Configuration Service's secrets contract package, defines the secret resolver in it, moves `IClientSecretHasher` into it, and repairs the configuration key the host's own hasher needs, per:
 
 - `reference/design/secrets-DMS-1503/design.md` ("### The Contract Package", "### The `IClientSecretHasher` Relocation", "### Contract Cardinality")
-- `reference/design/plugins-DMS-1462/design.md` ("### The Plugin Contract" for the additive-only policy and the package-versus-assembly-name rule, "### Applicability to the Configuration Service" for the relocation's provenance)
+- `reference/design/plugins-DMS-1462/design.md` ("### The Plugin Contract", "### Applicability to the Configuration Service")
 
 No plugin loads yet.
 This story ships a contract and a corrected host default; nothing calls a resolver until CMS host integration lands.
-The hashing-iterations repair travels with the relocation because the spine handed the question here explicitly: the contract has to name a key that actually binds rather than inheriting either of the two dead ones.
+
+## Technical Implementation
+
+**Citation convention.**
+Unprefixed paths are relative to the repository root.
+`Config.Frontend/` names `src/config/frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore/`.
+`Backend/`, `Backend.OpenIddict/`, `Backend.Postgresql/`, and `Backend.Mssql/` name the corresponding directories under `src/config/backend/EdFi.DmsConfigurationService.`.
+
+**The package id and the assembly name are different strings and are never used interchangeably.**
+`EdFi.Api.*` is the prefix for a contract package an Ed-Fi API host consumes.
+The assembly and namespace follow the tree the project lives in, which is what `EdFi.Api.Identity` already does by building from `src/dms/core/EdFi.DataManagementService.Identity/`.
+An assembly reference carries an assembly name, so the loader's skew preflight matches on assembly names, and a check written against the package id would silently check nothing.
+
+**Both contracts ship in one package because they are one type's contracts.**
+The additive-only policy is a property of a package, so two packages would mean two versions, two entries in the skew preflight, and two package ids burned permanently, to separate two interfaces the same plugin will usually implement.
+
+**`SecretReference` is a record so the contract can gain an input additively.**
+The additive-only policy forbids changing a member's signature for the life of the package, so a two-parameter method could never gain a third input.
+A record can gain a property with a default, which is the same additive move a virtual with a no-op body is for the base class.
+
+**`ClientSecretHasher` stays where it is while its interface moves.**
+The implementation is the host default and reads `IdentityOptions`, an OpenIddict type, so moving it would drag that dependency into the contract package.
+
+**The version has to survive two command-line stamping lanes, and a csproj declaration only survives one.**
+A csproj-declared `AssemblyVersion` beats the props file `SetDMSAssemblyInfo` regenerates (`build-config.ps1:143-160`).
+It loses to a global property, and both `Compile` (`:185-189`) and `PublishApi` (`:206-210`) pass `/p:AssemblyVersion=$DmsCSAssemblyVersion`, supplied by `.github/workflows/on-prerelease.yml:591`, which propagates through project references.
+So the exclusion has to be explicit, and the proof has to read both lanes' outputs rather than one.
+
+**The Docker lane is a third stamping path and it is removed rather than excluded.**
+`src/config/Dockerfile` supplies `ASSEMBLY_VERSION` (`:33`) and expands it into `/p:AssemblyVersion` and `/p:FileVersion` (`:39-40`), fed by a build-arg pair in `build-config.ps1`'s `DockerBuild` (`:463-467`).
+Only the locally built image is affected, because the pulled image comes from `src/config/Nuget.Dockerfile`, which compiles nothing (`:23-25`).
+This mirrors the removal `src/dms/Dockerfile` is taking in the still-open DMS-1499; that file still carries the pre-change state (`:112`, `:120-121`).
+
+**The Dockerfile's per-project `COPY` list cannot restore a project outside it.**
+`src/config/Dockerfile` copies project files one by one (`:14-20`, `:22`, `:24-30`), so a newly referenced project has to be added there in the same story that adds the reference, or the locked restore fails in the image build.
+
+**The exclusion mechanism has to survive a direct solution build as well as the scripted lanes.**
+`GlobalPropertiesToRemove` on the referencing `ProjectReference` items is the candidate; whatever is used, the pull request names it and confirms both paths.
+
+**The stored hash format carries no iteration count.**
+`Backend.OpenIddict/Services/ClientSecretHasher.cs:52-55` stores a version byte, a salt length, the salt, and the subkey, and verification derives with the configured count (`:97`) rather than with one read back from the stored value.
+That is what makes a changed count invalidate existing secrets.
+
+**The hashing-iterations key is dead today, and the contract cannot inherit a dead knob.**
+`Backend.OpenIddict/Extensions/OpenIddictServiceCollectionExtensions.cs:26` is the repository's only `services.Configure<IdentityOptions>`.
+It assigns thirteen properties and the iteration count is not among them, so `ClientSecretHasher` always reads the model default of `210000` (`Backend.OpenIddict/Models/IdentityOptions.cs:73`, read at `Backend.OpenIddict/Services/ClientSecretHasher.cs:38` and `:97`).
+The spine handed this question here explicitly: the contract has to name a key that actually binds rather than inheriting either of the two dead ones.
+
+**`DMS_CONFIG_IDENTITY_HASHING_ITERATIONS` stays, and removing it would break the bootstrap.**
+`eng/docker-compose/setup-openiddict.ps1` takes it as `$HashIterations` (`:36`) and hashes every bootstrapped client secret with it (`:212`), through a resolver that throws by key name when the value is configured nowhere.
+Every base `.env*` file under `eng/docker-compose/` defines it at `210000`.
+Re-pointing the compose mapping to the live key makes the bootstrap's hash count and the host's verify count read one knob, where today they agree only by both happening to be `210000`.
+
+**No working deployment's behavior changes.**
+The repository's own examples all set `210000`, which equals the model default, so the key becoming live changes nothing for them.
+A deployment that had set the variable to something else was already broken, because the bootstrap has always hashed at the variable's value while the host verified at the model default.
 
 ## Acceptance Criteria
 
-- A new project `src/config/contracts/EdFi.DmsConfigurationService.Secrets/` packs as `EdFi.Api.Secrets` with assembly and root namespace `EdFi.DmsConfigurationService.Secrets`, following `EdFi.Api.Identity` from `EdFi.DataManagementService.Identity`. A test asserts the assembly name inside the package, because the skew preflight matches assembly names and a package id would silently check nothing.
-- The project declares its own `AssemblyVersion`, `1.0.0`, in its own csproj, independent of the CMS release version.
-- **The contract is excluded from both command-line stamping lanes, and the proof reads both lanes' outputs.** The csproj declaration beats `SetDMSAssemblyInfo`'s regenerated props (`build-config.ps1:143-160`), but `Compile` (`:185-189`) and `PublishApi` (`:206-210`) pass `/p:AssemblyVersion=$DmsCSAssemblyVersion` as a global property (supplied by `.github/workflows/on-prerelease.yml:591`), which propagates through project references. A test runs `build-config.ps1 BuildAndPublish` with explicit `-DmsCSVersion` and `-DmsCSAssemblyVersion` and asserts `1.0.0.0` on `EdFi.DmsConfigurationService.Secrets.dll` in the `Compile` output and in the `PublishApi` output; the pull request names the exclusion mechanism used (`GlobalPropertiesToRemove` on the referencing `ProjectReference` items, or equivalent that also holds for a direct solution build).
+**Contract project**
+
+- `src/config/contracts/EdFi.DmsConfigurationService.Secrets/` exists and packs as package id `EdFi.Api.Secrets`.
+- The assembly name and root namespace are `EdFi.DmsConfigurationService.Secrets`.
+- A test asserts the assembly name inside the packed nupkg is `EdFi.DmsConfigurationService.Secrets`.
+- The csproj declares `Version`, `AssemblyVersion`, and `FileVersion` of `1.0.0`.
 - A test asserts the `AssemblyVersion` of the assembly inside the packed nupkg equals the package version.
-- **`src/config/Dockerfile` stops stamping `AssemblyVersion` on the publish command line, with nothing replacing it**: the `ASSEMBLY_VERSION` argument (`:33`) and the `/p:AssemblyVersion` and `/p:FileVersion` expansions (`:39-40`) come out, and the matching build-arg pair comes out of `build-config.ps1`'s `DockerBuild` (`:463-467`). Only the locally built image changes: the pulled image comes from `src/config/Nuget.Dockerfile`, which compiles nothing (`:23-25`). This mirrors the removal `src/dms/Dockerfile` is taking in the still-open DMS-1499; that file still carries the pre-change state (`:112`, `:120-121`). A test builds the local image with an explicit `-DmsCSAssemblyVersion` and asserts the contract dll inside carries `1.0.0.0` while a CMS assembly carries the committed props value.
-- `ISecretResolver` has one member, `ValueTask<string> ResolveAsync(SecretReference reference, CancellationToken cancellationToken)`, and `SecretReference` is a `sealed record (string Name, string? Tenant)`, a record so the contract can gain an input additively. `Tenant` is null single-tenant and the tenant name multi-tenant.
-- `IClientSecretHasher` moves from `Backend.OpenIddict/Services/IClientSecretHasher.cs` into the package, members and signatures unchanged. `ClientSecretHasher` does not move: it is the host default and reads `IdentityOptions`, an OpenIddict type.
-- All four registration sites and both consumers compile against the new namespace: `Config.Frontend/Infrastructure/WebApplicationBuilderExtensions.cs:206`, `Backend.Postgresql/OpenIddict/PostgresOpenIddictServiceExtensions.cs:37` and `:93` (an overload nothing calls; it changes because it compiles, and deleting it is out of scope), `Backend.Mssql/OpenIddict/MssqlOpenIddictServiceExtensions.cs:35`, `Backend.OpenIddict/Repositories/OpenIddictClientRepository.cs:21`, and `Backend.OpenIddict/Services/OpenIddictTokenManager.cs:28`. The criterion is that the solution builds, tests included.
-- `src/config/Dockerfile`'s build stage gains the new project's csproj, lock file, and sources in this story, because its per-project `COPY` list (`:14-20`, `:22`, `:24-30`) cannot restore a referenced project outside it.
-- `Backend`, `Backend.OpenIddict`, `Backend.Postgresql`, `Backend.Mssql`, and `Config.Frontend` take the `ProjectReference` with regenerated `packages.lock.json` files. A test asserts the project is present in `src/config/EdFi.DmsConfigurationService.sln`, because `--locked-mode` does not catch a missing project entry.
-- XML documentation on both contracts states the implementer obligations: replace cardinality with a plain `Add` and never a `TryAdd`, singleton and unkeyed registration, and the tenant as an argument because a plugin instance outlives every tenant.
-- **`IdentitySettings:ClientSecretHashingIterations` becomes the live key**: the repository's only `Configure<IdentityOptions>` (`Backend.OpenIddict/Extensions/OpenIddictServiceCollectionExtensions.cs:26`) gains the assignment with default `210000`, and the model property renames from `HashingIterations` to `ClientSecretHashingIterations` (`Backend.OpenIddict/Models/IdentityOptions.cs:73`, read at `Backend.OpenIddict/Services/ClientSecretHasher.cs:38` and `:97`).
-- `eng/docker-compose/published-config.yml:54` and `eng/docker-compose/local-config.yml:58` re-point `IdentitySettings__HashingIterations` to `IdentitySettings__ClientSecretHashingIterations`, still fed by `DMS_CONFIG_IDENTITY_HASHING_ITERATIONS`. The variable stays: `eng/docker-compose/setup-openiddict.ps1` hashes every bootstrapped client secret with it (`:36`, `:212`) through a resolver that throws when it is configured nowhere, and every base `.env*` file under `eng/docker-compose/` defines it. The re-point makes the bootstrap's hash count and the host's verify count read one knob; see design.md, "The `IClientSecretHasher` Relocation", for why no working deployment's behavior changes.
-- `IdentitySettings:HashingIterations` remains unbound, asserted by a test, so both keys are never live at once.
-- Tests pin the repair: a non-default `IdentitySettings:ClientSecretHashingIterations` reaches `ClientSecretHasher` (the assertion that fails on main today); the shipped `Config.Frontend/appsettings.json:45` value equals the model default; and a secret hashed at one count fails verification at another, pinning the stored-format property (`ClientSecretHasher.cs:52-55` stores no count; `:97` derives at the configured one).
-- `docs/CONFIGURATION.md` gains the key with its default and the consequence: raising it invalidates every client secret hashed at the old count, and the remedy is to re-issue them.
-- A per-pull-request lane packs `EdFi.Api.Secrets` into a local folder feed and compiles a scratch consumer implementing both contracts, following `eng/verification/CustomValidationConsumer/`, asserting the packed assembly version equals the package version. `.github/workflows/on-config-pullrequest.yml` runs it via the existing `src/config/*` relevance case (`:124`).
+
+**Contract surface**
+
+- `ISecretResolver` declares exactly one member: `ValueTask<string> ResolveAsync(SecretReference reference, CancellationToken cancellationToken)`.
+- `SecretReference` is a `sealed record` with members `string Name` and `string? Tenant`.
+- `IClientSecretHasher` is declared in the package with its three members and signatures unchanged from `Backend.OpenIddict/Services/IClientSecretHasher.cs`.
+- `ClientSecretHasher` remains in `Backend.OpenIddict`.
+- XML documentation on both contracts states: replace cardinality with a plain `Add` and never a `TryAdd`; singleton and unkeyed registration; and that the tenant is an argument because a plugin instance outlives every tenant.
+- XML documentation on `SecretReference` states that `Tenant` is null in a single-tenant deployment and carries the tenant name in a multi-tenant one.
+
+**Version stamping**
+
+- A test runs `build-config.ps1 BuildAndPublish` with explicit `-DmsCSVersion` and `-DmsCSAssemblyVersion` and asserts `EdFi.DmsConfigurationService.Secrets.dll` carries `1.0.0.0` in the `Compile` output.
+- The same test asserts `1.0.0.0` in the `PublishApi` output.
+- The pull request names the exclusion mechanism used and confirms it also holds for a direct solution build.
+- `src/config/Dockerfile` no longer declares `ASSEMBLY_VERSION` (`:33`) and no longer expands `/p:AssemblyVersion` or `/p:FileVersion` (`:39-40`), with nothing replacing them.
+- `build-config.ps1`'s `DockerBuild` no longer passes the matching build-arg pair (`:463-467`).
+- A test builds the local image with an explicit `-DmsCSAssemblyVersion` and asserts the contract dll inside carries `1.0.0.0` while a CMS assembly carries the committed props value.
+
+**Relocation**
+
+- These four registration sites compile against the new namespace: `Config.Frontend/Infrastructure/WebApplicationBuilderExtensions.cs:206`, `Backend.Postgresql/OpenIddict/PostgresOpenIddictServiceExtensions.cs:37` and `:93`, and `Backend.Mssql/OpenIddict/MssqlOpenIddictServiceExtensions.cs:35`.
+- Both consumers compile against the new namespace: `Backend.OpenIddict/Repositories/OpenIddictClientRepository.cs:21` and `Backend.OpenIddict/Services/OpenIddictTokenManager.cs:28`.
+- The unreachable overload at `Backend.Postgresql/OpenIddict/PostgresOpenIddictServiceExtensions.cs:93` is updated because it compiles and is not deleted.
+
+**Project wiring**
+
+- `Backend`, `Backend.OpenIddict`, `Backend.Postgresql`, `Backend.Mssql`, and `Config.Frontend` each take a `ProjectReference` on the contract project.
+- Each of those five projects has a regenerated `packages.lock.json`.
+- The contract project is in `src/config/EdFi.DmsConfigurationService.sln`, asserted by a test.
+- `src/config/Dockerfile`'s build stage copies the new project's csproj, lock file, and sources, added to the per-project `COPY` list at `:14-20`, `:22`, and `:24-30`.
+
+**Hashing-iterations repair**
+
+- `Backend.OpenIddict/Extensions/OpenIddictServiceCollectionExtensions.cs:26` assigns the iteration count from `IdentitySettings:ClientSecretHashingIterations` with a default of `210000`.
+- The model property at `Backend.OpenIddict/Models/IdentityOptions.cs:73` is renamed from `HashingIterations` to `ClientSecretHashingIterations`.
+- `eng/docker-compose/published-config.yml:54` and `eng/docker-compose/local-config.yml:58` re-point `IdentitySettings__HashingIterations` to `IdentitySettings__ClientSecretHashingIterations`, still fed by `DMS_CONFIG_IDENTITY_HASHING_ITERATIONS`.
+- `DMS_CONFIG_IDENTITY_HASHING_ITERATIONS` remains defined in every `.env*` file that defines it today, and `eng/docker-compose/setup-openiddict.ps1` is unchanged.
+- A test asserts `IdentitySettings:HashingIterations` set alone leaves the hasher at the default, so the two keys are never both live.
+- A test asserts a non-default `IdentitySettings:ClientSecretHashingIterations` reaches `ClientSecretHasher`. This test fails on main today.
+- A test asserts the value at `Config.Frontend/appsettings.json:45` equals the model default.
+- A test asserts a secret hashed at one iteration count fails verification at another.
+
+**Verification lane**
+
+- A per-pull-request lane packs `EdFi.Api.Secrets` into a local folder feed and compiles a scratch consumer implementing both contracts, following `eng/verification/CustomValidationConsumer/`.
+- That lane asserts the packed assembly version equals the package version.
+- `.github/workflows/on-config-pullrequest.yml` runs the lane through the existing `src/config/*` relevance case (`:124`).
+
+**Build**
+
+- `dotnet build --no-restore src/config/EdFi.DmsConfigurationService.sln` passes.
+- `dotnet test src/config/EdFi.DmsConfigurationService.sln` passes.
 - The existing CMS unit and end-to-end suites pass unchanged for a deployment that sets neither iteration key.
-- `dotnet build --no-restore src/config/EdFi.DmsConfigurationService.sln` and `dotnet test src/config/EdFi.DmsConfigurationService.sln` pass.
+
+**Documentation**
+
+- `docs/CONFIGURATION.md` documents `IdentitySettings:ClientSecretHashingIterations` with its default and states that raising it invalidates every client secret hashed at the old count, with re-issue as the remedy.
 
 ## Tasks
 
 1. Add the contract project with `ISecretResolver`, `SecretReference`, package metadata, and the implementer-obligation XML documentation.
 2. Move `IClientSecretHasher` into the package and update the four registration sites, both consumers, and the affected tests.
-3. Exclude the contract from the two command-line stamping lanes, remove the Docker lane's stamping, and add the two-lane and image version proofs.
-4. Bind `IdentitySettings:ClientSecretHashingIterations`, rename the model property, and re-point the two compose files.
-5. Add the Dockerfile build-stage entries, the five project references with lock files, and the solution-membership test.
-6. Add the pack-and-consumer-verify lane to the config pull-request workflow.
-7. Update `docs/CONFIGURATION.md` with the live key and its re-issue consequence.
+3. Exclude the contract from the `Compile` and `PublishApi` stamping lanes and add the two-lane version proof.
+4. Remove the Docker lane's `AssemblyVersion` stamping from `src/config/Dockerfile` and `build-config.ps1`, and add the image version proof.
+5. Bind `IdentitySettings:ClientSecretHashingIterations`, rename the model property, and re-point the two compose mappings.
+6. Add the hashing repair tests and the unbound-key assertion.
+7. Add the Dockerfile build-stage entries, the five project references with lock files, and the solution-membership test.
+8. Add the pack-and-consumer-verify lane to the config pull-request workflow.
+9. Update `docs/CONFIGURATION.md`.
