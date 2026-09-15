@@ -17,39 +17,9 @@ This one writes the documentation an operator and an implementer actually use, a
 
 Publishing is the last ticket rather than the first: blocked by every other story, blocking none, and it burns a package id permanently, so it wants its own review.
 
-## Technical Implementation
-
 **Citation convention.**
 Unprefixed paths are relative to the repository root.
 `Config.Frontend/` names `src/config/frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore/`.
-
-**The Alliance ships no vault plugin, for any vault.**
-An Ed-Fi-authored Azure Key Vault or AWS Parameter Store plugin would commit the Alliance to a cloud SDK's release cadence, authentication surface, and CVEs for a component every deployment configures differently.
-The ODS documentation's own answer to the same problem is worked examples an implementer copies, and this story writes the DMS equivalents, against `EdFiApiPlugin.ContributeConfiguration` instead of ODS's `IHostConfigurationActivity.ConfigureHost(IHostBuilder)`.
-
-**The CMS lane does not implement the publish policy today, so this story writes it.**
-`build-config.ps1`'s `PushPackage` runs `dotnet nuget push` with no `--skip-duplicate` (`:444`).
-DMS-1501 does the same work for `EdFi.Api.Plugins` in the DMS lane and is the implementation to follow, but it is a port rather than a copy: CMS artifacts ride the `cs-` tag prefix through `attach-cs-artifacts-to-release`.
-
-**Promotion queries the release view first because absence from the prerelease view means two different things.**
-A version already promoted by an earlier release is absent from the prerelease view, and so is a version that was never published at all.
-Treating absence as "already promoted" would let a missed publish log "nothing to do" and exit zero.
-
-**The package version is passed explicitly rather than derived from the release tag.**
-`Invoke-Promote` derives the version from the release tag, and this contract's version deliberately does not move with the platform release, so promoting at the release version would ask the feed for a version that does not exist.
-
-**The trust position has to be stated in full, including the part that does not favor the feature.**
-CMS can still produce the resolved value: it is cached in process for the expiration and returned re-encrypted on every limited-access read across four endpoints.
-What the mechanism removes is the value at rest in CMS's database and its backups.
-An operator whose requirement is that nothing but the vault can produce the secret is not served by this, and the chapter says so rather than leaving them to discover it.
-
-**Rotation has an order and a reason, and getting it backwards loses reads.**
-Rotate first and revoke after the propagation window, because DMS keeps using the pre-rotation value for that window.
-An immediate rotation takes a restart of both hosts, since `RefreshInstancesIfExpiredAsync` does nothing when refresh is disabled or the expiration is not positive (`src/dms/core/EdFi.DataManagementService.Core/Configuration/ConfigurationServiceDataStoreProvider.cs:155-165`).
-A rotation also retires and rebuilds DMS's connection pool for that data store, because pool ownership keys on the connection string verbatim.
-
-**Process-global secrets rotate on a different clock from connection strings.**
-Each is captured once and never re-read, so rotating one takes a restart regardless of any cache setting.
 
 ## Acceptance Criteria
 

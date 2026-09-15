@@ -20,65 +20,11 @@ DMS receives the shape it receives today and is not touched by this story at all
 
 Per `reference/design/secrets-DMS-1503/design.md` ("### The Secret Reference: Runtime-Data Secrets", "### Where Resolution Happens", "### Freshness, Caching, and the Tenant Set", "### Failure Semantics").
 
-## Technical Implementation
-
 **Citation convention.**
 Unprefixed paths are relative to the repository root.
 `Config.Frontend/` names `src/config/frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore/`.
 `Backend/`, `Backend.OpenIddict/`, `Backend.Postgresql/`, and `Backend.Mssql/` name the corresponding directories under `src/config/backend/EdFi.DmsConfigurationService.`.
 `DataModel/` names `src/config/datamodel/EdFi.DmsConfigurationService.DataModel/`.
-
-**The token sits inside a value because a whole-value reference cannot survive CMS's existing validation.**
-Every submitted connection string is parsed by the configured engine's own `DbConnectionStringBuilder` and rejected if the provider cannot read it (`Backend/Services/DataStoreConnectionStringValidator.cs:56-75`).
-Probe-measured on `net10.0` against `Npgsql` 8.0.4 and `Microsoft.Data.SqlClient` 6.1.4: `vault://prod/dms/ds-2026` throws `ArgumentException` on both builders, while `Password=${secret:prod/dms/ds-2026}` parses on both and the builder hands the token back through the `Password` key unchanged.
-
-**Textual substitution is measurably wrong, so substitution goes through the builder.**
-Probe-measured on the same versions, a resolved value with a leading space comes back without it on both engines, and values containing `;` or the combination `a;b=c` throw.
-Assigning through the builder's indexer and re-emitting `builder.ConnectionString` is correct for all seven measured values on both engines.
-
-**The builder has to come from the same object that validated the string, and nothing exposes one today.**
-The seam lives in the engine-agnostic `Backend/Services/`, whose project references neither Npgsql nor Microsoft.Data.SqlClient.
-`IDataStoreConnectionStringValidator` declares only `Validate`, and `CreateBuilder` is `protected abstract` (`Backend/Services/DataStoreConnectionStringValidator.cs:83`).
-So the abstract validator additionally implements a new one-member `IDataStoreConnectionStringBuilderSource` exposing that parse, and `AddDataStoreConnectionStringValidator` (`Config.Frontend/Infrastructure/WebApplicationBuilderExtensions.cs:215-231`) registers the one engine validator under both interfaces, the second forwarded to the first.
-That is what makes "validation and substitution cannot disagree" a property of the registration rather than a hope.
-
-**The row's `Provider` column is not read.**
-Derivative rows carry no provider at all (`DataModel/Model/DataStoreDerivative/DataStoreDerivativeResponse.cs:11-31`), so the engine comes from the deployment's configuration, which is the same choice `AddDataStoreConnectionStringValidator` already makes.
-
-**Eight of the twelve call sites cannot carry the failure semantics as written today.**
-They are lazy `Select` projections returned unmaterialized inside `Success(...)`, so the lambda runs during response serialization, outside the repository's `try`/`catch` and after `Results.Ok` was chosen.
-A synchronous lambda also cannot await `ResolveAsync`.
-Each becomes an eager per-row awaited projection so `Success(...)` carries a completed list, and the four single-row `Get` sites gain an `await` in place.
-
-**Every non-null row is decrypted, token-free ones included.**
-Token-freeness is unknowable in cipher text, so there is no way to skip the decrypt and still find the tokens.
-A token-free row must come back byte-identical to what main returns, which is what makes this safe.
-
-**Re-emission normalizes more than casing.**
-Probe-measured: `Server=db;Database=edfi;User Id=sa` returns as `Data Source=db;Initial Catalog=edfi;User ID=sa`, so SQL Server canonicalizes keyword names and not only their casing.
-DMS keys connection-pool ownership on this text verbatim, so re-emission changes that key once, the way a rotation changes it each time.
-
-**The re-encryption assertion uses CMS's own decryptor.**
-No project under `src/config/` references any `EdFi.DataManagementService.*` assembly, and this story must not create the first such reference.
-A fixed-string expectation is impossible anyway, because `ConnectionStringEncryptionService.Encrypt` generates a fresh initialization vector per call (`Backend/Services/ConnectionStringEncryptionService.cs:19-38`).
-
-**The seam is transient and the cache is a singleton, and the split is not stylistic.**
-The seam reads the request's tenant from `ITenantContextProvider`, which is registered scoped (`Config.Frontend/Infrastructure/WebApplicationBuilderExtensions.cs:126`), and the file already documents that a singleton depending on it fails DI scope validation in the Development environment (`:116-119`).
-The cache holds no scoped dependency and receives the tenant as an argument, which is the shape the host-owned `IConnectionStringEncryptionService` beside it already has.
-
-**The resolve timeout races a host-owned task rather than the returned `ValueTask`.**
-A resolver that blocks before returning its `ValueTask` never hands the host anything to race, so racing the return value alone would not bound that case.
-
-**Derivative containment follows DMS's own precedent.**
-An undecryptable derivative already yields a null connection string and a successful parent read on the DMS side (`src/dms/core/EdFi.DataManagementService.Core/Configuration/ConfigurationServiceDataStoreProvider.cs:576`, `:588-612`).
-A parent token still fails the read, because there is nothing to contain it to.
-The standalone derivative endpoints fail instead, because there the derivative is the requested resource rather than part of one.
-
-**Blast radius is asymmetric and that asymmetry is the point.**
-DMS calls `EnsureSuccessStatusCode()` on the data store fetch (`src/dms/core/EdFi.DataManagementService.Core/Configuration/ConfigurationServiceDataStoreProvider.cs:465`, `:487`), so one failing parent token fails the whole collection read for that tenant, while one failing derivative token does not.
-
-**`TimeProvider` is taken as an optional constructor parameter rather than injected.**
-CMS registers one only in the self-contained branch (`Config.Frontend/Infrastructure/WebApplicationBuilderExtensions.cs:384`), so the cache defaults to `TimeProvider.System`, following the pattern at `Backend.OpenIddict/Services/TokenCleanupService.cs:22`.
 
 ## Acceptance Criteria
 
@@ -152,7 +98,7 @@ CMS registers one only in the self-contained branch (`Config.Frontend/Infrastruc
     - concurrent misses on one key collapse to one resolver call whose result every waiter takes
     - a second key is not serialized behind the first
     - a failing call fails every waiter and caches nothing
-- Time is taken through a `TimeProvider` optional constructor parameter defaulting to `TimeProvider.System`.
+- Time is taken through a `TimeProvider` optional constructor parameter defaulting to `TimeProvider.System`, following the pattern at `Backend.OpenIddict/Services/TokenCleanupService.cs:22`, because CMS registers a `TimeProvider` only in the self-contained branch (`Config.Frontend/Infrastructure/WebApplicationBuilderExtensions.cs:384`).
 - A new tenant's first read populates the cache.
 - A removed tenant's entries are unreachable and expire, asserted directly against the cache because tenant administration exposes no removal today (`Config.Frontend/Modules/TenantModule.cs:21-23`).
 
