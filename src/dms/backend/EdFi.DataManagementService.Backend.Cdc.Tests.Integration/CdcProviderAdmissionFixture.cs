@@ -876,6 +876,14 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
                             o.Effect,
                             o.IntendedAt,
                             Completions = o.Completions.Length,
+                            RetirementSteps = o
+                                .Retirement.SelectMany(retirement => retirement.Steps)
+                                .Select(step => new
+                                {
+                                    step.Kind,
+                                    step.IntendedAt,
+                                    step.VerifiedAt,
+                                }),
                         }),
                         Preparation,
                         ValidationFailures = _validationFailures.ToArray(),

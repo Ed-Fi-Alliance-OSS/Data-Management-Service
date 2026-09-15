@@ -123,3 +123,11 @@ The follow-up Release build and all 93 offline fixture tests passed after the di
 3. Completed: both additional SQL Server cases passed unchanged focused replays. Their hosted root causes remain unconfirmed; preserve readiness guards and investigate any recurrence using the added evidence.
 4. Commit and push the validated follow-up, then dispatch and verify all 13 nightly jobs on that SHA. If the restart failure recurs, use the new evidence to establish its cause and repeat qualification after any correction.
 5. Verify current PR checks, update PR #1255 with the final results, and audit the completion criteria above. Keep incomplete or failed checks explicit.
+
+## Follow-up: isolated hosted retirement failure
+
+Full run `35011184375` on `d1366badb` passed Kafka, both History and Telemetry suites, and PostgreSQL Recovery at this checkpoint. PostgreSQL Lifecycle passed 14 cases, including both cleanup wrapper variants, but failed `It_rejects_actual_pinned_worker_offsets_until_their_exact_keys_are_tombstoned`. The remaining suites were still running.
+
+The retirement failure did not reproduce in one focused PostgreSQL replay or five additional isolated replays. Its hosted cause remains unconfirmed. The existing artifact recorded the expected initial rejection of retained offsets, but omitted the later retirement result and individual journal steps. Add only coded retirement outcomes and step timestamps to the sanitized evidence; retain all cleanup checks and assertions. The diagnostic follow-up built with zero warnings/errors and passed all 95 selected cases (93 offline tests and both providers' live retirement cases), with zero skips. Attachment readback confirmed the intended safe fields.
+
+Next, rerun the hosted PostgreSQL Lifecycle suite with this evidence while collecting the remaining full-run results. Investigate a recurrence using the result codes and journal steps. A targeted pass is insufficient for completion: the full 13-job qualification and current PR checks must still pass on the final code commit.
