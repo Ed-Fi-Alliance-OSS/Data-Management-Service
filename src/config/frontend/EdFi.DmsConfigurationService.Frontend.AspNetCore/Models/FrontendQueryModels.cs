@@ -212,3 +212,21 @@ public class FrontendResourceClaimActionAuthStrategyQuery : FrontendPagingQuery
     public ResourceClaimActionAuthStrategyQuery ToQuery() =>
         ApplyPagingTo(new ResourceClaimActionAuthStrategyQuery { ResourceName = ResourceName });
 }
+
+public class FrontendActionQuery : FrontendPagingQuery
+{
+    [FromQuery(Name = "id")]
+    [Description("Filter actions by identifier.")]
+    public int? Id { get; set; }
+
+    [FromQuery(Name = "name")]
+    [Description("Filter actions by name.")]
+    public string? Name { get; set; }
+
+    public ActionQuery ToQuery() => ApplyPagingTo(new ActionQuery { Id = Id, Name = Name });
+}
+
+public class FrontendAuthorizationStrategyQuery : FrontendPagingQuery
+{
+    public AuthorizationStrategyQuery ToQuery() => ApplyPagingTo(new AuthorizationStrategyQuery());
+}
