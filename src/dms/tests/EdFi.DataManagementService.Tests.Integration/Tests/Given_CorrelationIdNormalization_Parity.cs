@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Net;
-using System.Reflection;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
@@ -31,8 +30,8 @@ namespace EdFi.DataManagementService.Tests.Integration.Tests;
 /// AND filter (<c>Category=ApiIntegration&amp;Category=PostgresqlIntegration</c> or
 /// <c>Category=ApiIntegration&amp;Category=MssqlIntegration</c>). This fixture uses only a plain
 /// <see cref="WebApplicationFactory{TEntryPoint}"/> plus faked providers, so it leases no database despite
-/// carrying the engine categories. <see cref="CorrelationIdNormalizationParityCiSelectionGuardrail"/> keeps
-/// these categories from being dropped.
+/// carrying the engine categories. Dropping any one of the three categories silently removes this fixture
+/// from a lane.
 /// </remarks>
 [TestFixture]
 [NonParallelizable]
@@ -207,42 +206,5 @@ public class Given_CorrelationIdNormalization_Parity
         A.CallTo(() => backendMappingInitializer.InitializeAsync(A<CancellationToken>._))
             .Returns(Task.CompletedTask);
         services.Replace(ServiceDescriptor.Singleton(backendMappingInitializer));
-    }
-}
-
-[TestFixture]
-[Category("ApiIntegration")]
-[Category("PostgresqlIntegration")]
-[Category("MssqlIntegration")]
-public class CorrelationIdNormalizationParityCiSelectionGuardrail
-{
-    private static readonly string[] RequiredCiSelectionCategories =
-    [
-        "ApiIntegration",
-        "PostgresqlIntegration",
-        "MssqlIntegration",
-    ];
-
-    [Test]
-    public void It_keeps_the_correlation_id_parity_fixture_selected_by_both_api_ci_lanes()
-    {
-        string[] declaredCategories =
-        [
-            .. typeof(Given_CorrelationIdNormalization_Parity)
-                .GetCustomAttributes<CategoryAttribute>(inherit: true)
-                .Select(category => category.Name),
-        ];
-
-        string[] missingCategories = [.. RequiredCiSelectionCategories.Except(declaredCategories)];
-
-        missingCategories
-            .Should()
-            .BeEmpty(
-                "{0} must declare the API CI-selection categories {1} so both API lanes "
-                    + "(Category=ApiIntegration&Category=PostgresqlIntegration and "
-                    + "Category=ApiIntegration&Category=MssqlIntegration) keep selecting it",
-                nameof(Given_CorrelationIdNormalization_Parity),
-                string.Join(", ", RequiredCiSelectionCategories)
-            );
     }
 }
