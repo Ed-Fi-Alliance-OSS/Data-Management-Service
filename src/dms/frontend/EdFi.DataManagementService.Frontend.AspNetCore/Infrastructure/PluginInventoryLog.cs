@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.Api.Plugins.Hosting;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 
@@ -24,9 +25,10 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 /// than by everyone remembering it.
 /// </para>
 /// <para>
-/// Every value projected below is metadata: names, versions, digests and states. No service
-/// descriptor, implementation instance, factory delegate or configuration object is passed to the
-/// logger, so nothing here can render an object whose <c>ToString</c> the host does not control.
+/// Every value projected below is metadata: names, versions, digests, states, lifetimes and flags. No
+/// service descriptor, implementation instance, factory delegate, service key or configuration object
+/// is passed to the logger, so nothing here can render an object whose <c>ToString</c> the host does
+/// not control.
 /// </para>
 /// </remarks>
 internal static class PluginInventoryLog
@@ -38,13 +40,22 @@ internal static class PluginInventoryLog
     private static readonly EventId PluginInventoryEvent = new(1499, "PluginInventory");
 
     /// <summary>
-    /// Emits one structured event per loaded plugin. Nothing is written when no plugin was loaded,
-    /// which is the shipped default.
+    /// Identifies the replay of a loader warning, which is a different event from the inventory even
+    /// though the two are written together.
+    /// </summary>
+    private static readonly EventId PluginLoadWarningEvent = new(1498, "PluginLoadWarning");
+
+    /// <summary>
+    /// Replays what the loader warned about, then emits one structured event per loaded plugin.
+    /// Nothing is written when no plugin was loaded and the loader warned about nothing, which is the
+    /// shipped default.
     /// </summary>
     public static void Emit(ILogger logger, PluginAuditInput auditInput)
     {
         ArgumentNullException.ThrowIfNull(logger);
         ArgumentNullException.ThrowIfNull(auditInput);
+
+        EmitWarnings(logger, auditInput.Warnings);
 
         foreach (PluginContributionRecord record in auditInput.Records)
         {
@@ -53,6 +64,10 @@ internal static class PluginInventoryLog
             // loaded and a substitution the hook provoked is present.
             IReadOnlyList<PluginInventoryRow> inventory = record.MaterializeInventory();
             IReadOnlyList<HostFirstSubstitution> substitutions = record.MaterializeSubstitutions();
+
+            // The service types this plugin both added and removed a descriptor for, which is what
+            // tells a replacement from a bare removal below.
+            HashSet<Type> replaced = [.. record.ReplacedServiceTypes];
 
             logger.LogInformation(
                 PluginInventoryEvent,
@@ -63,9 +78,32 @@ internal static class PluginInventoryLog
                 PluginLogText.Loggable(record.PluginName),
                 record.Plugin.EntryAssemblyVersion.ToString(),
                 inventory.Select(DeclaredFileOf).ToArray(),
-                record.Additions.Select(addition => PluginLogText.TypeName(addition.ServiceType)).ToArray(),
-                record.Removals.Select(RemovedDescriptorOf).ToArray(),
+                record.Additions.Select(RegisteredServiceOf).ToArray(),
+                record.Removals.Select(removal => RemovedDescriptorOf(removal, replaced)).ToArray(),
                 substitutions.Select(SubstitutionOf).ToArray()
+            );
+        }
+    }
+
+    /// <summary>
+    /// Replays the loader's warnings through the host's logger, one event each.
+    /// </summary>
+    /// <remarks>
+    /// The loader writes these to <see cref="Console.Error"/> because it runs before any logging
+    /// pipeline exists. A deployment that collects application logs rather than container stdout would
+    /// otherwise never see them.
+    /// </remarks>
+    private static void EmitWarnings(ILogger logger, IReadOnlyList<PluginLoadWarning> warnings)
+    {
+        foreach (PluginLoadWarning warning in warnings)
+        {
+            logger.LogWarning(
+                PluginLoadWarningEvent,
+                "Plugin loader warning {PluginLoadWarningKind}: directories {@IgnoredDirectories}; "
+                    + "detail {WarningDetail}",
+                warning.Kind.ToString(),
+                warning.Directories.Select(PluginLogText.Loggable).ToArray(),
+                PluginLogText.Loggable(warning.Detail)
             );
         }
     }
@@ -84,12 +122,28 @@ internal static class PluginInventoryLog
             row.LoadState.ToString()
         );
 
-    private static PluginRemovedDescriptorEntry RemovedDescriptorOf(PluginDescriptorDisplacement removal) =>
+    private static PluginRegisteredServiceEntry RegisteredServiceOf(ServiceDescriptor descriptor)
+    {
+        Type? implementationType = PluginDescriptorFacts.ImplementationTypeOf(descriptor);
+
+        return new PluginRegisteredServiceEntry(
+            PluginLogText.TypeName(descriptor.ServiceType),
+            implementationType is null ? null : PluginLogText.TypeName(implementationType),
+            descriptor.Lifetime.ToString(),
+            descriptor.IsKeyedService
+        );
+    }
+
+    private static PluginRemovedDescriptorEntry RemovedDescriptorOf(
+        PluginDescriptorDisplacement removal,
+        HashSet<Type> replacedServiceTypes
+    ) =>
         new(
             PluginLogText.TypeName(removal.ServiceType),
             removal.DisplacedImplementationType is null
                 ? null
-                : PluginLogText.TypeName(removal.DisplacedImplementationType)
+                : PluginLogText.TypeName(removal.DisplacedImplementationType),
+            replacedServiceTypes.Contains(removal.ServiceType)
         );
 
     private static PluginSubstitutionEntry SubstitutionOf(HostFirstSubstitution substitution) =>
@@ -136,6 +190,42 @@ internal sealed record PluginInventoryFileEntry(
 );
 
 /// <summary>
+/// One descriptor a plugin added, as the inventory event reports it.
+/// </summary>
+/// <remarks>
+/// <para>
+/// The implementation type travels with the service type because attribution is what this event is
+/// for. Every host guard that can abort startup over a plugin's registration names the offending
+/// <em>implementation</em> class: the validator audit at startup-task order 250 does, and it knows
+/// nothing about plugins. Two plugins registering the same contract produce two entries carrying the
+/// same service type, so the service type alone cannot say which of them supplied the offender, and
+/// nothing obliges an implementation's namespace to resemble the plugin's name.
+/// </para>
+/// <para>
+/// Metadata only. The implementation type is read from the descriptor rather than activated, an
+/// instance registration is asked for its runtime type and never its value, and the key of a keyed
+/// registration is reported as a flag rather than rendered, because a key is a plugin-supplied object
+/// whose <c>ToString</c> the host does not control.
+/// </para>
+/// </remarks>
+/// <param name="ServiceType">The service type the descriptor was registered under.</param>
+/// <param name="ImplementationType">
+/// The implementation it names, or null where it names none, which is what a factory registration
+/// looks like.
+/// </param>
+/// <param name="Lifetime">Singleton, Scoped or Transient, which is what a shape rule keys on.</param>
+/// <param name="IsKeyed">
+/// Whether the registration is keyed, which decides whether it reaches the unkeyed collection a host
+/// resolves at all.
+/// </param>
+internal sealed record PluginRegisteredServiceEntry(
+    string ServiceType,
+    string? ImplementationType,
+    string Lifetime,
+    bool IsKeyed
+);
+
+/// <summary>
 /// A pre-existing descriptor a plugin removed or overwrote.
 /// </summary>
 /// <remarks>
@@ -146,7 +236,16 @@ internal sealed record PluginInventoryFileEntry(
 /// <param name="DisplacedImplementationType">
 /// What that descriptor implemented, or null where it was a factory and there is no type to name.
 /// </param>
-internal sealed record PluginRemovedDescriptorEntry(string ServiceType, string? DisplacedImplementationType);
+/// <param name="Replaced">
+/// Whether the same plugin also registered this service type, which is what a replacement looks like
+/// in a comparison that sees only the two ends of the hook. False means the plugin took the service
+/// type out of service and put nothing back.
+/// </param>
+internal sealed record PluginRemovedDescriptorEntry(
+    string ServiceType,
+    string? DisplacedImplementationType,
+    bool Replaced
+);
 
 /// <summary>
 /// An assembly the host served a plugin in place of the plugin's own copy.

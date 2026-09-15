@@ -16,6 +16,14 @@
 #
 # Acquiring the bytes does not enable them. Nothing here writes Plugins:Allowed; the allowlist
 # is a separate deployment-owned setting. See eng/docker-compose/README.md, "Loading plugins".
+#
+# Repeat deployments are stop, fetch, start. service_completed_successfully orders container
+# startup and nothing more: it does not keep a completed one-shot service away from the files of a
+# container already running. Composing this file again over a stack that is up starts the fetcher
+# while DMS keeps running on the same volume, and the fetcher clears the plugin directory before it
+# extracts. Because assemblies load lazily, a request arriving afterwards can find a declared file
+# missing or load a dependency from a version other than the one the startup inventory recorded.
+# Take the stack down before fetching again. See the same README section.
 services:
   fetch-plugins:
     # Pinned by digest, as every third-party image in this directory already is. An operator may

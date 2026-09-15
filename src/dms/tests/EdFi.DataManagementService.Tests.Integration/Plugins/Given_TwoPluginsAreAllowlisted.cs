@@ -284,9 +284,30 @@ public sealed class Given_TwoPluginsAreAllowlisted
     {
         PluginLogCapture
             .Sequence(InventoryFor(HookTouchPlugin), "RegisteredServiceTypes")
-            .Select(value => (value as ScalarValue)?.Value?.ToString())
+            .Select(entry => PluginLogCapture.Member(entry, "ServiceType"))
             .Should()
             .Contain("EdFi.DataManagementService.CustomValidation.ICustomResourceValidator");
+    }
+
+    [Test]
+    public void It_named_the_implementation_behind_each_registered_service_type()
+    {
+        // The service type is what every host guard refuses against, and the implementation class is
+        // what those guards name. Two plugins registering the same contract are told apart by this
+        // member and by nothing else on the event.
+        LogEventPropertyValue registration = PluginLogCapture
+            .Sequence(InventoryFor(HookTouchPlugin), "RegisteredServiceTypes")
+            .Single(entry =>
+                PluginLogCapture.Member(entry, "ServiceType")
+                == "EdFi.DataManagementService.CustomValidation.ICustomResourceValidator"
+            );
+
+        PluginLogCapture
+            .Member(registration, "ImplementationType")
+            .Should()
+            .Be("Acme.DmsHookTouch.HookTouchResourceValidator");
+        PluginLogCapture.Member(registration, "Lifetime").Should().Be("Transient");
+        PluginLogCapture.Member(registration, "IsKeyed").Should().Be("False");
     }
 
     [Test]
@@ -341,6 +362,35 @@ public sealed class Given_TwoPluginsAreAllowlisted
 
         warnings.Should().ContainSingle();
         warnings[0].Should().Contain(UnallowlistedDirectory);
+    }
+
+    [Test]
+    public void It_replayed_that_warning_through_the_configured_application_logger()
+    {
+        // The loader's own channel is Console.Error, because it runs before any logging pipeline
+        // exists. A deployment collecting application logs rather than container stdout sees nothing
+        // written there, so the warning has to arrive through the real logger as well.
+        LogEvent replayed = _capture
+            .Events.Where(logEvent =>
+                logEvent.Level == LogEventLevel.Warning
+                && logEvent.MessageTemplate.Text.StartsWith(
+                    "Plugin loader warning ",
+                    StringComparison.Ordinal
+                )
+            )
+            .Should()
+            .ContainSingle()
+            .Subject;
+
+        PluginLogCapture
+            .ScalarText(replayed, "PluginLoadWarningKind")
+            .Should()
+            .Be("UnallowlistedDirectories");
+        PluginLogCapture
+            .Sequence(replayed, "IgnoredDirectories")
+            .Select(value => (value as ScalarValue)?.Value?.ToString())
+            .Should()
+            .BeEquivalentTo(UnallowlistedDirectory);
     }
 
     [Test]
@@ -400,6 +450,14 @@ public sealed class Given_TwoPluginsAreAllowlisted
                 "Microsoft.Extensions.Http.LoggingHttpMessageHandlerBuilderFilter",
                 "removing a pre-existing descriptor outside the host-owned and logging-pipeline sets "
                     + "is permitted, and this event is the only trace it leaves"
+            );
+        PluginLogCapture
+            .Member(removals[0], "Replaced")
+            .Should()
+            .Be(
+                "False",
+                "the plugin took the service type out of service and put nothing back, which is a "
+                    + "different fact from a plugin swapping its own descriptor for another"
             );
     }
 

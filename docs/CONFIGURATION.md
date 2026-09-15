@@ -350,6 +350,11 @@ least one plugin, each such directory also produces one warning naming it; an em
 `Allowed` asks for nothing and does not inspect the root at all, so it produces no
 warning.
 
+Loading runs before the logging pipeline exists, so the loader writes its own lines
+to standard error. Its warnings are also replayed through the configured application
+logger once one exists, as `Plugin loader warning` events, so a deployment that
+collects application logs rather than container output still sees them.
+
 The order written is the invocation order, so it is what decides the order in which
 plugins contribute.
 

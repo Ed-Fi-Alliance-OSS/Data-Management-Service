@@ -6,19 +6,28 @@
 using EdFi.DataManagementService.Tests.Integration.Fixtures;
 using FluentAssertions;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Serilog.Events;
 
 namespace EdFi.DataManagementService.Tests.Integration.Plugins;
 
 /// <summary>
-/// A plugin registers a custom validator in a shape the host's own validator audit refuses, and the
-/// inventory event naming the plugin is already in the log when that audit fails.
+/// Two plugins each register a custom validator, one of them in a shape the host's own validator audit
+/// refuses, and the inventory event attributes the offending implementation to the plugin that
+/// supplied it.
 /// </summary>
 /// <remarks>
 /// <para>
-/// This is what the ordering criterion is for. The validator audit runs at startup-task order 250 and
-/// names the offending implementation type; it knows nothing about plugins. Without the inventory
-/// event ahead of it, an operator is left with a type name and no way back to the plugin that
-/// supplied it.
+/// This is what the ordering and attribution criteria are for. The validator audit runs at startup-task
+/// order 250 and names the offending <em>implementation</em> type; it knows nothing about plugins.
+/// Without the inventory event ahead of it, an operator is left with a type name and no way back to the
+/// plugin that supplied it.
+/// </para>
+/// <para>
+/// Two plugins rather than one, deliberately. Both register the same service type, so both inventory
+/// events carry <c>ICustomResourceValidator</c> and the service type alone attributes nothing. Only the
+/// implementation type the audit names tells the two apart, and nothing obliges an implementation's
+/// namespace to resemble its plugin's name, so the event has to carry it rather than leave it to be
+/// guessed.
 /// </para>
 /// <para>
 /// The audit's failure is post-container, so it reaches the process-exit seam rather than escaping
@@ -28,7 +37,16 @@ namespace EdFi.DataManagementService.Tests.Integration.Plugins;
 /// </remarks>
 public sealed class Given_APluginRegistersAValidatorTheAuditRefuses
 {
-    private const string Plugin = "Acme.DmsHookTouch";
+    /// <summary>The plugin whose registration the audit accepts.</summary>
+    private const string AcceptedPlugin = "Acme.DmsContributor";
+
+    /// <summary>The plugin whose registration the audit refuses.</summary>
+    private const string RefusedPlugin = "Acme.DmsHookTouch";
+
+    private const string AcceptedImplementation = "Acme.DmsContributor.FixtureResourceValidator";
+    private const string RefusedImplementation = "Acme.DmsHookTouch.HookTouchResourceValidator";
+    private const string ContractServiceType =
+        "EdFi.DataManagementService.CustomValidation.ICustomResourceValidator";
 
     private WebApplicationFactory<Program>? _factory;
     private PluginLogCapture _capture = new();
@@ -41,7 +59,7 @@ public sealed class Given_APluginRegistersAValidatorTheAuditRefuses
     {
         FixtureContext fixture = FixtureContextLoader.Load(FixtureKey.ProfileRootOnlyMerge);
 
-        _pluginRoot = PluginHostProbe.CreatePluginRoot(Plugin);
+        _pluginRoot = PluginHostProbe.CreatePluginRoot(AcceptedPlugin, RefusedPlugin);
         _startupStatusFilePath = Path.Combine(
             Path.GetTempPath(),
             $"plugin-integration-refused-{Guid.NewGuid():N}.json"
@@ -55,11 +73,14 @@ public sealed class Given_APluginRegistersAValidatorTheAuditRefuses
         _factory = PluginHostProbe.CreateHost(
             fixture,
             _pluginRoot,
-            Plugin,
+            $"{AcceptedPlugin},{RefusedPlugin}",
             _startupStatusFilePath,
             _capture,
             new Dictionary<string, string>
             {
+                // Read by both fixtures. Acme.DmsContributor has no case for this value and falls
+                // through to its ordinary transient registration, which is what makes one of the two
+                // plugins blameless while both register the same contract.
                 ["Fixture:Behavior"] = "validatorWrongLifetime",
                 ["Fixture:ObservationPath"] = _observationPath,
             }
@@ -91,41 +112,111 @@ public sealed class Given_APluginRegistersAValidatorTheAuditRefuses
     }
 
     [Test]
-    public void It_emitted_the_inventory_event_naming_the_plugin()
+    public void It_emitted_an_inventory_event_for_each_plugin()
     {
-        _capture.IndexOfInventoryEventFor(Plugin).Should().BeGreaterThanOrEqualTo(0);
+        _capture
+            .InventoryEvents.Select(logEvent => PluginLogCapture.ScalarText(logEvent, "PluginName"))
+            .Should()
+            .BeEquivalentTo(AcceptedPlugin, RefusedPlugin);
     }
 
     [Test]
-    public void It_emitted_that_event_before_the_validator_audit_reported_the_failure()
+    public void It_emitted_those_events_before_the_validator_audit_reported_the_failure()
     {
-        int inventoryIndex = _capture.IndexOfInventoryEventFor(Plugin);
         int failureIndex = _capture.IndexOfMessageContaining("ICustomResourceValidator registration");
 
         failureIndex
             .Should()
             .BeGreaterThanOrEqualTo(0, "the validator audit refuses a non-transient registration");
-        inventoryIndex
+
+        foreach (string plugin in new[] { AcceptedPlugin, RefusedPlugin })
+        {
+            _capture
+                .IndexOfInventoryEventFor(plugin)
+                .Should()
+                .BeInRange(
+                    0,
+                    failureIndex - 1,
+                    "the inventory is emitted immediately after the container is built and before any "
+                        + "startup task runs, which is what attributes the offending type to a plugin"
+                );
+        }
+    }
+
+    [Test]
+    public void It_named_the_same_service_type_against_both_plugins()
+    {
+        // The premise of the case rather than an outcome: the service type is common to both events,
+        // so on its own it attributes nothing.
+        foreach (string plugin in new[] { AcceptedPlugin, RefusedPlugin })
+        {
+            RegisteredServices(plugin)
+                .Select(entry => PluginLogCapture.Member(entry, "ServiceType"))
+                .Should()
+                .Contain(ContractServiceType);
+        }
+    }
+
+    [Test]
+    public void It_reported_the_implementation_class_the_validator_audit_names()
+    {
+        _capture
+            .IndexOfMessageContaining(RefusedImplementation)
             .Should()
-            .BeLessThan(
-                failureIndex,
-                "the inventory is emitted immediately after the container is built and before any "
-                    + "startup task runs, which is what attributes the offending type to a plugin"
+            .BeGreaterThanOrEqualTo(
+                0,
+                "the audit identifies the offending registration by its implementation class, which "
+                    + "is the name an operator has to start from"
             );
     }
 
     [Test]
-    public void It_named_the_offending_service_type_against_the_plugin()
+    public void It_attributed_that_implementation_to_the_plugin_that_supplied_it()
     {
-        PluginLogCapture
-            .Sequence(
-                _capture.InventoryEvents.Single(logEvent =>
-                    PluginLogCapture.ScalarText(logEvent, "PluginName") == Plugin
-                ),
-                "RegisteredServiceTypes"
-            )
-            .Select(value => value.ToString().Trim('"'))
+        RegisteredServices(RefusedPlugin)
+            .Select(entry => PluginLogCapture.Member(entry, "ImplementationType"))
             .Should()
-            .Contain("EdFi.DataManagementService.CustomValidation.ICustomResourceValidator");
+            .Contain(
+                RefusedImplementation,
+                "the inventory has to carry the same name the audit reports for an operator to reach "
+                    + "the plugin from it"
+            );
+
+        RegisteredServices(AcceptedPlugin)
+            .Select(entry => PluginLogCapture.Member(entry, "ImplementationType"))
+            .Should()
+            .NotContain(
+                RefusedImplementation,
+                "the blameless plugin registered the same service type, so attribution that survives "
+                    + "must not point at it"
+            );
     }
+
+    [Test]
+    public void It_carried_the_lifetime_that_made_the_registration_invalid()
+    {
+        LogEventPropertyValue refused = RegisteredServices(RefusedPlugin)
+            .Single(entry => PluginLogCapture.Member(entry, "ImplementationType") == RefusedImplementation);
+
+        PluginLogCapture.Member(refused, "Lifetime").Should().Be("Singleton");
+        PluginLogCapture.Member(refused, "IsKeyed").Should().Be("False");
+
+        LogEventPropertyValue accepted = RegisteredServices(AcceptedPlugin)
+            .Single(entry =>
+                PluginLogCapture.Member(entry, "ImplementationType") == AcceptedImplementation
+            );
+
+        PluginLogCapture
+            .Member(accepted, "Lifetime")
+            .Should()
+            .Be("Transient", "the contract's shape rule is what the refused registration broke");
+    }
+
+    private IReadOnlyList<LogEventPropertyValue> RegisteredServices(string pluginName) =>
+        PluginLogCapture.Sequence(
+            _capture.InventoryEvents.Single(logEvent =>
+                PluginLogCapture.ScalarText(logEvent, "PluginName") == pluginName
+            ),
+            "RegisteredServiceTypes"
+        );
 }

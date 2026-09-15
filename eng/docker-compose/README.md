@@ -926,16 +926,38 @@ recipes. Each is an overlay added with its own `-f`, and they are **alternatives
 rather than additions: `/app/plugins` is one mount target and two overlays cannot
 both claim it. `local-dms.yml` and `published-dms.yml` are unchanged by either.
 
+Add the overlays by naming them in `DMS_PLUGINS_COMPOSE_FILES` and starting the
+stack through `bootstrap-local-dms.ps1`. That variable is a semicolon-delimited
+list, added in the order written, each entry either absolute or relative to
+`eng/docker-compose`. Leave it unset and nothing changes; a path that does not
+exist, or an empty entry from a stray separator, fails the launcher by name before
+it touches Docker.
+
+The launcher is the entry point rather than a convenience. An overlay only adds a
+mount and a fetch step to the DMS service; it provisions no schema and configures
+no Configuration Service, and DMS validates at startup that both were done. A bare
+`docker compose up` of `postgresql.yml` and `local-dms.yml` with an overlay added
+therefore cannot produce a working deployment on a fresh environment. Compose those
+files directly only against an environment already provisioned and configured by a
+previous `bootstrap-local-dms.ps1` run.
+
 ### Recipe 1: a pre-populated plugin root
 
 `plugins-dms.yml` bind-mounts a directory of plugin directories read-only.
 
 ```powershell
-$env:DMS_PLUGINS_MOUNT_SOURCE = "C:/plugins"
+cd eng/docker-compose
 
-docker compose -f postgresql.yml -f local-dms.yml -f plugins-dms.yml `
-  -f plugins-allowed-dms.yml up -d
+# In your environment file, or exported before the run:
+#   DMS_PLUGINS_COMPOSE_FILES=plugins-dms.yml;my-plugins-allowed-dms.yml
+#   DMS_PLUGINS_MOUNT_SOURCE=C:/plugins
+
+pwsh ./bootstrap-local-dms.ps1
 ```
+
+Nothing in this recipe writes into the mounted directory. The plugin directories are
+whatever you put there, so replacing one is your own step and DMS reads the bytes
+that are there when it starts.
 
 ### Recipe 2: a pinned package fetched by the deployment
 
@@ -945,12 +967,15 @@ directory into a named volume and exits. `depends_on: service_completed_successf
 orders it ahead of DMS, which then mounts that volume read-only.
 
 ```powershell
-$env:PLUGIN_PACKAGE_URL = "https://feed.example/v3-flatcontainer/acme.dms.identity/1.2.0/acme.dms.identity.1.2.0.nupkg"
-$env:PLUGIN_PACKAGE_SHA256 = "9f2c...the digest you pinned..."
-$env:PLUGIN_NAME = "Acme.Dms.Identity"
+cd eng/docker-compose
 
-docker compose -f postgresql.yml -f local-dms.yml -f plugins-fetch-dms.yml `
-  -f plugins-allowed-dms.yml up -d
+# In your environment file, or exported before the run:
+#   DMS_PLUGINS_COMPOSE_FILES=plugins-fetch-dms.yml;my-plugins-allowed-dms.yml
+#   PLUGIN_PACKAGE_URL=https://feed.example/v3-flatcontainer/acme.dms.identity/1.2.0/acme.dms.identity.1.2.0.nupkg
+#   PLUGIN_PACKAGE_SHA256=9f2c...the digest you pinned...
+#   PLUGIN_NAME=Acme.Dms.Identity
+
+pwsh ./bootstrap-local-dms.ps1
 ```
 
 `PLUGIN_PACKAGE_URL` is the package's download address in the feed's
@@ -959,12 +984,35 @@ case, where `<base>` is what the feed's `index.json` publishes for that resource
 It differs between feed hosts, which is one more reason the address belongs to the
 deployment rather than to DMS.
 
+#### Re-fetching requires stop, fetch, start
+
+**Stop DMS before fetching again.** The fetcher clears and rewrites the plugin
+directory inside the volume DMS mounts, and `service_completed_successfully` orders
+container *startup*; it does not keep a completed one-shot service away from the
+files of a container that is already running. Re-running the launcher against a
+stack that is already up starts the fetcher while DMS keeps running on the same
+volume, and because assemblies load lazily, a request arriving afterwards can find
+a file missing or load a dependency from a version other than the one the startup
+inventory recorded.
+
+Tear the stack down and bring it back up, which is what makes the inventory event a
+statement about the bytes the process is serving:
+
+```powershell
+cd eng/docker-compose
+pwsh ./bootstrap-local-dms.ps1 -d -v
+pwsh ./bootstrap-local-dms.ps1
+```
+
+`-v` removes the `plugins` volume along with the rest, so the next start fetches
+into an empty one. Keeping the volume is safe too, because the fetcher clears the
+plugin directory before extracting; what is not safe is fetching while DMS is up.
+
 ### Required variables
 
 All four are declared with `:?` rather than defaults, so composing an overlay in
 without setting its variables fails immediately instead of starting a deployment
-that silently loads nothing. They are listed, commented out, in `.env.example`, and
-in `.env.plugins.e2e`, which the plugin end-to-end harness drives.
+that silently loads nothing. They are listed, commented out, in `.env.example`.
 
 | Variable | Overlay | Meaning |
 | -------- | ------- | ------- |
@@ -983,10 +1031,11 @@ nothing from it.
 
 The DMS service's environment is declared in the base compose files, which stay
 unchanged, so the allowlist arrives in a small deployment-owned overlay of its own.
-Write it once, add it with its own `-f`, as the two `docker compose` lines above do:
+Write it once and name it in `DMS_PLUGINS_COMPOSE_FILES` after the acquisition
+overlay, as the two recipes above do:
 
 ```yaml
-# plugins-allowed-dms.yml
+# my-plugins-allowed-dms.yml
 services:
   dms:
     environment:
@@ -996,23 +1045,6 @@ services:
 The order written is the order plugins are invoked in. See the `Plugins` section of
 [docs/CONFIGURATION.md](../../docs/CONFIGURATION.md) for the full configuration
 surface.
-
-### Adding the overlays through the launcher scripts
-
-The `docker compose` lines above add the files with their own `-f`. When you are
-starting the stack through `start-local-dms.ps1` or `bootstrap-local-dms.ps1`
-instead, name them in `DMS_PLUGINS_COMPOSE_FILES` in your environment file. It is
-a semicolon-delimited list, added in the order written, each entry either absolute
-or relative to `eng/docker-compose`:
-
-```
-DMS_PLUGINS_COMPOSE_FILES=plugins-dms.yml;my-plugins-allowed-dms.yml
-```
-
-Leave it unset and nothing changes. A path that does not exist, or an empty entry
-from a stray separator, fails the launcher by name before it touches Docker. This
-is a launcher convenience and not part of either recipe: the acquisition overlays
-still declare exactly the four variables above.
 
 ## Kafka UI
 

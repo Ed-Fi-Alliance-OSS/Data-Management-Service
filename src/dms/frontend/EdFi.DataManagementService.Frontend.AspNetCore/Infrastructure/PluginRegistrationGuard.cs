@@ -9,14 +9,20 @@ using EdFi.DataManagementService.Core.Startup;
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 
 /// <summary>
-/// Runs the plugin registration checks that can only be made once the container exists, and records
-/// what each plugin contributed.
+/// Runs the plugin registration checks that can only be made once the container exists.
 /// </summary>
 /// <remarks>
 /// <para>
 /// Thin by design. Every decision is in the host-agnostic audit function; this owns the startup
-/// placement, the fatal path, and the log. It lives in the frontend rather than in Core because the
-/// records it reads are produced in the plugin hosting assembly, and Core must not see that tree.
+/// placement, the fatal path, and the acceptance line. It lives in the frontend rather than in Core
+/// because the records it reads are produced in the plugin hosting assembly, and Core must not see
+/// that tree.
+/// </para>
+/// <para>
+/// What each plugin contributed is not logged here. <see cref="PluginInventoryLog"/> emits that as a
+/// structured event immediately after the container is built, which is both earlier than this task and
+/// earlier than every other guard that can abort startup naming a type. A second rendering here would
+/// duplicate the output and could disagree with it, because the audit activates services in between.
 /// </para>
 /// <para>
 /// It resolves no service collection. Its input arrives by constructor as the instance the composition
@@ -46,13 +52,6 @@ internal sealed class PluginRegistrationGuard(
             rootServiceProvider,
             cancellationToken
         );
-
-        // Logged before anything is thrown, because a startup that is about to abort is exactly when
-        // an operator needs to see what each plugin contributed. This is a flat, human-readable
-        // summary at the point of the check; the structured inventory event PluginInventoryLog emits
-        // immediately after the container is built is the machine-readable record, and the two are
-        // distinguished by their message templates rather than by their content.
-        LogWhatEachPluginContributed();
 
         if (result.ScopeCleanupFailure is not null)
         {
@@ -88,50 +87,4 @@ internal sealed class PluginRegistrationGuard(
             auditInput.Registry.Entries.Count
         );
     }
-
-    private void LogWhatEachPluginContributed()
-    {
-        foreach (PluginContributionRecord record in auditInput.Records)
-        {
-            logger.LogInformation(
-                "Plugin '{PluginName}' registered {ServiceTypes}; removed {Removals}; host-first "
-                    + "substitutions {Substitutions}; declared files {DeclaredFiles}",
-                Loggable(record.PluginName),
-                Describe(record.Additions.Select(descriptor => TypeNameForLog(descriptor.ServiceType))),
-                Describe(
-                    record.Removals.Select(removal =>
-                        $"{TypeNameForLog(removal.ServiceType)} (displacing "
-                        + $"{(removal.DisplacedImplementationType is null ? "a factory" : TypeNameForLog(removal.DisplacedImplementationType))})"
-                    )
-                ),
-                Describe(
-                    record
-                        .MaterializeSubstitutions()
-                        .Select(substitution =>
-                            $"{Loggable(substitution.AssemblyName)} plugin declared "
-                            + $"{substitution.DeclaredVersion?.ToString() ?? "none"}, host served {substitution.HostVersion}"
-                        )
-                ),
-                Describe(
-                    record
-                        .MaterializeInventory()
-                        .Select(row =>
-                            $"{Loggable(row.FileName)} {row.EffectiveVersion?.ToString() ?? "no version"} "
-                            + $"sha256:{Loggable(row.Sha256) ?? "absent"} {row.LoadState}"
-                        )
-                )
-            );
-        }
-    }
-
-    private static string Describe(IEnumerable<string> values)
-    {
-        string joined = string.Join(", ", values);
-
-        return joined.Length == 0 ? "none" : joined;
-    }
-
-    private static string TypeNameForLog(Type type) => PluginLogText.TypeName(type);
-
-    private static string? Loggable(string? value) => PluginLogText.Loggable(value);
 }
