@@ -111,9 +111,9 @@ The assertion is that a rule written for one host already holds for the other, a
 
 - A CMS-side check runs beside the audit over the same input.
 - A plugin registering either declared contract in any of these ways fails the boot:
-  - as scoped, naming the plugin and the lifetime
-  - as transient, naming the plugin and the lifetime
-  - under a service key, naming the plugin and the key
+    - as scoped, naming the plugin and the lifetime
+    - as transient, naming the plugin and the lifetime
+    - under a service key, naming the plugin and the key
 
 **Observability**
 
@@ -129,18 +129,18 @@ The assertion is that a rule written for one host already holds for the other, a
 **Fatal cases**
 
 - Each of these fails host creation with no request served, and writes the failure to `Console.Error`:
-  - a misspelled allowlist entry
-  - a plugin allowlisted on a missing root
-  - a plugin whose `ContributeConfiguration` throws
-  - a plugin whose `ContributeServices` throws
+    - a misspelled allowlist entry
+    - a plugin allowlisted on a missing root
+    - a plugin whose `ContributeConfiguration` throws
+    - a plugin whose `ContributeServices` throws
 
 **Cardinality**
 
 - Two plugins each registering `ISecretResolver` fails the boot, naming both.
 - One plugin registering `ISecretResolver` twice fails the boot, naming the plugin and its registration count.
 - One plugin registering `IClientSecretHasher` once loads successfully on both reachable shapes:
-  - a self-contained PostgreSQL deployment, where the host registers its own default twice
-  - a Keycloak deployment, where the host registers its own default once
+    - a self-contained PostgreSQL deployment, where the host registers its own default twice
+    - a Keycloak deployment, where the host registers its own default once
 
 **Guard behavior**
 
@@ -165,17 +165,17 @@ The assertion is that a rule written for one host already holds for the other, a
 **Documentation**
 
 - `docs/CONFIGURATION.md` gains the CMS `Plugins` section, stating:
-  - that `Allowed` ships empty and is the only switch
-  - that its order is invocation order and contractual for Phase A
-  - which keys Phase A cannot supply in CMS, and that CMS has no `AppSettings:StartupStatusFilePath` equivalent
-  - that `PluginLoader.Load` binds `Plugins:Directory` and `Plugins:Allowed` before any Phase A hook runs, so no plugin source can supply either
+    - that `Allowed` ships empty and is the only switch
+    - that its order is invocation order and contractual for Phase A
+    - which keys Phase A cannot supply in CMS, and that CMS has no `AppSettings:StartupStatusFilePath` equivalent
+    - that `PluginLoader.Load` binds `Plugins:Directory` and `Plugins:Allowed` before any Phase A hook runs, so no plugin source can supply either
 
 **Build**
 
 - These pass:
-  - `dotnet build --no-restore src/config/EdFi.DmsConfigurationService.sln`
-  - `dotnet test src/config/EdFi.DmsConfigurationService.sln`
-  - `build-config.ps1 E2ETest`
+    - `dotnet build --no-restore src/config/EdFi.DmsConfigurationService.sln`
+    - `dotnet test src/config/EdFi.DmsConfigurationService.sln`
+    - `build-config.ps1 E2ETest`
 
 ## Tasks
 
