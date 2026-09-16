@@ -3,11 +3,10 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Net;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
-using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
+using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure.Extensions;
 using Microsoft.Extensions.Options;
 
@@ -19,12 +18,15 @@ public class XsdMetadataEndpointModule(IOptions<AppSettings> appSettings) : IEnd
 
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
-        var tenantPrefix = appSettings.Value.MultiTenancy ? "/{tenant}" : "";
+        string routePattern = FixedRoutePattern.Build(
+            appSettings.Value.GetRouteQualifierSegmentsArray(),
+            appSettings.Value.MultiTenancy
+        );
 
-        endpoints.MapGet($"{tenantPrefix}/metadata/xsd", GetSections);
-        endpoints.MapGet($"{tenantPrefix}/metadata/xsd/{{section}}/files", GetXsdMetadataFiles);
+        endpoints.MapGet($"{routePattern}/metadata/xsd", GetSections);
+        endpoints.MapGet($"{routePattern}/metadata/xsd/{{section}}/files", GetXsdMetadataFiles);
         endpoints.MapGet(
-            $"{tenantPrefix}/metadata/xsd/{{section}}/{{fileName}}.xsd",
+            $"{routePattern}/metadata/xsd/{{section}}/{{fileName}}.xsd",
             GetXsdMetadataFileContent
         );
     }
@@ -32,12 +34,10 @@ public class XsdMetadataEndpointModule(IOptions<AppSettings> appSettings) : IEnd
     internal static async Task GetSections(
         HttpContext httpContext,
         IApiService apiService,
-        IOptions<AppSettings> options,
-        ITenantValidator tenantValidator
+        IMetadataRouteValidator metadataRouteValidator
     )
     {
-        // Validate tenant if multi-tenancy is enabled
-        if (!await ValidateTenantAsync(httpContext, options, tenantValidator))
+        if (!await metadataRouteValidator.ValidateAsync(httpContext))
         {
             return;
         }
@@ -64,12 +64,10 @@ public class XsdMetadataEndpointModule(IOptions<AppSettings> appSettings) : IEnd
     internal async Task GetXsdMetadataFiles(
         HttpContext httpContext,
         IContentProvider contentProvider,
-        IOptions<AppSettings> options,
-        ITenantValidator tenantValidator
+        IMetadataRouteValidator metadataRouteValidator
     )
     {
-        // Validate tenant if multi-tenancy is enabled
-        if (!await ValidateTenantAsync(httpContext, options, tenantValidator))
+        if (!await metadataRouteValidator.ValidateAsync(httpContext))
         {
             return;
         }
@@ -112,12 +110,10 @@ public class XsdMetadataEndpointModule(IOptions<AppSettings> appSettings) : IEnd
     internal async Task<IResult> GetXsdMetadataFileContent(
         HttpContext httpContext,
         IContentProvider contentProvider,
-        IOptions<AppSettings> options,
-        ITenantValidator tenantValidator
+        IMetadataRouteValidator metadataRouteValidator
     )
     {
-        // Validate tenant if multi-tenancy is enabled
-        if (!await ValidateTenantAsync(httpContext, options, tenantValidator))
+        if (!await metadataRouteValidator.ValidateAsync(httpContext))
         {
             return Results.Empty;
         }
@@ -141,65 +137,6 @@ public class XsdMetadataEndpointModule(IOptions<AppSettings> appSettings) : IEnd
         }
     }
 
-    /// <summary>
-    /// Validates the tenant if multi-tenancy is enabled.
-    /// Returns true if validation passes or multi-tenancy is disabled.
-    /// Returns false and writes 404 response if tenant is invalid.
-    /// </summary>
-    private static async Task<bool> ValidateTenantAsync(
-        HttpContext httpContext,
-        IOptions<AppSettings> options,
-        ITenantValidator tenantValidator
-    )
-    {
-        if (!options.Value.MultiTenancy)
-        {
-            return true;
-        }
-
-        string? tenant = ExtractTenantFromRoute(httpContext);
-        if (tenant == null)
-        {
-            // No tenant in route - this shouldn't happen with multi-tenancy enabled
-            // but we'll let it pass since the route wouldn't match without tenant
-            return true;
-        }
-
-        bool isValid = await tenantValidator.ValidateTenantAsync(tenant);
-        if (!isValid)
-        {
-            httpContext.Response.StatusCode = (int)HttpStatusCode.NotFound;
-            await httpContext.Response.WriteAsSerializedJsonAsync(
-                new
-                {
-                    detail = "The specified resource could not be found.",
-                    type = "urn:ed-fi:api:not-found",
-                    title = "Not Found",
-                    status = 404,
-                }
-            );
-            return false;
-        }
-
-        return true;
-    }
-
-    /// <summary>
-    /// Extracts the tenant identifier from the route values.
-    /// Returns null if tenant is not present in the route.
-    /// </summary>
-    private static string? ExtractTenantFromRoute(HttpContext httpContext)
-    {
-        if (
-            httpContext.Request.RouteValues.TryGetValue("tenant", out object? value)
-            && value is string tenant
-            && !string.IsNullOrWhiteSpace(tenant)
-        )
-        {
-            return tenant;
-        }
-        return null;
-    }
 }
 
 public record XsdMetaDataSectionInfo(string description, string name, string version, string files);
