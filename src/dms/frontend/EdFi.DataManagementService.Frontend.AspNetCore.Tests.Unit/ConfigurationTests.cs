@@ -533,13 +533,8 @@ public class ConfigurationTests
 
     /// <summary>
     /// <c>CorrelationIdMaxLength</c> is bounded on both sides, and both bounds are inclusive.
-    /// The floor exists because <c>ExtractTraceIdFrom</c> pushes the server-generated
-    /// <c>HttpContext.TraceIdentifier</c> through the same cap: Kestrel formats that value as a
-    /// 13-character connection id, a colon and an 8-hex request number - 22 characters - so a cap
-    /// below it would drop the request number and collapse every request on one connection onto a
-    /// single correlation ID. 64 is the shortest cap that also leaves every common upstream scheme
-    /// intact, the longest being a 55-character W3C traceparent. The ceiling bounds how much
-    /// client-controlled text one request can push into every log event and error response body.
+    /// Why the floor is 64 and why there is a ceiling at all:
+    /// reference/adr-correlation-id-normalization.md.
     /// </summary>
     [TestFixture]
     public class Given_A_Bound_App_Settings_With_A_Correlation_Id_Max_Length_Outside_The_Permitted_Range
@@ -851,12 +846,9 @@ public class ConfigurationTests
     /// <remarks>
     /// The trigger is an out-of-range <c>CorrelationIdMaxLength</c> rather than, say, a missing
     /// AuthenticationService, because it is the failure that makes the correlation ID assertions
-    /// below mean something: the setting that just failed validation is the very one the correlation
-    /// ID pipeline reads, so there is no validated cap to normalize against and nothing cached on
-    /// <c>HttpContext.Items</c> to reuse. The request log and the response body have to arrive at
-    /// the same value independently, each through the documented default. 32 is also the shape of a
-    /// realistic operator typo: it was accepted before the floor of 64 was introduced, which is what
-    /// makes this short-circuit path materially more reachable than it was.
+    /// below mean something: the setting that just failed validation is the very one the
+    /// correlation ID pipeline reads, so there is no validated cap to normalize against and the
+    /// documented default has to stand in. 32 is the shape of a realistic operator typo.
     /// </remarks>
     [TestFixture]
     [NonParallelizable]

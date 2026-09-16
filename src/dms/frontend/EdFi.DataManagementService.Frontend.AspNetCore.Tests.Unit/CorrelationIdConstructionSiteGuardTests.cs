@@ -19,13 +19,11 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Why a source scan.</b> AD-2 decided not to put normalization inside <c>TraceId</c>, because
-/// it lives in a published contract assembly that must not depend on frontend configuration, and
-/// mitigated the resulting "nothing structurally prevents a raw <c>new TraceId(...)</c>" with a
-/// guard test. This is that test. The second scan exists because
-/// <c>SanitizeInternalValueForLog</c> strips punctuation an upstream identifier scheme uses, so a
-/// correlation ID passed to it stops matching the <c>correlationId</c> the client read for the
-/// same request - the single guarantee FR-LOG-6 makes - and most sites that log one assert nothing.
+/// <b>Why a source scan.</b> Normalization deliberately does not live inside <c>TraceId</c>,
+/// which sits in a published contract assembly that must not depend on frontend configuration, so
+/// nothing structurally prevents a raw <c>new TraceId(...)</c>; this is the guard that decision
+/// promised. The second scan exists because the strict sanitizer would break FR-LOG-6 parity, and
+/// most sites that log a correlation ID assert nothing.
 /// </para>
 /// <para>
 /// <b>How it looks.</b> Each production file is parsed with <see cref="CSharpSyntaxTree"/>.

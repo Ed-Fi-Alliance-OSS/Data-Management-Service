@@ -1006,9 +1006,9 @@ public class OAuthManagerTests
         private const string InternalRealmSentinel = "https://idp-internal-07.corp.local/realms/edfi";
 
         /// <summary>
-        /// The non-standard field from the review finding. It is the whole of why the upstream
-        /// rejected the request, it is not part of the OAuth 2.0 error contract, and so it is
-        /// exactly what withholding the body from the client costs an operator.
+        /// A non-standard field: the whole of why the upstream rejected the request, and not part
+        /// of the OAuth 2.0 error contract, so it is exactly what withholding the body from the
+        /// client costs an operator.
         /// </summary>
         private const string ReasonSentinel = "client disabled";
 
