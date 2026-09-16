@@ -45,8 +45,31 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
     /// through when present because they are part of the OAuth 2.0 error contract the client is
     /// entitled to, but an arbitrary body that merely failed to contain them is not.
     /// </summary>
+    /// <remarks>
+    /// Whatever this replaces is recorded on the log under
+    /// <see cref="DiscardedUnauthorizedDetailTemplate"/> rather than dropped, so the body's
+    /// <c>correlationId</c> reaches the explanation here for the same reason it does for
+    /// <see cref="GatewayErrorDetail"/>.
+    /// </remarks>
     private const string UnauthorizedFallbackDetail =
         "The upstream identity service rejected the request credentials.";
+
+    /// <summary>
+    /// The structured-logging template for the single event that preserves an upstream 401 body
+    /// whose diagnostic content <see cref="UnauthorizedFallbackDetail"/> is about to replace.
+    /// </summary>
+    /// <remarks>
+    /// A compile-time constant template with the upstream body bound to <c>{Content}</c>, never
+    /// the body interpolated into the template. <c>Microsoft.Extensions.Logging</c> reads braces
+    /// in a template as property holes, and a JSON error body is made of braces, so an
+    /// interpolated body would have its own punctuation parsed as holes - corrupting the
+    /// structured event and, with an unbalanced brace, the rendered message too. The same
+    /// reasoning is recorded at greater length on <c>ConfigurationErrorTemplate</c> in
+    /// <c>ReportInvalidConfigurationMiddleware</c>.
+    /// </remarks>
+    private const string DiscardedUnauthorizedDetailTemplate =
+        "Upstream identity service rejected the credentials with no usable error_description; "
+        + "its body is recorded here because it is withheld from the client - {TraceId} - {Content}";
 
     /// <summary>
     /// Upper bound, in characters, on how much of an upstream error body reaches the log.
@@ -113,7 +136,7 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
                 case HttpStatusCode.OK:
                     return response;
                 case HttpStatusCode.Unauthorized:
-                    return await GenerateUnauthorizedResponse(traceId, response);
+                    return await GenerateUnauthorizedResponse(logger, traceId, response);
                 default:
                     var content = await response.Content.ReadAsStringAsync();
                     logger.LogWarning(
@@ -138,7 +161,11 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
 
         // Attempts to read `{ "error": "...", "error_description": "..."}` from the response
         // body, with sensible fallback mechanism if the response is in a different format.
+        // The logger is a parameter because this is a `static` local function and so cannot
+        // capture the enclosing `logger`; it is kept static deliberately, to keep the accidental
+        // capture of anything else out of reach.
         static async Task<HttpResponseMessage> GenerateUnauthorizedResponse(
+            ILogger logger,
             TraceId traceId,
             HttpResponseMessage response
         )
@@ -149,6 +176,7 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
             // it parsed as a JSON object but happened not to carry an `error_description`, which
             // is the same unauthenticated disclosure as the 502 branch above.
             var errorDescription = UnauthorizedFallbackDetail;
+            var upstreamSuppliedDescription = false;
 
             JsonNode? parsed = JsonNode.Parse(body);
             if (parsed is not null)
@@ -161,7 +189,32 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
                 if (obj.ContainsKey("error_description"))
                 {
                     errorDescription = obj["error_description"]!.ToString();
+                    upstreamSuppliedDescription = true;
                 }
+            }
+
+            if (!upstreamSuppliedDescription)
+            {
+                // Logged only on the fallback, not on every 401. A 401 is client-triggered and
+                // routine, so logging every upstream body would be volume noise and would widen
+                // the log-injection surface for no gain; when the upstream did supply an
+                // `error_description` the client already receives it and nothing is lost. The
+                // fallback is the one point at which information is about to be discarded -
+                // `error_description` on a body that lacks it, and any non-standard field such as
+                // `reason` regardless - so it is the correct trigger.
+                //
+                // Information, not the Warning its 502 sibling above uses. Warning in this
+                // codebase marks a condition an operator may need to act on (docs/LOGGING.md), and
+                // a rejected credential is not one - every mistyped client secret produces one, so
+                // Warning here would let any caller fill the stream an operator watches most
+                // closely. Information is nonetheless the floor: DMS ships at Information and
+                // never at Debug, and an event the default deployment does not emit would leave
+                // the correlation ID pointing at nothing, which is the defect being fixed.
+                logger.LogInformation(
+                    DiscardedUnauthorizedDetailTemplate,
+                    traceId.Value,
+                    SanitizeAndBoundForLogging(body)
+                );
             }
 
             return GenerateProblemDetailResponse(

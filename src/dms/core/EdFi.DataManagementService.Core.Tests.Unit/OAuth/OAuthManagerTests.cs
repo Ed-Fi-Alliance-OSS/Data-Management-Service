@@ -545,6 +545,17 @@ public class OAuthManagerTests
     private static string LoggedUpstreamContent(RecordingLogger<OAuthManager> logger) =>
         (string)logger.Records.Single(record => record.Level == LogLevel.Warning).Properties["Content"]!;
 
+    /// <summary>
+    /// The single information event the 401 fallback emits, or <c>null</c> when it did not fire.
+    /// Every call also writes two routine information events ("GetAccessTokenAsync" and
+    /// "Forwarding token request"); the fallback event is told apart from those by its
+    /// <c>{Content}</c> parameter, which only it binds.
+    /// </summary>
+    private static LogRecord? DiscardedUnauthorizedDetailRecord(RecordingLogger<OAuthManager> logger) =>
+        logger.Records.SingleOrDefault(record =>
+            record.Level == LogLevel.Information && record.Properties.ContainsKey("Content")
+        );
+
     [TestFixture]
     [Parallelizable]
     public class Given_An_Upstream_Error_Body_Carrying_Internal_Details
@@ -839,20 +850,32 @@ public class OAuthManagerTests
     {
         private const string InternalRealmSentinel = "https://idp-internal-07.corp.local/realms/edfi";
 
+        /// <summary>
+        /// The non-standard field from the review finding. It is the whole of why the upstream
+        /// rejected the request, it is not part of the OAuth 2.0 error contract, and so it is
+        /// exactly what withholding the body from the client costs an operator.
+        /// </summary>
+        private const string ReasonSentinel = "client disabled";
+
         private static readonly string _upstreamBody = $$"""
-            { "error": "invalid_client", "realm": "{{InternalRealmSentinel}}" }
+            { "error": "invalid_client", "reason": "{{ReasonSentinel}}", "realm": "{{InternalRealmSentinel}}" }
             """;
 
         private HttpResponseMessage _response = default!;
         private string _rawResponseBody = default!;
         private JsonNode _body = default!;
+        private LogRecord? _logged;
 
         [SetUp]
         public async Task Setup()
         {
-            (_response, _) = await UpstreamResponds(HttpStatusCode.Unauthorized, _upstreamBody);
+            (_response, RecordingLogger<OAuthManager> logger) = await UpstreamResponds(
+                HttpStatusCode.Unauthorized,
+                _upstreamBody
+            );
             _rawResponseBody = await _response.Content.ReadAsStringAsync();
             _body = JsonNode.Parse(_rawResponseBody)!;
+            _logged = DiscardedUnauthorizedDetailRecord(logger);
         }
 
         [Test]
@@ -877,6 +900,113 @@ public class OAuthManagerTests
         public void It_still_surfaces_the_parsed_oauth_error_as_the_title()
         {
             _body["title"]!.GetValue<string>().Should().Be("invalid_client");
+        }
+
+        [Test]
+        public void It_withholds_the_reason_from_the_client()
+        {
+            // The paired half of It_records_the_discarded_reason_on_the_log below: the same
+            // sentinel that must reach an operator must not reach an unauthenticated caller.
+            _rawResponseBody.Should().NotContain(ReasonSentinel);
+        }
+
+        [Test]
+        public void It_emits_a_single_event_recording_the_discarded_body()
+        {
+            _logged.Should().NotBeNull();
+        }
+
+        [Test]
+        public void It_records_the_discarded_reason_on_the_log()
+        {
+            // The finding itself: searching by correlation ID has to find the explanation, not
+            // just the request.
+            _logged.Should().NotBeNull();
+            _logged!.Properties["Content"]!.ToString().Should().Contain(ReasonSentinel);
+        }
+
+        [Test]
+        public void It_records_the_discarded_realm_on_the_log()
+        {
+            _logged.Should().NotBeNull();
+            _logged!.Properties["Content"]!.ToString().Should().Contain(InternalRealmSentinel);
+        }
+
+        [Test]
+        public void It_records_the_discarded_body_against_the_correlation_id()
+        {
+            // Without this the entry exists but is unreachable: correlationId is the only handle
+            // the client is given, so an event that does not carry it cannot be found.
+            _logged.Should().NotBeNull();
+            _logged!.Properties["TraceId"].Should().Be(CorrelationId);
+        }
+
+        [Test]
+        public void It_records_the_discarded_body_at_information()
+        {
+            // Deliberately not Warning: a rejected credential is routine and client-triggered, so
+            // it must not reach the stream an operator watches for conditions needing action.
+            // Deliberately not Debug either - DMS ships at Information, so a Debug event would not
+            // be emitted at all in a default deployment.
+            _logged.Should().NotBeNull();
+            _logged!.Level.Should().Be(LogLevel.Information);
+        }
+
+        [Test]
+        public void It_binds_the_upstream_body_as_data_rather_than_as_a_message_template()
+        {
+            // The upstream body is JSON, so it is made of braces. Interpolating it into the
+            // template would have Microsoft.Extensions.Logging read those braces as property
+            // holes: the event would gain holes named after fragments of the body and lose the
+            // {Content} property entirely. Exactly two properties, with the body intact under
+            // {Content}, is what proves it was passed as a parameter.
+            _logged.Should().NotBeNull();
+            _logged!.Properties.Should().ContainKeys("TraceId", "Content").And.HaveCount(2);
+            _logged.Properties["Content"].Should().Be(_upstreamBody);
+        }
+    }
+
+    /// <summary>
+    /// The complement of <see cref="Given_An_Unauthorized_Upstream_Body_Without_An_Error_Description"/>.
+    /// A 401 is routine and client-triggered - every mistyped client secret produces one - so the
+    /// upstream body must reach the log only on the fallback, where information is actually being
+    /// discarded. Logging it on every 401 would be volume noise proportional to bad-credential
+    /// traffic and would widen the log-injection surface for nothing, since here the client already
+    /// receives the description.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_An_Unauthorized_Upstream_Body_Carrying_An_Error_Description
+    {
+        private const string UpstreamDescription = "Invalid client or Invalid client credentials";
+
+        private static readonly string _upstreamBody = $$"""
+            { "error": "invalid_client", "error_description": "{{UpstreamDescription}}" }
+            """;
+
+        private RecordingLogger<OAuthManager> _logger = default!;
+        private JsonNode _body = default!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            (HttpResponseMessage response, _logger) = await UpstreamResponds(
+                HttpStatusCode.Unauthorized,
+                _upstreamBody
+            );
+            _body = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
+        }
+
+        [Test]
+        public void It_forwards_the_upstream_description_to_the_client()
+        {
+            _body["detail"]!.GetValue<string>().Should().Be(UpstreamDescription);
+        }
+
+        [Test]
+        public void It_does_not_record_the_upstream_body_on_the_log()
+        {
+            DiscardedUnauthorizedDetailRecord(_logger).Should().BeNull();
         }
     }
 }
