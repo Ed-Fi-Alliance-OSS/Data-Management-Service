@@ -348,12 +348,24 @@ acquisition recipes.
 | Directory | The plugin root. Defaults to `/app/plugins`, and a relative value is resolved against the application's base directory. A root that does not exist is not an error when `Allowed` is empty.                                   |
 | Allowed   | A comma-delimited, ordered list of plugin directory names under `Directory`. **Ships empty**, which loads nothing. Each name must be a single path segment; a repeated name, including one that repeats only after trimming, fails startup. |
 
+`appsettings.json` ships `"Plugins": { "Directory": "/app/plugins", "Allowed": "" }`,
+so a deployment that adopts no plugin boots exactly as it did before the mechanism
+existed.
+
 `Allowed` is the only switch. A plugin runs if and only if its directory name
 appears here, and there is no per-feature switch of any kind. A directory present
 under the root but absent from `Allowed` is never opened. When `Allowed` names at
 least one plugin, each such directory also produces one warning naming it; an empty
 `Allowed` asks for nothing and does not inspect the root at all, so it produces no
 warning.
+
+**The value is split on commas once, and each entry is trimmed.** Whitespace around
+a name is removed before the name is used for anything, an empty entry is dropped
+rather than rejected, and what is left must be a single path segment. Duplicate
+detection is the one comparison that folds case: two entries differing only in case
+would name one directory on a case-insensitive filesystem and two on the Linux
+image, so the allowlist is treated as ambiguous and startup fails. Every other
+comparison the loader makes on a name is ordinal.
 
 Loading runs before the logging pipeline exists, so the loader writes its own lines
 to standard error. Its warnings are also replayed through the configured application
@@ -371,10 +383,63 @@ Plugins__Directory=/app/plugins
 Plugins__Allowed=Sea.Dms.StudentIdValidator,Acme.Dms.Identity
 ```
 
+### Configuration precedence
+
+For a key read **after** DMS has registered its services, the sources rank as
+follows, highest first:
+
+| Rank | Source | Notes |
+| ---- | ------ | ----- |
+| 1 | Environment variables | The unprefixed environment source DMS appends itself. See below for why this outranks the command line. |
+| 2 | Command-line arguments | Installed only when the host is started with arguments, which the stock container is not. |
+| 3 | Plugin-contributed configuration sources, in `Allowed` order | **Lands with Phase A.** No such source exists today; see below. |
+| 4 | `appsettings.json` and the other JSON sources | Including `appsettings.{Environment}.json`. |
+
+Rank 3 is stated now and is not yet reachable. The published plugin contract carries
+`Name` and `ContributeServices` only, so there is no hook through which a plugin can
+contribute a configuration source. When that hook lands, a plugin's sources are
+placed at rank 3 by the loader rather than wherever the plugin appended them, a
+later plugin in `Allowed` order wins over an earlier one, and no plugin source is
+ever placed above the operator's own environment or command-line surface.
+
+**Why the environment outranks the command line.** ASP.NET Core's own builder
+installs the command-line source above the unprefixed environment source, so on its
+own the command line would win. DMS then appends one more environment source of its
+own, at
+[`Infrastructure/WebApplicationBuilderExtensions.cs:57`](../src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Infrastructure/WebApplicationBuilderExtensions.cs),
+and an appended source outranks everything already installed.
+
+**That appended source carries a qualifier, and the qualifier is not cosmetic: it
+outranks the command line only for keys read after `AddServices` has run.** Two
+reads happen before it, and for those two the command line wins:
+
+- **Serilog's configuration.** `AddServices` calls `ConfigureLogging()` on line 49
+  of the same file, which reads `webAppBuilder.Configuration`. The
+  `AddEnvironmentVariables()` call is eight lines later, at line 57, so the `Serilog`
+  section is resolved without it.
+- **`Plugins:Allowed` itself.** The allowlist is read in the plugin-loading bootstrap
+  phase, which runs before the phase that calls `AddServices` at all. That ordering
+  is deliberate: the allowlist decides what may execute, so it is resolved from the
+  host's own sources before any plugin has had the chance to contribute one.
+
+**In the shipped container this is narrow, because there is no command-line source
+to lose to.** `src/dms/run.sh` starts the application as
+`dotnet EdFi.DataManagementService.Frontend.AspNetCore.dll` with nothing after it,
+so the builder installs no command-line source and ranks 1 and 2 collapse to rank 1.
+Only a deployment that starts the host with arguments of its own is affected by the
+qualifier above.
+
 > [!IMPORTANT]
-> **One bootstrap exception.** `AppSettings:StartupStatusFilePath` is read before the
-> plugin phase runs, so no plugin-supplied configuration source could ever provide it.
-> Everything DMS reads while registering its services is read after that phase.
+> **One key is read before the plugin phase exists at all.**
+> `AppSettings:StartupStatusFilePath` is read immediately after the builder is
+> created, before plugins are loaded, because the startup status file is how a plugin
+> loading failure is reported and it cannot depend on anything a plugin supplied. No
+> plugin-contributed source could ever provide it, whatever rank 3 above eventually
+> holds.
+>
+> This is a bootstrap exception and **not** an exception to the
+> environment-versus-command-line rule above: that rule is about which of two
+> operator-owned surfaces wins, and this key is read before either question arises.
 
 ## RateLimit
 
