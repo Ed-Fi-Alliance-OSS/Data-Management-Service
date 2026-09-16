@@ -56,10 +56,17 @@ public abstract record ApiSchemaNormalizationResult
     /// </summary>
     /// <remarks>
     /// A reserved name is removed from resource-filter matching before the query-field lookup runs, so
-    /// such a property could never be filtered on: silently on a collection GET, and as an HTTP 400 on
-    /// the Change Query endpoints. MetaEd protects only three of the reserved names, so a model
-    /// declaring any of the others is accepted upstream and the defect first becomes visible to an API
-    /// client. Refusing the schema here is what makes it visible to the person who can fix it.
+    /// such a property is not served as the schema declares it. For the seven names reserved on every
+    /// operation that means the filter is silently never applied on a collection GET, and reported as
+    /// an invalid query field on the Change Query endpoints. The partition count is reserved on
+    /// <c>/partitions</c> alone, so a property of that name filters on the collection GET and is
+    /// shadowed on the sibling operation of the same resource, which is the worse of the two outcomes
+    /// because it differs by route rather than being uniformly absent.
+    /// </remarks>
+    /// <remarks>
+    /// MetaEd protects only three of the reserved names, so a model declaring any of the others is
+    /// accepted upstream and the defect first becomes visible to an API client. Refusing the schema
+    /// here is what makes it visible to the person who can fix it.
     /// </remarks>
     public sealed record ReservedQueryParameterCollisionResult(
         IReadOnlyList<ReservedQueryParameterCollision> Collisions
@@ -90,12 +97,17 @@ public abstract record ApiSchemaNormalizationResult
                 description.Append("\n  - ").Append(collision.Describe());
             }
 
+            // The reason is stated per route rather than absolutely, because the two shapes of this
+            // fault differ. A name reserved on every operation is never matched as a filter at all,
+            // while the partition count is matched on a collection GET and consumed on that resource's
+            // /partitions sibling. "On at least one route" is the claim that covers both without
+            // telling an operator something untrue of the collision in front of them.
             description.Append(
                 "\nRename the colliding propert"
                     + (Collisions.Count == 1 ? "y" : "ies")
                     + " in the MetaEd model and rebuild the ApiSchema. A reserved name is consumed as a "
-                    + "control parameter before resource filters are matched, so the property could "
-                    + "never be filtered on."
+                    + "control parameter before resource filters are matched on at least one route the "
+                    + "resource exposes, so the field would not be served as its schema declares it."
             );
 
             return description.ToString();

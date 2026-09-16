@@ -175,8 +175,8 @@ public class ReservedQueryParametersTests
                 .TryGetReserved(declaredName, out ReservedQueryParameter? reserved)
                 .Should()
                 .BeTrue(
-                    "a query field is matched against a supplied key case-insensitively, so it is "
-                        + "just as unfilterable whichever case it is declared in"
+                    "a query field is matched against a supplied key case-insensitively, so it "
+                        + "collides whichever case it is declared in"
                 );
 
             reserved!.Name.Should().Be(expectedReservedName);

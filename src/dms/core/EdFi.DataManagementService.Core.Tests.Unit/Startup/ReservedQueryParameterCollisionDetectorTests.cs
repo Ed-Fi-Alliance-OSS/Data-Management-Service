@@ -112,8 +112,8 @@ public class ReservedQueryParameterCollisionDetectorTests
             Detect(SchemaDeclaring(ResourceName, declaredName))
                 .Should()
                 .ContainSingle(
-                    "a query field is matched against a supplied key case-insensitively, so it is just "
-                        + "as unfilterable whichever case it is declared in"
+                    "a query field is matched against a supplied key case-insensitively, so it "
+                        + "collides whichever case it is declared in"
                 );
         }
     }

@@ -107,7 +107,7 @@ internal class ValidatePartitionQueryMiddleware(
         //
         // The count is the one name reserved on this operation alone, which is what keeps it a
         // filterable resource property name on a collection GET. No loadable schema can declare a
-        // query field of any of these names, so nothing is silently unfilterable here.
+        // query field of any of these names, so no declared filter is shadowed here.
         ResourceQueryFilterResult filterResult = ResourceQueryFilterValidator.Validate(
             requestInfo.FrontendRequest.QueryParameters,
             requestInfo.ResourceSchema.QueryFields.ToArray(),

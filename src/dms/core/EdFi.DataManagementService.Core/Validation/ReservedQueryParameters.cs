@@ -44,7 +44,7 @@ public enum ReservedQueryParameterOperations
 /// boundary and then matched ordinally, while the change-version names are looked up
 /// case-insensitively in Core. Collision detection does not use this value - it always compares
 /// case-insensitively, because a query field is matched against a supplied key case-insensitively and
-/// is therefore just as unfilterable whichever case it is declared in.
+/// therefore collides whichever case it is declared in.
 /// </remarks>
 public enum ReservedQueryParameterMatching
 {
@@ -222,8 +222,8 @@ public static class ReservedQueryParameters
     /// Case-insensitive whatever the entry's <see cref="ReservedQueryParameter.RequestMatching" /> says.
     /// A query field is matched against a supplied key with
     /// <see cref="StringComparison.OrdinalIgnoreCase" />, and the paging names are canonicalized
-    /// case-insensitively at the HTTP boundary, so a field declared <c>PageSize</c> is exactly as
-    /// unfilterable as one declared <c>pageSize</c>.
+    /// case-insensitively at the HTTP boundary, so a field declared <c>PageSize</c> collides exactly
+    /// as one declared <c>pageSize</c> does.
     /// </remarks>
     public static bool TryGetReserved(
         string queryFieldName,

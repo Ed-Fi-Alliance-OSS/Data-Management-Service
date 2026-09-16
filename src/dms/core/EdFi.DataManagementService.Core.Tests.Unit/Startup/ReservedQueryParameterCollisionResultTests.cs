@@ -82,7 +82,8 @@ public class ReservedQueryParameterCollisionResultTests
                 .EndWith(
                     "Rename the colliding property in the MetaEd model and rebuild the ApiSchema. A "
                         + "reserved name is consumed as a control parameter before resource filters are "
-                        + "matched, so the property could never be filtered on."
+                        + "matched on at least one route the resource exposes, so the field would not be "
+                        + "served as its schema declares it."
                 );
         }
     }

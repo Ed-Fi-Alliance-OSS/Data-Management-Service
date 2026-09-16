@@ -20,7 +20,9 @@ namespace EdFi.DataManagementService.Core.Startup;
 /// - Sorting extensions by projectEndpointName (ordinal) for determinism
 /// - Validating inputs and failing fast with actionable errors
 /// - Refusing a schema whose resource declares a query field spelled like a query parameter DMS
-///   consumes as a control parameter, which would leave that property unfilterable
+///   consumes as a control parameter, which would leave that property unserved as declared: never
+///   filtered for the names reserved on every operation, and filtered on one route but shadowed on
+///   another for the partition count
 /// </summary>
 public class ApiSchemaInputNormalizer(ILogger<ApiSchemaInputNormalizer> _logger) : IApiSchemaInputNormalizer
 {

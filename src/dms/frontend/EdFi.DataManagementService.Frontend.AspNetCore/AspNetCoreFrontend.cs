@@ -480,8 +480,15 @@ public static class AspNetCoreFrontend
     /// The partitions operation reserves the count in addition, so it alone canonicalizes that name.
     /// Rewriting its spelling elsewhere would change resource filtering and unknown-field error text
     /// on every collection, because the count is an ordinary filterable property name off this route.
-    /// Asking the catalog per operation rather than adding the one name to a shared list is what keeps
-    /// that true for any further name reserved on one operation and not the other.
+    /// Asking the catalog rather than adding the one name to a shared list is what keeps that true
+    /// without this file holding a second copy of which names belong to which operation.
+    /// </remarks>
+    /// <remarks>
+    /// The path test distinguishes the partitions operation from everything else, not all three
+    /// operations the catalog names: a Change Query request takes the collection GET's set. That is
+    /// exact today, because those two sets are identical and a catalog test pins them so, but it is
+    /// not general. A name reserved on Change Queries alone would need this to classify that route as
+    /// well, and the catalog test failing is what would say so.
     /// </remarks>
     private static IReadOnlyList<string> CanonicalQueryParameterNamesFor(string dmsPath) =>
         ReservedQueryParameters.OrdinalFilterExclusionsOn(

@@ -345,9 +345,11 @@ report several errors. The four phases run in this order, and the first one to f
 2. **Resource filters.** The same unknown-query-field and filter-value-type rules GET-many applies,
    over the same candidate set. The five reserved paging names and `number` are excluded from filter
    matching before this phase runs, so a supplied `limit` is not reported as an unknown query field.
-   Excluding `number` is also what makes a resource property of that name unfilterable here while it
-   stays filterable on the collection GET, which is the approved intentional ODS difference the epic
-   records.
+   Excluding `number` here and nowhere else is what keeps it an ordinary filterable property name on
+   the collection GET. It used to follow that a resource declaring a query field of that name
+   filtered on it there but not here, recorded as an approved intentional ODS difference; DMS-1442
+   removed that asymmetry by refusing at ApiSchema load any schema declaring a query field spelled
+   like a reserved query parameter, so no loadable schema reaches the collision.
 3. **`number` syntax and range.** A malformed or out-of-range `number` produces the exact error
    `Number of partitions must be between 1 and 200.` A present-but-blank `?number=` is a malformed
    value and produces that same error rather than being treated as absent and defaulted: a client
