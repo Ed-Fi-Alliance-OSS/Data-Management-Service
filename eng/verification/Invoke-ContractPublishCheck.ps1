@@ -141,7 +141,7 @@ if ($null -eq $ResolvePackageBaseAddress) {
             throw "The feed's service index at $IndexUrl advertises no PackageBaseAddress/3.0.0 resource."
         }
 
-        return $resource[0].'@id'.TrimEnd('/')
+        return $resource[0].'@id'
     }
 }
 
@@ -165,6 +165,13 @@ if ($null -eq $GetPublishedVersions) {
             }
 
             throw "The feed answered $status for $url : $($_.Exception.Message). That is not an absent package."
+        }
+
+        # A 200 that carries no versions array is a malformed response rather than an empty package
+        # index: the endpoint's whole contract is that array, and reading its absence as "no versions
+        # published" would turn a broken feed into a push.
+        if ($null -eq $response -or $null -eq $response.versions) {
+            throw "The feed answered 200 for $url with no versions array. That is a malformed response, not an absent package."
         }
 
         return @{ Found = $true; Versions = @($response.versions) }
@@ -330,15 +337,33 @@ $scratch = Initialize-ScratchDirectory -Path $WorkingDirectory
 # package index as absence rather than as a feed that is down or refusing the credential.
 $baseAddress = & $ResolvePackageBaseAddress $ServiceIndexUrl $FeedApiKey
 
-if ([string]::IsNullOrWhiteSpace($baseAddress)) {
-    throw "The feed's service index resolved to an empty package base address."
+# Validated here rather than only inside the default resolver, so an injected seam is held to the
+# same contract. A relative or malformed address would compose a package-index URL that fails in a
+# way indistinguishable from an absent package.
+[uri] $baseUri = $null
+
+if (
+    -not [uri]::TryCreate($baseAddress, [System.UriKind]::Absolute, [ref] $baseUri) -or
+    ($baseUri.Scheme -ne "http" -and $baseUri.Scheme -ne "https")
+) {
+    throw "The feed's service index resolved to '$baseAddress', which is not an absolute http or https address."
 }
 
+$baseAddress = $baseAddress.TrimEnd('/')
+
 $published = & $GetPublishedVersions $baseAddress $normalizedId $FeedApiKey
+
+if ($null -eq $published -or $null -eq $published.Found) {
+    throw "The feed lookup for $PackageId returned no result. A feed that cannot be read is not an absent package."
+}
 
 $publishedVersions = @()
 
 if ($published.Found) {
+    if ($null -eq $published.Versions) {
+        throw "The feed reported $PackageId as present and listed no versions. That is a malformed response, not an absent version."
+    }
+
     $publishedVersions = @(
         $published.Versions |
             Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |

@@ -205,6 +205,22 @@ $Dependencies
         }
     }
 
+    # A seam that ignores its arguments and returns a fixed value. The suppression lives here rather
+    # than on each case because a seam's parameters are its calling contract: the real
+    # implementations are invoked with all of them, so a fake that consults none still has to accept
+    # them.
+    function Get-ConstantSeam {
+        [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'A fake seam accepts the real seam signature whether or not it reads every argument.')]
+        [CmdletBinding()]
+        [OutputType([scriptblock])]
+        param(
+            [Parameter(Mandatory)][AllowNull()][AllowEmptyString()]
+            $Value
+        )
+
+        return { param($One, $Two, $Three, $Four, $Five) return $Value }.GetNewClosure()
+    }
+
     function Invoke-Check {
         [CmdletBinding()]
         param(
@@ -476,6 +492,64 @@ Describe "Invoke-ContractPublishCheck fails closed on a feed it cannot trust" {
 
         { Invoke-Check -PackageFile $packed -Feed $feed } |
             Should -Throw -ExpectedMessage "*was not written*"
+    }
+}
+
+Describe "Invoke-ContractPublishCheck validates what the feed actually returned" {
+    # Not only that a seam threw. A feed can answer successfully with something that is not an
+    # answer, and each of these would otherwise compose a request that fails in a way
+    # indistinguishable from an absent package.
+    It "refuses a package base address that is not absolute" {
+        $packed = New-ContractPackage
+        $feed = Get-FakeFeed
+        $feed.ResolvePackageBaseAddress = Get-ConstantSeam -Value "flat2/"
+
+        { Invoke-Check -PackageFile $packed -Feed $feed } |
+            Should -Throw -ExpectedMessage "*not an absolute http or https address*"
+    }
+
+    It "refuses a package base address with a scheme the feed cannot serve" {
+        $packed = New-ContractPackage
+        $feed = Get-FakeFeed
+        $feed.ResolvePackageBaseAddress = Get-ConstantSeam -Value "file:///C:/feed"
+
+        { Invoke-Check -PackageFile $packed -Feed $feed } |
+            Should -Throw -ExpectedMessage "*not an absolute http or https address*"
+    }
+
+    It "refuses an empty package base address" {
+        $packed = New-ContractPackage
+        $feed = Get-FakeFeed
+        $feed.ResolvePackageBaseAddress = Get-ConstantSeam -Value ""
+
+        { Invoke-Check -PackageFile $packed -Feed $feed } |
+            Should -Throw -ExpectedMessage "*not an absolute http or https address*"
+    }
+
+    It "refuses a lookup result that reports presence with no versions" {
+        $packed = New-ContractPackage
+        $feed = Get-FakeFeed
+        $feed.GetPublishedVersions = Get-ConstantSeam -Value @{ Found = $true; Versions = $null }
+
+        { Invoke-Check -PackageFile $packed -Feed $feed } |
+            Should -Throw -ExpectedMessage "*malformed response*"
+    }
+
+    It "refuses a lookup result that is not an answer at all" {
+        $packed = New-ContractPackage
+        $feed = Get-FakeFeed
+        $feed.GetPublishedVersions = Get-ConstantSeam -Value $null
+
+        { Invoke-Check -PackageFile $packed -Feed $feed } |
+            Should -Throw -ExpectedMessage "*not an absent package*"
+    }
+
+    It "refuses a listed version that is not a version NuGet accepts" {
+        $packed = New-ContractPackage
+        $feed = Get-FakeFeed -Versions @("1.0.0-")
+
+        { Invoke-Check -PackageFile $packed -Feed $feed } |
+            Should -Throw -ExpectedMessage "*is not a package version NuGet accepts*"
     }
 }
 
