@@ -122,15 +122,16 @@ jobs:
       # already in the release view is a no-op, present only in the prerelease view is promoted,
       # and absent from both fails rather than reporting success for a version that never shipped.
       - name: Promote EdFi.Api.Plugins Package
-        # Only for a DMS release. This workflow runs for every released tag and for a dispatch, and
-        # promote-azure-artifact carries no guard of its own, so without this a cs-* release would
-        # read the DMS contract versions and either promote a DMS contract or fail the Configuration
-        # Service release because a DMS contract is in neither view. The three steps above are
-        # deliberately unguarded and stay that way; this coupling is new and is this story's.
+        # A final release is one vX.Y.Z tag covering both products: a prerelease is a dms-pre-* or
+        # cs-pre-* tag, and this workflow fires on released rather than prereleased, so those never
+        # reach it. That is also why the three steps above are unguarded - one release promotes the
+        # Data Management Service and Configuration Service packages together - and they stay that
+        # way. This guard exists only to keep the two new steps off a workflow_dispatch from a
+        # branch and off a dispatch that selects a prerelease tag.
         #
-        # ref_type, not the tag name alone: GitHub's startsWith is case-insensitive, so a dispatch
-        # from a branch named DMS-1501 would satisfy a name test. Only a tag reaches these steps.
-        if: ${{ github.ref_type == 'tag' && startsWith(github.ref_name, 'dms-') }}
+        # ref_type carries the weight. GitHub's startsWith is case-insensitive and a branch can be
+        # named anything, v8.0.0 included, so a name test alone would admit a branch dispatch.
+        if: ${{ github.ref_type == 'tag' && startsWith(github.ref_name, 'v') }}
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
@@ -147,15 +148,16 @@ jobs:
             -Version (Get-PluginsContractVersion)
 
       - name: Promote EdFi.Api.CustomValidation Package
-        # Only for a DMS release. This workflow runs for every released tag and for a dispatch, and
-        # promote-azure-artifact carries no guard of its own, so without this a cs-* release would
-        # read the DMS contract versions and either promote a DMS contract or fail the Configuration
-        # Service release because a DMS contract is in neither view. The three steps above are
-        # deliberately unguarded and stay that way; this coupling is new and is this story's.
+        # A final release is one vX.Y.Z tag covering both products: a prerelease is a dms-pre-* or
+        # cs-pre-* tag, and this workflow fires on released rather than prereleased, so those never
+        # reach it. That is also why the three steps above are unguarded - one release promotes the
+        # Data Management Service and Configuration Service packages together - and they stay that
+        # way. This guard exists only to keep the two new steps off a workflow_dispatch from a
+        # branch and off a dispatch that selects a prerelease tag.
         #
-        # ref_type, not the tag name alone: GitHub's startsWith is case-insensitive, so a dispatch
-        # from a branch named DMS-1501 would satisfy a name test. Only a tag reaches these steps.
-        if: ${{ github.ref_type == 'tag' && startsWith(github.ref_name, 'dms-') }}
+        # ref_type carries the weight. GitHub's startsWith is case-insensitive and a branch can be
+        # named anything, v8.0.0 included, so a name test alone would admit a branch dispatch.
+        if: ${{ github.ref_type == 'tag' && startsWith(github.ref_name, 'v') }}
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
