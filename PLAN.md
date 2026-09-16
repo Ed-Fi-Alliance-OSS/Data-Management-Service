@@ -146,6 +146,31 @@ Follow-up: run 35057484986 passed SQL Server Lifecycle but failed two SQL Server
 - [ ] Investigate the three SQL command failures. Existing logs do not retain their causes. A fixture follow-up now captures an allowlisted container status, numeric exit code, and out-of-memory flag before cleanup, with a separate five-second diagnostic bound. SQL command categories distinguish stopped containers, login failure, connection timeout/failure, and missing sqlcmd. Validate cancellation, cleanup, and redaction; no raw inspect output, state error text, or configuration is published.
 - [ ] Choose any behavioral correction from demonstrated evidence. Preserve the original startup deadline and production guards; successful replays alone do not resolve the cause.
 
+Run [35062017924](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/35062017924)
+on `850cff957` finished with 257 passes, two failures, zero skips, and one environment
+failure; all 16 TRX reports and 13 image records were verified. The SQL Admission
+cancelled-lag case failed before its scenario. After 20 probes, the new diagnostics recorded
+`ContainerNotRunning`, container status `exited`, exit code 1, and `OomKilled=false`.
+The published job log does not retain the SQL process error. This establishes container
+exit as the immediate failure, without identifying why SQL Server exited.
+
+- [x] Before cleanup of an exited SQL container, collect bounded startup-log classifications
+  and numeric error codes under the existing diagnostic time budget. Keep raw log text,
+  paths, credentials, and configuration out of published evidence; preserve the original
+  exception and cleanup even if log collection fails.
+- [x] Verify this diagnostic path, then replay the failed case once. Do not automatically
+  restart the container, extend startup time, or attribute the exit to memory without evidence.
+
+The log follow-up passed all 141 offline fixture checks, including 11 new classification,
+redaction, bounds, failed-read, cancellation, and cleanup cases. Inspection and log collection
+share the existing five-second diagnostic token. The provider startup commands, readiness
+predicate, retry loop, PostgreSQL TCP probe, and cleanup implementation remain unchanged.
+The failed Admission case passed once. Exact selection, image pins, source hashes, and cleanup
+were verified against the pre-run inventory: seven containers, six networks, and 290 existing
+volumes. SQL startup succeeded in this replay, so it does not explain the hosted process exit.
+The complete local Contract lane on the preceding `e164bdb19` commit passed all 4,915 checks;
+the new log diagnostics require final-source Contract and full hosted qualification again.
+
 ## 8. Require TCP readiness during PostgreSQL fixture startup
 
 The qualification run [35057484986](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/35057484986) on `c4a82bf83` has a PostgreSQL Recovery preparation failure: `It_detects_failed_task_recovery_on_the_same_worker_without_certifying_the_gap` failed on its first host database connection, before the scenario ran. The attachment preserves an `NpgsqlException`, but not the underlying network message; the precise hosted cause remains unconfirmed.
@@ -218,7 +243,7 @@ Use the CDC qualification fixtures' isolated stacks and nightly image digests. P
 - [x] Exercise Kafka provisioning and preserve coverage for policy rejection, delayed metadata, and authorization.
 - [x] Retain the existing PostgreSQL 16/18 compatibility and Compose 2.38.2 evidence; repeat affected cases if subsequent edits change those paths.
 - [x] Verify diagnostic attachments remain bounded and sanitized. Keep raw logs, credentials, connection strings, and full metric bodies out of published evidence.
-- [ ] After the PostgreSQL TCP readiness, RecordSize, and offset diagnostic changes, rerun the complete Contract lane on the final source: expected **4,915 tests** (3,606 controller, 715 CLI, 130 offline, 464 wrappers), including 18 new RecordSize regressions and 25 additional diagnostic checks, zero failures/skips. Earlier Contract passes do not qualify subsequent edits.
+- [ ] After the PostgreSQL TCP readiness, RecordSize, offset, and SQL exit diagnostic changes, rerun the complete Contract lane on the final source: expected **4,926 tests** (3,606 controller, 715 CLI, 141 offline, 464 wrappers), including 18 new RecordSize regressions and the current diagnostic checks, zero failures/skips. Earlier Contract passes do not qualify subsequent edits.
 
 PowerShell 7.4 failed empty-environment-variable tests locally; 7.6 preserves the distinction required by those tests. A skipped live test or environment failure does not count as qualification.
 
