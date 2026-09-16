@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Net;
 using System.Text.Json;
 using EdFi.InstanceManagement.Tests.E2E.Management;
 using FluentAssertions;
@@ -310,6 +311,57 @@ public class RouteQualifierStepDefinitions(InstanceManagementContext context)
             context.ClientKey!,
             context.ClientSecret!
         );
+    }
+
+    [Then("the discovery metadata urls should resolve")]
+    public async Task ThenTheDiscoveryMetadataUrlsShouldResolve()
+    {
+        context.LastResponse.Should().NotBeNull("Discovery response must be available");
+
+        var responseBody = await context.LastResponse!.Content.ReadAsStringAsync();
+        using var responseDoc = JsonDocument.Parse(responseBody);
+        var urls = responseDoc.RootElement.GetProperty("urls");
+        string[] metadataUrlKeys = ["dependencies", "openApiMetadata", "xsdMetadata"];
+
+        using var metadataClient = new DmsApiClient(TestConfiguration.DmsApiUrl, "");
+
+        foreach (string metadataUrlKey in metadataUrlKeys)
+        {
+            urls
+                .TryGetProperty(metadataUrlKey, out var metadataUrlProperty)
+                .Should()
+                .BeTrue($"Discovery response should include urls.{metadataUrlKey}");
+
+            metadataUrlProperty.ValueKind.Should().Be(JsonValueKind.String);
+            var metadataUrl = metadataUrlProperty.GetString();
+            metadataUrl.Should().NotBeNullOrWhiteSpace(
+                $"Discovery response should include a usable urls.{metadataUrlKey}"
+            );
+
+            context.LastResponse = await metadataClient.GetByLocationAsync(metadataUrl!);
+            context
+                .LastResponse.StatusCode.Should()
+                .Be(HttpStatusCode.OK, $"Discovery-advertised {metadataUrlKey} URL should resolve");
+        }
+    }
+
+    [When("a GET request is made to metadata path {string}")]
+    public async Task WhenAGetRequestIsMadeToMetadataPath(string metadataPath)
+    {
+        using var metadataClient = new DmsApiClient(TestConfiguration.DmsApiUrl, "");
+
+        Console.WriteLine($"GET metadata path: '{metadataPath}'");
+
+        context.LastResponse = await metadataClient.GetDiscoveryWithRouteAsync(metadataPath.TrimStart('/'));
+
+        Console.WriteLine(
+            $"Response: {(int)context.LastResponse.StatusCode} ({context.LastResponse.StatusCode})"
+        );
+        if (!context.LastResponse.IsSuccessStatusCode)
+        {
+            var responseBody = await context.LastResponse.Content.ReadAsStringAsync();
+            Console.WriteLine($"Response body: {responseBody}");
+        }
     }
 
     private async Task<string> ResolveDmsTokenUrlAsync(string? tenantName)

@@ -30,6 +30,12 @@ Feature: Route Qualifier Discovery API
                 }
               """
 
+          And the discovery metadata urls should resolve
+
+    Scenario: Concrete metadata endpoint with invalid route qualifiers returns 404
+         When a GET request is made to metadata path "Tenant_255901/999999/2024/metadata/dependencies"
+         Then it should respond with 404
+
     Scenario: Discovery endpoint with tenant and partial route qualifier returns URLs with mixed context
          When a GET request is made to discovery endpoint with route "Tenant_255901/255901"
          Then it should respond with 200
