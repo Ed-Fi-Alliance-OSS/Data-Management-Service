@@ -497,8 +497,12 @@ public class CorrelationIdParityTests
                             ["AppSettings:CorrelationIdHeader"] = CorrelationHeader,
                             ["AppSettings:CorrelationIdMaxLength"] = ConfiguredMaxLength.ToString(),
                             ["DataManagement:DocumentCache:Status:RequiredRole"] = ValidRequiredRole,
-                            // Without this the /management/* routes are never mapped and the request
-                            // would be answered by MapFallback instead of by AuthorizeAsync.
+                            // Both of these are required before the /management/* routes are
+                            // mapped at all; without either, the request would be answered by
+                            // MapFallback instead of by AuthorizeAsync. DMS-1480 (#1252) made
+                            // ManagementEndpointModule.MapEndpoints return early unless the
+                            // enable switch is on, and it defaults to false in appsettings.json.
+                            ["AppSettings:EnableManagementEndpoints"] = "true",
                             ["AppSettings:ManagementEndpoints:RequiredRole"] = ManagementRequiredRole,
                             ["JwtAuthentication:RoleClaimType"] = RoleClaimType,
                             ["JwtAuthentication:ClientRole"] = "legacy-service",
