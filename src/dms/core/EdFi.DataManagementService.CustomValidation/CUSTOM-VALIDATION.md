@@ -241,9 +241,10 @@ lives in `Microsoft.Extensions.Options.ConfigurationExtensions`, so without that
 binding.
 
 Declare exactly what your own code uses, and no more. That is what keeps your project's dependency
-closure the one you chose. The verification fixture these samples come from declares **five**
-packages, the two Ed-Fi contracts plus the three Microsoft ones marked "which you declare" above, and
-reaches `Microsoft.Extensions.Configuration.Abstractions` transitively through `EdFi.Api.Plugins`
+closure the one you chose. The verification fixture declares both Ed-Fi contracts and explicitly
+references `Microsoft.Extensions.DependencyInjection.Abstractions`, `Microsoft.Extensions.Options`,
+and `Microsoft.Extensions.Options.ConfigurationExtensions`. It reaches
+`Microsoft.Extensions.Configuration.Abstractions` transitively through `EdFi.Api.Plugins`
 rather than naming it. Declaring it as well is also reasonable, and is what the plugin contract's own
 sample project does, on the argument that code compiled against a signature should name the assembly
 it compiles against.
@@ -540,12 +541,10 @@ which contract versions it carries. Tying the version to the release version ins
 refuse a validator built against an identical contract, naming two versions that differ in nothing an
 implementer could act on.
 
-**Where that stands today.** The package is built and its contents verified on every pull request, and
-it is **not yet published**. Until it is, the build stamps it with the Data Management Service release
-version, so a locally produced nupkg's version is not yet the independent contract version the policy
-above describes. Read that policy as what the published package will carry, not as a description of
-today's build. The sibling `EdFi.Api.Plugins` contract already versions itself this way, and
-`PLUGINS.md` documents it as current fact for that package.
+For a locally built package, use the version recorded in the produced nupkg's metadata. Build-time
+version overrides can differ from the published contract version; do not infer either contract's
+package version from the DMS release number or from the other contract's version. Choose versions
+compatible with the assemblies carried by the target host.
 
 ### Additive-only, for the life of the package
 
@@ -567,7 +566,9 @@ the host's copy still satisfies the surface you compiled against. There is no re
 
 ### Newer validator, older host
 
-Refused at load, by name, **before any type is loaded**:
+Refused at load, by name, **before any type is loaded**. For example, a plugin requiring contract
+assembly version `2.0.0.0` cannot load into a host carrying `1.0.0.0`. The diagnostic identifies the
+plugin, contract assembly, required version, and host version; its exact wording can vary:
 
 ```text
 plugin 'Acme.Dms.StudentIdentity' requires 'EdFi.DataManagementService.CustomValidation' >= 2.0.0.0, host carries 1.0.0.0
@@ -621,9 +622,8 @@ it decides from the document in hand, the resource it belongs to, the operation,
 that requires a lookup against what is already persisted cannot be expressed within the supported
 surface.
 
-A store-read capability is a recorded deferred item. It is additive to this surface, since a validator
-would obtain it by constructor injection rather than as a new parameter, so adding it later breaks no
-signature.
+Do not assume that host services reachable through constructor injection are part of this contract.
+Only documented contract capabilities carry its compatibility guarantees.
 
 ### Supported versus possible
 
@@ -650,8 +650,8 @@ version's contract**, and it needs two things this version lacks rather than one
    identifier, and `ValidateAsync` never receives one. There is no `DocumentUuid` parameter, and
    `ValidationScope` carries route qualifiers rather than the route.
 
-Both are recorded deferred items. Store access alone would not close this gap, and neither absence is
-an oversight.
+Store access alone would not close this gap: the rule also requires a reliable identifier for the
+persisted document.
 
 ### Why the document body is not a substitute for identity
 
@@ -684,9 +684,9 @@ register - is
 it on commits you to nothing else, and that empty closure is part of the contract rather than an
 accident of the current implementation.
 
-Writing a validator and the plugin that registers it needs four more packages, and none of them is
-this one's to supply. [Which package each line needs](#which-package-each-line-needs) maps them line
-by line: `EdFi.Api.Plugins` for the plugin base class and, through it,
+Writing a validator and the plugin that registers it requires additional dependencies.
+[Which package each line needs](#which-package-each-line-needs) maps the sample APIs to their
+packages: `EdFi.Api.Plugins` for the plugin base class and, through it,
 `Microsoft.Extensions.DependencyInjection.Abstractions` and
 `Microsoft.Extensions.Configuration.Abstractions` for the hook's own signature; then
 `Microsoft.Extensions.Options` and `Microsoft.Extensions.Options.ConfigurationExtensions`, which you
