@@ -18,6 +18,78 @@ Nothing here contacts a feed. Everything takes paths on disk.
 
 $ErrorActionPreference = "Stop"
 
+# NuGet's own parsers, loaded from the installed SDK rather than reimplemented. Hand-rolled parsing
+# accepted malformed input as a valid equivalent: "(1.0.0)" is not a range NuGet accepts and became
+# an exact pin, and "1.0.0-" is not a version and became 1.0.0. Repairing malformed metadata into a
+# value that compares equal is the one outcome a publish gate must never produce.
+$script:nuGetAssembliesLoaded = $false
+
+<#
+.DESCRIPTION
+The directory of the highest installed .NET SDK, which is where NuGet.Versioning.dll and
+NuGet.Frameworks.dll ship.
+
+Selection is deterministic: the SDK list is parsed, non-parsing entries are ignored, and the highest
+version wins. `dotnet --list-sdks` prints `<version> [<containing directory>]` on every platform,
+which is what makes this work on the Linux runner the verification suite runs on.
+#>
+function Get-NuGetAssemblyDirectory {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param()
+
+    $best = $null
+
+    foreach ($line in (& dotnet --list-sdks)) {
+        if ($line -notmatch '^(\S+)\s+\[(.+)\]\s*$') {
+            continue
+        }
+
+        $parsed = [version] '0.0.0'
+
+        if (-not [version]::TryParse((($Matches[1] -split '-')[0]), [ref] $parsed)) {
+            continue
+        }
+
+        $candidate = [pscustomobject]@{ Version = $parsed; Path = (Join-Path $Matches[2] $Matches[1]) }
+
+        if ($null -eq $best -or $candidate.Version -gt $best.Version) {
+            $best = $candidate
+        }
+    }
+
+    if ($null -eq $best) {
+        throw "Cannot locate a .NET SDK: 'dotnet --list-sdks' listed none this script could parse."
+    }
+
+    return $best.Path
+}
+
+function Initialize-NuGetVersioning {
+    [CmdletBinding()]
+    param()
+
+    if ($script:nuGetAssembliesLoaded) {
+        return
+    }
+
+    $directory = Get-NuGetAssemblyDirectory
+
+    foreach ($name in @("NuGet.Versioning.dll", "NuGet.Frameworks.dll")) {
+        $path = Join-Path $directory $name
+
+        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+            throw "Cannot load NuGet's parsers: $path does not exist."
+        }
+
+        # Add-Type is per-process and permanent, so the flag below is what keeps a second call from
+        # reloading it.
+        Add-Type -Path $path
+    }
+
+    $script:nuGetAssembliesLoaded = $true
+}
+
 <#
 .DESCRIPTION
 The NuGet-normalized form of a package version.
@@ -32,58 +104,24 @@ function ConvertTo-NormalizedPackageVersion {
     [OutputType([string])]
     param(
         [Parameter(Mandatory)]
+        [AllowEmptyString()]
         [string]
         $Version
     )
 
-    $trimmed = $Version.Trim()
+    Initialize-NuGetVersioning
 
-    if ([string]::IsNullOrWhiteSpace($trimmed)) {
-        throw "A package version is required, and '$Version' is empty."
+    try {
+        $parsed = [NuGet.Versioning.NuGetVersion]::Parse($Version)
+    }
+    catch {
+        throw "'$Version' is not a package version NuGet accepts: $($_.Exception.Message)"
     }
 
-    # Build metadata is not part of a package's identity, so it is dropped rather than compared.
-    $withoutMetadata = ($trimmed -split '\+', 2)[0]
-    $parts = $withoutMetadata -split '-', 2
-    $release = $parts[0]
-    $prerelease = if ($parts.Count -gt 1) { $parts[1] } else { "" }
-
-    $segments = $release -split '\.'
-
-    if ($segments.Count -lt 2 -or $segments.Count -gt 4) {
-        throw "Cannot normalize package version '$Version': its release portion has $($segments.Count) segment(s)."
-    }
-
-    $numbers = foreach ($segment in $segments) {
-        $parsed = 0
-
-        if (-not [int]::TryParse($segment, [ref] $parsed) -or $parsed -lt 0) {
-            throw "Cannot normalize package version '$Version': '$segment' is not a release segment."
-        }
-
-        $parsed
-    }
-
-    $numbers = @($numbers)
-
-    while ($numbers.Count -lt 3) {
-        $numbers += 0
-    }
-
-    # A fourth segment survives only when it is non-zero, which is exactly NuGet's rule.
-    if ($numbers.Count -eq 4 -and $numbers[3] -eq 0) {
-        $numbers = $numbers[0..2]
-    }
-
-    $normalized = ($numbers -join '.')
-
-    if ($prerelease.Length -gt 0) {
-        # NuGet compares prerelease labels case-insensitively, so they are lowercased rather than
-        # compared as written. Two packages whose labels differ only in case are one version.
-        $normalized += "-" + $prerelease.ToLowerInvariant()
-    }
-
-    return $normalized
+    # Lowercased, because NuGet compares prerelease labels case-insensitively and the flat container
+    # addresses a package by its lowercase normalized version. ToNormalizedString keeps the label as
+    # written, so two spellings of one version would otherwise be two comparison keys.
+    return $parsed.ToNormalizedString().ToLowerInvariant()
 }
 
 <#
@@ -126,61 +164,90 @@ function ConvertTo-NormalizedVersionRange {
         $Range
     )
 
-    $trimmed = $Range.Trim()
+    Initialize-NuGetVersioning
 
-    if ([string]::IsNullOrWhiteSpace($trimmed)) {
-        # An omitted range means any version, which is what NuGet resolves it as.
-        return "(, )"
+    # An omitted version attribute is how a nuspec says "any version", and NuGet resolves it as the
+    # all-inclusive range. An empty string in a version attribute is not the same statement, but a
+    # nuspec cannot distinguish them, so both take this branch.
+    if ([string]::IsNullOrWhiteSpace($Range)) {
+        return [NuGet.Versioning.VersionRange]::All.ToNormalizedString().ToLowerInvariant()
     }
 
-    if ($trimmed[0] -ne '[' -and $trimmed[0] -ne '(') {
-        return "[" + (ConvertTo-NormalizedPackageVersion -Version $trimmed) + ", )"
+    try {
+        $parsed = [NuGet.Versioning.VersionRange]::Parse($Range)
+    }
+    catch {
+        throw "'$Range' is not a version range NuGet accepts: $($_.Exception.Message)"
     }
 
-    $open = $trimmed[0]
-    $close = $trimmed[-1]
+    return $parsed.ToNormalizedString().ToLowerInvariant()
+}
 
-    if ($close -ne ']' -and $close -ne ')') {
-        throw "Cannot normalize version range '$Range': it opens with '$open' and does not close."
+<#
+.DESCRIPTION
+The normalized short folder name of a dependency group's target framework.
+
+net10.0 and .NETCoreApp,Version=v10.0 are one framework written two ways, and a group is selected by
+the framework rather than by the spelling. A framework NuGet cannot parse is rejected rather than
+compared as written, because an unsupported framework silently changes which group a consumer
+resolves.
+#>
+function ConvertTo-NormalizedTargetFramework {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)]
+        [AllowEmptyString()]
+        [string]
+        $Framework
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Framework)) {
+        return "(any)"
     }
 
-    $inner = $trimmed.Substring(1, $trimmed.Length - 2)
-    $bounds = $inner -split ',', 2
+    Initialize-NuGetVersioning
 
-    $lower = $bounds[0].Trim()
-    $upper = if ($bounds.Count -gt 1) { $bounds[1].Trim() } else { "" }
-
-    # A single value in brackets is an exact pin, not an open interval.
-    if ($bounds.Count -eq 1) {
-        if ([string]::IsNullOrWhiteSpace($lower)) {
-            throw "Cannot normalize version range '$Range': it declares no version."
-        }
-
-        $pinned = ConvertTo-NormalizedPackageVersion -Version $lower
-
-        return "[$pinned]"
+    try {
+        $parsed = [NuGet.Frameworks.NuGetFramework]::Parse($Framework.Trim())
+    }
+    catch {
+        throw "'$Framework' is not a target framework NuGet accepts: $($_.Exception.Message)"
     }
 
-    $lowerText = if ([string]::IsNullOrWhiteSpace($lower)) { "" } else { ConvertTo-NormalizedPackageVersion -Version $lower }
-    $upperText = if ([string]::IsNullOrWhiteSpace($upper)) { "" } else { ConvertTo-NormalizedPackageVersion -Version $upper }
+    if ($parsed.IsUnsupported) {
+        throw "'$Framework' is not a target framework NuGet recognizes."
+    }
 
-    return "$open$lowerText, $upperText$close"
+    return $parsed.GetShortFolderName()
 }
 
 <#
 .DESCRIPTION
 The canonical form of one XML documentation file, as a sorted list of member entries.
 
-Two rules, and each is deliberate.
+Three rules, and each is deliberate.
+
+The serialization is structural and escaped rather than XML-shaped text. Rendering an element as
+"<b>must</b>" makes a member whose text is the literal string "<b>must</b>" identical to one that
+really marks the word up, and those are different contracts: one shows an implementer angle
+brackets, the other shows bold. Every name, attribute and text run is escaped so that no content can
+imitate the delimiters around it.
 
 Insignificant whitespace is normalized, so re-wrapping a comment at a different column is not a
-contract change. Whitespace inside a <code> element, or under any node carrying
-xml:space="preserve", is kept exactly, because an implementer copies that text and its layout is
-part of what they copy.
+contract change. Whitespace inside a <code> element, inside CDATA, or under any node carrying
+xml:space="preserve" is kept exactly, including a node inheriting that request from an ancestor as
+high as <doc> or the <member> itself. An implementer copies that text and its layout is part of what
+they copy, which is also why the document is parsed with whitespace preserved: the default
+XmlDocument discards whitespace-only text nodes, and under it a sample indented by one space and the
+same sample indented by two are one string.
 
 Everything else is compared ordinally, so a word changed, or a word changed only in case, is a
 change. The contract's load-bearing rules live only in these comments, so a rule silently rewritten
 at an unchanged version is precisely what this catches.
+
+A file with no members, or with two members sharing one name, is rejected. Neither is a contract
+this can compare, and an empty list would compare equal to any other empty list.
 #>
 function ConvertTo-CanonicalXmlDocumentation {
     [CmdletBinding()]
@@ -197,15 +264,26 @@ function ConvertTo-CanonicalXmlDocumentation {
         throw "Cannot canonicalize XML documentation: $Path does not exist."
     }
 
-    $document = [xml] (Get-Content -LiteralPath $Path -Raw)
+    $document = [System.Xml.XmlDocument]::new()
 
-    # The <assembly> element names the assembly rather than describing the contract, and the
-    # comparison is between two copies of one contract, so it carries no information here.
-    $members = $document.SelectNodes("/doc/members/member")
+    # Without this the parser throws away whitespace-only text nodes, and every whitespace
+    # distinction inside a code sample disappears before this function ever sees it.
+    $document.PreserveWhitespace = $true
 
-    if ($null -eq $members) {
-        throw "Cannot canonicalize XML documentation: $Path carries no /doc/members."
+    try {
+        $document.LoadXml((Get-Content -LiteralPath $Path -Raw))
     }
+    catch {
+        throw "Cannot canonicalize XML documentation: $Path is not well-formed XML. $($_.Exception.Message)"
+    }
+
+    $members = @($document.SelectNodes("/doc/members/member"))
+
+    if ($members.Count -eq 0) {
+        throw "Cannot canonicalize XML documentation: $Path declares no members under /doc/members. A contract package with no documented members is not comparable."
+    }
+
+    $seen = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
 
     $canonical = foreach ($member in $members) {
         $name = $member.GetAttribute("name")
@@ -214,7 +292,16 @@ function ConvertTo-CanonicalXmlDocumentation {
             throw "Cannot canonicalize XML documentation: $Path carries a member with no name."
         }
 
-        "$name => " + (ConvertTo-CanonicalXmlNode -Node $member -Preserve $false)
+        if (-not $seen.Add($name)) {
+            throw "Cannot canonicalize XML documentation: $Path declares '$name' more than once, so its members cannot be compared one to one."
+        }
+
+        # Inherited from every ancestor, so xml:space on <doc>, on <members>, or on the member
+        # itself governs that member's content.
+        $preserve = Test-XmlPreserveSpace -Node $member
+
+        (ConvertTo-CanonicalXmlText -Value $name) + " => " +
+        (ConvertTo-CanonicalXmlNode -Node $member -Preserve $preserve)
     }
 
     # The unary comma is load bearing: PowerShell unwraps a one-element array into a scalar and an
@@ -225,8 +312,53 @@ function ConvertTo-CanonicalXmlDocumentation {
 
 <#
 .DESCRIPTION
-One node's canonical text. Attributes are ordered by name so that an attribute reordering is not a
-change, and child order is preserved because it is the order an implementer reads.
+True when this node, or any ancestor, asks for whitespace to be preserved.
+#>
+function Test-XmlPreserveSpace {
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param(
+        [Parameter(Mandatory)]
+        [System.Xml.XmlNode]
+        $Node
+    )
+
+    $current = $Node
+
+    while ($null -ne $current) {
+        if ($current -is [System.Xml.XmlElement]) {
+            $element = [System.Xml.XmlElement] $current
+
+            if ($element.LocalName -ceq "code") {
+                return $true
+            }
+
+            $space = $element.GetAttribute("xml:space")
+
+            if ($space -ceq "preserve") {
+                return $true
+            }
+
+            # An explicit default closes an ancestor's preserve request, which is what xml:space
+            # means; treating it as "not mentioned" would keep preserving below it.
+            if ($space -ceq "default") {
+                return $false
+            }
+        }
+
+        $current = $current.ParentNode
+    }
+
+    return $false
+}
+
+<#
+.DESCRIPTION
+One node's children, serialized structurally so that no content can be mistaken for markup.
+
+Text is emitted as T{...}, an element as E{name}A{...}[...], and CDATA as C{...}, with every value
+escaped. Child order is preserved because it is the order an implementer reads; attributes are
+ordered by name so that a reordering is not a change.
 #>
 function ConvertTo-CanonicalXmlNode {
     [CmdletBinding()]
@@ -236,7 +368,7 @@ function ConvertTo-CanonicalXmlNode {
         [System.Xml.XmlNode]
         $Node,
 
-        # True once any ancestor has asked for whitespace to be kept.
+        # True once this node, or any ancestor, has asked for whitespace to be kept.
         [Parameter(Mandatory)]
         [bool]
         $Preserve
@@ -245,56 +377,87 @@ function ConvertTo-CanonicalXmlNode {
     $builder = [System.Text.StringBuilder]::new()
 
     foreach ($child in $Node.ChildNodes) {
-        switch ($child.NodeType) {
-            ([System.Xml.XmlNodeType]::Text) {
-                $text = $child.Value
+        $nodeType = $child.NodeType
 
-                if (-not $Preserve) {
-                    $text = ([regex]::Replace($text, '\s+', ' ')).Trim()
+        if (
+            $nodeType -eq [System.Xml.XmlNodeType]::Text -or
+            $nodeType -eq [System.Xml.XmlNodeType]::Whitespace -or
+            $nodeType -eq [System.Xml.XmlNodeType]::SignificantWhitespace
+        ) {
+            $text = $child.Value
+
+            if (-not $Preserve) {
+                $text = ([regex]::Replace($text, '\s+', ' ')).Trim()
+
+                # A run that was only formatting contributes nothing, so indentation outside a
+                # preserved context does not move the canonical form.
+                if ($text.Length -eq 0) {
+                    continue
                 }
-
-                [void] $builder.Append($text)
             }
 
-            ([System.Xml.XmlNodeType]::CDATA) {
-                # Always verbatim: an author chose CDATA to stop the parser touching the content.
-                [void] $builder.Append("<![CDATA[").Append($child.Value).Append("]]>")
-            }
+            [void] $builder.Append("T{").Append((ConvertTo-CanonicalXmlText -Value $text)).Append("}")
 
-            ([System.Xml.XmlNodeType]::Element) {
-                $element = [System.Xml.XmlElement] $child
-
-                # <code> is the sample an implementer copies, and xml:space="preserve" is the
-                # explicit request. Either one keeps the layout of everything below it.
-                $childPreserve = $Preserve -or
-                    $element.LocalName -ceq "code" -or
-                    ($element.GetAttribute("xml:space") -ceq "preserve")
-
-                $attributes = @(
-                    $element.Attributes |
-                        Sort-Object -Property Name -CaseSensitive |
-                        ForEach-Object { "$($_.Name)=`"$($_.Value)`"" }
-                )
-
-                [void] $builder.Append("<").Append($element.Name)
-
-                if ($attributes.Count -gt 0) {
-                    [void] $builder.Append(" ").Append($attributes -join " ")
-                }
-
-                [void] $builder.Append(">")
-                [void] $builder.Append((ConvertTo-CanonicalXmlNode -Node $element -Preserve $childPreserve))
-                [void] $builder.Append("</").Append($element.Name).Append(">")
-            }
-
-            default {
-                # Comments and processing instructions describe the file rather than the contract.
-                continue
-            }
+            continue
         }
+
+        if ($nodeType -eq [System.Xml.XmlNodeType]::CDATA) {
+            # Always verbatim: an author chose CDATA to stop the parser touching the content.
+            [void] $builder.Append("C{").Append((ConvertTo-CanonicalXmlText -Value $child.Value)).Append("}")
+
+            continue
+        }
+
+        if ($nodeType -eq [System.Xml.XmlNodeType]::Element) {
+            $element = [System.Xml.XmlElement] $child
+            $childPreserve = $Preserve -or (Test-XmlPreserveSpace -Node $element)
+
+            $attributes = @(
+                $element.Attributes |
+                    Sort-Object -Property Name -CaseSensitive |
+                    ForEach-Object {
+                        (ConvertTo-CanonicalXmlText -Value $_.Name) + "=" +
+                        (ConvertTo-CanonicalXmlText -Value $_.Value)
+                    }
+            )
+
+            [void] $builder.Append("E{").Append((ConvertTo-CanonicalXmlText -Value $element.Name)).Append("}")
+            [void] $builder.Append("A{").Append($attributes -join ";").Append("}")
+            [void] $builder.Append("[")
+            [void] $builder.Append((ConvertTo-CanonicalXmlNode -Node $element -Preserve $childPreserve))
+            [void] $builder.Append("]")
+
+            continue
+        }
+
+        # Comments and processing instructions describe the file rather than the contract.
     }
 
     return $builder.ToString()
+}
+
+<#
+.DESCRIPTION
+One value, escaped so that it cannot imitate the delimiters this serialization uses.
+#>
+function ConvertTo-CanonicalXmlText {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)]
+        [AllowEmptyString()]
+        [string]
+        $Value
+    )
+
+    $escaped = $Value
+
+    # The backslash first, or every escape introduced below would be escaped a second time.
+    foreach ($character in @('\', '{', '}', '[', ']', ';', '=')) {
+        $escaped = $escaped.Replace($character, '\' + $character)
+    }
+
+    return $escaped
 }
 
 <#
@@ -337,14 +500,24 @@ function ConvertTo-CanonicalDependencySet {
             "group" {
                 $framework = $node.GetAttribute("targetFramework")
 
-                foreach ($dependency in $node.ChildNodes) {
-                    if (
-                        $dependency.NodeType -ne [System.Xml.XmlNodeType]::Element -or
-                        $dependency.LocalName -cne "dependency"
-                    ) {
-                        continue
-                    }
+                $declared = @(
+                    $node.ChildNodes |
+                        Where-Object {
+                            $_.NodeType -eq [System.Xml.XmlNodeType]::Element -and
+                            $_.LocalName -ceq "dependency"
+                        }
+                )
 
+                # An empty group is a statement, not an absence. NuGet picks the single best-matching
+                # group, so an empty group for a specific framework gives a consumer on that
+                # framework no dependencies at all, where removing the group would let a fallback
+                # group's dependencies apply instead. Emitting nothing for it would make those two
+                # packages compare equal.
+                if ($declared.Count -eq 0) {
+                    "$(ConvertTo-NormalizedTargetFramework -Framework $framework) | (empty group)"
+                }
+
+                foreach ($dependency in $declared) {
                     ConvertTo-CanonicalDependencyEntry -Framework $framework -Dependency $dependency
                 }
             }
@@ -395,7 +568,9 @@ function ConvertTo-CanonicalDependencyEntry {
     $include = $Dependency.GetAttribute("include")
     $exclude = $Dependency.GetAttribute("exclude")
 
-    $frameworkText = if ([string]::IsNullOrWhiteSpace($Framework)) { "(any)" } else { $Framework.Trim() }
+    # Normalized rather than compared as written: net10.0 and .NETCoreApp,Version=v10.0 select the
+    # same group, so two spellings of one framework must not read as two groups.
+    $frameworkText = ConvertTo-NormalizedTargetFramework -Framework $Framework
 
     return "$frameworkText | $(ConvertTo-NormalizedPackageId -PackageId $id) | $range | include=$include | exclude=$exclude"
 }
@@ -406,5 +581,8 @@ Export-ModuleMember -Function `
     ConvertTo-NormalizedVersionRange, `
     ConvertTo-CanonicalXmlDocumentation, `
     ConvertTo-CanonicalXmlNode, `
+    ConvertTo-CanonicalXmlText, `
+    Test-XmlPreserveSpace, `
+    ConvertTo-NormalizedTargetFramework, `
     ConvertTo-CanonicalDependencySet, `
     ConvertTo-CanonicalDependencyEntry
