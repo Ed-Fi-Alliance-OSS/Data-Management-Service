@@ -217,9 +217,12 @@ public sealed class StudentIdentityPlugin : EdFiApiPlugin
 
 ### Which package each line needs
 
-Neither contract package supplies the registration machinery, so the implementer declares it. That
-is a property you inherit rather than a gap: the contracts oblige a consumer to nothing they did not
-choose.
+Neither contract package supplies the complete options and configuration machinery, so you declare
+the rest yourself. The DI and configuration **abstractions** do arrive through `EdFi.Api.Plugins`,
+because its own hook signature names `IServiceCollection` and `IConfiguration` and a contract cannot
+decline a dependency its signatures require. What no contract supplies is the options binding, and
+that is a property you inherit rather than a gap: the contracts oblige a consumer to nothing they did
+not choose.
 
 | What the samples name | Which package it comes from |
 | --- | --- |
@@ -238,7 +241,12 @@ lives in `Microsoft.Extensions.Options.ConfigurationExtensions`, so without that
 binding.
 
 Declare exactly what your own code uses, and no more. That is what keeps your project's dependency
-closure the one you chose.
+closure the one you chose. The verification fixture these samples come from declares **five**
+packages, the two Ed-Fi contracts plus the three Microsoft ones marked "which you declare" above, and
+reaches `Microsoft.Extensions.Configuration.Abstractions` transitively through `EdFi.Api.Plugins`
+rather than naming it. Declaring it as well is also reasonable, and is what the plugin contract's own
+sample project does, on the argument that code compiled against a signature should name the assembly
+it compiles against.
 
 ### Getting it into a host
 
@@ -254,9 +262,12 @@ Plugins__Directory=/app/plugins
 Plugins__Allowed=Acme.Dms.StudentIdentity
 ```
 
-`Allowed` ships empty, which loads nothing. A plugin runs if and only if its directory name appears
-there. The directory name, the assembly name, and the plugin's `Name` property must all be the same
-string; the host treats a mismatch as fatal.
+`Allowed` ships empty, which loads nothing, and only a directory named there is considered at all: a
+directory sitting under the root and absent from `Allowed` is never opened. Being allowlisted is what
+gets a plugin looked at, not a guarantee it loads; it still has to pass the host's load-time checks,
+and an allowlisted plugin that fails one of them is fatal rather than skipped. The directory name, the
+assembly name, and the plugin's `Name` property must all be the same string; the host treats a
+mismatch as one of those fatals.
 
 The publish command, the package shape, the two delivery recipes, the fatal catalogue, and what a
 plugin may and may not register are all
@@ -299,11 +310,15 @@ What follows from that:
   unless the deployment sets `AppSettings:BypassTypeCoercion`, which removes that coercion step from
   the pipeline. Core document validation still runs either way; what a validator should not assume is
   that every value was rewritten into its schema type.
-- **Which members are present.** A writable profile keeps only the members it names, so an ordinary
-  member your rule reads can be absent. **Resource identity is the exception**: root resource
-  identity members are preserved even when a profile does not name them, so a natural-key member
-  such as a student's `studentUniqueId` is there regardless. Do not generalize either half. The
-  surrogate document identifier `$.id` is *not* a resource identity member and can be absent; see
+- **Which members are present.** A writable profile's member filter decides, and which members
+  survive depends on the filter's mode: an `IncludeOnly` filter keeps only the members it names, an
+  `ExcludeOnly` filter keeps everything except those, and `IncludeAll` keeps everything. So an
+  ordinary member your rule reads can be absent under some profiles and present under others. Write
+  the rule so it does not depend on which.
+  **Resource identity is the exception in every mode**: root resource identity members are preserved
+  even when a profile's filter would hide them, so a natural-key member such as a student's
+  `studentUniqueId` is there regardless. Do not generalize either half. The surrogate document
+  identifier `$.id` is *not* a resource identity member and so gets no such preservation; see
   [Why the document body is not a substitute for identity](#why-the-document-body-is-not-a-substitute-for-identity).
 - **It is read-only.** The parameter is a `JsonNode` and nothing in the type system stops you
   mutating it. Not mutating it is a contract rule.
@@ -487,9 +502,15 @@ to every matching write.
 
 ## Scoping a rule to less than the deployment
 
-**A registration belongs to a whole DMS deployment, not to one district.** Every registered validator
-runs for every write the host serves, unless it inspects the `ValidationScope` it is handed and
-decides otherwise.
+**A registration belongs to a whole DMS deployment, not to one district.** There is no per-district,
+per-tenant, or per-route registration: a validator that applies to a resource applies to that
+resource for **every district and every route the deployment serves**, unless it inspects the
+`ValidationScope` it is handed and decides otherwise.
+
+Two different things are scoped differently, and it is worth keeping them apart. `AppliesTo` narrows
+which **resources** reach your `ValidateAsync`; nothing narrows which **districts** do. And your
+constructor is narrower than neither: it runs on every write that reaches the step, whatever the
+resource and whatever the route (see [Constructors run on every write](#constructors-run-on-every-write)).
 
 - `Tenant` is **null in every single-tenant deployment.** A rule keyed on it silently never matches
   unless multi-tenancy is enabled.
@@ -510,12 +531,21 @@ The published id is `EdFi.Api.CustomValidation`. The assembly inside it is
 `EdFi.DataManagementService.CustomValidation`; the two deliberately differ, and the difference
 matters when you read a load-time error (see below).
 
-The semver promise covers this contract's own types and nothing else. The version is the contract's
-own rather than the DMS release version, so a validator built against contract `1.0.0` is compatible
-with every DMS release that carries `1.0.0`, whatever that release is numbered. A release's notes
-state which contract versions it carries.
+The semver promise covers this contract's own types and nothing else.
 
-The package is built and verified but **not yet published**.
+**The version policy for the published contract** is that the version is the contract's own rather
+than the DMS release version, so a validator built against contract `1.0.0` will be compatible with
+every DMS release that carries `1.0.0`, whatever that release is numbered, and a release's notes state
+which contract versions it carries. Tying the version to the release version instead would have a host
+refuse a validator built against an identical contract, naming two versions that differ in nothing an
+implementer could act on.
+
+**Where that stands today.** The package is built and its contents verified on every pull request, and
+it is **not yet published**. Until it is, the build stamps it with the Data Management Service release
+version, so a locally produced nupkg's version is not yet the independent contract version the policy
+above describes. Read that policy as what the published package will carry, not as a description of
+today's build. The sibling `EdFi.Api.Plugins` contract already versions itself this way, and
+`PLUGINS.md` documents it as current fact for that package.
 
 ### Additive-only, for the life of the package
 
@@ -629,9 +659,11 @@ The obvious move after reading the above is to reach for `$.id` in the document.
 
 - On `Update`, the pipeline does require a body `id` matching the route id. But that check reads the
   **parsed request body**, while your validator receives the **profile-effective** body, and a
-  writable profile's member filter keeps only the members the profile names. The surrogate `$.id` is
-  not a resource identity member, so the identity preservation that keeps a natural key such as
-  `studentUniqueId` present does **not** keep `$.id` present. It can be absent from what you receive.
+  writable profile's member filter can hide `id` from the latter while the former still carries it:
+  an `IncludeOnly` filter that does not name `id` drops it, and an `ExcludeOnly` filter that names it
+  drops it too. The surrogate `$.id` is not a resource identity member, so the identity preservation
+  that keeps a natural key such as `studentUniqueId` present does **not** keep `$.id` present. It can
+  therefore be absent from what you receive even on a request that was required to send it.
 - On `Upsert`, the body carries no `id` at all by construction. A submitted `id` is rejected with a
   400 before a validator ever runs.
 
