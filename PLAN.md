@@ -29,17 +29,17 @@ historical passes do not qualify the current source.
    single-attempt mutations. For the idle boundary, require a strictly greater commit to
    cross a barrier; the same commit is insufficient. Run the new native idle-offset live
    control and the existing intact-restart scenario with the corrected binaries.
-4. **Establish the remaining SQL startup cause before changing startup behavior.** Inspect
-   the bounded diagnostics and privately retained process logs. Fatal reason 6 and errno 2
-   alone do not establish a cause. Apply a narrowly supported correction with a regression
-   or controlled reproduction. A successful replay alone does not resolve the diagnosis.
+4. **Mitigate the captured SQL Server LSA startup failure under the approved fixture policy.**
+   The user authorized one bounded fixture-only recreation for the exact captured failure.
+   Implement and validate section 7's amendment below. Preserve evidence for every failed
+   attempt and distinguish this CI mitigation from a repair to SQL Server's internal defect.
 5. **Validate the complete final source.** Format changed C#, review the diff, and run local
    tests sequentially: core CDC tests, the full Contract lane, and affected live cases.
    Verify image records, actual test selection, sanitized evidence, and cleanup of owned
-   resources. Expected selections are 437 core tests and 4,932 Contract checks; investigate
+   resources. Expected selections are 437 core tests and 4,966 Contract checks; investigate
    any discrepancy rather than treating missing or skipped tests as success.
 6. **Commit, push, and qualify the exact final SHA.** Run hosted Contract and all 13 live
-   jobs, expecting all 260 selected live tests to pass with zero failures, skips, or
+   jobs, expecting all 261 selected live tests to pass with zero failures, skips, or
    environment-unavailable outcomes. Confirm required PR gates, update PR #1255 with
    provenance and actual results, and read back the published description. Do not merge.
 
@@ -224,6 +224,53 @@ control runs the actual SQL RecordSize suite with bounded, encrypted process-log
 on a temporary diagnostic branch: [35079333656](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/35079333656).
 The private decryption key stays local. Keep this instrumentation out of the fix PR.
 
+### Approved amendment: bounded LSA startup recreation
+
+The user approved this amendment after diagnostic run
+[35092738931](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/35092738931)
+finished with 78 passes and one startup failure. The complete private log identifies
+AppLoader LSA initialization status `0xc0070102` and termination status `0xC0000001`.
+The underlying reason LSA stalled remains unknown. Microsoft's
+[matching report](https://github.com/microsoft/mssql-rs/issues/387) and
+[merged mitigation](https://github.com/microsoft/mssql-rs/pull/386) support bounded recreation
+as a CI mitigation, with their different macOS VM environment explicitly acknowledged.
+
+This amendment supersedes the earlier prohibition on automatic recreation and changes
+only the fresh SQL fixture startup budget. All other deadlines and constraints remain.
+
+- [x] Permit at most two starts (one recreation), before provisioning and before any test scenario.
+- [x] Require exited status, exit code 1, no OOM kill, complete readable logs, the exact LSA
+  and AppLoader termination markers, fatal reason 6, errno 2, and no contradictory SQL,
+  memory, mapping, or signal evidence. Unknown or incomplete evidence must fail.
+- [x] Keep a 90-second limit per startup attempt, a five-second bound for inspection and
+  evidence retention, a ten-second removal bound, and one shared 200-second overall cap.
+  Caller cancellation and an expired total deadline must prevent recreation.
+- [x] Retain a sanitized failed-attempt attachment before removing the owned unprovisioned
+  provider container and its anonymous volumes. A failed removal or evidence write aborts
+  recovery. KeepContainers disables recreation. Final startup failure preserves cleanup.
+- [x] Require the unchanged Agent-session and settled-configuration readiness predicate
+  on the replacement. Preserve image pins, PostgreSQL behavior, production SQL, mapping
+  version, single-attempt DMS mutations, and one execution of provisioning/scenario work.
+- [x] Validate exact-match recovery, rejection cases, second-failure cap, cancellation,
+  deadlines, cleanup, redaction, and the actual fixture wiring. Run a controlled real
+  Docker recreation and the affected live Lifecycle scenario with the pinned images.
+- [ ] Run complete local/hosted Contract and all live qualification jobs on the final
+  pushed SHA. Update expected test totals for added regression coverage and record
+  successful mitigated startups distinctly from an ordinary first-attempt startup.
+
+Local validation passed **4,966 Contract checks** (3,611 controller, 715 CLI, 176 offline
+fixture, 464 wrappers), including all **34 new policy cases**, and **437 core CDC tests**.
+The controlled real Docker recreation and both affected independent-source Lifecycle
+variants passed with the original image pins. The controlled recreation passed again
+with the final compiled classifier; the compiled policy also accepts the actual complete
+private failure capture. Sanitized attachments and exact resource cleanup were verified
+(seven pre-existing containers, six networks, and 290 volumes preserved). Formatting and
+diff checks passed. Hosted qualification of the final pushed SHA remains required; record
+its run links, 261 live results, Contract totals, and PR checks in PR #1255.
+
+Completion for this amended item means the supported failure class is captured and the
+bounded mitigation is validated. It does not require or claim an upstream SQL Server fix.
+
 ## 8. Require TCP readiness during PostgreSQL fixture startup
 
 The qualification run [35057484986](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/35057484986) on `c4a82bf83` has a PostgreSQL Recovery preparation failure: `It_detects_failed_task_recovery_on_the_same_worker_without_certifying_the_gap` failed on its first host database connection, before the scenario ran. The attachment preserves an `NpgsqlException`, but not the underlying network message; the precise hosted cause remains unconfirmed.
@@ -402,7 +449,7 @@ environment or startup change; keep raw logs private. This diagnostic is not fin
 - [ ] Dispatch `nightly-cdc-qualification.yml` with `lane=All` and `suite=All` on the final pushed commit.
 - [ ] Verify the workflow head SHA and all published image records.
 - [ ] Require all 13 live jobs: Kafka, plus Admission, History, Lifecycle, RecordSize, Recovery, and Telemetry for each provider.
-- [ ] Verify all 260 selected live tests pass with zero failures, skips, or environment-unavailable outcomes. The additional SQL Server Lifecycle case exercises a real idle commit boundary; all original 259 cases remain selected.
+- [ ] Verify all 261 selected live tests pass with zero failures, skips, or environment-unavailable outcomes. Two additional SQL Server Lifecycle cases cover a real idle commit boundary and controlled container recreation; all original 259 cases remain selected.
 - [ ] Investigate any remaining failure from its artifacts. After any code correction, qualify the complete matrix again on the new final commit.
 - [ ] Confirm current required PR checks: `license/cla`, `DMS CI Gate`, and `Config CI Gate`.
 - [ ] Update and read back PR #1255's title/body with the final scope, provenance, exact commit, run links, image/version coverage, and actual test totals.
@@ -413,6 +460,8 @@ Recorded evidence as of this plan update. Results from the final hosted run and 
 
 | Evidence | Result | Limit |
 | --- | --- | --- |
+| Approved LSA recreation amendment, local validation | 4,966 Contract and 437 core CDC checks passed; controlled recreation and both affected Lifecycle variants passed | Final hosted Contract, all 261 live cases, and required PR gates must pass on the pushed SHA. |
+| [Full run 35086104754](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/35086104754) on `47e159f71` | All 260 live tests and all 13 jobs passed; local/hosted Contract each passed 4,932; required PR gates passed | Baseline before the approved recreation amendment; does not qualify the amended source. |
 | Local Contract before the PostgreSQL TCP change, `c4a82bf83` | 4,872 passed, zero failures/skips | Must be rerun after the latest fixture edit. |
 | PostgreSQL temporary-server controls, versions 16 and 18.4 | Both reproduced socket success before TCP readiness; both accepted final TCP startup | Demonstrates the fixture defect; the exact hosted network error was not preserved. |
 | Offline fixture selection after the PostgreSQL TCP change | 53 passed, zero failures/skips | Focused live Recovery checks and final full qualification remain required. |
@@ -433,4 +482,4 @@ Earlier isolated retirement and fixture-startup failures also lack confirmed cau
 
 ## Done when
 
-The final branch contains the targeted repairs, the Contract lane and required PR checks pass, and all 13 live jobs pass on the final pushed commit with complete image and scenario evidence. PR #1255 accurately reports the results and any residual uncertainty. Full qualification is currently incomplete.
+The final branch contains the targeted repairs, the Contract lane and required PR checks pass, and all 13 live jobs pass on the final pushed commit with complete image and scenario evidence. PR #1255 accurately reports the results and any residual uncertainty. Record final hosted results and any remaining limitations against the pushed SHA in PR #1255.

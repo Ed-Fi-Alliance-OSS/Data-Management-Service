@@ -21,6 +21,8 @@ internal sealed record CdcSqlServerStartupLogEvidence(
     IReadOnlyList<string> Signals
 )
 {
+    public bool LsaInitializationTimeout { get; init; }
+
     internal static CdcSqlServerStartupLogEvidence Empty(string state) =>
         new(state, false, false, false, false, [], [], [], []);
 }
@@ -42,10 +44,12 @@ internal static partial class CdcSqlServerStartupLogClassifier
             "\n",
             result.StandardError.AsSpan(0, Math.Min(result.StandardError.Length, MaximumStreamCharacters))
         );
-        return new(
+        return new CdcSqlServerStartupLogEvidence(
             "Observed",
             result.StandardOutput.Length > MaximumStreamCharacters
-                || result.StandardError.Length > MaximumStreamCharacters,
+                || result.StandardError.Length > MaximumStreamCharacters
+                // A saturated Docker tail may have omitted earlier contradictory evidence.
+                || text.Count(character => character == '\n') >= 400,
             text.Contains("This program has encountered a fatal error", StringComparison.OrdinalIgnoreCase),
             text.Contains("out of memory", StringComparison.OrdinalIgnoreCase)
                 || text.Contains("unable to allocate", StringComparison.OrdinalIgnoreCase)
@@ -81,7 +85,34 @@ internal static partial class CdcSqlServerStartupLogClassifier
                 .Distinct()
                 .Take(8)
                 .ToArray()
-        );
+        )
+        {
+            LsaInitializationTimeout = HasExactLsaInitializationTimeout(text),
+        };
+    }
+
+    private static bool HasExactLsaInitializationTimeout(string text)
+    {
+        string[] lines = text.Split('\n', StringSplitOptions.TrimEntries);
+        string[] expected =
+        [
+            "** ERROR: [AppLoader] Failed to load LSA: 0xc0070102",
+            "AppLoader: Exiting with status=0xc0070102",
+            @"Message: Termination of \SystemRoot\system32\AppLoader.exe was due to fatal error 0xC0000001",
+        ];
+        string[] prefixes =
+        [
+            "** ERROR: [AppLoader] Failed to load LSA:",
+            "AppLoader: Exiting with status=",
+            "Message: Termination of ",
+        ];
+        return Enumerable
+            .Range(0, expected.Length)
+            .All(index =>
+                lines
+                    .Where(line => line.StartsWith(prefixes[index], StringComparison.OrdinalIgnoreCase))
+                    .SequenceEqual([expected[index]], StringComparer.OrdinalIgnoreCase)
+            );
     }
 
     [GeneratedRegex(

@@ -394,13 +394,15 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
         TestContext.AddTestAttachment(path, "Sanitized pinned-image fixture startup failure locations");
     }
 
-    private sealed record SqlServerContainerState(string Status, int ExitCode, bool OomKilled)
+    private async Task<CdcSqlServerContainerState> ReadFailedSqlServerContainerStateAsync()
     {
-        public CdcSqlServerStartupLogEvidence Logs { get; init; } =
-            CdcSqlServerStartupLogEvidence.Empty("NotObserved");
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        return await ReadFailedSqlServerContainerStateAsync(timeout.Token);
     }
 
-    private async Task<SqlServerContainerState> ReadFailedSqlServerContainerStateAsync()
+    private async Task<CdcSqlServerContainerState> ReadFailedSqlServerContainerStateAsync(
+        CancellationToken cancellationToken
+    )
     {
         if (
             Provider != CdcProvider.SqlServer
@@ -413,12 +415,11 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
 
         // Startup cancellation must not erase the evidence. Bound this read separately, then always
         // clean up. Never retain State.Error, container configuration, or raw inspect output.
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         try
         {
             var result = await _docker.RunAllowingFailureAsync(
                 ["inspect", "--format", "{{json .State}}", ProviderContainerName],
-                timeout.Token
+                cancellationToken
             );
             if (result.ExitCode == 0)
             {
@@ -436,14 +437,17 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
                         or "dead"
                 )
                 {
-                    var container = new SqlServerContainerState(
+                    var container = new CdcSqlServerContainerState(
                         status,
                         state.GetProperty("ExitCode").GetInt32(),
                         state.GetProperty("OOMKilled").GetBoolean()
                     );
                     if (status is "exited" or "dead")
                     {
-                        return container with { Logs = await ReadFailedSqlServerLogsAsync(timeout.Token) };
+                        return container with
+                        {
+                            Logs = await ReadFailedSqlServerLogsAsync(cancellationToken),
+                        };
                     }
                     return container;
                 }
@@ -1277,27 +1281,7 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
             return;
         }
 
-        await _docker.RunAsync(
-            [
-                "run",
-                "--detach",
-                "--name",
-                ProviderContainerName,
-                "--network",
-                NetworkName,
-                "-p",
-                "127.0.0.1::1433",
-                "-e",
-                "ACCEPT_EULA=Y",
-                "-e",
-                $"MSSQL_SA_PASSWORD={ConnectorDatabasePassword}",
-                "-e",
-                "MSSQL_AGENT_ENABLED=true",
-                _settings.ProviderImage,
-            ],
-            cancellationToken
-        );
-        await WaitForSqlServerAsync(cancellationToken);
+        await StartSqlServerWithRecoveryAsync(cancellationToken);
     }
 
     private async Task StartKafkaConnectAsync(CancellationToken cancellationToken)
@@ -1546,6 +1530,13 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
                     _ => "SqlCommandFailed",
                 };
 
+                cancellationToken.ThrowIfCancellationRequested();
+                if (_sqlServerReadinessState == "ContainerNotRunning")
+                {
+                    throw new InvalidOperationException(
+                        "SQL Server fixture container exited before readiness."
+                    );
+                }
                 return result;
             },
             cancellationToken
