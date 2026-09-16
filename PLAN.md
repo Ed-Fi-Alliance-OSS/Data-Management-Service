@@ -126,7 +126,22 @@ Validation: the three real SQL Server controls passed, including rejection witho
 
 Microsoft documents that each Agent start creates a [row in `msdb.dbo.syssessions`](https://learn.microsoft.com/en-us/sql/relational-databases/system-tables/dbo-syssessions-transact-sql?view=sql-server-ver17). The [configuration catalog documentation](https://learn.microsoft.com/en-us/sql/relational-databases/system-catalog-views/sys-configurations-transact-sql?view=sql-server-ver17) describes configured/active values and the default-memory exceptions.
 
-## 7. Validate the final changes locally
+## 7. Retain the last SQL readiness probe result
+
+The full run [35052233394](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/35052233394) on `8b63dfca9` finished with **258 passes, one failure, zero skips, and one environment failure**. All 36 SQL Server Admission tests passed. The SQL Server Lifecycle provider-unavailable case failed before its scenario: the fixture's SQL readiness probe did not succeed within the existing 90-second deadline. The attachment identifies that deadline but does not identify the failed readiness condition.
+
+A bounded local probe completed 29 fresh starts of the same pinned SQL image successfully, with a maximum readiness time of 14.139 seconds. One additional attempt was interrupted and excluded from those results; its container was inspected and removed. All seven pre-existing containers were preserved. These successful starts do not explain the hosted timeout.
+
+- Publish the number of completed SQL readiness probes, the last exit code, and one fixed state: `NotObserved`, `Ready`, `AgentStarting`, `ConfigurationPending`, or `SqlCommandFailed`.
+- Classify the existing fixed SQL messages inside the fixture. Never publish raw SQL output, commands, credentials, or container logs.
+- Keep the SQL predicate, 90-second deadline, two-second polling, cancellation, cleanup, and production guard unchanged.
+- Verify failed-probe evidence survives cancellation and resource cleanup while raw output remains private.
+- Exercise the failed live case with the diagnostic change. A passing replay alone does not establish the cause.
+- Require complete Contract and hosted qualification on the final pushed commit again.
+
+Validation: all **53 affected fixture tests** passed, including four new checks for cancellation, cleanup, and raw-output redaction. The single failed live Lifecycle case passed with the new diagnostics; the timeout did not reproduce. All seven pre-existing containers were preserved. Complete final-source Contract (expected **4,872 tests**) and hosted qualification remain required.
+
+## 8. Validate the final changes locally
 
 Use the CDC qualification fixtures' isolated stacks and nightly image digests. Preserve unrelated Docker containers and remove only resources created by these runs. Run local builds and tests sequentially.
 
@@ -145,7 +160,7 @@ Use the CDC qualification fixtures' isolated stacks and nightly image digests. P
 
 PowerShell 7.4 failed empty-environment-variable tests locally; 7.6 preserves the distinction required by those tests. A skipped live test or environment failure does not count as qualification.
 
-## 8. Commit, push, and qualify the final commit
+## 9. Commit, push, and qualify the final commit
 
 - [x] Review the final diff against the story contracts. Record the port-fix provenance and explain each production correction.
 - [ ] Commit and push to `fix-nightly-cdc-qualified-image`.
@@ -163,12 +178,13 @@ Recorded evidence as of this plan update. Results from the final hosted run and 
 
 | Evidence | Result | Limit |
 | --- | --- | --- |
+| [Full run 35052233394](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/35052233394) on `8b63dfca9` | 258 passed, one failed, zero skips; 12/13 jobs passed | SQL readiness timeout before a Lifecycle scenario; exact failed condition unknown. Local and hosted Contract passed all 4,868 tests. DMS and Config CI gates passed; CLA status is missing. |
 | [Full run 35046746577](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/35046746577) on `4139dd3ac` | 258 passed, one failed, zero skips; 12/13 jobs passed | Startup guard rejected pending server configuration. Hosted Contract passed 4,868 tests and all required PR checks passed. The intact-restart case exercised an initial `-1` sample and passed after fresh valid evidence. |
 | [Full run 35040814242](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/35040814242) on `f89639afd` | 258 passed, one failed, zero skips; 12/13 jobs passed | SQL Server Admission fixture preparation failure; original exception missing from published evidence. Hosted Contract passed all 4,867 tests. |
 | Local Contract on PowerShell 7.6.6, production follow-up | 4,867 passed, zero failures/skips | Reviewed source hashes match the tested code. |
 | Focused live production follow-up | Eight passed, zero failures/skips | Four per provider: guarded start, intact restart, and record-size interruptions at boundaries 1 and 5. Eight evidence attachments and resource cleanup verified; no negative lag sample occurred in this live selection. |
-| Latest hosted Contract on `ea4e0b2a2` | 4,837 passed, zero failures/skips | Does not cover live qualification. |
-| Latest local diagnostic selection | 108 passed, including eight live cases across both providers | Focused selection; final 100 offline cases also passed after the last diagnostic edit. |
+| Hosted Contract on `ea4e0b2a2` | 4,837 passed, zero failures/skips | Does not cover live qualification. |
+| Earlier local diagnostic selection | 108 passed, including eight live cases across both providers | Focused selection; final 100 offline cases also passed after the last diagnostic edit. |
 | [Full run 35018130919](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/35018130919) on `a57ab747f` | 256 passed, three failed, zero skips/environment failures | Previous complete matrix remains unsuccessful. |
 | [PostgreSQL Lifecycle 35032631052](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/35032631052) on `ea4e0b2a2` | 15 passed, zero failures/skips/environment failures | Does not explain the earlier PostgreSQL telemetry failure. |
 | SQL Server Lifecycle 35032641677 on `ea4e0b2a2` | 14 passed, one failed, zero skips/environment failures | Confirms the unusable `-1` post-restart lag sample. |

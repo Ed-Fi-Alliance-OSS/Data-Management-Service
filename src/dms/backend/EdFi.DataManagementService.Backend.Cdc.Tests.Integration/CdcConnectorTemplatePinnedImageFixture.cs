@@ -25,6 +25,9 @@ namespace EdFi.DataManagementService.Backend.Cdc.Tests.Integration;
 internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
 {
     private string _startupStage = "configure-resources";
+    private int _sqlServerReadinessProbeCount;
+    private int _sqlServerReadinessExitCode;
+    private string _sqlServerReadinessState = "NotObserved";
 
     private const string ConnectorPasswordEnvironmentVariable = "CDC_DATABASE_PASSWORD";
     internal const string ConnectorDatabasePassword = "EdFi_Dms1!";
@@ -377,6 +380,12 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
                     SqlServerErrorNumbers = cause is SqlException sqlException
                         ? sqlException.Errors.Cast<SqlError>().Select(error => error.Number).Take(8).ToArray()
                         : [],
+                    SqlServerReadiness = new
+                    {
+                        Attempts = _sqlServerReadinessProbeCount,
+                        LastExitCode = _sqlServerReadinessExitCode,
+                        State = _sqlServerReadinessState,
+                    },
                     Locations = locations,
                 }
             )
@@ -1413,7 +1422,7 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
                         $"""
                         for sqlcmd in /opt/mssql-tools18/bin/sqlcmd /opt/mssql-tools/bin/sqlcmd sqlcmd; do
                           if command -v "$sqlcmd" >/dev/null 2>&1 || test -x "$sqlcmd"; then
-                            "$sqlcmd" -b -C -S localhost -U sa -P '{ConnectorDatabasePassword}' -Q "{SqlServerReadinessQuery}" >/dev/null
+                            "$sqlcmd" -b -C -S localhost -U sa -P '{ConnectorDatabasePassword}' -Q "{SqlServerReadinessQuery}"
                             exit $?
                           fi
                         done
@@ -1422,6 +1431,24 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
                     ],
                     cancellationToken
                 );
+
+                _sqlServerReadinessProbeCount++;
+                _sqlServerReadinessExitCode = result.ExitCode;
+                // Retain only fixed classifications, never raw command output, in published evidence.
+                string output = result.StandardOutput + result.StandardError;
+                _sqlServerReadinessState = result.ExitCode switch
+                {
+                    0 => "Ready",
+                    _ when output.Contains(
+                            "SQL Server Agent has not finished startup.",
+                            StringComparison.Ordinal
+                        ) => "AgentStarting",
+                    _ when output.Contains(
+                            "SQL Server configuration has not settled.",
+                            StringComparison.Ordinal
+                        ) => "ConfigurationPending",
+                    _ => "SqlCommandFailed",
+                };
 
                 return result;
             },
