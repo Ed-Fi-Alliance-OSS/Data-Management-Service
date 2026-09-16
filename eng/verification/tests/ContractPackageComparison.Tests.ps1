@@ -136,6 +136,12 @@ Describe "ConvertTo-NormalizedPackageVersion uses NuGet's own parser" {
 
     # A hand-rolled parser accepted this and returned 1.0.0, quietly repairing metadata into a value
     # that compares equal to a real version.
+    # Valid shorthand NuGet accepts. The hand-rolled parser this replaced rejected it, which would
+    # have failed a lane over a spelling NuGet resolves without complaint.
+    It "accepts a single-segment version and normalizes it" {
+        ConvertTo-NormalizedPackageVersion -Version "1" | Should -BeExactly "1.0.0"
+    }
+
     It "rejects a dangling prerelease separator rather than repairing it" {
         { ConvertTo-NormalizedPackageVersion -Version "1.0.0-" } |
             Should -Throw -ExpectedMessage "*is not a package version NuGet accepts*"
@@ -278,6 +284,13 @@ Describe "ConvertTo-CanonicalXmlDocumentation keeps distinctions a reader can se
             Should -BeFalse
     }
 
+    It "ignores the order two members are declared in" {
+        Test-DocumentationChanged `
+            -Left '<member name="M:X.A"><summary>a</summary></member><member name="M:X.B"><summary>b</summary></member>' `
+            -Right '<member name="M:X.B"><summary>b</summary></member><member name="M:X.A"><summary>a</summary></member>' |
+            Should -BeFalse
+    }
+
     It "rejects a file with no members rather than returning an empty list" {
         $path = New-XmlDocumentation -Members ""
 
@@ -308,6 +321,43 @@ Describe "ConvertTo-CanonicalXmlDocumentation keeps distinctions a reader can se
 
         { ConvertTo-CanonicalXmlDocumentation -Path $path } |
             Should -Throw -ExpectedMessage "*not well-formed*"
+    }
+}
+
+Describe "ConvertTo-OrdinalOrder and ConvertTo-CanonicalAssetSet" {
+    # Sort-Object orders by the current culture even with -CaseSensitive, so a canonical list ordered
+    # through it can come out differently on two machines and a paired comparison then reports a
+    # collation difference as a contract change.
+    It "orders ordinally rather than by culture" {
+        $ordered = ConvertTo-OrdinalOrder -Value @("b", "A", "a", "B")
+
+        ($ordered -join ",") | Should -BeExactly "A,B,a,b"
+    }
+
+    It "returns an empty array rather than null for an empty input" {
+        $ordered = ConvertTo-OrdinalOrder -Value @()
+
+        $ordered.Count | Should -Be 0
+        $null -eq $ordered | Should -BeFalse
+    }
+
+    It "reads a reordered asset set as the same set" {
+        ConvertTo-CanonicalAssetSet -Assets "compile,runtime" |
+            Should -BeExactly (ConvertTo-CanonicalAssetSet -Assets "runtime, compile")
+    }
+
+    It "reads two spellings of one asset group as one" {
+        ConvertTo-CanonicalAssetSet -Assets "Compile" |
+            Should -BeExactly (ConvertTo-CanonicalAssetSet -Assets "compile")
+    }
+
+    It "keeps a genuinely different asset set apart" {
+        ConvertTo-CanonicalAssetSet -Assets "compile" |
+            Should -Not -BeExactly (ConvertTo-CanonicalAssetSet -Assets "compile,runtime")
+    }
+
+    It "reads an empty attribute as no assets" {
+        ConvertTo-CanonicalAssetSet -Assets "" | Should -BeExactly ""
     }
 }
 
@@ -362,6 +412,33 @@ Describe "ConvertTo-CanonicalDependencySet" {
             -Left '<dependencies><dependency id="Example.Package" version="1.0.0" /></dependencies>' `
             -Right '<dependencies><dependency id="example.package" version="1.0.0" /></dependencies>' |
             Should -BeFalse
+    }
+
+    It "reads a reordered exclude attribute as the same dependency" {
+        Test-DependencyChanged `
+            -Left '<dependencies><dependency id="A" version="1.0.0" exclude="compile,runtime" /></dependencies>' `
+            -Right '<dependencies><dependency id="A" version="1.0.0" exclude="runtime, compile" /></dependencies>' |
+            Should -BeFalse
+    }
+
+    It "rejects a nuspec carrying more than one dependencies element" {
+        $path = New-Nuspec -Dependencies '<dependencies><dependency id="A" version="1.0.0" /></dependencies><dependencies><dependency id="B" version="1.0.0" /></dependencies>'
+
+        { ConvertTo-CanonicalDependencySet -NuspecPath $path } |
+            Should -Throw -ExpectedMessage "*exactly one is allowed*"
+    }
+
+    It "rejects one framework declaring one package id twice" {
+        $path = New-Nuspec -Dependencies '<dependencies><group targetFramework="net10.0"><dependency id="A" version="1.0.0" /><dependency id="A" version="2.0.0" /></group></dependencies>'
+
+        { ConvertTo-CanonicalDependencySet -NuspecPath $path } |
+            Should -Throw -ExpectedMessage "*more than once*"
+    }
+
+    It "allows one package id in two different frameworks" {
+        $path = New-Nuspec -Dependencies '<dependencies><group targetFramework="net10.0"><dependency id="A" version="1.0.0" /></group><group targetFramework="net9.0"><dependency id="A" version="1.0.0" /></group></dependencies>'
+
+        (ConvertTo-CanonicalDependencySet -NuspecPath $path).Count | Should -Be 2
     }
 
     It "rejects a dependency with no id" {

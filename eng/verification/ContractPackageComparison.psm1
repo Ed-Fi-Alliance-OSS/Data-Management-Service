@@ -92,6 +92,66 @@ function Initialize-NuGetVersioning {
 
 <#
 .DESCRIPTION
+Sorts strings ordinally.
+
+Sort-Object orders by the current culture even with -CaseSensitive, so the same two canonical lines
+can order differently on two machines, and a comparison that walks both lists in step then reports
+differences that are only a collation difference. Every canonical list this module produces is
+ordered through here instead.
+#>
+function ConvertTo-OrdinalOrder {
+    [CmdletBinding()]
+    [OutputType([string[]], [object[]])]
+    param(
+        [Parameter(Mandatory)]
+        [AllowEmptyCollection()]
+        [string[]]
+        $Value
+    )
+
+    $sorted = [string[]] @($Value)
+    [array]::Sort($sorted, [System.StringComparer]::Ordinal)
+
+    return , $sorted
+}
+
+<#
+.DESCRIPTION
+The canonical form of a dependency's include or exclude attribute.
+
+NuGet reads these as a comma-delimited set of asset groups, so "compile,runtime" and
+"runtime, compile" say the same thing and must not demand a version bump. The tokens are trimmed,
+lowercased and ordered ordinally; an empty attribute stays empty.
+#>
+function ConvertTo-CanonicalAssetSet {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)]
+        [AllowEmptyString()]
+        [string]
+        $Assets
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Assets)) {
+        return ""
+    }
+
+    $tokens = @(
+        $Assets -split ',' |
+            ForEach-Object { $_.Trim().ToLowerInvariant() } |
+            Where-Object { $_.Length -gt 0 }
+    )
+
+    if ($tokens.Count -eq 0) {
+        return ""
+    }
+
+    return (ConvertTo-OrdinalOrder -Value $tokens) -join ','
+}
+
+<#
+.DESCRIPTION
 The NuGet-normalized form of a package version.
 
 Feed URLs, and therefore the comparison that decides whether a version is already published, are
@@ -307,7 +367,7 @@ function ConvertTo-CanonicalXmlDocumentation {
     # The unary comma is load bearing: PowerShell unwraps a one-element array into a scalar and an
     # empty one into $null on return, and a caller that received $null for "no members" would then
     # compare a null against a null and call two broken packages identical.
-    return , [string[]] @($canonical | Sort-Object -CaseSensitive)
+    return ConvertTo-OrdinalOrder -Value @($canonical)
 }
 
 <#
@@ -412,9 +472,8 @@ function ConvertTo-CanonicalXmlNode {
             $element = [System.Xml.XmlElement] $child
             $childPreserve = $Preserve -or (Test-XmlPreserveSpace -Node $element)
 
-            $attributes = @(
+            $attributes = ConvertTo-OrdinalOrder -Value @(
                 $element.Attributes |
-                    Sort-Object -Property Name -CaseSensitive |
                     ForEach-Object {
                         (ConvertTo-CanonicalXmlText -Value $_.Name) + "=" +
                         (ConvertTo-CanonicalXmlText -Value $_.Value)
@@ -485,11 +544,19 @@ function ConvertTo-CanonicalDependencySet {
     }
 
     $document = [xml] (Get-Content -LiteralPath $NuspecPath -Raw)
-    $dependencies = $document.SelectSingleNode("//*[local-name()='dependencies']")
+    $declarations = @($document.SelectNodes("//*[local-name()='dependencies']"))
 
-    if ($null -eq $dependencies) {
+    # More than one dependencies element is not a nuspec NuGet produces, and picking the first would
+    # silently compare one declaration while a consumer resolves against another.
+    if ($declarations.Count -gt 1) {
+        throw "Cannot read declared dependencies: $NuspecPath carries $($declarations.Count) dependencies elements; exactly one is allowed."
+    }
+
+    if ($declarations.Count -eq 0) {
         return , [string[]] @()
     }
+
+    $dependencies = $declarations[0]
 
     $entries = foreach ($node in $dependencies.ChildNodes) {
         if ($node.NodeType -ne [System.Xml.XmlNodeType]::Element) {
@@ -533,7 +600,22 @@ function ConvertTo-CanonicalDependencySet {
         }
     }
 
-    return , [string[]] @($entries | Sort-Object -CaseSensitive)
+    $ordered = ConvertTo-OrdinalOrder -Value @($entries)
+
+    # One framework cannot declare one package id twice: NuGet would resolve one of them and the
+    # other is dead metadata, so comparing a set that silently held both would be comparing
+    # something no consumer sees.
+    $seen = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+
+    foreach ($entry in $ordered) {
+        $identity = ($entry -split '\|')[0..1] -join '|'
+
+        if (-not $seen.Add($identity)) {
+            throw "Cannot read declared dependencies: $NuspecPath declares '$($identity.Trim())' more than once."
+        }
+    }
+
+    return , $ordered
 }
 
 <#
@@ -565,8 +647,11 @@ function ConvertTo-CanonicalDependencyEntry {
     }
 
     $range = ConvertTo-NormalizedVersionRange -Range $Dependency.GetAttribute("version")
-    $include = $Dependency.GetAttribute("include")
-    $exclude = $Dependency.GetAttribute("exclude")
+
+    # Normalized as sets: NuGet reads these as comma-delimited asset groups, so a reordering is the
+    # same statement and must not demand a version bump.
+    $include = ConvertTo-CanonicalAssetSet -Assets $Dependency.GetAttribute("include")
+    $exclude = ConvertTo-CanonicalAssetSet -Assets $Dependency.GetAttribute("exclude")
 
     # Normalized rather than compared as written: net10.0 and .NETCoreApp,Version=v10.0 select the
     # same group, so two spellings of one framework must not read as two groups.
@@ -576,6 +661,8 @@ function ConvertTo-CanonicalDependencyEntry {
 }
 
 Export-ModuleMember -Function `
+    ConvertTo-OrdinalOrder, `
+    ConvertTo-CanonicalAssetSet, `
     ConvertTo-NormalizedPackageVersion, `
     ConvertTo-NormalizedPackageId, `
     ConvertTo-NormalizedVersionRange, `
