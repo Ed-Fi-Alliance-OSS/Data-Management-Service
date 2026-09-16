@@ -51,6 +51,8 @@ public sealed record CdcEstablishedValidationObservation(
     // never a mutation or reuse of this pass's provider, offset or worker evidence.
     internal bool PreStartInvalidatedByRecovery { get; init; }
 
+    internal bool AwaitingInitialCurrentLag { get; init; }
+
     public override string ToString() => nameof(CdcEstablishedValidationObservation);
 
     [JsonIgnore]
@@ -642,6 +644,17 @@ public sealed partial class CdcEstablishedValidation
             {
                 result = result with
                 {
+                    AwaitingInitialCurrentLag =
+                        mode == CdcEstablishedValidationMode.RunningPublication
+                        && managedResumeId != Guid.Empty
+                        && result.PreStartEligible
+                        && pass.CurrentLagUnavailable
+                        && result.Diagnostics.All(d =>
+                            d.Component == CdcDeploymentComponent.Metrics
+                            && d.Failure
+                                is CdcDeploymentFailure.ValidationFailed
+                                    or CdcDeploymentFailure.Unavailable
+                        ),
                     PreStartInvalidatedByRecovery =
                         mode == CdcEstablishedValidationMode.PreStart
                         && result.PreStartEligible
