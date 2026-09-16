@@ -16,6 +16,7 @@ using FakeItEasy;
 using FluentAssertions;
 using ImpromptuInterface;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -109,23 +110,9 @@ public class XsdMetaDataModuleTests
         string prefix
     )
     {
-        var tenantValidator = A.Fake<ITenantValidator>();
-        A.CallTo(() => tenantValidator.ValidateTenantAsync("tenant1")).Returns(true);
-        var dataStoreProvider = A.Fake<IDataStoreProvider>();
-        A.CallTo(() => dataStoreProvider.GetAll(multiTenancy ? "tenant1" : null))
-            .Returns([
-                new DataStore(
-                    1,
-                    "Test",
-                    "TestInstance",
-                    "test-connection-string",
-                    new()
-                    {
-                        [new RouteQualifierName("districtId")] = new RouteQualifierValue("255901"),
-                        [new RouteQualifierName("schoolYear")] = new RouteQualifierValue("2024"),
-                    }
-                ),
-            ]);
+        var metadataRouteValidator = A.Fake<IMetadataRouteValidator>();
+        A.CallTo(() => metadataRouteValidator.ValidateAsync(A<HttpContext>._, A<CancellationToken>._))
+            .Returns(true);
         A.CallTo(() => _contentProvider!.TryLoadXsdContent("file1.xsd", "ed-fi"))
             .Returns(new Lazy<Stream>(() => new MemoryStream(Encoding.UTF8.GetBytes("test-content"))));
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
@@ -136,8 +123,7 @@ public class XsdMetaDataModuleTests
                 TestMockHelper.AddEssentialMocks(collection);
                 collection.AddTransient(_ => _apiService!);
                 collection.AddTransient(_ => _contentProvider!);
-                collection.AddTransient(_ => tenantValidator);
-                collection.AddTransient(_ => dataStoreProvider);
+                collection.AddTransient(_ => metadataRouteValidator);
                 collection.Configure<FrontendAppSettings>(options =>
                 {
                     options.MultiTenancy = multiTenancy;
