@@ -14,12 +14,13 @@ using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
+using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure.Extensions;
 using Microsoft.Extensions.Options;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Modules;
 
-public partial class MetadataEndpointModule : IEndpointModule
+public partial class MetadataEndpointModule(IOptions<Configuration.AppSettings> appSettings) : IEndpointModule
 {
     private const string DataOpenApiRouteBase = "data";
     private const string ChangeQueriesOpenApiRouteBase = "changeQueries/v1";
@@ -269,6 +270,167 @@ public partial class MetadataEndpointModule : IEndpointModule
         endpoints.MapGet(
             $"/metadata/specifications/profiles/{{profileName}}/resources-spec.json",
             GetProfileResourceOpenApiSpec
+        );
+
+        string routePattern = FixedRoutePattern.Build(
+            appSettings.Value.GetRouteQualifierSegmentsArray(),
+            appSettings.Value.MultiTenancy
+        );
+
+        if (string.IsNullOrEmpty(routePattern))
+        {
+            return;
+        }
+
+        endpoints.MapGet(
+            $"{routePattern}/metadata",
+            async (HttpContext httpContext, IMetadataRouteValidator metadataRouteValidator) =>
+            {
+                if (!await metadataRouteValidator.ValidateAsync(httpContext))
+                {
+                    return;
+                }
+
+                await GetMetadata(httpContext);
+            }
+        );
+        endpoints.MapGet(
+            $"{routePattern}/metadata/dependencies",
+            async (
+                HttpContext httpContext,
+                IMetadataRouteValidator metadataRouteValidator,
+                IApiService apiService
+            ) =>
+            {
+                if (!await metadataRouteValidator.ValidateAsync(httpContext))
+                {
+                    return;
+                }
+
+                var acceptHeader = httpContext.Request.Headers["Accept"].ToString();
+
+                if (acceptHeader.Contains("application/graphml", StringComparison.OrdinalIgnoreCase))
+                {
+                    await GetDependenciesGraphML(httpContext, apiService);
+                }
+                else
+                {
+                    await GetDependencies(httpContext, apiService);
+                }
+            }
+        );
+        endpoints.MapGet(
+            $"{routePattern}/metadata/specifications",
+            async (
+                HttpContext httpContext,
+                IMetadataRouteValidator metadataRouteValidator,
+                IApiService apiService
+            ) =>
+            {
+                if (!await metadataRouteValidator.ValidateAsync(httpContext))
+                {
+                    return;
+                }
+
+                await GetSections(httpContext, apiService);
+            }
+        );
+        endpoints.MapGet(
+            $"{routePattern}/metadata/specifications/resources-spec.json",
+            async (
+                HttpContext httpContext,
+                IMetadataRouteValidator metadataRouteValidator,
+                IApiService apiService,
+                IDataStoreProvider dataStoreProvider,
+                IOptions<Configuration.AppSettings> options
+            ) =>
+            {
+                if (!await metadataRouteValidator.ValidateAsync(httpContext))
+                {
+                    return;
+                }
+
+                await GetResourceOpenApiSpec(httpContext, apiService, dataStoreProvider, options);
+            }
+        );
+        endpoints.MapGet(
+            $"{routePattern}/metadata/specifications/descriptors-spec.json",
+            async (
+                HttpContext httpContext,
+                IMetadataRouteValidator metadataRouteValidator,
+                IApiService apiService,
+                IDataStoreProvider dataStoreProvider,
+                IOptions<Configuration.AppSettings> options
+            ) =>
+            {
+                if (!await metadataRouteValidator.ValidateAsync(httpContext))
+                {
+                    return;
+                }
+
+                await GetDescriptorOpenApiSpec(httpContext, apiService, dataStoreProvider, options);
+            }
+        );
+        endpoints.MapGet(
+            $"{routePattern}/metadata/changequeries/v1/swagger.json",
+            async (
+                HttpContext httpContext,
+                IMetadataRouteValidator metadataRouteValidator,
+                IApiService apiService,
+                IDataStoreProvider dataStoreProvider,
+                IOptions<Configuration.AppSettings> options
+            ) =>
+            {
+                if (!await metadataRouteValidator.ValidateAsync(httpContext))
+                {
+                    return;
+                }
+
+                await GetChangeQueriesOpenApiSpec(httpContext, apiService, dataStoreProvider, options);
+            }
+        );
+        endpoints.MapGet(
+            $"{routePattern}/metadata/specifications/{{section}}-spec.json",
+            async (
+                HttpContext httpContext,
+                IMetadataRouteValidator metadataRouteValidator,
+                IContentProvider contentProvider,
+                IOptions<Configuration.AppSettings> options,
+                IDataStoreProvider dataStoreProvider
+            ) =>
+            {
+                if (!await metadataRouteValidator.ValidateAsync(httpContext))
+                {
+                    return;
+                }
+
+                await GetSectionMetadata(httpContext, contentProvider, options, dataStoreProvider);
+            }
+        );
+        endpoints.MapGet(
+            $"{routePattern}/metadata/specifications/profiles/{{profileName}}/resources-spec.json",
+            async (
+                HttpContext httpContext,
+                string profileName,
+                IMetadataRouteValidator metadataRouteValidator,
+                IDataStoreProvider dataStoreProvider,
+                IApiService apiService,
+                IOptions<Configuration.AppSettings> options
+            ) =>
+            {
+                if (!await metadataRouteValidator.ValidateAsync(httpContext))
+                {
+                    return;
+                }
+
+                await GetProfileResourceOpenApiSpec(
+                    httpContext,
+                    profileName,
+                    dataStoreProvider,
+                    apiService,
+                    options
+                );
+            }
         );
     }
 
