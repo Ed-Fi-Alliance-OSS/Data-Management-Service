@@ -727,6 +727,161 @@ public class OAuthManagerTests
     }
 
     /// <summary>
+    /// U+1F600 GRINNING FACE, built from its code point rather than written as a literal so the
+    /// test data cannot be altered by a re-encoding of this file. It survives free-text
+    /// sanitization intact - an emoji is neither a control nor a format character - which is what
+    /// makes it available to be broken in half by the truncation that follows.
+    /// </summary>
+    private static readonly string _emoji = char.ConvertFromUtf32(0x1F600);
+
+    /// <summary>
+    /// Whether <paramref name="value"/> is malformed UTF-16: a high surrogate not followed by a
+    /// low one, or a low surrogate not preceded by a high one. Written out rather than expressed
+    /// as a comparison against an expected string so the assertion states the property at issue -
+    /// a log sink disagreeing with another about what the upstream service said - rather than
+    /// merely a value.
+    /// </summary>
+    private static bool ContainsUnpairedSurrogate(string value)
+    {
+        int index = 0;
+
+        while (index < value.Length)
+        {
+            char unit = value[index];
+
+            if (char.IsHighSurrogate(unit))
+            {
+                if (index + 1 >= value.Length || !char.IsLowSurrogate(value[index + 1]))
+                {
+                    return true;
+                }
+
+                // A well-formed pair is two code units, and its low half must not then be
+                // examined on its own - it would read as an orphan.
+                index += 2;
+                continue;
+            }
+
+            if (char.IsLowSurrogate(unit))
+            {
+                return true;
+            }
+
+            index++;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// The cap counts UTF-16 code units, so a body of 2047 ASCII characters followed by an astral
+    /// character puts the cut between the halves of a well-formed surrogate pair. Taking the first
+    /// 2048 units verbatim would leave a lone high surrogate in a value the sanitizer had already
+    /// made well-formed - the defect the rest of this branch exists to prevent, reintroduced by
+    /// the truncation three files away from the rule that forbids it.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Truncation_Boundary_That_Splits_An_Astral_Character
+    {
+        private static readonly string _leadingText = new('a', ExpectedMaxLoggedContentLength - 1);
+
+        private string _loggedContent = default!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            (_, RecordingLogger<OAuthManager> logger) = await UpstreamResponds(
+                HttpStatusCode.InternalServerError,
+                _leadingText + _emoji
+            );
+            _loggedContent = LoggedUpstreamContent(logger);
+        }
+
+        [Test]
+        public void It_does_not_log_an_unpaired_surrogate()
+        {
+            ContainsUnpairedSurrogate(_loggedContent).Should().BeFalse();
+        }
+
+        [Test]
+        public void It_drops_the_split_character_whole_rather_than_keeping_half_of_it()
+        {
+            _loggedContent.Should().Be(_leadingText + ExpectedTruncationSuffix);
+        }
+
+        [Test]
+        public void It_still_marks_the_value_as_truncated()
+        {
+            // Backing the boundary off must not cost the operator the one signal that anything
+            // was cut at all.
+            _loggedContent.Should().EndWith(ExpectedTruncationSuffix);
+        }
+    }
+
+    /// <summary>
+    /// The complement of the fixture above, in both directions: a cut landing on ordinary BMP text
+    /// must still spend the whole budget, and a cut landing immediately after a complete surrogate
+    /// pair must not back off either - the pair is intact, and giving up a code unit for it would
+    /// be an off-by-one in the ordinary case rather than a fix for the astral one.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Truncation_Boundary_That_Does_Not_Split_A_Character
+    {
+        private static readonly string _bmpBody = new('a', ExpectedMaxLoggedContentLength + 500);
+
+        /// <summary>
+        /// The emoji occupies the last two code units of the budget, so the cut falls after its
+        /// low half rather than between the two.
+        /// </summary>
+        private static readonly string _bodyEndingOnACompletePair =
+            new string('a', ExpectedMaxLoggedContentLength - 2) + _emoji + new string('b', 500);
+
+        private string _loggedBmpContent = default!;
+        private string _loggedPairContent = default!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            (_, RecordingLogger<OAuthManager> bmpLogger) = await UpstreamResponds(
+                HttpStatusCode.InternalServerError,
+                _bmpBody
+            );
+            _loggedBmpContent = LoggedUpstreamContent(bmpLogger);
+
+            (_, RecordingLogger<OAuthManager> pairLogger) = await UpstreamResponds(
+                HttpStatusCode.InternalServerError,
+                _bodyEndingOnACompletePair
+            );
+            _loggedPairContent = LoggedUpstreamContent(pairLogger);
+        }
+
+        [Test]
+        public void It_spends_the_whole_budget_on_ordinary_text()
+        {
+            _loggedBmpContent
+                .Should()
+                .Be(new string('a', ExpectedMaxLoggedContentLength) + ExpectedTruncationSuffix);
+        }
+
+        [Test]
+        public void It_spends_the_whole_budget_when_the_boundary_follows_a_complete_pair()
+        {
+            _loggedPairContent
+                .Should()
+                .Be(new string('a', ExpectedMaxLoggedContentLength - 2) + _emoji + ExpectedTruncationSuffix);
+        }
+
+        [Test]
+        public void It_keeps_the_astral_character_that_fits_within_the_budget()
+        {
+            _loggedPairContent.Should().Contain(_emoji);
+            ContainsUnpairedSurrogate(_loggedPairContent).Should().BeFalse();
+        }
+    }
+
+    /// <summary>
     /// Order-of-operations guard. Sanitizing and then truncating is not interchangeable with
     /// truncating and then sanitizing: an upstream body padded with control characters spends the
     /// whole budget on characters the sanitizer removes under the second order, so the diagnostic

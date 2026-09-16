@@ -232,12 +232,42 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
         {
             string sanitized = LoggingSanitizer.SanitizeFreeTextForLogging(content);
 
-            return sanitized.Length <= MaxLoggedUpstreamContentLength
-                ? sanitized
-                : string.Concat(
-                    sanitized.AsSpan(0, MaxLoggedUpstreamContentLength),
-                    LoggedContentTruncationSuffix
-                );
+            if (sanitized.Length <= MaxLoggedUpstreamContentLength)
+            {
+                return sanitized;
+            }
+
+            // The cap counts UTF-16 code units, so the cut can land between the halves of a
+            // surrogate pair and manufacture a lone high surrogate that the upstream body never
+            // contained - 2047 ASCII characters followed by an emoji is the whole of it. That is
+            // the same defect this branch exists to prevent elsewhere, so it is backed off here
+            // rather than tolerated: an unpaired surrogate reaches a JSON-formatted log sink as
+            // U+FFFD and a plain-text one as the raw code unit, so two sinks reading the same
+            // event disagree about what the upstream service said. The astral character is
+            // dropped whole rather than half-kept, costing one code unit of a 2048-unit budget.
+            //
+            // One test, unlike the two-part test in CorrelationIdNormalizer.Normalize, and the
+            // difference is deliberate - do not "restore" the missing half. That method cuts
+            // *unsanitized* input, where a lone high surrogate the caller actually sent can sit
+            // at the boundary; it has to check for the low half so it backs off only from a pair
+            // it is itself about to break, leaving a pre-existing orphan for the allowlist to
+            // remove and keeping its Truncated/CharactersRemoved flags honest. Here the cut
+            // happens *after* sanitization, and SanitizeByCodePoint drops every unpaired
+            // surrogate in both of its passes, so any high surrogate still present is necessarily
+            // followed by its low half and there is nothing for a second test to distinguish.
+            //
+            // The index is in bounds for the same reason the branch was entered: it runs only
+            // when sanitized.Length exceeds the cap, so both sanitized[cap - 1] and the code unit
+            // at sanitized[cap] exist, and `retained` is never driven below cap - 1.
+            int retained = MaxLoggedUpstreamContentLength;
+            if (char.IsHighSurrogate(sanitized[retained - 1]))
+            {
+                retained--;
+            }
+
+            // The suffix is appended whichever way the boundary moved. It is the operator's only
+            // signal that anything was cut at all, and backing off must not cost it.
+            return string.Concat(sanitized.AsSpan(0, retained), LoggedContentTruncationSuffix);
         }
 
         static HttpResponseMessage GenerateProblemDetailResponse(
