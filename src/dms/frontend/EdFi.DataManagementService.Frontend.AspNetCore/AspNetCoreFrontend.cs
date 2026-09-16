@@ -14,6 +14,7 @@ using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Utilities;
+using EdFi.DataManagementService.Core.Validation;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure.Extensions;
 using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.Extensions.DependencyInjection;
@@ -466,33 +467,33 @@ public static class AspNetCoreFrontend
     }
 
     /// <summary>
-    /// The canonical spellings of the query parameter names recognized on every request: the
-    /// traditional paging and count controls and the cursor paging controls.
+    /// The canonical spellings this request's operation needs, read from the reserved query parameter
+    /// catalog rather than listed here.
     /// </summary>
-    private static readonly string[] QueryParameterNamesCanonicalizedEverywhere =
-    [
-        "limit",
-        "offset",
-        "totalCount",
-        "pageToken",
-        "pageSize",
-    ];
-
-    /// <summary>
-    /// The canonical spelling of the partition count, recognized only on the partitions operation.
-    /// </summary>
-    private const string PartitionNumberParameterName = "number";
+    /// <remarks>
+    /// Exactly the names Core matches ordinally, which is what makes the catalog the right source: a
+    /// name Core looks up case-insensitively needs no canonical spelling, and a name it matches
+    /// ordinally cannot be recognized without one. The change-version names fall in the first group
+    /// and are correctly absent.
+    /// </remarks>
+    /// <remarks>
+    /// The partitions operation reserves the count in addition, so it alone canonicalizes that name.
+    /// Rewriting its spelling elsewhere would change resource filtering and unknown-field error text
+    /// on every collection, because the count is an ordinary filterable property name off this route.
+    /// Asking the catalog per operation rather than adding the one name to a shared list is what keeps
+    /// that true for any further name reserved on one operation and not the other.
+    /// </remarks>
+    private static IReadOnlyList<string> CanonicalQueryParameterNamesFor(string dmsPath) =>
+        ReservedQueryParameters.OrdinalFilterExclusionsOn(
+            IsPartitionsPath(dmsPath)
+                ? ReservedQueryParameterOperations.Partitions
+                : ReservedQueryParameterOperations.CollectionGet
+        );
 
     /// <summary>
     /// Canonicalizes the query parameter names Core matches exactly. A name that is not recognized is
     /// returned exactly as supplied.
     /// </summary>
-    /// <remarks>
-    /// The cursor parameters are canonicalized everywhere. The partition count is canonicalized only
-    /// on the partitions operation, because <c>number</c> is generic enough to collide with a
-    /// resource query field, and rewriting its spelling elsewhere would change resource filtering and
-    /// unknown-field error text on collections this feature does not otherwise touch.
-    /// </remarks>
     /// <remarks>
     /// Recognition is an ordinal case-insensitive comparison, which is the same relation the query
     /// collection uses for its own keys. Matching it exactly is what keeps the result usable as a
@@ -506,26 +507,14 @@ public static class AspNetCoreFrontend
     /// </remarks>
     private static string FromValidatedQueryParam(
         KeyValuePair<string, StringValues> queryParam,
-        bool canonicalizePartitionNumber
+        IReadOnlyList<string> canonicalNames
     )
     {
         string suppliedName = queryParam.Key;
 
-        string? canonicalName = Array.Find(
-            QueryParameterNamesCanonicalizedEverywhere,
-            name => string.Equals(name, suppliedName, StringComparison.OrdinalIgnoreCase)
-        );
-
-        if (canonicalName is not null)
-        {
-            return canonicalName;
-        }
-
-        return
-            canonicalizePartitionNumber
-            && string.Equals(suppliedName, PartitionNumberParameterName, StringComparison.OrdinalIgnoreCase)
-            ? PartitionNumberParameterName
-            : suppliedName;
+        return canonicalNames.FirstOrDefault(canonicalName =>
+                string.Equals(canonicalName, suppliedName, StringComparison.OrdinalIgnoreCase)
+            ) ?? suppliedName;
     }
 
     /// <summary>
@@ -596,7 +585,7 @@ public static class AspNetCoreFrontend
                 : JsonBodyExtractionResult.Empty;
         string? rawBody = includeBody && !parseJsonBody ? await ExtractRawBodyFrom(httpRequest) : null;
 
-        bool canonicalizePartitionNumber = IsPartitionsPath(dmsPath);
+        IReadOnlyList<string> canonicalQueryParameterNames = CanonicalQueryParameterNamesFor(dmsPath);
 
         return new(
             Body: rawBody,
@@ -608,7 +597,7 @@ public static class AspNetCoreFrontend
             // last-value-wins. Canonicalizing a name uses the same comparison as the query collection's
             // own comparer, so two entries it holds separately cannot produce one canonical key.
             QueryParameters: httpRequest.Query.ToDictionary(
-                queryParam => FromValidatedQueryParam(queryParam, canonicalizePartitionNumber),
+                queryParam => FromValidatedQueryParam(queryParam, canonicalQueryParameterNames),
                 x => x.Value[^1] ?? ""
             ),
             TraceId: ExtractTraceIdFrom(httpRequest, appSettings),
