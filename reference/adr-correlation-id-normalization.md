@@ -25,11 +25,30 @@ Two sanitizers already existed for different purposes:
   `SanitizeForLogging` at the time of this decision):
   letters, digits, spaces, and a small set of safe punctuation (`_ - . : / \`). Used for
   server-controlled values like `Method` and `Path`.
-- A new **broader allowlist**, added for correlation IDs: all printable non-control characters —
-  effectively `!char.IsControl(c)`, with no positive character enumeration, plus removal of
-  `U+2028`/`U+2029` (LINE SEPARATOR / PARAGRAPH SEPARATOR), which are not control characters but
-  break line-oriented log consumers the same way a line feed does, plus removal of any unpaired
-  surrogate (see [Unpaired surrogates](#unpaired-surrogates-are-removed-unconditionally)).
+- A new **broader allowlist**, added for correlation IDs, stated as negative tests with no
+  positive character enumeration. It removes Unicode category `Cc` (control) and category `Cf`
+  (format) — in `LogSanitizer.SanitizeCorrelationId`, exactly
+  `!Rune.IsControl(r) && Rune.GetUnicodeCategory(r) != UnicodeCategory.Format` — plus
+  `U+2028`/`U+2029` (LINE SEPARATOR / PARAGRAPH SEPARATOR, categories `Zl` and `Zp`), which are
+  not control characters but break line-oriented log consumers the same way a line feed does and
+  are taken out by the `ReplaceLineEndings` call ahead of the predicate rather than by the
+  predicate itself, plus any unpaired surrogate (see
+  [Unpaired surrogates](#unpaired-surrogates-are-removed-unconditionally)). Everything else is
+  kept: printable punctuation, non-ASCII letters, emoji, and category `Zs` whitespace.
+
+  The two categories are removed for different reasons, and the distinction is worth keeping
+  straight. `Cc`, together with the two separators, is what prevents log forging. `Cf` cannot
+  forge a log line — the sinks that receive the value escape their own output — but the
+  zero-width characters, the bidirectional marks, embeddings, overrides and isolates, `U+00AD`,
+  `U+FEFF` and the supplementary-plane TAG block each defeat the one guarantee a correlation ID
+  carries: that an operator can search the logs for the ID the client received. Which code points
+  those are, and what each costs an operator, is set out in
+  [docs/LOGGING.md](../docs/LOGGING.md#correlation-id-normalization) and is not restated here.
+
+  The predicate tests a `Rune` rather than a `char`, and that is load-bearing rather than
+  stylistic: a per-code-unit test cannot see the supplementary-plane `Cf` set at all, because both
+  halves of a non-BMP code point are surrogates and `char.GetUnicodeCategory` reports `Cs` for a
+  surrogate and never `Cf`.
 
 The broader allowlist exists because a client-supplied correlation ID normally originates in an
 upstream system's own identifier scheme (base64, W3C `traceparent`, JSON-ish keys, RFC 5322
@@ -162,6 +181,14 @@ ingest the correlation ID; the result is cached on `HttpContext.Items` and every
 reads the cache. A cache miss still computes, so a call site that ever ran ahead of that middleware
 behaves exactly as it would without the cache — it simply becomes the one that populates it.
 
+The ingestion point is also **total**, and that is part of the same decision rather than an
+implementation detail. A host whose `AppSettings` cannot be read at all — because validating them
+is what failed — still gets an ingestion, from the server-generated identifier under the default
+cap, computed and cached inside the ingestion point itself. No caller carries its own guard for
+that case, which is what makes the `500` such a host answers every request with carry the same
+`correlationId` the request is logged under; two callers each falling back on their own would be
+two copies of the policy, free to disagree.
+
 Relying instead on the ingestion function being pure and idempotent was considered and rejected.
 It is true today, and it does make every call site agree, but it makes parity a property nobody
 maintains deliberately: the day a non-deterministic step is added — a hash, a counter, a timestamp
@@ -213,24 +240,32 @@ report a fact that is true once per request would spread the concern across the 
 request-logging middleware already holds a logger, already reads the correlation ID, and already
 runs before every other call site, so it is where the notice belongs.
 
-### Empty-after-normalization is treated as absent
+### Blank-after-normalization is treated as absent
 
-A header that is present but normalizes to empty (for example, a value made up entirely of control
-characters, such as a lone horizontal tab) is treated the same as a header sent empty or omitted:
-the server-generated trace identifier is used. This must be checked **after** normalization, not on
-the raw header value — checking the raw value lets a client send a technically-non-empty value
-(legal over HTTP) that normalizes to the empty string, silently blanking the operational identifier
-everywhere it's read.
+A header that is present but normalizes to nothing but whitespace — a value made up entirely of
+removed characters, such as a lone horizontal tab or a lone `U+200B` ZERO WIDTH SPACE, or made up
+entirely of the whitespace the allowlist keeps, such as a run of `U+00A0` NO-BREAK SPACE — is
+treated the same as a header sent empty or omitted: the server-generated trace identifier is used.
+Whitespace *within* a correlation ID is preserved; only an all-blank value falls back.
+
+The test is `string.IsNullOrWhiteSpace` on the normalized value, and both halves of that are
+deliberate. It runs **after** normalization rather than on the raw header, because checking the
+raw value lets a client send a technically-non-empty value (legal over HTTP) that normalizes away,
+silently blanking the operational identifier everywhere it's read. And it tests blankness rather
+than length, because category `Zs` whitespace is neither control nor format and so is retained by
+design: an all-whitespace header would otherwise survive normalization intact and become the
+correlation ID.
 
 ### Allowlist is deliberately unbounded (not "settled by omission")
 
-The allowlist is "all printable non-control characters," with **no positive enumeration** of
-allowed punctuation. This was an explicit product decision (not merely undiscussed): narrowing it
-to reject quotes, angle brackets, or non-ASCII would re-violate the requirement that it "SHALL NOT
-be limited to only alphanumeric characters." The value reaches log sinks through structured-log
-parameters and response bodies through JSON serialization, both of which already escape their own
-output — character exclusion from this allowlist is not the mechanism protecting those sinks;
-removing line-breaking characters (control chars plus `U+2028`/`U+2029`) is what prevents log
+The allowlist excludes only what [Context](#context) lists — `Cc`, `Cf`, the two separators, and
+unpaired surrogates — with **no positive enumeration** of allowed punctuation. Everything else a
+client can send survives. This was an explicit product decision (not merely undiscussed):
+narrowing it to reject quotes, angle brackets, or non-ASCII would re-violate the requirement that
+it "SHALL NOT be limited to only alphanumeric characters." The value reaches log sinks through
+structured-log parameters and response bodies through JSON serialization, both of which already
+escape their own output — character exclusion from this allowlist is not the mechanism protecting
+those sinks; removing line-breaking characters (`Cc` plus `U+2028`/`U+2029`) is what prevents log
 forging.
 
 ### Scope boundaries
