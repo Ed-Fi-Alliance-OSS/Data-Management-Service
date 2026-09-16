@@ -399,9 +399,13 @@ an error at all: nothing was asked for, and the root is not inspected.
 | The plugin leaves no surviving declared contract registration | Names the plugin and lists what it did register. It ran and contributed nothing the host will call — most often a plugin allowlisted on the wrong host, or a replace-contract claim made with a `TryAdd`, which declines invisibly. |
 | A registration of a declared contract cannot be constructed | Reported by the startup probe, which resolves each surviving declared-contract registration once before the process serves traffic. |
 
-Every row in this group is a defect in the plugin, not in the deployment. The
-allowlist is still the operator's lever: removing the plugin's name is what gets DMS
-started again while the implementer fixes it.
+Every row in this group is about the plugin's own content rather than about how the
+deployment is assembled, which is why its author is the party who can change it. Some
+of them have a second remedy: the two version-skew rows and the runtime backstop name
+a version **the host** carries, so running a host version the plugin already supports
+resolves them as surely as a new plugin build would. Either way the allowlist is the
+operator's immediate lever, and removing the plugin's name is what gets DMS started
+again.
 
 #### Resolve a conflict between two plugins
 
@@ -415,10 +419,12 @@ started again while the implementer fixes it.
 - **An unmanaged library a plugin declares but cannot resolve is not detected at
   load.** Native resolution is lazy by construction, so it surfaces as a
   `DllNotFoundException` on first use.
-- **A managed assembly first touched after startup refuses on the request thread.**
-  The friendly message above is produced by a frame inside the loader, and once
-  startup has completed there is no such frame: the refusal travels up the request
-  pipeline as repeated HTTP 500s, with no process abort and no unwrapped message.
+- **A managed assembly whose host copy is older than the plugin's reference declares
+  refuses on the request thread when that first use falls after startup.** The
+  refusal itself is the backstop row above; what changes is how it reaches you. The
+  readable message is produced by a frame inside the loader, and once startup has
+  completed there is no such frame: the refusal travels up the request pipeline as
+  repeated HTTP 500s, with no process abort and no unwrapped message.
 
 #### Two rows that cannot fire yet
 

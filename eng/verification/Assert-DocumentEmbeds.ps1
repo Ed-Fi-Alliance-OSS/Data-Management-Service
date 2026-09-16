@@ -130,8 +130,10 @@ if (-not (Test-Path -LiteralPath $DocumentPath)) {
 
 $documentLines = (Read-NormalizedText -Path $DocumentPath) -split "`n"
 
-# The marker is anchored to the whole line so that a mention of the syntax inside prose or inside an
-# embedded block cannot be mistaken for a claim.
+# Anchored to the whole line, so the syntax quoted mid-sentence in prose is not read as a claim.
+# Fenced blocks are deliberately not tracked: a marker sitting alone on its own line inside one is
+# still read as a claim, and is then held to the same rule as any other - the next line opens a block
+# that matches its source, or the document fails.
 $markerPattern = '^<!--\s*embed:\s*(\S+)\s*-->$'
 $fenceOpenPattern = '^```[A-Za-z0-9_-]*$'
 

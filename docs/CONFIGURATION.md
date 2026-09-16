@@ -440,8 +440,10 @@ qualifier above.
 > holds.
 >
 > This is a bootstrap exception and **not** an exception to the
-> environment-versus-command-line rule above: that rule is about which of two
-> operator-owned surfaces wins, and this key is read before either question arises.
+> environment-versus-command-line rule above. The environment and command-line sources
+> both exist by the time this key is read, so for it the command line wins when a
+> deployment supplies one, exactly as it does for the two reads named above. What is
+> missing at that moment is a plugin source, not an operator-owned one.
 
 ## RateLimit
 
