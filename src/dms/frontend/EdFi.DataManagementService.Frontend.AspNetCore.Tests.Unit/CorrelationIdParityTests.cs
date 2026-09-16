@@ -54,6 +54,11 @@ public class CorrelationIdParityTests
     /// which is FR-LOG-5's evidence: the status codes are compared against each other rather than
     /// against hardcoded expectations. No database is required: every one of these responses is
     /// produced before the request reaches a backend.
+    ///
+    /// This is the one authoritative HTTP correlation-ID parity suite. An integration-project copy
+    /// covering a subset of these paths was folded in here; a second copy is not worth its
+    /// maintenance, and one in the integration project has to wear database categories it does not
+    /// use in order to be selected by CI at all.
     /// </summary>
     [TestFixture]
     [NonParallelizable]
@@ -90,19 +95,29 @@ public class CorrelationIdParityTests
         /// stay comfortably longer than the cap: a value at or under 64 would not be truncated at
         /// all and the fixture would quietly stop covering the truncation path it exists for. The
         /// braces are the FR-LOG-3 check: the stricter Method/Path allowlist would strip them.
+        ///
+        /// The horizontal tab is load-bearing and is not interchangeable with the CR and LF beside
+        /// it. Control characters are removed twice over, by two independent mechanisms:
+        /// <c>LogSanitizer.SanitizeByCodePoint</c> calls <c>ReplaceLineEndings(string.Empty)</c>
+        /// first, which takes out CR and LF (and U+2028/U+2029) before any predicate runs, and only
+        /// then does <c>SanitizeCorrelationId</c>'s <c>!Rune.IsControl(r)</c> test see what is left.
+        /// A tab is category Cc but is not a line ending, so it is the only character here that the
+        /// predicate alone removes. Without it this whole fixture stayed green with
+        /// <c>!Rune.IsControl(r)</c> deleted from the correlation-ID allowlist - verified by doing
+        /// exactly that.
         /// </summary>
         private const string HostileCorrelationId =
-            "hos\r\ntile{id}XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX";
+            "hos\r\nti\tle{id}XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX";
 
         /// <summary>
         /// Truncate-to-64-then-filter yields this: the first 64 characters of the hostile value are
-        /// "hos", CR, LF, "tile{id}" and 51 X's; dropping the two control characters leaves 62.
-        /// Filter-then-truncate would instead yield "hostile{id}" followed by 53 X's (a full 64
-        /// characters), so this literal also pins the order end to end. The result being shorter
-        /// than the cap is the intended consequence.
+        /// "hos", CR, LF, "ti", TAB, "le{id}" and 50 X's; dropping the three control characters
+        /// leaves 61. Filter-then-truncate would instead yield "hostile{id}" followed by 53 X's (a
+        /// full 64 characters), so this literal also pins the order end to end. The result being
+        /// shorter than the cap is the intended consequence.
         /// </summary>
         private const string ExpectedCorrelationId =
-            "hostile{id}XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX";
+            "hostile{id}XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX";
 
         /// <summary>
         /// The control arm for FR-LOG-5: short enough for the cap and holding nothing the
