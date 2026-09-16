@@ -139,9 +139,42 @@ A bounded local probe completed 29 fresh starts of the same pinned SQL image suc
 - Exercise the failed live case with the diagnostic change. A passing replay alone does not establish the cause.
 - Require complete Contract and hosted qualification on the final pushed commit again.
 
-Validation: all **53 affected fixture tests** passed, including four new checks for cancellation, cleanup, and raw-output redaction. The single failed live Lifecycle case passed with the new diagnostics; the timeout did not reproduce. All seven pre-existing containers were preserved. Complete final-source Contract (expected **4,872 tests**) and hosted qualification remain required.
+Validation: all **53 affected fixture tests** passed, including four new checks for cancellation, cleanup, and raw-output redaction. The single failed live Lifecycle case passed with the new diagnostics; the timeout did not reproduce. All seven pre-existing containers were preserved. Complete final-source Contract (expected **4,872 tests** before subsequent additions) and hosted qualification remain required.
 
-## 8. Validate the final changes locally
+Follow-up: run 35057484986 passed SQL Server Lifecycle but failed two SQL Server RecordSize cases and one SQL Server Admission case during startup. Both last probes had exit code 1 and state `SqlCommandFailed` (18, 41, and 39 completed probes); neither identified Agent startup or pending configuration as the last failure. The job log does not retain the underlying command error. The same RecordSize job also failed one scenario after an initial `-1` lag sample, covered by section 9.
+
+- [ ] Investigate the three SQL command failures. Existing logs do not retain their causes. A fixture follow-up now captures an allowlisted container status, numeric exit code, and out-of-memory flag before cleanup, with a separate five-second diagnostic bound. SQL command categories distinguish stopped containers, login failure, connection timeout/failure, and missing sqlcmd. Validate cancellation, cleanup, and redaction; no raw inspect output, state error text, or configuration is published.
+- [ ] Choose any behavioral correction from demonstrated evidence. Preserve the original startup deadline and production guards; successful replays alone do not resolve the cause.
+
+## 8. Require TCP readiness during PostgreSQL fixture startup
+
+The qualification run [35057484986](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/35057484986) on `c4a82bf83` has a PostgreSQL Recovery preparation failure: `It_detects_failed_task_recovery_on_the_same_worker_without_certifying_the_gap` failed on its first host database connection, before the scenario ran. The attachment preserves an `NpgsqlException`, but not the underlying network message; the precise hosted cause remains unconfirmed.
+
+The fixture's socket-based `pg_isready` can accept the image's temporary initialization server before TCP is available. Controlled starts of both pinned PostgreSQL 16 and recorded PostgreSQL 18.4 images reproduced this defect: the socket probe succeeded while the TCP probe and host PostgreSQL handshake failed. After initialization, TCP readiness, the host handshake, and an authenticated SQL query succeeded.
+
+- [x] Change only the fixture readiness probe to `pg_isready -h 127.0.0.1`, with an explanatory comment.
+- [x] Preserve the existing 90-second deadline, two-second interval, cancellation, cleanup, image pins, and production provider SQL.
+- [x] Demonstrate rejection of the temporary server and acceptance of the final server on PostgreSQL 16 and 18.4; remove the isolated control resources.
+- [x] Format the change and run the affected offline fixture selection: **53 passed**, zero failures/skips.
+- [x] Run the failed Recovery case once on PostgreSQL 16 and once on PostgreSQL 18.4, sequentially. Both selected cases passed; exact test selection and preservation of all seven pre-existing containers were verified.
+- [ ] Review and commit this change, then run the full qualification on the new final SHA. A passing replay does not prove the cause of the hosted failure.
+
+## 9. Apply the initial-lag wait to the acknowledged RecordSize resume
+
+Run 35057484986 also failed five PostgreSQL RecordSize scenarios after resume: both confirmed-increase variants and interrupted boundaries 1, 2, and 3 with uncertain responses. Each attachment records the first consumed post-resume current-lag value as exactly `-1`, followed by rejection. A sixth RecordSize failure occurred before its scenario on the first host database connection, matching the separate startup investigation in section 8.
+
+The RecordSize operation has a separate resume loop. It does not use the narrow `AwaitingInitialCurrentLag` allowance already implemented for managed lifecycle, so it rejects that initial observation immediately.
+
+- [x] Reproduce this path with deterministic tests before changing production behavior.
+- [x] Allow complete fresh observations only during the acknowledged rollout's first-lag wait, within the original invocation deadline and while every other prerequisite remains valid.
+- [x] Preserve the pending rollout gate, renewed confirmation requirements, full policy/identity/continuity checks, and one execution of each mutation.
+- [x] Stop allowing initial-lag waits after usable evidence arrives. Unknown lag during later catch-up or after resume completion must still reject.
+- [x] Verify success after initial unusable samples, persistent unavailability, cancellation, worker/provider/policy/continuity changes, and unknown evidence after usable evidence or completion on both providers.
+- [ ] Run the affected live RecordSize cases on both providers, then repeat complete Contract and hosted qualification on the final commit.
+
+Validation checkpoint: all 18 new RecordSize regression cases passed on both providers. The full 224-case selection passed 222 and exposed two existing cancellation tests racing their 200 ms test deadline. Cancellation cases now use a separate test budget; the 200 ms timeout cases and all production deadlines remain unchanged. The complete 224-case selection subsequently passed with zero failures/skips. Terminal-loss tests require an additional containment stop and incident persistence, while rollout mutations remain single-attempt.
+
+## 10. Validate the final changes locally
 
 Use the CDC qualification fixtures' isolated stacks and nightly image digests. Preserve unrelated Docker containers and remove only resources created by these runs. Run local builds and tests sequentially.
 
@@ -157,10 +190,11 @@ Use the CDC qualification fixtures' isolated stacks and nightly image digests. P
 - [x] Exercise Kafka provisioning and preserve coverage for policy rejection, delayed metadata, and authorization.
 - [x] Retain the existing PostgreSQL 16/18 compatibility and Compose 2.38.2 evidence; repeat affected cases if subsequent edits change those paths.
 - [x] Verify diagnostic attachments remain bounded and sanitized. Keep raw logs, credentials, connection strings, and full metric bodies out of published evidence.
+- [ ] After the PostgreSQL TCP readiness and RecordSize changes, rerun the complete Contract lane on the final source: expected **4,901 tests** (3,606 controller, 715 CLI, 116 offline, 464 wrappers), including 18 new RecordSize regressions and 11 additional diagnostic checks, zero failures/skips. Earlier Contract passes do not qualify subsequent edits.
 
 PowerShell 7.4 failed empty-environment-variable tests locally; 7.6 preserves the distinction required by those tests. A skipped live test or environment failure does not count as qualification.
 
-## 9. Commit, push, and qualify the final commit
+## 11. Commit, push, and qualify the final commit
 
 - [x] Review the final diff against the story contracts. Record the port-fix provenance and explain each production correction.
 - [ ] Commit and push to `fix-nightly-cdc-qualified-image`.
@@ -178,6 +212,10 @@ Recorded evidence as of this plan update. Results from the final hosted run and 
 
 | Evidence | Result | Limit |
 | --- | --- | --- |
+| Local Contract before the PostgreSQL TCP change, `c4a82bf83` | 4,872 passed, zero failures/skips | Must be rerun after the latest fixture edit. |
+| PostgreSQL temporary-server controls, versions 16 and 18.4 | Both reproduced socket success before TCP readiness; both accepted final TCP startup | Demonstrates the fixture defect; the exact hosted network error was not preserved. |
+| Offline fixture selection after the PostgreSQL TCP change | 53 passed, zero failures/skips | Focused live Recovery checks and final full qualification remain required. |
+| Full run 35057484986 on `c4a82bf83` | 248 passed, 11 failed, zero skips, five environment failures; 9/13 jobs passed | All 16 TRX reports and 13 image records verified. Six initial-lag failures, two PostgreSQL startup failures, three SQL startup failures. |
 | [Full run 35052233394](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/35052233394) on `8b63dfca9` | 258 passed, one failed, zero skips; 12/13 jobs passed | SQL readiness timeout before a Lifecycle scenario; exact failed condition unknown. Local and hosted Contract passed all 4,868 tests. DMS and Config CI gates passed; CLA status is missing. |
 | [Full run 35046746577](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/35046746577) on `4139dd3ac` | 258 passed, one failed, zero skips; 12/13 jobs passed | Startup guard rejected pending server configuration. Hosted Contract passed 4,868 tests and all required PR checks passed. The intact-restart case exercised an initial `-1` sample and passed after fresh valid evidence. |
 | [Full run 35040814242](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/35040814242) on `f89639afd` | 258 passed, one failed, zero skips; 12/13 jobs passed | SQL Server Admission fixture preparation failure; original exception missing from published evidence. Hosted Contract passed all 4,867 tests. |

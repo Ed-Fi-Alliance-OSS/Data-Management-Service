@@ -385,12 +385,66 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
                         Attempts = _sqlServerReadinessProbeCount,
                         LastExitCode = _sqlServerReadinessExitCode,
                         State = _sqlServerReadinessState,
+                        Container = await ReadFailedSqlServerContainerStateAsync(),
                     },
                     Locations = locations,
                 }
             )
         );
         TestContext.AddTestAttachment(path, "Sanitized pinned-image fixture startup failure locations");
+    }
+
+    private sealed record SqlServerContainerState(string Status, int ExitCode, bool OomKilled);
+
+    private async Task<SqlServerContainerState> ReadFailedSqlServerContainerStateAsync()
+    {
+        if (
+            Provider != CdcProvider.SqlServer
+            || _sqlServerReadinessProbeCount == 0
+            || _sqlServerReadinessExitCode == 0
+        )
+        {
+            return new("NotObserved", 0, false);
+        }
+
+        // Startup cancellation must not erase the evidence. Bound this read separately, then always
+        // clean up. Never retain State.Error, container configuration, or raw inspect output.
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        try
+        {
+            var result = await _docker.RunAllowingFailureAsync(
+                ["inspect", "--format", "{{json .State}}", ProviderContainerName],
+                timeout.Token
+            );
+            if (result.ExitCode == 0)
+            {
+                using var document = JsonDocument.Parse(result.StandardOutput);
+                var state = document.RootElement;
+                string status = state.GetProperty("Status").GetString() ?? string.Empty;
+                if (
+                    status
+                    is "created"
+                        or "running"
+                        or "paused"
+                        or "restarting"
+                        or "removing"
+                        or "exited"
+                        or "dead"
+                )
+                {
+                    return new(
+                        status,
+                        state.GetProperty("ExitCode").GetInt32(),
+                        state.GetProperty("OOMKilled").GetBoolean()
+                    );
+                }
+            }
+        }
+        catch (Exception)
+        {
+            // Diagnostic collection cannot replace the original startup failure or prevent cleanup.
+        }
+        return new("Unavailable", 0, false);
     }
 
     public async Task<CdcConnectorTemplateRequest> CreateRequestAsync(CancellationToken cancellationToken)
@@ -1369,6 +1423,8 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
 
     private async Task WaitForPostgresqlAsync(CancellationToken cancellationToken)
     {
+        // The image's temporary initialization server accepts socket connections before TCP is ready.
+        // Probe TCP so the subsequent host connection cannot accept that temporary server as ready.
         await RetryUntilReadyAsync(
             () =>
                 _docker.RunAllowingFailureAsync(
@@ -1378,6 +1434,8 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
                         $"PGPASSWORD={ConnectorDatabasePassword}",
                         ProviderContainerName,
                         "pg_isready",
+                        "-h",
+                        "127.0.0.1",
                         "-U",
                         "postgres",
                         "-d",
@@ -1447,6 +1505,15 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
                             "SQL Server configuration has not settled.",
                             StringComparison.Ordinal
                         ) => "ConfigurationPending",
+                    _ when output.Contains("is not running", StringComparison.OrdinalIgnoreCase) =>
+                        "ContainerNotRunning",
+                    _ when output.Contains("Login failed for user", StringComparison.OrdinalIgnoreCase) =>
+                        "LoginFailed",
+                    _ when output.Contains("Login timeout expired", StringComparison.OrdinalIgnoreCase) =>
+                        "ConnectionTimeout",
+                    _ when output.Contains("TCP Provider", StringComparison.OrdinalIgnoreCase) =>
+                        "ConnectionFailed",
+                    127 => "SqlCommandMissing",
                     _ => "SqlCommandFailed",
                 };
 
