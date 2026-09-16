@@ -695,6 +695,37 @@ surface including the host assembly manifest, the trust model, and what a plugin
 register - is
 [PLUGINS.md](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/src/plugins/EdFi.Api.Plugins/PLUGINS.md).
 
+## Getting the package
+
+This package is published to the Ed-Fi Azure Artifacts feed:
+
+```text
+https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json
+```
+
+```xml
+<PackageReference Include="EdFi.Api.CustomValidation" Version="[1.0.0]" />
+```
+
+A validator reaches the running service through a plugin, so a validator project normally also
+references `EdFi.Api.Plugins` from the same feed. The two contracts version independently: this one
+declares its version in its own project file and the plugin contract declares its own in
+`src/plugins/Directory.Build.props`, so neither number moves because the other did, and neither moves
+with the Data Management Service release.
+
+Pin the version exactly, in brackets, as above; a bare version is a minimum rather than a pin. The
+release notes of the Data Management Service release you are targeting state which contract versions
+that release carries.
+
+## Versioning
+
+This package's version moves when what you compile and resolve against moves, which is three things:
+the assembly's public and protected surface, the XML documentation that ships beside it, and the
+package's declared dependencies. The rules below live only in `///` comments, so a rule rewritten
+there is a changed contract even though no signature moved; the publish lane compares all three
+against the version already on the feed and refuses to republish a version whose contract differs.
+A changed readme is not one of them.
+
 ## Dependencies
 
 **This package declares none.** Everything in its signatures resolves from the framework, so taking
