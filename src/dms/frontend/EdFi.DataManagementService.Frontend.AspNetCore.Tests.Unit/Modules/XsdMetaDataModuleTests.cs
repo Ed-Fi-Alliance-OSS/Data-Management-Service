@@ -7,6 +7,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
@@ -19,6 +20,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
+using FrontendAppSettings = EdFi.DataManagementService.Frontend.AspNetCore.Configuration.AppSettings;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.Modules;
 
@@ -92,6 +94,77 @@ public class XsdMetaDataModuleTests
         jsonContent.Should().NotBeNull();
         section1.Should().Contain("ed-fi");
         section2.Should().Contain("tpdm");
+    }
+
+    [TestCase(false, "", "")]
+    [TestCase(true, "", "")]
+    [TestCase(false, "districtId,schoolYear", "")]
+    [TestCase(true, "districtId,schoolYear", "")]
+    [TestCase(true, "", "/tenant1")]
+    [TestCase(false, "districtId,schoolYear", "/255901/2024")]
+    [TestCase(true, "districtId,schoolYear", "/tenant1/255901/2024")]
+    public async Task It_serves_all_xsd_routes_and_preserves_child_links(
+        bool multiTenancy,
+        string qualifiers,
+        string prefix
+    )
+    {
+        var tenantValidator = A.Fake<ITenantValidator>();
+        A.CallTo(() => tenantValidator.ValidateTenantAsync("tenant1")).Returns(true);
+        var dataStoreProvider = A.Fake<IDataStoreProvider>();
+        A.CallTo(() => dataStoreProvider.GetAll(multiTenancy ? "tenant1" : null))
+            .Returns([
+                new DataStore(
+                    1,
+                    "Test",
+                    "TestInstance",
+                    "test-connection-string",
+                    new()
+                    {
+                        [new RouteQualifierName("districtId")] = new RouteQualifierValue("255901"),
+                        [new RouteQualifierName("schoolYear")] = new RouteQualifierValue("2024"),
+                    }
+                ),
+            ]);
+        A.CallTo(() => _contentProvider!.TryLoadXsdContent("file1.xsd", "ed-fi"))
+            .Returns(new Lazy<Stream>(() => new MemoryStream(Encoding.UTF8.GetBytes("test-content"))));
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Test");
+            builder.ConfigureServices(collection =>
+            {
+                TestMockHelper.AddEssentialMocks(collection);
+                collection.AddTransient(_ => _apiService!);
+                collection.AddTransient(_ => _contentProvider!);
+                collection.AddTransient(_ => tenantValidator);
+                collection.AddTransient(_ => dataStoreProvider);
+                collection.Configure<FrontendAppSettings>(options =>
+                {
+                    options.MultiTenancy = multiTenancy;
+                    options.RouteQualifierSegments = qualifiers;
+                });
+            });
+        });
+        using var client = factory.CreateClient();
+
+        using var sectionsResponse = await client.GetAsync($"{prefix}/metadata/xsd");
+        sectionsResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var sections = JsonNode.Parse(await sectionsResponse.Content.ReadAsStringAsync())!.AsArray();
+        string filesUrl = sections.Single(section => section!["name"]!.GetValue<string>() == "ed-fi")![
+            "files"
+        ]!.GetValue<string>();
+        filesUrl.Should().Be($"http://localhost{prefix}/metadata/xsd/ed-fi/files");
+
+        using var filesResponse = await client.GetAsync(filesUrl);
+        filesResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var files = JsonNode.Parse(await filesResponse.Content.ReadAsStringAsync())!.AsArray();
+        string fileUrl = files[0]!.GetValue<string>();
+        fileUrl.Should().Be($"http://localhost{prefix}/metadata/xsd/ed-fi/file1.xsd");
+
+        using var fileResponse = await client.GetAsync(fileUrl);
+        fileResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        fileResponse.Content.Headers.ContentType!.MediaType.Should().Be("application/xml");
+        (await fileResponse.Content.ReadAsStringAsync()).Should().Be("test-content");
     }
 
     [Test]
@@ -457,35 +530,35 @@ public class XsdMetaDataModuleTests
 
         var dataStoreProvider = A.Fake<IDataStoreProvider>();
         A.CallTo(() => dataStoreProvider.GetAll("tenant1"))
-            .Returns(
-                [
-                    new DataStore(
-                        1,
-                        "Test",
-                        "TestInstance",
-                        "test-connection-string",
-                        new()
-                        {
-                            [new RouteQualifierName("districtId")] = new RouteQualifierValue("255901"),
-                            [new RouteQualifierName("schoolYear")] = new RouteQualifierValue("2024"),
-                        }
-                    ),
-                ]
-            );
+            .Returns([
+                new DataStore(
+                    1,
+                    "Test",
+                    "TestInstance",
+                    "test-connection-string",
+                    new()
+                    {
+                        [new RouteQualifierName("districtId")] = new RouteQualifierValue("255901"),
+                        [new RouteQualifierName("schoolYear")] = new RouteQualifierValue("2024"),
+                    }
+                ),
+            ]);
 
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Test");
-            builder.ConfigureAppConfiguration((context, configuration) =>
-            {
-                configuration.AddInMemoryCollection(
-                    new Dictionary<string, string?>
-                    {
-                        ["AppSettings:MultiTenancy"] = "true",
-                        ["AppSettings:RouteQualifierSegments"] = "districtId,schoolYear",
-                    }
-                );
-            });
+            builder.ConfigureAppConfiguration(
+                (context, configuration) =>
+                {
+                    configuration.AddInMemoryCollection(
+                        new Dictionary<string, string?>
+                        {
+                            ["AppSettings:MultiTenancy"] = "true",
+                            ["AppSettings:RouteQualifierSegments"] = "districtId,schoolYear",
+                        }
+                    );
+                }
+            );
             builder.ConfigureServices(collection =>
             {
                 TestMockHelper.AddEssentialMocks(collection);
@@ -519,35 +592,35 @@ public class XsdMetaDataModuleTests
 
         var dataStoreProvider = A.Fake<IDataStoreProvider>();
         A.CallTo(() => dataStoreProvider.GetAll("tenant1"))
-            .Returns(
-                [
-                    new DataStore(
-                        1,
-                        "Test",
-                        "TestInstance",
-                        "test-connection-string",
-                        new()
-                        {
-                            [new RouteQualifierName("districtId")] = new RouteQualifierValue("255901"),
-                            [new RouteQualifierName("schoolYear")] = new RouteQualifierValue("2024"),
-                        }
-                    ),
-                ]
-            );
+            .Returns([
+                new DataStore(
+                    1,
+                    "Test",
+                    "TestInstance",
+                    "test-connection-string",
+                    new()
+                    {
+                        [new RouteQualifierName("districtId")] = new RouteQualifierValue("255901"),
+                        [new RouteQualifierName("schoolYear")] = new RouteQualifierValue("2024"),
+                    }
+                ),
+            ]);
 
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Test");
-            builder.ConfigureAppConfiguration((context, configuration) =>
-            {
-                configuration.AddInMemoryCollection(
-                    new Dictionary<string, string?>
-                    {
-                        ["AppSettings:MultiTenancy"] = "true",
-                        ["AppSettings:RouteQualifierSegments"] = "districtId,schoolYear",
-                    }
-                );
-            });
+            builder.ConfigureAppConfiguration(
+                (context, configuration) =>
+                {
+                    configuration.AddInMemoryCollection(
+                        new Dictionary<string, string?>
+                        {
+                            ["AppSettings:MultiTenancy"] = "true",
+                            ["AppSettings:RouteQualifierSegments"] = "districtId,schoolYear",
+                        }
+                    );
+                }
+            );
             builder.ConfigureServices(collection =>
             {
                 TestMockHelper.AddEssentialMocks(collection);
@@ -567,8 +640,7 @@ public class XsdMetaDataModuleTests
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
         jsonContent?["title"]?.GetValue<string>().Should().Be("Not Found");
-        A.CallTo(() => _contentProvider!.TryLoadXsdContent(A<string>._, A<string>._))
-            .MustNotHaveHappened();
+        A.CallTo(() => _contentProvider!.TryLoadXsdContent(A<string>._, A<string>._)).MustNotHaveHappened();
     }
 }
 

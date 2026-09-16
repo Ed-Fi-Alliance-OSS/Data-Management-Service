@@ -42,16 +42,20 @@ Feature: Tenant-Aware Discovery API
 
     # XSD endpoint tests
 
-    Scenario: XSD metadata endpoint with valid tenant returns OK
-         When a GET request is made to XSD metadata endpoint with tenant "Tenant_255901"
+    Scenario: XSD metadata endpoint with valid tenant and full route context returns OK
+         When a GET request is made to metadata path "Tenant_255901/255901/2024/metadata/xsd"
          Then it should respond with 200
           And the response should contain "ed-fi"
 
-    Scenario: XSD metadata endpoint with invalid tenant returns 404
-         When a GET request is made to XSD metadata endpoint with tenant "NonExistentTenant"
+    Scenario: XSD metadata endpoint with invalid tenant and full route context returns 404
+         When a GET request is made to metadata path "NonExistentTenant/255901/2024/metadata/xsd"
          Then it should respond with 404
 
-    Scenario: XSD metadata file content with valid tenant returns OK
-         When a GET request is made to XSD file "Ed-Fi-Core" in section "ed-fi" with tenant "Tenant_255901"
+    Scenario: XSD metadata file content with valid tenant and full route context returns OK
+         When a GET request is made to metadata path "Tenant_255901/255901/2024/metadata/xsd/ed-fi/Ed-Fi-Core.xsd"
          Then it should respond with 200
           And the response content type should be "application/xml"
+
+    Scenario: Tenant-only XSD metadata is unavailable when route qualifiers are configured
+         When a GET request is made to metadata path "Tenant_255901/metadata/xsd"
+         Then it should respond with 404

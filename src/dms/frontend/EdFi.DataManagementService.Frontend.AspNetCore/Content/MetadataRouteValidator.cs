@@ -4,10 +4,11 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Net;
+using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Model;
-using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure.Extensions;
 using Microsoft.Extensions.Options;
+using FrontendAppSettings = EdFi.DataManagementService.Frontend.AspNetCore.Configuration.AppSettings;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Content;
 
@@ -19,9 +20,8 @@ public interface IMetadataRouteValidator
 public class MetadataRouteValidator(
     ITenantValidator tenantValidator,
     IDataStoreProvider dataStoreProvider,
-    IOptions<AppSettings> appSettings
-)
-    : IMetadataRouteValidator
+    IOptions<FrontendAppSettings> appSettings
+) : IMetadataRouteValidator
 {
     private const string TenantRouteValueName = "tenant";
 
@@ -30,18 +30,35 @@ public class MetadataRouteValidator(
         CancellationToken cancellationToken = default
     )
     {
-        string? tenant = ReadRouteValue(httpContext, TenantRouteValueName);
-        Dictionary<RouteQualifierName, RouteQualifierValue> requestQualifiers = ReadRouteQualifiers(
-            httpContext,
-            appSettings.Value.GetRouteQualifierSegmentsArray()
-        );
+        string[] qualifierSegments = appSettings.Value.GetRouteQualifierSegmentsArray();
+        bool hasTenant = httpContext.Request.RouteValues.ContainsKey(TenantRouteValueName);
+        bool hasQualifiers = qualifierSegments.Any(httpContext.Request.RouteValues.ContainsKey);
 
-        if (tenant is null && requestQualifiers.Count == 0)
+        // Only absent context keys identify an unqualified compatibility route.
+        // Present-but-blank values must not bypass validation.
+        if (!hasTenant && !hasQualifiers)
         {
             return true;
         }
 
-        if (tenant is not null && !await tenantValidator.ValidateTenantAsync(tenant))
+        string tenant = ReadRouteValue(httpContext, TenantRouteValueName);
+        if (
+            ((hasTenant || appSettings.Value.MultiTenancy) && string.IsNullOrWhiteSpace(tenant))
+            || qualifierSegments.Any(segment =>
+                string.IsNullOrWhiteSpace(ReadRouteValue(httpContext, segment))
+            )
+        )
+        {
+            await WriteNotFoundAsync(httpContext);
+            return false;
+        }
+
+        Dictionary<RouteQualifierName, RouteQualifierValue> requestQualifiers = ReadRouteQualifiers(
+            httpContext,
+            qualifierSegments
+        );
+
+        if (hasTenant && !await tenantValidator.ValidateTenantAsync(tenant))
         {
             await WriteNotFoundAsync(httpContext);
             return false;
@@ -52,7 +69,7 @@ public class MetadataRouteValidator(
             return true;
         }
 
-        IReadOnlyList<DataStore> dataStores = dataStoreProvider.GetAll(tenant);
+        IReadOnlyList<DataStore> dataStores = dataStoreProvider.GetAll(hasTenant ? tenant : null);
         if (!dataStores.Any(dataStore => IsRouteContextMatch(dataStore.RouteContext, requestQualifiers)))
         {
             await WriteNotFoundAsync(httpContext);
@@ -80,14 +97,13 @@ public class MetadataRouteValidator(
             );
     }
 
-    private static string? ReadRouteValue(HttpContext httpContext, string routeValueName)
+    private static string ReadRouteValue(HttpContext httpContext, string routeValueName)
     {
         return
-            httpContext.Request.RouteValues.TryGetValue(routeValueName, out object? value)
-            && value is string stringValue
+            httpContext.Request.RouteValues[routeValueName] is string stringValue
             && !string.IsNullOrWhiteSpace(stringValue)
             ? stringValue
-            : null;
+            : string.Empty;
     }
 
     private static bool IsRouteContextMatch(

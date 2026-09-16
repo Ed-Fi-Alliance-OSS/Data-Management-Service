@@ -6,6 +6,7 @@
 using System.Net;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure.Extensions;
@@ -24,6 +25,15 @@ public class XsdMetadataEndpointModule(IOptions<AppSettings> appSettings) : IEnd
             appSettings.Value.MultiTenancy
         );
 
+        MapXsdEndpoints(endpoints, string.Empty);
+        if (!string.IsNullOrEmpty(routePattern))
+        {
+            MapXsdEndpoints(endpoints, routePattern);
+        }
+    }
+
+    private void MapXsdEndpoints(IEndpointRouteBuilder endpoints, string routePattern)
+    {
         endpoints.MapGet($"{routePattern}/metadata/xsd", GetSections);
         endpoints.MapGet($"{routePattern}/metadata/xsd/{{section}}/files", GetXsdMetadataFiles);
         endpoints.MapGet(
@@ -137,7 +147,6 @@ public class XsdMetadataEndpointModule(IOptions<AppSettings> appSettings) : IEnd
             return Results.NotFound(ErrorResourcePath);
         }
     }
-
 }
 
 public record XsdMetaDataSectionInfo(string description, string name, string version, string files);

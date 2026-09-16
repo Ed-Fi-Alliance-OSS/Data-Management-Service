@@ -54,9 +54,7 @@ public class MetadataModuleTests
         [TestCase("/tenant1/255901/2024/metadata/specifications/descriptors-spec.json")]
         [TestCase("/tenant1/255901/2024/metadata/changequeries/v1/swagger.json")]
         [TestCase("/tenant1/255901/2024/metadata/specifications/discovery-spec.json")]
-        [TestCase(
-            "/tenant1/255901/2024/metadata/specifications/profiles/StudentProfile/resources-spec.json"
-        )]
+        [TestCase("/tenant1/255901/2024/metadata/specifications/profiles/StudentProfile/resources-spec.json")]
         public async Task It_short_circuits_invalid_qualified_metadata_requests(string requestPath)
         {
             // Arrange
@@ -163,11 +161,7 @@ public class MetadataModuleTests
             var httpContext = new DefaultHttpContext();
             var tenantValidator = A.Fake<ITenantValidator>();
             var dataStoreProvider = A.Fake<IDataStoreProvider>();
-            var validator = new MetadataRouteValidator(
-                tenantValidator,
-                dataStoreProvider,
-                RouteOptions()
-            );
+            var validator = new MetadataRouteValidator(tenantValidator, dataStoreProvider, RouteOptions());
 
             // Act
             bool result = await validator.ValidateAsync(httpContext);
@@ -175,6 +169,73 @@ public class MetadataModuleTests
             // Assert
             result.Should().BeTrue();
             A.CallTo(() => tenantValidator.ValidateTenantAsync(A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestCase("tenant", "")]
+        [TestCase("tenant", " ")]
+        [TestCase("tenant", null)]
+        [TestCase("districtId", "")]
+        [TestCase("districtId", " ")]
+        [TestCase("districtId", null)]
+        public async Task It_rejects_present_but_blank_route_values(string key, string value)
+        {
+            var httpContext = new DefaultHttpContext();
+            httpContext.Request.RouteValues[key] = value;
+            var tenantValidator = A.Fake<ITenantValidator>();
+            A.CallTo(() => tenantValidator.ValidateTenantAsync(A<string>._)).Returns(true);
+            var dataStoreProvider = A.Fake<IDataStoreProvider>();
+            var validator = new MetadataRouteValidator(
+                tenantValidator,
+                dataStoreProvider,
+                RouteOptions(key == "tenant" ? [] : ["districtId"])
+            );
+
+            bool result = await validator.ValidateAsync(httpContext);
+
+            result.Should().BeFalse();
+            httpContext.Response.StatusCode.Should().Be((int)HttpStatusCode.NotFound);
+        }
+
+        [TestCase("tenant")]
+        [TestCase("districtId")]
+        [TestCase("schoolYear")]
+        public async Task It_rejects_incomplete_qualified_contexts(string missingKey)
+        {
+            var httpContext = new DefaultHttpContext();
+            httpContext.Request.RouteValues["tenant"] = "Tenant_255901";
+            httpContext.Request.RouteValues["districtId"] = "255901";
+            httpContext.Request.RouteValues["schoolYear"] = "2024";
+            httpContext.Request.RouteValues.Remove(missingKey);
+            var tenantValidator = A.Fake<ITenantValidator>();
+            A.CallTo(() => tenantValidator.ValidateTenantAsync(A<string>._)).Returns(true);
+            var dataStoreProvider = A.Fake<IDataStoreProvider>();
+            var options = RouteOptions("districtId", "schoolYear");
+            options.Value.MultiTenancy = true;
+            var validator = new MetadataRouteValidator(tenantValidator, dataStoreProvider, options);
+
+            bool result = await validator.ValidateAsync(httpContext);
+
+            result.Should().BeFalse();
+            httpContext.Response.StatusCode.Should().Be((int)HttpStatusCode.NotFound);
+        }
+
+        [Test]
+        public async Task It_allows_unqualified_metadata_with_dynamic_values_and_configured_qualifiers()
+        {
+            var httpContext = new DefaultHttpContext();
+            httpContext.Request.RouteValues["section"] = "ed-fi";
+            httpContext.Request.RouteValues["fileName"] = "Ed-Fi-Core";
+            var options = RouteOptions("districtId", "schoolYear");
+            options.Value.MultiTenancy = true;
+            var validator = new MetadataRouteValidator(
+                A.Fake<ITenantValidator>(),
+                A.Fake<IDataStoreProvider>(),
+                options
+            );
+
+            bool result = await validator.ValidateAsync(httpContext);
+
+            result.Should().BeTrue();
         }
 
         [Test]
@@ -217,11 +278,7 @@ public class MetadataModuleTests
             A.CallTo(() => tenantValidator.ValidateTenantAsync("UnknownTenant")).Returns(false);
 
             var dataStoreProvider = A.Fake<IDataStoreProvider>();
-            var validator = new MetadataRouteValidator(
-                tenantValidator,
-                dataStoreProvider,
-                RouteOptions()
-            );
+            var validator = new MetadataRouteValidator(tenantValidator, dataStoreProvider, RouteOptions());
 
             // Act
             bool result = await validator.ValidateAsync(httpContext);
@@ -1077,8 +1134,22 @@ public class MetadataModuleTests
                 .MustNotHaveHappened();
         }
 
-        [Test]
-        public async Task It_preserves_the_qualified_prefix_for_Change_Queries()
+        [TestCase("/tenant1/255901/2024/metadata/specifications", "", "/tenant1/255901/2024/metadata")]
+        [TestCase(
+            "/tenant1/255901/2024/MeTaDaTa/SpEcIfIcAtIoNs/",
+            "/dms",
+            "/dms/tenant1/255901/2024/MeTaDaTa"
+        )]
+        [TestCase("/metadata/SPECIFICATIONS/", "", "/metadata")]
+        [TestCase("/metadata/specifications", "/dms", "/dms/metadata")]
+        [TestCase("", "", "/metadata")]
+        [TestCase("/", "/dms", "/dms/metadata")]
+        [TestCase("/other", "/dms", "/dms/metadata")]
+        public async Task It_preserves_the_metadata_prefix_for_Change_Queries(
+            string path,
+            string pathBase,
+            string expectedPrefix
+        )
         {
             // Arrange
             var apiService = A.Fake<IApiService>();
@@ -1089,7 +1160,8 @@ public class MetadataModuleTests
             var httpContext = new DefaultHttpContext();
             httpContext.Request.Scheme = "http";
             httpContext.Request.Host = new HostString("localhost");
-            httpContext.Request.Path = "/tenant1/255901/2024/metadata/specifications";
+            httpContext.Request.Path = path;
+            httpContext.Request.PathBase = pathBase;
             httpContext.Response.Body = new MemoryStream();
 
             // Act
@@ -1105,7 +1177,7 @@ public class MetadataModuleTests
             changeQueries["endpointUri"]!
                 .GetValue<string>()
                 .Should()
-                .Be("http://localhost/tenant1/255901/2024/metadata/changequeries/v1/swagger.json");
+                .Be($"http://localhost{expectedPrefix}/changequeries/v1/swagger.json");
         }
 
         [Test]
