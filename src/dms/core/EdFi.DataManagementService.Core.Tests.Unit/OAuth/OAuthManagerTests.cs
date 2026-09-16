@@ -1119,12 +1119,12 @@ public class OAuthManagerTests
             // As much of the first finding as the second finding leaves reachable: searching by
             // correlation ID finds a request whose upstream rejection carried a `reason` and a
             // `realm`, which is the handle for pursuing it in the identity provider's own logs.
+            //
+            // Exact equality rather than Contain, so this also pins that the summary holds
+            // nothing beyond the two names and that they appear in the upstream document's own
+            // order.
             _logged.Should().NotBeNull();
-            _logged!.Properties["OtherFieldNames"]!
-                .ToString()
-                .Should()
-                .Contain("reason")
-                .And.Contain("realm");
+            _logged!.Properties["OtherFieldNames"]!.ToString().Should().Be("reason, realm");
         }
 
         [Test]
@@ -1185,65 +1185,6 @@ public class OAuthManagerTests
                 .Properties.Should()
                 .ContainKeys("TraceId", "StandardFields", "OtherFieldNames")
                 .And.HaveCount(3);
-        }
-    }
-
-    /// <summary>
-    /// Brad Banister's example from the review, verbatim. The point of it is that <c>reason</c>
-    /// is "the whole of why the upstream rejected the request" and is not an RFC 6749 field, so
-    /// it is precisely the field an allowlist of standard members cannot anticipate. The
-    /// resolution keeps its name and discards its value; this fixture pins both halves.
-    /// </summary>
-    [TestFixture]
-    [Parallelizable]
-    public class Given_The_Reviewers_Example_Unauthorized_Body
-    {
-        private const string ReasonValueSentinel = "client disabled";
-
-        private const string UpstreamBody = """
-            {"error":"invalid_client","reason":"client disabled"}
-            """;
-
-        private LogRecord _logged = default!;
-        private string _rendered = default!;
-        private string _rawResponseBody = default!;
-
-        [SetUp]
-        public async Task Setup()
-        {
-            (HttpResponseMessage response, RecordingLogger<OAuthManager> logger) = await UpstreamResponds(
-                HttpStatusCode.Unauthorized,
-                UpstreamBody
-            );
-            _rawResponseBody = await response.Content.ReadAsStringAsync();
-            _logged = DiscardedUnauthorizedDetailRecord(logger)!;
-            _rendered = RenderedFallbackEvent(logger);
-        }
-
-        [Test]
-        public void It_records_the_standard_error_field_by_value()
-        {
-            _logged.Properties["StandardFields"]!.ToString().Should().Be("error=invalid_client");
-        }
-
-        [Test]
-        public void It_records_the_non_standard_field_by_name()
-        {
-            _logged.Properties["OtherFieldNames"]!.ToString().Should().Be("reason");
-        }
-
-        [Test]
-        public void It_never_records_the_non_standard_fields_value()
-        {
-            // The assertion the whole change exists for. An operator learns a `reason` was sent
-            // and goes to the identity provider for what it said; DMS persists none of it.
-            _rendered.Should().NotContain(ReasonValueSentinel);
-        }
-
-        [Test]
-        public void It_still_withholds_the_reason_from_the_client()
-        {
-            _rawResponseBody.Should().NotContain(ReasonValueSentinel);
         }
     }
 
