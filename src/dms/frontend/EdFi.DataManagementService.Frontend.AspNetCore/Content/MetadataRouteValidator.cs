@@ -4,9 +4,10 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Net;
-using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure.Extensions;
+using Microsoft.Extensions.Options;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Content;
 
@@ -15,7 +16,11 @@ public interface IMetadataRouteValidator
     Task<bool> ValidateAsync(HttpContext httpContext, CancellationToken cancellationToken = default);
 }
 
-public class MetadataRouteValidator(ITenantValidator tenantValidator, IDataStoreProvider dataStoreProvider)
+public class MetadataRouteValidator(
+    ITenantValidator tenantValidator,
+    IDataStoreProvider dataStoreProvider,
+    IOptions<AppSettings> appSettings
+)
     : IMetadataRouteValidator
 {
     private const string TenantRouteValueName = "tenant";
@@ -27,7 +32,8 @@ public class MetadataRouteValidator(ITenantValidator tenantValidator, IDataStore
     {
         string? tenant = ReadRouteValue(httpContext, TenantRouteValueName);
         Dictionary<RouteQualifierName, RouteQualifierValue> requestQualifiers = ReadRouteQualifiers(
-            httpContext
+            httpContext,
+            appSettings.Value.GetRouteQualifierSegmentsArray()
         );
 
         if (tenant is null && requestQualifiers.Count == 0)
@@ -57,12 +63,13 @@ public class MetadataRouteValidator(ITenantValidator tenantValidator, IDataStore
     }
 
     private static Dictionary<RouteQualifierName, RouteQualifierValue> ReadRouteQualifiers(
-        HttpContext httpContext
+        HttpContext httpContext,
+        string[] routeQualifierSegments
     )
     {
         return httpContext
             .Request.RouteValues.Where(routeValue =>
-                routeValue.Key != TenantRouteValueName
+                routeQualifierSegments.Contains(routeValue.Key, StringComparer.OrdinalIgnoreCase)
                 && routeValue.Value is string value
                 && !string.IsNullOrWhiteSpace(value)
             )

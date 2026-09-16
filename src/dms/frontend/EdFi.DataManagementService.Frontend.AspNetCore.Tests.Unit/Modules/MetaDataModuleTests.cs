@@ -21,6 +21,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NUnit.Framework;
 using CoreAppSettings = EdFi.DataManagementService.Core.Configuration.AppSettings;
+using FrontendAppSettings = EdFi.DataManagementService.Frontend.AspNetCore.Configuration.AppSettings;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.Modules;
 
@@ -72,7 +73,7 @@ public class MetadataModuleTests
                     collection.AddTransient(_ => apiService);
                     collection.AddTransient(_ => contentProvider);
                     collection.AddTransient<IMetadataRouteValidator>(_ => metadataRouteValidator);
-                    collection.Configure<CoreAppSettings>(options =>
+                    collection.Configure<FrontendAppSettings>(options =>
                     {
                         options.MultiTenancy = true;
                         options.RouteQualifierSegments = "districtId,schoolYear";
@@ -104,7 +105,7 @@ public class MetadataModuleTests
                     TestMockHelper.AddEssentialMocks(collection);
                     collection.AddTransient(_ => apiService);
                     collection.AddTransient<IMetadataRouteValidator>(_ => metadataRouteValidator);
-                    collection.Configure<CoreAppSettings>(options =>
+                    collection.Configure<FrontendAppSettings>(options =>
                     {
                         options.MultiTenancy = true;
                         options.RouteQualifierSegments = "districtId,schoolYear";
@@ -125,6 +126,19 @@ public class MetadataModuleTests
     [TestFixture]
     public class When_Validating_Qualified_Metadata_Routes
     {
+        private static IOptions<FrontendAppSettings> RouteOptions(params string[] routeQualifierSegments)
+        {
+            return Options.Create(
+                new FrontendAppSettings
+                {
+                    AuthenticationService = "http://localhost/oauth",
+                    CorrelationIdHeader = "X-Correlation-Id",
+                    Datastore = "postgresql",
+                    RouteQualifierSegments = string.Join(',', routeQualifierSegments),
+                }
+            );
+        }
+
         private static DataStore DataStoreWithRouteContext(
             long id,
             params (string Key, string Value)[] routeContext
@@ -149,7 +163,11 @@ public class MetadataModuleTests
             var httpContext = new DefaultHttpContext();
             var tenantValidator = A.Fake<ITenantValidator>();
             var dataStoreProvider = A.Fake<IDataStoreProvider>();
-            var validator = new MetadataRouteValidator(tenantValidator, dataStoreProvider);
+            var validator = new MetadataRouteValidator(
+                tenantValidator,
+                dataStoreProvider,
+                RouteOptions()
+            );
 
             // Act
             bool result = await validator.ValidateAsync(httpContext);
@@ -175,7 +193,11 @@ public class MetadataModuleTests
             A.CallTo(() => dataStoreProvider.GetAll("Tenant_255901"))
                 .Returns([DataStoreWithRouteContext(1, ("districtId", "255901"), ("schoolYear", "2024"))]);
 
-            var validator = new MetadataRouteValidator(tenantValidator, dataStoreProvider);
+            var validator = new MetadataRouteValidator(
+                tenantValidator,
+                dataStoreProvider,
+                RouteOptions("districtId", "schoolYear")
+            );
 
             // Act
             bool result = await validator.ValidateAsync(httpContext);
@@ -195,7 +217,11 @@ public class MetadataModuleTests
             A.CallTo(() => tenantValidator.ValidateTenantAsync("UnknownTenant")).Returns(false);
 
             var dataStoreProvider = A.Fake<IDataStoreProvider>();
-            var validator = new MetadataRouteValidator(tenantValidator, dataStoreProvider);
+            var validator = new MetadataRouteValidator(
+                tenantValidator,
+                dataStoreProvider,
+                RouteOptions()
+            );
 
             // Act
             bool result = await validator.ValidateAsync(httpContext);
@@ -221,7 +247,11 @@ public class MetadataModuleTests
             A.CallTo(() => dataStoreProvider.GetAll("Tenant_255901"))
                 .Returns([DataStoreWithRouteContext(1, ("districtId", "255901"), ("schoolYear", "2024"))]);
 
-            var validator = new MetadataRouteValidator(tenantValidator, dataStoreProvider);
+            var validator = new MetadataRouteValidator(
+                tenantValidator,
+                dataStoreProvider,
+                RouteOptions("districtId", "schoolYear")
+            );
 
             // Act
             bool result = await validator.ValidateAsync(httpContext);
@@ -229,6 +259,40 @@ public class MetadataModuleTests
             // Assert
             result.Should().BeFalse();
             httpContext.Response.StatusCode.Should().Be((int)HttpStatusCode.NotFound);
+        }
+
+        [TestCase("section", "discovery")]
+        [TestCase("profileName", "StudentProfile")]
+        public async Task It_ignores_dynamic_metadata_route_values(
+            string dynamicRouteValueName,
+            string dynamicRouteValue
+        )
+        {
+            // Arrange
+            var httpContext = new DefaultHttpContext();
+            httpContext.Request.RouteValues["tenant"] = "Tenant_255901";
+            httpContext.Request.RouteValues["districtId"] = "255901";
+            httpContext.Request.RouteValues["schoolYear"] = "2024";
+            httpContext.Request.RouteValues[dynamicRouteValueName] = dynamicRouteValue;
+
+            var tenantValidator = A.Fake<ITenantValidator>();
+            A.CallTo(() => tenantValidator.ValidateTenantAsync("Tenant_255901")).Returns(true);
+
+            var dataStoreProvider = A.Fake<IDataStoreProvider>();
+            A.CallTo(() => dataStoreProvider.GetAll("Tenant_255901"))
+                .Returns([DataStoreWithRouteContext(1, ("districtId", "255901"), ("schoolYear", "2024"))]);
+
+            var validator = new MetadataRouteValidator(
+                tenantValidator,
+                dataStoreProvider,
+                RouteOptions("districtId", "schoolYear")
+            );
+
+            // Act
+            bool result = await validator.ValidateAsync(httpContext);
+
+            // Assert
+            result.Should().BeTrue();
         }
     }
 
