@@ -29,6 +29,100 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.Modules;
 public class MetadataModuleTests
 {
     [TestFixture]
+    public class When_Mapping_Qualified_Metadata_Routes
+    {
+        private sealed class RejectingMetadataRouteValidator : IMetadataRouteValidator
+        {
+            public int CallCount { get; private set; }
+
+            public Task<bool> ValidateAsync(
+                HttpContext httpContext,
+                CancellationToken cancellationToken = default
+            )
+            {
+                CallCount++;
+                httpContext.Response.StatusCode = (int)HttpStatusCode.NotFound;
+                return Task.FromResult(false);
+            }
+        }
+
+        [TestCase("/tenant1/255901/2024/metadata")]
+        [TestCase("/tenant1/255901/2024/metadata/dependencies")]
+        [TestCase("/tenant1/255901/2024/metadata/specifications")]
+        [TestCase("/tenant1/255901/2024/metadata/specifications/resources-spec.json")]
+        [TestCase("/tenant1/255901/2024/metadata/specifications/descriptors-spec.json")]
+        [TestCase("/tenant1/255901/2024/metadata/changequeries/v1/swagger.json")]
+        [TestCase("/tenant1/255901/2024/metadata/specifications/discovery-spec.json")]
+        [TestCase(
+            "/tenant1/255901/2024/metadata/specifications/profiles/StudentProfile/resources-spec.json"
+        )]
+        public async Task It_short_circuits_invalid_qualified_metadata_requests(string requestPath)
+        {
+            // Arrange
+            var metadataRouteValidator = new RejectingMetadataRouteValidator();
+            var apiService = A.Fake<IApiService>();
+            var contentProvider = A.Fake<IContentProvider>();
+
+            await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.ConfigureServices(collection =>
+                {
+                    TestMockHelper.AddEssentialMocks(collection);
+                    collection.AddTransient(_ => apiService);
+                    collection.AddTransient(_ => contentProvider);
+                    collection.AddTransient<IMetadataRouteValidator>(_ => metadataRouteValidator);
+                    collection.Configure<CoreAppSettings>(options =>
+                    {
+                        options.MultiTenancy = true;
+                        options.RouteQualifierSegments = "districtId,schoolYear";
+                    });
+                });
+            });
+            using var client = factory.CreateClient();
+
+            // Act
+            var response = await client.GetAsync(requestPath);
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            metadataRouteValidator.CallCount.Should().Be(1);
+        }
+
+        [Test]
+        public async Task It_preserves_the_unqualified_metadata_root_without_route_validation()
+        {
+            // Arrange
+            var metadataRouteValidator = new RejectingMetadataRouteValidator();
+            var apiService = A.Fake<IApiService>();
+
+            await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.ConfigureServices(collection =>
+                {
+                    TestMockHelper.AddEssentialMocks(collection);
+                    collection.AddTransient(_ => apiService);
+                    collection.AddTransient<IMetadataRouteValidator>(_ => metadataRouteValidator);
+                    collection.Configure<CoreAppSettings>(options =>
+                    {
+                        options.MultiTenancy = true;
+                        options.RouteQualifierSegments = "districtId,schoolYear";
+                    });
+                });
+            });
+            using var client = factory.CreateClient();
+
+            // Act
+            var response = await client.GetAsync("/metadata");
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            metadataRouteValidator.CallCount.Should().Be(0);
+        }
+    }
+
+    [TestFixture]
     public class When_Validating_Qualified_Metadata_Routes
     {
         private static DataStore DataStoreWithRouteContext(
