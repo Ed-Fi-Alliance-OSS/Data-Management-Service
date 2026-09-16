@@ -228,9 +228,28 @@ if ($unexpected.Count -gt 0 -or $missing.Count -gt 0) {
 #     document describing compiled-in delivery would have no reason to mention;
 #   - neither carries the obsolete denial.
 #
-# The denial is matched on its distinctive tail rather than on the word "compiled", deliberately.
-# Both documents legitimately say that compiling a validator into a DMS build remains possible and
-# is not the documented route, and a check that refused that prose would be refusing the truth.
+# What is matched is the **denial**, "not loaded from a dropped-in assembly at runtime", and not the
+# word "compiled" and not the bare noun phrase "dropped-in assembly at runtime". All three
+# distinctions are load-bearing:
+#
+#   - matching on "compiled" would refuse the accurate prose, in both documents, that compiling a
+#     validator into a DMS build remains possible and is not the documented route;
+#   - matching the bare noun phrase would refuse the accurate affirmative, "a validator IS loaded
+#     from a dropped-in assembly at runtime", which is the true statement of plugin delivery and the
+#     opposite of the claim being guarded against.
+#
+# Whitespace is collapsed on both sides before the comparison, because neither document controls
+# where the sentence breaks. An XML doc comment wraps at the source line and a Markdown paragraph
+# wraps at the column limit, so the denial reaches this check with newlines and leading slashes
+# between its words. Matching the raw text would have missed every real revert and only caught one
+# written as a single unbroken line.
+function Get-CollapsedProse {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([Parameter(Mandatory)][AllowEmptyString()][string] $Text)
+
+    return ($Text -replace '\s+', ' ').Trim()
+}
 # InnerText rather than the summary property. The summary carries child elements - <see cref>,
 # <c>Plugins:Allowed</c> - so the property yields an XmlElement whose string form drops exactly the
 # words being looked for, and the allowlist key is inside a <c> element. InnerText flattens the
@@ -245,7 +264,7 @@ if ([string]::IsNullOrWhiteSpace($validatorSummary)) {
     throw "The packed XML documentation carries no summary for T:$($AssemblyName).ICustomResourceValidator, so the delivery path it tells an implementer cannot be compared against the guide."
 }
 
-$obsoleteDeliveryClaim = "dropped-in assembly at runtime"
+$obsoleteDeliveryDenial = "not loaded from a dropped-in assembly at runtime"
 $allowlistKey = "Plugins:Allowed"
 
 foreach (
@@ -254,11 +273,13 @@ foreach (
         [pscustomobject]@{ Name = "the packed CUSTOM-VALIDATION.md"; Text = $packedReadme }
     )
 ) {
-    if ($document.Text.Contains($obsoleteDeliveryClaim, [StringComparison]::OrdinalIgnoreCase)) {
-        throw "$($document.Name) still says a validator is '$obsoleteDeliveryClaim', which the plugin delivery path made false. A validator ships as a published directory under the plugin root and named in $allowlistKey. Correct it so the guide and the contract's own documentation agree."
+    $collapsed = Get-CollapsedProse -Text $document.Text
+
+    if ($collapsed.Contains($obsoleteDeliveryDenial, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "$($document.Name) still says a validator is '$obsoleteDeliveryDenial', which the plugin delivery path made false: a validator IS loaded from a dropped-in assembly at run time. It ships as a published directory under the plugin root and named in $allowlistKey. Correct it so the guide and the contract's own documentation agree."
     }
 
-    if (-not $document.Text.Contains($allowlistKey, [StringComparison]::Ordinal)) {
+    if (-not $collapsed.Contains($allowlistKey, [StringComparison]::Ordinal)) {
         throw "$($document.Name) never mentions $allowlistKey, so it does not state the delivery path a validator actually takes. The guide and the contract's own documentation must agree that a validator is delivered as an allowlisted plugin."
     }
 }

@@ -131,8 +131,37 @@ BeforeAll {
 }
 
 AfterAll {
-    if ($script:fixtureRoot -and (Test-Path -LiteralPath $script:fixtureRoot)) {
-        Remove-Item -LiteralPath $script:fixtureRoot -Recurse -Force
+    # A recursive force-delete of a computed path, guarded before it runs rather than trusted.
+    # $script:fixtureRoot is built from GetTempPath plus a GUID, so in the normal case this is
+    # obviously safe; the guard is for the abnormal ones, where BeforeAll threw before assigning it,
+    # where the variable was somehow reassigned, or where GetTempPath returned something unexpected.
+    # Without it, an empty or short value would make this a recursive delete of a directory nobody
+    # chose.
+    #
+    # Containment is checked lexically on full paths with a trailing separator on the parent, which
+    # is what stops "C:\Temp\x" from being read as inside "C:\Temp2". Ordinal comparison, because
+    # this is about the string the delete would receive. The fixture root must be strictly inside the
+    # temp directory and never the temp directory itself.
+    $temporaryRoot = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath())
+    $temporaryRootWithSeparator = $temporaryRoot.TrimEnd(
+        [System.IO.Path]::DirectorySeparatorChar,
+        [System.IO.Path]::AltDirectorySeparatorChar
+    ) + [System.IO.Path]::DirectorySeparatorChar
+
+    if (-not [string]::IsNullOrWhiteSpace($script:fixtureRoot)) {
+        $resolvedFixtureRoot = [System.IO.Path]::GetFullPath($script:fixtureRoot)
+
+        $isContained = $resolvedFixtureRoot.StartsWith(
+            $temporaryRootWithSeparator, [StringComparison]::OrdinalIgnoreCase
+        ) -and $resolvedFixtureRoot.Length -gt $temporaryRootWithSeparator.Length
+
+        if (-not $isContained) {
+            throw "Refusing to remove $resolvedFixtureRoot : the test fixture root must be a directory strictly inside $temporaryRoot. Nothing was deleted."
+        }
+
+        if (Test-Path -LiteralPath $resolvedFixtureRoot) {
+            Remove-Item -LiteralPath $resolvedFixtureRoot -Recurse -Force
+        }
     }
 }
 
@@ -254,6 +283,54 @@ Describe "Assert-CustomValidationPackage on the delivery path the two documents 
         $result.Threw | Should -BeTrue
         $result.Message | Should -BeLike "*the packed CUSTOM-VALIDATION.md*"
         $result.Message | Should -BeLike "*dropped-in assembly at runtime*"
+    }
+
+    It "refuses the obsolete denial even when it wraps across lines" {
+        Test-PackedPackageAvailable
+
+        # The case the first version of this check missed, and the reason the comparison collapses
+        # whitespace. Neither document controls where its sentences break: an XML doc comment wraps
+        # at the source line, behind a leading '///', and a Markdown paragraph wraps at the column
+        # limit. A revert written by a human therefore arrives with newlines between the words, so a
+        # check matching the raw text would have caught only a denial written as one unbroken line,
+        # which is the one shape a real revert would not take.
+        $result = Invoke-Verifier -PackageFile (
+            New-RepackedPackage -Name "wrapped-denial" -TransformXmlDocumentation {
+                param($xml)
+                $xml -replace
+                "An implementation is delivered as a plugin",
+                "An implementation is not`n            loaded from a dropped-in`n            assembly at runtime. Formerly it was delivered as a plugin"
+            }
+        )
+
+        $result.Threw |
+            Should -BeTrue -Because "a wrapped denial is the same claim as an unwrapped one"
+        $result.Message | Should -BeLike "*ICustomResourceValidator's XML documentation*"
+        $result.Message | Should -BeLike "*not loaded from a dropped-in assembly at runtime*"
+    }
+
+    It "still admits the accurate affirmative that a validator IS loaded at runtime" {
+        Test-PackedPackageAvailable
+
+        # The other half of the precision, and the failure the first version of this check actually
+        # had: matching the bare noun phrase "dropped-in assembly at runtime" refused this sentence,
+        # which is the true statement of plugin delivery and the exact opposite of the claim being
+        # guarded against. A check that refuses the truth it exists to protect is worse than no
+        # check, because the next author satisfies it by deleting an accurate sentence.
+        $affirmative = (
+            ([System.IO.File]::ReadAllText($script:guidePath)).Replace("`r`n", "`n") -replace
+            "(?m)^Compiling a validator into a DMS build remains possible and is not the documented route\.$",
+            "A validator is loaded from a dropped-in assembly at runtime. Compiling one into a DMS build remains possible and is not the documented route."
+        )
+        $guideFixture = Join-Path (New-FixtureDirectory -Name "guide-affirmative") "CUSTOM-VALIDATION.md"
+        [System.IO.File]::WriteAllText($guideFixture, $affirmative)
+
+        $result = Invoke-Verifier `
+            -PackageFile (New-RepackedPackage -Name "affirmative" -ReadmeContent $affirmative) `
+            -GuidePath $guideFixture
+
+        $result.Threw |
+            Should -BeFalse -Because "the affirmative is the delivery path, not the obsolete denial: $($result.Message)"
     }
 
     It "refuses a guide that never names the allowlist key" {
