@@ -477,6 +477,60 @@ Describe "DMS pull request change classifier" {
             $result.fresh_build_required | Should -BeFalse
         }
     }
+
+    Context "The document-embed check gets its own relevance flag" {
+        BeforeAll {
+            $script:embedChecks = Join-Path $script:repoRoot "eng/verification/Invoke-DocumentEmbedChecks.ps1"
+        }
+
+        It "routes <Path> to the embed check" -ForEach @(
+            @{ Path = "docs/OPERATIONS.md" }
+            @{ Path = "eng/docker-compose/plugins-dms.yml" }
+            @{ Path = "eng/verification/Assert-DocumentEmbeds.ps1" }
+            @{ Path = "eng/verification/PluginsConsumer/AcmePlugin.cs" }
+            @{ Path = "src/plugins/EdFi.Api.Plugins/PLUGINS.md" }
+        ) {
+            (Get-DmsChangeCategory -EventName "pull_request" -ChangedFile @($Path)).document_embeds_relevant |
+                Should -BeTrue
+        }
+
+        It "reports docs/OPERATIONS.md embed-relevant while it stays DMS-irrelevant" {
+            # The whole reason for a separate flag. dms_relevant excludes docs/, so a pull request
+            # that edits only a documented Compose recipe reaches no DMS lane at all, and the
+            # equality assertion it should fail would not run until the merge queue.
+            $result = Get-DmsChangeCategory -EventName "pull_request" -ChangedFile @("docs/OPERATIONS.md")
+
+            $result.document_embeds_relevant | Should -BeTrue
+            $result.dms_relevant | Should -BeFalse
+        }
+
+        It "does not route <Path> to the embed check" -ForEach @(
+            @{ Path = "README.md" }
+            @{ Path = "src/dms/core/EdFi.DataManagementService.Core/Something.cs" }
+            @{ Path = "eng/smoke_test/Invoke-NonDestructiveApiTests.ps1" }
+            # Prefix matching must not spill past the directory boundary.
+            @{ Path = "docsite/index.md" }
+        ) {
+            (Get-DmsChangeCategory -EventName "pull_request" -ChangedFile @($Path)).document_embeds_relevant |
+                Should -BeFalse
+        }
+
+        It "reports the check relevant for every path its runner reads" {
+            # The guard that keeps the two halves together, and the one no test of either half alone
+            # could be. A document added to the runner's table but landing outside the prefixes above
+            # would leave the check gated behind a lane that a pull request changing that document
+            # never reaches, which is a silent hole rather than a failure.
+            foreach ($path in @(& $script:embedChecks -ListPath)) {
+                (Get-DmsChangeCategory -EventName "pull_request" -ChangedFile @($path)).document_embeds_relevant |
+                    Should -BeTrue -Because "'$path' is read by the document-embed check"
+            }
+        }
+
+        It "never narrows for merge_group" {
+            (Get-DmsChangeCategory -EventName "merge_group" -ChangedFile @("README.md")).document_embeds_relevant |
+                Should -BeTrue
+        }
+    }
 }
 
 Describe "Write-DmsChangeCategories output contract" {
@@ -519,6 +573,33 @@ Describe "Write-DmsChangeCategories output contract" {
 
         $written | Should -Contain "fresh_build_required=false"
         $written | Should -Contain "dms_relevant=false"
+    }
+
+    It "emits the document-embed flag the embed check gates on" {
+        Set-Content -LiteralPath $script:changedFilePath -Value "docs/OPERATIONS.md"
+
+        & $script:writeScript `
+            -EventName "pull_request" `
+            -ChangedFilePath $script:changedFilePath `
+            -OutputPath $script:outputPath | Out-Null
+
+        $written = @(Get-Content -LiteralPath $script:outputPath)
+
+        # Both halves matter: an output declared but never true would skip the job forever, and a
+        # docs-only pull request is exactly the case where dms_relevant cannot stand in for it.
+        $written | Should -Contain "document_embeds_relevant=true"
+        $written | Should -Contain "dms_relevant=false"
+    }
+
+    It "writes the document-embed flag false when nothing reaches it" {
+        Set-Content -LiteralPath $script:changedFilePath -Value "README.md"
+
+        & $script:writeScript `
+            -EventName "pull_request" `
+            -ChangedFilePath $script:changedFilePath `
+            -OutputPath $script:outputPath | Out-Null
+
+        @(Get-Content -LiteralPath $script:outputPath) | Should -Contain "document_embeds_relevant=false"
     }
 
     It "treats a missing changed-file list as an empty list" {

@@ -551,6 +551,94 @@ jobs:
           labels: ${{ steps.metadatamanagementservice.outputs.labels }}
           push: true
 
+  attach-dms-host-assembly-manifest:
+    name: Attach DMS Host Assembly Manifest to GitHub Release
+    runs-on: ubuntu-latest
+    # This is the edge that makes the manifest a job of its own rather than one more upload inside
+    # attach-dms-artifacts-to-release. That job needs the pack, SBOM and provenance jobs and has no
+    # dependency on docker-publish-dms at all, so the two run concurrently and a generator step added
+    # there could inspect an image that has not been pushed yet.
+    needs:
+      - docker-publish-dms
+    # The same gate attach-dms-artifacts-to-release carries, and deliberately not the one
+    # docker-publish-dms carries, which is none at all. An alpha prerelease has no vX.Y.Z release to
+    # attach an asset to, so an alpha publishes an image and no manifest - which is already what
+    # happens to the SBOM and the provenance.
+    if: ${{ startsWith(github.event.release.tag_name, 'dms-') && !contains(github.event.release.tag_name, 'alpha') }}
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Prepare release version
+        id: prepare-version
+        shell: bash
+        run: |
+          TAG_NAME="${{ github.event.release.tag_name }}"
+
+          # Remove 'dms-pre-' prefix and add 'v' to match release format
+          SEMVER="v${TAG_NAME#dms-pre-}"
+
+          echo "semver=$SEMVER" >> "$GITHUB_OUTPUT"
+          echo "Release version: $SEMVER"
+
+      - name: Generate Host Assembly Manifest
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          # The tag docker-publish-dms actually pushed, which carries the whole dms-pre- prefix:
+          # that job composes its tags from REF without stripping anything, so the image is
+          # <repository>:dms-pre-X.Y.Z. The vX.Y.Z form prepared above names the GitHub release and
+          # is not an image tag. The generator pulls this tag and resolves it to one immutable
+          # digest before it inspects anything, so a tag republished mid-run cannot make one
+          # manifest describe two images.
+          ./eng/verification/New-HostAssemblyManifest.ps1 `
+            -Image "${{ env.IMAGE_NAME }}:${{ env.REF }}" `
+            -OutputPath "host-assembly-manifest.md"
+
+      - name: Assert Host Assembly Manifest
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          # The contract's own declared version, read from this checkout rather than passed as a
+          # literal, so the assertion is made against the version this release's source declares.
+          Import-Module ./package-helpers.psm1
+
+          ./eng/verification/Assert-HostAssemblyManifest.ps1 `
+            -ManifestPath "host-assembly-manifest.md" `
+            -ExpectedPluginsVersion (Get-PluginsContractVersion)
+
+      - name: Attach Host Assembly Manifest to release
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $release = "${{ steps.prepare-version.outputs.semver }}"
+          $repo = "${{ github.repository }}"
+          $token = "${{ secrets.GITHUB_TOKEN }}"
+
+          $gh_headers = @{
+              "Accept"        = "application/vnd.github+json"
+              "Authorization" = "Bearer $token"
+          }
+          $response = Invoke-RestMethod -Uri "https://api.github.com/repos/$repo/releases/tags/$release" -Headers $gh_headers
+          $releaseId = $response.id
+
+          # Uploaded as it stands rather than compressed, unlike the SBOM beside it. That one is a
+          # directory that has to be packed; this is one small Markdown file an implementer reads in
+          # the browser before choosing what to build against.
+          $uploadName = "host-assembly-manifest.md"
+          $uploadUrl = "https://uploads.github.com/repos/$repo/releases/$releaseId/assets"
+          $gh_headers["Content-Type"] = "application/octet-stream"
+
+          Write-Host "Uploading manifest as $uploadName"
+          Invoke-RestMethod -Method POST `
+              -Uri "$($uploadUrl)?name=$($uploadName)" `
+              -Headers $gh_headers `
+              -InFile $uploadName
+
   # jobs for Config
   pack-cs:
     name: Build and Pack Config

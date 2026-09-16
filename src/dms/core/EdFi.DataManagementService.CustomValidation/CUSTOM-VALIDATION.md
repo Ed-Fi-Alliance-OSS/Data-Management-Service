@@ -3,18 +3,21 @@
 This package defines `ICustomResourceValidator`, the contract a district or vendor implements to add
 custom resource validation to the Ed-Fi Data Management Service.
 
-> **The contract ships ahead of a supported way to register against it.**
+> **A validator is registered from a plugin.**
 >
-> The Data Management Service's write pipeline now resolves registered `ICustomResourceValidator`
-> instances and invokes those whose `AppliesTo` matches the current request's resource, but no
-> supported registration seam ships yet.
-> An implementer has no documented way to register one, so in practice nothing runs today.
-> Registering one is not inert at startup, however: a startup guard audits every registration and
-> aborts startup if a validator is registered in a shape DMS would not resolve, so a registration
-> mistake fails the process rather than passing silently.
-> Build against it to pin the contract and to compile early, but do not expect a registered
-> validator to execute until a Data Management Service release announces custom-validation support,
-> which is also the release that will document how a registration has to be shaped.
+> The Data Management Service's write pipeline resolves registered `ICustomResourceValidator`
+> instances and invokes those whose `AppliesTo` matches the current request's resource, and a
+> validator reaches that pipeline through a plugin's `ContributeServices` hook. How a plugin is
+> built, published, packaged, and delivered into a host is
+> [PLUGINS.md](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/src/plugins/EdFi.Api.Plugins/PLUGINS.md).
+> Registering one is not inert at startup: a startup guard audits every registration and aborts
+> startup if a validator is registered in a shape DMS would not resolve, so a registration mistake
+> fails the process rather than passing silently.
+> The release notes of a Data Management Service release state which contract versions that release
+> carries, which is what tells you the version of this package to build against for a given host.
+>
+> **Links out of this readme point at the current documentation on `main`**, not at the
+> documentation for the package version you resolved.
 
 ## What is here
 
@@ -42,9 +45,9 @@ service knows about a resource, carrying the fields a validator has a use for an
 
 ## Registration shape
 
-No host support for loading an implementation has shipped yet, so nothing here can register one.
-When that arrives, the shape below is the one DMS accepts, because a startup guard now audits these
-registrations and terminates the process rather than letting a validator silently never run:
+A validator is registered from a plugin's `ContributeServices` hook, and the shape below is the one
+DMS accepts, because a startup guard audits these registrations and terminates the process rather
+than letting a validator silently never run:
 
 ```csharp
 services.TryAddEnumerable(
@@ -53,7 +56,16 @@ services.TryAddEnumerable(
 ```
 
 Transient, unkeyed, and an implementation type rather than a shared instance or a factory delegate.
+`TryAddEnumerable` is the form this contract requires: it is fan-in, so every registered validator
+runs and any number of plugins may contribute one.
 To supply configuration, bind an options type and take `IOptions<T>` in the constructor.
+
+## Packaging and delivery
+
+This document is the validator contract. Getting an implementation of it into a running host — the
+project settings, the publish command, the package shape, the compatibility surface, and what a
+plugin may and may not register — is
+[PLUGINS.md](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/src/plugins/EdFi.Api.Plugins/PLUGINS.md).
 
 ## What is not here yet
 
