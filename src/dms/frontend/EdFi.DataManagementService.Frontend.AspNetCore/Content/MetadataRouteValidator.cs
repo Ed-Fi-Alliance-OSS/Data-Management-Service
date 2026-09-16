@@ -32,7 +32,7 @@ public class MetadataRouteValidator(
     {
         string[] qualifierSegments = appSettings.Value.GetRouteQualifierSegmentsArray();
         bool hasTenant = httpContext.Request.RouteValues.ContainsKey(TenantRouteValueName);
-        bool hasQualifiers = qualifierSegments.Any(httpContext.Request.RouteValues.ContainsKey);
+        bool hasQualifiers = Array.Exists(qualifierSegments, httpContext.Request.RouteValues.ContainsKey);
 
         // Only absent context keys identify an unqualified compatibility route.
         // Present-but-blank values must not bypass validation.
@@ -44,8 +44,9 @@ public class MetadataRouteValidator(
         string tenant = ReadRouteValue(httpContext, TenantRouteValueName);
         if (
             ((hasTenant || appSettings.Value.MultiTenancy) && string.IsNullOrWhiteSpace(tenant))
-            || qualifierSegments.Any(segment =>
-                string.IsNullOrWhiteSpace(ReadRouteValue(httpContext, segment))
+            || Array.Exists(
+                qualifierSegments,
+                segment => string.IsNullOrWhiteSpace(ReadRouteValue(httpContext, segment))
             )
         )
         {

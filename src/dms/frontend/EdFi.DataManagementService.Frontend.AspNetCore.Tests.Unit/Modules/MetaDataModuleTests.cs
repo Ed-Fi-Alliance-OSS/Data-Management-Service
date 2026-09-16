@@ -9,6 +9,7 @@ using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
+using EdFi.DataManagementService.Frontend.AspNetCore.Modules;
 using EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.Content;
 using FakeItEasy;
 using FluentAssertions;
@@ -177,7 +178,7 @@ public class MetadataModuleTests
         [TestCase("districtId", "")]
         [TestCase("districtId", " ")]
         [TestCase("districtId", null)]
-        public async Task It_rejects_present_but_blank_route_values(string key, string value)
+        public async Task It_rejects_present_but_blank_route_values(string key, string? value)
         {
             var httpContext = new DefaultHttpContext();
             httpContext.Request.RouteValues[key] = value;
@@ -1174,7 +1175,7 @@ public class MetadataModuleTests
             );
 
             // Assert
-            changeQueries["endpointUri"]!
+            changeQueries!["endpointUri"]!
                 .GetValue<string>()
                 .Should()
                 .Be($"http://localhost{expectedPrefix}/changequeries/v1/swagger.json");
