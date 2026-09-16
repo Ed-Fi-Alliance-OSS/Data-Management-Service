@@ -421,6 +421,113 @@ Describe "Get-ContractPublicSurface sees a change that the XML type list does no
             Should -BeTrue
     }
 
+    # A decimal has no CLR literal encoding, so the compiler records both decimal defaults and
+    # decimal constants in DecimalConstantAttribute rather than in the metadata Constant table. A
+    # reader that consulted only that table reported both sides of a changed decimal as having no
+    # value at all, and a consumer compiles that value into its own code.
+    It "sees a decimal default value changed" {
+        Test-SurfaceChange -Namespace "DecimalDefault" `
+            -Before "    public class Contract { public void Apply(decimal amount = 1m) { } }" `
+            -After "    public class Contract { public void Apply(decimal amount = 2m) { } }" |
+            Should -BeTrue
+    }
+
+    It "sees a decimal constant's value changed" {
+        Test-SurfaceChange -Namespace "DecimalConstant" `
+            -Before "    public class Contract { public const decimal Amount = 1m; }" `
+            -After "    public class Contract { public const decimal Amount = 2m; }" |
+            Should -BeTrue
+    }
+
+    It "reports the decimal value rather than only that one exists" {
+        $surface = Get-FixtureSurface -Namespace "DecimalRendered" -Body @"
+    public class Contract
+    {
+        public const decimal Amount = 1.25m;
+        public void Apply(decimal rate = 3.5m) { }
+    }
+"@
+
+        ($surface -join "`n") | Should -BeLike "*value=decimal:1.25*"
+        ($surface -join "`n") | Should -BeLike "*rate = decimal:3.5*"
+    }
+
+    # DateTimeConstantAttribute is the other attribute-encoded default the framework defines. The
+    # parameter is marked optional through [Optional] rather than `= default`, because a C# default
+    # clause plus the attribute is two distinct defaults and the compiler refuses it.
+    It "sees a DateTime default value changed" {
+        Test-SurfaceChange -Namespace "DateTimeDefault" `
+            -Before @"
+    public class Contract
+    {
+        public void Apply(
+            [System.Runtime.InteropServices.Optional]
+            [System.Runtime.CompilerServices.DateTimeConstant(100L)] DateTime at) { }
+    }
+"@ `
+            -After @"
+    public class Contract
+    {
+        public void Apply(
+            [System.Runtime.InteropServices.Optional]
+            [System.Runtime.CompilerServices.DateTimeConstant(200L)] DateTime at) { }
+    }
+"@ | Should -BeTrue
+    }
+
+    # notnull is not a CLR constraint flag; the compiler records it as NullableAttribute(1) on the
+    # type parameter, so the constraint table and GenericParameterAttributes are both blind to it.
+    It "sees a notnull constraint added to a type parameter" {
+        Test-SurfaceChange -Namespace "NotNullConstraint" `
+            -Before "    public class Contract<T> { }" `
+            -After "    public class Contract<T> where T : notnull { }" |
+            Should -BeTrue
+    }
+
+    It "sees a notnull constraint added to a generic method" {
+        Test-SurfaceChange -Namespace "NotNullMethod" `
+            -Before "    public class Contract { public void Apply<T>(T value) { } }" `
+            -After "    public class Contract { public void Apply<T>(T value) where T : notnull { } }" |
+            Should -BeTrue
+    }
+
+    It "reports notnull by name" {
+        $surface = Get-FixtureSurface -Namespace "NotNullRendered" `
+            -Body "    public class Contract<T> where T : notnull { }"
+
+        ($surface -join "`n") | Should -BeLike "*generics=T:notnull*"
+    }
+
+    # The exclusion this replaces was mine and it was wrong: Apply(value: 1) stops compiling when
+    # the parameter is renamed, at an unchanged package version and with an identical signature.
+    It "sees a parameter renamed, which breaks every named argument at the call site" {
+        Test-SurfaceChange -Namespace "ParameterRenamed" `
+            -Before "    public class Contract { public void Apply(int value) { } }" `
+            -After "    public class Contract { public void Apply(int input) { } }" |
+            Should -BeTrue
+    }
+
+    It "sees a constructor's parameter renamed" {
+        Test-SurfaceChange -Namespace "ConstructorParameterRenamed" `
+            -Before "    public class Contract { public Contract(int value) { } }" `
+            -After "    public class Contract { public Contract(int input) { } }" |
+            Should -BeTrue
+    }
+
+    It "sees an indexer's parameter renamed" {
+        Test-SurfaceChange -Namespace "IndexerParameterRenamed" `
+            -Before "    public class Contract { public int this[int index] => index; }" `
+            -After "    public class Contract { public int this[int position] => position; }" |
+            Should -BeTrue
+    }
+
+    It "keeps parameters positional, so two names swapped is a change" {
+        Test-SurfaceChange -Namespace "ParameterNamesSwapped" `
+            -Before "    public class Contract { public void Apply(int first, int second) { } }" `
+            -After "    public class Contract { public void Apply(int second, int first) { } }" |
+            Should -BeTrue
+    }
+
     It "sees a rename that differs only in case" {
         Test-SurfaceChange -Namespace "CaseOnlyRename" `
             -Before "    public class Contract { public void Apply() { } }" `
@@ -475,13 +582,15 @@ Describe "Get-ContractPublicSurface ignores what an implementer cannot bind to" 
             Should -BeFalse
     }
 
-    It "ignores a parameter renamed without a type change" {
-        # A parameter name is not part of what a positional caller binds to. Named arguments do bind
-        # to it, so this is a deliberate boundary rather than an oversight: it keeps the comparison
-        # to what the metadata signature states.
-        Test-SurfaceChange -Namespace "ParameterRenamed" `
-            -Before "    public class Contract { public void Apply(int value) { } }" `
-            -After "    public class Contract { public void Apply(int input) { } }" |
+    It "ignores an added attribute that encodes no signature, default or constraint" {
+        # The boundary, stated rather than implied. [Obsolete] and the nullable annotations on
+        # ordinary parameters and return types are attribute-encoded and are not compared; what is
+        # compared is the signature, the declared defaults and the generic constraints, including
+        # the attribute-encoded forms of the latter two. An assembly whose only change is a new
+        # [Obsolete] still compiles for every consumer, which is why this is a clean skip.
+        Test-SurfaceChange -Namespace "AttributeAdded" `
+            -Before '    public class Contract { public void Apply() { } }' `
+            -After '    public class Contract { [Obsolete] public void Apply() { } }' |
             Should -BeFalse
     }
 }
