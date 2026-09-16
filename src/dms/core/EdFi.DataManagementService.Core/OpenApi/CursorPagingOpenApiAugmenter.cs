@@ -10,6 +10,7 @@ using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.Handler;
 using EdFi.DataManagementService.Core.Paging;
 using EdFi.DataManagementService.Core.Utilities;
+using EdFi.DataManagementService.Core.Validation;
 
 namespace EdFi.DataManagementService.Core.OpenApi;
 
@@ -122,9 +123,10 @@ internal static class CursorPagingOpenApiAugmenter
         BuildChangeVersionParameterNames();
 
     /// <summary>
-    /// The query names the partitions operation refuses to filter on, copied out of the request-pipeline
-    /// validator into an immutable set. Copying a resource filter named for the partition count would also
-    /// produce two query parameters of the same name on one operation.
+    /// The query names the partitions operation refuses to filter on, read from the reserved query
+    /// parameter catalog so the names this document omits are the names the request pipeline consumes.
+    /// Copying a filter named for the partition count would also produce two query parameters of the
+    /// same name on one operation.
     /// </summary>
     private static readonly FrozenSet<string> _partitionExcludedParameterNames =
         BuildPartitionExcludedParameterNames();
@@ -385,12 +387,18 @@ internal static class CursorPagingOpenApiAugmenter
 
     /// <summary>
     /// Appends the cursor parameter reference, tolerating one already present in the identical shape and
-    /// refusing any other parameter publishing the same query name. The refusal is deliberate even though
-    /// the request pipeline is silent about the same collision: a resource declaring a query field spelled
-    /// like a cursor parameter simply cannot filter on it, and publishing the cursor meaning over the top
-    /// would advertise a contract the package did not author. Failing assembly is what surfaces the
-    /// collision instead of resolving it on the package author's behalf.
+    /// refusing any other parameter publishing the same query name. Publishing the cursor meaning over
+    /// the top would advertise a contract the package did not author, so failing assembly is what
+    /// surfaces the collision instead of resolving it on the package author's behalf.
     /// </summary>
+    /// <remarks>
+    /// This refusal reads the assembled document's published parameters, which is a different surface
+    /// from the one DMS-1442 guards. That check refuses a schema whose <c>queryFieldMapping</c> declares
+    /// a reserved name, and the two can disagree: a package may publish an OpenAPI parameter of that
+    /// name while declaring no query field of it, and such a package loads and is caught only here. So
+    /// this stays as the narrower guard over the published contract rather than being folded into the
+    /// load-time check.
+    /// </remarks>
     private static void AppendParameterReference(
         JsonArray collectionParameters,
         JsonObject componentParameters,
@@ -743,16 +751,16 @@ internal static class CursorPagingOpenApiAugmenter
         return componentNames.ToFrozenDictionary(StringComparer.Ordinal);
     }
 
-    private static FrozenSet<string> BuildPartitionExcludedParameterNames()
-    {
-        string[] excludedNames =
-        [
-            .. PartitionRequestValidator.ReservedParameters,
-            PartitionRequestValidator.NumberParameter,
-        ];
-
-        return excludedNames.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
-    }
+    /// <remarks>
+    /// Matched case-insensitively although the request pipeline matches these names ordinally. A
+    /// published parameter differing only in case would still read as the same parameter to a client
+    /// and would still produce two of that name on one operation, which is the fault this set exists
+    /// to prevent.
+    /// </remarks>
+    private static FrozenSet<string> BuildPartitionExcludedParameterNames() =>
+        ReservedQueryParameters
+            .OrdinalFilterExclusionsOn(ReservedQueryParameterOperations.Partitions)
+            .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// What assembly needs to know about one parameter entry: whether it arrived as a component reference,
