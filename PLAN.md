@@ -108,7 +108,25 @@ The full run [35040814242](https://github.com/Ed-Fi-Alliance-OSS/Data-Management
 
 Validation: the complete Contract lane passed **4,868 tests**, zero failures/skips (3,588 controller, 715 CLI, 101 offline, 464 wrappers). The single failed SQL Server `queue` case passed locally with the pinned images; all seven pre-existing containers were preserved and fixture resources were removed. The hosted preparation failure remains unexplained.
 
-## 6. Validate the final changes locally
+## 6. Wait for SQL Server Agent startup before fixture preparation
+
+The full run [35046746577](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/35046746577) on `4139dd3ac` passed 258 tests and failed one SQL Server Admission case during fixture preparation. The preserved original exception identifies SQL error 50000 from `MssqlDatabaseProvisioner.CheckCdcProjectionPrerequisites`: the production guard rejected unrelated pending server configuration.
+
+The fixture previously accepted `SELECT 1` as readiness. In two of three fresh starts of the pinned SQL Server 2025 image, local sampling observed `show advanced options` temporarily differ between configured and active values before SQL Server Agent registered its session. This reproduces a startup race capable of triggering the exact guard. The hosted attachment does not identify which configuration row was pending.
+
+- Wait for an Agent session from the current SQL Server start, using `msdb.dbo.syssessions` and `sys.dm_os_sys_info`.
+- Require settled server configuration, with the same documented default-memory exceptions as the production guard.
+- Use `sqlcmd -b` so a failed SQL readiness predicate produces a nonzero exit code.
+- Retain the existing 90-second startup deadline, two-second poll interval, cancellation, cleanup, and fail-fast behavior. The readiness probe is read-only.
+- Keep the production prerequisite guard unchanged. Do not apply unrelated settings, retry provisioning, or rerun whole scenarios until they pass.
+- Validate Agent-disabled and pending-setting rejection, successful Agent startup, and no configuration mutation on isolated real SQL Server instances.
+- Run the affected offline fixture checks and both previously failing Admission cases. Then qualify the full final commit again.
+
+Validation: the three real SQL Server controls passed, including rejection without configuration mutation. All **49 affected offline fixture tests** and **both previously failing live Admission cases** passed with zero failures/skips. Fixture cleanup preserved all seven pre-existing containers. The complete final-source Contract lane and hosted matrix remain required.
+
+Microsoft documents that each Agent start creates a [row in `msdb.dbo.syssessions`](https://learn.microsoft.com/en-us/sql/relational-databases/system-tables/dbo-syssessions-transact-sql?view=sql-server-ver17). The [configuration catalog documentation](https://learn.microsoft.com/en-us/sql/relational-databases/system-catalog-views/sys-configurations-transact-sql?view=sql-server-ver17) describes configured/active values and the default-memory exceptions.
+
+## 7. Validate the final changes locally
 
 Use the CDC qualification fixtures' isolated stacks and nightly image digests. Preserve unrelated Docker containers and remove only resources created by these runs. Run local builds and tests sequentially.
 
@@ -127,7 +145,7 @@ Use the CDC qualification fixtures' isolated stacks and nightly image digests. P
 
 PowerShell 7.4 failed empty-environment-variable tests locally; 7.6 preserves the distinction required by those tests. A skipped live test or environment failure does not count as qualification.
 
-## 7. Commit, push, and qualify the final commit
+## 8. Commit, push, and qualify the final commit
 
 - [x] Review the final diff against the story contracts. Record the port-fix provenance and explain each production correction.
 - [ ] Commit and push to `fix-nightly-cdc-qualified-image`.
@@ -145,6 +163,7 @@ Recorded evidence as of this plan update. Results from the final hosted run and 
 
 | Evidence | Result | Limit |
 | --- | --- | --- |
+| [Full run 35046746577](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/35046746577) on `4139dd3ac` | 258 passed, one failed, zero skips; 12/13 jobs passed | Startup guard rejected pending server configuration. Hosted Contract passed 4,868 tests and all required PR checks passed. The intact-restart case exercised an initial `-1` sample and passed after fresh valid evidence. |
 | [Full run 35040814242](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/35040814242) on `f89639afd` | 258 passed, one failed, zero skips; 12/13 jobs passed | SQL Server Admission fixture preparation failure; original exception missing from published evidence. Hosted Contract passed all 4,867 tests. |
 | Local Contract on PowerShell 7.6.6, production follow-up | 4,867 passed, zero failures/skips | Reviewed source hashes match the tested code. |
 | Focused live production follow-up | Eight passed, zero failures/skips | Four per provider: guarded start, intact restart, and record-size interruptions at boundaries 1 and 5. Eight evidence attachments and resource cleanup verified; no negative lag sample occurred in this live selection. |

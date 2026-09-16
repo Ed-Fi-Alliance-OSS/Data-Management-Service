@@ -1380,6 +1380,25 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
         );
     }
 
+    // SELECT 1 can succeed while Agent is changing show advanced options during startup.
+    // Wait for its current session and settled configuration before owned-local preparation
+    // deliberately changes nested triggers. Do not apply unrelated pending configuration.
+    internal const string SqlServerReadinessQuery = """
+        IF NOT EXISTS (
+            SELECT 1 FROM msdb.dbo.syssessions
+            WHERE agent_start_date >= (SELECT sqlserver_start_time FROM sys.dm_os_sys_info)
+        )
+            THROW 50000, 'SQL Server Agent has not finished startup.', 1;
+        IF EXISTS (
+            SELECT 1 FROM sys.configurations
+            WHERE [value] <> [value_in_use]
+              AND NOT ([name] = N'min server memory (MB)' AND [value] = 0 AND [value_in_use] IN (8, 16))
+              AND NOT ([name] = N'max server memory (MB)' AND [value] = 0 AND [value_in_use] = 2147483647)
+        )
+            THROW 50000, 'SQL Server configuration has not settled.', 1;
+        SELECT 1;
+        """;
+
     private async Task WaitForSqlServerAsync(CancellationToken cancellationToken)
     {
         await RetryUntilReadyAsync(
@@ -1394,7 +1413,7 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
                         $"""
                         for sqlcmd in /opt/mssql-tools18/bin/sqlcmd /opt/mssql-tools/bin/sqlcmd sqlcmd; do
                           if command -v "$sqlcmd" >/dev/null 2>&1 || test -x "$sqlcmd"; then
-                            "$sqlcmd" -C -S localhost -U sa -P '{ConnectorDatabasePassword}' -Q 'SELECT 1' >/dev/null
+                            "$sqlcmd" -b -C -S localhost -U sa -P '{ConnectorDatabasePassword}' -Q "{SqlServerReadinessQuery}" >/dev/null
                             exit $?
                           fi
                         done
