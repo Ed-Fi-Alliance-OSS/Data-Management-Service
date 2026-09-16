@@ -558,6 +558,17 @@ heartbeat update after-image has event serial number `2`, so the connector is ca
 only at or after `(barrierCommitLsn, barrierChangeLsn, 2)`. Null/snapshot positions do not
 pass. Comparison uses the decoded unsigned bytes, not locale or string collation.
 
+The pinned Debezium 3.6.0 connector also emits an idle commit boundary after a streaming
+scan finds no captured rows: a valid nonzero `commit_lsn`, the literal string `"NULL"`
+for `change_lsn`, and `event_serial_no = 0`. This complete form represents an inclusive
+restart at the beginning of the commit. Preserve the marker in observations and incident
+evidence, and require its commit to remain in retained source history. It crosses the
+heartbeat barrier only when its commit LSN is strictly greater than the barrier commit;
+it cannot certify a barrier in the same commit. Do not synthesize a change LSN. Missing
+fields, JSON null, snapshot offsets, and other serial values do not qualify as this idle
+form. The initial `"NULL"` marker with serial 1 remains awaiting streaming. Source-partition,
+snapshot, continuity, freshness, and independent readiness checks still apply.
+
 The pinned Connect/Debezium image must support the connector-offset REST endpoint and
 these exact provider offset fields. Image qualification and provider integration tests
 pin their shapes. See the Kafka Connect

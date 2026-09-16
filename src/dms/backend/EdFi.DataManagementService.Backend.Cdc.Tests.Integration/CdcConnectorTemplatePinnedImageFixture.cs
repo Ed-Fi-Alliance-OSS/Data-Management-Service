@@ -24,6 +24,11 @@ namespace EdFi.DataManagementService.Backend.Cdc.Tests.Integration;
 
 internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
 {
+    private string _startupStage = "configure-resources";
+    private int _sqlServerReadinessProbeCount;
+    private int _sqlServerReadinessExitCode;
+    private string _sqlServerReadinessState = "NotObserved";
+
     private const string ConnectorPasswordEnvironmentVariable = "CDC_DATABASE_PASSWORD";
     internal const string ConnectorDatabasePassword = "EdFi_Dms1!";
     private const string ConnectorDatabaseUser = "dms_connector";
@@ -251,7 +256,8 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
         bool exposeBroker = false,
         bool nativeKafka = false,
         bool composeKafka = false,
-        bool offlineKafka = false
+        bool offlineKafka = false,
+        Func<Exception, string, Task> writeStartupFailureEvidence = null!
     )
     {
         var fixture = new CdcConnectorTemplatePinnedImageFixture(
@@ -294,17 +300,34 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
                 fixture._httpClient.BaseAddress = fixture.ControllerConnectEndpoint;
                 return fixture;
             }
+            fixture._startupStage = "start-docker-resources";
             await fixture.StartDockerResourcesAsync(cancellationToken, beforeWorker);
+            fixture._startupStage = "read-connect-port";
             Uri connectBaseUri = await fixture.ReadMappedConnectBaseUriAsync(cancellationToken);
 
             fixture._httpClient.BaseAddress = connectBaseUri;
+            fixture._startupStage = "wait-for-connect";
             await fixture.WaitForKafkaConnectAsync(cancellationToken);
 
             return fixture;
         }
         catch (Exception ex)
         {
-            await fixture.DisposeAfterStartupFailureAsync();
+            try
+            {
+                await (writeStartupFailureEvidence ?? fixture.WriteStartupFailureEvidenceAsync)(
+                    ex,
+                    fixture._startupStage
+                );
+            }
+            catch (Exception)
+            {
+                // Failure evidence is best effort; preserve the startup exception and prerequisite policy.
+            }
+            finally
+            {
+                await fixture.DisposeAfterStartupFailureAsync();
+            }
             if (ex is OperationCanceledException or AssertionException)
             {
                 throw;
@@ -320,6 +343,148 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
                 $"Pinned-image fixture prerequisites are not ready for {provider}. Failure details are redacted."
             );
             throw;
+        }
+    }
+
+    private async Task WriteStartupFailureEvidenceAsync(Exception exception, string stage)
+    {
+        // Qualification strips raw exceptions. Publish only code locations and fixed metadata,
+        // never exception messages, Docker arguments, container logs, or machine paths.
+        string path = Path.Combine(
+            TestContext.CurrentContext.WorkDirectory,
+            "admission-evidence-startup-" + Guid.NewGuid().ToString("N") + ".json"
+        );
+        // Unwrap only the fixture assertion. Provider exceptions may themselves contain native
+        // causes; keep the provider exception's DMS locations and SQL error numbers intact.
+        Exception cause = exception is AssertionException { InnerException: { } original }
+            ? original
+            : exception;
+        var locations = new StackTrace(cause, true)
+            .GetFrames()
+            .Where(frame =>
+                frame
+                    .GetMethod()
+                    ?.DeclaringType?.Namespace?.StartsWith(
+                        "EdFi.DataManagementService.",
+                        StringComparison.Ordinal
+                    ) == true
+            )
+            .Take(8)
+            .Select(frame => new
+            {
+                Type = frame.GetMethod()!.DeclaringType!.FullName,
+                Method = frame.GetMethod()!.Name,
+                Line = frame.GetFileLineNumber(),
+            });
+        await File.WriteAllTextAsync(
+            path,
+            JsonSerializer.Serialize(
+                new
+                {
+                    Provider = Provider.ToString(),
+                    Stage = stage,
+                    ExceptionType = exception.GetType().Name,
+                    CauseExceptionType = cause.GetType().Name,
+                    SqlServerErrorNumbers = cause is SqlException sqlException
+                        ? sqlException.Errors.Cast<SqlError>().Select(error => error.Number).Take(8).ToArray()
+                        : [],
+                    SqlServerReadiness = new
+                    {
+                        Attempts = _sqlServerReadinessProbeCount,
+                        LastExitCode = _sqlServerReadinessExitCode,
+                        State = _sqlServerReadinessState,
+                        Container = await ReadFailedSqlServerContainerStateAsync(),
+                    },
+                    Locations = locations,
+                }
+            )
+        );
+        TestContext.AddTestAttachment(path, "Sanitized pinned-image fixture startup failure locations");
+    }
+
+    private async Task<CdcSqlServerContainerState> ReadFailedSqlServerContainerStateAsync()
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        return await ReadFailedSqlServerContainerStateAsync(timeout.Token);
+    }
+
+    private async Task<CdcSqlServerContainerState> ReadFailedSqlServerContainerStateAsync(
+        CancellationToken cancellationToken
+    )
+    {
+        if (
+            Provider != CdcProvider.SqlServer
+            || _sqlServerReadinessProbeCount == 0
+            || _sqlServerReadinessExitCode == 0
+        )
+        {
+            return new("NotObserved", 0, false);
+        }
+
+        // Startup cancellation must not erase the evidence. Bound this read separately, then always
+        // clean up. Never retain State.Error, container configuration, or raw inspect output.
+        try
+        {
+            var result = await _docker.RunAllowingFailureAsync(
+                ["inspect", "--format", "{{json .State}}", ProviderContainerName],
+                cancellationToken
+            );
+            if (result.ExitCode == 0)
+            {
+                using var document = JsonDocument.Parse(result.StandardOutput);
+                var state = document.RootElement;
+                string status = state.GetProperty("Status").GetString() ?? string.Empty;
+                if (
+                    status
+                    is "created"
+                        or "running"
+                        or "paused"
+                        or "restarting"
+                        or "removing"
+                        or "exited"
+                        or "dead"
+                )
+                {
+                    var container = new CdcSqlServerContainerState(
+                        status,
+                        state.GetProperty("ExitCode").GetInt32(),
+                        state.GetProperty("OOMKilled").GetBoolean()
+                    );
+                    if (status is "exited" or "dead")
+                    {
+                        return container with
+                        {
+                            Logs = await ReadFailedSqlServerLogsAsync(cancellationToken),
+                        };
+                    }
+                    return container;
+                }
+            }
+        }
+        catch (Exception)
+        {
+            // Diagnostic collection cannot replace the original startup failure or prevent cleanup.
+        }
+        return new("Unavailable", 0, false);
+    }
+
+    private async Task<CdcSqlServerStartupLogEvidence> ReadFailedSqlServerLogsAsync(
+        CancellationToken cancellationToken
+    )
+    {
+        // Share the five-second inspection budget. A log failure must not erase the known
+        // container state, replace the original startup exception, or prevent cleanup.
+        try
+        {
+            var result = await _docker.RunAllowingFailureAsync(
+                ["logs", "--tail", "400", ProviderContainerName],
+                cancellationToken
+            );
+            return CdcSqlServerStartupLogClassifier.Parse(result);
+        }
+        catch (Exception)
+        {
+            return CdcSqlServerStartupLogEvidence.Empty("Unavailable");
         }
     }
 
@@ -1124,27 +1289,7 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
             return;
         }
 
-        await _docker.RunAsync(
-            [
-                "run",
-                "--detach",
-                "--name",
-                ProviderContainerName,
-                "--network",
-                NetworkName,
-                "-p",
-                "127.0.0.1::1433",
-                "-e",
-                "ACCEPT_EULA=Y",
-                "-e",
-                $"MSSQL_SA_PASSWORD={ConnectorDatabasePassword}",
-                "-e",
-                "MSSQL_AGENT_ENABLED=true",
-                _settings.ProviderImage,
-            ],
-            cancellationToken
-        );
-        await WaitForSqlServerAsync(cancellationToken);
+        await StartSqlServerWithRecoveryAsync(cancellationToken);
     }
 
     private async Task StartKafkaConnectAsync(CancellationToken cancellationToken)
@@ -1299,6 +1444,8 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
 
     private async Task WaitForPostgresqlAsync(CancellationToken cancellationToken)
     {
+        // The image's temporary initialization server accepts socket connections before TCP is ready.
+        // Probe TCP so the subsequent host connection cannot accept that temporary server as ready.
         await RetryUntilReadyAsync(
             () =>
                 _docker.RunAllowingFailureAsync(
@@ -1308,6 +1455,8 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
                         $"PGPASSWORD={ConnectorDatabasePassword}",
                         ProviderContainerName,
                         "pg_isready",
+                        "-h",
+                        "127.0.0.1",
                         "-U",
                         "postgres",
                         "-d",
@@ -1318,6 +1467,25 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
             cancellationToken
         );
     }
+
+    // SELECT 1 can succeed while Agent is changing show advanced options during startup.
+    // Wait for its current session and settled configuration before owned-local preparation
+    // deliberately changes nested triggers. Do not apply unrelated pending configuration.
+    internal const string SqlServerReadinessQuery = """
+        IF NOT EXISTS (
+            SELECT 1 FROM msdb.dbo.syssessions
+            WHERE agent_start_date >= (SELECT sqlserver_start_time FROM sys.dm_os_sys_info)
+        )
+            THROW 50000, 'SQL Server Agent has not finished startup.', 1;
+        IF EXISTS (
+            SELECT 1 FROM sys.configurations
+            WHERE [value] <> [value_in_use]
+              AND NOT ([name] = N'min server memory (MB)' AND [value] = 0 AND [value_in_use] IN (8, 16))
+              AND NOT ([name] = N'max server memory (MB)' AND [value] = 0 AND [value_in_use] = 2147483647)
+        )
+            THROW 50000, 'SQL Server configuration has not settled.', 1;
+        SELECT 1;
+        """;
 
     private async Task WaitForSqlServerAsync(CancellationToken cancellationToken)
     {
@@ -1333,7 +1501,7 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
                         $"""
                         for sqlcmd in /opt/mssql-tools18/bin/sqlcmd /opt/mssql-tools/bin/sqlcmd sqlcmd; do
                           if command -v "$sqlcmd" >/dev/null 2>&1 || test -x "$sqlcmd"; then
-                            "$sqlcmd" -C -S localhost -U sa -P '{ConnectorDatabasePassword}' -Q 'SELECT 1' >/dev/null
+                            "$sqlcmd" -b -C -S localhost -U sa -P '{ConnectorDatabasePassword}' -Q "{SqlServerReadinessQuery}"
                             exit $?
                           fi
                         done
@@ -1343,6 +1511,40 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
                     cancellationToken
                 );
 
+                _sqlServerReadinessProbeCount++;
+                _sqlServerReadinessExitCode = result.ExitCode;
+                // Retain only fixed classifications, never raw command output, in published evidence.
+                string output = result.StandardOutput + result.StandardError;
+                _sqlServerReadinessState = result.ExitCode switch
+                {
+                    0 => "Ready",
+                    _ when output.Contains(
+                            "SQL Server Agent has not finished startup.",
+                            StringComparison.Ordinal
+                        ) => "AgentStarting",
+                    _ when output.Contains(
+                            "SQL Server configuration has not settled.",
+                            StringComparison.Ordinal
+                        ) => "ConfigurationPending",
+                    _ when output.Contains("is not running", StringComparison.OrdinalIgnoreCase) =>
+                        "ContainerNotRunning",
+                    _ when output.Contains("Login failed for user", StringComparison.OrdinalIgnoreCase) =>
+                        "LoginFailed",
+                    _ when output.Contains("Login timeout expired", StringComparison.OrdinalIgnoreCase) =>
+                        "ConnectionTimeout",
+                    _ when output.Contains("TCP Provider", StringComparison.OrdinalIgnoreCase) =>
+                        "ConnectionFailed",
+                    127 => "SqlCommandMissing",
+                    _ => "SqlCommandFailed",
+                };
+
+                cancellationToken.ThrowIfCancellationRequested();
+                if (_sqlServerReadinessState == "ContainerNotRunning")
+                {
+                    throw new InvalidOperationException(
+                        "SQL Server fixture container exited before readiness."
+                    );
+                }
                 return result;
             },
             cancellationToken

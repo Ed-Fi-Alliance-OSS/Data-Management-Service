@@ -20,8 +20,10 @@ namespace EdFi.DataManagementService.Backend.Cdc.Tests.Integration;
 /// </summary>
 internal sealed class CdcControllerFixture : IAsyncDisposable
 {
-    private readonly HttpClient _connectClient = CdcConnectRestAdapter.CreateHttpClient();
-    private readonly HttpClient _metricsClient = CdcConnectorTelemetryAdapter.CreateHttpClient();
+    private readonly HttpClient _connectClient;
+    private readonly HttpClient _metricsClient;
+    internal CdcControllerFixtureMetrics MetricsEvidence { get; } = new();
+    internal CdcControllerFixtureOffsets OffsetEvidence { get; } = new();
     private readonly ServiceProvider _bindingServices;
     private readonly bool _keepResources;
     private bool _disposed;
@@ -34,6 +36,8 @@ internal sealed class CdcControllerFixture : IAsyncDisposable
                 "Local controller fixtures require Unix file permissions."
             );
         }
+        _connectClient = new(OffsetEvidence) { Timeout = Timeout.InfiniteTimeSpan };
+        _metricsClient = new(MetricsEvidence) { Timeout = Timeout.InfiniteTimeSpan };
         Resources = resources;
         _keepResources = keepResources;
         StateRoot = Path.Combine(Path.GetTempPath(), "dms-cdc-controller-" + Guid.NewGuid().ToString("N"));

@@ -184,7 +184,7 @@ Describe 'CDC qualification CI scheduling' {
         $script:scheduledJob | Should -Match 'timeout-minutes: 120'
         $script:scheduledJob | Should -Match 'fail-fast: false'
         $script:scheduledJob | Should -Not -Match 'continue-on-error:'
-        foreach ($image in @('CONNECT', 'REDPANDA', 'POSTGRES', 'SQLSERVER_2025')) {
+        foreach ($image in @('REDPANDA', 'POSTGRES', 'SQLSERVER_2025')) {
             $script:scheduledJob | Should -Match "CDC_CONNECTOR_TEMPLATE_$($image)_IMAGE:"
         }
         $script:scheduledJob | Should -Match 'Invoke-CdcQualification.ps1 -Lane.*-Suite.*-PullImages'
@@ -193,6 +193,23 @@ Describe 'CDC qualification CI scheduling' {
         $script:scheduledJob | Should -Match 'path: TestResults/cdc-qualification/\*\*'
         $script:scheduledJob | Should -Match 'name: cdc-qualification-.*github.run_attempt'
         $script:scheduledJob | Should -Match 'if-no-files-found: error'
+    }
+    It 'configures the nightly Connect image from the checked-out qualification record' {
+        $script:scheduledJob | Should -Not -Match 'vars.CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE'
+        $configure = [regex]::Match($script:scheduledJob, '(?ms)^      - name: Configure qualified Connect image\r?\n        run: \|\r?\n(?<run>(?:          [^\r\n]*\r?\n)+)').Groups['run'].Value
+        $configure | Should -Not -BeNullOrEmpty
+        $savedGithubEnv = $env:GITHUB_ENV
+        try {
+            $env:GITHUB_ENV = Join-Path $TestDrive 'github-env'
+            Push-Location (Join-Path $PSScriptRoot '../../..')
+            $qualified = Get-Content 'src/dms/backend/EdFi.DataManagementService.Backend.Cdc/CdcQualifiedWorkerImage.json' -Raw | ConvertFrom-Json
+            & ([scriptblock]::Create($configure))
+            (Get-Content $env:GITHUB_ENV) | Should -Be "CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE=$($qualified.image)"
+        }
+        finally {
+            Pop-Location
+            $env:GITHUB_ENV = $savedGithubEnv
+        }
     }
     It 'provisions and cleans up both packaged-history admin servers in their nightly jobs' {
         foreach ($provider in @('Postgresql', 'Mssql')) {
