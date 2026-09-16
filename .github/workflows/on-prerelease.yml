@@ -602,13 +602,14 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
 
-          # The contract's own declared version, read from this checkout rather than passed as a
-          # literal, so the assertion is made against the version this release's source declares.
+          # Each contract's own declared version, read from this checkout rather than passed as a
+          # literal, so the assertion is made against the versions this release's source declares.
           Import-Module ./package-helpers.psm1
 
           ./eng/verification/Assert-HostAssemblyManifest.ps1 `
             -ManifestPath "host-assembly-manifest.md" `
-            -ExpectedPluginsVersion (Get-PluginsContractVersion)
+            -ExpectedPluginsVersion (Get-PluginsContractVersion) `
+            -ExpectedCustomValidationVersion (Get-CustomValidationContractVersion)
 
       - name: Attach Host Assembly Manifest to release
         shell: pwsh
