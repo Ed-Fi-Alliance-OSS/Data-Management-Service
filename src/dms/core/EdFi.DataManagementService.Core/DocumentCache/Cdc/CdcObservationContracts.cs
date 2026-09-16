@@ -3122,7 +3122,16 @@ public static class CdcConnectorOffsetObservationValidator
         ValidateProviderInapplicable(observation.LsnProc, "$.lsnProc", "lsnProc", diagnostics);
 
         Add(CdcSqlServerProviderPositionParser.ParseLsn(observation.CommitLsn, "$.commitLsn"));
-        Add(CdcSqlServerProviderPositionParser.ParseLsn(observation.ChangeLsn, "$.changeLsn"));
+        if (
+            !CdcSqlServerProviderPositionParser.IsIdleCommitBoundary(
+                observation.CommitLsn,
+                observation.ChangeLsn,
+                observation.EventSerialNo
+            )
+        )
+        {
+            Add(CdcSqlServerProviderPositionParser.ParseLsn(observation.ChangeLsn, "$.changeLsn"));
+        }
         CdcSqlServerEventSerialNoResult eventSerialNoResult =
             CdcSqlServerProviderPositionParser.ParseEventSerialNo(
                 observation.EventSerialNo,
@@ -3810,7 +3819,14 @@ public static class CdcSourceHistoryObservationValidator
                     );
                 }
 
-                if (providerPositionRequired || positionEvidence.ChangeLsn is not null)
+                if (
+                    (providerPositionRequired || positionEvidence.ChangeLsn is not null)
+                    && !CdcSqlServerProviderPositionParser.IsIdleCommitBoundary(
+                        positionEvidence.CommitLsn,
+                        positionEvidence.ChangeLsn,
+                        positionEvidence.EventSerialNo
+                    )
+                )
                 {
                     Add(
                         CdcSqlServerProviderPositionParser.ParseLsn(

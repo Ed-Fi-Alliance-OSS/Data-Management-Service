@@ -479,6 +479,26 @@ public class Given_CdcConnectRestAdapter_offsets
     }
 
     [Test]
+    public async Task It_preserves_the_sql_server_idle_stream_commit_boundary()
+    {
+        using CdcConnectHttpFixture fixture = new(CdcProvider.SqlServer);
+        fixture.Respond(
+            body: fixture.Offsets(
+                """{"commit_lsn":"00000032:00003ff8:0050","change_lsn":"NULL","event_serial_no":0}"""
+            )
+        );
+        var result = await fixture.Adapter.ReadOffsetEvidenceAsync(fixture.Request, CancellationToken.None);
+        var value = result
+            .Should()
+            .BeOfType<CdcTransportResult<CdcConnectOffsetEvidence>.Observed>()
+            .Which.Value;
+        value.State.Should().Be(CdcConnectOffsetState.Streaming);
+        value.SqlServer.CommitLsn.Should().Be("00000032:00003ff8:0050");
+        value.SqlServer.ChangeLsn.Should().Be("NULL");
+        value.SqlServer.EventSerialNo.Should().Be(0);
+    }
+
+    [Test]
     public async Task It_compares_the_actual_sql_server_catalog_case_sensitively()
     {
         using CdcConnectHttpFixture fixture = new(CdcProvider.SqlServer);
@@ -497,6 +517,19 @@ public class Given_CdcConnectRestAdapter_offsets
         """{"commit_lsn":"NULL","change_lsn":"00000001:00000002:0003","event_serial_no":1}"""
     )]
     [TestCase(CdcProvider.SqlServer, """{"commit_lsn":null,"change_lsn":null,"event_serial_no":1}""")]
+    [TestCase(CdcProvider.SqlServer, """{"commit_lsn":"NULL","change_lsn":"NULL","event_serial_no":0}""")]
+    [TestCase(
+        CdcProvider.SqlServer,
+        """{"commit_lsn":"00000000:00000000:0000","change_lsn":"NULL","event_serial_no":0}"""
+    )]
+    [TestCase(
+        CdcProvider.SqlServer,
+        """{"commit_lsn":"00000001:00000002:0003","change_lsn":"NULL","event_serial_no":2}"""
+    )]
+    [TestCase(
+        CdcProvider.SqlServer,
+        """{"commit_lsn":"00000001:00000002:0003","change_lsn":null,"event_serial_no":0}"""
+    )]
     [TestCase(CdcProvider.Postgresql, "{}")]
     [TestCase(CdcProvider.Postgresql, "{\"lsn_proc\":\"42\"}")]
     [TestCase(CdcProvider.Postgresql, "{\"lsn_proc\":1.5}")]

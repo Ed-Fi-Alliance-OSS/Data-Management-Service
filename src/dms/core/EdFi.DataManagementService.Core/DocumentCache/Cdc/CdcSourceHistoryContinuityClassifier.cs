@@ -1369,6 +1369,18 @@ public static class CdcSourceHistoryContinuityClassifier
             offset.CommitLsn,
             "$.commitLsn"
         );
+        if (
+            CdcSqlServerProviderPositionParser.IsIdleCommitBoundary(
+                offset.CommitLsn,
+                offset.ChangeLsn,
+                offset.EventSerialNo
+            )
+        )
+        {
+            return CdcCommittedSourcePositionResult.Success(
+                new(null, commitLsn.Lsn!.Value.ToString(), "NULL", 0, comparison.CommittedPosition)
+            );
+        }
         CdcSqlServerLsnResult changeLsn = CdcSqlServerProviderPositionParser.ParseLsn(
             offset.ChangeLsn,
             "$.changeLsn"
