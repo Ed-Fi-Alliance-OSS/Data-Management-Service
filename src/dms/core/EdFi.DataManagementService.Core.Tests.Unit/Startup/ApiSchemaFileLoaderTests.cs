@@ -255,4 +255,67 @@ public class ApiSchemaFileLoaderTests
                 .BeOfType<ApiSchemaNormalizationResult.MissingOrMalformedProjectSchemaResult>();
         }
     }
+
+    /// <summary>
+    /// The library-first load path reaches the same normalization the DMS host does, so a schema
+    /// declaring a query field spelled like a reserved query parameter is refused here too.
+    /// </summary>
+    /// <remarks>
+    /// The loader has no arm of its own for this result: it falls into the pass-through that wraps
+    /// every normalization failure. This fixture is what proves the pass-through really carries the new
+    /// result rather than losing it, which is what the schema tooling's error handler then reports.
+    /// </remarks>
+    [TestFixture]
+    public class Given_Reserved_Query_Parameter_Collision : ApiSchemaFileLoaderTests
+    {
+        private ApiSchemaFileLoadResult _result = null!;
+
+        [SetUp]
+        public new void SetUp()
+        {
+            base.SetUp();
+
+            var extension = CreateValidExtensionSchema("tpdm");
+            extension["projectSchema"]!["resourceSchemas"]!.AsObject()["candidates"] = new JsonObject
+            {
+                ["resourceName"] = "Candidate",
+                ["queryFieldMapping"] = new JsonObject
+                {
+                    ["pageToken"] = new JsonArray(
+                        new JsonObject { ["path"] = "$.pageToken", ["type"] = "string" }
+                    ),
+                },
+            };
+
+            var loader = new ApiSchemaFileLoader(
+                new ApiSchemaInputNormalizer(NullLogger<ApiSchemaInputNormalizer>.Instance),
+                NullLogger<ApiSchemaFileLoader>.Instance
+            );
+
+            _result = loader.Load(
+                CreateSchemaFile("core.json", CreateValidCoreSchema()),
+                [CreateSchemaFile("extension.json", extension)]
+            );
+        }
+
+        [Test]
+        public void It_returns_normalization_failure_result()
+        {
+            _result.Should().BeOfType<ApiSchemaFileLoadResult.NormalizationFailureResult>();
+        }
+
+        [Test]
+        public void It_wraps_the_reserved_query_parameter_collision_result()
+        {
+            var failure = (ApiSchemaFileLoadResult.NormalizationFailureResult)_result;
+
+            failure
+                .FailureResult.Should()
+                .BeOfType<ApiSchemaNormalizationResult.ReservedQueryParameterCollisionResult>()
+                .Which.Collisions.Should()
+                .ContainSingle()
+                .Which.QueryFieldName.Should()
+                .Be("pageToken");
+        }
+    }
 }

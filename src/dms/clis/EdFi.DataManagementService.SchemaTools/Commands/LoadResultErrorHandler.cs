@@ -64,6 +64,12 @@ public static class LoadResultErrorHandler
                         $"Version mismatch in '{r.SchemaSource}': expected {r.ExpectedVersion}, got {r.ActualVersion}",
                     ApiSchemaNormalizationResult.ProjectEndpointNameCollisionResult r =>
                         $"Endpoint name collision(s): {string.Join("; ", r.Collisions.Select(c => $"'{c.ProjectEndpointName}' in [{string.Join(", ", c.ConflictingSources)}]"))}",
+                    // Taken from the result rather than composed here, so the operator reading a CLI
+                    // failure and the operator reading a DMS startup failure are told the same thing.
+                    // The stderr path below preserves its line breaks and quoting; the log line is
+                    // flattened by the structured-log whitelist exactly as every other arm here is,
+                    // and normalization has already logged each collision on its own line.
+                    ApiSchemaNormalizationResult.ReservedQueryParameterCollisionResult r => r.Describe(),
                     _ => "Unknown normalization failure",
                 };
                 logger.LogError(
