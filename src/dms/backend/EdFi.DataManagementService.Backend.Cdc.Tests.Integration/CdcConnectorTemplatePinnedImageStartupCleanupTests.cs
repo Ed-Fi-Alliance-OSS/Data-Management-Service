@@ -98,6 +98,54 @@ public sealed class Given_PinnedImageFixtureStartupFailureCleanup
 {
     private const string ResourcePrefix = "dms-cdc-startup-test";
 
+    [TestCase(1, "SQL Server Agent has not finished startup.", "", "AgentStarting")]
+    [TestCase(1, "", "SQL Server configuration has not settled.", "ConfigurationPending")]
+    [TestCase(1, "", "", "SqlCommandFailed")]
+    [TestCase(125, "", "", "SqlCommandFailed")]
+    [NonParallelizable]
+    public async Task It_preserves_the_last_sql_readiness_state_on_cancellation_without_raw_output(
+        int exitCode,
+        string standardOutput,
+        string standardError,
+        string expectedState
+    )
+    {
+        string directory = TestContext.CurrentContext.WorkDirectory;
+        const string pattern = "admission-evidence-startup-*.json";
+        string[] before = Directory.GetFiles(directory, pattern);
+        const string privateDetails = "private-sql-command-output-and-credentials";
+        using var cancellation = new CancellationTokenSource();
+        var docker = new RecordingDockerCli(_ => null)
+        {
+            ProviderProbe = _ =>
+            {
+                cancellation.Cancel();
+                return new(exitCode, standardOutput + privateDetails, standardError + privateDetails);
+            },
+        };
+
+        Assert.CatchAsync<OperationCanceledException>(async () =>
+            await CdcConnectorTemplatePinnedImageFixture.StartAsync(
+                CdcProvider.SqlServer,
+                BuildSettings(),
+                docker,
+                ResourcePrefix,
+                cancellation.Token,
+                applyPrerequisitePolicy: false
+            )
+        );
+
+        AssertCleanupCommandsWereRun(docker);
+        string path = Directory.GetFiles(directory, pattern).Except(before).Should().ContainSingle().Subject;
+        string text = await File.ReadAllTextAsync(path);
+        text.Should().NotContain(privateDetails).And.NotContain(ResourcePrefix);
+        using var evidence = JsonDocument.Parse(text);
+        JsonElement readiness = evidence.RootElement.GetProperty("SqlServerReadiness");
+        readiness.GetProperty("Attempts").GetInt32().Should().Be(1);
+        readiness.GetProperty("LastExitCode").GetInt32().Should().Be(exitCode);
+        readiness.GetProperty("State").GetString().Should().Be(expectedState);
+    }
+
     [TestCase(false)]
     [TestCase(true)]
     [NonParallelizable]
@@ -369,6 +417,9 @@ public sealed class Given_PinnedImageFixtureStartupFailureCleanup
 
         public IReadOnlyList<string> Commands => _commands;
 
+        public Func<IReadOnlyList<string>, DockerCommandResult> ProviderProbe { get; init; } =
+            _ => new(0, string.Empty, string.Empty);
+
         public bool IsOffline => false;
 
         public Task RequireDockerAsync(CancellationToken cancellationToken) => Task.CompletedTask;
@@ -397,6 +448,10 @@ public sealed class Given_PinnedImageFixtureStartupFailureCleanup
             if (failFirstCleanup && arguments.Contains(ResourcePrefix + "-connect") && arguments[0] == "rm")
             {
                 throw new IOException("sentinel-cleanup-secret");
+            }
+            if (arguments[0] == "exec" && arguments.Contains(ResourcePrefix + "-provider"))
+            {
+                return Task.FromResult(ProviderProbe(arguments));
             }
             return Task.FromResult(ResultFor(arguments));
         }
