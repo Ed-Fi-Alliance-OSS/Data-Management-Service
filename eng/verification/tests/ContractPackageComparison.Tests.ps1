@@ -266,6 +266,22 @@ Describe "ConvertTo-CanonicalXmlDocumentation keeps distinctions a reader can se
             Should -BeTrue
     }
 
+    # A sample is what an implementer copies, so nothing inside it is cosmetic. A nested element
+    # asking for default treatment does not make the sample's own layout negotiable.
+    It "preserves code content even when nested markup asks for default treatment" {
+        Test-DocumentationChanged `
+            -Left '<member name="M:X.Y"><example><code><b xml:space="default">one two</b></code></example></member>' `
+            -Right '<member name="M:X.Y"><example><code><b xml:space="default">one  two</b></code></example></member>' |
+            Should -BeTrue
+    }
+
+    It "still normalizes a default reset that is not inside a code sample" {
+        Test-DocumentationChanged `
+            -Left '<member name="M:X.Y" xml:space="preserve"><summary><b xml:space="default">one two</b></summary></member>' `
+            -Right '<member name="M:X.Y" xml:space="preserve"><summary><b xml:space="default">one  two</b></summary></member>' |
+            Should -BeFalse
+    }
+
     # A code sample is preserved on its own terms, so a reset above it does not reach inside.
     It "preserves a code sample declared under a reset" {
         Test-DocumentationChanged `
@@ -373,6 +389,11 @@ Describe "ConvertTo-OrdinalOrder and ConvertTo-CanonicalAssetSet" {
 
     It "reads two spellings of one asset group as one" {
         ConvertTo-CanonicalAssetSet -Assets "Compile" |
+            Should -BeExactly (ConvertTo-CanonicalAssetSet -Assets "compile")
+    }
+
+    It "reads a repeated asset token as one" {
+        ConvertTo-CanonicalAssetSet -Assets "compile,compile" |
             Should -BeExactly (ConvertTo-CanonicalAssetSet -Assets "compile")
     }
 

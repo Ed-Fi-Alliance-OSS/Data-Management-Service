@@ -145,7 +145,9 @@ namespace EdFi.Api.TestContract
         [OutputType([string])]
         param()
 
-        return Join-Path ([System.IO.Path]::GetTempPath()) "dms1501-feed-defaults-published.nupkg"
+        # Per process, not a fixed name: two suite runs on one machine would otherwise serve each
+        # other's fixture and fail for a reason that has nothing to do with the code under test.
+        return Join-Path ([System.IO.Path]::GetTempPath()) "dms1501-feed-defaults-published-$PID.nupkg"
     }
 
     function Invoke-DefaultCheck {
