@@ -1107,9 +1107,10 @@ public static class ContractSurfaceReader
 
         RequireNoNamedArguments(ref blob, AttributeName, owner);
 
-        // The decimal constructor rejects a scale above 28 and a sign byte other than 0 or 0x80,
-        // and rejecting them here names the member instead of surfacing an ArgumentOutOfRangeException
-        // from three frames down.
+        // The decimal constructor rejects a scale above 28, and rejecting it here names the member
+        // instead of surfacing an ArgumentOutOfRangeException from three frames down. The sign byte
+        // needs no such check: DecimalConstantAttribute treats any non-zero value as negative, which
+        // is what the bool below passes on.
         if (scale > 28)
         {
             throw new BadImageFormatException(

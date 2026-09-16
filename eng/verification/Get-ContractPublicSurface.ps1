@@ -9,8 +9,13 @@
 
 .DESCRIPTION
     The comparison the publish lane makes before it republishes a contract at a version already on
-    the feed. Two assemblies whose surfaces are identical produce identical output; any change an
-    implementer outside the assembly could bind to produces different output.
+    the feed. Two assemblies whose surfaces are identical produce identical output.
+
+    What moves the output is a change to a declared type or member: its accessibility, its
+    signature, its generic constraints, or a declared default or constant value, including the
+    forms of those the compiler encodes as attributes. Attributes that encode none of those, such
+    as [Obsolete] or the nullable annotations on ordinary parameters and return types, are outside
+    this comparison; so it is not a claim that every externally observable change is caught.
 
     This exists because the assertion the packed-package scripts make is narrower than "public
     surface" suggests: they select T: members out of the shipped XML documentation, so they compare
