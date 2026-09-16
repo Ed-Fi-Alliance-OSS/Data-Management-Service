@@ -12,6 +12,8 @@ on:
 env:
   ARTIFACTS_API_KEY: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
   ARTIFACTS_FEED_URL: "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json"
+  ARTIFACTS_PACKAGES_URL: ${{ vars.ARTIFACTS_PACKAGES_URL }}
+  ARTIFACTS_USERNAME: ${{ secrets.AZURE_ARTIFACTS_USER_NAME }}
   VSS_NUGET_EXTERNAL_FEED_ENDPOINTS: '{"endpointCredentials": [{"endpoint": "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json","password": "${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}"}]}'
   MANIFEST_FILE: "_manifest/spdx_2.2/manifest.spdx.json"
   DMS_PACKAGE_NAME: "EdFi.Api"
@@ -436,8 +438,9 @@ jobs:
 
       - name: Create Plugins NuGet Package
         run: |
-          # No -DMSVersion. The pack target reads src/plugins/Directory.Build.props, and a release
-          # version on this command line would override the contract's own.
+          # No -DMSVersion, and the target would ignore one anyway: BuildPluginsPackage passes no
+          # -p:PackageVersion at all, so the version comes from src/plugins/Directory.Build.props
+          # whatever this command line says. Omitted so the command states what actually decides.
           ./build-dms.ps1 -Command Package `
               -Configuration Release `
               -PackageTarget Plugins
@@ -775,6 +778,27 @@ jobs:
 
           ./build-dms.ps1 Push @arguments
 
+      # Whether the push happened or the version was already published unchanged, the version has to
+      # be a member of the Prerelease view: that is what the release lane asks later to tell a
+      # version that shipped from one that never did. Nothing else populates that view.
+      #
+      # Idempotent in both directions. A version already in the Release view is left there, and one
+      # already in Prerelease is not promoted again, so running this on every prerelease is safe.
+      - name: Ensure Plugins Contract Prerelease Membership
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          Import-Module ./package-helpers.psm1
+
+          Invoke-ContractPrereleasePromotion `
+            -PackagesURL "${{ env.ARTIFACTS_PACKAGES_URL }}" `
+            -Username "${{ env.ARTIFACTS_USERNAME }}" `
+            -Password (ConvertTo-SecureString -String "${{ env.ARTIFACTS_API_KEY }}" -AsPlainText -Force) `
+            -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" `
+            -ApiKey "${{ env.ARTIFACTS_API_KEY }}" `
+            -PackageName "${{ env.PLUGINS_PACKAGE_NAME }}" `
+            -Version "${{ needs.pack-plugins.outputs.contract-version }}"
+
   publish-package-custom-validation:
     name: Publish Custom Validation Contract NuGet Package
     needs: pack-custom-validation
@@ -832,6 +856,27 @@ jobs:
           }
 
           ./build-dms.ps1 Push @arguments
+
+      # Whether the push happened or the version was already published unchanged, the version has to
+      # be a member of the Prerelease view: that is what the release lane asks later to tell a
+      # version that shipped from one that never did. Nothing else populates that view.
+      #
+      # Idempotent in both directions. A version already in the Release view is left there, and one
+      # already in Prerelease is not promoted again, so running this on every prerelease is safe.
+      - name: Ensure Custom Validation Contract Prerelease Membership
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          Import-Module ./package-helpers.psm1
+
+          Invoke-ContractPrereleasePromotion `
+            -PackagesURL "${{ env.ARTIFACTS_PACKAGES_URL }}" `
+            -Username "${{ env.ARTIFACTS_USERNAME }}" `
+            -Password (ConvertTo-SecureString -String "${{ env.ARTIFACTS_API_KEY }}" -AsPlainText -Force) `
+            -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" `
+            -ApiKey "${{ env.ARTIFACTS_API_KEY }}" `
+            -PackageName "${{ env.CUSTOM_VALIDATION_PACKAGE_NAME }}" `
+            -Version "${{ needs.pack-custom-validation.outputs.contract-version }}"
 
   # dms-pre and dms-*-alpha releases, will not have artifacts attached.
   # This step attach DMS artifacts to the release with tag vX.Y.Z without 'alpha' or 'pre' in the tag name.

@@ -7,6 +7,12 @@
 
 $ErrorActionPreference = "Stop"
 
+# NuGet identity is defined once, in the module the publish check already uses, and the promotion
+# functions below compare feed-listed versions against a contract's declared version by exactly the
+# same rules. A second copy of "what makes two versions the same version" is how the release lane
+# and the publish lane would come to disagree.
+Import-Module (Join-Path $PSScriptRoot "eng/verification/ContractPackageComparison.psm1") -Force
+
 <#
 .DESCRIPTION
 Builds a pre-release version number based on the last tag in the commit history
@@ -73,10 +79,16 @@ function Invoke-Promote {
         # Name of the Package
         [Parameter(Mandatory = $true)]
         [String]
-        $PackageName
+        $PackageName,
+
+        # The exact version to promote, for a package whose version does not move with the release.
+        # Omitted, the version is derived from ReleaseRef as it always has been, which is what the
+        # three release-stamped callers rely on.
+        [String]
+        $Version
     )
 
-    $version = $ReleaseRef -replace "v", ""
+    $version = if ([string]::IsNullOrWhiteSpace($Version)) { $ReleaseRef -replace "v", "" } else { $Version }
 
     $body = @{
         data      = @{
@@ -302,4 +314,447 @@ function Get-CustomValidationContractVersion {
         -ContractDescription "custom-validation contract"
 }
 
-Export-ModuleMember -Function Get-VersionNumber, Invoke-Promote, InstallCredentialHandler, Convert-ToAssemblyVersion, Get-PluginsContractVersion, Get-CustomValidationContractVersion
+<#
+.DESCRIPTION
+The view-scoped form of a feed's NuGet v3 service index.
+
+Azure Artifacts addresses a feed's views by suffixing the feed name, so the Release view of
+.../_packaging/EdFi/nuget/v3/index.json is .../_packaging/EdFi@Release/nuget/v3/index.json. Asking
+the unscoped index instead would answer "is this version on the feed at all", which is a different
+question from "is it in this view" and is exactly the substitution the design rules out.
+
+A URL that does not carry a _packaging/<feed>/ segment is rejected rather than rewritten, because a
+silently unmodified URL would answer that different question without saying so.
+
+.EXAMPLE
+Get-ViewScopedServiceIndexUrl -ServiceIndexUrl "https://pkgs.dev.azure.com/o/p/_packaging/EdFi/nuget/v3/index.json" -ViewName "Release"
+#>
+function Get-ViewScopedServiceIndexUrl {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)]
+        [string]
+        $ServiceIndexUrl,
+
+        [Parameter(Mandatory)]
+        [string]
+        $ViewName
+    )
+
+    if ([string]::IsNullOrWhiteSpace($ServiceIndexUrl)) {
+        throw "Cannot scope a service index to the $ViewName view: no service index URL was supplied."
+    }
+
+    $pattern = '(?<prefix>/_packaging/)(?<feed>[^/@]+)(?<suffix>/)'
+
+    if ($ServiceIndexUrl -notmatch $pattern) {
+        throw "Cannot scope '$ServiceIndexUrl' to the $ViewName view: it carries no /_packaging/<feed>/ segment."
+    }
+
+    return [regex]::Replace(
+        $ServiceIndexUrl,
+        $pattern,
+        { param($match) $match.Groups['prefix'].Value + $match.Groups['feed'].Value + "@$ViewName" + $match.Groups['suffix'].Value },
+        1
+    )
+}
+
+<#
+.DESCRIPTION
+Whether a package version is a member of one feed view.
+
+Every failure here is fatal on purpose. This answer decides two different mutations: at release time
+an absence fails the release, and in the prerelease lane an absence promotes into a view. A feed
+that cannot be read, or that answers with something other than a version index, must never be read
+as "not a member".
+
+The request seam is injectable so that every outcome is testable without a feed or a credential.
+The default mirrors the rules Invoke-ContractPublishCheck.ps1 applies: the service index must answer
+before a package-index 404 may be read as absence, and any other status is an error.
+#>
+function Test-PackageInView {
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param(
+        # The feed's unscoped NuGet v3 service index, which is scoped to the view here.
+        [Parameter(Mandatory)]
+        [string]
+        $ServiceIndexUrl,
+
+        [Parameter(Mandatory)]
+        [string]
+        $ViewName,
+
+        [Parameter(Mandatory)]
+        [string]
+        $PackageName,
+
+        [Parameter(Mandatory)]
+        [string]
+        $Version,
+
+        [string]
+        $ApiKey = "",
+
+        # Returns the versions of $PackageName in the view addressed by the supplied index URL, as a
+        # hashtable of Found and Versions, or throws.
+        [scriptblock]
+        $GetViewVersions
+    )
+
+    $viewIndexUrl = Get-ViewScopedServiceIndexUrl -ServiceIndexUrl $ServiceIndexUrl -ViewName $ViewName
+
+    if ($null -eq $GetViewVersions) {
+        $GetViewVersions = ${function:Get-FeedViewVersion}
+    }
+
+    $result = & $GetViewVersions $viewIndexUrl $PackageName $ApiKey
+
+    if ($null -eq $result -or $result.Found -isnot [bool]) {
+        throw "The $ViewName view lookup for $PackageName returned no usable result. A view that cannot be read is not a view without the package."
+    }
+
+    if (-not $result.Found) {
+        return $false
+    }
+
+    if ($null -eq $result.Versions) {
+        throw "The $ViewName view reported $PackageName as present and listed no versions. That is a malformed response, not an absent version."
+    }
+
+    $normalized = ConvertTo-NormalizedPackageVersion -Version $Version
+
+    foreach ($listed in $result.Versions) {
+        if ($null -eq $listed -or [string]::IsNullOrWhiteSpace([string] $listed)) {
+            throw "The $ViewName view listed a blank version for $PackageName. That is a malformed version index, not an absent version."
+        }
+
+        if ((ConvertTo-NormalizedPackageVersion -Version ([string] $listed)) -ceq $normalized) {
+            return $true
+        }
+    }
+
+    return $false
+}
+
+<#
+.DESCRIPTION
+The default view lookup: resolve the view's package base address, then ask for the package's
+versions.
+#>
+function Get-FeedViewVersion {
+    [CmdletBinding()]
+    [OutputType([hashtable])]
+    param(
+        [Parameter(Mandatory)]
+        [string]
+        $ViewIndexUrl,
+
+        [Parameter(Mandatory)]
+        [string]
+        $PackageName,
+
+        [Parameter(Mandatory)]
+        [AllowEmptyString()]
+        [string]
+        $ApiKey
+    )
+
+    $headers = @{}
+
+    if (-not [string]::IsNullOrWhiteSpace($ApiKey)) {
+        # Azure Artifacts accepts a PAT as the password of a basic credential; the user name is
+        # ignored.
+        $encoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes("nuget:$ApiKey"))
+        $headers = @{ Authorization = "Basic $encoded" }
+    }
+
+    try {
+        $index = Invoke-RestMethod -Uri $ViewIndexUrl -Headers $headers -Method Get
+    }
+    catch {
+        throw "The view's service index at $ViewIndexUrl could not be read: $($_.Exception.Message). A view that cannot be read is not a view without the package."
+    }
+
+    $resource = @($index.resources | Where-Object { $_.'@type' -like "PackageBaseAddress/3.0.0*" })
+
+    if ($resource.Count -eq 0) {
+        throw "The view's service index at $ViewIndexUrl advertises no PackageBaseAddress/3.0.0 resource."
+    }
+
+    $baseAddress = $resource[0].'@id'
+    [uri] $baseUri = $null
+
+    if (
+        -not [uri]::TryCreate($baseAddress, [System.UriKind]::Absolute, [ref] $baseUri) -or
+        ($baseUri.Scheme -ne "http" -and $baseUri.Scheme -ne "https")
+    ) {
+        throw "The view's service index resolved to '$baseAddress', which is not an absolute http or https address."
+    }
+
+    $normalizedId = ConvertTo-NormalizedPackageId -PackageId $PackageName
+    $url = "$($baseAddress.TrimEnd('/'))/$normalizedId/index.json"
+
+    try {
+        $response = Invoke-RestMethod -Uri $url -Headers $headers -Method Get
+    }
+    catch {
+        $status = $_.Exception.Response.StatusCode.value__
+
+        # 404 from a view's package index, reached through a service index that answered, is how
+        # NuGet says the id is not in this view.
+        if ($status -eq 404) {
+            return @{ Found = $false; Versions = @() }
+        }
+
+        throw "The view answered $status for $url : $($_.Exception.Message). That is not an absent package."
+    }
+
+    if ($null -eq $response -or $null -eq $response.versions) {
+        throw "The view answered 200 for $url with no versions array. That is a malformed response, not an absent package."
+    }
+
+    if ($response.versions -isnot [System.Collections.IEnumerable] -or $response.versions -is [string]) {
+        throw "The view answered 200 for $url with a versions property that is not an array. That is a malformed response, not an absent package."
+    }
+
+    return @{ Found = $true; Versions = $response.versions }
+}
+
+<#
+.DESCRIPTION
+Promotes one contract package into the release view, with three outcomes and no fourth.
+
+A contract's version deliberately does not move with the release, so every release after the first
+offers a version that is already promoted. Absence from the prerelease view cannot be the test for
+that, because a version that was never published is absent from the prerelease view too: treating
+absence as "already promoted" would let a missed publish exit zero.
+
+So two views are asked:
+
+  present in the release view    -> already promoted, nothing to do
+  absent there, in prerelease    -> promote it
+  absent from both               -> fail, naming the package and the version
+
+.EXAMPLE
+Invoke-ContractPromotion -PackagesURL $url -Username $user -Password $secret -ServiceIndexUrl $index -PackageName EdFi.Api.Plugins -Version 1.0.0
+#>
+function Invoke-ContractPromotion {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'Passed through to Invoke-Promote in a splat the rule does not follow.')]
+    [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Medium')]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)]
+        [String]
+        $PackagesURL,
+
+        [Parameter(Mandatory)]
+        [String]
+        $Username,
+
+        [Parameter(Mandatory)]
+        [SecureString]
+        $Password,
+
+        # The feed's unscoped NuGet v3 service index, scoped to each view for the lookups.
+        [Parameter(Mandatory)]
+        [String]
+        $ServiceIndexUrl,
+
+        [Parameter(Mandatory)]
+        [String]
+        $PackageName,
+
+        # The contract's own declared version, read by the caller from the contract's own source.
+        [Parameter(Mandatory)]
+        [String]
+        $Version,
+
+        [String]
+        $ReleaseViewName = "Release",
+
+        [String]
+        $PrereleaseViewName = "Prerelease",
+
+        [String]
+        $ApiKey = "",
+
+        [scriptblock]
+        $GetViewVersions,
+
+        # Performs the promotion. Injectable so the outcomes are testable with no feed mutation.
+        [scriptblock]
+        $Promote
+    )
+
+    $lookup = @{
+        ServiceIndexUrl = $ServiceIndexUrl
+        PackageName     = $PackageName
+        Version         = $Version
+        ApiKey          = $ApiKey
+    }
+
+    if ($null -ne $GetViewVersions) {
+        $lookup.GetViewVersions = $GetViewVersions
+    }
+
+    if (Test-PackageInView @lookup -ViewName $ReleaseViewName) {
+        $message = "$PackageName $Version is already in the $ReleaseViewName view; nothing to do."
+        Write-Output $message
+
+        return $message
+    }
+
+    if (-not (Test-PackageInView @lookup -ViewName $PrereleaseViewName)) {
+        throw "$PackageName $Version is in neither the $ReleaseViewName nor the $PrereleaseViewName view. A version that never reached the feed cannot be promoted; check that the prerelease published it."
+    }
+
+    if ($null -eq $Promote) {
+        $Promote = {
+            param($Arguments)
+
+            Invoke-Promote @Arguments
+        }
+    }
+
+    if ($PSCmdlet.ShouldProcess("$PackageName $Version", "Promote to the $ReleaseViewName view")) {
+        & $Promote @{
+            PackagesURL = $PackagesURL
+            Username    = $Username
+            Password    = $Password
+            ViewId      = $ReleaseViewName.ToLowerInvariant()
+            ReleaseRef  = $Version
+            Version     = $Version
+            PackageName = $PackageName
+        }
+    }
+
+    $promoted = "$PackageName $Version promoted to the $ReleaseViewName view."
+    Write-Output $promoted
+
+    return $promoted
+}
+
+<#
+.DESCRIPTION
+Puts one contract package into the prerelease view, idempotently.
+
+The prerelease lane offers the same contract version on every prerelease, and the release lane later
+asks the prerelease view whether that version ever reached the feed. Nothing else populates that
+view, so without this step the release-time lookup would find the version in neither view and fail
+every release.
+
+Idempotent in both directions that matter: a version already in the release view is left alone,
+because promoting a released version backwards is not what this is for, and a version already in the
+prerelease view is left alone rather than promoted a second time. That is what makes it safe to run
+after a push and after a clean unchanged skip alike.
+#>
+function Invoke-ContractPrereleasePromotion {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'Passed through to Invoke-Promote in a splat the rule does not follow.')]
+    [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Medium')]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)]
+        [String]
+        $PackagesURL,
+
+        [Parameter(Mandatory)]
+        [String]
+        $Username,
+
+        [Parameter(Mandatory)]
+        [SecureString]
+        $Password,
+
+        [Parameter(Mandatory)]
+        [String]
+        $ServiceIndexUrl,
+
+        [Parameter(Mandatory)]
+        [String]
+        $PackageName,
+
+        [Parameter(Mandatory)]
+        [String]
+        $Version,
+
+        [String]
+        $ReleaseViewName = "Release",
+
+        [String]
+        $PrereleaseViewName = "Prerelease",
+
+        [String]
+        $ApiKey = "",
+
+        [scriptblock]
+        $GetViewVersions,
+
+        [scriptblock]
+        $Promote
+    )
+
+    $lookup = @{
+        ServiceIndexUrl = $ServiceIndexUrl
+        PackageName     = $PackageName
+        Version         = $Version
+        ApiKey          = $ApiKey
+    }
+
+    if ($null -ne $GetViewVersions) {
+        $lookup.GetViewVersions = $GetViewVersions
+    }
+
+    if (Test-PackageInView @lookup -ViewName $ReleaseViewName) {
+        $message = "$PackageName $Version is already in the $ReleaseViewName view; leaving it there."
+        Write-Output $message
+
+        return $message
+    }
+
+    if (Test-PackageInView @lookup -ViewName $PrereleaseViewName) {
+        $message = "$PackageName $Version is already in the $PrereleaseViewName view; nothing to do."
+        Write-Output $message
+
+        return $message
+    }
+
+    if ($null -eq $Promote) {
+        $Promote = {
+            param($Arguments)
+
+            Invoke-Promote @Arguments
+        }
+    }
+
+    if ($PSCmdlet.ShouldProcess("$PackageName $Version", "Promote to the $PrereleaseViewName view")) {
+        & $Promote @{
+            PackagesURL = $PackagesURL
+            Username    = $Username
+            Password    = $Password
+            ViewId      = $PrereleaseViewName.ToLowerInvariant()
+            ReleaseRef  = $Version
+            Version     = $Version
+            PackageName = $PackageName
+        }
+    }
+
+    $promoted = "$PackageName $Version promoted to the $PrereleaseViewName view."
+    Write-Output $promoted
+
+    return $promoted
+}
+
+Export-ModuleMember -Function `
+    Get-VersionNumber, `
+    Invoke-Promote, `
+    InstallCredentialHandler, `
+    Convert-ToAssemblyVersion, `
+    Get-PluginsContractVersion, `
+    Get-CustomValidationContractVersion, `
+    Get-ViewScopedServiceIndexUrl, `
+    Test-PackageInView, `
+    Get-FeedViewVersion, `
+    Invoke-ContractPromotion, `
+    Invoke-ContractPrereleasePromotion
