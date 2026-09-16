@@ -275,6 +275,15 @@ Describe "ConvertTo-CanonicalXmlDocumentation keeps distinctions a reader can se
             Should -BeTrue
     }
 
+    # The same rule with the review's own fixture shape, kept alongside the <b> case so the exact
+    # probe that found this is pinned by name rather than only by equivalence.
+    It "preserves code content wrapped in a span asking for default treatment" {
+        Test-DocumentationChanged `
+            -Left '<member name="T:C"><code><span xml:space="default">one two</span></code></member>' `
+            -Right '<member name="T:C"><code><span xml:space="default">one  two</span></code></member>' |
+            Should -BeTrue
+    }
+
     It "still normalizes a default reset that is not inside a code sample" {
         Test-DocumentationChanged `
             -Left '<member name="M:X.Y" xml:space="preserve"><summary><b xml:space="default">one two</b></summary></member>' `
