@@ -256,7 +256,8 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
         bool exposeBroker = false,
         bool nativeKafka = false,
         bool composeKafka = false,
-        bool offlineKafka = false
+        bool offlineKafka = false,
+        Func<Exception, string, Task> writeStartupFailureEvidence = null!
     )
     {
         var fixture = new CdcConnectorTemplatePinnedImageFixture(
@@ -314,7 +315,14 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
         {
             try
             {
-                await fixture.WriteStartupFailureEvidenceAsync(ex, fixture._startupStage);
+                await (writeStartupFailureEvidence ?? fixture.WriteStartupFailureEvidenceAsync)(
+                    ex,
+                    fixture._startupStage
+                );
+            }
+            catch (Exception)
+            {
+                // Failure evidence is best effort; preserve the startup exception and prerequisite policy.
             }
             finally
             {

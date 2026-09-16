@@ -98,6 +98,42 @@ public sealed class Given_PinnedImageFixtureStartupFailureCleanup
 {
     private const string ResourcePrefix = "dms-cdc-startup-test";
 
+    [TestCase("cancellation")]
+    [TestCase("assertion")]
+    [TestCase("failure")]
+    public void It_preserves_the_startup_failure_and_cleans_up_when_evidence_cannot_be_written(
+        string scenario
+    )
+    {
+        Exception startupException = scenario switch
+        {
+            "cancellation" => new OperationCanceledException("startup canceled"),
+            "assertion" => new AssertionException("startup rejected"),
+            _ => new InvalidOperationException("startup failed"),
+        };
+        var docker = new RecordingDockerCli(arguments => IsPortCommand(arguments) ? startupException : null);
+        bool evidenceAttempted = false;
+        Exception actual = Assert.CatchAsync(async () =>
+            await CdcConnectorTemplatePinnedImageFixture.StartAsync(
+                CdcProvider.Postgresql,
+                BuildSettings(),
+                docker,
+                ResourcePrefix,
+                CancellationToken.None,
+                applyPrerequisitePolicy: scenario != "failure",
+                writeStartupFailureEvidence: (_, _) =>
+                {
+                    evidenceAttempted = true;
+                    return Task.FromException(new IOException("evidence destination unavailable"));
+                }
+            )
+        )!;
+
+        evidenceAttempted.Should().BeTrue();
+        actual.Should().BeSameAs(startupException);
+        AssertCleanupCommandsWereRun(docker);
+    }
+
     [TestCase(1, "SQL Server Agent has not finished startup.", "", "AgentStarting")]
     [TestCase(1, "", "SQL Server configuration has not settled.", "ConfigurationPending")]
     [TestCase(1, "", "", "SqlCommandFailed")]
