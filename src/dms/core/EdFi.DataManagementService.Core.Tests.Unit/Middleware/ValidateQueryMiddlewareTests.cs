@@ -14,6 +14,7 @@ using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Paging;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Telemetry;
+using EdFi.DataManagementService.Core.Validation;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
@@ -1648,6 +1649,139 @@ public class ValidateQueryMiddlewareTests
 
             requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
             requestInfo.PageOrderingMode.Should().Be(PageOrderingMode.ContentVersion);
+        }
+    }
+
+    /// <summary>
+    /// A resource declaring a query field spelled like a reserved query parameter cannot filter on it:
+    /// the name is consumed as a control parameter before the query-field lookup runs.
+    /// </summary>
+    /// <remarks>
+    /// This is the request-time half of the DMS-1442 guarantee, and the reason the load-time refusal
+    /// exists. Such a schema is now refused by normalization, so this fixture builds one directly to
+    /// show what serving it would have meant. The cases are sourced from the catalog, so a name added
+    /// to it is covered here without anyone remembering to extend this suite.
+    /// </remarks>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Resource_Declaring_A_Reserved_Query_Parameter_Name : ValidateQueryMiddlewareTests
+    {
+        /// <summary>
+        /// Every name the collection GET removes from filter matching, with a value that parses, so a
+        /// name that was matched as a filter would produce a query element rather than an error.
+        /// </summary>
+        public static IEnumerable<TestCaseData> ReservedNamesAndValues()
+        {
+            Dictionary<string, string> values = new(StringComparer.Ordinal)
+            {
+                ["limit"] = "5",
+                ["offset"] = "0",
+                ["totalCount"] = "true",
+                ["pageToken"] = "ZCwxLDEw",
+                ["pageSize"] = "5",
+                ["minChangeVersion"] = "100",
+                ["maxChangeVersion"] = "200",
+            };
+
+            IEnumerable<string> reservedNames =
+            [
+                .. ReservedQueryParameters.OrdinalFilterExclusionsOn(
+                    ReservedQueryParameterOperations.CollectionGet
+                ),
+                .. ReservedQueryParameters.IgnoreCaseFilterExclusionsOn(
+                    ReservedQueryParameterOperations.CollectionGet
+                ),
+            ];
+
+            foreach (string reservedName in reservedNames)
+            {
+                yield return new TestCaseData(reservedName, values[reservedName]).SetName(
+                    $"{{m}}({reservedName})"
+                );
+            }
+        }
+
+        private static async Task<RequestInfo> Execute(string reservedName, string value)
+        {
+            ApiSchemaDocuments apiSchemaDocuments = new ApiSchemaBuilder()
+                .WithStartProject()
+                .WithStartResource("AcademicWeek")
+                .WithStartQueryFieldMapping()
+                .WithQueryField(reservedName, [new($"$.{reservedName}", "string")])
+                .WithQueryField("schoolId", [new("$.schoolId", "number")])
+                .WithEndQueryFieldMapping()
+                .WithEndResource()
+                .WithEndProject()
+                .ToApiSchemaDocuments();
+
+            FrontendRequest frontendRequest = new(
+                Path: "/ed-fi/academicWeeks",
+                Body: null,
+                Form: null,
+                Headers: [],
+                QueryParameters: new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    [reservedName] = value,
+                },
+                TraceId: new TraceId(""),
+                RouteQualifiers: []
+            );
+
+            RequestInfo requestInfo = new(
+                frontendRequest,
+                RequestMethod.GET,
+                ServiceProviderWithEffectiveTarget()
+            )
+            {
+                ApiSchemaDocuments = apiSchemaDocuments,
+                PathComponents = new(
+                    ProjectEndpointName: new("ed-fi"),
+                    EndpointName: new("academicWeeks"),
+                    Operation: ResourcePathOperation.Collection.Instance
+                ),
+            };
+
+            requestInfo.ProjectSchema = requestInfo.ApiSchemaDocuments.FindProjectSchemaForProjectNamespace(
+                new("ed-fi")
+            )!;
+            requestInfo.ResourceSchema = new ResourceSchema(
+                requestInfo.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("academicWeeks"))
+                    ?? new JsonObject()
+            );
+
+            await Middleware().Execute(requestInfo, NullNext);
+
+            return requestInfo;
+        }
+
+        [TestCaseSource(nameof(ReservedNamesAndValues))]
+        public async Task It_never_becomes_a_query_element(string reservedName, string value)
+        {
+            RequestInfo requestInfo = await Execute(reservedName, value);
+
+            requestInfo
+                .QueryElements.Select(queryElement => queryElement.QueryFieldName)
+                .Should()
+                .NotContain(
+                    reservedName,
+                    "the schema really declares this query field, so it would have produced a query "
+                        + "element had the name not been consumed as a control parameter first"
+                );
+        }
+
+        /// <summary>
+        /// Nor is it answered as an unknown query field. Excluding a name from filter matching is not
+        /// the same as rejecting it, and reporting it as unknown would contradict the schema that
+        /// declares it.
+        /// </summary>
+        [TestCaseSource(nameof(ReservedNamesAndValues))]
+        public async Task It_is_not_reported_as_an_unknown_query_field(string reservedName, string value)
+        {
+            RequestInfo requestInfo = await Execute(reservedName, value);
+
+            (requestInfo.FrontendResponse.Body?.ToJsonString() ?? string.Empty)
+                .Should()
+                .NotContain($"The query field '{reservedName}' is not valid for this resource.");
         }
     }
 }

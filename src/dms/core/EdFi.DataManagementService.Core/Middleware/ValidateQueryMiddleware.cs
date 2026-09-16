@@ -57,18 +57,18 @@ internal class ValidateQueryMiddleware(
     );
 
     /// <summary>
-    /// The paging names this operation parses and excludes from filter matching. Spelled from the
-    /// constants the cursor validator reads, because <see cref="Paging.PartitionRequestValidator" />
-    /// reserves the same five names from the same constants: matching filters over a different set of
-    /// names than /partitions rejects would let one operation filter on a resource property the other
-    /// treats as paging.
+    /// Which operation's reserved names this composition excludes from filter matching.
     /// </summary>
-    private static readonly string[] _paginationQueryParameters =
-    [
-        CursorRequestValidator.LimitParameter,
-        CursorRequestValidator.OffsetParameter,
-        CursorRequestValidator.TotalCountParameter,
-    ];
+    /// <remarks>
+    /// This step is composed into two pipelines, and the same flag that decides whether it acquires
+    /// the cursor parameters decides which operation it is serving. Naming the operation rather than
+    /// always asking for the collection GET's names is what keeps a future name reserved on only one
+    /// of the two from silently changing the other: the two sets are identical today, and a catalog
+    /// test pins that, but nothing here depends on their staying so.
+    /// </remarks>
+    private readonly ReservedQueryParameterOperations _reservedFor = _cursorParametersRecognized
+        ? ReservedQueryParameterOperations.CollectionGet
+        : ReservedQueryParameterOperations.ChangeQueries;
 
     /// <summary>
     /// Finds and sets PaginationParameters on the requestInfo by parsing the client request.
@@ -269,9 +269,11 @@ internal class ValidateQueryMiddleware(
         requestInfo.ChangeVersionRange = changeVersionResult.Range;
         requestInfo.PageOrderingMode = pageOrderingMode;
 
-        // Pagination parameters are matched case-sensitively, consistent with how they are
-        // parsed above; change-version parameters are matched case-insensitively, consistent
-        // with how the validator looks them up.
+        // Both excluded sets are read from the reserved query parameter catalog rather than assembled
+        // here, so a name this step consumes and a name a schema is refused for cannot diverge. The
+        // catalog carries how each name is matched: the paging and cursor names case-sensitively,
+        // consistent with how they are parsed above, and the change-version names
+        // case-insensitively, consistent with how that validator looks them up.
         //
         // The cursor parameters are excluded in both modes, for different reasons. Where they are
         // recognized, the cursor validation above has already consumed them. Where they are not,
@@ -282,8 +284,8 @@ internal class ValidateQueryMiddleware(
         ResourceQueryFilterResult filterResult = ResourceQueryFilterValidator.Validate(
             requestInfo.FrontendRequest.QueryParameters,
             requestInfo.ResourceSchema.QueryFields.ToArray(),
-            ordinalExcludedNames: [.. _paginationQueryParameters, .. CursorRequestValidator.CursorParameters],
-            ignoreCaseExcludedNames: ChangeVersionParameterValidator.ReservedParameterNames
+            ordinalExcludedNames: ReservedQueryParameters.OrdinalFilterExclusionsOn(_reservedFor),
+            ignoreCaseExcludedNames: ReservedQueryParameters.IgnoreCaseFilterExclusionsOn(_reservedFor)
         );
 
         switch (filterResult)
