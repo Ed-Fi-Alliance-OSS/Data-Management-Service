@@ -89,8 +89,9 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
     /// Ordinal, because JSON member names are case-sensitive and RFC 6749 spells these lowercase.
     /// <c>error</c> costs nothing at all to log, since it is already forwarded to the client as
     /// the problem-details <c>title</c> (<see cref="Response.FailureResponse.ForUnauthorized"/>).
-    /// <c>error_description</c> appears only when it arrived malformed - a well-formed one is
-    /// precisely what suppresses this event. <c>error_uri</c> is never logged by value; see
+    /// <c>error_description</c> reaches this summary only when its value was not a usable string
+    /// - a JSON object or array, reported as malformed, or a JSON null - because a well-formed one
+    /// is precisely what suppresses this event. <c>error_uri</c> is never logged by value; see
     /// <see cref="ErrorUriFieldName"/>.
     ///
     /// Membership makes a field eligible, not safe: what a member actually contributes to the

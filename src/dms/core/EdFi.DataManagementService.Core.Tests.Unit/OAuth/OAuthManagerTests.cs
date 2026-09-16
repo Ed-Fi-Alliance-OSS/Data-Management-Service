@@ -1689,4 +1689,50 @@ public class OAuthManagerTests
             _logged.Properties["StandardFields"]!.ToString().Should().Be("error=null");
         }
     }
+
+    /// <summary>
+    /// A JSON null in <c>error_description</c> is not a description, so it does not suppress the
+    /// fallback event the way a well-formed one does. The field therefore does reach the summary,
+    /// by way of its allowlist entry, and is reported there as a null.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_An_Unauthorized_Upstream_Body_Whose_Error_Description_Is_A_Json_Null
+    {
+        private const string UpstreamBody = """
+            {"error":"invalid_client","error_description":null}
+            """;
+
+        private HttpResponseMessage _response = default!;
+        private LogRecord _logged = default!;
+        private JsonNode _body = default!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            (_response, RecordingLogger<OAuthManager> logger) = await UpstreamResponds(
+                HttpStatusCode.Unauthorized,
+                UpstreamBody
+            );
+            _body = JsonNode.Parse(await _response.Content.ReadAsStringAsync())!;
+            _logged = DiscardedUnauthorizedDetailRecord(logger)!;
+        }
+
+        [Test]
+        public void It_treats_the_null_as_no_description_at_all()
+        {
+            _body["detail"]!.GetValue<string>().Should().Be(ExpectedUnauthorizedFallbackDetail);
+        }
+
+        [Test]
+        public void It_records_the_error_description_by_name_and_value_rather_than_by_name_alone()
+        {
+            // The allowlist entry is what puts `error_description` in StandardFields rather than
+            // among the names-only members, and the null is what it contributed.
+            _logged.Properties["StandardFields"]!
+                .ToString()
+                .Should()
+                .Be("error=invalid_client, error_description=null");
+        }
+    }
 }
