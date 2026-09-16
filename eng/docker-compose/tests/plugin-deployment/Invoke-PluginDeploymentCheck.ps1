@@ -504,6 +504,11 @@ function Invoke-ImageVersionProof {
     $dmsDeclared = Get-DeclaredAssemblyVersion (Join-Path $repositoryRoot "src/dms/Directory.Build.props")
     $pluginsDeclared = Get-DeclaredAssemblyVersion (Join-Path $repositoryRoot "src/plugins/Directory.Build.props")
 
+    # The second contract's declaration lives in its csproj rather than in a props file, which is
+    # what the module's reader knows and this phase does not have to.
+    Import-Module (Join-Path $repositoryRoot "package-helpers.psm1") -Force
+    $customValidationDeclared = Get-CustomValidationContractVersion
+
     Assert-True `
         ($DmsVersion -notlike "$dmsDeclared*") `
         "the build version '$DmsVersion' differs from the committed DMS assembly version '$dmsDeclared', so the two are distinguishable"
@@ -537,7 +542,10 @@ function Invoke-ImageVersionProof {
     Invoke-Checked -What "docker create" -Command { & docker create --name $container local/ed-fi-api | Out-Null }
 
     try {
-        foreach ($assembly in @("EdFi.Api.Plugins.dll", "EdFi.DataManagementService.Frontend.AspNetCore.dll")) {
+        foreach ($assembly in @(
+                "EdFi.Api.Plugins.dll",
+                "EdFi.DataManagementService.CustomValidation.dll",
+                "EdFi.DataManagementService.Frontend.AspNetCore.dll")) {
             Invoke-Checked -What "docker cp $assembly" -Command {
                 & docker cp "${container}:/app/$assembly" $extractRoot | Out-Null
             }
@@ -548,18 +556,28 @@ function Invoke-ImageVersionProof {
     }
 
     $contract = Get-AssemblyIdentity (Join-Path $extractRoot "EdFi.Api.Plugins.dll")
+    $customValidation = Get-AssemblyIdentity (Join-Path $extractRoot "EdFi.DataManagementService.CustomValidation.dll")
     $frontend = Get-AssemblyIdentity (Join-Path $extractRoot "EdFi.DataManagementService.Frontend.AspNetCore.dll")
 
-    # Scoped to the plugin contract deliberately. EdFi.DataManagementService.CustomValidation declares
-    # no version of its own today and inherits src/dms/Directory.Build.props; asserting that it
-    # "carries the version its own project declares" would assert against a value no project writes.
-    # The story that gives it its own declaration extends this assertion in the same pass.
+    # Both contracts, and for the same reason: each declares its own version, and neither may take
+    # the version the build was given. The custom-validation contract lives under src/dms, where
+    # SetDMSAssemblyInfo regenerates the props every project there inherits, so its csproj
+    # declaration is the only thing standing between it and the release version.
     Assert-True `
         ($contract.AssemblyVersion -eq "$pluginsDeclared.0") `
         "EdFi.Api.Plugins carries AssemblyVersion $($contract.AssemblyVersion), the version src/plugins/Directory.Build.props declares"
     Assert-True `
         ($contract.FileVersion -eq $pluginsDeclared) `
         "EdFi.Api.Plugins carries FileVersion $($contract.FileVersion)"
+    Assert-True `
+        ($customValidation.AssemblyVersion -eq "$customValidationDeclared.0") `
+        "EdFi.DataManagementService.CustomValidation carries AssemblyVersion $($customValidation.AssemblyVersion), the version its own csproj declares"
+    Assert-True `
+        ($customValidation.FileVersion -eq $customValidationDeclared) `
+        "EdFi.DataManagementService.CustomValidation carries FileVersion $($customValidation.FileVersion)"
+    Assert-True `
+        ($customValidation.AssemblyVersion -ne "$dmsDeclared.0" -and $customValidation.AssemblyVersion -notlike "$DmsVersion*") `
+        "EdFi.DataManagementService.CustomValidation took neither the committed DMS version '$dmsDeclared' nor the build's '$DmsVersion'"
     Assert-True `
         ($frontend.AssemblyVersion -eq "$dmsDeclared.0") `
         "the frontend carries AssemblyVersion $($frontend.AssemblyVersion), the committed value"
@@ -590,15 +608,17 @@ function Invoke-ImageVersionProof {
     }
 
     $script:results.imageVersionProof = [ordered]@{
-        dmsVersionArgument       = $DmsVersion
-        committedDmsVersion      = $dmsDeclared
-        committedContractVersion = $pluginsDeclared
-        probedImageReference     = "local/ed-fi-api"
-        probedImageId            = $probedImageId
-        defaultTagImageId        = $defaultTagImageId
-        contract                 = $contract
-        frontend                 = $frontend
-        propsUnchanged           = $true
+        dmsVersionArgument                     = $DmsVersion
+        committedDmsVersion                    = $dmsDeclared
+        committedContractVersion               = $pluginsDeclared
+        committedCustomValidationVersion       = $customValidationDeclared
+        probedImageReference                   = "local/ed-fi-api"
+        probedImageId                          = $probedImageId
+        defaultTagImageId                      = $defaultTagImageId
+        contract                               = $contract
+        customValidation                       = $customValidation
+        frontend                               = $frontend
+        propsUnchanged                         = $true
     }
     $script:probedImageId = $probedImageId
 }
