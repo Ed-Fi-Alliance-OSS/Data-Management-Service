@@ -544,6 +544,33 @@ Describe "Invoke-ContractPublishCheck validates what the feed actually returned"
             Should -Throw -ExpectedMessage "*not an absent package*"
     }
 
+    # Filtering an unusable entry away empties the list, an empty list reads as "this version is not
+    # published", and that reads as a push.
+    It "refuses a blank version entry rather than discarding it" {
+        $packed = New-ContractPackage
+        $feed = Get-FakeFeed -Versions @(" ")
+
+        { Invoke-Check -PackageFile $packed -Feed $feed } |
+            Should -Throw -ExpectedMessage "*malformed version index*"
+    }
+
+    It "refuses a blank entry beside a valid one" {
+        $packed = New-ContractPackage
+        $feed = Get-FakeFeed -Versions @("1.0.0", "")
+
+        { Invoke-Check -PackageFile $packed -Feed $feed } |
+            Should -Throw -ExpectedMessage "*malformed version index*"
+    }
+
+    It "refuses a lookup result whose Found is not a boolean" {
+        $packed = New-ContractPackage
+        $feed = Get-FakeFeed
+        $feed.GetPublishedVersions = Get-ConstantSeam -Value @{ Found = "yes"; Versions = @() }
+
+        { Invoke-Check -PackageFile $packed -Feed $feed } |
+            Should -Throw -ExpectedMessage "*not a boolean*"
+    }
+
     It "refuses a listed version that is not a version NuGet accepts" {
         $packed = New-ContractPackage
         $feed = Get-FakeFeed -Versions @("1.0.0-")

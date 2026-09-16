@@ -470,7 +470,12 @@ function ConvertTo-CanonicalXmlNode {
 
         if ($nodeType -eq [System.Xml.XmlNodeType]::Element) {
             $element = [System.Xml.XmlElement] $child
-            $childPreserve = $Preserve -or (Test-XmlPreserveSpace -Node $element)
+
+            # The element's own walk is the whole answer, and inheriting the caller's value with -or
+            # would be wrong: Test-XmlPreserveSpace already climbs ancestors and stops at the nearest
+            # of code, xml:space="preserve" or xml:space="default", so a nearer default must be able
+            # to reset a preserving ancestor. Or-ing the inherited true made that reset unreachable.
+            $childPreserve = Test-XmlPreserveSpace -Node $element
 
             $attributes = ConvertTo-OrdinalOrder -Value @(
                 $element.Attributes |
