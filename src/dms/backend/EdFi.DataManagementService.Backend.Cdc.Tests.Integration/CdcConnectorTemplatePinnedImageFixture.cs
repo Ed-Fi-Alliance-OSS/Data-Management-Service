@@ -394,7 +394,11 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
         TestContext.AddTestAttachment(path, "Sanitized pinned-image fixture startup failure locations");
     }
 
-    private sealed record SqlServerContainerState(string Status, int ExitCode, bool OomKilled);
+    private sealed record SqlServerContainerState(string Status, int ExitCode, bool OomKilled)
+    {
+        public CdcSqlServerStartupLogEvidence Logs { get; init; } =
+            CdcSqlServerStartupLogEvidence.Empty("NotObserved");
+    }
 
     private async Task<SqlServerContainerState> ReadFailedSqlServerContainerStateAsync()
     {
@@ -432,11 +436,16 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
                         or "dead"
                 )
                 {
-                    return new(
+                    var container = new SqlServerContainerState(
                         status,
                         state.GetProperty("ExitCode").GetInt32(),
                         state.GetProperty("OOMKilled").GetBoolean()
                     );
+                    if (status is "exited" or "dead")
+                    {
+                        return container with { Logs = await ReadFailedSqlServerLogsAsync(timeout.Token) };
+                    }
+                    return container;
                 }
             }
         }
@@ -445,6 +454,26 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
             // Diagnostic collection cannot replace the original startup failure or prevent cleanup.
         }
         return new("Unavailable", 0, false);
+    }
+
+    private async Task<CdcSqlServerStartupLogEvidence> ReadFailedSqlServerLogsAsync(
+        CancellationToken cancellationToken
+    )
+    {
+        // Share the five-second inspection budget. A log failure must not erase the known
+        // container state, replace the original startup exception, or prevent cleanup.
+        try
+        {
+            var result = await _docker.RunAllowingFailureAsync(
+                ["logs", "--tail", "400", ProviderContainerName],
+                cancellationToken
+            );
+            return CdcSqlServerStartupLogClassifier.Parse(result);
+        }
+        catch (Exception)
+        {
+            return CdcSqlServerStartupLogEvidence.Empty("Unavailable");
+        }
     }
 
     public async Task<CdcConnectorTemplateRequest> CreateRequestAsync(CancellationToken cancellationToken)
