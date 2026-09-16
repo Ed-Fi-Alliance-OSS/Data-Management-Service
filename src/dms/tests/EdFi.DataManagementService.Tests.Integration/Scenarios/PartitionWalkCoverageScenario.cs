@@ -94,10 +94,25 @@ internal static class PartitionWalkCoverageScenario
     private const string UpdatedLabel = "updated";
 
     /// <summary>
-    /// The number the extension documents carry. Nothing in this scenario reads the value; it is
-    /// supplied only because the seeding helper writes the field on every document.
+    /// The item number the extension documents carry where the value itself is not the subject. The
+    /// walks those seeds feed filter on the label or on nothing at all.
     /// </summary>
-    private const int SharedExtensionNumber = 105;
+    private const int SharedItemNumber = 105;
+
+    /// <summary>
+    /// The lowest item number the both-operations filter seed assigns. Each document gets a distinct
+    /// value from here upward, so filtering on one selects exactly one document — which is what keeps
+    /// that assertion inside a page size of <see cref="HostMaximumPageSize"/>.
+    /// </summary>
+    private const int FilterItemNumberBase = 100;
+
+    /// <summary>
+    /// The offset into that seed whose item number both requests supply. Base plus offset stays inside
+    /// the accepted partition-count range of 1 to 200, so a regression that read the filter as a count
+    /// would be answered rather than rejected, and would therefore be caught by the union assertion
+    /// rather than by an error the test was not looking for.
+    /// </summary>
+    private const int FilterItemNumberOffset = 5;
 
     public static Task It_covers_a_regular_resource_collection_sequentially(ApiIntegrationHarness harness) =>
         CoverRegularResourceAsync(harness, "regular-sequential", inParallel: false);
@@ -139,7 +154,7 @@ internal static class PartitionWalkCoverageScenario
             harness,
             FilteredSeedCount,
             labelFor: index => index % 2 == 0 ? MatchingLabel : OtherLabel,
-            numberFor: _ => SharedExtensionNumber
+            itemNumberFor: _ => SharedItemNumber
         );
 
         string[] expectedIds = [.. seeded.Where(item => item.Label == MatchingLabel).Select(item => item.Id)];
@@ -186,7 +201,7 @@ internal static class PartitionWalkCoverageScenario
             harness,
             WindowSeedCount,
             labelFor: _ => MatchingLabel,
-            numberFor: _ => SharedExtensionNumber
+            itemNumberFor: _ => SharedItemNumber
         );
 
         // Every document was created before this, so the window's lower bound excludes all of them
@@ -212,7 +227,7 @@ internal static class PartitionWalkCoverageScenario
             harness,
             LaterBatchCount,
             labelFor: _ => MatchingLabel,
-            numberFor: _ => SharedExtensionNumber
+            itemNumberFor: _ => SharedItemNumber
         );
 
         laterItems.Should().NotBeEmpty("the later batch is what a dropped upper bound would readmit");
@@ -236,6 +251,100 @@ internal static class PartitionWalkCoverageScenario
     }
 
     /// <summary>
+    /// One query field, one meaning, on both sibling operations: the same filter selects the same
+    /// document from the collection GET and narrows the candidate set the partition boundaries are cut
+    /// over, so walking every returned range reaches exactly that document and nothing else.
+    /// </summary>
+    /// <remarks>
+    /// This is the property DMS-1442 restores. Before it, a resource declaring a query field spelled
+    /// like a DMS-reserved query parameter filtered on one operation and was consumed as a control
+    /// parameter on the other, so the two siblings answered the same filter differently and nothing in
+    /// either response said so. A schema declaring such a field is now refused at ApiSchema load, which
+    /// leaves this behavior — identical filtering on both operations — as the only one reachable.
+    /// <para>
+    /// Asserted with a numeric field, and with a value inside the accepted partition-count range of 1 to
+    /// 200, because that is the shape the retired collision had: were <c>itemNumber</c> consumed as a
+    /// count here, the partitions request would still answer 200 rather than rejecting the value, so
+    /// the fault would have to be caught by an assertion rather than by an error.
+    /// </para>
+    /// <para>
+    /// The partition count is asserted before the walks, and it is what carries this test. The walks
+    /// repeat the filter on every page, as the contract requires, so their union would hold the one
+    /// matching document whether or not the boundary query applied the filter at all — the walks would
+    /// simply have filtered wider ranges down to the same answer. Only the number of boundaries the
+    /// partitions request cut distinguishes the two, and it is read straight from that response.
+    /// </para>
+    /// </remarks>
+    public static async Task It_filters_on_the_same_query_field_on_a_collection_and_on_its_partitions(
+        ApiIntegrationHarness harness
+    )
+    {
+        ArgumentNullException.ThrowIfNull(harness);
+
+        // Every document gets a distinct item number, so filtering on one selects exactly one document.
+        // That keeps both assertions inside the host's small maximum page size while still being an
+        // observably narrower answer than the whole collection.
+        var seeded = await CursorContractSupport.SeedExtensionItemsAsync(
+            harness,
+            SeededDocumentCount,
+            labelFor: _ => MatchingLabel,
+            itemNumberFor: index => FilterItemNumberBase + index
+        );
+
+        string selectedId = seeded[FilterItemNumberOffset].Id;
+        string filter =
+            $"itemNumber={(FilterItemNumberBase + FilterItemNumberOffset).ToString(CultureInfo.InvariantCulture)}";
+
+        var filteredCollection = await CursorContractSupport.ReadPageAsync(
+            harness,
+            $"{CursorContractSupport.ExtensionItemsEndpoint}?{filter}"
+        );
+
+        filteredCollection
+            .DocumentIds.Should()
+            .BeEquivalentTo(
+                new[] { selectedId },
+                "the collection GET filters on the query field the schema declares"
+            );
+
+        var pageTokens = await CursorContractSupport.ReadPageTokensAsync(
+            harness,
+            $"{CursorContractSupport.ExtensionItemsPartitionsEndpoint}"
+                + $"?number={RequestedPartitionCount.ToString(CultureInfo.InvariantCulture)}&{filter}"
+        );
+
+        // The boundary query's own answer, read before any page is walked. This is the assertion that
+        // makes the filter observable on this operation: the walks below repeat the filter, so a
+        // boundary query that ignored it would still produce a union of one document and the final
+        // equality would pass. A count cannot be recovered that way. One matching candidate is one
+        // partition, where the unfiltered seed of twenty-five is cut into three at the minimum
+        // partition size of ten, so the two cases are not confusable.
+        pageTokens
+            .Should()
+            .ContainSingle(
+                "the filtered candidate set holds one document, so the boundary query cut one "
+                    + "partition; a boundary query that ignored the filter would have cut three"
+            );
+
+        var walkedIds = await WalkEveryPartitionAsync(
+            harness,
+            CursorContractSupport.ExtensionItemsEndpoint,
+            pageTokens,
+            querySuffix: $"&{filter}",
+            inParallel: false
+        );
+
+        walkedIds
+            .SelectMany(static partition => partition)
+            .Should()
+            .BeEquivalentTo(
+                new[] { selectedId },
+                "the partitions operation cut its boundaries over the same filtered candidate set, so "
+                    + "walking every range reaches the one document the collection GET returned"
+            );
+    }
+
+    /// <summary>
     /// The partitions endpoint reports the count as unsupported nowhere, but the collection endpoint has
     /// no partition count: a bare <c>number</c> on the collection GET that no query field matches is an
     /// unknown query field rather than a control parameter.
@@ -254,6 +363,32 @@ internal static class PartitionWalkCoverageScenario
 
         using var response = await harness.HttpClient.GetAsync(
             $"{CursorContractSupport.MergeItemsEndpoint}?number=5"
+        );
+
+        await BadRequestProblemDetails.AssertShellAsync(
+            response,
+            BadRequestProblemDetails.UnknownQueryField("number")
+        );
+    }
+
+    /// <summary>
+    /// The extension collection answers the count key the same way the regular one does, because no
+    /// loadable schema declares a query field spelled like a DMS-reserved query parameter.
+    /// </summary>
+    /// <remarks>
+    /// The twin above asserts this on a resource that never declared such a field. This row asserts it
+    /// on the one resource in this fixture that used to, which is what makes the fixture rename
+    /// observable rather than merely committed: were the field still declared, this request would filter
+    /// and return HTTP 200 instead.
+    /// </remarks>
+    public static async Task It_rejects_a_number_query_key_on_the_extension_collection(
+        ApiIntegrationHarness harness
+    )
+    {
+        ArgumentNullException.ThrowIfNull(harness);
+
+        using var response = await harness.HttpClient.GetAsync(
+            $"{CursorContractSupport.ExtensionItemsEndpoint}?number=5"
         );
 
         await BadRequestProblemDetails.AssertShellAsync(
@@ -314,7 +449,7 @@ internal static class PartitionWalkCoverageScenario
             harness,
             SeededDocumentCount,
             labelFor: _ => MatchingLabel,
-            numberFor: _ => SharedExtensionNumber
+            itemNumberFor: _ => SharedItemNumber
         );
 
         await AssertPartitionsTileTheCandidateSetAsync(

@@ -502,24 +502,24 @@ internal static class CursorContractSupport
     );
 
     /// <summary>
-    /// Seeds <paramref name="count"/> extension-resource documents, giving each the label and number the
-    /// callbacks return for its index, and returns their ids in creation order.
+    /// Seeds <paramref name="count"/> extension-resource documents, giving each the label and item
+    /// number the callbacks return for its index, and returns their ids in creation order.
     /// </summary>
     /// <remarks>
-    /// The label and number are supplied per document rather than fixed, because the filtered walks
-    /// need a seed whose matching and non-matching members are interleaved: a filter dropped partway
-    /// through a walk must pull in a non-matching document rather than land in an untouched tail.
+    /// Both values are supplied per document rather than fixed, because the filtered walks need a seed
+    /// whose matching and non-matching members are interleaved: a filter dropped partway through a walk
+    /// must pull in a non-matching document rather than land in an untouched tail.
     /// </remarks>
     internal static async Task<IReadOnlyList<SeededExtensionItem>> SeedExtensionItemsAsync(
         ApiIntegrationHarness harness,
         int count,
         Func<int, string> labelFor,
-        Func<int, int> numberFor
+        Func<int, int> itemNumberFor
     )
     {
         ArgumentNullException.ThrowIfNull(harness);
         ArgumentNullException.ThrowIfNull(labelFor);
-        ArgumentNullException.ThrowIfNull(numberFor);
+        ArgumentNullException.ThrowIfNull(itemNumberFor);
 
         List<SeededExtensionItem> seeded = [];
 
@@ -527,13 +527,13 @@ internal static class CursorContractSupport
         {
             int identity = Interlocked.Increment(ref _nextExtensionItemIdentity);
             string label = labelFor(index);
-            int number = numberFor(index);
+            int itemNumber = itemNumberFor(index);
 
             var payload = new JsonObject
             {
                 ["partitionContractItemId"] = identity,
                 ["label"] = label,
-                ["number"] = number,
+                ["itemNumber"] = itemNumber,
             };
 
             seeded.Add(
@@ -541,7 +541,7 @@ internal static class CursorContractSupport
                     await CreateAsync(harness, ExtensionItemsEndpoint, payload),
                     identity,
                     label,
-                    number
+                    itemNumber
                 )
             );
         }
@@ -550,7 +550,7 @@ internal static class CursorContractSupport
     }
 
     /// <summary>One seeded extension document, with the values needed to update it in place.</summary>
-    internal sealed record SeededExtensionItem(string Id, int Identity, string Label, int Number);
+    internal sealed record SeededExtensionItem(string Id, int Identity, string Label, int ItemNumber);
 
     /// <summary>
     /// Updates one extension document's label, which raises its change version.
@@ -558,8 +558,8 @@ internal static class CursorContractSupport
     /// <remarks>
     /// The label really changes, because an update that changed nothing would be answered as a no-op
     /// and would not move the document's change version — which is the whole point of calling this.
-    /// The identity and number are resent unchanged, so the update cannot move the document into or out
-    /// of a partition range or a number filter.
+    /// The identity and item number are resent unchanged, so the update cannot move the document into
+    /// or out of a partition range or an item-number filter.
     /// </remarks>
     internal static async Task UpdateExtensionItemLabelAsync(
         ApiIntegrationHarness harness,
@@ -575,7 +575,7 @@ internal static class CursorContractSupport
             ["id"] = item.Id,
             ["partitionContractItemId"] = item.Identity,
             ["label"] = updatedLabel,
-            ["number"] = item.Number,
+            ["itemNumber"] = item.ItemNumber,
         };
 
         using var content = new StringContent(payload.ToJsonString(), Encoding.UTF8, StandardJsonContentType);

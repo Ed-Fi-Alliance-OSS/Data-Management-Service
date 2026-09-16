@@ -12,8 +12,7 @@ namespace EdFi.DataManagementService.Tests.Integration.Tests.Mssql;
 /// <summary>
 /// SQL Server twin of the ODS comparison, restricted to the groups whose observation is produced by
 /// provider work: partition sizing and its boundaries in both the supplied-count and omitted-count
-/// forms, the filter-versus-count collision over a real candidate set, the range a token names, and the
-/// identity maximum the provider's own identity column reaches.
+/// forms, the range a token names, and the identity maximum the provider's own identity column reaches.
 /// </summary>
 /// <remarks>
 /// The validation, published-metadata, and profile groups are deliberately absent. Request validation,

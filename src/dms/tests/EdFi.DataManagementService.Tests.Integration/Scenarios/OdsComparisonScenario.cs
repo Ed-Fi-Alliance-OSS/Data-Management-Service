@@ -52,7 +52,11 @@ internal static class OdsComparisonScenario
 
     internal const int HostDefaultPartitionCount = 10;
 
-    private const string CollisionNumber = "105";
+    /// <summary>
+    /// The item number every seeded extension document carries. No case reads the value; the field is
+    /// written because the seeding helper writes it on every document.
+    /// </summary>
+    private const string SharedItemNumber = "105";
 
     /// <summary>
     /// The collection whose profile document and runtime profile behavior the profile group observes. It
@@ -359,7 +363,7 @@ internal static class OdsComparisonScenario
                 harness,
                 seed,
                 labelFor: _ => "included",
-                numberFor: _ => int.Parse(CollisionNumber, CultureInfo.InvariantCulture)
+                itemNumberFor: _ => int.Parse(SharedItemNumber, CultureInfo.InvariantCulture)
             );
         }
 
@@ -515,7 +519,7 @@ internal static class OdsComparisonScenario
                     $"Sizing case '{comparisonCase.Id}' must declare its seed."
                 ),
             labelFor: _ => "included",
-            numberFor: _ => int.Parse(CollisionNumber, CultureInfo.InvariantCulture)
+            itemNumberFor: _ => int.Parse(SharedItemNumber, CultureInfo.InvariantCulture)
         );
 
         var pageTokens = await CursorContractSupport.ReadPageTokensAsync(
@@ -573,7 +577,7 @@ internal static class OdsComparisonScenario
             harness,
             8,
             labelFor: _ => "included",
-            numberFor: _ => int.Parse(CollisionNumber, CultureInfo.InvariantCulture)
+            itemNumberFor: _ => int.Parse(SharedItemNumber, CultureInfo.InvariantCulture)
         );
 
         var page = await CursorContractSupport.ReadPageAsync(
@@ -610,7 +614,7 @@ internal static class OdsComparisonScenario
             harness,
             1,
             labelFor: _ => "included",
-            numberFor: _ => int.Parse(CollisionNumber, CultureInfo.InvariantCulture)
+            itemNumberFor: _ => int.Parse(SharedItemNumber, CultureInfo.InvariantCulture)
         );
 
         long maximumDocumentId = await ReadMaximumDocumentIdAsync(harness);

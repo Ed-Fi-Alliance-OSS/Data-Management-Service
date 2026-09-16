@@ -16,7 +16,7 @@ namespace EdFi.DataManagementService.Tests.Integration.Tests.Postgresql;
 /// </summary>
 /// <remarks>
 /// Leases the cursor-partition-contract fixture, which is the only fixture carrying all three
-/// collections plus the extension resource whose schema declares a query field named <c>number</c>.
+/// collections plus an extension resource declaring both a string and a numeric filterable query field.
 /// </remarks>
 public sealed class Given_Postgresql_PartitionWalkCoverage : PostgresqlApiIntegrationTestBase
 {
@@ -64,8 +64,18 @@ public sealed class Given_Postgresql_PartitionWalkCoverage : PostgresqlApiIntegr
         );
 
     [Test]
+    public Task It_filters_on_the_same_query_field_on_a_collection_and_on_its_partitions() =>
+        PartitionWalkCoverageScenario.It_filters_on_the_same_query_field_on_a_collection_and_on_its_partitions(
+            Harness
+        );
+
+    [Test]
     public Task It_rejects_a_number_query_key_on_a_collection_whose_schema_omits_it() =>
         PartitionWalkCoverageScenario.It_rejects_a_number_query_key_on_a_collection_whose_schema_omits_it(
             Harness
         );
+
+    [Test]
+    public Task It_rejects_a_number_query_key_on_the_extension_collection() =>
+        PartitionWalkCoverageScenario.It_rejects_a_number_query_key_on_the_extension_collection(Harness);
 }

@@ -6,7 +6,7 @@
       "partitioncontractitems": "partitionContractItems"
     },
     "compatibleDsRange": "5.0.0",
-    "description": "Synthetic extension project supplying one standalone extension resource for cursor and partition contract coverage. It declares a query field literally named 'number', which is the only way to exercise the approved intentional ODS difference in which that key filters on the collection GET but is consumed as the partition count on the sibling /partitions operation. The 'label' field is an ordinary filterable string used for the filtered-walk coverage.",
+    "description": "Synthetic extension project supplying one standalone extension resource for cursor and partition contract coverage. The 'label' field is an ordinary filterable string used for the filtered-walk coverage, and 'itemNumber' is an ordinary filterable number used to prove one query field behaves the same on a collection GET and on its /partitions sibling. Neither name may collide with a DMS-reserved query parameter: DMS-1442 refuses such a schema at ApiSchema load, so this fixture would no longer load.",
     "domains": [],
     "educationOrganizationHierarchy": {},
     "educationOrganizationTypes": [],
@@ -27,19 +27,19 @@
         "dateTimeJsonPaths": [],
         "decimalPropertyValidationInfos": [],
         "documentPathsMapping": {
+          "ItemNumber": {
+            "isPartOfIdentity": false,
+            "isReference": false,
+            "isRequired": false,
+            "path": "$.itemNumber",
+            "type": "number"
+          },
           "Label": {
             "isPartOfIdentity": false,
             "isReference": false,
             "isRequired": false,
             "path": "$.label",
             "type": "string"
-          },
-          "Number": {
-            "isPartOfIdentity": false,
-            "isReference": false,
-            "isRequired": false,
-            "path": "$.number",
-            "type": "number"
           },
           "PartitionContractItemId": {
             "isPartOfIdentity": true,
@@ -61,13 +61,13 @@
           "additionalProperties": false,
           "description": "Synthetic extension resource used by cursor and partition contract coverage.",
           "properties": {
+            "itemNumber": {
+              "format": "int32",
+              "type": "integer"
+            },
             "label": {
               "maxLength": 100,
               "type": "string"
-            },
-            "number": {
-              "format": "int32",
-              "type": "integer"
             },
             "partitionContractItemId": {
               "format": "int32",
@@ -78,7 +78,7 @@
           "title": "CursorPartitionExt.PartitionContractItem",
           "type": "object"
         },
-        "numericJsonPaths": ["$.partitionContractItemId", "$.number"],
+        "numericJsonPaths": ["$.partitionContractItemId", "$.itemNumber"],
         "queryFieldMapping": {
           "id": [
             {
@@ -86,16 +86,16 @@
               "type": "string"
             }
           ],
+          "itemNumber": [
+            {
+              "path": "$.itemNumber",
+              "type": "number"
+            }
+          ],
           "label": [
             {
               "path": "$.label",
               "type": "string"
-            }
-          ],
-          "number": [
-            {
-              "path": "$.number",
-              "type": "number"
             }
           ],
           "partitionContractItemId": [

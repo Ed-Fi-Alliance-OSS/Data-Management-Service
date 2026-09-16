@@ -80,7 +80,7 @@ internal static class CursorPartitionConcurrencyScenario
             harness,
             SeededDocumentCount,
             labelFor: _ => MatchingLabel,
-            numberFor: _ => SharedNumber
+            itemNumberFor: _ => SharedNumber
         );
 
         var pageTokens = await ReadPartitionTokensAsync(harness);
@@ -91,7 +91,7 @@ internal static class CursorPartitionConcurrencyScenario
             harness,
             InsertedAfterBoundariesCount,
             labelFor: _ => MatchingLabel,
-            numberFor: _ => SharedNumber
+            itemNumberFor: _ => SharedNumber
         );
 
         var after = await WalkEachPartitionAsync(harness, pageTokens, querySuffix: string.Empty);
@@ -145,7 +145,7 @@ internal static class CursorPartitionConcurrencyScenario
             harness,
             SeededDocumentCount,
             labelFor: _ => MatchingLabel,
-            numberFor: _ => SharedNumber
+            itemNumberFor: _ => SharedNumber
         );
 
         var pageTokens = await ReadPartitionTokensAsync(harness);
@@ -224,7 +224,7 @@ internal static class CursorPartitionConcurrencyScenario
             harness,
             InterleavedSeedCount,
             labelFor: index => index % 2 == 0 ? MatchingLabel : OtherLabel,
-            numberFor: _ => SharedNumber
+            itemNumberFor: _ => SharedNumber
         );
 
         string filter = $"&label={MatchingLabel}";

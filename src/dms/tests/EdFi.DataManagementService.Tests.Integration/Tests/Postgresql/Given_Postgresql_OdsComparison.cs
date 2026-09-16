@@ -12,12 +12,12 @@ namespace EdFi.DataManagementService.Tests.Integration.Tests.Postgresql;
 /// <summary>
 /// Executes the static ODS 7.3.2 comparison cases against a PostgreSQL-backed host. This binding carries
 /// the groups a lowered maximum page size suits: the validation matrix, sizing in both its forms, the
-/// number collision, the token range, the identity maximum, and the published metadata that reads the
-/// configured maximum back out of the served document.
+/// token range, the identity maximum, and the published metadata that reads the configured maximum back
+/// out of the served document.
 /// </summary>
 /// <remarks>
-/// Leases the cursor-partition-contract fixture because several cases need the extension resource whose
-/// schema declares a query field named <c>number</c>. The maximum page size is lowered so the sizing
+/// Leases the cursor-partition-contract fixture because several cases need its filterable extension
+/// collection. The maximum page size is lowered so the sizing
 /// cases are cut by a computed partition size rather than by the minimum, which is the only arrangement
 /// in which a true ceiling and a floor produce different boundaries.
 /// </remarks>
