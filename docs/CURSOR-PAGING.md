@@ -388,13 +388,61 @@ A `/partitions` response is always `application/json` and never carries
 `Total-Count` or `Next-Page-Token`; a set of partition boundaries is not a page
 and has no successor.
 
-> [!NOTE]
-> A resource that declares a query property literally named `number` can filter
-> on it on its collection GET-many but not on its `/partitions` sibling, where
-> that name is the partition-count parameter. This is an intentional difference
-> from Ed-Fi ODS/API 7.3.2: ODS/API applies a single supplied `?number=` as both
-> the partition count and the resource-property filter, while DMS uses it only as
-> the partition count on this route.
+## Reserved query parameter names
+
+DMS consumes the names below as control parameters, taking them out of a request
+before it matches the remaining query parameters against a resource's declared
+query fields. **A schema declaring a query field spelled like any of them is
+refused when DMS loads it**, and DMS does not start. The ban is on the name, so
+it applies to every resource regardless of the column below. Names are compared
+without regard to case: a field declared `PageSize` collides exactly as one
+declared `pageSize` does.
+
+| Name | Consumed as | Consumed on |
+| --- | --- | --- |
+| `limit` | Traditional paging page size | Collection GET-many, `/partitions`, Change Queries |
+| `offset` | Traditional paging start position | Collection GET-many, `/partitions`, Change Queries |
+| `totalCount` | Traditional paging total-count request | Collection GET-many, `/partitions`, Change Queries |
+| `pageToken` | Cursor paging continuation token | Collection GET-many, `/partitions`, Change Queries |
+| `pageSize` | Cursor paging page size | Collection GET-many, `/partitions`, Change Queries |
+| `minChangeVersion` | Change-version window lower bound | Collection GET-many, `/partitions`, Change Queries |
+| `maxChangeVersion` | Change-version window upper bound | Collection GET-many, `/partitions`, Change Queries |
+| `number` | Partition count | `/partitions` only |
+
+The last column is about request handling, not about which schemas load. A
+supplied `number` is read as the partition count on `/partitions` and nowhere
+else, which is why it is an ordinary filterable name in a request to any other
+route. It is still refused as a declared query field on every resource, because a
+resource exposing a collection GET-many also exposes the `/partitions` sibling,
+and the field would filter on the one and be shadowed on the other. That split is
+the defect this rule removes, so the name is rejected rather than left to behave
+differently on two routes of the same resource.
+
+### What this means for extension authors
+
+> [!IMPORTANT]
+> This rule is new in Ed-Fi API v8.1 and is a breaking change for any extension
+> that already declares a query field with one of these names. MetaEd rejects a
+> property colliding with `offset`, `limit`, or `totalcount`, so a model can pass
+> its build and still be refused here for one of the other five.
+
+DMS names the schema, the resource, the field, and what the name is taken for,
+both in its startup log and in the error it fails with. The schema tooling
+reports the same thing and exits non-zero. The fix is to rename the property in
+the MetaEd model and rebuild the ApiSchema. There is no setting that relaxes the
+check, because accepting such a schema is what produced the behavior described
+below.
+
+Before this rule the collision produced no diagnostic anywhere, and what it did
+instead depended on the name:
+
+* For the seven names consumed on every operation, the filter was silently never
+  applied on a collection GET-many, and on `/deletes` and `/keyChanges` a
+  supplied `pageToken` or `pageSize` was answered as an invalid query field.
+* For `number`, the filter did apply on the collection GET-many but not on that
+  resource's `/partitions` sibling, where the same value was read as the
+  partition count instead. A client supplying it there got a different result set
+  from the one it asked for, or a range error for a non-numeric value.
 
 ## Related settings
 

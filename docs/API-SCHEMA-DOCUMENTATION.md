@@ -413,7 +413,15 @@ properties for subclass types.
   DocumentPaths objects.
 * `queryFieldMapping`: A mapping of API query term strings to the JsonPaths in
   the document for querying, used for building search engine API query
-  expressions.
+  expressions. A key here may not be spelled like a query parameter DMS consumes
+  as a control parameter. DMS checks every resource of every loaded schema as it
+  starts and refuses to start on a collision, because the declared field would
+  not be served consistently: for most of those names the filter is silently
+  never applied, and for the partition count it would apply on the collection
+  GET-many but be shadowed on that resource's `/partitions` sibling. See
+  [Reserved query parameter
+  names](./CURSOR-PAGING.md#reserved-query-parameter-names) for the list and the
+  remediation.
 * `isResourceExtension`: Boolean indicating if the resource extends an existing
   Ed-Fi resource (used in extension projects).
 * `openApiFragments`: OpenAPI fragments for extension resources. Contains
