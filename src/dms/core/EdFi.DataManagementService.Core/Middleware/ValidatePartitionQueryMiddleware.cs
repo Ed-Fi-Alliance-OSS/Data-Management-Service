@@ -63,23 +63,6 @@ internal class ValidatePartitionQueryMiddleware(
         _useLegacyDocumentIdOrderingForChangeQueries
     );
 
-    /// <summary>
-    /// The parameter names this operation owns, matched case-sensitively. The five reserved paging
-    /// names are matched the way <see cref="ValidateQueryMiddleware" /> parses them, and the count is
-    /// matched the way <see cref="PartitionRequestValidator" /> looks it up.
-    /// </summary>
-    /// <remarks>
-    /// A name listed here is removed from filter matching, so it cannot also be filtered on. That is
-    /// what makes a resource query field named <c>number</c> unfilterable on this operation while it
-    /// stays filterable on the collection GET, which is the recorded consequence of serving the
-    /// published count-parameter name. Nothing outside this list is reserved.
-    /// </remarks>
-    private static readonly string[] _ordinalOwnedParameters =
-    [
-        .. PartitionRequestValidator.ReservedParameters,
-        PartitionRequestValidator.NumberParameter,
-    ];
-
     public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
         _logger.LogDebug(
@@ -116,11 +99,24 @@ internal class ValidatePartitionQueryMiddleware(
             return;
         }
 
+        // Both excluded sets are read from the reserved query parameter catalog rather than assembled
+        // here, so the names this operation consumes and the names a schema is refused for cannot
+        // diverge. The catalog carries how each is matched: the five paging names and the count
+        // case-sensitively, on the canonical spelling the HTTP boundary produces, and the
+        // change-version names case-insensitively.
+        //
+        // The count is the one name reserved on this operation alone, which is what keeps it a
+        // filterable resource property name on a collection GET. No loadable schema can declare a
+        // query field of any of these names, so nothing is silently unfilterable here.
         ResourceQueryFilterResult filterResult = ResourceQueryFilterValidator.Validate(
             requestInfo.FrontendRequest.QueryParameters,
             requestInfo.ResourceSchema.QueryFields.ToArray(),
-            ordinalExcludedNames: _ordinalOwnedParameters,
-            ignoreCaseExcludedNames: ChangeVersionParameterValidator.ReservedParameterNames
+            ordinalExcludedNames: ReservedQueryParameters.OrdinalFilterExclusionsOn(
+                ReservedQueryParameterOperations.Partitions
+            ),
+            ignoreCaseExcludedNames: ReservedQueryParameters.IgnoreCaseFilterExclusionsOn(
+                ReservedQueryParameterOperations.Partitions
+            )
         );
 
         switch (filterResult)

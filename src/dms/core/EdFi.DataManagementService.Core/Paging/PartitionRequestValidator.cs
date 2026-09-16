@@ -41,12 +41,21 @@ internal static class PartitionRequestValidator
     /// publishes.
     /// </summary>
     /// <remarks>
-    /// A partition-control parameter is removed from resource-filter matching before the query-field
-    /// lookup runs, so a resource declaring a query field named <c>number</c> can filter on it on its
-    /// collection GET but not on its <c>/partitions</c> sibling. That asymmetry is a recorded approved
-    /// difference rather than an oversight. Ed-Fi's query namespace is flat and offers no qualification
-    /// syntax, so one raw key cannot carry both meanings on this operation, and serving the published
-    /// name is worth more than the filter the operation gives up for it.
+    /// Reserved on this operation alone, which is what keeps <c>number</c> an ordinary filterable
+    /// resource property name on a collection GET: reserving it everywhere, or canonicalizing its
+    /// spelling everywhere, would change filtering and unknown-field error text on every collection
+    /// for the sake of one operation's control parameter.
+    /// </remarks>
+    /// <remarks>
+    /// One raw key cannot carry both meanings here, because Ed-Fi's query namespace is flat and offers
+    /// no qualification syntax. That used to mean a resource declaring a query field of this name
+    /// filtered on it on its collection GET but not on its <c>/partitions</c> sibling, recorded as an
+    /// approved difference from ODS 7.3.2, which binds one supplied value as both at once. DMS-1442
+    /// removed the asymmetry instead of preserving it: a schema declaring a query field spelled like
+    /// any reserved query parameter is refused at ApiSchema load, so no loadable schema reaches the
+    /// collision and the difference is no longer observable. The served contract is unchanged - this
+    /// is still the published <c>numberOfPartitions</c> query name, still consumed as the count here,
+    /// and still removed from filter matching on this operation alone.
     /// </remarks>
     internal const string NumberParameter = "number";
 
