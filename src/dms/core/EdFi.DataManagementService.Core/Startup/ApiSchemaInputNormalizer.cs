@@ -19,6 +19,8 @@ namespace EdFi.DataManagementService.Core.Startup;
 /// - Stripping OpenAPI payloads (not needed for hashing/model derivation)
 /// - Sorting extensions by projectEndpointName (ordinal) for determinism
 /// - Validating inputs and failing fast with actionable errors
+/// - Refusing a schema whose resource declares a query field spelled like a query parameter DMS
+///   consumes as a control parameter, which would leave that property unfilterable
 /// </summary>
 public class ApiSchemaInputNormalizer(ILogger<ApiSchemaInputNormalizer> _logger) : IApiSchemaInputNormalizer
 {
@@ -80,7 +82,21 @@ public class ApiSchemaInputNormalizer(ILogger<ApiSchemaInputNormalizer> _logger)
             return collisionResult;
         }
 
-        // Step 4: Strip OpenAPI payloads and sort extensions
+        // Step 4: Check for query fields colliding with DMS-reserved query parameter names. Runs after
+        // the endpoint-name check so that a schema set faulty in both ways is reported by the fault
+        // that makes the other unreadable: two projects answering on one endpoint name make "which
+        // project declares this field" ambiguous, so naming a project in a collision message would be
+        // misleading until the endpoint names are distinct.
+        var reservedQueryParameterResult = CheckForReservedQueryParameterCollisions(
+            nodes.CoreApiSchemaRootNode,
+            extensionSchemas
+        );
+        if (reservedQueryParameterResult != null)
+        {
+            return reservedQueryParameterResult;
+        }
+
+        // Step 5: Strip OpenAPI payloads and sort extensions
         var strippedCoreNode = StripOpenApiPayloads(nodes.CoreApiSchemaRootNode);
 
         var sortedExtensions = extensionSchemas
@@ -198,6 +214,51 @@ public class ApiSchemaInputNormalizer(ILogger<ApiSchemaInputNormalizer> _logger)
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Checks every resource of every schema for a query field spelled like a query parameter DMS
+    /// consumes as a control parameter. Reports all collisions found, not just the first one.
+    /// </summary>
+    /// <remarks>
+    /// The core schema is checked on the same footing as the extensions. MetaEd protects three of the
+    /// reserved names, so the core model cannot collide on those today, but exempting it would leave
+    /// the rule stated as "extensions may not" when what DMS can actually serve is "no schema may".
+    /// </remarks>
+    /// <remarks>
+    /// Collisions are collected in load order, core first, so the report reads in the order the
+    /// operator listed the schemas rather than the order normalization happens to sort them into. The
+    /// sort below is for hashing determinism and runs after this check.
+    /// </remarks>
+    private ApiSchemaNormalizationResult? CheckForReservedQueryParameterCollisions(
+        JsonNode coreNode,
+        List<(JsonNode Node, string EndpointName, string SchemaSource)> extensions
+    )
+    {
+        List<ApiSchemaNormalizationResult.ReservedQueryParameterCollision> collisions =
+        [
+            .. ReservedQueryParameterCollisionDetector.Detect(coreNode, "core"),
+            .. extensions.SelectMany(extension =>
+                ReservedQueryParameterCollisionDetector.Detect(extension.Node, extension.SchemaSource)
+            ),
+        ];
+
+        if (collisions.Count == 0)
+        {
+            return null;
+        }
+
+        foreach (var collision in collisions)
+        {
+            // The described line is built already sanitized and is a single line, so it is safe as a
+            // structured-log value without a second pass here.
+            _logger.LogError(
+                "ApiSchema reserved query parameter collision: {Collision}",
+                collision.Describe()
+            );
+        }
+
+        return new ApiSchemaNormalizationResult.ReservedQueryParameterCollisionResult(collisions);
     }
 
     /// <summary>
