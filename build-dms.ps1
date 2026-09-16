@@ -2078,21 +2078,33 @@ function BuildSchemaToolsPackage {
 
 function BuildCustomValidationPackage {
     $projectPath = "$coreRoot/$customValidationProjectName/$customValidationProjectName.csproj"
-    $expectedPackagePath = "$PSScriptRoot/$customValidationPackageName.$DMSVersion.nupkg"
 
-    Write-Info "Building $customValidationPackageName package"
+    # Deliberately NOT $DMSVersion, for the reason its sibling below records: the plugin loader's
+    # newer-plugin-on-older-host preflight compares AssemblyVersions across contract packages, so a
+    # contract's version must move with its public surface and only with it. The csproj declares
+    # Version, AssemblyVersion and FileVersion, and this reads the same declaration the compiler does.
+    $packageVersion = Get-CustomValidationContractVersion
+    $expectedPackagePath = "$PSScriptRoot/$customValidationPackageName.$packageVersion.nupkg"
+
+    Write-Info "Building $customValidationPackageName package version $packageVersion"
 
     Invoke-Execute {
+        # The contract version is fixed for the life of a surface rather than moving with every
+        # build, so a stale nupkg of the very same version is the normal state of a developer's
+        # working copy rather than a rare collision, and the verification lane downstream would
+        # happily assert against it.
         if (Test-Path $expectedPackagePath) {
             Remove-Item -LiteralPath $expectedPackagePath -ErrorAction Stop
         }
 
+        # No -p:PackageVersion. A command-line global property overrides the csproj, so passing one
+        # here would put the release version back on the package and make the existence check below
+        # a restatement of an argument just passed in rather than an assertion.
         dotnet pack $projectPath `
             -c $Configuration `
             --no-build `
             --no-restore `
-            --output $PSScriptRoot `
-            -p:PackageVersion=$DMSVersion
+            --output $PSScriptRoot
 
         if (-not (Test-Path $expectedPackagePath)) {
             throw "Expected custom-validation package was not created: $expectedPackagePath"

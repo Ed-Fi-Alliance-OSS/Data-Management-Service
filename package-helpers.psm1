@@ -191,6 +191,58 @@ function Convert-ToAssemblyVersion {
 
 <#
 .DESCRIPTION
+Reads one declared version element out of an MSBuild file, for the two contract packages that carry
+their own version rather than the DMS release version.
+
+Not exported. The two readers below are the callable surface, because a caller naming its own
+element would be free to read a property the compiler does not use.
+
+SelectNodes rather than property access, and a count check rather than SelectSingleNode: property
+access on a file that grew a second PropertyGroup returns an array and stringifies into a version no
+package will ever carry, and SelectSingleNode would quietly return whichever declaration came first.
+Two declarations mean the single-declaration property this whole mechanism rests on has already been
+lost, so it is reported rather than resolved.
+#>
+function Get-DeclaredVersionElement {
+    param (
+        # The MSBuild file to read.
+        [Parameter(Mandatory)]
+        [string]
+        $Path,
+
+        # The PropertyGroup child element declaring the version.
+        [Parameter(Mandatory)]
+        [string]
+        $ElementName,
+
+        # Names the contract in every failure message, so a lane reports which version it could not
+        # read rather than only which file it was looking at.
+        [Parameter(Mandatory)]
+        [string]
+        $ContractDescription
+    )
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        throw "Cannot read the $ContractDescription version: $Path does not exist."
+    }
+
+    $declarations = ([xml] (Get-Content -LiteralPath $Path -Raw)).SelectNodes(
+        "//PropertyGroup/$ElementName"
+    )
+
+    if ($declarations.Count -gt 1) {
+        throw "Cannot read the $ContractDescription version: $Path declares $ElementName more than one time."
+    }
+
+    if ($declarations.Count -eq 0 -or [string]::IsNullOrWhiteSpace($declarations[0].InnerText)) {
+        throw "Cannot read the $ContractDescription version: $Path declares no $ElementName."
+    }
+
+    return $declarations[0].InnerText.Trim()
+}
+
+<#
+.DESCRIPTION
 Reads the plugin contract's own declared version out of src/plugins/Directory.Build.props.
 
 The contract package is versioned on its own and deliberately outside SetDMSAssemblyInfo's reach,
@@ -213,21 +265,41 @@ function Get-PluginsContractVersion {
         $PropsPath = (Join-Path $PSScriptRoot "src/plugins/Directory.Build.props")
     )
 
-    if (-not (Test-Path -LiteralPath $PropsPath)) {
-        throw "Cannot read the plugin contract version: $PropsPath does not exist."
-    }
-
-    # SelectSingleNode rather than property access, so a props file that grew a second PropertyGroup
-    # cannot silently return an array and stringify into a version no package will ever carry.
-    $versionPrefix = ([xml] (Get-Content -LiteralPath $PropsPath -Raw)).SelectSingleNode(
-        "//PropertyGroup/VersionPrefix"
-    )
-
-    if ($null -eq $versionPrefix -or [string]::IsNullOrWhiteSpace($versionPrefix.InnerText)) {
-        throw "Cannot read the plugin contract version: $PropsPath declares no VersionPrefix."
-    }
-
-    return $versionPrefix.InnerText.Trim()
+    return Get-DeclaredVersionElement `
+        -Path $PropsPath `
+        -ElementName "VersionPrefix" `
+        -ContractDescription "plugin contract"
 }
 
-Export-ModuleMember -Function Get-VersionNumber, Invoke-Promote, InstallCredentialHandler, Convert-ToAssemblyVersion, Get-PluginsContractVersion
+<#
+.DESCRIPTION
+Reads the custom-validation contract's own declared version out of its csproj.
+
+The same argument as the sibling above, one file further in. This contract used to be packed at
+-p:PackageVersion=$DMSVersion and to inherit its AssemblyVersion from the release-stamped
+src/dms/Directory.Build.props, so a validator built against one release's contract would be refused
+by an adjacent release whose contract surface was identical, naming two versions that differ in
+nothing an implementer can act on. The csproj declares Version, AssemblyVersion and FileVersion,
+which override the imported props, and every lane reads them through here.
+
+The csproj is under src/dms rather than beside the plugin contract, so the element is Version rather
+than the VersionPrefix its sibling props declares. That is the only difference between the two.
+
+.EXAMPLE
+Get-CustomValidationContractVersion
+# Returns: 1.0.0
+#>
+function Get-CustomValidationContractVersion {
+    param (
+        # The project file declaring the contract version. Defaults to the repository's own.
+        [string]
+        $ProjectPath = (Join-Path $PSScriptRoot "src/dms/core/EdFi.DataManagementService.CustomValidation/EdFi.DataManagementService.CustomValidation.csproj")
+    )
+
+    return Get-DeclaredVersionElement `
+        -Path $ProjectPath `
+        -ElementName "Version" `
+        -ContractDescription "custom-validation contract"
+}
+
+Export-ModuleMember -Function Get-VersionNumber, Invoke-Promote, InstallCredentialHandler, Convert-ToAssemblyVersion, Get-PluginsContractVersion, Get-CustomValidationContractVersion
