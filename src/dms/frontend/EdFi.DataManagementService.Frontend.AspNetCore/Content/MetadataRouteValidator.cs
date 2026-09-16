@@ -91,25 +91,8 @@ public class MetadataRouteValidator(
             )
         )
         {
-            try
-            {
-                await dataStoreProvider.LoadDataStores(tenantKey, cancellationToken);
-            }
-            catch
-            {
-                // The existing cache remains the final source for validation when reload fails.
-            }
-
-            dataStores = dataStoreProvider.GetAll(tenantKey);
-            if (
-                !dataStores.Any(dataStore =>
-                    RouteContextMatcher.IsMatch(dataStore.RouteContext, requestQualifiers)
-                )
-            )
-            {
-                await WriteNotFoundAsync(httpContext);
-                return false;
-            }
+            await WriteNotFoundAsync(httpContext);
+            return false;
         }
 
         return true;
