@@ -1,53 +1,50 @@
-import json,os,pathlib,secrets,subprocess,time
-out=pathlib.Path('startup-diagnostic');out.mkdir()
-private=pathlib.Path('/tmp/cdc-startup-private');private.mkdir(mode=0o700)
-image=os.environ['CDC_SQL_IMAGE']
+import json,os,pathlib,signal,subprocess,threading,time
+out=pathlib.Path('startup-diagnostic');out.mkdir(exist_ok=True)
+private=pathlib.Path('/tmp/cdc-stack-private');private.mkdir(mode=0o700,exist_ok=True)
+image=os.environ['CDC_CONNECTOR_TEMPLATE_SQLSERVER_2025_IMAGE']
 expected='mcr.microsoft.com/mssql/server:2025-latest@sha256:4bab24f36c1ecd48e85f7d37df26e6bf301641d84c3fe652f9a0dcc947d512e1'
-assert image==expected, 'Diagnostic must retain the qualification image pin'
-password='Dms1!'+secrets.token_hex(20)
-print('::add-mask::'+password,flush=True)
-env=os.environ.copy();env['MSSQL_SA_PASSWORD']=password
-network='cdc-startup-diagnostic-'+os.environ['GITHUB_RUN_ID']
-name=''
-summary={'image':image,'sha':os.environ['GITHUB_SHA'],'kernel':subprocess.check_output(['uname','-r'],text=True).strip(),'architecture':subprocess.check_output(['uname','-m'],text=True).strip(),'attempts':[]}
-def call(args,**kwargs):
- try:return subprocess.run(args,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,timeout=kwargs.pop('timeout',30),**kwargs)
- except subprocess.TimeoutExpired as e:return subprocess.CompletedProcess(args,124,e.output or b'')
-def encrypt(path):
- subprocess.run(['openssl','cms','-encrypt','-binary','-aes256','-in',str(path),'-outform','DER','-out',str(out/(path.name+'.p7m')),'eng/ci/startup-diagnostic-recipient.pem'],check=True,capture_output=True)
- path.unlink()
+assert image==expected
+records={};workers=[];lock=threading.Lock();stopping=threading.Event()
+def record(cid):
+ try:
+  inspected=subprocess.run(['docker','inspect','--format','{{.Config.Image}}',cid],capture_output=True,text=True,timeout=5)
+  if inspected.returncode or inspected.stdout.strip()!=image:return
+  with lock:
+   if cid in records:return
+   data={'bytes':bytearray(),'process':None,'truncated':False};records[cid]=data
+  process=subprocess.Popen(['docker','logs','--follow','--tail','800',cid],stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
+  data['process']=process
+  while chunk:=process.stdout.read(4096):
+   data['bytes'].extend(chunk)
+   if len(data['bytes'])>131072:
+    del data['bytes'][:-131072];data['truncated']=True
+  process.wait()
+ except Exception:
+  pass
+
+def events():
+ for line in event_process.stdout:
+  if stopping.is_set():break
+  cid=line.strip()
+  if len(cid)==64 and all(c in '0123456789abcdef' for c in cid):
+   worker=threading.Thread(target=record,args=(cid,),daemon=True);workers.append(worker);worker.start()
+
+event_process=subprocess.Popen(['docker','events','--filter','type=container','--filter','event=start','--format','{{.ID}}'],stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,text=True)
+listener=threading.Thread(target=events,daemon=True);listener.start()
+code=1
 try:
- subprocess.run(['docker','pull',image],check=True,stdout=subprocess.DEVNULL)
- subprocess.run(['docker','network','create',network],check=True,stdout=subprocess.DEVNULL)
- for attempt in range(1,41):
-  name=network+'-'+str(attempt)
-  began=time.monotonic()
-  launched=call(['docker','run','--detach','--name',name,'--network',network,'-p','127.0.0.1::1433','-e','ACCEPT_EULA=Y','-e','MSSQL_SA_PASSWORD','-e','MSSQL_AGENT_ENABLED=true',image],env=env)
-  record={'attempt':attempt,'launchExit':launched.returncode,'ready':False,'state':{}}
-  until=time.monotonic()+90
-  ready_at=None
-  while launched.returncode==0 and time.monotonic()<until:
-   inspected=call(['docker','inspect','--format','{{json .State}}',name])
-   if inspected.returncode:
-    record['inspectFailed']=True;break
-   state=json.loads(inspected.stdout)
-   record['state']={k:state.get(k) for k in ['Status','ExitCode','OOMKilled']}
-   if state.get('Status') in ['exited','dead']:break
-   query=call(['docker','exec',name,'sh','-c','/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$MSSQL_SA_PASSWORD" -C -b -Q "SET NOCOUNT ON; SELECT 1;"'],timeout=12)
-   if query.returncode==0:
-    if ready_at is None:ready_at=time.monotonic()
-    if time.monotonic()-ready_at>=15:
-     record['ready']=True;break
-   time.sleep(1)
-  record['seconds']=round(time.monotonic()-began,3)
-  summary['attempts'].append(record)
-  print(json.dumps(record),flush=True)
-  if not record['ready']:
-   logs=call(['docker','logs','--tail','800',name]);path=private/('attempt-'+str(attempt)+'.log');path.write_bytes(logs.stdout);path.chmod(0o600);encrypt(path)
-   inspected=call(['docker','inspect','--format','{{json .State}}',name]);path=private/('attempt-'+str(attempt)+'-state.json');path.write_bytes(inspected.stdout);path.chmod(0o600);encrypt(path)
-   break
-  call(['docker','rm','--force','--volumes',name]);name=''
+ code=subprocess.call(['pwsh','-NoProfile','-File','./eng/ci/Invoke-CdcQualification.ps1','-Lane','Mssql','-Suite','RecordSize','-ResultsDirectory','TestResults/cdc-qualification','-PullImages'])
 finally:
- if name:call(['docker','rm','--force','--volumes',name])
- call(['docker','network','rm',network])
+ stopping.set();event_process.terminate();event_process.wait(timeout=5);listener.join(timeout=5)
+ for data in list(records.values()):
+  process=data['process']
+  if process is not None and process.poll() is None:process.terminate()
+ for worker in workers:worker.join(timeout=5)
+ summary={'sha':os.environ['GITHUB_SHA'],'image':image,'qualificationExit':code,'containers':[]}
+ for i,(cid,data) in enumerate(records.items(),1):
+  raw=bytes(data['bytes']);name='sql-container-'+str(i)+'.log';path=private/name;path.write_bytes(raw);path.chmod(0o600)
+  subprocess.run(['openssl','cms','-encrypt','-binary','-aes256','-in',str(path),'-outform','DER','-out',str(out/(name+'.p7m')),'eng/ci/startup-diagnostic-recipient.pem'],check=True,capture_output=True)
+  path.unlink()
+  summary['containers'].append({'sequence':i,'bytes':len(raw),'truncated':data['truncated'],'fatalMarker':b'fatal error' in raw.lower()})
  (out/'summary.json').write_text(json.dumps(summary,indent=2))
+raise SystemExit(code)
