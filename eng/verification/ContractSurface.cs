@@ -343,6 +343,7 @@ public static class ContractSurfaceReader
 
         List<string> rendered = DescribeSignatureParameters(
             reader,
+            provider,
             signature.ParameterTypes,
             method.GetParameters()
         );
@@ -361,7 +362,12 @@ public static class ContractSurfaceReader
         return builder.ToString();
     }
 
-    private static string DescribeParameter(MetadataReader reader, string type, Parameter? parameter)
+    private static string DescribeParameter(
+        MetadataReader reader,
+        ContractSignatureProvider provider,
+        string type,
+        Parameter? parameter
+    )
     {
         StringBuilder builder = new();
 
@@ -401,7 +407,13 @@ public static class ContractSurfaceReader
                 builder
                     .Append(" = ")
                     .Append(
-                        DescribeDefaultValue(reader, value.GetDefaultValue(), value.GetCustomAttributes())
+                        DescribeDefaultValue(
+                            reader,
+                            provider,
+                            value.GetDefaultValue(),
+                            value.GetCustomAttributes(),
+                            "parameter '" + name + "'"
+                        )
                     );
             }
 
@@ -447,7 +459,14 @@ public static class ContractSurfaceReader
         // Not gated on FieldAttributes.Literal. A `const decimal` is emitted as static readonly
         // carrying DecimalConstantAttribute, because the CLR has no decimal literal, so gating on
         // Literal would drop exactly the constants whose values are least visible elsewhere.
-        string value = DescribeDefaultValue(reader, field.GetDefaultValue(), field.GetCustomAttributes());
+        string fieldName = reader.GetString(field.Name);
+        string value = DescribeDefaultValue(
+            reader,
+            provider,
+            field.GetDefaultValue(),
+            field.GetCustomAttributes(),
+            "field '" + typeName + "." + fieldName + "'"
+        );
 
         if (attributes.HasFlag(FieldAttributes.Literal) || value != "none")
         {
@@ -494,7 +513,10 @@ public static class ContractSurfaceReader
             builder
                 .Append('[')
                 .Append(
-                    string.Join(", ", DescribeSignatureParameters(reader, signature.ParameterTypes, source))
+                    string.Join(
+                        ", ",
+                        DescribeSignatureParameters(reader, provider, signature.ParameterTypes, source)
+                    )
                 )
                 .Append(']');
         }
@@ -515,17 +537,20 @@ public static class ContractSurfaceReader
     /// </summary>
     private static List<string> DescribeSignatureParameters(
         MetadataReader reader,
+        ContractSignatureProvider provider,
         ImmutableArray<string> parameterTypes,
         MethodDefinitionHandle owner
     ) =>
         DescribeSignatureParameters(
             reader,
+            provider,
             parameterTypes,
             owner.IsNil ? default : reader.GetMethodDefinition(owner).GetParameters()
         );
 
     private static List<string> DescribeSignatureParameters(
         MetadataReader reader,
+        ContractSignatureProvider provider,
         ImmutableArray<string> parameterTypes,
         ParameterHandleCollection owned
     )
@@ -551,6 +576,7 @@ public static class ContractSurfaceReader
             rendered.Add(
                 DescribeParameter(
                     reader,
+                    provider,
                     parameterTypes[index],
                     parameters.TryGetValue(index + 1, out Parameter parameter) ? parameter : null
                 )
@@ -682,7 +708,7 @@ public static class ContractSurfaceReader
                 constraints.Add(TypeName(reader, provider, constraint.Type, context));
             }
 
-            string annotation = NullableAnnotation(reader, parameter);
+            string annotation = NullableAnnotation(reader, provider, parameter);
 
             if (annotation.Length > 0)
             {
@@ -972,8 +998,10 @@ public static class ContractSurfaceReader
     /// </remarks>
     private static string DescribeDefaultValue(
         MetadataReader reader,
+        ContractSignatureProvider provider,
         ConstantHandle constant,
-        CustomAttributeHandleCollection attributes
+        CustomAttributeHandleCollection attributes,
+        string owner
     )
     {
         if (!constant.IsNil)
@@ -1005,10 +1033,10 @@ public static class ContractSurfaceReader
             switch (attributeName)
             {
                 case "DecimalConstantAttribute":
-                    return DescribeDecimalConstant(reader, attribute);
+                    return DescribeDecimalConstant(reader, provider, attribute, owner);
 
                 case "DateTimeConstantAttribute":
-                    return DescribeDateTimeConstant(reader, attribute);
+                    return DescribeDateTimeConstant(reader, provider, attribute, owner);
 
                 default:
                     // An encoding this reader does not decode is carried as its name plus the raw
@@ -1031,25 +1059,63 @@ public static class ContractSurfaceReader
 
     // Both DecimalConstantAttribute constructors lay their arguments out identically: a two-byte
     // prolog, scale, sign, then the high, middle and low 32-bit words.
-    private static string DescribeDecimalConstant(MetadataReader reader, CustomAttribute attribute)
+    private static string DescribeDecimalConstant(
+        MetadataReader reader,
+        ContractSignatureProvider provider,
+        CustomAttribute attribute,
+        string owner
+    )
     {
-        BlobReader blob = reader.GetBlobReader(attribute.Value);
+        const string AttributeName = "DecimalConstantAttribute";
 
-        if (blob.Length < 16)
+        // Both documented constructors take (byte scale, byte sign, X hi, X mid, X lo) where X is
+        // uint or int, and both lay their arguments out identically. The shape is checked rather
+        // than assumed, so an unrecognized constructor is a failure rather than five bytes read at
+        // the wrong offsets.
+        ImmutableArray<string> parameterTypes = AttributeConstructorParameterTypes(
+            reader,
+            provider,
+            attribute,
+            AttributeName,
+            owner
+        );
+
+        if (
+            parameterTypes.Length != 5
+            || parameterTypes[0] != "System.Byte"
+            || parameterTypes[1] != "System.Byte"
+            || !IsWordType(parameterTypes[2])
+            || !IsWordType(parameterTypes[3])
+            || !IsWordType(parameterTypes[4])
+        )
         {
-            return "decimal:malformed";
+            throw new BadImageFormatException(
+                $"{AttributeName} on {owner} has constructor ({string.Join(", ", parameterTypes)}); this reader supports (byte, byte, uint, uint, uint) and its int form."
+            );
         }
 
-        if (blob.ReadUInt16() != 1)
-        {
-            return "decimal:malformed";
-        }
+        BlobReader blob = ReadAttributeProlog(reader, attribute, AttributeName, owner);
+
+        const int FixedArgumentBytes = sizeof(byte) + sizeof(byte) + (3 * sizeof(uint));
+        RequireArgumentBytes(ref blob, FixedArgumentBytes, AttributeName, owner);
 
         byte scale = blob.ReadByte();
         byte sign = blob.ReadByte();
         uint high = blob.ReadUInt32();
         uint middle = blob.ReadUInt32();
         uint low = blob.ReadUInt32();
+
+        RequireNoNamedArguments(ref blob, AttributeName, owner);
+
+        // The decimal constructor rejects a scale above 28 and a sign byte other than 0 or 0x80,
+        // and rejecting them here names the member instead of surfacing an ArgumentOutOfRangeException
+        // from three frames down.
+        if (scale > 28)
+        {
+            throw new BadImageFormatException(
+                $"{AttributeName} on {owner} declares scale {scale}; a decimal scale is at most 28."
+            );
+        }
 
         decimal value = new(
             unchecked((int)low),
@@ -1060,20 +1126,51 @@ public static class ContractSurfaceReader
         );
 
         return "decimal:" + value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+        static bool IsWordType(string type) => type is "System.UInt32" or "System.Int32";
     }
 
-    private static string DescribeDateTimeConstant(MetadataReader reader, CustomAttribute attribute)
+    private static string DescribeDateTimeConstant(
+        MetadataReader reader,
+        ContractSignatureProvider provider,
+        CustomAttribute attribute,
+        string owner
+    )
     {
-        BlobReader blob = reader.GetBlobReader(attribute.Value);
+        const string AttributeName = "DateTimeConstantAttribute";
 
-        if (blob.Length < 10 || blob.ReadUInt16() != 1)
+        ImmutableArray<string> parameterTypes = AttributeConstructorParameterTypes(
+            reader,
+            provider,
+            attribute,
+            AttributeName,
+            owner
+        );
+
+        if (parameterTypes.Length != 1 || parameterTypes[0] != "System.Int64")
         {
-            return "datetime:malformed";
+            throw new BadImageFormatException(
+                $"{AttributeName} on {owner} has constructor ({string.Join(", ", parameterTypes)}); this reader supports (long)."
+            );
+        }
+
+        BlobReader blob = ReadAttributeProlog(reader, attribute, AttributeName, owner);
+        RequireArgumentBytes(ref blob, sizeof(long), AttributeName, owner);
+
+        long ticks = blob.ReadInt64();
+
+        RequireNoNamedArguments(ref blob, AttributeName, owner);
+
+        if (ticks < 0 || ticks > DateTime.MaxValue.Ticks)
+        {
+            throw new BadImageFormatException(
+                $"{AttributeName} on {owner} declares {ticks} ticks, which is outside the representable range."
+            );
         }
 
         // Ticks rather than a formatted date: a format would drag in a calendar and a culture, and
         // the tick count is what the compiler recorded.
-        return "datetime:" + blob.ReadInt64().ToString(System.Globalization.CultureInfo.InvariantCulture);
+        return "datetime:" + ticks.ToString(System.Globalization.CultureInfo.InvariantCulture);
     }
 
     /// <summary>
@@ -1086,44 +1183,106 @@ public static class ContractSurfaceReader
     /// elided in favour of a NullableContextAttribute on the declaring type or method, which is why
     /// that fallback exists.
     /// </remarks>
-    private static string NullableAnnotation(MetadataReader reader, GenericParameter parameter)
+    private static string NullableAnnotation(
+        MetadataReader reader,
+        ContractSignatureProvider provider,
+        GenericParameter parameter
+    )
     {
+        string owner = "type parameter '" + reader.GetString(parameter.Name) + "'";
+
+        // The parameter's own annotation wins when it has one. The compiler emits it only when it
+        // differs from the context in force, which is why the chain below is not optional.
         if (
-            !TryReadNullableByte(reader, parameter.GetCustomAttributes(), "NullableAttribute", out byte value)
+            TryReadNullableByte(
+                reader,
+                provider,
+                parameter.GetCustomAttributes(),
+                "NullableAttribute",
+                owner,
+                out byte value
+            )
         )
         {
-            EntityHandle parent = parameter.Parent;
-            CustomAttributeHandleCollection parentAttributes = parent.Kind switch
-            {
-                HandleKind.TypeDefinition => reader
-                    .GetTypeDefinition((TypeDefinitionHandle)parent)
-                    .GetCustomAttributes(),
-                HandleKind.MethodDefinition => reader
-                    .GetMethodDefinition((MethodDefinitionHandle)parent)
-                    .GetCustomAttributes(),
-                _ => default,
-            };
+            return Describe(value);
+        }
 
+        // The effective NullableContextAttribute, resolved outward. Which entity carries it is a
+        // compiler packing decision rather than a fact about the contract: adding a private member
+        // can move it from a method onto the declaring type, and a reader that looked only at the
+        // method would then report an unchanged public constraint as changed and demand a version
+        // bump for a change no consumer can see.
+        foreach (CustomAttributeHandleCollection attributes in ContextAttributeChain(reader, parameter))
+        {
             if (
-                parentAttributes.Count == 0
-                || !TryReadNullableByte(reader, parentAttributes, "NullableContextAttribute", out value)
+                TryReadNullableByte(
+                    reader,
+                    provider,
+                    attributes,
+                    "NullableContextAttribute",
+                    owner,
+                    out value
+                )
             )
             {
-                return string.Empty;
+                return Describe(value);
             }
         }
 
-        return value switch
+        return string.Empty;
+
+        static string Describe(byte value) =>
+            value switch
+            {
+                1 => "notnull",
+                _ => "nullable(" + value.ToString(System.Globalization.CultureInfo.InvariantCulture) + ")",
+            };
+    }
+
+    /// <summary>
+    /// The entities whose NullableContextAttribute can govern a generic parameter, nearest first:
+    /// its declaring method, that method's declaring type, and every enclosing type outward.
+    /// </summary>
+    private static IEnumerable<CustomAttributeHandleCollection> ContextAttributeChain(
+        MetadataReader reader,
+        GenericParameter parameter
+    )
+    {
+        EntityHandle parent = parameter.Parent;
+        TypeDefinitionHandle declaringType = default;
+
+        switch (parent.Kind)
         {
-            1 => "notnull",
-            _ => "nullable(" + value.ToString(System.Globalization.CultureInfo.InvariantCulture) + ")",
-        };
+            case HandleKind.MethodDefinition:
+                MethodDefinition method = reader.GetMethodDefinition((MethodDefinitionHandle)parent);
+                yield return method.GetCustomAttributes();
+                declaringType = method.GetDeclaringType();
+
+                break;
+
+            case HandleKind.TypeDefinition:
+                declaringType = (TypeDefinitionHandle)parent;
+
+                break;
+
+            default:
+                yield break;
+        }
+
+        while (!declaringType.IsNil)
+        {
+            TypeDefinition type = reader.GetTypeDefinition(declaringType);
+            yield return type.GetCustomAttributes();
+            declaringType = type.GetDeclaringType();
+        }
     }
 
     private static bool TryReadNullableByte(
         MetadataReader reader,
+        ContractSignatureProvider provider,
         CustomAttributeHandleCollection attributes,
         string attributeName,
+        string owner,
         out byte value
     )
     {
@@ -1141,21 +1300,154 @@ public static class ContractSurfaceReader
                 continue;
             }
 
-            BlobReader blob = reader.GetBlobReader(attribute.Value);
+            // Which overload was used is read from the constructor's own signature rather than
+            // guessed from the blob's length. Both NullableAttribute forms begin with the same two
+            // prolog bytes, and under the byte[] form the next four bytes are an element count, so a
+            // reader that assumed the third byte was the value would report an element count as an
+            // annotation.
+            ImmutableArray<string> parameterTypes = AttributeConstructorParameterTypes(
+                reader,
+                provider,
+                attribute,
+                attributeName,
+                owner
+            );
 
-            // A byte argument is the single-value form. The array form, which annotates a
-            // constructed type rather than a bare type parameter, is not a notnull constraint.
-            if (blob.Length >= 3 && blob.ReadUInt16() == 1)
+            if (parameterTypes.Length != 1)
             {
-                value = blob.ReadByte();
-
-                return true;
+                throw new BadImageFormatException(
+                    $"{attributeName} on {owner} declares {parameterTypes.Length} constructor parameters; this reader supports the byte and byte[] forms."
+                );
             }
+
+            // The array form annotates a constructed type rather than a bare type parameter, so it
+            // states nothing about a constraint. It is not an error, and it is not an annotation.
+            if (parameterTypes[0] == "System.Byte[]")
+            {
+                continue;
+            }
+
+            if (parameterTypes[0] != "System.Byte")
+            {
+                throw new BadImageFormatException(
+                    $"{attributeName} on {owner} takes {parameterTypes[0]}; this reader supports the byte and byte[] forms."
+                );
+            }
+
+            BlobReader blob = ReadAttributeProlog(reader, attribute, attributeName, owner);
+            RequireArgumentBytes(ref blob, sizeof(byte), attributeName, owner);
+            value = blob.ReadByte();
+            RequireNoNamedArguments(ref blob, attributeName, owner);
+
+            return true;
         }
 
         value = 0;
 
         return false;
+    }
+
+    /// <summary>
+    /// The decoded parameter types of the constructor a custom attribute names.
+    /// </summary>
+    private static ImmutableArray<string> AttributeConstructorParameterTypes(
+        MetadataReader reader,
+        ContractSignatureProvider provider,
+        CustomAttribute attribute,
+        string attributeName,
+        string owner
+    ) =>
+        attribute.Constructor.Kind switch
+        {
+            HandleKind.MemberReference => reader
+                .GetMemberReference((MemberReferenceHandle)attribute.Constructor)
+                .DecodeMethodSignature(provider, GenericContext.Empty)
+                .ParameterTypes,
+            HandleKind.MethodDefinition => reader
+                .GetMethodDefinition((MethodDefinitionHandle)attribute.Constructor)
+                .DecodeSignature(provider, GenericContext.Empty)
+                .ParameterTypes,
+            _ => throw new BadImageFormatException(
+                $"{attributeName} on {owner} names a constructor this reader cannot resolve."
+            ),
+        };
+
+    // A custom attribute blob opens with a two-byte prolog of 0x0001. Anything else is corrupt, and
+    // corrupt is a failure rather than a value: a sentinel string would make two differently corrupt
+    // inputs compare equal, which is exactly what a publish gate must never do.
+    private static BlobReader ReadAttributeProlog(
+        MetadataReader reader,
+        CustomAttribute attribute,
+        string attributeName,
+        string owner
+    )
+    {
+        BlobReader blob = reader.GetBlobReader(attribute.Value);
+
+        if (blob.RemainingBytes < sizeof(ushort))
+        {
+            throw new BadImageFormatException(
+                $"{attributeName} on {owner} carries a {blob.Length}-byte argument blob, too short for its prolog."
+            );
+        }
+
+        ushort prolog = blob.ReadUInt16();
+
+        if (prolog != 1)
+        {
+            throw new BadImageFormatException(
+                $"{attributeName} on {owner} carries prolog 0x{prolog:X4} rather than 0x0001, so its arguments cannot be decoded."
+            );
+        }
+
+        return blob;
+    }
+
+    // Validates only, and deliberately returns nothing. An earlier revision returned the reader,
+    // which is a struct: the caller then read its argument out of a copy and left the real reader
+    // positioned on the value, so the named-argument count was read from the middle of the payload.
+    private static void RequireArgumentBytes(
+        ref BlobReader blob,
+        int byteCount,
+        string attributeName,
+        string owner
+    )
+    {
+        if (blob.RemainingBytes < byteCount)
+        {
+            throw new BadImageFormatException(
+                $"{attributeName} on {owner} is truncated: {byteCount} more argument byte(s) were required and {blob.RemainingBytes} remain."
+            );
+        }
+    }
+
+    // The named-argument count closes every attribute blob. Requiring it, and requiring it to be
+    // zero for these constructors, is what makes a truncated-but-plausible payload a failure instead
+    // of a silently short read.
+    private static void RequireNoNamedArguments(ref BlobReader blob, string attributeName, string owner)
+    {
+        if (blob.RemainingBytes < sizeof(ushort))
+        {
+            throw new BadImageFormatException(
+                $"{attributeName} on {owner} is truncated: its named-argument count is missing."
+            );
+        }
+
+        ushort named = blob.ReadUInt16();
+
+        if (named != 0)
+        {
+            throw new BadImageFormatException(
+                $"{attributeName} on {owner} declares {named} named argument(s); this reader supports none."
+            );
+        }
+
+        if (blob.RemainingBytes != 0)
+        {
+            throw new BadImageFormatException(
+                $"{attributeName} on {owner} carries {blob.RemainingBytes} unread argument byte(s)."
+            );
+        }
     }
 
     private static bool TryGetAttributeTypeName(
