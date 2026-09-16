@@ -75,7 +75,7 @@ internal static class Program
     /// </summary>
     private static List<ServiceDescriptor> AssertRegistrationShape()
     {
-        FixtureServiceCollection services = [];
+        ServiceCollection services = [];
 
         new StudentIdentityPlugin().ContributeServices(
             services,
@@ -177,7 +177,7 @@ internal static class Program
 
         // The same pair against a configuration carrying no such section. The default has to
         // survive, or the "sets a default, then lets a deployment override it" claim is backwards.
-        FixtureServiceCollection unconfiguredServices = [];
+        ServiceCollection unconfiguredServices = [];
         new StudentIdentityPlugin().ContributeServices(
             unconfiguredServices,
             new FixtureConfiguration(ConfigurationSection, new Dictionary<string, string>())
@@ -249,11 +249,20 @@ internal static class Program
             "The failure message quotes the submitted value back; the readme's sample must not."
         );
 
-        // A writable profile can leave the member out of the profile-effective body entirely, and
-        // the readme says the sample tolerates that rather than rejecting the write.
+        // A body that does not carry the member at all. Profile shaping preserves Student's
+        // natural identity, $.studentUniqueId, so this is the sample defending against input it
+        // did not construct rather than a shape a writable profile produces.
         Assert(
             (await Validate(validator, JsonNode.Parse("{\"studentLastName\":\"Doe\"}")!)).Count == 0,
             "The sample reported a failure for a body that does not carry studentUniqueId at all."
+        );
+
+        // A member holding a number rather than a string. A deployment that sets
+        // AppSettings:BypassTypeCoercion removes the coercion step from the pipeline, so a
+        // validator can be handed this; the sample must not throw its way to a 500 over it.
+        Assert(
+            (await Validate(validator, JsonNode.Parse("{\"studentUniqueId\":12345}")!)).Count == 0,
+            "The sample did not tolerate a studentUniqueId that is not a JSON string."
         );
 
         // Cancellation propagates rather than being reported as a validation failure.

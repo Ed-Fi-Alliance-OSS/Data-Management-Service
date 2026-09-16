@@ -56,13 +56,22 @@ public sealed class StudentIdentityValidator : ICustomResourceValidator
 
         // The document is read, never written. The parameter is a JsonNode and nothing in the type
         // system stops a validator mutating it; not doing so is a contract rule.
-        string? studentUniqueId = document["studentUniqueId"]?.GetValue<string>();
+        //
+        // Read as a JSON string rather than through GetValue<string>(), which throws when the
+        // member holds a number. A validator cannot assume every value arrives coerced to its
+        // schema type: a deployment that sets AppSettings:BypassTypeCoercion removes that step from
+        // the pipeline. Anything that is not a JSON string is treated as nothing to check.
+        string studentUniqueId =
+            document["studentUniqueId"] is JsonValue submitted
+            && submitted.TryGetValue(out string? submittedText)
+                ? submittedText ?? string.Empty
+                : string.Empty;
 
-        // Absent rather than wrong. This is the profile-effective body, so a writable profile that
-        // does not name studentUniqueId leaves it out of what this method receives, and a rule that
-        // reported a failure here would reject every write made through such a profile. There is
-        // nothing to check, so nothing is reported.
-        if (string.IsNullOrEmpty(studentUniqueId))
+        // Nothing to check rather than a failure to report. A validator reads a document it did not
+        // construct, so it defends against a member being absent instead of assuming its own rule's
+        // input is there. Reporting a failure here would reject writes over the shape of the body
+        // rather than over the rule.
+        if (studentUniqueId.Length == 0)
         {
             return NoFailures;
         }

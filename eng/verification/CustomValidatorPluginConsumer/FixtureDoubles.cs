@@ -4,70 +4,28 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 // Harness types, not samples. Nothing here is embedded in the readme, and an implementer writes
-// none of it: a real plugin is handed the host's own IServiceCollection and IConfiguration.
+// none of it: a real plugin is handed the host's own IConfiguration.
 //
-// They exist because of a closure constraint worth recording. The concrete ServiceCollection class
-// and BuildServiceProvider live in Microsoft.Extensions.DependencyInjection, the implementation
-// package, which is NOT one of the five this project is allowed to declare: the samples reach DI
-// only through Microsoft.Extensions.DependencyInjection.Abstractions, and adding the implementation
-// package to build a container would make this project's closure wider than the implementer's it
-// is supposed to model.
+// Only configuration is doubled, because only configuration needs to be. The service collection
+// does not: Microsoft.Extensions.DependencyInjection.Abstractions carries the concrete
+// ServiceCollection alongside IServiceCollection, so Program.cs passes a real one. What that
+// package does NOT carry is BuildServiceProvider, which lives in the
+// Microsoft.Extensions.DependencyInjection implementation package and is outside the five this
+// project is allowed to declare.
 //
-// So instead of resolving through a container, Program.cs invokes the real ContributeServices
-// against the minimal IServiceCollection below, then reads the IConfigureOptions<T> registrations
-// back out and invokes them directly. That exercises the same objects the framework's own options
-// machinery would invoke, in the same order, with nothing added to the closure.
+// That is why the options assertions invoke the registered IConfigureOptions<T> instances directly
+// instead of resolving IOptions<T> from a container. The framework's own options machinery runs
+// exactly those objects in exactly that order, so running them is the same work a container would
+// have done, with nothing added to the closure.
 //
 // Microsoft.Extensions.Primitives appears in one signature below. It arrives transitively with
 // Microsoft.Extensions.Configuration.Abstractions and is named only because IConfiguration's own
 // member returns it; no sample touches it.
 
-using System.Collections;
 using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Primitives;
 
 namespace CustomValidatorPluginConsumer;
-
-/// <summary>
-/// The smallest thing that is honestly an <see cref="IServiceCollection"/>: the interface is
-/// <see cref="IList{T}"/> of <see cref="ServiceDescriptor"/> and nothing more, so a list is a
-/// complete implementation rather than a stub that pretends.
-/// </summary>
-internal sealed class FixtureServiceCollection : IServiceCollection
-{
-    private readonly List<ServiceDescriptor> _descriptors = [];
-
-    public ServiceDescriptor this[int index]
-    {
-        get => _descriptors[index];
-        set => _descriptors[index] = value;
-    }
-
-    public int Count => _descriptors.Count;
-
-    public bool IsReadOnly => false;
-
-    public void Add(ServiceDescriptor item) => _descriptors.Add(item);
-
-    public void Clear() => _descriptors.Clear();
-
-    public bool Contains(ServiceDescriptor item) => _descriptors.Contains(item);
-
-    public void CopyTo(ServiceDescriptor[] array, int arrayIndex) => _descriptors.CopyTo(array, arrayIndex);
-
-    public IEnumerator<ServiceDescriptor> GetEnumerator() => _descriptors.GetEnumerator();
-
-    public int IndexOf(ServiceDescriptor item) => _descriptors.IndexOf(item);
-
-    public void Insert(int index, ServiceDescriptor item) => _descriptors.Insert(index, item);
-
-    public bool Remove(ServiceDescriptor item) => _descriptors.Remove(item);
-
-    public void RemoveAt(int index) => _descriptors.RemoveAt(index);
-
-    IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
-}
 
 /// <summary>
 /// A configuration root carrying one section of literal values, which is what the sample's

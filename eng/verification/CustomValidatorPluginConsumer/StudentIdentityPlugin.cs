@@ -42,8 +42,11 @@ public sealed class StudentIdentityPlugin : EdFiApiPlugin
 
         // The registration shape DMS's startup guard accepts: TryAddEnumerable, Transient,
         // unkeyed, and an implementation type rather than a shared instance or a factory delegate.
-        // TryAddEnumerable is what makes this fan-in, so every registered validator runs and any
-        // number of plugins may contribute one.
+        // TryAddEnumerable is the form this contract requires because it adds to the collection
+        // rather than replacing it: an earlier plugin's validator survives this call, and this one
+        // survives a later plugin's. Running every registered validator is DMS's own doing, not
+        // this helper's; its fan-in step resolves them all on each write and invokes the ones whose
+        // AppliesTo matches.
         services.TryAddEnumerable(
             ServiceDescriptor.Transient<ICustomResourceValidator, StudentIdentityValidator>()
         );
