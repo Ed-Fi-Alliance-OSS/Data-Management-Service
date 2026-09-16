@@ -14,6 +14,7 @@ using EdFi.DataManagementService.Backend.Ddl;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache.Cdc;
 using EdFi.DataManagementService.Core.Startup;
+using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -85,6 +86,26 @@ public sealed class CdcCommandRunner(IApiSchemaFileLoader loader, EffectiveSchem
     {
         string name = CdcCommandHost.Name(invocation.Operation);
         CdcDeploymentComponent component = CdcDeploymentComponent.Request;
+        bool collisionDescribed = false;
+        // Said beside the result rather than through it: a refused ApiSchema is the one failure this
+        // command can tell an operator how to fix, and the fix is a field name that no allow-listed
+        // classification carries. Written in the form the hash/ddl commands use, on the writer the host
+        // supplies as stderr, so both schema tooling surfaces read the same. The text is the refusal's
+        // own description, in which every schema-supplied fragment is already sanitized.
+        void DescribeCollision(CdcReservedQueryParameterCollisionException collision)
+        {
+            // Said where the refusal is discovered rather than where the command returns, because the
+            // controllers classify it into a typed diagnostic and return normally; keying off the
+            // discovery is what makes this independent of which return path the operation takes. Once
+            // per invocation, because a watch pass may retry the preparation that raised it.
+            if (!collisionDescribed)
+            {
+                collisionDescribed = true;
+                progress.WriteLine(
+                    $"Error: {LoggingSanitizer.SanitizeForConsole(collision.Collision.Describe())}"
+                );
+            }
+        }
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
         try
         {
@@ -172,7 +193,16 @@ public sealed class CdcCommandRunner(IApiSchemaFileLoader loader, EffectiveSchem
             {
                 // Includes schema loading and emitted inventory validation. These are observation inputs,
                 // and must not precede retained-incident containment or be required for explicit stop.
-                _ = request.ProviderSetup;
+                try
+                {
+                    _ = request.ProviderSetup;
+                }
+                catch (CdcReservedQueryParameterCollisionException exception)
+                {
+                    // Rethrown unchanged, so every controller classifies this exactly as it does today.
+                    DescribeCollision(exception);
+                    throw;
+                }
                 return await CreateProjectionRuntime(settings, logger, targetKey, cancellation);
             });
             if (invocation.Operation == CdcCommandOperation.Retire)
@@ -418,6 +448,20 @@ public sealed class CdcCommandRunner(IApiSchemaFileLoader loader, EffectiveSchem
         catch (CdcCommandEvidenceException exception)
         {
             return new(name, false, 1, exception.Diagnostics);
+        }
+        catch (CdcReservedQueryParameterCollisionException exception)
+        {
+            // The operations that prepare projection eagerly refuse here instead, before any controller
+            // runs. The emitted result is deliberately the one this would have produced anyway: only
+            // allow-listed classifications cross the output boundary, so the exit code, the diagnostic,
+            // and the stdout JSON do not change.
+            DescribeCollision(exception);
+            return CdcCommandHost.Failure(
+                name,
+                2,
+                CdcDeploymentComponent.Request,
+                CdcDeploymentFailure.InvalidInput
+            );
         }
         catch (Exception exception)
         {

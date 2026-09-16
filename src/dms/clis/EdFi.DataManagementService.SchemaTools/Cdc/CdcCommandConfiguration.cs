@@ -8,6 +8,7 @@ using System.Globalization;
 using EdFi.DataManagementService.Backend.Cdc;
 using EdFi.DataManagementService.Backend.Ddl;
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache.Cdc;
 using EdFi.DataManagementService.Core.Startup;
@@ -231,11 +232,7 @@ public sealed class CdcCommandConfiguration(IConfigurationRoot settings)
             }
             token.ThrowIfCancellationRequested();
             var loaded = loader.Load(schemaPaths[0], schemaPaths.Skip(1).ToList());
-            if (loaded is not ApiSchemaFileLoadResult.SuccessResult success)
-            {
-                throw new ArgumentException("CDC command input is invalid.");
-            }
-            var schema = builder.Build(success.NormalizedNodes);
+            var schema = builder.Build(RequireNormalizedSchemas(loaded));
             var emission = DdlPipelineHelpers.BuildDdlEmissionForDialect(
                 schema,
                 GetProvider() == CoreProvider.Postgresql ? SqlDialect.Pgsql : SqlDialect.Mssql
@@ -296,6 +293,26 @@ public sealed class CdcCommandConfiguration(IConfigurationRoot settings)
         return request;
     }
 
+    /// <summary>
+    /// The normalized nodes of a successful load, or the refusal this command fails with.
+    /// </summary>
+    /// <remarks>
+    /// A reserved query parameter collision is the one load failure whose remedy is in the MetaEd model
+    /// rather than in this command's input, so it is the one carried out far enough to be described.
+    /// Every other failure stays the generic refusal, because its detail is a path or a parser message
+    /// this surface does not disclose.
+    /// </remarks>
+    internal static ApiSchemaDocumentNodes RequireNormalizedSchemas(ApiSchemaFileLoadResult loaded) =>
+        loaded switch
+        {
+            ApiSchemaFileLoadResult.SuccessResult success => success.NormalizedNodes,
+            ApiSchemaFileLoadResult.NormalizationFailureResult
+            {
+                FailureResult: ApiSchemaNormalizationResult.ReservedQueryParameterCollisionResult collision
+            } => throw new CdcReservedQueryParameterCollisionException(collision),
+            _ => throw new ArgumentException("CDC command input is invalid."),
+        };
+
     public Dictionary<string, string> Properties(string key) =>
         Settings
             .GetSection(key)
@@ -306,4 +323,27 @@ public sealed class CdcCommandConfiguration(IConfigurationRoot settings)
             );
 
     public override string ToString() => nameof(CdcCommandConfiguration);
+}
+
+/// <summary>
+/// The one ApiSchema load failure a CDC command describes to the operator rather than refusing
+/// generically: a resource declares a query field spelled like a query parameter DMS reserves.
+/// </summary>
+/// <remarks>
+/// Carries the result rather than composed text, so the only thing that can reach the command's output
+/// is the description that result builds, in which every schema-supplied fragment is already sanitized.
+/// <see cref="Exception.Message"/> is the generic refusal for the same reason: nothing that prints a
+/// caught exception's message can widen what this surface discloses.
+/// </remarks>
+[System.Diagnostics.CodeAnalysis.SuppressMessage(
+    "Sonar",
+    "S3871",
+    Justification = "Internal control-flow exception is caught in CdcCommandRunner.RunAsync and never escapes the CDC command boundary."
+)]
+internal sealed class CdcReservedQueryParameterCollisionException(
+    ApiSchemaNormalizationResult.ReservedQueryParameterCollisionResult collision
+) : Exception("CDC command input is invalid.")
+{
+    internal ApiSchemaNormalizationResult.ReservedQueryParameterCollisionResult Collision { get; } =
+        collision;
 }
