@@ -198,8 +198,9 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
                     }
                     catch (Exception exception)
                     {
-                        Assert.Fail(
-                            $"Owned admission preparation failed ({exception.GetType().Name}). Stack: {exception.StackTrace}"
+                        throw new AssertionException(
+                            $"Owned admission preparation failed ({exception.GetType().Name}).",
+                            exception
                         );
                     }
                 },

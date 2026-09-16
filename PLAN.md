@@ -96,7 +96,19 @@ Regression cases must cover first unusable sample followed by valid evidence, pe
 
 The implementation now classifies a correctly attributed, finite current-lag value of exactly `-1` separately after both worker/task identity brackets and the age check complete. It still returns unavailable telemetry and invalidates the pass. Any other invalidation supersedes this classification. Established validation permits another observation only when all other prerequisites pass and the caller supplies the managed resume operation ID. The lifecycle controller uses that allowance only before resume completion, within the original deadline, without repeating the mutation. Every iteration re-reads the complete evidence. The focused telemetry/lifecycle selection passed all 532 cases, and the complete controller unit suite passed all 3,588 cases. Live validation remains required.
 
-## 5. Validate the final changes locally
+## 5. Preserve the original admission-preparation failure
+
+The full run [35040814242](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/35040814242) on `f89639afdd86e7184b9bdd6a99d2cee8a708bd0c` passed 258 live tests and failed one SQL Server Admission case, with zero skips. `It_repeats_fresh_readiness_after_an_interrupted_offline_wait("queue")` failed during fixture preparation before its scenario ran. Its published evidence identifies the `Assert.Fail` wrapper at `CdcProviderAdmissionFixture.StartAsync`, which discarded the original exception; the underlying cause remains unknown.
+
+- Preserve that exception as the inner exception of the assertion wrapper, without changing failure or cleanup behavior.
+- Publish the original exception type and DMS code locations plus at most eight numeric SQL Server error codes. Never publish messages, commands, connection strings, full logs, or machine paths.
+- Verify wrapped and unwrapped startup failures retain cleanup and redaction, then exercise the failed case with matching pinned images.
+- Investigate any reproduced underlying failure before choosing a behavioral fix. A passing replay does not explain the hosted failure.
+- Require a new complete hosted qualification on the final pushed commit; the previous 258/259 result is not qualification.
+
+Validation: the complete Contract lane passed **4,868 tests**, zero failures/skips (3,588 controller, 715 CLI, 101 offline, 464 wrappers). The single failed SQL Server `queue` case passed locally with the pinned images; all seven pre-existing containers were preserved and fixture resources were removed. The hosted preparation failure remains unexplained.
+
+## 6. Validate the final changes locally
 
 Use the CDC qualification fixtures' isolated stacks and nightly image digests. Preserve unrelated Docker containers and remove only resources created by these runs. Run local builds and tests sequentially.
 
@@ -115,7 +127,7 @@ Use the CDC qualification fixtures' isolated stacks and nightly image digests. P
 
 PowerShell 7.4 failed empty-environment-variable tests locally; 7.6 preserves the distinction required by those tests. A skipped live test or environment failure does not count as qualification.
 
-## 6. Commit, push, and qualify the final commit
+## 7. Commit, push, and qualify the final commit
 
 - [x] Review the final diff against the story contracts. Record the port-fix provenance and explain each production correction.
 - [ ] Commit and push to `fix-nightly-cdc-qualified-image`.
@@ -133,6 +145,7 @@ Recorded evidence as of this plan update. Results from the final hosted run and 
 
 | Evidence | Result | Limit |
 | --- | --- | --- |
+| [Full run 35040814242](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/35040814242) on `f89639afd` | 258 passed, one failed, zero skips; 12/13 jobs passed | SQL Server Admission fixture preparation failure; original exception missing from published evidence. Hosted Contract passed all 4,867 tests. |
 | Local Contract on PowerShell 7.6.6, production follow-up | 4,867 passed, zero failures/skips | Reviewed source hashes match the tested code. |
 | Focused live production follow-up | Eight passed, zero failures/skips | Four per provider: guarded start, intact restart, and record-size interruptions at boundaries 1 and 5. Eight evidence attachments and resource cleanup verified; no negative lag sample occurred in this live selection. |
 | Latest hosted Contract on `ea4e0b2a2` | 4,837 passed, zero failures/skips | Does not cover live qualification. |

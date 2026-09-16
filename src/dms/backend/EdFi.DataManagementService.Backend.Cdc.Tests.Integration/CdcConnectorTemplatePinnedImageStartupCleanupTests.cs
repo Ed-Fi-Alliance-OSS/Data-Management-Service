@@ -98,17 +98,28 @@ public sealed class Given_PinnedImageFixtureStartupFailureCleanup
 {
     private const string ResourcePrefix = "dms-cdc-startup-test";
 
-    [Test]
+    [TestCase(false)]
+    [TestCase(true)]
     [NonParallelizable]
-    public async Task It_records_compose_startup_locations_without_exception_details_and_still_cleans_up()
+    public async Task It_records_compose_startup_locations_without_exception_details_and_still_cleans_up(
+        bool wrapped
+    )
     {
         string directory = TestContext.CurrentContext.WorkDirectory;
         const string pattern = "admission-evidence-startup-*.json";
         string[] before = Directory.GetFiles(directory, pattern);
         const string privateDetails = "private-docker-command-password-and-output";
-        var startupException = new InvalidOperationException(privateDetails);
+        Exception startupException;
+        try
+        {
+            throw new InvalidOperationException(privateDetails, new IOException(privateDetails));
+        }
+        catch (InvalidOperationException cause)
+        {
+            startupException = wrapped ? new AssertionException(privateDetails, cause) : cause;
+        }
         var docker = new RecordingDockerCli(arguments => arguments[0] == "network" ? startupException : null);
-        var exception = Assert.ThrowsAsync<InvalidOperationException>(async () =>
+        var exception = Assert.CatchAsync(async () =>
             await CdcConnectorTemplatePinnedImageFixture.StartAsync(
                 CdcProvider.Postgresql,
                 BuildSettings(),
@@ -131,7 +142,13 @@ public sealed class Given_PinnedImageFixtureStartupFailureCleanup
             .RootElement.GetProperty("ExceptionType")
             .GetString()
             .Should()
+            .Be(wrapped ? "AssertionException" : "InvalidOperationException");
+        evidence
+            .RootElement.GetProperty("CauseExceptionType")
+            .GetString()
+            .Should()
             .Be("InvalidOperationException");
+        evidence.RootElement.GetProperty("SqlServerErrorNumbers").GetArrayLength().Should().Be(0);
         evidence.RootElement.GetProperty("Locations").GetArrayLength().Should().BeGreaterThan(0);
         evidence.RootElement.TryGetProperty("Message", out _).Should().BeFalse();
     }

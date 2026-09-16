@@ -343,7 +343,12 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
             TestContext.CurrentContext.WorkDirectory,
             "admission-evidence-startup-" + Guid.NewGuid().ToString("N") + ".json"
         );
-        var locations = new StackTrace(exception, true)
+        // Unwrap only the fixture assertion. Provider exceptions may themselves contain native
+        // causes; keep the provider exception's DMS locations and SQL error numbers intact.
+        Exception cause = exception is AssertionException { InnerException: { } original }
+            ? original
+            : exception;
+        var locations = new StackTrace(cause, true)
             .GetFrames()
             .Where(frame =>
                 frame
@@ -368,6 +373,10 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
                     Provider = Provider.ToString(),
                     Stage = stage,
                     ExceptionType = exception.GetType().Name,
+                    CauseExceptionType = cause.GetType().Name,
+                    SqlServerErrorNumbers = cause is SqlException sqlException
+                        ? sqlException.Errors.Cast<SqlError>().Select(error => error.Number).Take(8).ToArray()
+                        : [],
                     Locations = locations,
                 }
             )
