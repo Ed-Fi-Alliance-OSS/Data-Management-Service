@@ -57,6 +57,24 @@ public sealed class Given_CdcControllerFixtureOffsets
     }
 
     [Test]
+    public void It_distinguishes_the_idle_serial_zero_without_publishing_offset_values()
+    {
+        using var evidence = new CdcControllerFixtureOffsets();
+        evidence.Record(
+            Encoding.UTF8.GetBytes(
+                """{"offsets":[{"offset":{"commit_lsn":"00000001:00000002:0003","change_lsn":"NULL","event_serial_no":0}}]}"""
+            ),
+            "Complete"
+        );
+        using var document = JsonDocument.Parse(JsonSerializer.Serialize(evidence.Observations));
+        var entry = document.RootElement[0].GetProperty("Entries")[0];
+        entry.GetProperty("SerialZero").GetBoolean().Should().BeTrue();
+        entry.GetProperty("SerialOne").GetBoolean().Should().BeFalse();
+        entry.GetProperty("Change").GetProperty("NullMarker").GetBoolean().Should().BeTrue();
+        document.RootElement.GetRawText().Should().NotContain("00000001");
+    }
+
+    [Test]
     public async Task It_preserves_malformed_json_for_the_adapter_to_reject()
     {
         const string body = "{private-malformed";

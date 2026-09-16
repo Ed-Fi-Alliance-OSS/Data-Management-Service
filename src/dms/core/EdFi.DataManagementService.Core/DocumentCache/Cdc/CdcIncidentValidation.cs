@@ -68,7 +68,11 @@ public static class CdcIncidentValidator
         ValidateTimestamp(incident.LatchedAt, nowUtc, "$.latchedAt", diagnostics);
         ValidateBindingIdentity(incident.BindingIdentity, diagnostics);
         ValidateFailureCategory(incident.FailureCategory, diagnostics);
-        ValidatePositionMetadata(incident.PositionMetadata, diagnostics);
+        ValidatePositionMetadata(
+            incident.PositionMetadata,
+            incident.BindingIdentity is { Provider: CdcProvider.SqlServer },
+            diagnostics
+        );
     }
 
     private static void ValidateContractVersion(
@@ -252,6 +256,7 @@ public static class CdcIncidentValidator
 
     private static void ValidatePositionMetadata(
         CdcIncidentPositionMetadata? positionMetadata,
+        bool sqlServer,
         CdcDiagnosticCollector diagnostics
     )
     {
@@ -317,12 +322,22 @@ public static class CdcIncidentValidator
             "commitLsn",
             diagnostics
         );
-        ValidateProviderPosition(
-            positionMetadata.ChangeLsn,
-            "$.positionMetadata.changeLsn",
-            "changeLsn",
-            diagnostics
-        );
+        if (
+            !sqlServer
+            || !CdcSqlServerProviderPositionParser.IsIdleCommitBoundary(
+                positionMetadata.CommitLsn,
+                positionMetadata.ChangeLsn,
+                positionMetadata.EventSerialNo
+            )
+        )
+        {
+            ValidateProviderPosition(
+                positionMetadata.ChangeLsn,
+                "$.positionMetadata.changeLsn",
+                "changeLsn",
+                diagnostics
+            );
+        }
         ValidateProviderPosition(
             positionMetadata.RetainedRangeStart,
             "$.positionMetadata.retainedRangeStart",

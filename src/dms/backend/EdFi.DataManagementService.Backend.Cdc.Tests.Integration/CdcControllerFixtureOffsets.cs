@@ -134,6 +134,7 @@ internal sealed class CdcControllerFixtureOffsets : DelegatingHandler
             SerialKind = serial.ValueKind.ToString(),
             SerialInteger = serialInteger,
             SerialNonNegative = serialInteger && serial.GetInt64() >= 0,
+            SerialZero = serialInteger && serial.GetInt64() == 0,
             SerialOne = serialInteger && serial.GetInt64() == 1,
         };
     }

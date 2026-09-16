@@ -8,6 +8,45 @@ Worktree: `/home/brad/work/dms-root/fix-nightly-cdc-qualified-image`.
 
 Story: [DMS-1323 bootstrap and CDC enablement](reference/design/backend-redesign/epics/19-cdc-kafka/04-bootstrap-enable-kafka-cdc.md).
 
+## Execution sequence
+
+The simplest responsible path is to finish the targeted repairs already on this branch,
+validate the demonstrated production corrections, and resolve the remaining startup
+failure from evidence. The sections below retain implementation details and prior results;
+historical passes do not qualify the current source.
+
+1. **Retain the targeted DMS-1324-port repairs and qualified image selection.** Review
+   the listed source commits and the final diff. Import only the relevant fixture and
+   wrapper changes; keep their regression coverage.
+2. **Keep PostgreSQL 16 and use the production-compatible catalog lookup in the fixture.**
+   Read `invalidation_reason` through `to_jsonb(slot)` while retaining the active-slot
+   and WAL-retention checks. This field also protects DMS source-history validation;
+   production already uses the compatible lookup. Retain PostgreSQL 16/18 validation
+   evidence. Keep production provider SQL, image pins, and mapping version `v3` unchanged.
+3. **Finish validation of the demonstrated CDC corrections.** Cover delayed Kafka metadata,
+   the narrowly scoped initial-lag wait, and the SQL Server idle commit boundary. Preserve
+   authorization, identity, continuity, containment, freshness, finite deadlines, and
+   single-attempt mutations. For the idle boundary, require a strictly greater commit to
+   cross a barrier; the same commit is insufficient. Run the new native idle-offset live
+   control and the existing intact-restart scenario with the corrected binaries.
+4. **Establish the remaining SQL startup cause before changing startup behavior.** Inspect
+   the bounded diagnostics and privately retained process logs. Fatal reason 6 and errno 2
+   alone do not establish a cause. Apply a narrowly supported correction with a regression
+   or controlled reproduction. A successful replay alone does not resolve the diagnosis.
+5. **Validate the complete final source.** Format changed C#, review the diff, and run local
+   tests sequentially: core CDC tests, the full Contract lane, and affected live cases.
+   Verify image records, actual test selection, sanitized evidence, and cleanup of owned
+   resources. Expected selections are 437 core tests and 4,932 Contract checks; investigate
+   any discrepancy rather than treating missing or skipped tests as success.
+6. **Commit, push, and qualify the exact final SHA.** Run hosted Contract and all 13 live
+   jobs, expecting all 260 selected live tests to pass with zero failures, skips, or
+   environment-unavailable outcomes. Confirm required PR gates, update PR #1255 with
+   provenance and actual results, and read back the published description. Do not merge.
+
+**Done means:** the reviewed changes are committed and pushed, the full qualification and
+required checks pass on that commit, and the PR records the evidence and any remaining
+limitations. Until then, report qualification as incomplete.
+
 ## Decisions
 
 - Keep the nightly PostgreSQL 16 pin. Make the fixture query compatible with the supported catalog shape.
@@ -171,6 +210,20 @@ volumes. SQL startup succeeded in this replay, so it does not explain the hosted
 The complete local Contract lane on the preceding `e164bdb19` commit passed all 4,915 checks;
 the new log diagnostics require final-source Contract and full hosted qualification again.
 
+Follow-up on `1cb8c1517`: the full run finished with **256 passes, three failures,
+zero skips and two environment failures**; all 16 TRX reports and 13 image records were
+verified. Both SQL RecordSize startup failures now retain a fatal log marker, fatal reason
+code 6 and errno 2, with `OomKilled=false` and no memory/mapping marker. These codes alone
+do not identify the underlying cause. Investigate the process failure before choosing an
+environment correction; do not infer OOM, add automatic restarts, or extend readiness time.
+
+The isolated hosted diagnostic [35077597913](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/35077597913)
+completed 40 fresh SQL starts successfully with the original image on x86_64. It did not
+include the surrounding fixture stack and does not explain the process exits. The next
+control runs the actual SQL RecordSize suite with bounded, encrypted process-log capture
+on a temporary diagnostic branch: [35079333656](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/35079333656).
+The private decryption key stays local. Keep this instrumentation out of the fix PR.
+
 ## 8. Require TCP readiness during PostgreSQL fixture startup
 
 The qualification run [35057484986](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/35057484986) on `c4a82bf83` has a PostgreSQL Recovery preparation failure: `It_detects_failed_task_recovery_on_the_same_worker_without_certifying_the_gap` failed on its first host database connection, before the scenario ran. The attachment preserves an `NpgsqlException`, but not the underlying network message; the precise hosted cause remains unconfirmed.
@@ -227,6 +280,58 @@ cleanup preserved all seven pre-existing containers. This validates the diagnost
 without explaining the hosted failure. The hosted live matrix on `850cff957` has already
 failed and is not final qualification.
 
+### Follow-up: recognize the pinned SQL Server idle-stream offset
+
+Run [35069035378](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/35069035378)
+on `1cb8c1517` again failed the intact SQL Server restart case. The consumed-response diagnostics
+now show a valid commit LSN, literal `"NULL"` change LSN, and a nonnegative integer serial other
+than 1. The parser returned `Malformed`, which latched source-history loss and stopped the
+connector. The exact serial value was not retained. The completed matrix passed 256 tests and failed three; the other two failures were SQL process exits before RecordSize scenarios.
+
+The [pinned Debezium 3.6.0 source](https://github.com/debezium/debezium/blob/v3.6.0.Final/debezium-connector-sqlserver/src/main/java/io/debezium/connector/sqlserver/SqlServerStreamingChangeEventSource.java)
+emits a commit-only offset with change LSN `"NULL"` and serial 0 after a streaming iteration
+finds no captured rows, before publishing a heartbeat. The current DMS parser rejects this
+supported form. Debezium orders the null in-transaction LSN before real change positions and
+restarts by reading the commit inclusively; do not invent an after-image position or treat
+this as proof that a barrier in the same transaction was crossed.
+
+- [x] Reproduce the exact idle offset with the pinned live image and a deterministic parser regression.
+- [x] Support only the demonstrated commit-only form through the shared provider-position,
+  continuity, and observation contracts. Preserve the actual marker in evidence, source identity,
+  retained-range checks, snapshot/null-offset rejection, terminal incidents, and fresh lag requirements.
+- [x] Verify conservative ordering: a greater commit can cross an earlier barrier, but a commit-only
+  boundary must not certify a barrier in the same commit. Keep missing/invalid commit LSNs,
+  unsupported serial values, malformed change LSNs, and absent offsets rejected.
+- [x] Cover parser, provider comparison, continuity, observation/incident serialization, and
+  the live intact-restart path. Preserve all operation deadlines and single-attempt mutations.
+- [ ] Rerun complete local/hosted Contract and the full hosted matrix on the corrected final commit;
+  include any new test selection counts explicitly. The `1cb8c1517` matrix is unsuccessful.
+
+The native-offset control reproduced the exact form on the pinned worker: valid commit LSN,
+change LSN `"NULL"`, serial 0, no snapshot marker, and a matching source partition. The old
+parser rejected it as `Malformed`. The control pauses capture in its own fixture database,
+restarts the connector with DMS processing offline, and restores capture before validating
+continuity. Three earlier controls timed out without observing the marker; they are not
+positive evidence. The active one-second heartbeat query explained why a no-capture interval
+was needed. Original binary hashes, all four image pins, and cleanup of the owned resources
+were verified; seven pre-existing containers, six networks and 290 volumes were preserved.
+The shared correction is implemented and under validation; final-source Contract and live
+qualification remain required.
+
+The first corrected live run accepted the native idle marker as `Streaming`, and the
+separate intact-restart case passed with fresh readiness. The native control then timed
+out on an incorrect healthy-continuity expectation: its deliberate capture-job stop left
+failed job history, which the unchanged provider mapper rejects after restart. The revised
+control requires offset acceptance while keeping continuity unknown, pre-start/publication
+ineligible, and source-loss incidents absent for that job-health failure. It preserves the
+job history and production guard. Healthy idle-position semantics remain covered by the
+core tests; ordinary intact restart is covered independently. Resource cleanup was verified.
+
+The revised native control passed, consuming one real idle marker as `Streaming` and
+preserving the capture-job rejection. The separate intact-restart pass reached fresh
+readiness with unchanged production sources. Both runs retained all four image pins;
+the revised test's source hashes and exact cleanup inventory were verified.
+
 ## 10. Validate the final changes locally
 
 Use the CDC qualification fixtures' isolated stacks and nightly image digests. Preserve unrelated Docker containers and remove only resources created by these runs. Run local builds and tests sequentially.
@@ -243,7 +348,9 @@ Use the CDC qualification fixtures' isolated stacks and nightly image digests. P
 - [x] Exercise Kafka provisioning and preserve coverage for policy rejection, delayed metadata, and authorization.
 - [x] Retain the existing PostgreSQL 16/18 compatibility and Compose 2.38.2 evidence; repeat affected cases if subsequent edits change those paths.
 - [x] Verify diagnostic attachments remain bounded and sanitized. Keep raw logs, credentials, connection strings, and full metric bodies out of published evidence.
-- [ ] After the PostgreSQL TCP readiness, RecordSize, offset, and SQL exit diagnostic changes, rerun the complete Contract lane on the final source: expected **4,926 tests** (3,606 controller, 715 CLI, 141 offline, 464 wrappers), including 18 new RecordSize regressions and the current diagnostic checks, zero failures/skips. Earlier Contract passes do not qualify subsequent edits.
+- [x] After the PostgreSQL TCP readiness, RecordSize, offset, and SQL exit diagnostic changes, rerun the complete Contract lane on the corrected source: **4,932 passed** (3,611 controller, 715 CLI, 142 offline, 464 wrappers), zero failures/skips. Four reports, all three TRX files, individual results, and nine unchanged source hashes were independently verified. Repeat affected validation if subsequent edits change this source; hosted Contract must still pass on the final pushed commit.
+
+- [x] Run the complete core CDC unit selection for the shared position/continuity changes: **437 passed**, including 35 new idle-boundary cases, zero failures/skips. Verify the final DMS CI unit job also passes after the correction.
 
 PowerShell 7.4 failed empty-environment-variable tests locally; 7.6 preserves the distinction required by those tests. A skipped live test or environment failure does not count as qualification.
 
@@ -254,7 +361,7 @@ PowerShell 7.4 failed empty-environment-variable tests locally; 7.6 preserves th
 - [ ] Dispatch `nightly-cdc-qualification.yml` with `lane=All` and `suite=All` on the final pushed commit.
 - [ ] Verify the workflow head SHA and all published image records.
 - [ ] Require all 13 live jobs: Kafka, plus Admission, History, Lifecycle, RecordSize, Recovery, and Telemetry for each provider.
-- [ ] Verify all 259 currently selected live tests pass with zero failures, skips, or environment-unavailable outcomes. Explain any legitimate selection-count change.
+- [ ] Verify all 260 selected live tests pass with zero failures, skips, or environment-unavailable outcomes. The additional SQL Server Lifecycle case exercises a real idle commit boundary; all original 259 cases remain selected.
 - [ ] Investigate any remaining failure from its artifacts. After any code correction, qualify the complete matrix again on the new final commit.
 - [ ] Confirm current required PR checks: `license/cla`, `DMS CI Gate`, and `Config CI Gate`.
 - [ ] Update and read back PR #1255's title/body with the final scope, provenance, exact commit, run links, image/version coverage, and actual test totals.
