@@ -1078,6 +1078,37 @@ public class MetadataModuleTests
         }
 
         [Test]
+        public async Task It_preserves_the_qualified_prefix_for_Change_Queries()
+        {
+            // Arrange
+            var apiService = A.Fake<IApiService>();
+            A.CallTo(() => apiService.HasChangeQueriesOpenApiSpecification()).Returns(true);
+            A.CallTo(() => apiService.GetProfileNamesAsync(A<string?>._))
+                .Returns(Task.FromResult<IReadOnlyList<string>>([]));
+
+            var httpContext = new DefaultHttpContext();
+            httpContext.Request.Scheme = "http";
+            httpContext.Request.Host = new HostString("localhost");
+            httpContext.Request.Path = "/tenant1/255901/2024/metadata/specifications";
+            httpContext.Response.Body = new MemoryStream();
+
+            // Act
+            await MetadataEndpointModule.GetSections(httpContext, apiService);
+            httpContext.Response.Body.Position = 0;
+            var content = await new StreamReader(httpContext.Response.Body).ReadToEndAsync();
+            var jsonArray = JsonNode.Parse(content) as JsonArray;
+            var changeQueries = jsonArray!.Single(node =>
+                node!["name"]!.GetValue<string>() == "Change-Queries"
+            );
+
+            // Assert
+            changeQueries["endpointUri"]!
+                .GetValue<string>()
+                .Should()
+                .Be("http://localhost/tenant1/255901/2024/metadata/changequeries/v1/swagger.json");
+        }
+
+        [Test]
         public async Task It_omits_Change_Queries_when_the_standalone_document_is_absent()
         {
             // Arrange

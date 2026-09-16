@@ -586,10 +586,13 @@ public partial class MetadataEndpointModule(IOptions<FrontendAppSettings> appSet
 
         if (apiService.HasChangeQueriesOpenApiSpecification())
         {
+            var metadataPrefix = baseUrl[
+                ..baseUrl.LastIndexOf("/metadata/specifications", StringComparison.Ordinal)
+            ];
             sections.Add(
                 new RouteInformation(
                     "Change-Queries",
-                    $"{httpContext.Request.RootUrl()}/metadata/changequeries/v1/swagger.json",
+                    $"{metadataPrefix}/metadata/changequeries/v1/swagger.json",
                     "Other"
                 )
             );
