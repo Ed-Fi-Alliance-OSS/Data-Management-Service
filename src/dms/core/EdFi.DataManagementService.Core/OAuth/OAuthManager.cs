@@ -76,22 +76,44 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
         + "present, their values withheld: {OtherFieldNames}";
 
     /// <summary>
-    /// The RFC 6749 section 5.2 error response members: the only upstream fields whose
-    /// <em>values</em> are written to the log.
+    /// RFC 6749 section 5.2 defines <c>error_uri</c> as a URI, which is why it is the one
+    /// standard field reported by presence alone.
+    /// </summary>
+    private const string ErrorUriFieldName = "error_uri";
+
+    /// <summary>
+    /// The RFC 6749 section 5.2 error response members: the only upstream fields eligible to
+    /// have their <em>values</em> written to the log.
     /// </summary>
     /// <remarks>
     /// Ordinal, because JSON member names are case-sensitive and RFC 6749 spells these lowercase.
     /// <c>error</c> costs nothing at all to log, since it is already forwarded to the client as
     /// the problem-details <c>title</c> (<see cref="Response.FailureResponse.ForUnauthorized"/>).
-    /// <c>error_description</c> is listed for completeness of the contract rather than because it
-    /// can appear here - its presence is precisely what suppresses this event.
+    /// <c>error_description</c> appears only when it arrived malformed - a well-formed one is
+    /// precisely what suppresses this event. <c>error_uri</c> is never logged by value; see
+    /// <see cref="ErrorUriFieldName"/>.
+    ///
+    /// Membership makes a field eligible, not safe: what a member actually contributes to the
+    /// log is decided per value by <c>StandardFieldValueForLogging</c>.
     /// </remarks>
     private static readonly HashSet<string> _standardOAuthErrorFields = new(StringComparer.Ordinal)
     {
         "error",
         "error_description",
-        "error_uri",
+        ErrorUriFieldName,
     };
+
+    /// <summary>
+    /// Stands in for the value of a standard field that arrived as a JSON object or array, so an
+    /// operator can tell a malformed upstream body from an absent field.
+    /// </summary>
+    private const string MalformedFieldValueMarker = "(malformed)";
+
+    /// <summary>
+    /// Stands in for the value of a standard field that is reported as present but never by
+    /// value.
+    /// </summary>
+    private const string WithheldFieldValueMarker = "(withheld)";
 
     /// <summary>
     /// Upper bound on how many non-standard field <em>names</em> from an upstream error body reach
@@ -234,13 +256,19 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
             if (parsed is not null)
             {
                 obj = parsed.AsObject();
-                if (obj.ContainsKey("error"))
+
+                // A standard field name does not establish that its contents are safe. RFC 6749
+                // section 5.2 defines both of these as strings, and `JsonNode.ToString()` on a
+                // member that arrived as an object or an array serializes the whole subtree - so
+                // `{"error":{"client_secret":"..."}}` would otherwise be echoed verbatim to a
+                // caller that has not authenticated. A malformed member falls back to the same
+                // fixed default an absent one uses.
+                error = ScalarValueOrNull(obj["error"]) ?? error;
+
+                string? suppliedDescription = ScalarValueOrNull(obj["error_description"]);
+                if (suppliedDescription is not null)
                 {
-                    error = obj["error"]!.ToString();
-                }
-                if (obj.ContainsKey("error_description"))
-                {
-                    errorDescription = obj["error_description"]!.ToString();
+                    errorDescription = suppliedDescription;
                     upstreamSuppliedDescription = true;
                 }
             }
@@ -304,6 +332,10 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
         // The residual loss is real and deliberate. The log shows that `reason` was present; it
         // never shows that it read "client disabled". That is the price of the no-payload policy,
         // paid knowingly. Do not "restore" full-body logging here without reading both findings.
+        //
+        // Being on the allowlist buys a field nothing beyond eligibility: an allowlisted name on
+        // a nested object is a way back to the second finding by another route, so what a value
+        // contributes is decided per value, by StandardFieldValueForLogging.
         static (string StandardFields, string OtherFieldNames) SummarizeUpstreamFieldsForLogging(
             JsonObject obj
         )
@@ -318,12 +350,11 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
             {
                 if (_standardOAuthErrorFields.Contains(member.Key))
                 {
-                    // `member.Value` is null for a JSON null, and a nested object or array
-                    // renders as its JSON text. Neither throws - this must not become a second
-                    // way out of this method, the first (JsonNode.Parse and AsObject on a
-                    // non-object body) being tracked as DMS-1549 - and neither can disturb the
+                    // No branch of StandardFieldValueForLogging throws - this must not become a
+                    // second way out of this method, the first (JsonNode.Parse and AsObject on a
+                    // non-object body) being tracked as DMS-1549 - and none can disturb the
                     // message template, because the result is bound as a parameter.
-                    standard.Add($"{member.Key}={member.Value?.ToString() ?? "null"}");
+                    standard.Add($"{member.Key}={StandardFieldValueForLogging(member.Key, member.Value)}");
                     continue;
                 }
 
@@ -357,6 +388,40 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
                 )
             );
         }
+
+        // What a standard field contributes to the log - its scalar text, or a marker standing
+        // in for a value that is never logged. A member name earns a field its place in the
+        // summary, and this decides what, if anything, of the value goes with it.
+        static string StandardFieldValueForLogging(string name, JsonNode? value)
+        {
+            if (name == ErrorUriFieldName)
+            {
+                // A URI carries credentials in its query and userinfo components often enough
+                // that no part of one is logged. A client secret in the query string is the
+                // obvious case, and a one-time token in the path is no better. Presence is the
+                // whole diagnostic, and the operator follows it up in the identity provider's
+                // own logs.
+                return WithheldFieldValueMarker;
+            }
+
+            if (value is null)
+            {
+                // A JSON null, which JsonObject surfaces as a null node. Kept distinct from the
+                // malformed marker so an operator can tell an upstream that sent nothing from
+                // one that sent something unloggable.
+                return "null";
+            }
+
+            return ScalarValueOrNull(value) ?? MalformedFieldValueMarker;
+        }
+
+        // The text of a JSON scalar, or null for a JSON null, object or array. The container
+        // cases are the point: `JsonNode.ToString()` on an object or an array renders its whole
+        // subtree, which for an upstream error body is arbitrary payload - nested credentials
+        // included - and neither a log sink nor a client response may receive it. Callers turn
+        // the null into whatever their own safe default is.
+        static string? ScalarValueOrNull(JsonNode? value) =>
+            value is JsonValue scalar ? scalar.ToString() : null;
 
         // Sanitize first and truncate second. The order is observable: an upstream body padded
         // with control characters would, under truncate-then-sanitize, spend the whole budget on

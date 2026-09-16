@@ -564,6 +564,18 @@ public class OAuthManagerTests
     private const string ExpectedNoFieldsMarker = "(none)";
 
     /// <summary>
+    /// The marker the fallback event uses for a standard field that arrived as a JSON object or
+    /// array instead of the string RFC 6749 section 5.2 defines.
+    /// </summary>
+    private const string ExpectedMalformedMarker = "(malformed)";
+
+    /// <summary>
+    /// The marker the fallback event uses for a standard field reported as present but never by
+    /// value.
+    /// </summary>
+    private const string ExpectedWithheldMarker = "(withheld)";
+
+    /// <summary>
     /// The number of non-standard field names the fallback event will name before it starts
     /// counting instead.
     /// </summary>
@@ -1236,10 +1248,10 @@ public class OAuthManagerTests
     }
 
     /// <summary>
-    /// The three RFC 6749 section 5.2 error response members are the allowlist, and all three are
-    /// logged by value. <c>error_description</c> cannot reach this path - its presence is what
-    /// suppresses the event - so <c>error</c> and <c>error_uri</c> are what a standard-only body
-    /// can carry here.
+    /// The three RFC 6749 section 5.2 error response members are the allowlist, but membership
+    /// only makes a field eligible. <c>error</c> is logged by value, <c>error_uri</c> is reported
+    /// by presence alone, and a well-formed <c>error_description</c> cannot reach this path at
+    /// all, since its presence is what suppresses the event.
     /// </summary>
     [TestFixture]
     [Parallelizable]
@@ -1264,12 +1276,21 @@ public class OAuthManagerTests
         }
 
         [Test]
-        public void It_records_every_standard_field_by_value_in_upstream_order()
+        public void It_records_every_standard_field_in_upstream_order()
         {
             _logged.Properties["StandardFields"]!
                 .ToString()
                 .Should()
-                .Be($"error=invalid_client, error_uri={ErrorUri}");
+                .Be($"error=invalid_client, error_uri={ExpectedWithheldMarker}");
+        }
+
+        [Test]
+        public void It_does_not_record_the_error_uri_itself()
+        {
+            // Even this benign documentation URI is withheld. The rule is on the field, not on
+            // the individual value, because nothing at this point can tell a documentation link
+            // from one carrying a credential.
+            _logged.Message.Should().NotContain(ErrorUri);
         }
 
         [Test]
@@ -1456,6 +1477,275 @@ public class OAuthManagerTests
         public void It_does_not_record_the_upstream_body_on_the_log()
         {
             DiscardedUnauthorizedDetailRecord(_logger).Should().BeNull();
+        }
+    }
+
+    /// <summary>
+    /// A standard field name does not establish that its contents are safe. The reviewer's
+    /// example: an <c>error_uri</c> that arrived as an object nesting a credential, where
+    /// <c>JsonNode.ToString()</c> would have serialized the subtree into the event and neither
+    /// sanitizing nor bounding would have removed any of it.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_An_Unauthorized_Upstream_Body_Whose_Error_Uri_Nests_A_Secret
+    {
+        private const string NestedSecretSentinel = "nested-client-secret-never-logged";
+
+        // Three-brace interpolation: the body's own closing `}}` would otherwise be read as the
+        // end of an interpolation hole.
+        private static readonly string _upstreamBody = $$$"""
+            {"error":"invalid_client","error_uri":{"client_secret":"{{{NestedSecretSentinel}}}"}}
+            """;
+
+        private LogRecord _logged = default!;
+        private string _rendered = default!;
+        private string _rawResponseBody = default!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            (HttpResponseMessage response, RecordingLogger<OAuthManager> logger) = await UpstreamResponds(
+                HttpStatusCode.Unauthorized,
+                _upstreamBody
+            );
+            _rawResponseBody = await response.Content.ReadAsStringAsync();
+            _logged = DiscardedUnauthorizedDetailRecord(logger)!;
+            _rendered = RenderedFallbackEvent(logger);
+        }
+
+        [Test]
+        public void It_does_not_record_the_nested_secret()
+        {
+            _rendered.Should().NotContain(NestedSecretSentinel);
+        }
+
+        [Test]
+        public void It_does_not_disclose_the_nested_secret_to_the_client()
+        {
+            _rawResponseBody.Should().NotContain(NestedSecretSentinel);
+        }
+
+        [Test]
+        public void It_reports_the_error_uri_as_present_and_withheld()
+        {
+            _logged.Properties["StandardFields"]!
+                .ToString()
+                .Should()
+                .Be($"error=invalid_client, error_uri={ExpectedWithheldMarker}");
+        }
+
+        [Test]
+        public void It_still_surfaces_the_well_formed_error_as_the_title()
+        {
+            // The malformed member is contained: a sibling that did arrive as a string is still
+            // forwarded, so the fix costs nothing on the fields that are well formed.
+            JsonNode.Parse(_rawResponseBody)!["title"]!
+                .GetValue<string>()
+                .Should()
+                .Be("invalid_client");
+        }
+    }
+
+    /// <summary>
+    /// RFC 6749 section 5.2 defines <c>error_uri</c> as a URI, and a URI carries credentials in
+    /// its query and userinfo components. The field is reported by presence alone, so a
+    /// well-formed URI string is withheld exactly as a malformed container is.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_An_Unauthorized_Upstream_Body_Whose_Error_Uri_Carries_Query_Credentials
+    {
+        private const string QuerySecretSentinel = "uri-query-secret-never-logged";
+
+        private const string UserInfoSentinel = "uri-userinfo-secret-never-logged";
+
+        private static readonly string _errorUri =
+            $"https://svc:{UserInfoSentinel}@idp.example.com/docs?client_secret={QuerySecretSentinel}";
+
+        private static readonly string _upstreamBody = $$"""
+            {"error":"invalid_client","error_uri":"{{_errorUri}}"}
+            """;
+
+        private LogRecord _logged = default!;
+        private string _rendered = default!;
+        private string _rawResponseBody = default!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            (HttpResponseMessage response, RecordingLogger<OAuthManager> logger) = await UpstreamResponds(
+                HttpStatusCode.Unauthorized,
+                _upstreamBody
+            );
+            _rawResponseBody = await response.Content.ReadAsStringAsync();
+            _logged = DiscardedUnauthorizedDetailRecord(logger)!;
+            _rendered = RenderedFallbackEvent(logger);
+        }
+
+        [Test]
+        public void It_does_not_record_the_credential_in_the_query_string()
+        {
+            _rendered.Should().NotContain(QuerySecretSentinel);
+        }
+
+        [Test]
+        public void It_does_not_record_the_credential_in_the_userinfo_component()
+        {
+            _rendered.Should().NotContain(UserInfoSentinel);
+        }
+
+        [Test]
+        public void It_does_not_record_any_part_of_the_uri()
+        {
+            // Not only the credential-bearing components. Nothing decides per-URI which part is
+            // sensitive, so the whole value is withheld, host included.
+            _rendered.Should().NotContain("idp.example.com");
+        }
+
+        [Test]
+        public void It_does_not_disclose_the_uri_to_the_client()
+        {
+            _rawResponseBody.Should().NotContain(QuerySecretSentinel);
+            _rawResponseBody.Should().NotContain(UserInfoSentinel);
+        }
+
+        [Test]
+        public void It_still_reports_that_an_error_uri_was_present()
+        {
+            // Presence is the diagnostic that survives: the operator knows to look for the
+            // upstream's own record of this request rather than assuming it sent nothing.
+            _logged.Properties["StandardFields"]!
+                .ToString()
+                .Should()
+                .Contain($"error_uri={ExpectedWithheldMarker}");
+        }
+    }
+
+    /// <summary>
+    /// Both container kinds, on the two standard fields whose values would otherwise be
+    /// forwarded. <c>error</c> reaches the client as the problem-details <c>title</c> and
+    /// <c>error_description</c> as its <c>detail</c>, so a container here is a disclosure to an
+    /// unauthenticated caller as well as to the log.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_An_Unauthorized_Upstream_Body_Whose_Standard_Fields_Arrived_As_Containers
+    {
+        private const string NestedSecretSentinel = "object-nested-secret-never-disclosed";
+
+        private const string ArrayElementSentinel = "array-nested-secret-never-disclosed";
+
+        private static readonly string _upstreamBody = $$"""
+            {"error":{"client_secret":"{{NestedSecretSentinel}}"},"error_description":["{{ArrayElementSentinel}}"]}
+            """;
+
+        private LogRecord _logged = default!;
+        private string _rendered = default!;
+        private string _rawResponseBody = default!;
+        private JsonNode _body = default!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            (HttpResponseMessage response, RecordingLogger<OAuthManager> logger) = await UpstreamResponds(
+                HttpStatusCode.Unauthorized,
+                _upstreamBody
+            );
+            _rawResponseBody = await response.Content.ReadAsStringAsync();
+            _body = JsonNode.Parse(_rawResponseBody)!;
+            _logged = DiscardedUnauthorizedDetailRecord(logger)!;
+            _rendered = RenderedFallbackEvent(logger);
+        }
+
+        [Test]
+        public void It_does_not_disclose_the_nested_object_to_the_client()
+        {
+            _rawResponseBody.Should().NotContain(NestedSecretSentinel);
+        }
+
+        [Test]
+        public void It_does_not_disclose_the_nested_array_element_to_the_client()
+        {
+            _rawResponseBody.Should().NotContain(ArrayElementSentinel);
+        }
+
+        [Test]
+        public void It_does_not_record_either_container_on_the_log()
+        {
+            _rendered.Should().NotContain(NestedSecretSentinel);
+            _rendered.Should().NotContain(ArrayElementSentinel);
+        }
+
+        [Test]
+        public void It_falls_back_to_the_fixed_title_rather_than_the_container()
+        {
+            _body["title"]!.GetValue<string>().Should().Be("Unauthorized");
+        }
+
+        [Test]
+        public void It_falls_back_to_the_fixed_detail_rather_than_the_container()
+        {
+            _body["detail"]!.GetValue<string>().Should().Be(ExpectedUnauthorizedFallbackDetail);
+        }
+
+        [Test]
+        public void It_reports_both_fields_as_present_and_malformed()
+        {
+            _logged.Properties["StandardFields"]!
+                .ToString()
+                .Should()
+                .Be($"error={ExpectedMalformedMarker}, error_description={ExpectedMalformedMarker}");
+        }
+
+        [Test]
+        public void It_treats_a_malformed_description_as_no_description_at_all()
+        {
+            // The event has to fire. A container in `error_description` is not a description,
+            // so the client gets the fixed detail and the correlation ID still has to lead to a
+            // log entry saying what the upstream actually sent.
+            _logged.Should().NotBeNull();
+        }
+    }
+
+    /// <summary>
+    /// A JSON null is reported distinctly from a container, so an operator can tell an upstream
+    /// that sent nothing from one that sent something unloggable. It also cannot be dereferenced:
+    /// <c>JsonObject</c> surfaces it as a null node.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_An_Unauthorized_Upstream_Body_Whose_Error_Is_A_Json_Null
+    {
+        private const string UpstreamBody = """
+            {"error":null,"reason":"client disabled"}
+            """;
+
+        private HttpResponseMessage _response = default!;
+        private LogRecord _logged = default!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            (_response, RecordingLogger<OAuthManager> logger) = await UpstreamResponds(
+                HttpStatusCode.Unauthorized,
+                UpstreamBody
+            );
+            _logged = DiscardedUnauthorizedDetailRecord(logger)!;
+        }
+
+        [Test]
+        public void It_still_responds_with_unauthorized()
+        {
+            // Rather than the 502 a dereference of the null node used to produce by way of the
+            // enclosing catch.
+            _response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        }
+
+        [Test]
+        public void It_records_the_null_distinctly_from_a_malformed_container()
+        {
+            _logged.Properties["StandardFields"]!.ToString().Should().Be("error=null");
         }
     }
 }
