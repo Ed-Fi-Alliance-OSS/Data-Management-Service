@@ -41,7 +41,7 @@ jobs:
           SELECTED_LANE: ${{ inputs.lane || 'All' }}
           SELECTED_SUITE: ${{ inputs.suite || 'All' }}
         run: |
-          $matrix = ./eng/ci/Get-CdcQualificationMatrix.ps1 -Lane $env:SELECTED_LANE -Suite $env:SELECTED_SUITE
+          $matrix = '{"include":[{"lane":"Mssql","suite":"Admission"},{"lane":"Mssql","suite":"Lifecycle"},{"lane":"Mssql","suite":"Recovery"},{"lane":"Mssql","suite":"RecordSize"},{"lane":"Mssql","suite":"Telemetry"}]}'
           "matrix=$matrix" >> $env:GITHUB_OUTPUT
 
   run-cdc-qualification:
@@ -56,6 +56,7 @@ jobs:
       run:
         shell: pwsh
     env:
+      CDC_DIAGNOSTIC_SUITE: ${{ matrix.suite }}
       CDC_CONNECTOR_TEMPLATE_REDPANDA_IMAGE: ${{ vars.CDC_CONNECTOR_TEMPLATE_REDPANDA_IMAGE }}
       CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE: ${{ vars.CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE }}
       CDC_CONNECTOR_TEMPLATE_SQLSERVER_2025_IMAGE: ${{ vars.CDC_CONNECTOR_TEMPLATE_SQLSERVER_2025_IMAGE }}
@@ -125,7 +126,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: cdc-sql-stack-diagnostic
+          name: cdc-sql-stack-diagnostic-${{ matrix.suite }}
           path: startup-diagnostic/
           retention-days: 1
           if-no-files-found: error

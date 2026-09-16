@@ -4,6 +4,8 @@ private=pathlib.Path('/tmp/cdc-stack-private');private.mkdir(mode=0o700,exist_ok
 image=os.environ['CDC_CONNECTOR_TEMPLATE_SQLSERVER_2025_IMAGE']
 expected='mcr.microsoft.com/mssql/server:2025-latest@sha256:4bab24f36c1ecd48e85f7d37df26e6bf301641d84c3fe652f9a0dcc947d512e1'
 assert image==expected
+suite=os.environ['CDC_DIAGNOSTIC_SUITE']
+assert suite in ['Admission','Lifecycle','Recovery','RecordSize','Telemetry']
 records={};workers=[];lock=threading.Lock();stopping=threading.Event()
 def record(cid):
  try:
@@ -33,14 +35,14 @@ event_process=subprocess.Popen(['docker','events','--filter','type=container','-
 listener=threading.Thread(target=events,daemon=True);listener.start()
 code=1
 try:
- code=subprocess.call(['pwsh','-NoProfile','-File','./eng/ci/Invoke-CdcQualification.ps1','-Lane','Mssql','-Suite','RecordSize','-ResultsDirectory','TestResults/cdc-qualification','-PullImages'])
+ code=subprocess.call(['pwsh','-NoProfile','-File','./eng/ci/Invoke-CdcQualification.ps1','-Lane','Mssql','-Suite',suite,'-ResultsDirectory','TestResults/cdc-qualification','-PullImages'])
 finally:
  stopping.set();event_process.terminate();event_process.wait(timeout=5);listener.join(timeout=5)
  for data in list(records.values()):
   process=data['process']
   if process is not None and process.poll() is None:process.terminate()
  for worker in workers:worker.join(timeout=5)
- summary={'sha':os.environ['GITHUB_SHA'],'image':image,'qualificationExit':code,'containers':[]}
+ summary={'sha':os.environ['GITHUB_SHA'],'image':image,'qualificationExit':code,'suite':suite,'containers':[]}
  for i,(cid,data) in enumerate(records.items(),1):
   raw=bytes(data['bytes']);name='sql-container-'+str(i)+'.log';path=private/name;path.write_bytes(raw);path.chmod(0o600)
   subprocess.run(['openssl','cms','-encrypt','-binary','-aes256','-in',str(path),'-outform','DER','-out',str(out/(name+'.p7m')),'eng/ci/startup-diagnostic-recipient.pem'],check=True,capture_output=True)

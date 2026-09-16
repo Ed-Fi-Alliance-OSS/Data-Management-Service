@@ -294,6 +294,17 @@ public sealed record CdcSqlServerConnectorOffset(
 
 public static class CdcSqlServerProviderPositionParser
 {
+    /// <summary>
+    /// The pinned connector emits this commit-only position after an idle streaming scan.
+    /// It resumes inclusively at the commit, before any captured change in that commit.
+    /// This is distinct from the initial snapshot marker whose event serial is one.
+    /// </summary>
+    public static bool IsIdleCommitBoundary(string? commitLsn, string? changeLsn, long? eventSerialNo) =>
+        changeLsn == "NULL"
+        && eventSerialNo is 0
+        && ParseLsn(commitLsn, "$.commitLsn").Lsn is { } commit
+        && commit.CompareTo(new(0, 0, 0)) > 0;
+
     public static CdcSqlServerLsnResult ParseLsn(string? value, string path)
     {
         CdcDiagnosticCollector diagnostics = new();
@@ -363,6 +374,23 @@ public static class CdcSqlServerProviderPositionParser
         );
         CdcConnectorOffsetValidationRules.ValidateSnapshotFlag(offset.IsSnapshot, diagnostics);
         CdcConnectorOffsetValidationRules.ValidateNullFlag(offset.IsNull, diagnostics);
+
+        if (IsIdleCommitBoundary(offset.CommitLsn, offset.ChangeLsn, offset.EventSerialNo))
+        {
+            // Do not synthesize a change LSN or claim that a same-commit barrier was crossed.
+            var commit = ParseLsn(offset.CommitLsn, "$.commitLsn").Lsn!.Value;
+            if (commit.CompareTo(barrier.CommitLsn) <= 0)
+            {
+                diagnostics.Add(
+                    CdcDiagnosticCategory.InvalidOrdering,
+                    "$.commitLsn",
+                    "CDC SQL Server idle commit boundary has not passed the provider barrier commit."
+                );
+            }
+            return diagnostics.HasDiagnostics
+                ? CdcProviderPositionComparisonResult.Failure(diagnostics.Diagnostics)
+                : CdcProviderPositionComparisonResult.Success($"{commit}/NULL/0");
+        }
 
         CdcSqlServerLsn? commitLsn = ParseOffsetLsn(offset.CommitLsn, "$.commitLsn", diagnostics);
         CdcSqlServerLsn? changeLsn = ParseOffsetLsn(offset.ChangeLsn, "$.changeLsn", diagnostics);
