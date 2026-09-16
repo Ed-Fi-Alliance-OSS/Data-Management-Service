@@ -884,6 +884,186 @@ internal class Given_CdcRecordSizeIncrease(Ddl.CdcProvider provider) : CdcReadin
         _trace.Count(s => s == "metrics").Should().BeGreaterThanOrEqualTo(3);
     }
 
+    [Test]
+    public async Task It_reobserves_initial_unusable_lag_without_repeating_the_rollout()
+    {
+        ShortTiming(1000);
+        _onCall = step =>
+        {
+            if (step == "resume-after")
+            {
+                UnavailableCurrentLag(2);
+            }
+        };
+
+        var result = await Execute();
+
+        result.Succeeded.Should().BeTrue(because: JsonSerializer.Serialize(result));
+        result.Ready.Should().BeTrue();
+        result.Diagnostics.Should().BeEmpty();
+        AssertSingleRollout();
+        ReadJournal().HasPendingRecordSizeIncrease.Should().BeFalse();
+        ReadJournal()
+            .Operations.Single(o => o.Effect == CdcWorkflowEffect.ResumeConnector)
+            .Completions.Should()
+            .ContainSingle();
+    }
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task It_bounds_initial_unusable_lag_without_completing_the_rollout(bool cancel)
+    {
+        // Keep the explicit cancellation case independent of the shorter deadline case.
+        ShortTiming(cancel ? 1000 : 200);
+        using var caller = new CancellationTokenSource();
+        int passes = 0;
+        _onCall = step =>
+        {
+            if (step == "resume-after")
+            {
+                UnavailableCurrentLag(int.MaxValue);
+            }
+            if (step == "provider" && _effects.Contains("resume-after") && ++passes == 3 && cancel)
+            {
+                caller.Cancel();
+                caller.Token.ThrowIfCancellationRequested();
+            }
+        };
+
+        if (cancel)
+        {
+            await FluentActions
+                .Awaiting(() => Execute(caller.Token))
+                .Should()
+                .ThrowAsync<OperationCanceledException>();
+        }
+        else
+        {
+            var result = await Execute();
+            result.Succeeded.Should().BeFalse();
+            result.Ready.Should().BeFalse();
+            result.Diagnostics.Should().Contain(d => d.Failure == CdcDeploymentFailure.Timeout);
+        }
+        passes.Should().BeGreaterThanOrEqualTo(3);
+        AssertSingleRollout();
+        ReadJournal().HasPendingRecordSizeIncrease.Should().BeTrue();
+        ReadJournal()
+            .Operations.Single(o => o.Effect == CdcWorkflowEffect.ResumeConnector)
+            .Completions.Should()
+            .BeEmpty();
+    }
+
+    [TestCase("worker")]
+    [TestCase("provider")]
+    [TestCase("topic")]
+    [TestCase("terminal")]
+    public async Task It_rejects_other_evidence_changes_while_initial_rollout_lag_is_unusable(string change)
+    {
+        ShortTiming(1000);
+        int passes = 0;
+        _onCall = step =>
+        {
+            if (step == "resume-after")
+            {
+                UnavailableCurrentLag(int.MaxValue);
+            }
+            if (step == "provider" && _effects.Contains("resume-after") && ++passes == 2)
+            {
+                if (change == "terminal")
+                {
+                    _identity = new('b', 64);
+                }
+                else if (change == "worker")
+                {
+                    _workerEvidence = new(
+                        "replacement",
+                        _workerEvidence.MetricsEndpoint,
+                        _workerEvidence.EffectiveConfiguration,
+                        _workerEvidence.ImageDigest,
+                        _workerEvidence.HeapBytes,
+                        "replacement-worker"
+                    );
+                }
+            }
+            if (passes >= 2 && step == change && change is "provider" or "topic")
+            {
+                throw new IOException("private-failure");
+            }
+        };
+
+        var result = await Execute();
+
+        result.Succeeded.Should().BeFalse();
+        result.Ready.Should().BeFalse();
+        result.Diagnostics.Should().NotContain(d => d.Failure == CdcDeploymentFailure.Timeout);
+        passes.Should().BeGreaterThanOrEqualTo(2);
+        AssertSingleRollout(stopCount: change == "terminal" ? 2 : 1);
+        if (change == "terminal")
+        {
+            result.Observation.IncidentPersistence.Should().Be(CdcIncidentPersistenceState.Persisted);
+            result.Observation.Containment.Should().Be(CdcConnectorContainmentState.Stopped);
+        }
+        ReadJournal().HasPendingRecordSizeIncrease.Should().BeTrue();
+        ReadJournal()
+            .Operations.Single(o => o.Effect == CdcWorkflowEffect.ResumeConnector)
+            .Completions.Should()
+            .BeEmpty();
+    }
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task It_rejects_unusable_lag_after_usable_rollout_evidence(bool completedResume)
+    {
+        ShortTiming(1000);
+        int passes = 0;
+        _onCall = step =>
+        {
+            if (step == "resume-after")
+            {
+                _backlog = !completedResume;
+            }
+            if (step == "provider" && _effects.Contains("resume-after") && ++passes == 2)
+            {
+                UnavailableCurrentLag(int.MaxValue);
+            }
+        };
+
+        var result = await Execute();
+
+        result.Succeeded.Should().BeFalse();
+        result.Ready.Should().BeFalse();
+        passes.Should().Be(2);
+        result.Diagnostics.Should().NotContain(d => d.Failure == CdcDeploymentFailure.Timeout);
+        AssertSingleRollout();
+        ReadJournal().HasPendingRecordSizeIncrease.Should().BeTrue();
+        ReadJournal()
+            .Operations.Single(o => o.Effect == CdcWorkflowEffect.ResumeConnector)
+            .Completions.Should()
+            .HaveCount(completedResume ? 1 : 0);
+    }
+
+    private void UnavailableCurrentLag(int count) =>
+        A.CallTo(() =>
+                _metrics.CollectAsync(
+                    A<CdcDeploymentRequest>._,
+                    A<CdcTelemetryObservationPass>._,
+                    A<CancellationToken>._
+                )
+            )
+            .ReturnsLazily(
+                (CdcDeploymentRequest _, CdcTelemetryObservationPass pass, CancellationToken _) =>
+                {
+                    Trace("metrics");
+                    pass.InvalidateForUnavailableCurrentLag();
+                    return Task.FromResult<CdcTransportResult<CdcConnectorTelemetryObservation>>(
+                        new CdcTransportResult<CdcConnectorTelemetryObservation>.Unavailable(
+                            new(CdcDeploymentComponent.Metrics, CdcDeploymentFailure.ValidationFailed)
+                        )
+                    );
+                }
+            )
+            .NumberOfTimes(count);
+
     [TestCase("lag")]
     [TestCase("backlog")]
     [TestCase("both")]
@@ -957,7 +1137,8 @@ internal class Given_CdcRecordSizeIncrease(Ddl.CdcProvider provider) : CdcReadin
         bool cancel
     )
     {
-        ShortTiming(200);
+        // Cancellation must reach its explicit trigger before the separate timeout under test.
+        ShortTiming(cancel ? 1000 : 200);
         using var caller = new CancellationTokenSource();
         int observations = 0;
         _onCall = step =>
@@ -1153,13 +1334,14 @@ internal class Given_CdcRecordSizeIncrease(Ddl.CdcProvider provider) : CdcReadin
         );
     }
 
-    private void AssertSingleRollout()
+    private void AssertSingleRollout(int stopCount = 1)
     {
         _confirmations.Should().Be(1);
         foreach (string effect in new[] { "stop", "broker", "topic", "buffer", "request", "resume" })
         {
-            _effects.Count(e => e == effect + "-before").Should().Be(1);
-            _effects.Count(e => e == effect + "-after").Should().Be(1);
+            int expected = effect == "stop" ? stopCount : 1;
+            _effects.Count(e => e == effect + "-before").Should().Be(expected);
+            _effects.Count(e => e == effect + "-after").Should().Be(expected);
         }
         ReadJournal()
             .Operations.Single(o => o.OperationId == _scope.OperationId)

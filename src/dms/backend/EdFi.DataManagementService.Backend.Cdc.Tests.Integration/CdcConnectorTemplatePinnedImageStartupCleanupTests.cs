@@ -102,6 +102,11 @@ public sealed class Given_PinnedImageFixtureStartupFailureCleanup
     [TestCase(1, "", "SQL Server configuration has not settled.", "ConfigurationPending")]
     [TestCase(1, "", "", "SqlCommandFailed")]
     [TestCase(125, "", "", "SqlCommandFailed")]
+    [TestCase(1, "", "Container private-name is not running", "ContainerNotRunning")]
+    [TestCase(1, "", "Login failed for user private-user", "LoginFailed")]
+    [TestCase(1, "", "Login timeout expired", "ConnectionTimeout")]
+    [TestCase(1, "", "TCP Provider: private-connection-details", "ConnectionFailed")]
+    [TestCase(127, "", "", "SqlCommandMissing")]
     [NonParallelizable]
     public async Task It_preserves_the_last_sql_readiness_state_on_cancellation_without_raw_output(
         int exitCode,
@@ -144,6 +149,94 @@ public sealed class Given_PinnedImageFixtureStartupFailureCleanup
         readiness.GetProperty("Attempts").GetInt32().Should().Be(1);
         readiness.GetProperty("LastExitCode").GetInt32().Should().Be(exitCode);
         readiness.GetProperty("State").GetString().Should().Be(expectedState);
+    }
+
+    [TestCase("exited")]
+    [TestCase("running")]
+    [TestCase("malformed")]
+    [TestCase("unknown-status")]
+    [TestCase("failure")]
+    [TestCase("cancellation")]
+    [NonParallelizable]
+    public async Task It_records_bounded_container_state_before_cleanup_despite_startup_cancellation(
+        string scenario
+    )
+    {
+        string directory = TestContext.CurrentContext.WorkDirectory;
+        const string pattern = "admission-evidence-startup-*.json";
+        string[] before = Directory.GetFiles(directory, pattern);
+        const string privateDetails = "private-inspect-error-and-configuration";
+        using var cancellation = new CancellationTokenSource();
+        bool inspected = false;
+        var docker = new RecordingDockerCli(_ => null)
+        {
+            ProviderProbe = _ =>
+            {
+                cancellation.Cancel();
+                return new(1, string.Empty, privateDetails);
+            },
+            ProviderInspect = token =>
+            {
+                inspected = true;
+                token.IsCancellationRequested.Should().BeFalse();
+                if (scenario == "cancellation")
+                {
+                    throw new OperationCanceledException(privateDetails);
+                }
+                string status = scenario == "unknown-status" ? privateDetails : scenario;
+                int exitCode = scenario == "exited" ? 137 : 0;
+                string output =
+                    scenario == "malformed"
+                        ? privateDetails
+                        : JsonSerializer.Serialize(
+                            new
+                            {
+                                Status = status,
+                                ExitCode = exitCode,
+                                OOMKilled = scenario == "exited",
+                                Error = privateDetails,
+                                Configuration = privateDetails,
+                            }
+                        );
+                return Task.FromResult(
+                    new DockerCommandResult(scenario == "failure" ? 1 : 0, output, privateDetails)
+                );
+            },
+        };
+
+        Assert.CatchAsync<OperationCanceledException>(async () =>
+            await CdcConnectorTemplatePinnedImageFixture.StartAsync(
+                CdcProvider.SqlServer,
+                BuildSettings(),
+                docker,
+                ResourcePrefix,
+                cancellation.Token,
+                applyPrerequisitePolicy: false
+            )
+        );
+
+        inspected.Should().BeTrue();
+        AssertCleanupCommandsWereRun(docker);
+        docker
+            .Commands.ToList()
+            .FindIndex(c => c.StartsWith("allow inspect", StringComparison.Ordinal))
+            .Should()
+            .BeLessThan(
+                docker.Commands.ToList().FindIndex(c => c.StartsWith("allow rm", StringComparison.Ordinal))
+            );
+        string path = Directory.GetFiles(directory, pattern).Except(before).Should().ContainSingle().Subject;
+        string text = await File.ReadAllTextAsync(path);
+        text.Should().NotContain(privateDetails).And.NotContain(ResourcePrefix);
+        using var evidence = JsonDocument.Parse(text);
+        var state = evidence.RootElement.GetProperty("SqlServerReadiness").GetProperty("Container");
+        state.EnumerateObject().Should().HaveCount(3);
+        state
+            .GetProperty("Status")
+            .GetString()
+            .Should()
+            .Be(scenario is "exited" or "running" ? scenario : "Unavailable");
+        state.GetProperty("ExitCode").GetInt32().Should().Be(scenario == "exited" ? 137 : 0);
+        state.GetProperty("OomKilled").GetBoolean().Should().Be(scenario == "exited");
     }
 
     [TestCase(false)]
@@ -420,6 +513,9 @@ public sealed class Given_PinnedImageFixtureStartupFailureCleanup
         public Func<IReadOnlyList<string>, DockerCommandResult> ProviderProbe { get; init; } =
             _ => new(0, string.Empty, string.Empty);
 
+        public Func<CancellationToken, Task<DockerCommandResult>> ProviderInspect { get; init; } =
+            _ => Task.FromResult(new DockerCommandResult(0, string.Empty, string.Empty));
+
         public bool IsOffline => false;
 
         public Task RequireDockerAsync(CancellationToken cancellationToken) => Task.CompletedTask;
@@ -452,6 +548,10 @@ public sealed class Given_PinnedImageFixtureStartupFailureCleanup
             if (arguments[0] == "exec" && arguments.Contains(ResourcePrefix + "-provider"))
             {
                 return Task.FromResult(ProviderProbe(arguments));
+            }
+            if (arguments[0] == "inspect" && arguments.Contains(ResourcePrefix + "-provider"))
+            {
+                return ProviderInspect(cancellationToken);
             }
             return Task.FromResult(ResultFor(arguments));
         }
