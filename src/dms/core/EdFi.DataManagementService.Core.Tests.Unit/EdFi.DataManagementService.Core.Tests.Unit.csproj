@@ -33,17 +33,70 @@
             GeneratePathProperty="true"
             ExcludeAssets="all"
         />
-        <!-- The extension packages that complete the supported effective schema sets, restored only so
-             the snapshot hash-neutrality fixtures can read the packaged schema NuGet restored. Assets
-             are excluded so nothing lands in this project's output, and no path property is generated:
-             Directory.Build.targets reads a Data Standard 5.2 extension's path property as a request to
-             bundle it into the staged ApiSchema workspace, which other fixtures load as the bundled set.
-             TPDM already restores through the frontend reference. -->
+        <!-- The extension packages that complete the supported effective schema sets, restored so the
+             snapshot hash-neutrality fixtures can read the packaged schema. Assets are excluded and no
+             path property is generated: Directory.Build.targets reads a Data Standard 5.2 extension's
+             path property as a request to bundle it into the staged ApiSchema workspace, which other
+             fixtures load as the bundled set. StageSnapshotContractExtensionApiSchemas below copies
+             each package's ApiSchema.json into this project's output instead, so the fixtures read it
+             from the build output rather than from the NuGet packages folder: CI runs the unit tests
+             on a runner that receives this project's build output and never restores, and its NuGet
+             cache is keyed on Directory.Packages.props, so a package only this project references is
+             not there. TPDM needs no reference of its own: it restores through the frontend project
+             reference, and is staged below like the others so every extension in a fixture's set is
+             read the same way. -->
         <PackageReference Include="EdFi.DataStandard52.Homograph.ApiSchema" ExcludeAssets="all" />
         <PackageReference Include="EdFi.DataStandard52.Sample.ApiSchema" ExcludeAssets="all" />
         <PackageReference Include="EdFi.DataStandard61.Homograph.ApiSchema" ExcludeAssets="all" />
         <PackageReference Include="EdFi.DataStandard61.Sample.ApiSchema" ExcludeAssets="all" />
+        <SnapshotContractExtensionPackage Include="EdFi.DataStandard52.TPDM.ApiSchema" />
+        <SnapshotContractExtensionPackage Include="EdFi.DataStandard52.Homograph.ApiSchema" />
+        <SnapshotContractExtensionPackage Include="EdFi.DataStandard52.Sample.ApiSchema" />
+        <SnapshotContractExtensionPackage Include="EdFi.DataStandard61.Homograph.ApiSchema" />
+        <SnapshotContractExtensionPackage Include="EdFi.DataStandard61.Sample.ApiSchema" />
     </ItemGroup>
+    <!-- Copies each SnapshotContractExtensionPackage's packaged ApiSchema.json to
+         ApiSchema/SnapshotContractExtensions/{PackageId}/ApiSchema.json in the output. The package root
+         is derived from the NuGet packages folder and the centrally pinned version rather than from a
+         generated path property, for the reason given on the package references above. The folder is
+         distinct from ApiSchema/Packages, which is the bundled set the provider and the bootstrap
+         manifest describe, so this staging never changes what the bundled-set fixtures load. -->
+    <Target
+        Name="StageSnapshotContractExtensionApiSchemas"
+        BeforeTargets="GetCopyToOutputDirectoryItems;GetCopyToPublishDirectoryItems;ComputeFilesToPublish"
+        Condition="'@(SnapshotContractExtensionPackage)' != ''"
+    >
+        <ItemGroup>
+            <!-- Unqualified %(Identity) batches over both item types at once, one bucket per identity,
+                 so this keeps exactly the PackageVersion items whose identity is also a
+                 SnapshotContractExtensionPackage: an MSBuild join. -->
+            <_SnapshotContractExtensionPackageVersion
+                Include="@(PackageVersion)"
+                Condition="'%(Identity)' != '' and '@(SnapshotContractExtensionPackage)' != ''"
+            />
+            <_SnapshotContractExtensionApiSchema
+                Include="$(NuGetPackageRoot)$([System.String]::Copy('%(_SnapshotContractExtensionPackageVersion.Identity)').ToLowerInvariant())/%(_SnapshotContractExtensionPackageVersion.Version)/contentFiles/any/any/ApiSchema/ApiSchema.json"
+            >
+                <PackageId>%(_SnapshotContractExtensionPackageVersion.Identity)</PackageId>
+            </_SnapshotContractExtensionApiSchema>
+        </ItemGroup>
+        <Error
+            Condition="'@(_SnapshotContractExtensionApiSchema->Count())' != '@(SnapshotContractExtensionPackage->Count())'"
+            Text="Every SnapshotContractExtensionPackage must have a centrally pinned PackageVersion. Pinned: @(_SnapshotContractExtensionPackageVersion). Expected: @(SnapshotContractExtensionPackage)."
+        />
+        <Error
+            Condition="!Exists('%(_SnapshotContractExtensionApiSchema.Identity)')"
+            Text="Packaged ApiSchema not found for '%(_SnapshotContractExtensionApiSchema.PackageId)': %(_SnapshotContractExtensionApiSchema.Identity)"
+        />
+        <ItemGroup>
+            <ContentWithTargetPath Include="@(_SnapshotContractExtensionApiSchema)">
+                <TargetPath>ApiSchema/SnapshotContractExtensions/%(_SnapshotContractExtensionApiSchema.PackageId)/ApiSchema.json</TargetPath>
+                <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+                <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+                <Visible>false</Visible>
+            </ContentWithTargetPath>
+        </ItemGroup>
+    </Target>
     <ItemGroup>
         <!-- Surfaces the restored package roots so tests can assert the packaged ApiSchema.json
              payloads directly, without depending on what this project stages into its output. -->

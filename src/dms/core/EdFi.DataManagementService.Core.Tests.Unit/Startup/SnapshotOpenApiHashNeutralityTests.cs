@@ -51,8 +51,8 @@ public abstract class SnapshotOpenApiHashNeutralityTests
     protected abstract string CorePackageRootMetadataKey { get; }
 
     /// <summary>
-    /// The extension packages that complete this effective schema set, read from the roots NuGet
-    /// restored beside the core package.
+    /// The extension packages that complete this effective schema set, read from the packaged
+    /// documents the build staged into this project's output.
     /// </summary>
     protected abstract IReadOnlyList<string> ExtensionPackageIds { get; }
 
@@ -110,9 +110,7 @@ public abstract class SnapshotOpenApiHashNeutralityTests
         JsonNode coreNode = PackagedApiSchemaContract.LoadPackagedRootNode(CorePackageRootMetadataKey);
         JsonNode[] extensionNodes =
         [
-            .. ExtensionPackageIds.Select(packageId =>
-                PackagedApiSchemaContract.LoadPackagedExtensionRootNode(CorePackageRootMetadataKey, packageId)
-            ),
+            .. ExtensionPackageIds.Select(PackagedApiSchemaContract.LoadStagedExtensionRootNode),
         ];
         ApiSchemaDocumentNodes nodes = new(coreNode, extensionNodes);
 

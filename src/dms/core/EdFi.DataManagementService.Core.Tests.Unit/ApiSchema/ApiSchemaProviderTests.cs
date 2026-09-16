@@ -1136,39 +1136,41 @@ internal static class PackagedApiSchemaContract
 
     /// <summary>
     /// Parses the entire packaged <c>ApiSchema.json</c> of the extension package
-    /// <paramref name="extensionPackageId"/>, restored beside the core package whose root the build
-    /// recorded under <paramref name="corePackageRootMetadataKey"/>.
+    /// <paramref name="extensionPackageId"/>, as the build staged it into this project's output under
+    /// <c>ApiSchema/SnapshotContractExtensions/{packageId}/</c>.
     /// </summary>
     /// <remarks>
-    /// NuGet restores every package to <c>{packages folder}/{lowercase id}/{version}/</c>, and the
-    /// ApiSchema packages are pinned to a single version, so the extension's root is the core root
-    /// with the package segment swapped. It is derived rather than recorded through a generated path
-    /// property because <c>Directory.Build.targets</c> treats a Data Standard 5.2 extension's path
-    /// property as a request to bundle that package into this project's staged ApiSchema workspace,
-    /// which other fixtures load as the bundled set. The path is checked before it is read, so a
-    /// package restored elsewhere, or pinned to a different version, fails here by name.
+    /// The extension packages are not read from the NuGet packages folder the way the core packages
+    /// are. CI runs the unit tests on a runner that receives this project's build output and never
+    /// restores, with a NuGet cache keyed on <c>Directory.Packages.props</c>, so a package only this
+    /// project references is absent there. The build (<c>StageSnapshotContractExtensionApiSchemas</c>
+    /// in the project file) copies each packaged document, byte for byte, into the output that travels
+    /// with the tests. It is staged apart from <c>ApiSchema/Packages</c>, rather than through a
+    /// generated path property, because <c>Directory.Build.targets</c> treats a Data Standard 5.2
+    /// extension's path property as a request to bundle that package into the staged ApiSchema
+    /// workspace other fixtures load as the bundled set. The path is checked before it is read, so a
+    /// package the build did not stage fails here by name.
     /// </remarks>
-    public static JsonNode LoadPackagedExtensionRootNode(
-        string corePackageRootMetadataKey,
-        string extensionPackageId
-    )
+    public static JsonNode LoadStagedExtensionRootNode(string extensionPackageId)
     {
-        string coreRoot = Path.TrimEndingDirectorySeparator(ResolvePackageRoot(corePackageRootMetadataKey));
-        string version = Path.GetFileName(coreRoot);
-        string packagesFolder =
-            Path.GetDirectoryName(Path.GetDirectoryName(coreRoot))
-            ?? throw new InvalidOperationException(
-                $"Restored package root for '{corePackageRootMetadataKey}' is not inside a packages "
-                    + $"folder: {coreRoot}"
-            );
-
-        string apiSchemaPath = ResolvePackagedApiSchemaPath(
-            Path.Combine(packagesFolder, extensionPackageId.ToLowerInvariant(), version),
-            extensionPackageId
+        string apiSchemaPath = Path.Combine(
+            AppContext.BaseDirectory,
+            "ApiSchema",
+            "SnapshotContractExtensions",
+            extensionPackageId,
+            "ApiSchema.json"
         );
 
+        if (!File.Exists(apiSchemaPath))
+        {
+            throw new FileNotFoundException(
+                $"Staged ApiSchema not found for '{extensionPackageId}': {apiSchemaPath}",
+                apiSchemaPath
+            );
+        }
+
         return JsonNode.Parse(File.ReadAllText(apiSchemaPath))
-            ?? throw new InvalidOperationException($"Packaged ApiSchema parsed to null: {apiSchemaPath}");
+            ?? throw new InvalidOperationException($"Staged ApiSchema parsed to null: {apiSchemaPath}");
     }
 
     /// <summary>
