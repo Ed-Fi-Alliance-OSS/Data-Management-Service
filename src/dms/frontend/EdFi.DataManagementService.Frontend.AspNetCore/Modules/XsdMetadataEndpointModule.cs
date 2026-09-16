@@ -25,10 +25,20 @@ public class XsdMetadataEndpointModule(IOptions<AppSettings> appSettings) : IEnd
             appSettings.Value.MultiTenancy
         );
 
-        MapXsdEndpoints(endpoints, string.Empty);
-        if (!string.IsNullOrEmpty(routePattern))
+        List<string> routePatterns = [string.Empty];
+        if (appSettings.Value.MultiTenancy)
         {
-            MapXsdEndpoints(endpoints, routePattern);
+            routePatterns.Add("/{tenant}");
+        }
+
+        if (!string.IsNullOrEmpty(routePattern) && !routePatterns.Contains(routePattern))
+        {
+            routePatterns.Add(routePattern);
+        }
+
+        foreach (string pattern in routePatterns)
+        {
+            MapXsdEndpoints(endpoints, pattern);
         }
     }
 

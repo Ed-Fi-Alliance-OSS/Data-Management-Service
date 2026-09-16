@@ -56,6 +56,7 @@ Feature: Tenant-Aware Discovery API
          Then it should respond with 200
           And the response content type should be "application/xml"
 
-    Scenario: Tenant-only XSD metadata is unavailable when route qualifiers are configured
+    Scenario: Tenant-only XSD metadata remains available when route qualifiers are configured
          When a GET request is made to metadata path "Tenant_255901/metadata/xsd"
-         Then it should respond with 404
+         Then it should respond with 200
+          And the response should contain "ed-fi"

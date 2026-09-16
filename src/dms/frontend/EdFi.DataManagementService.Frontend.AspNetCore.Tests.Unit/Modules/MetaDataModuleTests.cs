@@ -269,6 +269,50 @@ public class MetadataModuleTests
         }
 
         [Test]
+        public async Task It_reloads_route_context_when_the_cached_tenant_has_no_match()
+        {
+            // Arrange
+            var httpContext = new DefaultHttpContext();
+            httpContext.Request.RouteValues["tenant"] = "Tenant_255901";
+            httpContext.Request.RouteValues["districtId"] = "255901";
+            httpContext.Request.RouteValues["schoolYear"] = "2024";
+
+            var tenantValidator = A.Fake<ITenantValidator>();
+            A.CallTo(() => tenantValidator.ValidateTenantAsync("Tenant_255901")).Returns(true);
+
+            var dataStoreProvider = A.Fake<IDataStoreProvider>();
+            bool routeContextLoaded = false;
+            DataStore matchingDataStore = DataStoreWithRouteContext(
+                1,
+                ("districtId", "255901"),
+                ("schoolYear", "2024")
+            );
+            A.CallTo(() => dataStoreProvider.GetAll("Tenant_255901"))
+                .ReturnsLazily(() => routeContextLoaded ? [matchingDataStore] : []);
+            A.CallTo(() => dataStoreProvider.LoadDataStores("Tenant_255901", A<CancellationToken>._))
+                .Invokes(_ => routeContextLoaded = true)
+                .Returns([matchingDataStore]);
+
+            var validator = new MetadataRouteValidator(
+                tenantValidator,
+                dataStoreProvider,
+                RouteOptions("districtId", "schoolYear")
+            );
+
+            // Act
+            bool result = await validator.ValidateAsync(httpContext);
+
+            // Assert
+            result.Should().BeTrue();
+            A.CallTo(() =>
+                    dataStoreProvider.RefreshInstancesIfExpiredAsync("Tenant_255901", A<CancellationToken>._)
+                )
+                .MustHaveHappenedOnceExactly();
+            A.CallTo(() => dataStoreProvider.LoadDataStores("Tenant_255901", A<CancellationToken>._))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [Test]
         public async Task It_rejects_unknown_tenant()
         {
             // Arrange
