@@ -10,12 +10,10 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 /// is the source of truth, and pinned by a unit test in this assembly.
 /// </summary>
 /// <remarks>
-/// Deliberately not added to <c>Core.External.Logging.RequestLoggingEventIds</c>. That class is the
-/// two-event contract CMS and DMS both implement and keep in lockstep, and CMS has no
-/// <c>CorrelationIdHeader</c> setting, reads no correlation header, and therefore can never emit
-/// this event. Putting a DMS-only event in the shared class would create a contract CMS cannot
-/// honor. The id continues the same <c>1228xxx</c> block so the numbers stay allocated from one
-/// place, and docs/LOGGING.md records it as DMS-only.
+/// Deliberately not in <c>Core.External.Logging.RequestLoggingEventIds</c>, which is the
+/// two-event contract CMS and DMS keep in lockstep: CMS reads no correlation header and so could
+/// never emit this one. The id continues the same <c>1228xxx</c> block so the numbers stay
+/// allocated from one place.
 /// </remarks>
 public static class CorrelationIdLoggingEventIds
 {

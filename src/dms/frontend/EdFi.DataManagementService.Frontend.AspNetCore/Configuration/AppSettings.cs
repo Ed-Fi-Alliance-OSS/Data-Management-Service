@@ -15,20 +15,16 @@ public class AppSettings
     public const int DefaultCorrelationIdMaxLength = 255;
 
     /// <summary>
-    /// Smallest value <c>CorrelationIdMaxLength</c> may be configured to, inclusive.
-    /// 64 is the shortest cap that preserves every common upstream correlation ID scheme
-    /// intact - the longest of them, a full W3C <c>traceparent</c>, is 55 characters, and the
-    /// server-generated Kestrel <c>HttpContext.TraceIdentifier</c> that DMS falls back to is 22.
-    /// A cap below this would silently truncate real identifiers, including DMS's own, which
-    /// would collapse every request on one connection onto a single correlation ID.
-    /// See reference/adr-correlation-id-normalization.md.
+    /// Smallest value <c>CorrelationIdMaxLength</c> may be configured to, inclusive. 64 is the
+    /// shortest cap that leaves every common upstream identifier scheme intact; why that matters,
+    /// and why not 22 or 32, is in reference/adr-correlation-id-normalization.md.
     /// </summary>
     public const int MinimumCorrelationIdMaxLength = 64;
 
     /// <summary>
-    /// Largest value <c>CorrelationIdMaxLength</c> may be configured to, inclusive.
-    /// 1024 is generous for any real identifier scheme while bounding how much client-controlled
-    /// text a single request can push into every log event and error response body.
+    /// Largest value <c>CorrelationIdMaxLength</c> may be configured to, inclusive. Generous for
+    /// any real identifier scheme, while bounding how much client-controlled text one request can
+    /// push into every log event and error response body.
     /// </summary>
     public const int MaximumCorrelationIdMaxLength = 1024;
 

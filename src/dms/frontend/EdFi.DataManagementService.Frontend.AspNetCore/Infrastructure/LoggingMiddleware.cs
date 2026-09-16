@@ -32,16 +32,12 @@ public class LoggingMiddleware
         var sanitizedMethod = LoggingSanitizer.SanitizeInternalValueForLogging(context.Request.Method);
         var sanitizedPath = LoggingSanitizer.SanitizeInternalValueForLogging(context.Request.Path.Value);
         var pathBase = LoggingSanitizer.SanitizeInternalValueForLogging(context.Request.PathBase.Value);
-        // Normalized at the ingestion boundary by AspNetCoreFrontend, so this middleware
-        // deliberately applies no second, differently-shaped normalization of its own. Method and
-        // Path keep the stricter SanitizeInternalValueForLogging allowlist above.
-        //
-        // This middleware is registered ahead of routing, the rate limiter and endpoint execution,
-        // so it is the first component in the pipeline to ingest the correlation ID. That is what
-        // makes the value it caches on HttpContext.Items the one every later call site reads.
-        //
-        // No guard against a host whose AppSettings failed validation is needed here: ingestion is
-        // total, and owns the documented-default fallback for that case itself.
+        // Normalized at the ingestion boundary by AspNetCoreFrontend, so no second,
+        // differently-shaped normalization happens here; Method and Path keep the stricter
+        // SanitizeInternalValueForLogging allowlist above. Registered ahead of routing, the rate
+        // limiter and endpoint execution, this is the first component to ingest the correlation
+        // ID, which is what makes the value it caches the one every later call site reads. No
+        // guard for a host whose AppSettings failed validation: ingestion is total.
         var ingestion = AspNetCoreFrontend.IngestCorrelationIdFrom(context.Request, _appSettings);
         var traceId = ingestion.TraceId.Value;
 
@@ -211,21 +207,14 @@ public class LoggingMiddleware
     /// answered under is not the value the client sent.
     /// </summary>
     /// <remarks>
-    /// <para>
     /// <b>The original value is deliberately absent</b> - not raw, not sanitized, not truncated.
-    /// The client-supplied correlation ID is precisely the hostile input normalization exists to
-    /// defang; writing any form of it to a log sink would reopen the log-forging vector that
-    /// normalization closes, and a sanitized copy would in most cases just reproduce the
-    /// normalized value that is already on the line. What is logged instead is derived facts -
-    /// two lengths and three booleans - plus the resulting normalized <c>TraceId</c>, which is
-    /// already safe and is the key an operator searches on.
-    /// </para>
-    /// <para>
-    /// <b>Silence is the normal case.</b> Nothing is emitted when the host configures no
-    /// correlation header, when the request sends none, or when the value the client sent
-    /// survived normalization unchanged. A per-request line on the normal path would be
-    /// unacceptable log volume for a notice about an exceptional condition.
-    /// </para>
+    /// What is logged instead is derived facts - two lengths and three booleans - plus the
+    /// resulting normalized <c>TraceId</c>, which is already safe and is the key an operator
+    /// searches on. Nothing at all is emitted on the normal path: no configured header, none
+    /// sent, or a value that survived normalization unchanged.
+    ///
+    /// Both decisions, and the reverse-lookup limitation they accept, are settled in
+    /// <c>reference/adr-correlation-id-normalization.md</c>.
     /// </remarks>
     private static void LogCorrelationIdModification(
         ILogger<LoggingMiddleware> logger,

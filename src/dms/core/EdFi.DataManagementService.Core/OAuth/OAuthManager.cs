@@ -59,13 +59,8 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
     /// whose diagnostic content <see cref="UnauthorizedFallbackDetail"/> is about to replace.
     /// </summary>
     /// <remarks>
-    /// A compile-time constant template with the upstream body bound to <c>{Content}</c>, never
-    /// the body interpolated into the template. <c>Microsoft.Extensions.Logging</c> reads braces
-    /// in a template as property holes, and a JSON error body is made of braces, so an
-    /// interpolated body would have its own punctuation parsed as holes - corrupting the
-    /// structured event and, with an unbalanced brace, the rendered message too. The same
-    /// reasoning is recorded at greater length on <c>ConfigurationErrorTemplate</c> in
-    /// <c>ReportInvalidConfigurationMiddleware</c>.
+    /// The body is bound to <c>{Content}</c> and never interpolated into the template: a JSON
+    /// error body is made of braces, which the logging pipeline would read as property holes.
     /// </remarks>
     private const string DiscardedUnauthorizedDetailTemplate =
         "Upstream identity service rejected the credentials with no usable error_description; "
@@ -195,21 +190,14 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
 
             if (!upstreamSuppliedDescription)
             {
-                // Logged only on the fallback, not on every 401. A 401 is client-triggered and
-                // routine, so logging every upstream body would be volume noise and would widen
-                // the log-injection surface for no gain; when the upstream did supply an
-                // `error_description` the client already receives it and nothing is lost. The
-                // fallback is the one point at which information is about to be discarded -
-                // `error_description` on a body that lacks it, and any non-standard field such as
-                // `reason` regardless - so it is the correct trigger.
+                // Only on the fallback, not on every 401: a 401 is client-triggered and routine,
+                // and when the upstream did supply an `error_description` the client already has
+                // it. This is the one point at which information is about to be discarded.
                 //
-                // Information, not the Warning its 502 sibling above uses. Warning in this
-                // codebase marks a condition an operator may need to act on (docs/LOGGING.md), and
-                // a rejected credential is not one - every mistyped client secret produces one, so
-                // Warning here would let any caller fill the stream an operator watches most
-                // closely. Information is nonetheless the floor: DMS ships at Information and
-                // never at Debug, and an event the default deployment does not emit would leave
-                // the correlation ID pointing at nothing, which is the defect being fixed.
+                // Information rather than the Warning its 502 sibling uses, because a rejected
+                // credential is not a condition an operator must act on (docs/LOGGING.md) - but
+                // not Debug either, since DMS ships at Information and an unemitted event would
+                // leave the correlation ID pointing at nothing, the defect being fixed.
                 logger.LogInformation(
                     DiscardedUnauthorizedDetailTemplate,
                     traceId.Value,
@@ -246,19 +234,14 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
             // event disagree about what the upstream service said. The astral character is
             // dropped whole rather than half-kept, costing one code unit of a 2048-unit budget.
             //
-            // One test, unlike the two-part test in CorrelationIdNormalizer.Normalize, and the
-            // difference is deliberate - do not "restore" the missing half. That method cuts
-            // *unsanitized* input, where a lone high surrogate the caller actually sent can sit
-            // at the boundary; it has to check for the low half so it backs off only from a pair
-            // it is itself about to break, leaving a pre-existing orphan for the allowlist to
-            // remove and keeping its Truncated/CharactersRemoved flags honest. Here the cut
-            // happens *after* sanitization, and SanitizeByCodePoint drops every unpaired
-            // surrogate in both of its passes, so any high surrogate still present is necessarily
-            // followed by its low half and there is nothing for a second test to distinguish.
+            // One test, deliberately not the two-part test in CorrelationIdNormalizer.Normalize
+            // - do not "restore" the missing half. That method cuts *unsanitized* input, where a
+            // lone high surrogate can sit at the boundary. Here the cut happens after
+            // sanitization, which drops every unpaired surrogate, so a high surrogate still
+            // present is necessarily paired.
             //
-            // The index is in bounds for the same reason the branch was entered: it runs only
-            // when sanitized.Length exceeds the cap, so both sanitized[cap - 1] and the code unit
-            // at sanitized[cap] exist, and `retained` is never driven below cap - 1.
+            // The index is in bounds because the branch runs only when sanitized.Length exceeds
+            // the cap, and `retained` is never driven below cap - 1.
             int retained = MaxLoggedUpstreamContentLength;
             if (char.IsHighSurrogate(sanitized[retained - 1]))
             {

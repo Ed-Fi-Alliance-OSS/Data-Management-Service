@@ -397,35 +397,26 @@ public static class AspNetCoreFrontend
     }
 
     /// <summary>
-    /// Takes an HttpRequest and returns a unique trace identifier, normalized by
-    /// <see cref="CorrelationIdNormalizer"/>. This is the single ingestion point for the
-    /// correlation ID: the value is normalized here, at this one place, so every downstream
-    /// consumer - every log event and every error response body - carries the identical value
-    /// with no further work. Both candidate sources are normalized, since the length cap and
-    /// the allowlist apply to a server-generated identifier as well as a client-supplied one.
+    /// Takes an HttpRequest and returns its correlation ID as a normalized
+    /// <see cref="TraceId"/>. This is the single ingestion point: both candidate sources - the
+    /// configured client header and the server-generated identifier - are normalized here, so
+    /// every downstream log event and error response body carries the identical value.
     /// </summary>
     /// <remarks>
-    /// A client-supplied header that normalizes to nothing but whitespace - a value made up
-    /// only of characters the allowlist removes, such as a lone horizontal tab or a lone
-    /// U+200B ZERO WIDTH SPACE, or only of spaces - falls through to the server-generated
-    /// identifier. Blankness is therefore tested after normalization rather than before it, so
-    /// a client cannot blank the operational identifier that every log event and error response
-    /// body carries, and a header holding only removed characters behaves the same as a header
-    /// sent empty.
+    /// A client-supplied header that normalizes to nothing but whitespace falls through to the
+    /// server-generated identifier, so blankness is tested after normalization rather than before
+    /// it. Why: <c>reference/adr-correlation-id-normalization.md</c>.
     ///
     /// The test is <see cref="string.IsNullOrWhiteSpace(string?)"/> rather than a length check
-    /// because whitespace is neither control nor format: a space is retained by the
-    /// correlation-ID allowlist by design, so a header of nothing but whitespace would
-    /// otherwise survive normalization intact and become the correlation ID. Kestrel strips leading and trailing ASCII optional
-    /// whitespace from a header value, but it decodes header bytes as Latin-1 by default, so
-    /// U+00A0 NO-BREAK SPACE - which is whitespace to .NET and not OWS to Kestrel - reaches
-    /// here. This narrows no allowlist: a correlation ID with internal whitespace is still
-    /// accepted whole, and <see cref="CorrelationIdNormalizer"/> still preserves whitespace.
-    /// Only the all-blank case falls back.
+    /// because whitespace is neither control nor format, and so is retained by the
+    /// correlation-ID allowlist by design: an all-whitespace header would otherwise survive
+    /// normalization intact and become the correlation ID. Kestrel strips leading and trailing
+    /// ASCII optional whitespace, but decodes header bytes as Latin-1 by default, so U+00A0
+    /// NO-BREAK SPACE - whitespace to .NET and not OWS to Kestrel - reaches here. Internal
+    /// whitespace in a correlation ID is still accepted whole; only the all-blank case falls back.
     ///
-    /// Total, and in particular does not surface <see cref="OptionsValidationException"/>: a host
-    /// whose <c>AppSettings</c> failed validation is answered from
-    /// <see cref="IngestUnreadableConfiguration"/>, so no caller needs to guard this call.
+    /// Total, and in particular does not surface <see cref="OptionsValidationException"/>, so no
+    /// caller needs to guard this call.
     /// </remarks>
     public static TraceId ExtractTraceIdFrom(HttpRequest request, IOptions<AppSettings> options) =>
         IngestCorrelationIdFrom(request, options).TraceId;
@@ -446,19 +437,13 @@ public static class AspNetCoreFrontend
     /// client-supplied value, for the one caller - <c>LoggingMiddleware</c> - that reports them.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// The result is computed at most once per request and cached on
-    /// <see cref="HttpContext.Items"/>, so "normalized once" is a property of the code rather than
-    /// of the function happening to be pure. A cache miss still computes, so a caller that somehow
-    /// runs ahead of the request-logging middleware behaves exactly as it did before the cache
-    /// existed - it simply becomes the caller that populates it.
-    /// </para>
-    /// <para>
-    /// Total: it returns an ingestion for every request, including one whose <c>AppSettings</c>
-    /// cannot be read because validating them is what failed. That case is handled by
-    /// <see cref="IngestUnreadableConfiguration"/> below rather than by any caller, so no call
-    /// site needs - or should grow - a fallback of its own.
-    /// </para>
+    /// Computed at most once per request and cached on <see cref="HttpContext.Items"/>, so
+    /// "normalized once" is a property of the code rather than of the function happening to be
+    /// pure. A cache miss still computes, so a caller that somehow runs ahead of the
+    /// request-logging middleware simply becomes the one that populates it. Total: every request
+    /// gets an ingestion, including one whose <c>AppSettings</c> cannot be read, through
+    /// <see cref="IngestUnreadableConfiguration"/> below rather than through any caller's own
+    /// fallback.
     /// </remarks>
     internal static CorrelationIdIngestion IngestCorrelationIdFrom(
         HttpRequest request,
@@ -534,44 +519,23 @@ public static class AspNetCoreFrontend
     /// all, because validating them is what failed.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// The decision lives here, inside the ingestion point, rather than at the call sites that
-    /// encounter it. Both of them - <c>LoggingMiddleware</c> ingesting the request and
+    /// The decision lives here rather than at the two call sites that encounter it -
+    /// <c>LoggingMiddleware</c> ingesting the request, and
     /// <c>ReportInvalidConfigurationMiddleware</c> reading the correlation ID for the 500 body it
-    /// short-circuits with - would otherwise each need a <c>catch</c> making this same policy
-    /// choice, which is one policy in two places and free to drift apart.
-    /// </para>
-    /// <para>
-    /// There is no validated <c>CorrelationIdMaxLength</c> to normalize against, since
-    /// <c>AppSettings</c> validation is precisely what failed, so
-    /// <see cref="Configuration.AppSettings.DefaultCorrelationIdMaxLength"/> stands in. The
-    /// server-generated identifier still goes through the same <see cref="CorrelationIdNormalizer"/>
-    /// as every other path, so this one cannot emit a differently-shaped value than any other.
-    /// </para>
-    /// <para>
+    /// short-circuits with - which would otherwise each need a <c>catch</c> making this same
+    /// policy choice, one policy in two places and free to drift apart.
+    ///
+    /// <see cref="Configuration.AppSettings.DefaultCorrelationIdMaxLength"/> stands in for the
+    /// cap there is no validated value for, and the server-generated identifier still goes
+    /// through the same <see cref="CorrelationIdNormalizer"/> as every other path, so this one
+    /// cannot emit a differently-shaped value.
     /// <see cref="CorrelationIdIngestion.ClientSuppliedAValue"/> is false because no client value
     /// was considered at all: the header <i>name</i> lives in the configuration that failed to
-    /// validate. There is therefore nothing to report as modified, and <c>LoggingMiddleware</c>'s
-    /// <c>CorrelationIdModified</c> notice stays silent - which also keeps a host stuck in
-    /// invalid-configuration mode from adding a second log line to every short-circuited request.
-    /// </para>
-    /// <para>
-    /// The result is cached exactly as an ordinary ingestion is, because this mode does have a
-    /// second correlation ID call site: <c>ReportInvalidConfigurationMiddleware</c>, registered
-    /// behind <c>LoggingMiddleware</c>, writes a 500 body carrying the correlation ID and reaches
-    /// that value back through <see cref="ExtractTraceIdFrom"/>. The cache is what makes that read a
-    /// hit on this very value, so the body a client can read and the <c>TraceId</c> it can search
-    /// the logs for are one value rather than two that merely agree. Without it the middleware
-    /// re-derives the value on every request such a host answers, paying a second thrown
-    /// <see cref="OptionsValidationException"/> for a string it already had.
-    /// </para>
-    /// <para>
-    /// Worth recognizing for what it is: the cached value derives from the documented default rather
-    /// than from validated configuration, because on this path there is no validated configuration
-    /// to derive it from. Reuse is still what is wanted. Every consumer of it is answering the same
-    /// short-circuited request, and each would otherwise reach that same default by the same route;
-    /// recomputing could only arrive at the same string, at the cost of another exception.
-    /// </para>
+    /// validate, so the <c>CorrelationIdModified</c> notice stays silent. The result is cached
+    /// like any other, which is what makes the 500 body a client reads and the <c>TraceId</c> it
+    /// searches the logs for one value rather than two that merely agree.
+    ///
+    /// What this mode does to a host, and why: <c>reference/adr-correlation-id-normalization.md</c>.
     /// </remarks>
     private static CorrelationIdIngestion IngestUnreadableConfiguration(HttpContext context) =>
         CacheIngestionOn(
@@ -585,19 +549,13 @@ public static class AspNetCoreFrontend
         );
 
     /// <summary>
-    /// Records <paramref name="ingestion"/> as this request's one ingestion result, so that every
-    /// later correlation ID call site reads it rather than deriving its own.
+    /// Records <paramref name="ingestion"/> as this request's one ingestion result, returning what
+    /// it stored so a caller can cache and return in a single expression.
     /// </summary>
     /// <remarks>
-    /// <para>
     /// Exists so that <see cref="CorrelationIdItemsKey"/> is written in exactly one place, and is
-    /// private so that place stays inside this class: both the ordinary path and
-    /// <see cref="IngestUnreadableConfiguration"/> reach the cache through here, and no middleware
-    /// can write the key behind the ingestion point's back.
-    /// </para>
-    /// <para>
-    /// Returns what it stored so a caller can cache and return in one expression.
-    /// </para>
+    /// private so that place stays inside this class - no middleware can write the key behind the
+    /// ingestion point's back.
     /// </remarks>
     private static CorrelationIdIngestion CacheIngestionOn(
         HttpContext context,

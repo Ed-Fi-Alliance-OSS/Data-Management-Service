@@ -19,24 +19,17 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 public class ReportInvalidConfigurationMiddleware
 {
     /// <summary>
-    /// A constant message template with the failure text passed as a parameter, never the failure
-    /// text as the template itself.
+    /// A constant message template with the failure text passed as the
+    /// <c>{ConfigurationError}</c> parameter, never as the template itself - a brace in a
+    /// validation message would otherwise be parsed as a property hole and corrupt the event.
     /// </summary>
-    /// <remarks>
-    /// The logging pipeline re-reads the template from <c>{OriginalFormat}</c> and parses it for
-    /// property holes, so a validation message passed as the template would have any brace it
-    /// contained read as a hole rather than as literal text - corrupting the structured event and,
-    /// with an unbalanced brace, the rendered message too. Passing the message as
-    /// <c>{ConfigurationError}</c> makes it data, which no validator can turn back into a template.
-    /// </remarks>
     private const string ConfigurationErrorTemplate = "Invalid DMS configuration: {ConfigurationError}";
 
     /// <summary>
-    /// Logs the validation failures once, here, because <c>UseMiddleware</c> constructs the
-    /// middleware a single time while the pipeline is built rather than per request. The failures
-    /// are a startup-time fact about configuration that cannot change while the process runs, so
-    /// re-logging them at <c>Critical</c> on every request would add nothing beyond traffic-rate
-    /// noise in the sink an operator watches most closely.
+    /// Logs the validation failures at <c>Critical</c> once, here, because <c>UseMiddleware</c>
+    /// constructs the middleware a single time while the pipeline is built rather than per
+    /// request - and the failures are a startup-time fact that cannot change while the process
+    /// runs.
     /// </summary>
     /// <param name="next">
     /// Required by the <c>UseMiddleware</c> convention and deliberately not stored: this middleware
@@ -78,27 +71,19 @@ public class ReportInvalidConfigurationMiddleware
     }
 
     /// <summary>
-    /// The correlation ID this response carries, reached the same way <c>LoggingMiddleware</c>
-    /// reaches the one it logs for the same request, so a client can still search the logs by what
-    /// it read from the body.
+    /// The correlation ID this response carries, reached through the single ingestion point so a
+    /// client can search the logs by what it read from the body.
     /// </summary>
     /// <remarks>
-    /// <para>
     /// In practice every call here is a cache hit, including the one where
-    /// <c>CorrelationIdMaxLength</c> is itself the rejected setting. <c>LoggingMiddleware</c> is
-    /// registered ahead of this middleware and caches its ingestion on <c>HttpContext.Items</c>
-    /// either way: from validated configuration when it can read it, and from
-    /// <see cref="AppSettings.DefaultCorrelationIdMaxLength"/> when reading it is what failed. The
-    /// value is reached through <c>ExtractTraceIdFrom</c> rather than read from <c>Items</c>
-    /// directly so that this stays one more ordinary caller of the single ingestion point.
-    /// </para>
-    /// <para>
-    /// No <c>catch</c> for the unreadable-configuration case, and none should be added here: the
-    /// ingestion point is total and owns that fallback, so a request this middleware ever answers
-    /// without <c>LoggingMiddleware</c> having ingested it first - a pipeline reordering in
-    /// <c>Program.cs</c>, say - is answered from the same documented default by the same code, not
-    /// by a second copy of the policy living at this call site.
-    /// </para>
+    /// <c>CorrelationIdMaxLength</c> is itself the rejected setting, because
+    /// <c>LoggingMiddleware</c> runs ahead of this middleware and caches its ingestion either
+    /// way. Reached through <c>ExtractTraceIdFrom</c> rather than read from <c>Items</c> directly
+    /// so that this stays one more ordinary caller of that point.
+    ///
+    /// No <c>catch</c> for the unreadable-configuration case, and none should be added: ingestion
+    /// is total and owns that fallback, so even a reordered pipeline is answered from the same
+    /// documented default by the same code rather than by a second copy of the policy here.
     /// </remarks>
     private static TraceId CorrelationIdFor(HttpContext context) =>
         AspNetCoreFrontend.ExtractTraceIdFrom(
