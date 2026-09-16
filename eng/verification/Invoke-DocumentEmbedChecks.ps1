@@ -63,6 +63,18 @@ $checkedDocument = @(
         Document = "src/plugins/EdFi.Api.Plugins/PLUGINS.md"
         RequiredEmbed = @("eng/verification/PluginsConsumer/AcmePlugin.cs#sample")
     }
+    [pscustomobject]@{
+        # Three regions rather than one, and all three are required. The guide teaches an
+        # implementer to write a validator, a plugin that registers it, and the options type both
+        # depend on; a guide that kept two of the three would publish a sample that does not
+        # compile where it is read.
+        Document = "src/dms/core/EdFi.DataManagementService.CustomValidation/CUSTOM-VALIDATION.md"
+        RequiredEmbed = @(
+            "eng/verification/CustomValidatorPluginConsumer/StudentIdentityOptions.cs#options",
+            "eng/verification/CustomValidatorPluginConsumer/StudentIdentityValidator.cs#validator",
+            "eng/verification/CustomValidatorPluginConsumer/StudentIdentityPlugin.cs#plugin"
+        )
+    }
 )
 
 if ($ListPath) {

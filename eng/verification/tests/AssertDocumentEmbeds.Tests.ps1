@@ -98,15 +98,17 @@ AfterAll {
 }
 
 Describe "Assert-DocumentEmbeds against the committed documents" {
-    It "admits both checked documents, each with its required embeds" {
+    It "admits every checked document, each with its required embeds" {
         # The required counts are asserted and the block counts are not: requiring a file is the
         # claim this makes, while a document is free to gain another embedded block, which the
         # verifier checks for drift either way.
         $output = @(& $script:embedChecks)
 
-        $output | Should -HaveCount 2
+        $output | Should -HaveCount 3
         $output[0] | Should -BeLike "Verified OPERATIONS.md: * match their files, including 2 required."
         $output[1] | Should -BeLike "Verified PLUGINS.md: * match their files, including 1 required."
+        $output[2] |
+            Should -BeLike "Verified CUSTOM-VALIDATION.md: * match their files, including 3 required."
     }
 
     It "still requires both plugin Compose overlays" {
@@ -127,6 +129,23 @@ Describe "Assert-DocumentEmbeds against the committed documents" {
 
         $paths | Should -Contain "src/plugins/EdFi.Api.Plugins/PLUGINS.md"
         $paths | Should -Contain "eng/verification/PluginsConsumer/AcmePlugin.cs"
+    }
+
+    It "still requires all three of the custom-validation guide's compiled sample regions" {
+        # The validator, the plugin that registers it, and the options type both depend on. All
+        # three are required rather than only the validator, because an implementer copying two of
+        # them out of the guide would get code that does not compile. The fixture they come from is
+        # compiled AND run against both packed contract packages by its own check.
+        $paths = @(& $script:embedChecks -ListPath)
+
+        $paths |
+            Should -Contain "src/dms/core/EdFi.DataManagementService.CustomValidation/CUSTOM-VALIDATION.md"
+        $paths |
+            Should -Contain "eng/verification/CustomValidatorPluginConsumer/StudentIdentityOptions.cs"
+        $paths |
+            Should -Contain "eng/verification/CustomValidatorPluginConsumer/StudentIdentityValidator.cs"
+        $paths |
+            Should -Contain "eng/verification/CustomValidatorPluginConsumer/StudentIdentityPlugin.cs"
     }
 }
 
