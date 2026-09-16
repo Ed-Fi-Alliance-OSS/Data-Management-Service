@@ -73,9 +73,19 @@ Feature: Served OpenAPI documents advertise the snapshot contract
               And the served OpenAPI operation "get" on path "/tpdm/candidates/deletes" answers "404" with response "SnapshotNotFound"
               And the served OpenAPI operation "post" on path "/tpdm/candidates" answers "405" with response "SnapshotMethodNotAllowed"
               And the served OpenAPI operation "get" on path "/sample/busRoutes" references parameter "Use-Snapshot"
+              And the served OpenAPI operation "get" on path "/sample/busRoutes/deletes" references parameter "Use-Snapshot"
+              And the served OpenAPI operation "get" on path "/sample/busRoutes/keyChanges" references parameter "Use-Snapshot"
               And the served OpenAPI operation "get" on path "/sample/busRoutes" answers "404" with response "SnapshotNotFound"
+              And the served OpenAPI operation "get" on path "/sample/busRoutes/deletes" answers "404" with response "SnapshotNotFound"
+              And the served OpenAPI operation "get" on path "/sample/busRoutes/keyChanges" answers "404" with response "SnapshotNotFound"
+              And the served OpenAPI operation "post" on path "/sample/busRoutes" answers "405" with response "SnapshotMethodNotAllowed"
               And the served OpenAPI operation "get" on path "/homograph/contacts" references parameter "Use-Snapshot"
+              And the served OpenAPI operation "get" on path "/homograph/contacts/deletes" references parameter "Use-Snapshot"
+              And the served OpenAPI operation "get" on path "/homograph/contacts/keyChanges" references parameter "Use-Snapshot"
               And the served OpenAPI operation "get" on path "/homograph/contacts" answers "404" with response "SnapshotNotFound"
+              And the served OpenAPI operation "get" on path "/homograph/contacts/deletes" answers "404" with response "SnapshotNotFound"
+              And the served OpenAPI operation "get" on path "/homograph/contacts/keyChanges" answers "404" with response "SnapshotNotFound"
+              And the served OpenAPI operation "post" on path "/homograph/contacts" answers "405" with response "SnapshotMethodNotAllowed"
 
         # Data Standard 6.1. Tagged by standard version with no shard tag, the convention the other
         # 6.1 scenarios use, so the DS 5.2 shard lanes skip them and the 6.1 lane runs them against a
@@ -114,9 +124,19 @@ Feature: Served OpenAPI documents advertise the snapshot contract
               And the served OpenAPI operation "get" on path "/ed-fi/candidates/deletes" answers "404" with response "SnapshotNotFound"
               And the served OpenAPI operation "post" on path "/ed-fi/candidates" answers "405" with response "SnapshotMethodNotAllowed"
               And the served OpenAPI operation "get" on path "/sample/busRoutes" references parameter "Use-Snapshot"
+              And the served OpenAPI operation "get" on path "/sample/busRoutes/deletes" references parameter "Use-Snapshot"
+              And the served OpenAPI operation "get" on path "/sample/busRoutes/keyChanges" references parameter "Use-Snapshot"
               And the served OpenAPI operation "get" on path "/sample/busRoutes" answers "404" with response "SnapshotNotFound"
+              And the served OpenAPI operation "get" on path "/sample/busRoutes/deletes" answers "404" with response "SnapshotNotFound"
+              And the served OpenAPI operation "get" on path "/sample/busRoutes/keyChanges" answers "404" with response "SnapshotNotFound"
+              And the served OpenAPI operation "post" on path "/sample/busRoutes" answers "405" with response "SnapshotMethodNotAllowed"
               And the served OpenAPI operation "get" on path "/homograph/contacts" references parameter "Use-Snapshot"
+              And the served OpenAPI operation "get" on path "/homograph/contacts/deletes" references parameter "Use-Snapshot"
+              And the served OpenAPI operation "get" on path "/homograph/contacts/keyChanges" references parameter "Use-Snapshot"
               And the served OpenAPI operation "get" on path "/homograph/contacts" answers "404" with response "SnapshotNotFound"
+              And the served OpenAPI operation "get" on path "/homograph/contacts/deletes" answers "404" with response "SnapshotNotFound"
+              And the served OpenAPI operation "get" on path "/homograph/contacts/keyChanges" answers "404" with response "SnapshotNotFound"
+              And the served OpenAPI operation "post" on path "/homograph/contacts" answers "405" with response "SnapshotMethodNotAllowed"
 
         @StandardVersion-6_1
         Scenario: 07 The Data Standard 6.1 descriptors document advertises the snapshot contract
