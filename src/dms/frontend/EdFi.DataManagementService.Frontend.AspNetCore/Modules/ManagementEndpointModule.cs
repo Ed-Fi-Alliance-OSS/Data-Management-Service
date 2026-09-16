@@ -12,9 +12,9 @@ using EdFi.DataManagementService.Core.Response;
 using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
 using Microsoft.Extensions.Options;
+using AspNetCoreFrontend = EdFi.DataManagementService.Frontend.AspNetCore.AspNetCoreFrontend;
 using CoreAppSettings = EdFi.DataManagementService.Core.Configuration.AppSettings;
 using FrontendAppSettings = EdFi.DataManagementService.Frontend.AspNetCore.Configuration.AppSettings;
-using AspNetCoreFrontend = EdFi.DataManagementService.Frontend.AspNetCore.AspNetCoreFrontend;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Modules;
 
