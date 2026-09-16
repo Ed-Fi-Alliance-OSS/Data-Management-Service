@@ -347,6 +347,23 @@ and what a startup failure means, and
 [eng/docker-compose/README.md](../eng/docker-compose/README.md) for running them
 against a local development stack.
 
+A plugin is built against two published contract packages, on the Ed-Fi Azure
+Artifacts feed at
+`https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json`:
+
+| Package                     | What it declares                                                    |
+| --------------------------- | ------------------------------------------------------------------- |
+| `EdFi.Api.Plugins`          | `EdFiApiPlugin`, the base class a plugin implements.                  |
+| `EdFi.Api.CustomValidation` | `ICustomResourceValidator`, for a plugin that registers a validator.  |
+
+Neither carries the Data Management Service release version. Each declares its own
+semantic version, in its own source, and moves it only when its public surface, its
+XML documentation or its declared dependencies change, because the loader compares
+contract assembly versions when it decides whether a plugin may run. Which contract
+versions a given release carries is stated in that release's notes and in the host
+assembly manifest published beside it. None of this is configuration: it is what a
+vendor compiles against before the directory this section governs ever exists.
+
 | Parameter | Description                                                                                                                                                                                                                  |
 | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Directory | The plugin root. Defaults to `/app/plugins`, and a relative value is resolved against the application's base directory. A root that does not exist is not an error when `Allowed` is empty.                                   |
