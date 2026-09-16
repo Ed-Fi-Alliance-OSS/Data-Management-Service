@@ -115,6 +115,44 @@ jobs:
           Import-Module ./package-helpers.psm1
           Invoke-Promote @arguments
 
+      # The two contract packages, and neither can be a copy of the three above. Those derive the
+      # version to promote from the release tag; a contract's version deliberately does not move
+      # with the release, so promoting it at the release version would ask the feed for a version
+      # that does not exist. Each reads its own declared version instead, and has three outcomes:
+      # already in the release view is a no-op, present only in the prerelease view is promoted,
+      # and absent from both fails rather than reporting success for a version that never shipped.
+      - name: Promote EdFi.Api.Plugins Package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          Import-Module ./package-helpers.psm1
+
+          Invoke-ContractPromotion `
+            -PackagesURL "${{ env.ARTIFACTS_PACKAGES_URL }}" `
+            -Username "${{ env.ARTIFACTS_USERNAME }}" `
+            -Password (ConvertTo-SecureString -String "${{ env.ARTIFACTS_API_KEY }}" -AsPlainText -Force) `
+            -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" `
+            -ApiKey "${{ env.ARTIFACTS_API_KEY }}" `
+            -PackageName "EdFi.Api.Plugins" `
+            -Version (Get-PluginsContractVersion)
+
+      - name: Promote EdFi.Api.CustomValidation Package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          Import-Module ./package-helpers.psm1
+
+          Invoke-ContractPromotion `
+            -PackagesURL "${{ env.ARTIFACTS_PACKAGES_URL }}" `
+            -Username "${{ env.ARTIFACTS_USERNAME }}" `
+            -Password (ConvertTo-SecureString -String "${{ env.ARTIFACTS_API_KEY }}" -AsPlainText -Force) `
+            -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" `
+            -ApiKey "${{ env.ARTIFACTS_API_KEY }}" `
+            -PackageName "EdFi.Api.CustomValidation" `
+            -Version (Get-CustomValidationContractVersion)
+
   tag-dms-image:
     name: Release Tag DMS Image
     runs-on: ubuntu-latest
