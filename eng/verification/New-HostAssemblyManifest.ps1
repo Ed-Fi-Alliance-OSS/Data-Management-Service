@@ -97,6 +97,12 @@ param(
     [string]
     $DockerfilePath,
 
+    # The build stage whose FROM carries the runtime base. Named rather than taken from whichever
+    # FROM appears first, because a Dockerfile's later stages build on the earlier ones and reading
+    # the wrong line would put a stage reference where a base image belongs.
+    [string]
+    $RuntimeBaseStageName = "runtimebase",
+
     [string]
     $OutputPath = "host-assembly-manifest.md"
 )
@@ -344,6 +350,13 @@ function Assert-FrameworkDependenciesAgree {
                 $entries = if ($propertyName -eq "frameworks") { @($property.EnumerateArray()) } else { @($property) }
 
                 foreach ($entry in $entries) {
+                    # The same refusal the application's own framework references get. A policy set
+                    # on a nested entry changes which version the runtime would load just as surely
+                    # as one set at the top of the file, and validating only the parent would let a
+                    # nested Disable through while the manifest reported a version chosen under a
+                    # policy the runtime was not using.
+                    Assert-NoRollForwardOverride -Element $entry -Where "Shared framework '$name' framework reference"
+
                     $dependencyName = (Get-JsonProperty -Element $entry -Name "name").GetString()
                     $dependencyVersionText = (Get-JsonProperty -Element $entry -Name "version").GetString()
 
@@ -420,19 +433,51 @@ function Get-AssemblyRow {
 function Get-RuntimeBasePin {
     [CmdletBinding()]
     [OutputType([string])]
-    param([Parameter(Mandatory)][string] $Path)
+    param(
+        [Parameter(Mandatory)][string] $Path,
+        [Parameter(Mandatory)][string] $StageName
+    )
 
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
         throw "Dockerfile not found: $Path"
     }
 
     foreach ($line in [System.IO.File]::ReadAllLines($Path)) {
-        if ($line -match '^\s*FROM\s+(\S+)') {
+        # The named stage, not the first FROM. A Dockerfile's later stages build on its earlier ones,
+        # so the first FROM is the runtime base only by coincidence of ordering.
+        if ($line -match '^\s*FROM\s+(\S+)\s+AS\s+(\S+)\s*$' -and $Matches[2] -ieq $StageName) {
             return $Matches[1]
         }
     }
 
-    throw "No FROM instruction found in $Path."
+    throw "No 'FROM <image> AS $StageName' instruction found in $Path. This tool records the runtime base of a named stage and refuses a Dockerfile shape it does not recognise rather than reading whichever FROM comes first."
+}
+
+# The version the base image's tag carries, compared as a version rather than matched as text. An
+# unanchored substring comparison treats 10.0.3 as present in 10.0.30, which is the wrong answer in
+# the direction that matters: it accepts a checkout and an image that are not the same pair.
+function Get-BaseImageVersion {
+    [CmdletBinding()]
+    [OutputType([version])]
+    param([Parameter(Mandatory)][string] $Reference)
+
+    $withoutDigest = ($Reference -split "@", 2)[0]
+
+    $lastColon = $withoutDigest.LastIndexOf(":")
+    $lastSlash = $withoutDigest.LastIndexOf("/")
+
+    # A colon before the last slash is a registry port, not a tag separator.
+    if ($lastColon -lt 0 -or $lastColon -lt $lastSlash) {
+        throw "The runtime base reference '$Reference' carries no tag, so there is no version to cross-check against the inspected image."
+    }
+
+    $tag = $withoutDigest.Substring($lastColon + 1)
+
+    if ($tag -notmatch '^(\d+\.\d+\.\d+)(?:[-.].*)?$') {
+        throw "The runtime base tag '$tag' does not begin with a three-part version, so there is no version to cross-check against the inspected image."
+    }
+
+    return [version] $Matches[1]
 }
 
 function Format-AssemblyTable {
@@ -594,7 +639,7 @@ try {
     # Header facts, each labelled with where it came from.
     # -----------------------------------------------------------------------------------------
 
-    $basePin = Get-RuntimeBasePin -Path $DockerfilePath
+    $basePin = Get-RuntimeBasePin -Path $DockerfilePath -StageName $RuntimeBaseStageName
     $dockerfileRelative = [System.IO.Path]::GetRelativePath($repositoryRoot, [System.IO.Path]::GetFullPath($DockerfilePath)).Replace("\", "/")
 
     $declaredVersions = @{}
@@ -639,8 +684,12 @@ try {
         $null
     }
 
-    if ($null -ne $pinComparisonVersion -and $basePin -notmatch [regex]::Escape($pinComparisonVersion)) {
-        throw "The runtime base pinned by $dockerfileRelative is '$basePin', which does not carry the shared framework version the inspected image has ($pinComparisonVersion). This checkout and $inspectedReference are not the same pair, so the header's base pin would be misleading."
+    if ($null -ne $pinComparisonVersion) {
+        $basePinVersion = Get-BaseImageVersion -Reference $basePin
+
+        if ($basePinVersion -ne [version] $pinComparisonVersion) {
+            throw "The runtime base pinned by $dockerfileRelative is '$basePin', carrying $basePinVersion, while the inspected image carries $pinComparisonVersion. This checkout and $inspectedReference are not the same pair, so the header's base pin would be misleading."
+        }
     }
 
     # -----------------------------------------------------------------------------------------

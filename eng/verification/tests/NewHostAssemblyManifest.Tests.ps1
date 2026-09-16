@@ -36,20 +36,55 @@ BeforeAll {
     $script:contractAssemblyAvailable = Test-Path -LiteralPath $script:contractAssembly
 
     # Real shared-framework assemblies from the installed runtime. The fixture's directory names, not
-    # these files' versions, are what selection reads, so an installed 10.0.x serves for any name.
-    $script:installedAspNet = @(
-        Get-ChildItem -Path (Join-Path $env:ProgramFiles "dotnet/shared/Microsoft.AspNetCore.App") -Directory -ErrorAction SilentlyContinue |
-            Sort-Object -Property Name -Descending |
-            Select-Object -First 1
-    )
-    $script:installedNetCore = @(
-        Get-ChildItem -Path (Join-Path $env:ProgramFiles "dotnet/shared/Microsoft.NETCore.App") -Directory -ErrorAction SilentlyContinue |
-            Sort-Object -Property Name -Descending |
-            Select-Object -First 1
-    )
+    # these files' versions, are what selection reads, so any installed 10.0.x serves for any name.
+    #
+    # Located through `dotnet --list-runtimes`, which the runtime itself owns and which prints the
+    # containing directory on every platform. An earlier revision composed the path from
+    # $env:ProgramFiles, which is unset on the Linux runner the whole eng/verification/tests directory
+    # runs on, so BeforeAll threw on a null path and every case in this file failed before any of them
+    # ran. A Windows-only variable cannot locate a runtime for a suite that runs on Linux.
+    function Get-InstalledFrameworkDirectory {
+        [CmdletBinding()]
+        [OutputType([string])]
+        param([Parameter(Mandatory)][string] $FrameworkName)
 
-    $script:configurationAbstractions = if ($script:installedAspNet.Count -eq 1) {
-        Join-Path $script:installedAspNet[0].FullName "Microsoft.Extensions.Configuration.Abstractions.dll"
+        $candidates = @()
+
+        foreach ($line in (& dotnet --list-runtimes)) {
+            if ($line -notmatch '^(\S+)\s+(\S+)\s+\[(.+)\]\s*$') {
+                continue
+            }
+            if ($Matches[1] -ne $FrameworkName) {
+                continue
+            }
+
+            # A prerelease version does not parse, and a directory this fixture cannot order is a
+            # directory it should not pick.
+            $parsed = [version] "0.0.0"
+            if (-not [version]::TryParse($Matches[2], [ref] $parsed)) {
+                continue
+            }
+
+            $candidates += [pscustomobject]@{
+                Version = $parsed
+                Path = Join-Path $Matches[3] $Matches[2]
+            }
+        }
+
+        $best = @($candidates | Sort-Object -Property Version -Descending) | Select-Object -First 1
+
+        if ($null -eq $best) {
+            return $null
+        }
+
+        return $best.Path
+    }
+
+    $script:installedAspNet = Get-InstalledFrameworkDirectory -FrameworkName "Microsoft.AspNetCore.App"
+    $script:installedNetCore = Get-InstalledFrameworkDirectory -FrameworkName "Microsoft.NETCore.App"
+
+    $script:configurationAbstractions = if ($null -ne $script:installedAspNet) {
+        Join-Path $script:installedAspNet "Microsoft.Extensions.Configuration.Abstractions.dll"
     }
     else {
         $null
@@ -57,15 +92,15 @@ BeforeAll {
 
     # The downloader-only sentinel: a real assembly the fixture places under app/ApiSchemaDownloader/
     # and nowhere else, so a row for it can only mean the sweep went below the top level.
-    $script:downloaderSentinelSource = if ($script:installedAspNet.Count -eq 1) {
-        Join-Path $script:installedAspNet[0].FullName "Microsoft.AspNetCore.Mvc.Core.dll"
+    $script:downloaderSentinelSource = if ($null -ne $script:installedAspNet) {
+        Join-Path $script:installedAspNet "Microsoft.AspNetCore.Mvc.Core.dll"
     }
     else {
         $null
     }
 
-    $script:runtimeAssembly = if ($script:installedNetCore.Count -eq 1) {
-        Join-Path $script:installedNetCore[0].FullName "System.Runtime.dll"
+    $script:runtimeAssembly = if ($null -ne $script:installedNetCore) {
+        Join-Path $script:installedNetCore "System.Runtime.dll"
     }
     else {
         $null
@@ -557,6 +592,58 @@ Describe "New-HostAssemblyManifest unsupported input" {
             Should -Throw -ExpectedMessage "*which the application does not name*"
     }
 
+    It "refuses a roll-forward policy on a selected framework's own nested framework reference" {
+        if (-not (Test-FixturesAvailable)) {
+            Set-ItResult -Inconclusive -Because "the fixture needs an installed .NET shared framework"
+        }
+
+        # Validating only the parent runtimeOptions let this through: the manifest was emitted
+        # successfully while the nested entry asked for a policy the runtime would have applied and
+        # this tool does not implement.
+        $fixture = New-ManifestFixture -Name "nested-policy"
+
+        [System.IO.File]::WriteAllText(
+            (Join-Path $fixture.Root "shared/Microsoft.AspNetCore.App/10.0.3/Microsoft.AspNetCore.App.runtimeconfig.json"),
+            '{ "runtimeOptions": { "rollForward": "LatestPatch", "framework": { "name": "Microsoft.NETCore.App", "version": "10.0.0", "rollForward": "Disable" } } }'
+        )
+
+        { Invoke-Generator -Fixture $fixture } |
+            Should -Throw -ExpectedMessage "*Shared framework 'Microsoft.AspNetCore.App' framework reference declares 'rollForward'*"
+    }
+
+    It "refuses the legacy settings on a selected framework's own nested framework reference" {
+        if (-not (Test-FixturesAvailable)) {
+            Set-ItResult -Inconclusive -Because "the fixture needs an installed .NET shared framework"
+        }
+
+        $fixture = New-ManifestFixture -Name "nested-legacy"
+
+        [System.IO.File]::WriteAllText(
+            (Join-Path $fixture.Root "shared/Microsoft.AspNetCore.App/10.0.3/Microsoft.AspNetCore.App.runtimeconfig.json"),
+            '{ "runtimeOptions": { "framework": { "name": "Microsoft.NETCore.App", "version": "10.0.0", "applyPatches": false } } }'
+        )
+
+        { Invoke-Generator -Fixture $fixture } |
+            Should -Throw -ExpectedMessage "*framework reference declares 'applyPatches'*"
+    }
+
+    It "still accepts the shape the released image's ASP.NET Core framework actually carries" {
+        if (-not (Test-FixturesAvailable)) {
+            Set-ItResult -Inconclusive -Because "the fixture needs an installed .NET shared framework"
+        }
+
+        # Copied from the released image: LatestPatch on the parent, a plain nested reference. The
+        # refusals above must not close on this.
+        $fixture = New-ManifestFixture -Name "nested-released-shape"
+
+        [System.IO.File]::WriteAllText(
+            (Join-Path $fixture.Root "shared/Microsoft.AspNetCore.App/10.0.3/Microsoft.AspNetCore.App.runtimeconfig.json"),
+            '{ "runtimeOptions": { "tfm": "net10.0", "rollForward": "LatestPatch", "framework": { "name": "Microsoft.NETCore.App", "version": "10.0.3" } } }'
+        )
+
+        { Invoke-Generator -Fixture $fixture } | Should -Not -Throw
+    }
+
     It "refuses a selected framework that declares a roll-forward policy other than LatestPatch" {
         if (-not (Test-FixturesAvailable)) {
             Set-ItResult -Inconclusive -Because "the fixture needs an installed .NET shared framework"
@@ -585,6 +672,83 @@ Describe "New-HostAssemblyManifest header cross-checks" {
 
         { Invoke-Generator -Fixture $fixture } |
             Should -Throw -ExpectedMessage "*not the same pair*"
+    }
+
+    It "refuses a base pin whose version merely begins with the selected one" {
+        if (-not (Test-FixturesAvailable)) {
+            Set-ItResult -Inconclusive -Because "the fixture needs an installed .NET shared framework"
+        }
+
+        # 10.0.3 is a substring of 10.0.30. An unanchored text comparison accepted this pair, which
+        # is the wrong answer in the direction that matters: it lets a checkout and an image that are
+        # not the same pair produce a manifest claiming they are.
+        $fixture = New-ManifestFixture -Name "pin-prefix" -BasePinVersion "10.0.30"
+
+        { Invoke-Generator -Fixture $fixture } |
+            Should -Throw -ExpectedMessage "*carrying 10.0.30, while the inspected image carries 10.0.3*"
+    }
+
+    It "refuses a base pin whose version merely ends with the selected one" {
+        if (-not (Test-FixturesAvailable)) {
+            Set-ItResult -Inconclusive -Because "the fixture needs an installed .NET shared framework"
+        }
+
+        $fixture = New-ManifestFixture -Name "pin-suffix" -BasePinVersion "110.0.3"
+
+        { Invoke-Generator -Fixture $fixture } |
+            Should -Throw -ExpectedMessage "*carrying 110.0.3, while the inspected image carries 10.0.3*"
+    }
+
+    It "admits a base pin whose version equals the selected one" {
+        if (-not (Test-FixturesAvailable)) {
+            Set-ItResult -Inconclusive -Because "the fixture needs an installed .NET shared framework"
+        }
+
+        $fixture = New-ManifestFixture -Name "pin-exact" -BasePinVersion "10.0.3"
+
+        { Invoke-Generator -Fixture $fixture } | Should -Not -Throw
+    }
+
+    It "refuses a Dockerfile with no runtime base stage rather than reading its first FROM" {
+        if (-not (Test-FixturesAvailable)) {
+            Set-ItResult -Inconclusive -Because "the fixture needs an installed .NET shared framework"
+        }
+
+        $fixture = New-ManifestFixture -Name "pin-no-stage"
+
+        [System.IO.File]::WriteAllText(
+            $fixture.Dockerfile,
+            "FROM mcr.microsoft.com/dotnet/aspnet:10.0.3-alpine3.23 AS somethingelse`nFROM somethingelse AS setup`n"
+        )
+
+        { Invoke-Generator -Fixture $fixture } |
+            Should -Throw -ExpectedMessage "*No 'FROM <image> AS runtimebase' instruction found*"
+    }
+
+    It "reads the named runtime base stage rather than whichever FROM comes first" {
+        if (-not (Test-FixturesAvailable)) {
+            Set-ItResult -Inconclusive -Because "the fixture needs an installed .NET shared framework"
+        }
+
+        # The shape src/dms/Nuget.Dockerfile has: the runtime base first, then a stage built on it.
+        # Reordered here so that reading the first FROM would pick up a stage name rather than an
+        # image reference and the version cross-check would have nothing to parse.
+        $fixture = New-ManifestFixture -Name "pin-stage-order"
+
+        [System.IO.File]::WriteAllText(
+            $fixture.Dockerfile,
+            @(
+                "FROM scratch AS preamble",
+                "FROM mcr.microsoft.com/dotnet/aspnet:10.0.3-alpine3.23@sha256:0000 AS runtimebase",
+                "FROM runtimebase AS setup",
+                ""
+            ) -join "`n"
+        )
+
+        { Invoke-Generator -Fixture $fixture } | Should -Not -Throw
+
+        [System.IO.File]::ReadAllText($fixture.OutputPath) |
+            Should -BeLike "*mcr.microsoft.com/dotnet/aspnet:10.0.3-alpine3.23@sha256:0000*"
     }
 
     It "refuses an image whose declared runtime version disagrees with what it carries" {
