@@ -174,7 +174,14 @@ if ($null -eq $GetPublishedVersions) {
             throw "The feed answered 200 for $url with no versions array. That is a malformed response, not an absent package."
         }
 
-        return @{ Found = $true; Versions = @($response.versions) }
+        # Not wrapped with @(). A scalar here means the endpoint returned something other than the
+        # array it is defined to return, and auto-wrapping it would hide that behind a one-element
+        # list.
+        if ($response.versions -isnot [System.Collections.IEnumerable] -or $response.versions -is [string]) {
+            throw "The feed answered 200 for $url with a versions property that is not an array. That is a malformed response, not an absent package."
+        }
+
+        return @{ Found = $true; Versions = $response.versions }
     }
 }
 
@@ -357,6 +364,12 @@ if ($null -eq $published -or $null -eq $published.Found) {
     throw "The feed lookup for $PackageId returned no result. A feed that cannot be read is not an absent package."
 }
 
+# A Found that is not a boolean is not an answer. PowerShell would treat any non-empty value as
+# true, so a lookup returning a string or an object would decide the branch by accident.
+if ($published.Found -isnot [bool]) {
+    throw "The feed lookup for $PackageId reported Found as '$($published.Found)', which is not a boolean. That is a malformed result, not an absent package."
+}
+
 $publishedVersions = @()
 
 if ($published.Found) {
@@ -364,10 +377,18 @@ if ($published.Found) {
         throw "The feed reported $PackageId as present and listed no versions. That is a malformed response, not an absent version."
     }
 
+    # Every entry is normalized, and none is discarded. Filtering blank or unparseable entries away
+    # empties the list, an empty list reads as "this version is not published", and that reads as a
+    # push. A version index this reader cannot understand is a feed it cannot trust.
     $publishedVersions = @(
         $published.Versions |
-            Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
-            ForEach-Object { ConvertTo-NormalizedPackageVersion -Version $_ }
+            ForEach-Object {
+                if ($null -eq $_ -or [string]::IsNullOrWhiteSpace([string] $_)) {
+                    throw "The feed listed a blank version for $PackageId. That is a malformed version index, not an absent version."
+                }
+
+                ConvertTo-NormalizedPackageVersion -Version ([string] $_)
+            }
     )
 }
 

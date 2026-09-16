@@ -200,6 +200,47 @@ Describe "The default feed implementations" {
             Should -Throw -ExpectedMessage "*malformed response*"
     }
 
+    # The probe that showed filtering was not enough: a 200 whose versions array holds only a blank
+    # entry emptied the list and reached the absent branch, which is a push.
+    It "fails on a versions array holding a blank entry" {
+        Mock Invoke-RestMethod {
+            if ($Uri -eq (Get-ServiceIndexUrl)) {
+                return Get-HealthyServiceIndex
+            }
+
+            return [pscustomobject]@{ versions = @(" ") }
+        }
+
+        { Invoke-DefaultCheck -PackageFile (New-MinimalPackage) } |
+            Should -Throw -ExpectedMessage "*malformed version index*"
+    }
+
+    It "fails on a versions property that is a scalar rather than an array" {
+        Mock Invoke-RestMethod {
+            if ($Uri -eq (Get-ServiceIndexUrl)) {
+                return Get-HealthyServiceIndex
+            }
+
+            return [pscustomobject]@{ versions = "1.0.0" }
+        }
+
+        { Invoke-DefaultCheck -PackageFile (New-MinimalPackage) } |
+            Should -Throw -ExpectedMessage "*not an array*"
+    }
+
+    It "fails on a versions array holding an entry NuGet cannot parse" {
+        Mock Invoke-RestMethod {
+            if ($Uri -eq (Get-ServiceIndexUrl)) {
+                return Get-HealthyServiceIndex
+            }
+
+            return [pscustomobject]@{ versions = @("not-a-version") }
+        }
+
+        { Invoke-DefaultCheck -PackageFile (New-MinimalPackage) } |
+            Should -Throw -ExpectedMessage "*is not a package version NuGet accepts*"
+    }
+
     It "fails when the service index answers 404" {
         Mock Invoke-RestMethod { throw (Get-HttpError -StatusCode 404) }
 

@@ -249,6 +249,31 @@ Describe "ConvertTo-CanonicalXmlDocumentation keeps distinctions a reader can se
             Should -BeTrue
     }
 
+    # A nearer xml:space="default" has to be able to reset a preserving ancestor. Inheriting the
+    # ancestor's true with -or made the reset unreachable, so whitespace in a default context
+    # demanded a version bump.
+    It "honours an xml:space reset inside a preserving member" {
+        Test-DocumentationChanged `
+            -Left '<member name="M:X.Y" xml:space="preserve"><summary xml:space="default">one two</summary></member>' `
+            -Right '<member name="M:X.Y" xml:space="preserve"><summary xml:space="default">one  two</summary></member>' |
+            Should -BeFalse
+    }
+
+    It "keeps preserving outside the reset element" {
+        Test-DocumentationChanged `
+            -Left '<member name="M:X.Y" xml:space="preserve">a b<summary xml:space="default">one two</summary></member>' `
+            -Right '<member name="M:X.Y" xml:space="preserve">a  b<summary xml:space="default">one two</summary></member>' |
+            Should -BeTrue
+    }
+
+    # A code sample is preserved on its own terms, so a reset above it does not reach inside.
+    It "preserves a code sample declared under a reset" {
+        Test-DocumentationChanged `
+            -Left '<member name="M:X.Y"><summary xml:space="default"><code>a b</code></summary></member>' `
+            -Right '<member name="M:X.Y"><summary xml:space="default"><code>a  b</code></summary></member>' |
+            Should -BeTrue
+    }
+
     It "normalizes the same whitespace where preservation was not asked for" {
         Test-DocumentationChanged `
             -Left '<member name="M:X.Y"><summary>a  b</summary></member>' `
