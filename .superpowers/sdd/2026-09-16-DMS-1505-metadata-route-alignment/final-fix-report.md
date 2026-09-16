@@ -57,7 +57,7 @@ Paths above are under `src/dms/frontend/EdFi.DataManagementService.Frontend.AspN
 - Self-review covered imports, route cardinality, compatibility paths, tenant-only/full-context behavior, suffix boundaries, `PathBase`, and validation ordering.
 - Changed-file inventory confirms no changes to Discovery implementation, resource API routing, authentication, CMS/schema, or `SchemaHashConstants.RelationalMappingVersion`. No new Newtonsoft.Json usage or dependencies.
 - Existing `.config/dotnet-tools.json` modification, untracked task/progress artifacts, and REST-client file were preserved and excluded from these commits.
-- No subagents were dispatched. Review/implementation/verification skills guided scope and evidence tracking; explicit user instructions superseded their test-execution and delegation steps.
+- Remediation was dispatched to subagent `01a0ab0e-fc72-7711-b099-ab00b5a4ba1e`; review/implementation/verification skills guided scope and evidence tracking. Explicit user instructions superseded test execution.
 
 ## Commits
 
