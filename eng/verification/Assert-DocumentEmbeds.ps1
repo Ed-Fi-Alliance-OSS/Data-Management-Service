@@ -21,6 +21,17 @@
         ...the file, verbatim...
         ```
 
+    A marker may name a region of a file instead of the whole of it, which is what a source file
+    needs: a licence header and the notes explaining why a fixture exists belong in the file and not
+    in the document. The region is delimited in the source by a pair of ordinary comments, so the
+    delimiters survive any formatter and cost the file nothing but two lines:
+
+        <!-- embed: eng/verification/PluginsConsumer/AcmePlugin.cs#sample -->
+
+        // embed-region: sample
+        ...the lines the document carries...
+        // embed-region-end: sample
+
     Marking the block rather than matching on content is what lets a failure name the file, lets the
     document order its sections freely, and lets a block be found at all when two files differ only
     in a line or two.
@@ -64,9 +75,53 @@ $ErrorActionPreference = "Stop"
 # would otherwise fail every block for a reason that has nothing to do with the content.
 function Read-NormalizedText {
     [CmdletBinding()]
+    [OutputType([string])]
     param([Parameter(Mandatory)][string] $Path)
 
     return ([System.IO.File]::ReadAllText($Path)).Replace("`r`n", "`n")
+}
+
+# The text a marker claims: the whole file, or the lines strictly between a delimited region's two
+# comments. Every failure here names the region, because a silently absent region would otherwise
+# compare an empty block against an empty answer and pass.
+function Get-EmbedSource {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)][string] $Path,
+        [Parameter(Mandatory)][AllowEmptyString()][string] $Region,
+        [Parameter(Mandatory)][string] $Claim
+    )
+
+    $text = Read-NormalizedText -Path $Path
+
+    if ($Region.Length -eq 0) {
+        return $text
+    }
+
+    $lines = $text -split "`n"
+    $escaped = [regex]::Escape($Region)
+    $beginPattern = "^\s*//\s*embed-region:\s*$escaped\s*$"
+    $endPattern = "^\s*//\s*embed-region-end:\s*$escaped\s*$"
+
+    $beginIndexes = @(0..($lines.Count - 1) | Where-Object { $lines[$_] -match $beginPattern })
+    $endIndexes = @(0..($lines.Count - 1) | Where-Object { $lines[$_] -match $endPattern })
+
+    if ($beginIndexes.Count -ne 1) {
+        throw "$Claim names region '$Region' of $Path, which carries $($beginIndexes.Count) '// embed-region: $Region' lines. A region is opened exactly once."
+    }
+    if ($endIndexes.Count -ne 1) {
+        throw "$Claim names region '$Region' of $Path, which carries $($endIndexes.Count) '// embed-region-end: $Region' lines. A region is closed exactly once."
+    }
+    if ($endIndexes[0] -le $beginIndexes[0]) {
+        throw "$Claim names region '$Region' of $Path, whose closing line is not after its opening line."
+    }
+
+    if ($endIndexes[0] -eq $beginIndexes[0] + 1) {
+        return ""
+    }
+
+    return ($lines[($beginIndexes[0] + 1)..($endIndexes[0] - 1)] -join "`n")
 }
 
 if (-not (Test-Path -LiteralPath $DocumentPath)) {
@@ -83,15 +138,23 @@ $fenceOpenPattern = '^```[A-Za-z0-9_-]*$'
 $markers = @()
 for ($index = 0; $index -lt $documentLines.Count; $index++) {
     if ($documentLines[$index] -match $markerPattern) {
+        # A marker claims either a whole file or one named region of it, written path#region.
+        $claim = $Matches[1]
+        $separator = $claim.IndexOf('#')
+
         $markers += [pscustomobject]@{
-            Path = $Matches[1]
+            Claim = $claim
+            Path = if ($separator -lt 0) { $claim } else { $claim.Substring(0, $separator) }
+            Region = if ($separator -lt 0) { "" } else { $claim.Substring($separator + 1) }
             Line = $index
         }
     }
 }
 
 foreach ($required in $RequiredEmbed) {
-    $matching = @($markers | Where-Object { [string]::Equals($_.Path, $required, [StringComparison]::Ordinal) })
+    # Matched on the whole claim, so a required entry naming one region of a file is satisfied by
+    # that region rather than by any block that happens to quote the same file.
+    $matching = @($markers | Where-Object { [string]::Equals($_.Claim, $required, [StringComparison]::Ordinal) })
 
     if ($matching.Count -eq 0) {
         throw "$DocumentPath carries no '<!-- embed: $required -->' marker. Every required file must be embedded exactly once."
@@ -116,7 +179,7 @@ foreach ($marker in $markers) {
 
     $openIndex = $marker.Line + 1
     if ($openIndex -ge $documentLines.Count -or $documentLines[$openIndex] -notmatch $fenceOpenPattern) {
-        throw "$DocumentPath line ${markerLineNumber} embeds '$($marker.Path)' but no fenced block opens on the next line."
+        throw "$DocumentPath line ${markerLineNumber} embeds '$($marker.Claim)' but no fenced block opens on the next line."
     }
 
     $closeIndex = -1
@@ -128,7 +191,7 @@ foreach ($marker in $markers) {
     }
 
     if ($closeIndex -lt 0) {
-        throw "$DocumentPath line ${markerLineNumber} embeds '$($marker.Path)' in a fenced block that is never closed."
+        throw "$DocumentPath line ${markerLineNumber} embeds '$($marker.Claim)' in a fenced block that is never closed."
     }
 
     # An empty block is spelled out rather than sliced. PowerShell's range operator counts down when
@@ -139,7 +202,10 @@ foreach ($marker in $markers) {
     else {
         ($documentLines[($openIndex + 1)..($closeIndex - 1)] -join "`n").TrimEnd()
     }
-    $source = (Read-NormalizedText -Path $sourcePath).TrimEnd()
+    $source = (Get-EmbedSource `
+            -Path $sourcePath `
+            -Region $marker.Region `
+            -Claim "$DocumentPath line ${markerLineNumber}").TrimEnd()
 
     if (-not [string]::Equals($embedded, $source, [StringComparison]::Ordinal)) {
         $embeddedLines = $embedded -split "`n"
@@ -148,7 +214,7 @@ foreach ($marker in $markers) {
 
         for ($index = 0; $index -lt [Math]::Max($embeddedLines.Count, $sourceLines.Count); $index++) {
             $left = if ($index -lt $embeddedLines.Count) { $embeddedLines[$index] } else { '<end of block>' }
-            $right = if ($index -lt $sourceLines.Count) { $sourceLines[$index] } else { '<end of file>' }
+            $right = if ($index -lt $sourceLines.Count) { $sourceLines[$index] } else { '<end of source>' }
 
             if (-not [string]::Equals($left, $right, [StringComparison]::Ordinal)) {
                 $firstDifference = "line $($index + 1) of the block: document has '$left', file has '$right'"
@@ -157,8 +223,8 @@ foreach ($marker in $markers) {
         }
 
         throw (
-            "$DocumentPath no longer embeds '$($marker.Path)' verbatim. The file is the artifact and " +
-            "the document is the copy, so update the document to match. First difference at $firstDifference."
+            "$DocumentPath no longer embeds '$($marker.Claim)' verbatim. The source is the artifact " +
+            "and the document is the copy, so update the document to match. First difference at $firstDifference."
         )
     }
 }

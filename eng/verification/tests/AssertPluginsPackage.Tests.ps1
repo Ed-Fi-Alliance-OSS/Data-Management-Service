@@ -5,8 +5,13 @@
 
 #Requires -Version 7
 
-# Regression cover for one property of Assert-PluginsPackage.ps1: it must never delete anything the
-# caller owns.
+# Two properties of Assert-PluginsPackage.ps1 are pinned here.
+#
+# The second, further down, is that the packed readme is the implementer guide and not a placeholder.
+# It is checked by repacking the genuine artifact with a different readme, so a failure in those cases
+# can only be the readme check.
+#
+# The first is that the verifier must never delete anything the caller owns.
 #
 # An earlier revision of that script inherited the sibling custom-validation verifier's guard, which
 # treats "this directory contains a *.nuspec" as proof that a previous run of its own produced the
@@ -62,6 +67,36 @@ BeforeAll {
         }
 
         return $path
+    }
+
+    # A copy of the real packed package with a different readme in it. Repacking the genuine artifact
+    # rather than fabricating a nupkg is what keeps these cases about the readme: every other
+    # assertion in the verifier still runs against real content, so a failure here can only be the
+    # readme check.
+    function New-RepackedPackage {
+        [CmdletBinding(SupportsShouldProcess)]
+        param(
+            [Parameter(Mandatory)][string] $Name,
+            [Parameter(Mandatory)][string] $ReadmeContent
+        )
+
+        $stage = Join-Path $script:fixtureRoot "$Name-stage-$([guid]::NewGuid().ToString('N'))"
+        $packagePath = Join-Path $script:fixtureRoot "$Name-$([guid]::NewGuid().ToString('N')).nupkg"
+
+        if (-not $PSCmdlet.ShouldProcess($packagePath, "Repack the plugin contract package")) {
+            return $null
+        }
+
+        Expand-Archive -LiteralPath $script:packedPackage -DestinationPath $stage
+        [System.IO.File]::WriteAllText((Join-Path $stage "PLUGINS.md"), $ReadmeContent)
+
+        # -LiteralPath, and per entry. A nupkg carries [Content_Types].xml at its root, and square
+        # brackets are a character class to Compress-Archive's wildcard -Path, so globbing the stage
+        # directory would silently drop that entry.
+        $entries = @(Get-ChildItem -LiteralPath $stage -Force | ForEach-Object { $_.FullName })
+        Compress-Archive -LiteralPath $entries -DestinationPath $packagePath
+
+        return $packagePath
     }
 
     function Invoke-Verifier {
@@ -176,5 +211,70 @@ Describe "Assert-PluginsPackage extraction directory handling" {
             Test-Path -LiteralPath (Join-Path $target "EdFi.Api.Plugins.nuspec") | Should -BeTrue
         }
 
+    }
+}
+
+Describe "Assert-PluginsPackage packed readme" {
+
+    Context "The readme has to be the implementer guide" {
+
+        It "refuses a package whose readme still reads as a placeholder" {
+            if (-not $script:packedPackageAvailable) {
+                Set-ItResult -Inconclusive -Because "EdFi.Api.Plugins.$($script:contractVersion).nupkg is absent; run ./build-dms.ps1 Package -PackageTarget Plugins to exercise the readme path"
+            }
+
+            # The shape the contract's first version actually shipped: a real heading, then a notice
+            # saying the content is not the guide yet.
+            $placeholder = @(
+                "# Ed-Fi API Plugins",
+                "",
+                "> **This readme is a placeholder.**",
+                "",
+                "Run dotnet publish --no-self-contained and see the host assembly manifest,",
+                "contentFiles/any/any/<Name>/."
+            ) -join "`n"
+
+            $package = New-RepackedPackage -Name "placeholder-readme" -ReadmeContent $placeholder
+            $result = Invoke-Verifier -PackageFile $package -ExtractTo (New-FixtureDirectory -Name "placeholder-extract")
+
+            $result.Threw | Should -BeTrue
+            $result.Message | Should -BeLike "*still reads as a placeholder*"
+        }
+
+        It "refuses a readme that says nothing about publishing, even with no placeholder notice in it" {
+            if (-not $script:packedPackageAvailable) {
+                Set-ItResult -Inconclusive -Because "EdFi.Api.Plugins.$($script:contractVersion).nupkg is absent; run ./build-dms.ps1 Package -PackageTarget Plugins to exercise the readme path"
+            }
+
+            # The case a negative-only check would pass: nothing here calls itself a placeholder, and
+            # an implementer still cannot deliver a plugin from it.
+            $thin = @(
+                "# Ed-Fi API Plugins",
+                "",
+                "This package defines EdFiApiPlugin.",
+                "",
+                "The package shape is contentFiles/any/any/<Name>/ and each release publishes a",
+                "host assembly manifest."
+            ) -join "`n"
+
+            $package = New-RepackedPackage -Name "thin-readme" -ReadmeContent $thin
+            $result = Invoke-Verifier -PackageFile $package -ExtractTo (New-FixtureDirectory -Name "thin-extract")
+
+            $result.Threw | Should -BeTrue
+            $result.Message | Should -BeLike "*does not contain 'dotnet publish --no-self-contained'*"
+        }
+
+        It "admits the readme the contract actually packs" {
+            if (-not $script:packedPackageAvailable) {
+                Set-ItResult -Inconclusive -Because "EdFi.Api.Plugins.$($script:contractVersion).nupkg is absent; run ./build-dms.ps1 Package -PackageTarget Plugins to exercise the readme path"
+            }
+
+            # Deliberately runs the whole verifier rather than reading the file: the admission that
+            # matters is that the real packed artifact clears both halves of the readme check.
+            $result = Invoke-Verifier -PackageFile $script:packedPackage -ExtractTo (New-FixtureDirectory -Name "real-readme-extract")
+
+            $result.Threw |
+                Should -BeFalse -Because "the packed readme is the implementer guide: $($result.Message)"
+        }
     }
 }

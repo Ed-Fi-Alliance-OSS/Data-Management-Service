@@ -28,6 +28,9 @@ BeforeAll {
         "eng/docker-compose/plugins-fetch-dms.yml"
     )
 
+    $script:pluginsGuide = Join-Path $script:repositoryRoot "src/plugins/EdFi.Api.Plugins/PLUGINS.md"
+    $script:pluginsGuideEmbeds = @("eng/verification/PluginsConsumer/AcmePlugin.cs#sample")
+
     $script:fixtureRoot = Join-Path ([System.IO.Path]::GetTempPath()) "dms1500-embed-tests-$([guid]::NewGuid().ToString('N'))"
     New-Item -ItemType Directory -Path $script:fixtureRoot -Force | Out-Null
 
@@ -111,6 +114,19 @@ Describe "Assert-DocumentEmbeds against the committed operations chapter" {
         # would keep passing while the chapter lost a recipe.
         $script:requiredEmbeds | Should -Contain "eng/docker-compose/plugins-dms.yml"
         $script:requiredEmbeds | Should -Contain "eng/docker-compose/plugins-fetch-dms.yml"
+    }
+}
+
+Describe "Assert-DocumentEmbeds against the packed implementer guide" {
+    It "carries the consumer fixture's sample region verbatim" {
+        # The guide's sample is the one an implementer copies, and the fixture it comes from is
+        # compiled against the packed contract package by its own check. Pinning the two together is
+        # what makes the sample in the guide a sample that has been compiled.
+        $output = & $script:verifier `
+            -DocumentPath $script:pluginsGuide `
+            -RequiredEmbed $script:pluginsGuideEmbeds
+
+        $output | Should -BeLike "*1 embedded block(s) match their files*"
     }
 }
 
@@ -247,5 +263,141 @@ Describe "Assert-DocumentEmbeds structural failures" {
         {
             & $script:verifier -DocumentPath $fixture.Document -RequiredEmbed @() -RepositoryRoot $fixture.Root
         } | Should -Throw -ExpectedMessage "*carries no embed markers at all*"
+    }
+}
+
+Describe "Assert-DocumentEmbeds region claims" {
+    BeforeAll {
+        # A source file whose embeddable part is a region: a licence header and the notes explaining
+        # why the file exists stay in the file, and only the marked lines reach the document.
+        $script:regionBody = @(
+            "public sealed class Sample",
+            "{",
+            "    public string Name => `"Sample`";",
+            "}"
+        ) -join "`n"
+
+        function New-RegionFixture {
+            [CmdletBinding(SupportsShouldProcess)]
+            param(
+                [Parameter(Mandatory)][string] $Name,
+                [Parameter(Mandatory)][string] $SourceFile,
+                [string] $DocumentBody = $script:regionBody
+            )
+
+            $root = Join-Path $script:fixtureRoot "$Name-$([guid]::NewGuid().ToString('N'))"
+
+            if (-not $PSCmdlet.ShouldProcess($root, "Create region fixture")) {
+                return $null
+            }
+
+            New-Item -ItemType Directory -Path (Join-Path $root "src") -Force | Out-Null
+            [System.IO.File]::WriteAllText((Join-Path $root "src/Sample.cs"), $SourceFile)
+
+            $document = @(
+                "# Fixture",
+                "",
+                "<!-- embed: src/Sample.cs#sample -->",
+                '```csharp',
+                $DocumentBody,
+                '```',
+                ""
+            ) -join "`n"
+
+            $documentPath = Join-Path $root "DOCUMENT.md"
+            [System.IO.File]::WriteAllText($documentPath, $document)
+
+            return [pscustomobject]@{ Root = $root; Document = $documentPath }
+        }
+
+        function Get-WellFormedSource {
+            [CmdletBinding()]
+            param([string] $Body = $script:regionBody)
+
+            return @(
+                "// a licence header the document must not carry",
+                "",
+                "// embed-region: sample",
+                $Body,
+                "// embed-region-end: sample",
+                ""
+            ) -join "`n"
+        }
+    }
+
+    It "admits a document carrying only the marked region, not the whole file" {
+        $fixture = New-RegionFixture -Name "region-happy" -SourceFile (Get-WellFormedSource)
+
+        {
+            & $script:verifier -DocumentPath $fixture.Document -RequiredEmbed @("src/Sample.cs#sample") -RepositoryRoot $fixture.Root
+        } | Should -Not -Throw
+    }
+
+    It "refuses a document whose region content has drifted" {
+        $source = Get-WellFormedSource -Body ($script:regionBody -replace 'Sample";', 'Renamed";')
+        $fixture = New-RegionFixture -Name "region-drift" -SourceFile $source
+
+        {
+            & $script:verifier -DocumentPath $fixture.Document -RequiredEmbed @("src/Sample.cs#sample") -RepositoryRoot $fixture.Root
+        } | Should -Throw -ExpectedMessage "*no longer embeds 'src/Sample.cs#sample' verbatim*"
+    }
+
+    It "refuses a source file that never opens the region" {
+        $fixture = New-RegionFixture -Name "region-absent" -SourceFile ($script:regionBody + "`n")
+
+        {
+            & $script:verifier -DocumentPath $fixture.Document -RequiredEmbed @("src/Sample.cs#sample") -RepositoryRoot $fixture.Root
+        } | Should -Throw -ExpectedMessage "*carries 0 '// embed-region: sample' lines*"
+    }
+
+    It "refuses a source file that opens the region twice" {
+        $fixture = New-RegionFixture -Name "region-duplicate" -SourceFile (
+            (Get-WellFormedSource) + "`n// embed-region: sample`n"
+        )
+
+        {
+            & $script:verifier -DocumentPath $fixture.Document -RequiredEmbed @("src/Sample.cs#sample") -RepositoryRoot $fixture.Root
+        } | Should -Throw -ExpectedMessage "*carries 2 '// embed-region: sample' lines*"
+    }
+
+    It "refuses a source file that never closes the region" {
+        $source = @(
+            "// embed-region: sample",
+            $script:regionBody,
+            ""
+        ) -join "`n"
+
+        $fixture = New-RegionFixture -Name "region-unclosed" -SourceFile $source
+
+        {
+            & $script:verifier -DocumentPath $fixture.Document -RequiredEmbed @("src/Sample.cs#sample") -RepositoryRoot $fixture.Root
+        } | Should -Throw -ExpectedMessage "*carries 0 '// embed-region-end: sample' lines*"
+    }
+
+    It "refuses a region whose closing line precedes its opening line" {
+        $source = @(
+            "// embed-region-end: sample",
+            $script:regionBody,
+            "// embed-region: sample",
+            ""
+        ) -join "`n"
+
+        $fixture = New-RegionFixture -Name "region-inverted" -SourceFile $source
+
+        {
+            & $script:verifier -DocumentPath $fixture.Document -RequiredEmbed @("src/Sample.cs#sample") -RepositoryRoot $fixture.Root
+        } | Should -Throw -ExpectedMessage "*closing line is not after its opening line*"
+    }
+
+    It "does not satisfy a required region with a whole-file claim on the same path" {
+        # A marker naming the whole file and a requirement naming one of its regions are different
+        # claims. Matching on the path alone would let the wrong block stand in for the required one.
+        $fixture = New-RegionFixture -Name "region-vs-file" -SourceFile (Get-WellFormedSource)
+        $document = [System.IO.File]::ReadAllText($fixture.Document).Replace("src/Sample.cs#sample", "src/Sample.cs")
+        [System.IO.File]::WriteAllText($fixture.Document, $document)
+
+        {
+            & $script:verifier -DocumentPath $fixture.Document -RequiredEmbed @("src/Sample.cs#sample") -RepositoryRoot $fixture.Root
+        } | Should -Throw -ExpectedMessage "*carries no '<!-- embed: src/Sample.cs#sample -->' marker*"
     }
 }
