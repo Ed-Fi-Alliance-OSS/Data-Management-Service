@@ -16,6 +16,8 @@ env:
   MANIFEST_FILE: "_manifest/spdx_2.2/manifest.spdx.json"
   DMS_PACKAGE_NAME: "EdFi.Api"
   SCHEMA_TOOLS_PACKAGE_NAME: "EdFi.Api.SchemaTools"
+  PLUGINS_PACKAGE_NAME: "EdFi.Api.Plugins"
+  CUSTOM_VALIDATION_PACKAGE_NAME: "EdFi.Api.CustomValidation"
   CS_PACKAGE_NAME: "EdFi.Api.ConfigurationService"
   IMAGE_NAME: ${{ vars.IMAGE_NAME }}
   CONFIG_IMAGE_NAME: "edfialliance/ed-fi-api-configuration-service"
@@ -376,6 +378,461 @@ jobs:
 
           ./build-dms.ps1 Push @arguments
 
+  # The two contract chains. Each is the shape EdFi.Api and EdFi.Api.SchemaTools already have -
+  # pack exposing hash-code, an SPDX 2.2 SBOM exposing sbom-hash-code, SLSA provenance with a name
+  # of its own, and a publish job - with one difference that runs through all of it: a contract is
+  # packed and published at the version its own project declares, never at the release version.
+  #
+  # That is also why the publish jobs consult Invoke-ContractPublishCheck rather than pushing.
+  # This workflow fires on every prerelease while a contract's version deliberately does not move,
+  # so the same version is offered to the feed again and again.
+  pack-plugins:
+    name: Build and Pack Plugins Contract
+    if: startsWith(github.event.release.tag_name, 'dms-')
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: pwsh
+    outputs:
+      hash-code: ${{ steps.hash-code.outputs.hash-code }}
+      contract-version: ${{ steps.contract-version.outputs.contract-version }}
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Set DMS Version Numbers
+        id: versions
+        run: |
+          Import-Module ./package-helpers.psm1
+          Get-VersionNumber -projectPrefix "dms"
+
+      - name: Read Plugins Contract Version
+        id: contract-version
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          # The contract's own declared version, read from the file the compiler reads. Every step
+          # below names the package by this value rather than by the release version.
+          Import-Module ./package-helpers.psm1
+          $contractVersion = Get-PluginsContractVersion
+
+          "contract-version=$contractVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Build DMS .NET Assemblies
+        run: |
+          $packageVersion = "${{ steps.versions.outputs.dms-semver }}" -replace "dms-v", ""
+
+          ./build-dms.ps1 -Command BuildAndPublish `
+              -Configuration Release `
+              -DMSVersion $packageVersion `
+              -LockedMode
+
+      - name: Create Plugins NuGet Package
+        run: |
+          # No -DMSVersion. The pack target reads src/plugins/Directory.Build.props, and a release
+          # version on this command line would override the contract's own.
+          ./build-dms.ps1 -Command Package `
+              -Configuration Release `
+              -PackageTarget Plugins
+
+      - name: Assert Plugins Package Contents
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          # Before anything is uploaded, and therefore before anything can be published: this is the
+          # check that decides what the first published version of this contract contains.
+          ./eng/verification/Assert-PluginsPackage.ps1 `
+            -PackageFile "${{ env.PLUGINS_PACKAGE_NAME }}.${{ steps.contract-version.outputs.contract-version }}.nupkg" `
+            -ExtractTo (Join-Path $env:RUNNER_TEMP "plugins-nupkg-$([guid]::NewGuid().ToString('N'))") `
+            -PackageId "${{ env.PLUGINS_PACKAGE_NAME }}" `
+            -ExpectedPackageVersion "${{ steps.contract-version.outputs.contract-version }}"
+
+      - name: Generate Plugins hash for NuGet package
+        id: hash-code
+        run: |
+          $packageFile = "${{ env.PLUGINS_PACKAGE_NAME }}.${{ steps.contract-version.outputs.contract-version }}.nupkg"
+          if (-not (Test-Path $packageFile)) {
+            throw "Expected plugin contract package was not found: $packageFile"
+          }
+
+          "hash-code=$(sha256sum $packageFile | base64 -w0)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Upload Plugins Package as Artifact
+        if: success()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: "${{ env.PLUGINS_PACKAGE_NAME }}-NuGet"
+          path: ${{ github.workspace }}/${{ env.PLUGINS_PACKAGE_NAME }}.${{ steps.contract-version.outputs.contract-version }}.nupkg
+          if-no-files-found: error
+          retention-days: 30
+
+  pack-custom-validation:
+    name: Build and Pack Custom Validation Contract
+    if: startsWith(github.event.release.tag_name, 'dms-')
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: pwsh
+    outputs:
+      hash-code: ${{ steps.hash-code.outputs.hash-code }}
+      contract-version: ${{ steps.contract-version.outputs.contract-version }}
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Set DMS Version Numbers
+        id: versions
+        run: |
+          Import-Module ./package-helpers.psm1
+          Get-VersionNumber -projectPrefix "dms"
+
+      - name: Read Custom Validation Contract Version
+        id: contract-version
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          Import-Module ./package-helpers.psm1
+          $contractVersion = Get-CustomValidationContractVersion
+
+          "contract-version=$contractVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Build DMS .NET Assemblies
+        run: |
+          $packageVersion = "${{ steps.versions.outputs.dms-semver }}" -replace "dms-v", ""
+
+          # BuildAndPublish regenerates src/dms/Directory.Build.props with this release version, so
+          # the contract below is packed out of a release-stamped tree. Its csproj is what holds the
+          # contract's version against that, and the assertion two steps down is what proves it.
+          ./build-dms.ps1 -Command BuildAndPublish `
+              -Configuration Release `
+              -DMSVersion $packageVersion `
+              -LockedMode
+
+      - name: Create Custom Validation NuGet Package
+        run: |
+          $packageVersion = "${{ steps.versions.outputs.dms-semver }}" -replace "dms-v", ""
+
+          # -DMSVersion is passed deliberately, and is deliberately the wrong version for this
+          # package: it is the release version, and the assertion below requires the artifact to
+          # carry the contract's own. Removing it would remove what is being disproved.
+          ./build-dms.ps1 -Command Package `
+              -DMSVersion $packageVersion `
+              -Configuration Release `
+              -PackageTarget CustomValidation
+
+      - name: Assert Custom Validation Package Contents
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          ./eng/verification/Assert-CustomValidationPackage.ps1 `
+            -PackageFile "${{ env.CUSTOM_VALIDATION_PACKAGE_NAME }}.${{ steps.contract-version.outputs.contract-version }}.nupkg" `
+            -ExtractTo (Join-Path $env:RUNNER_TEMP "custom-validation-nupkg-$([guid]::NewGuid().ToString('N'))") `
+            -PackageId "${{ env.CUSTOM_VALIDATION_PACKAGE_NAME }}" `
+            -ExpectedPackageVersion "${{ steps.contract-version.outputs.contract-version }}"
+
+      - name: Generate Custom Validation hash for NuGet package
+        id: hash-code
+        run: |
+          $packageFile = "${{ env.CUSTOM_VALIDATION_PACKAGE_NAME }}.${{ steps.contract-version.outputs.contract-version }}.nupkg"
+          if (-not (Test-Path $packageFile)) {
+            throw "Expected custom-validation package was not found: $packageFile"
+          }
+
+          "hash-code=$(sha256sum $packageFile | base64 -w0)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Upload Custom Validation Package as Artifact
+        if: success()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: "${{ env.CUSTOM_VALIDATION_PACKAGE_NAME }}-NuGet"
+          path: ${{ github.workspace }}/${{ env.CUSTOM_VALIDATION_PACKAGE_NAME }}.${{ steps.contract-version.outputs.contract-version }}.nupkg
+          if-no-files-found: error
+          retention-days: 30
+
+  sbom-create-plugins:
+    name: Create Plugins Contract SBOM
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: pwsh
+    needs: pack-plugins
+    permissions:
+      actions: read
+      contents: write
+    outputs:
+      sbom-hash-code: ${{ steps.sbom-hash-code.outputs.sbom-hash-code }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Get Plugins Artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ env.PLUGINS_PACKAGE_NAME }}-NuGet
+
+      - name: Generate Plugins Software Bill of Materials (SBOM)
+        run: |
+          $packageName = "${{ env.PLUGINS_PACKAGE_NAME }}"
+          $version = "${{ needs.pack-plugins.outputs.contract-version }}"
+
+          $packageFile = "$packageName.$version.nupkg"
+          if (-not (Test-Path $packageFile)) {
+            throw "Expected plugin contract package was not found: $packageFile"
+          }
+          (Resolve-Path $packageFile).Path > buildfilelist.txt
+
+          dotnet tool install --global Microsoft.Sbom.DotNetTool
+
+          sbom-tool generate `
+              -b ./ `
+              -bl ./buildfilelist.txt `
+              -bc "./" `
+              -pn "$packageName" `
+              -pv $version `
+              -nsb https://ed-fi.org `
+              -m ./ `
+              -ps "Ed-Fi Alliance"
+
+          cp _manifest/spdx_2.2/manifest.spdx.* .
+
+      - name: Upload Plugins SBOM
+        if: success()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ env.PLUGINS_PACKAGE_NAME }}-SBOM
+          path: ${{ env.MANIFEST_FILE }}
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Generate Plugins hash code for SBOM
+        id: sbom-hash-code
+        shell: bash
+        run: |
+          sbom_hash=$(sha256sum "./${{ env.MANIFEST_FILE }}" | awk '{split($0,a); print a[1]}')
+          echo "sbom-hash-code=$sbom_hash" >> "$GITHUB_OUTPUT"
+
+  sbom-create-custom-validation:
+    name: Create Custom Validation Contract SBOM
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: pwsh
+    needs: pack-custom-validation
+    permissions:
+      actions: read
+      contents: write
+    outputs:
+      sbom-hash-code: ${{ steps.sbom-hash-code.outputs.sbom-hash-code }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Get Custom Validation Artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ env.CUSTOM_VALIDATION_PACKAGE_NAME }}-NuGet
+
+      - name: Generate Custom Validation Software Bill of Materials (SBOM)
+        run: |
+          $packageName = "${{ env.CUSTOM_VALIDATION_PACKAGE_NAME }}"
+          $version = "${{ needs.pack-custom-validation.outputs.contract-version }}"
+
+          $packageFile = "$packageName.$version.nupkg"
+          if (-not (Test-Path $packageFile)) {
+            throw "Expected custom-validation package was not found: $packageFile"
+          }
+          (Resolve-Path $packageFile).Path > buildfilelist.txt
+
+          dotnet tool install --global Microsoft.Sbom.DotNetTool
+
+          sbom-tool generate `
+              -b ./ `
+              -bl ./buildfilelist.txt `
+              -bc "./" `
+              -pn "$packageName" `
+              -pv $version `
+              -nsb https://ed-fi.org `
+              -m ./ `
+              -ps "Ed-Fi Alliance"
+
+          cp _manifest/spdx_2.2/manifest.spdx.* .
+
+      - name: Upload Custom Validation SBOM
+        if: success()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ env.CUSTOM_VALIDATION_PACKAGE_NAME }}-SBOM
+          path: ${{ env.MANIFEST_FILE }}
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Generate Custom Validation hash code for SBOM
+        id: sbom-hash-code
+        shell: bash
+        run: |
+          sbom_hash=$(sha256sum "./${{ env.MANIFEST_FILE }}" | awk '{split($0,a); print a[1]}')
+          echo "sbom-hash-code=$sbom_hash" >> "$GITHUB_OUTPUT"
+
+  provenance-create-plugins:
+    name: Create Plugins Contract Provenance
+    needs: pack-plugins
+    permissions:
+      actions: read
+      id-token: write
+      contents: write
+    uses: Ed-Fi-Alliance-OSS/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.0.0
+    with:
+      base64-subjects: ${{ needs.pack-plugins.outputs.hash-code }}
+      provenance-name: edfiApiPlugins.intoto.jsonl
+      upload-assets: false
+      compile-generator: true
+
+  provenance-create-custom-validation:
+    name: Create Custom Validation Contract Provenance
+    needs: pack-custom-validation
+    permissions:
+      actions: read
+      id-token: write
+      contents: write
+    uses: Ed-Fi-Alliance-OSS/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.0.0
+    with:
+      base64-subjects: ${{ needs.pack-custom-validation.outputs.hash-code }}
+      provenance-name: edfiApiCustomValidation.intoto.jsonl
+      upload-assets: false
+      compile-generator: true
+
+  publish-package-plugins:
+    name: Publish Plugins Contract NuGet Package
+    needs: pack-plugins
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Get Plugins Artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ env.PLUGINS_PACKAGE_NAME }}-NuGet
+
+      - name: Decide Whether to Publish Plugins Contract
+        id: publish-check
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          # Publish when absent, skip when unchanged, fail when changed. A contract's version does
+          # not move with the release, so this workflow offers the same version to the feed on every
+          # prerelease; refusing outright would fail every prerelease after the first, and pushing
+          # regardless would let a changed contract overwrite a published one.
+          $result = ./eng/verification/Invoke-ContractPublishCheck.ps1 `
+            -PackageFile "${{ env.PLUGINS_PACKAGE_NAME }}.${{ needs.pack-plugins.outputs.contract-version }}.nupkg" `
+            -PackageId "${{ env.PLUGINS_PACKAGE_NAME }}" `
+            -PackageVersion "${{ needs.pack-plugins.outputs.contract-version }}" `
+            -WorkingDirectory (Join-Path $env:RUNNER_TEMP "plugins-publish-check-$([guid]::NewGuid().ToString('N'))") `
+            -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" `
+            -FeedApiKey "${{ env.ARTIFACTS_API_KEY }}"
+
+          "should-push=$($result.ShouldPush.ToString().ToLowerInvariant())" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          Write-Output "Decision for $($result.PackageId) $($result.PackageVersion): $($result.Reason)"
+
+      - name: Install-credential-handler Plugins
+        if: steps.publish-check.outputs.should-push == 'true'
+        run: |
+          Import-Module ./package-helpers.psm1
+          InstallCredentialHandler
+
+      - name: Push Plugins Package to Azure Artifacts
+        if: steps.publish-check.outputs.should-push == 'true'
+        run: |
+          $packageFile = "${{ env.PLUGINS_PACKAGE_NAME }}.${{ needs.pack-plugins.outputs.contract-version }}.nupkg"
+          if (-not (Test-Path $packageFile)) {
+            throw "Expected plugin contract package was not found: $packageFile"
+          }
+
+          $arguments = @{
+            EdFiNuGetFeed = "${{ env.ARTIFACTS_FEED_URL }}"
+            NuGetApiKey = "${{ env.ARTIFACTS_API_KEY }}"
+            PackageFile = $packageFile
+          }
+
+          ./build-dms.ps1 Push @arguments
+
+  publish-package-custom-validation:
+    name: Publish Custom Validation Contract NuGet Package
+    needs: pack-custom-validation
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Get Custom Validation Artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ env.CUSTOM_VALIDATION_PACKAGE_NAME }}-NuGet
+
+      - name: Decide Whether to Publish Custom Validation Contract
+        id: publish-check
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $result = ./eng/verification/Invoke-ContractPublishCheck.ps1 `
+            -PackageFile "${{ env.CUSTOM_VALIDATION_PACKAGE_NAME }}.${{ needs.pack-custom-validation.outputs.contract-version }}.nupkg" `
+            -PackageId "${{ env.CUSTOM_VALIDATION_PACKAGE_NAME }}" `
+            -PackageVersion "${{ needs.pack-custom-validation.outputs.contract-version }}" `
+            -WorkingDirectory (Join-Path $env:RUNNER_TEMP "custom-validation-publish-check-$([guid]::NewGuid().ToString('N'))") `
+            -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" `
+            -FeedApiKey "${{ env.ARTIFACTS_API_KEY }}"
+
+          "should-push=$($result.ShouldPush.ToString().ToLowerInvariant())" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          Write-Output "Decision for $($result.PackageId) $($result.PackageVersion): $($result.Reason)"
+
+      - name: Install-credential-handler Custom Validation
+        if: steps.publish-check.outputs.should-push == 'true'
+        run: |
+          Import-Module ./package-helpers.psm1
+          InstallCredentialHandler
+
+      - name: Push Custom Validation Package to Azure Artifacts
+        if: steps.publish-check.outputs.should-push == 'true'
+        run: |
+          $packageFile = "${{ env.CUSTOM_VALIDATION_PACKAGE_NAME }}.${{ needs.pack-custom-validation.outputs.contract-version }}.nupkg"
+          if (-not (Test-Path $packageFile)) {
+            throw "Expected custom-validation package was not found: $packageFile"
+          }
+
+          $arguments = @{
+            EdFiNuGetFeed = "${{ env.ARTIFACTS_FEED_URL }}"
+            NuGetApiKey = "${{ env.ARTIFACTS_API_KEY }}"
+            PackageFile = $packageFile
+          }
+
+          ./build-dms.ps1 Push @arguments
+
   # dms-pre and dms-*-alpha releases, will not have artifacts attached.
   # This step attach DMS artifacts to the release with tag vX.Y.Z without 'alpha' or 'pre' in the tag name.
   attach-dms-artifacts-to-release:
@@ -387,6 +844,10 @@ jobs:
       - provenance-create-dms
       - sbom-create-schema-tools
       - provenance-create-schema-tools
+      - sbom-create-plugins
+      - provenance-create-plugins
+      - sbom-create-custom-validation
+      - provenance-create-custom-validation
     if: ${{ startsWith(github.event.release.tag_name, 'dms-') && !contains(github.event.release.tag_name, 'alpha') }}
     permissions:
       contents: write
@@ -429,6 +890,38 @@ jobs:
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: edfiApiSchemaTools.intoto.jsonl
+
+      - name: Prepare Plugins SBOM download directory
+        shell: pwsh
+        run: New-Item -ItemType Directory -Force plugins/_manifest/spdx_2.2 | Out-Null
+
+      - name: Download Plugins SBOM
+        uses: Ed-Fi-Alliance-OSS/slsa-github-generator/.github/actions/secure-download-artifact@v2.0.0
+        with:
+          name: "${{ env.PLUGINS_PACKAGE_NAME }}-SBOM"
+          path: plugins/${{ env.MANIFEST_FILE }}
+          sha256: "${{ needs.sbom-create-plugins.outputs.sbom-hash-code }}"
+
+      - name: Download Plugins Provenance
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: edfiApiPlugins.intoto.jsonl
+
+      - name: Prepare Custom Validation SBOM download directory
+        shell: pwsh
+        run: New-Item -ItemType Directory -Force custom-validation/_manifest/spdx_2.2 | Out-Null
+
+      - name: Download Custom Validation SBOM
+        uses: Ed-Fi-Alliance-OSS/slsa-github-generator/.github/actions/secure-download-artifact@v2.0.0
+        with:
+          name: "${{ env.CUSTOM_VALIDATION_PACKAGE_NAME }}-SBOM"
+          path: custom-validation/${{ env.MANIFEST_FILE }}
+          sha256: "${{ needs.sbom-create-custom-validation.outputs.sbom-hash-code }}"
+
+      - name: Download Custom Validation Provenance
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: edfiApiCustomValidation.intoto.jsonl
 
       - name: Attach DMS SBOM and Provenance to release
         shell: pwsh
@@ -491,6 +984,46 @@ jobs:
               -Uri "$($uploadUrl)?name=$($schemaToolsProvenanceUploadName)" `
               -Headers $gh_headers `
               -InFile $schemaToolsProvenanceFile
+
+          # The contract packages. Every asset name carries its own package id, so a reader of the
+          # release page can tell which contract an SBOM or a provenance file describes.
+          $pluginsSbomFile = "plugins/${{ env.MANIFEST_FILE }}"
+          $pluginsSbomUploadName = "${{ env.PLUGINS_PACKAGE_NAME }}-SBOM.zip"
+
+          Compress-Archive $pluginsSbomFile -DestinationPath $pluginsSbomUploadName
+
+          Write-Host "Uploading Plugins SBOM as $pluginsSbomUploadName"
+          Invoke-RestMethod -Method POST `
+              -Uri "$($uploadUrl)?name=$($pluginsSbomUploadName)" `
+              -Headers $gh_headers `
+              -InFile $pluginsSbomUploadName
+
+          $pluginsProvenanceFile = "edfiApiPlugins.intoto.jsonl"
+
+          Write-Host "Uploading Plugins Provenance as $pluginsProvenanceFile"
+          Invoke-RestMethod -Method POST `
+              -Uri "$($uploadUrl)?name=$($pluginsProvenanceFile)" `
+              -Headers $gh_headers `
+              -InFile $pluginsProvenanceFile
+
+          $customValidationSbomFile = "custom-validation/${{ env.MANIFEST_FILE }}"
+          $customValidationSbomUploadName = "${{ env.CUSTOM_VALIDATION_PACKAGE_NAME }}-SBOM.zip"
+
+          Compress-Archive $customValidationSbomFile -DestinationPath $customValidationSbomUploadName
+
+          Write-Host "Uploading Custom Validation SBOM as $customValidationSbomUploadName"
+          Invoke-RestMethod -Method POST `
+              -Uri "$($uploadUrl)?name=$($customValidationSbomUploadName)" `
+              -Headers $gh_headers `
+              -InFile $customValidationSbomUploadName
+
+          $customValidationProvenanceFile = "edfiApiCustomValidation.intoto.jsonl"
+
+          Write-Host "Uploading Custom Validation Provenance as $customValidationProvenanceFile"
+          Invoke-RestMethod -Method POST `
+              -Uri "$($uploadUrl)?name=$($customValidationProvenanceFile)" `
+              -Headers $gh_headers `
+              -InFile $customValidationProvenanceFile
 
   docker-publish-dms:
     name: Publish DMS to Docker Hub
