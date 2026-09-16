@@ -356,6 +356,47 @@ PowerShell 7.4 failed empty-environment-variable tests locally; 7.6 preserves th
 
 ## 11. Commit, push, and qualify the final commit
 
+### Follow-up: isolate behavioral tests from short timeout budgets
+
+Hosted Contract on `1bd936f44` passed 4,930 checks and failed two: stale stop readback
+and retained-history loss while enable waits for its barrier. Local Contract passed all
+4,932 on the same commit. The hosted artifact omits assertion messages, so the exact
+failed assertions are not known.
+
+The tests impose 50 ms and 300 ms call budgets on unrelated observation and persistence
+work. A single-CPU stop-readback replay passed all 12 variants. Controlled provider delays
+then demonstrated the timing dependency: 80 ms caused all 12 readback cases to fail before
+their intended containment assertions, and 350 ms caused both enable cases to fail before
+the expected incident was recorded. Matched corrections passed all 14 under those delays.
+
+- [x] Make the readback test end polling through an explicit unavailable response after
+  the invalid readback, with the normal fixture budget and all containment assertions intact.
+- [x] Keep the enable-loss test's normal fixture budget; retain its barrier, incident,
+  stop/readback ordering, and closed-publication assertions.
+- [x] Remove all temporary diagnostic delays and analyzer suppressions. Change no
+  production deadline or behavior; retain the separate timeout-specific tests.
+- [x] Run both affected test classes normally: 166 controller and 86 CLI cases passed,
+  zero failures/skips, after removing diagnostic delays.
+- [x] Complete final-source local Contract: **4,932 passed**, zero failures/skips; all
+  four reports, three TRX files, individual results, and eleven source hashes verified.
+- [ ] Commit the test corrections and require hosted Contract and full live qualification
+  on the new final commit.
+
+### Bounded SQL diagnostic follow-up
+
+The actual RecordSize diagnostic run [35079333656](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/35079333656)
+passed all 17 cases. All 17 privately captured SQL logs were complete and contained no
+fatal marker. Together with the earlier 40 isolated starts, this still does not establish
+the cause of the prior process exits.
+
+A single broader diagnostic run [35085220051](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/35085220051)
+covers the five affected SQL fixture suites (79 expected tests), using production source
+`1bd936f44`, unchanged image pins and deadlines, and bounded encrypted process-log capture.
+It runs on a temporary branch outside this PR. Inspect any recurrence before making an
+environment or startup change; keep raw logs private. This diagnostic is not final qualification.
+
+### Final delivery
+
 - [x] Review the final diff against the story contracts. Record the port-fix provenance and explain each production correction.
 - [ ] Commit and push to `fix-nightly-cdc-qualified-image`.
 - [ ] Dispatch `nightly-cdc-qualification.yml` with `lane=All` and `suite=All` on the final pushed commit.

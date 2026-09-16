@@ -164,7 +164,9 @@ internal partial class Given_CdcControllerStatus
     )
     {
         _identity = new('b', 64);
-        ShortTiming(50);
+        // Reject the bad readback before a controlled endpoint failure ends polling.
+        // Persistence and observation use the normal fixture budget, not a 50 ms race.
+        int stoppedReadbacks = 0;
         A.CallTo(() => _connect.ReadStatusAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
             .ReturnsLazily(() =>
             {
@@ -172,6 +174,12 @@ internal partial class Given_CdcControllerStatus
                 if (!_stopped)
                 {
                     return Observed(status);
+                }
+                if (++stoppedReadbacks > 1)
+                {
+                    return new CdcTransportResult<CdcConnectStatus>.Unavailable(
+                        new(CdcDeploymentComponent.Connect, CdcDeploymentFailure.Unavailable)
+                    );
                 }
                 return Observed(
                     failure switch
@@ -218,6 +226,7 @@ internal partial class Given_CdcControllerStatus
                 );
             });
         var target = await TargetStatusAsync();
+        stoppedReadbacks.Should().BeGreaterThan(1);
         target.IncidentPersistence.Should().Be(CdcIncidentPersistenceState.Persisted);
         target.Containment.Should().Be(CdcConnectorContainmentState.Failed);
         target.Status.SourceHistory.Continuity.Should().Be(CdcSourceHistoryContinuity.Lost);

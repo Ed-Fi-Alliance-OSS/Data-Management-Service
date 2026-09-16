@@ -341,7 +341,8 @@ internal class Given_Cdc_command_enable_retry(Ddl.CdcProvider provider) : CdcRea
     public async Task It_contains_retained_history_loss_while_enable_waits_for_the_barrier()
     {
         await InterruptAfterEstablishmentAsync();
-        ShortTiming(300);
+        // This case proves loss containment at the barrier, not a short invocation timeout.
+        // Retain the normal fixture budget for the real journal and incident-store writes.
         bool waiting = false;
         var healthy = _change;
         _change = result =>
