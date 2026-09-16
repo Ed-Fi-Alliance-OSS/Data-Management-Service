@@ -6,6 +6,7 @@
 using System.Net;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Utilities;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure.Extensions;
 using Microsoft.Extensions.Options;
 using FrontendAppSettings = EdFi.DataManagementService.Frontend.AspNetCore.Configuration.AppSettings;
@@ -44,9 +45,12 @@ public class MetadataRouteValidator(
         string tenant = ReadRouteValue(httpContext, TenantRouteValueName);
         if (
             ((hasTenant || appSettings.Value.MultiTenancy) && string.IsNullOrWhiteSpace(tenant))
-            || Array.Exists(
-                qualifierSegments,
-                segment => string.IsNullOrWhiteSpace(ReadRouteValue(httpContext, segment))
+            || (
+                hasQualifiers
+                && Array.Exists(
+                    qualifierSegments,
+                    segment => string.IsNullOrWhiteSpace(ReadRouteValue(httpContext, segment))
+                )
             )
         )
         {
@@ -70,11 +74,42 @@ public class MetadataRouteValidator(
             return true;
         }
 
-        IReadOnlyList<DataStore> dataStores = dataStoreProvider.GetAll(hasTenant ? tenant : null);
-        if (!dataStores.Any(dataStore => IsRouteContextMatch(dataStore.RouteContext, requestQualifiers)))
+        string? tenantKey = hasTenant ? tenant : null;
+        try
         {
-            await WriteNotFoundAsync(httpContext);
-            return false;
+            await dataStoreProvider.RefreshInstancesIfExpiredAsync(tenantKey, cancellationToken);
+        }
+        catch
+        {
+            // Continue with the cached data stores when a refresh is unavailable.
+        }
+
+        IReadOnlyList<DataStore> dataStores = dataStoreProvider.GetAll(tenantKey);
+        if (
+            !dataStores.Any(dataStore =>
+                RouteContextMatcher.IsMatch(dataStore.RouteContext, requestQualifiers)
+            )
+        )
+        {
+            try
+            {
+                await dataStoreProvider.LoadDataStores(tenantKey, cancellationToken);
+            }
+            catch
+            {
+                // The existing cache remains the final source for validation when reload fails.
+            }
+
+            dataStores = dataStoreProvider.GetAll(tenantKey);
+            if (
+                !dataStores.Any(dataStore =>
+                    RouteContextMatcher.IsMatch(dataStore.RouteContext, requestQualifiers)
+                )
+            )
+            {
+                await WriteNotFoundAsync(httpContext);
+                return false;
+            }
         }
 
         return true;
@@ -105,40 +140,6 @@ public class MetadataRouteValidator(
             && !string.IsNullOrWhiteSpace(stringValue)
             ? stringValue
             : string.Empty;
-    }
-
-    private static bool IsRouteContextMatch(
-        Dictionary<RouteQualifierName, RouteQualifierValue> instanceRouteContext,
-        Dictionary<RouteQualifierName, RouteQualifierValue> requestQualifiers
-    )
-    {
-        if (instanceRouteContext.Count != requestQualifiers.Count)
-        {
-            return false;
-        }
-
-        if (instanceRouteContext.Count == 0)
-        {
-            return true;
-        }
-
-        if (!instanceRouteContext.Keys.All(requestQualifiers.ContainsKey))
-        {
-            return false;
-        }
-
-        foreach (KeyValuePair<RouteQualifierName, RouteQualifierValue> kvp in instanceRouteContext)
-        {
-            if (
-                !requestQualifiers.TryGetValue(kvp.Key, out RouteQualifierValue requestValue)
-                || !kvp.Value.Value.Equals(requestValue.Value, StringComparison.OrdinalIgnoreCase)
-            )
-            {
-                return false;
-            }
-        }
-
-        return true;
     }
 
     private static Task WriteNotFoundAsync(HttpContext httpContext)

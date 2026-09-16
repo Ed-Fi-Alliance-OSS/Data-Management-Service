@@ -102,6 +102,7 @@ public class XsdMetaDataModuleTests
     [TestCase(false, "districtId,schoolYear", "")]
     [TestCase(true, "districtId,schoolYear", "")]
     [TestCase(true, "", "/tenant1")]
+    [TestCase(true, "districtId,schoolYear", "/tenant1")]
     [TestCase(false, "districtId,schoolYear", "/255901/2024")]
     [TestCase(true, "districtId,schoolYear", "/tenant1/255901/2024")]
     public async Task It_serves_all_xsd_routes_and_preserves_child_links(
@@ -455,6 +456,51 @@ public class XsdMetaDataModuleTests
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         files.Should().NotBeNull();
         files?.Count().Should().Be(3);
+    }
+
+    [Test]
+    public async Task MultiTenant_XsdMetaData_Returns_Files_For_Tenant_Only_Route_When_Qualifiers_Are_Configured()
+    {
+        // Arrange
+        var tenantValidator = A.Fake<ITenantValidator>();
+        A.CallTo(() => tenantValidator.ValidateTenantAsync("tenant1")).Returns(true);
+
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Test");
+            builder.ConfigureAppConfiguration(
+                (context, configuration) =>
+                {
+                    configuration.AddInMemoryCollection(
+                        new Dictionary<string, string?>
+                        {
+                            ["AppSettings:MultiTenancy"] = "true",
+                            ["AppSettings:RouteQualifierSegments"] = "districtId,schoolYear",
+                        }
+                    );
+                }
+            );
+            builder.ConfigureServices(collection =>
+            {
+                TestMockHelper.AddEssentialMocks(collection);
+                collection.AddTransient(x => _apiService!);
+                collection.AddTransient(x => _contentProvider!);
+                collection.AddTransient(x => tenantValidator);
+            });
+        });
+        using var client = factory.CreateClient();
+
+        // Act
+        var response = await client.GetAsync("/tenant1/metadata/xsd/ed-fi/files");
+        var content = await response.Content.ReadAsStringAsync();
+
+        var files = JsonSerializer.Deserialize<List<string>>(content);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        files.Should().NotBeNull();
+        files?.Count().Should().Be(3);
+        A.CallTo(() => tenantValidator.ValidateTenantAsync("tenant1")).MustHaveHappenedOnceExactly();
     }
 
     [Test]

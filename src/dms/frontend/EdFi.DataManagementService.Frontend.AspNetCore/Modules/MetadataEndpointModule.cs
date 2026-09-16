@@ -245,49 +245,30 @@ public partial class MetadataEndpointModule(IOptions<FrontendAppSettings> appSet
 
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapGet("/metadata", GetMetadata);
-        endpoints.MapGet(
-            "/metadata/dependencies",
-            async (HttpContext httpContext, IApiService apiService) =>
-            {
-                var acceptHeader = httpContext.Request.Headers["Accept"].ToString();
-
-                if (acceptHeader.Contains("application/graphml", StringComparison.OrdinalIgnoreCase))
-                {
-                    await GetDependenciesGraphML(httpContext, apiService);
-                }
-                else
-                {
-                    await GetDependencies(httpContext, apiService);
-                }
-            }
-        );
-        endpoints.MapGet("/metadata/specifications", GetSections);
-        endpoints.MapGet("/metadata/specifications/resources-spec.json", GetResourceOpenApiSpec);
-        endpoints.MapGet("/metadata/specifications/descriptors-spec.json", GetDescriptorOpenApiSpec);
-        endpoints.MapGet("/metadata/changequeries/v1/swagger.json", GetChangeQueriesOpenApiSpec);
-        endpoints.MapGet("/metadata/specifications/{section}-spec.json", GetSectionMetadata);
-
-        endpoints.MapGet(
-            $"/metadata/specifications/profiles/{{profileName}}/resources-spec.json",
-            GetProfileResourceOpenApiSpec
-        );
+        MapMetadataEndpoints(endpoints, string.Empty, validateRoute: false);
 
         string routePattern = FixedRoutePattern.Build(
             appSettings.Value.GetRouteQualifierSegmentsArray(),
             appSettings.Value.MultiTenancy
         );
 
-        if (string.IsNullOrEmpty(routePattern))
+        if (!string.IsNullOrEmpty(routePattern))
         {
-            return;
+            MapMetadataEndpoints(endpoints, routePattern, validateRoute: true);
         }
+    }
 
+    private static void MapMetadataEndpoints(
+        IEndpointRouteBuilder endpoints,
+        string routePattern,
+        bool validateRoute
+    )
+    {
         endpoints.MapGet(
             $"{routePattern}/metadata",
             async (HttpContext httpContext, IMetadataRouteValidator metadataRouteValidator) =>
             {
-                if (!await metadataRouteValidator.ValidateAsync(httpContext))
+                if (!await ValidateMetadataRouteAsync(httpContext, metadataRouteValidator, validateRoute))
                 {
                     return;
                 }
@@ -303,7 +284,7 @@ public partial class MetadataEndpointModule(IOptions<FrontendAppSettings> appSet
                 IApiService apiService
             ) =>
             {
-                if (!await metadataRouteValidator.ValidateAsync(httpContext))
+                if (!await ValidateMetadataRouteAsync(httpContext, metadataRouteValidator, validateRoute))
                 {
                     return;
                 }
@@ -328,7 +309,7 @@ public partial class MetadataEndpointModule(IOptions<FrontendAppSettings> appSet
                 IApiService apiService
             ) =>
             {
-                if (!await metadataRouteValidator.ValidateAsync(httpContext))
+                if (!await ValidateMetadataRouteAsync(httpContext, metadataRouteValidator, validateRoute))
                 {
                     return;
                 }
@@ -346,7 +327,7 @@ public partial class MetadataEndpointModule(IOptions<FrontendAppSettings> appSet
                 IOptions<FrontendAppSettings> options
             ) =>
             {
-                if (!await metadataRouteValidator.ValidateAsync(httpContext))
+                if (!await ValidateMetadataRouteAsync(httpContext, metadataRouteValidator, validateRoute))
                 {
                     return;
                 }
@@ -364,7 +345,7 @@ public partial class MetadataEndpointModule(IOptions<FrontendAppSettings> appSet
                 IOptions<FrontendAppSettings> options
             ) =>
             {
-                if (!await metadataRouteValidator.ValidateAsync(httpContext))
+                if (!await ValidateMetadataRouteAsync(httpContext, metadataRouteValidator, validateRoute))
                 {
                     return;
                 }
@@ -382,7 +363,7 @@ public partial class MetadataEndpointModule(IOptions<FrontendAppSettings> appSet
                 IOptions<FrontendAppSettings> options
             ) =>
             {
-                if (!await metadataRouteValidator.ValidateAsync(httpContext))
+                if (!await ValidateMetadataRouteAsync(httpContext, metadataRouteValidator, validateRoute))
                 {
                     return;
                 }
@@ -400,7 +381,7 @@ public partial class MetadataEndpointModule(IOptions<FrontendAppSettings> appSet
                 IDataStoreProvider dataStoreProvider
             ) =>
             {
-                if (!await metadataRouteValidator.ValidateAsync(httpContext))
+                if (!await ValidateMetadataRouteAsync(httpContext, metadataRouteValidator, validateRoute))
                 {
                     return;
                 }
@@ -419,7 +400,7 @@ public partial class MetadataEndpointModule(IOptions<FrontendAppSettings> appSet
                 IOptions<FrontendAppSettings> options
             ) =>
             {
-                if (!await metadataRouteValidator.ValidateAsync(httpContext))
+                if (!await ValidateMetadataRouteAsync(httpContext, metadataRouteValidator, validateRoute))
                 {
                     return;
                 }
@@ -433,6 +414,15 @@ public partial class MetadataEndpointModule(IOptions<FrontendAppSettings> appSet
                 );
             }
         );
+    }
+
+    private static Task<bool> ValidateMetadataRouteAsync(
+        HttpContext httpContext,
+        IMetadataRouteValidator metadataRouteValidator,
+        bool validateRoute
+    )
+    {
+        return validateRoute ? metadataRouteValidator.ValidateAsync(httpContext) : Task.FromResult(true);
     }
 
     internal static async Task GetMetadata(HttpContext httpContext)
