@@ -744,10 +744,12 @@ try {
 
     $lines += @(
         "",
-        "``EdFi.Api.Plugins`` carries its own semantic version, which moves when its public surface",
-        "moves. ``EdFi.DataManagementService.CustomValidation`` carries the Data Management Service",
-        "release version rather than an independently declared contract version; the value above is",
-        "the assembly version observed in the image and is not a contract package version.",
+        "Every value above is the ``AssemblyVersion`` observed in the image. Read each against the",
+        "versioning policy of the package it comes from: a contract that declares its own version,",
+        "as ``EdFi.Api.Plugins`` does, states that version here and moves it only when its public",
+        "surface moves, while a contract that inherits the Data Management Service release version",
+        "states that instead. An observed assembly version is not necessarily a contract package",
+        "version.",
         "",
         "## Application assemblies",
         "",

@@ -394,35 +394,35 @@ follows, highest first:
 | ---- | ------ | ----- |
 | 1 | Environment variables | The unprefixed environment source DMS appends itself. See below for why this outranks the command line. |
 | 2 | Command-line arguments | Installed only when the host is started with arguments, which the stock container is not. |
-| 3 | Plugin-contributed configuration sources, in `Allowed` order | **Lands with Phase A.** No such source exists today; see below. |
+| 3 | Plugin-contributed configuration sources, in `Allowed` order | **Reserved; not supported.** See below. |
 | 4 | `appsettings.json` and the other JSON sources | Including `appsettings.{Environment}.json`. |
 
-Rank 3 is stated now and is not yet reachable. The published plugin contract carries
-`Name` and `ContributeServices` only, so there is no hook through which a plugin can
-contribute a configuration source. When that hook lands, a plugin's sources are
-placed at rank 3 by the loader rather than wherever the plugin appended them, a
-later plugin in `Allowed` order wins over an earlier one, and no plugin source is
-ever placed above the operator's own environment or command-line surface.
+**Rank 3 is reserved and unreachable.** The plugin contract exposes `Name` and
+`ContributeServices`, neither of which can add a configuration source, so no
+deployment can populate that rank. It appears in the table because the ordering rules
+for it are fixed rather than open: a plugin's sources are placed at rank 3 by the
+loader rather than wherever the plugin appended them, a later plugin in `Allowed`
+order outranks an earlier one, and no plugin source is placed above the operator's own
+environment or command-line surface.
 
 **Why the environment outranks the command line.** ASP.NET Core's own builder
 installs the command-line source above the unprefixed environment source, so on its
 own the command line would win. DMS then appends one more environment source of its
-own, at
-[`Infrastructure/WebApplicationBuilderExtensions.cs:57`](../src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Infrastructure/WebApplicationBuilderExtensions.cs),
+own, in `AddServices`
+([`Infrastructure/WebApplicationBuilderExtensions.cs`](../src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Infrastructure/WebApplicationBuilderExtensions.cs)),
 and an appended source outranks everything already installed.
 
 **That appended source carries a qualifier, and the qualifier is not cosmetic: it
 outranks the command line only for keys read after `AddServices` has run.** Two
 reads happen before it, and for those two the command line wins:
 
-- **Serilog's configuration.** `AddServices` calls `ConfigureLogging()` on line 49
-  of the same file, which reads `webAppBuilder.Configuration`. The
-  `AddEnvironmentVariables()` call is eight lines later, at line 57, so the `Serilog`
-  section is resolved without it.
+- **Serilog's configuration.** `AddServices` calls `ConfigureLogging()`, which reads
+  `webAppBuilder.Configuration`, before it calls `AddEnvironmentVariables()`, so the
+  `Serilog` section is resolved without the appended source.
 - **`Plugins:Allowed` itself.** The allowlist is read in the plugin-loading bootstrap
   phase, which runs before the phase that calls `AddServices` at all. That ordering
   is deliberate: the allowlist decides what may execute, so it is resolved from the
-  host's own sources before any plugin has had the chance to contribute one.
+  host's own sources rather than from any source a plugin could contribute.
 
 **In the shipped container this is narrow, because there is no command-line source
 to lose to.** `src/dms/run.sh` starts the application as
@@ -436,8 +436,7 @@ qualifier above.
 > `AppSettings:StartupStatusFilePath` is read immediately after the builder is
 > created, before plugins are loaded, because the startup status file is how a plugin
 > loading failure is reported and it cannot depend on anything a plugin supplied. No
-> plugin-contributed source could ever provide it, whatever rank 3 above eventually
-> holds.
+> plugin-contributed source can provide it, whatever rank 3 above holds.
 >
 > This is a bootstrap exception and **not** an exception to the
 > environment-versus-command-line rule above. The environment and command-line sources

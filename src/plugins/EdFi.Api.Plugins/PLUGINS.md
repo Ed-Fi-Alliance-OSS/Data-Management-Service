@@ -3,11 +3,10 @@
 This package defines `EdFiApiPlugin`, the base class a district or vendor implements to extend an
 Ed-Fi API host without rebuilding it.
 
-> **The supported host today is the Data Management Service.** The contract and the loader are
-> host-neutral, which is why the base class is named for the Ed-Fi API platform rather than for one
-> host, and the Configuration Service could adopt the same loader for very little. It has not:
-> no Configuration Service release loads plugins, and that adoption is deferred. Target the Data
-> Management Service.
+> **Target the Data Management Service.** It is the host that loads plugins. The contract and the
+> loader are host-neutral — which is why the base class is named for the Ed-Fi API platform rather
+> than for one host, and why the Configuration Service could adopt the same loader — but the
+> Configuration Service does not load plugins, so a plugin deployed to it contributes nothing.
 
 A plugin is a directory of assemblies you publish, compiled against this package. An operator drops
 that directory into the host's plugin root and names it in an allowlist. The host loads it into an
@@ -18,10 +17,13 @@ This guide is about packaging and delivering a plugin. For the custom-validation
 what a validator receives and what it returns — see
 [CUSTOM-VALIDATION.md](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/src/dms/core/EdFi.DataManagementService.CustomValidation/CUSTOM-VALIDATION.md).
 
-> **This contract package is not on the Ed-Fi feed yet.** The loading mechanism is integrated into
-> the Data Management Service, but publication of the contract packages is its own step. Watch the
-> release notes of a Data Management Service release: they state which contract versions that
-> release carries.
+The release notes of a Data Management Service release state which contract versions that release
+carries. That is what tells you which version of this package to build against for a given host.
+
+> **Links out of this readme point at the current documentation on `main`**, not at the
+> documentation for the package version you resolved. Where the two could differ — a rule this
+> guide states, a failure this guide names — the copy in the Data Management Service release you are
+> targeting is the authority.
 
 ## What is here
 

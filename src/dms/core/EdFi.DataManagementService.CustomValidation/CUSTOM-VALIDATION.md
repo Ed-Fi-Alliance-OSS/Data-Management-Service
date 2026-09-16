@@ -3,19 +3,21 @@
 This package defines `ICustomResourceValidator`, the contract a district or vendor implements to add
 custom resource validation to the Ed-Fi Data Management Service.
 
-> **The registration seam is the plugin mechanism, and this package is not on the Ed-Fi feed yet.**
+> **A validator is registered from a plugin.**
 >
 > The Data Management Service's write pipeline resolves registered `ICustomResourceValidator`
 > instances and invokes those whose `AppliesTo` matches the current request's resource, and a
-> validator is registered from a plugin's `ContributeServices` hook. How a plugin is built,
-> published, packaged, and delivered into a host is
+> validator reaches that pipeline through a plugin's `ContributeServices` hook. How a plugin is
+> built, published, packaged, and delivered into a host is
 > [PLUGINS.md](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/src/plugins/EdFi.Api.Plugins/PLUGINS.md).
 > Registering one is not inert at startup: a startup guard audits every registration and aborts
 > startup if a validator is registered in a shape DMS would not resolve, so a registration mistake
 > fails the process rather than passing silently.
-> Publishing the contract packages to the Ed-Fi feed is a separate step that has not happened yet.
-> Build against this package to pin the contract and to compile early, and watch a Data Management
-> Service release's notes for which contract versions that release carries.
+> The release notes of a Data Management Service release state which contract versions that release
+> carries, which is what tells you the version of this package to build against for a given host.
+>
+> **Links out of this readme point at the current documentation on `main`**, not at the
+> documentation for the package version you resolved.
 
 ## What is here
 

@@ -33,8 +33,8 @@ Acquiring the bytes does not enable them. A plugin runs if and only if its direc
 name appears in `Plugins:Allowed`, which is a separate, deployment-owned setting
 neither recipe writes. See [Plugins](./CONFIGURATION.md#plugins) for that setting and
 for configuration precedence, and
-[PLUGINS.md](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/src/plugins/EdFi.Api.Plugins/PLUGINS.md)
-for what an implementer has to do on the other side.
+[PLUGINS.md](../src/plugins/EdFi.Api.Plugins/PLUGINS.md) for what an implementer has
+to do on the other side.
 
 ### Trust
 
@@ -426,17 +426,19 @@ again.
   completed there is no such frame: the refusal travels up the request pipeline as
   repeated HTTP 500s, with no process abort and no unwrapped message.
 
-#### Two rows that cannot fire yet
+#### Two rules that apply only to configuration contribution
 
-The published plugin contract carries the service-contribution hook only. A
-configuration-contribution hook lands later, and with it two rules that are recorded
-here so the catalogue is complete rather than quietly incomplete:
+The plugin contract exposes a service-contribution hook and no configuration-contribution
+hook, so neither rule below can be reached by any plugin a deployment can install. They
+are recorded so the catalogue states the whole rule set rather than a silently partial
+one:
 
 - **A configuration hook that removes or reorders a source it did not add is
   fatal**, naming the plugin. Adding is the only permitted operation.
-- **The "contributed nothing" row above gains its second half.** Today a plugin
-  satisfies it by registering a declared contract; once the configuration hook
-  exists, contributing a configuration source will satisfy it too.
+- **The "contributed nothing" row above has a second half that is likewise
+  unreachable.** A plugin satisfies that row by registering a declared contract;
+  where configuration contribution is supported, contributing a configuration source
+  satisfies it as well.
 
 ### Where to read the reason
 
