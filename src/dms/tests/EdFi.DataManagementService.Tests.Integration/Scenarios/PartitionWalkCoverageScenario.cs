@@ -52,8 +52,6 @@ internal static class PartitionWalkCoverageScenario
     /// <summary>How a shared tiling assertion names this scenario in a failure message.</summary>
     private const string WalkContext = "the partition walk";
 
-    private const string NumberCollisionContext = "the number-collision partition walk";
-
     /// <summary>
     /// Enough documents that the requested count of three is reachable at a minimum partition size of
     /// ten: three partitions of ten start at candidate rows one, eleven, and twenty-one.
@@ -96,25 +94,10 @@ internal static class PartitionWalkCoverageScenario
     private const string UpdatedLabel = "updated";
 
     /// <summary>
-    /// The number the extension documents carry when the value itself is not the subject. Any value in
-    /// the accepted partition-count range would do; the collision test below is the only place the
-    /// value's second meaning matters.
+    /// The number the extension documents carry. Nothing in this scenario reads the value; it is
+    /// supplied only because the seeding helper writes the field on every document.
     /// </summary>
     private const int SharedExtensionNumber = 105;
-
-    /// <summary>
-    /// The lowest <c>number</c> the collision seed assigns. Each document gets a distinct value from
-    /// here upward, so filtering the collection GET on one selects exactly one document — which is what
-    /// keeps the assertion inside a page size of <see cref="HostMaximumPageSize"/>.
-    /// </summary>
-    private const int CollisionNumberBase = 100;
-
-    /// <summary>
-    /// The offset into the collision seed whose <c>number</c> both requests supply. It is inside the
-    /// accepted partition-count range of 1 to 200, which is what lets one raw value be a filter on one
-    /// operation and a count on the other.
-    /// </summary>
-    private const int CollisionNumberOffset = 5;
 
     public static Task It_covers_a_regular_resource_collection_sequentially(ApiIntegrationHarness harness) =>
         CoverRegularResourceAsync(harness, "regular-sequential", inParallel: false);
@@ -253,95 +236,15 @@ internal static class PartitionWalkCoverageScenario
     }
 
     /// <summary>
-    /// One raw query key, two meanings, one on each sibling operation: the collection GET filters on the
-    /// extension resource's <c>number</c> field, while <c>/partitions</c> consumes the same key as the
-    /// requested partition count and does not filter on it at all.
-    /// </summary>
-    /// <remarks>
-    /// This is the approved intentional ODS difference made executable. ODS 7.3.2 binds one supplied
-    /// <c>?number=</c> into both meanings at once, so its partitions request both counts and filters;
-    /// DMS removes the partition control from filter matching before the query-field lookup runs and
-    /// answers with one meaning. The assertion needs a schema that really declares a query field of that
-    /// name, which is why the cursor-partition-contract fixture declares one.
-    /// <para>
-    /// The two requests use the same value, so nothing about the comparison rests on the number chosen.
-    /// The collection GET returns the documents carrying it; the partitions request returns tokens whose
-    /// union is the whole collection, which a filtered partition calculation could not produce.
-    /// </para>
-    /// </remarks>
-    public static async Task It_consumes_a_number_query_key_as_a_filter_on_a_collection_and_as_a_count_on_partitions(
-        ApiIntegrationHarness harness
-    )
-    {
-        ArgumentNullException.ThrowIfNull(harness);
-
-        // Every document gets a distinct number, so filtering on one selects exactly one document. That
-        // keeps the collection assertion inside the host's small maximum page size while still being an
-        // observably narrower answer than the whole collection.
-        var seeded = await CursorContractSupport.SeedExtensionItemsAsync(
-            harness,
-            SeededDocumentCount,
-            labelFor: _ => MatchingLabel,
-            numberFor: index => CollisionNumberBase + index
-        );
-
-        int collidingNumber = CollisionNumberBase + CollisionNumberOffset;
-
-        var filteredCollection = await CursorContractSupport.ReadPageAsync(
-            harness,
-            $"{CursorContractSupport.ExtensionItemsEndpoint}?number={collidingNumber.ToString(CultureInfo.InvariantCulture)}"
-        );
-
-        filteredCollection
-            .DocumentIds.Should()
-            .BeEquivalentTo(
-                new[] { seeded[CollisionNumberOffset].Id },
-                "the collection GET treats number as the resource query field the schema declares"
-            );
-
-        var pageTokens = await CursorContractSupport.ReadPageTokensAsync(
-            harness,
-            $"{CursorContractSupport.ExtensionItemsPartitionsEndpoint}?number={collidingNumber.ToString(CultureInfo.InvariantCulture)}"
-        );
-
-        pageTokens
-            .Should()
-            .HaveCountGreaterThan(
-                1,
-                "the seed exceeds the minimum partition size, so the count really produced several "
-                    + "partitions rather than collapsing into one"
-            );
-
-        CursorContractSupport.AssertTokenRangesTileTheIdentitySpace(pageTokens, NumberCollisionContext);
-
-        var walkedIds = await WalkEveryPartitionAsync(
-            harness,
-            CursorContractSupport.ExtensionItemsEndpoint,
-            pageTokens,
-            querySuffix: string.Empty,
-            inParallel: false
-        );
-
-        walkedIds
-            .SelectMany(static partition => partition)
-            .Should()
-            .BeEquivalentTo(
-                seeded.Select(item => item.Id),
-                "the partitions operation consumed number as its count, so the boundaries cover the "
-                    + "whole collection rather than only the documents carrying that value"
-            );
-    }
-
-    /// <summary>
     /// The partitions endpoint reports the count as unsupported nowhere, but the collection endpoint has
     /// no partition count: a bare <c>number</c> on the collection GET that no query field matches is an
-    /// unknown query field, which is what keeps the collision confined to schemas that declare the
-    /// field.
+    /// unknown query field rather than a control parameter.
     /// </summary>
     /// <remarks>
-    /// Asserted on the regular resource, whose schema declares no <c>number</c> query field. Without
-    /// this row the collision test above could be read as evidence that <c>number</c> is globally
-    /// reserved on collection GETs, which would be the opposite of the recorded behavior.
+    /// Asserted on the regular resource, whose schema declares no <c>number</c> query field. The count
+    /// key is reserved on <c>/partitions</c> alone, so this row is what distinguishes "not reserved on a
+    /// collection GET" from "reserved everywhere": a schema that did declare a query field of that name
+    /// would filter on it here, which is why DMS-1442 refuses such a schema at ApiSchema load instead.
     /// </remarks>
     public static async Task It_rejects_a_number_query_key_on_a_collection_whose_schema_omits_it(
         ApiIntegrationHarness harness

@@ -336,7 +336,6 @@ internal static class OdsComparisonScenario
                 query,
                 hostMaximumPageSize
             ),
-            "number-collision" => await ObserveCollisionAsync(harness, hostMaximumPageSize),
             "empty-hydration" => await ObserveEmptyHydrationAsync(harness, hostMaximumPageSize),
             "identity-maximum" => await ObserveIdentityMaximumAsync(harness),
             "profile-partitions-get" => await ObserveProfilePartitionsAsync(harness),
@@ -564,57 +563,6 @@ internal static class OdsComparisonScenario
 
     /// <summary>How a shared assertion names one comparison case in a failure message.</summary>
     private static string CaseContext(ComparisonCase comparisonCase) => $"case '{comparisonCase.Id}'";
-
-    private static async Task<ObservedOutcome> ObserveCollisionAsync(
-        ApiIntegrationHarness harness,
-        int hostMaximumPageSize
-    )
-    {
-        var seeded = await CursorContractSupport.SeedExtensionItemsAsync(
-            harness,
-            25,
-            labelFor: _ => "included",
-            numberFor: index => 100 + index
-        );
-
-        var filtered = await CursorContractSupport.ReadPageAsync(
-            harness,
-            $"{CursorContractSupport.ExtensionItemsEndpoint}?number={CollisionNumber}"
-        );
-
-        var pageTokens = await CursorContractSupport.ReadPageTokensAsync(
-            harness,
-            $"{CursorContractSupport.ExtensionItemsPartitionsEndpoint}?number={CollisionNumber}"
-        );
-
-        List<string> walked = [];
-
-        foreach (string pageToken in pageTokens)
-        {
-            walked.AddRange(
-                await CursorContractSupport.WalkFromTokenAsync(
-                    harness,
-                    CursorContractSupport.ExtensionItemsEndpoint,
-                    pageToken,
-                    hostMaximumPageSize
-                )
-            );
-        }
-
-        return new ObservedOutcome(
-            200,
-            null,
-            null,
-            new Dictionary<string, JsonNode?>(StringComparer.Ordinal)
-            {
-                ["collectionFilteredCount"] = JsonValue.Create(filtered.DocumentIds.Count),
-                ["partitionsCoverWholeCollection"] = JsonValue.Create(
-                    walked.Count == seeded.Count
-                        && seeded.All(item => walked.Contains(item.Id, StringComparer.Ordinal))
-                ),
-            }
-        );
-    }
 
     private static async Task<ObservedOutcome> ObserveEmptyHydrationAsync(
         ApiIntegrationHarness harness,

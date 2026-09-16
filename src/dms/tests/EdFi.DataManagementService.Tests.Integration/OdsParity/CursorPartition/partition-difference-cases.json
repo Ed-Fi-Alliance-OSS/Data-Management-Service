@@ -271,29 +271,6 @@
       "note": "Twenty-five candidates over two requested partitions: a true ceiling sizes the partition at 13, so the second starts at candidate row 14. ODS spells the size as CEILING over two integer operands, so its CEILING receives an already-truncated quotient of 12 and its second partition starts at row 13, absorbing the surplus into a wider final range."
     },
     {
-      "id": "partition-number-consumed-as-count-not-filter",
-      "group": "number-collision",
-      "executor": "number-collision",
-      "seed": 25,
-      "dms": {
-        "status": 200,
-        "expect": {
-          "collectionFilteredCount": 1,
-          "partitionsCoverWholeCollection": true
-        }
-      },
-      "ods": {
-        "status": 200,
-        "expect": {
-          "collectionFilteredCount": 1,
-          "partitionsCoverWholeCollection": false
-        }
-      },
-      "outcome": "difference",
-      "approvedDifference": "number-reserved-from-filter-matching",
-      "note": "ODS's PartitionsController takes [FromQuery] int? number and then binds the same request against the generated {Resource}GetByExample with an empty prefix, so a case-insensitive match carries the same value into the filter specification and into the partition count. DMS removes the partition control from filter matching before the query-field lookup runs and answers with one meaning."
-    },
-    {
       "id": "cursor-range-beyond-int32",
       "group": "int64-bounds",
       "executor": "collection-get",

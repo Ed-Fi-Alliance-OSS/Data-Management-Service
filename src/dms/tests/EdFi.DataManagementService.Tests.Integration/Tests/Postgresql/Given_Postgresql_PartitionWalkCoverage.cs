@@ -64,12 +64,6 @@ public sealed class Given_Postgresql_PartitionWalkCoverage : PostgresqlApiIntegr
         );
 
     [Test]
-    public Task It_consumes_a_number_query_key_as_a_filter_on_a_collection_and_as_a_count_on_partitions() =>
-        PartitionWalkCoverageScenario.It_consumes_a_number_query_key_as_a_filter_on_a_collection_and_as_a_count_on_partitions(
-            Harness
-        );
-
-    [Test]
     public Task It_rejects_a_number_query_key_on_a_collection_whose_schema_omits_it() =>
         PartitionWalkCoverageScenario.It_rejects_a_number_query_key_on_a_collection_whose_schema_omits_it(
             Harness

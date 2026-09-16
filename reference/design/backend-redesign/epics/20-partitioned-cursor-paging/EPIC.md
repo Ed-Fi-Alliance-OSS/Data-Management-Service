@@ -299,21 +299,6 @@ The approved intentional ODS differences are:
   blank and non-numeric values, where ODS's `int?` model binding reads a blank value as absent and
   returns HTTP 200, and fails binding on a non-numeric value before its validator can emit a range
   message;
-- reserve the `number` count key out of resource-filter matching on `/partitions`, so a resource
-  exposing a query field of that name filters on it on its collection GET but cannot filter on it
-  here, where ODS 7.3.2 applies one supplied `?number=` as both meanings at once. DMS keeps the name
-  the consumed base ApiSchema's `numberOfPartitions` component publishes and ODS 7.3.2 serves; what
-  differs is the collision handling. ODS's `PartitionsController` takes `[FromQuery] int? number` and
-  then binds the same request against the generated `{Resource}GetByExample` with an empty prefix, so
-  a case-insensitive match carries the same value into the filter specification and into the
-  partition count. DMS answers with one meaning rather than two, because a partition-control
-  parameter is removed from filter matching before the query-field lookup runs, and Ed-Fi's flat
-  query namespace has no qualification syntax that would let one raw key carry both. Which deployed
-  resources declare a query field of that name depends on the extensions loaded at runtime, so the
-  parity harness can exercise this difference only against a schema that declares one. The general
-  problem — DMS reserving query keys that model validation does not protect against a colliding
-  resource property, which predates this epic in `minChangeVersion` and `maxChangeVersion` — is
-  raised as DMS-1442 for team triage rather than resolved here;
 - return `Number of partitions must be between 1 and 200.` for a non-numeric
   `/partitions?number=abc`, where ODS's `[FromQuery] int? number` binding fails before its
   controller body runs. `PartitionsController` is an `[ApiController]`, and
@@ -385,6 +370,27 @@ The approved intentional ODS differences are:
 - use DMS `Int64 DocumentId` bounds rather than ODS `Int32 AggregateId` bounds;
 - omit the next header rather than overflowing at `Int64.MaxValue`; and
 - use the stricter approved base64url and decimal decoder contract.
+
+#### Resolved by DMS-1442
+
+This list carried one further difference, which DMS-1442 removed rather than kept: DMS reserved the
+`number` count key out of resource-filter matching on `/partitions`, so a resource declaring a query
+field of that name filtered on it on its collection GET but could not filter on it here, where ODS
+7.3.2 applies one supplied `?number=` as both meanings at once.
+
+The asymmetry was the point of the difference, and it was also the defect. DMS-1442 records that DMS
+reserves eight query parameter names before resource-filter matching runs, of which MetaEd protects
+only three, so an extension author can declare a colliding property that MetaEd and DMS both accept
+and that is then silently unfilterable. DMS now refuses such a schema at ApiSchema load, for every
+reserved name including this one. No loadable schema can declare a query field named `number`, so the
+difference is no longer observable from a DMS target and is not something the parity harness can
+execute. Its catalog entry and comparison case were retired with the fix.
+
+Nothing about the served `/partitions` contract changed. The count key is still spelled `number`,
+which is the name the consumed base ApiSchema's `numberOfPartitions` component publishes and ODS
+7.3.2 serves, and it is still consumed as the partition count and removed from filter matching on
+that operation alone. What changed is upstream of the request: the schema that made the collision
+reachable is now refused.
 
 ### Approved Behavior Changes to Existing Endpoints
 

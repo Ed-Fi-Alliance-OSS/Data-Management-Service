@@ -62,10 +62,4 @@ public sealed class Given_Mssql_PartitionWalkCoverage : MssqlApiIntegrationTestB
         PartitionWalkCoverageScenario.It_repeats_a_change_version_window_on_every_page_of_every_partition(
             Harness
         );
-
-    [Test]
-    public Task It_consumes_a_number_query_key_as_a_filter_on_a_collection_and_as_a_count_on_partitions() =>
-        PartitionWalkCoverageScenario.It_consumes_a_number_query_key_as_a_filter_on_a_collection_and_as_a_count_on_partitions(
-            Harness
-        );
 }

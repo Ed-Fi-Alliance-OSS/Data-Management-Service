@@ -34,7 +34,6 @@ public sealed class Given_Postgresql_OdsComparison : PostgresqlApiIntegrationTes
         "validation",
         "sizing",
         "sizing-default-count",
-        "number-collision",
         "int64-bounds",
         "identity-maximum",
         "metadata",

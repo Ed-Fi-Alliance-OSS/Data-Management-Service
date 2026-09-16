@@ -32,7 +32,6 @@ public sealed class Given_Mssql_OdsComparison : MssqlApiIntegrationTestBase
     [
         "sizing",
         "sizing-default-count",
-        "number-collision",
         "int64-bounds",
         "identity-maximum",
     ];
