@@ -455,10 +455,19 @@ host invokes that hook while it is registering services.
 **What actually loaded: the log.** Each loaded plugin produces one
 `Plugin inventory for {PluginName} version {AssemblyVersion}` event listing the files
 the plugin declared, the service types it registered, the registrations it removed,
-and every assembly the host served in place of the plugin's own copy. Because the
-design cannot contain a plugin, that event is an **audit record**: it is how an
-incident responder says which third-party code was available to the process, at what
-version, from which bytes.
+and the host-first substitutions recorded up to that point. Because the design cannot
+contain a plugin, that event is an **audit record**: it is how an incident responder
+says which third-party code was available to the process, at what version, from which
+bytes.
+
+**What the substitution list does and does not prove.** It is narrower than the other
+three, and an investigation into a dependency mismatch has to read it as what it is: a
+startup snapshot of the version-changing substitutions observed so far. The event is
+emitted once, before any startup task runs, and a resolution is recorded only where
+the version the host served differs from the version the plugin declared. A
+same-version substitution leaves no row, and neither does a resolution first triggered
+after the event was written. An assembly's absence from the list is therefore not
+evidence that the plugin's own copy ran.
 
 **One ordering caveat.** Plugin loading runs before the logging pipeline exists, so
 the loader writes its own lines to standard error. Its warnings are replayed through

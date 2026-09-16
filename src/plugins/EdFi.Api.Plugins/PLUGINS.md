@@ -262,13 +262,21 @@ it.
 
 ## Do not name an assembly with an Ed-Fi host prefix
 
-**No assembly you ship may be named `EdFi.DataManagementService.*` or
+**No assembly you author may be named `EdFi.DataManagementService.*` or
 `EdFi.DmsConfigurationService.*`.**
 
 The host decides what is host-owned by assembly name and by nothing else, so a type declared in an
 assembly you published as `EdFi.DataManagementService.Acme` is treated as the host's. Your plugin then
 fails the host-owned displacement check on its **own** types. Read this as a naming rule, not as an
 inexplicable startup failure.
+
+The rule covers the assemblies you write, not the ones you redistribute unchanged. A publish output
+carrying `EdFi.DataManagementService.CustomValidation.dll` is correct and required: that is the
+assembly inside the `EdFi.Api.CustomValidation` package, whose package id and assembly name
+deliberately differ, and it is where `ICustomResourceValidator` is declared. Ship the whole publish
+output as [Publishing](#publishing) says. The displacement check tests the declared plugin contracts
+first and only then applies the name rule, so registering that contract is admitted; what the rule
+refuses is a host-prefixed type of your own.
 
 ## What you may register, and how
 
@@ -332,9 +340,12 @@ Two places carry the answer, and they answer different questions.
   phase, the exception type, and the message. During loading the host also writes to standard error,
   because plugin loading runs before the logging pipeline exists.
 - **What actually loaded** is in the log, as one `Plugin inventory` event per plugin listing the
-  files you declared, the service types you registered, the descriptors you removed, and every
-  assembly the host served in place of your own copy. That last list is where a host-first
-  substitution shows up after the fact; the host assembly manifest is how you avoid one beforehand.
+  files you declared, the service types you registered, the descriptors you removed, and the
+  host-first substitutions recorded by the time the event was written. That last list is a startup
+  snapshot, emitted before the host's startup tasks run, and it carries a resolution only where the
+  version the host served differs from the version your manifest declared. Read it as evidence that
+  a substitution happened, never as evidence that one did not: an assembly missing from it may still
+  have been served from the host. The host assembly manifest is how you avoid one beforehand.
 
 The full catalogue of failures, grouped by what an operator does about each, is in
 [OPERATIONS.md](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/docs/OPERATIONS.md#plugins).

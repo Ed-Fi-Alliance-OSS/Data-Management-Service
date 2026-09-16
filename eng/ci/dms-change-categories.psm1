@@ -55,6 +55,25 @@ $script:DmsRelevantPathPrefix = @(
     'src/plugins/'
 )
 
+# Paths that make the document-embed check relevant. It is its own flag rather than part of
+# dms_relevant because the check's whole point is the pull request that changes a documented recipe
+# and nothing else: docs/ is not DMS-relevant, so such a pull request would skip the equality
+# assertion entirely and learn about the drift in the merge queue.
+#
+# Deliberately coarser than the file list Invoke-DocumentEmbedChecks.ps1 reads. The job is a
+# checkout and one script with no build and no module install, so the cost of running it for an
+# unrelated documentation edit is nothing worth narrowing for, and being coarse fails in the safe
+# direction. eng/verification/ is here because the verifier, the runner and their tests live there;
+# eng/docker-compose/ and src/plugins/ because that is where the embedded files and the second
+# checked document are. DmsChangeCategories.Tests.ps1 asserts every path the runner names reaches
+# one of these rules, so a document added to that table cannot land outside them unnoticed.
+$script:DocumentEmbedPathPrefix = @(
+    'docs/'
+    'eng/docker-compose/'
+    'eng/verification/'
+    'src/plugins/'
+)
+
 # Promoted-suite categories. Each names one or two integration lanes that a pull request runs only
 # when its changed files reach them; the merge queue always runs all of them. The two DMS-API lanes
 # share one category because they share one test project and one in-process pipeline, and the two
@@ -215,6 +234,10 @@ function ConvertTo-DmsChangeCategoryResult {
 
         [Parameter(Mandatory)]
         [bool]
+        $DocumentEmbedsRelevant,
+
+        [Parameter(Mandatory)]
+        [bool]
         $Draft,
 
         [Parameter(Mandatory)]
@@ -223,9 +246,10 @@ function ConvertTo-DmsChangeCategoryResult {
     )
 
     $result = [ordered]@{
-        fresh_build_required = $FreshBuildRequired
-        dms_relevant         = $DmsRelevant
-        draft                = $Draft
+        fresh_build_required     = $FreshBuildRequired
+        dms_relevant             = $DmsRelevant
+        document_embeds_relevant = $DocumentEmbedsRelevant
+        draft                    = $Draft
     }
 
     foreach ($name in $Category.Keys) {
@@ -277,7 +301,8 @@ function Get-DmsChangeCategory {
     .SYNOPSIS
         Classifies an event's changed files into the flags the DMS pull request workflow gates on.
     .DESCRIPTION
-        Returns fresh_build_required, dms_relevant, draft, and one flag per promoted-suite category.
+        Returns fresh_build_required, dms_relevant, document_embeds_relevant, draft, and one flag per
+        promoted-suite category.
         Only pull_request narrows: merge_group validates the merged result, so nothing may be
         skipped there, and every other event runs the full suite.
     .PARAMETER EventName
@@ -319,6 +344,7 @@ function Get-DmsChangeCategory {
         return ConvertTo-DmsChangeCategoryResult `
             -FreshBuildRequired $true `
             -DmsRelevant $true `
+            -DocumentEmbedsRelevant $true `
             -Draft $draft `
             -Category (Get-DmsCategoryDefault -InitialValue $true)
     }
@@ -328,6 +354,7 @@ function Get-DmsChangeCategory {
     $narrows = $EventName -eq 'pull_request'
     $freshBuildRequired = $false
     $dmsRelevant = -not $narrows
+    $documentEmbedsRelevant = -not $narrows
     $category = Get-DmsCategoryDefault -InitialValue (-not $narrows)
 
     foreach ($path in $ChangedFile) {
@@ -342,6 +369,13 @@ function Get-DmsChangeCategory {
                 -PathPrefix $script:FreshBuildPathPrefix
         ) {
             $freshBuildRequired = $true
+        }
+
+        # Before the DMS-relevance test below, and outside it. docs/ is not DMS-relevant, and the
+        # documentation-only pull request that edits an embedded recipe is precisely the one this
+        # check has to run for.
+        if (Test-DmsChangedFileMatch -Path $path -PathPrefix $script:DocumentEmbedPathPrefix) {
+            $documentEmbedsRelevant = $true
         }
 
         if (
@@ -367,6 +401,7 @@ function Get-DmsChangeCategory {
     return ConvertTo-DmsChangeCategoryResult `
         -FreshBuildRequired $freshBuildRequired `
         -DmsRelevant $dmsRelevant `
+        -DocumentEmbedsRelevant $documentEmbedsRelevant `
         -Draft $draft `
         -Category $category
 }

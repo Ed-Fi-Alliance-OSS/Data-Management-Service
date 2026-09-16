@@ -73,6 +73,11 @@ jobs:
       # suite while this workflow still runs and reports dms-ci-gate. src/config counts as
       # DMS-relevant, so a config-only PR does not skip.
       dms_relevant: ${{ steps.detect.outputs.dms_relevant }}
+      # True when the pull request changed a file that could move a document's embedded blocks or one
+      # of the files they copy. Separate from dms_relevant because docs/ is not DMS-relevant, and a
+      # pull request that edits only a documented Compose recipe is exactly the drift the embed check
+      # exists to refuse.
+      document_embeds_relevant: ${{ steps.detect.outputs.document_embeds_relevant }}
       # True while a pull request is a draft. Only the expensive roots and leaves gate on it, so a
       # draft still gets the cheap lanes and still gets a reporting dms-ci-gate; ready_for_review is
       # in the trigger types above, so marking the PR ready re-runs the full suite.
@@ -265,6 +270,33 @@ jobs:
           if ($result.FailedCount -gt 0 -or $result.FailedContainersCount -gt 0 -or $result.FailedBlocksCount -gt 0) {
               throw "Bootstrap Pester lane failed: $($result.FailedCount) test(s), $($result.FailedContainersCount) container(s), $($result.FailedBlocksCount) block(s)."
           }
+
+  verify-document-embeds:
+    name: Verify Document Embeds
+    needs: detect-fresh-build-changes
+    # Its own narrow gate, and deliberately not draft-gated. The same assertion runs inside the
+    # eng/verification/tests suite in Verify DMS Packages, but that job requires dms_relevant and a
+    # non-draft pull request, so the one pull request this check is for - a documentation-only edit
+    # to an embedded Compose recipe - would skip it and learn about the drift in the merge queue.
+    # This job is a checkout and one script: no build, no module install, no container.
+    if: >-
+      github.event_name != 'pull_request' ||
+      needs.detect-fresh-build-changes.outputs.document_embeds_relevant == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout the Repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Assert Documents Embed Their Files Verbatim
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          ./eng/verification/Invoke-DocumentEmbedChecks.ps1
 
   verify-lock-files:
     name: Verify DMS Lock Files
@@ -3812,6 +3844,7 @@ jobs:
       - detect-fresh-build-changes
       - scan-actions-bidi
       - run-bootstrap-pester-tests
+      - verify-document-embeds
       - verify-lock-files
       - verify-dms-packages
       - build-dms-solution

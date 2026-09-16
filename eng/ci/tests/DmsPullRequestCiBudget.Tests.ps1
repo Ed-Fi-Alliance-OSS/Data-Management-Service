@@ -258,6 +258,7 @@ Describe "on-dms-pullrequest.yml CI budget wiring" {
             'detect-fresh-build-changes'
             'scan-actions-bidi'
             'run-bootstrap-pester-tests'
+            'verify-document-embeds'
             'verify-lock-files'
             'run-unit-tests'
             'dms-ci-gate'
@@ -466,11 +467,47 @@ Describe "on-dms-pullrequest.yml CI budget wiring" {
             @{ JobName = 'detect-fresh-build-changes' }
             @{ JobName = 'scan-actions-bidi' }
             @{ JobName = 'run-bootstrap-pester-tests' }
+            @{ JobName = 'verify-document-embeds' }
             @{ JobName = 'verify-lock-files' }
             @{ JobName = 'run-unit-tests' }
             @{ JobName = 'dms-ci-gate' }
         ) {
             Get-JobIfCondition -JobName $JobName | Should -Not -Match 'outputs\.draft'
+        }
+    }
+
+    Context "The document-embed check runs where the drift it refuses can happen" {
+        It "gates on document_embeds_relevant and not on dms_relevant" {
+            # dms_relevant excludes docs/, so gating this job on it would skip the one pull request
+            # shape the check exists for: a documentation-only edit to an embedded Compose recipe.
+            $condition = Get-JobIfCondition -JobName 'verify-document-embeds'
+
+            $condition | Should -Match "needs\.detect-fresh-build-changes\.outputs\.document_embeds_relevant == 'true'"
+            $condition | Should -Not -Match 'dms_relevant'
+        }
+
+        It "still runs the full check for non-pull_request events" {
+            Get-JobIfCondition -JobName 'verify-document-embeds' |
+                Should -Match "github\.event_name != 'pull_request'"
+        }
+
+        It "runs the shared runner rather than a second copy of the document table" {
+            # eng/verification/Invoke-DocumentEmbedChecks.ps1 is the single statement of which
+            # documents are checked, and the Pester suite and the classifier's tests read the same
+            # one. A job that named documents inline here would be a third copy free to drift.
+            Get-JobBlock -JobName 'verify-document-embeds' |
+                Should -Match 'eng/verification/Invoke-DocumentEmbedChecks\.ps1'
+        }
+
+        It "needs no build, no container and no module install" {
+            # The whole reason this is a separate job from Verify DMS Packages. If it acquires a
+            # build it stops being affordable on every documentation pull request and the gap it
+            # closes will be re-opened by gating it again.
+            $block = Get-JobBlock -JobName 'verify-document-embeds'
+
+            $block | Should -Not -Match 'dotnet '
+            $block | Should -Not -Match 'Install-Module'
+            $block | Should -Not -Match 'docker '
         }
     }
 

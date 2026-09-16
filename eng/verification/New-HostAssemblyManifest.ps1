@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: Apache-2.0
+﻿# SPDX-License-Identifier: Apache-2.0
 # Licensed to the Ed-Fi Alliance under one or more agreements.
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
@@ -592,7 +592,6 @@ try {
     $runtimeConfig = Read-JsonDocument -Path $runtimeConfigPath
 
     $selected = @{}
-    $requestedByName = @{}
     try {
         $runtimeOptions = Get-JsonProperty -Element $runtimeConfig.RootElement -Name "runtimeOptions"
         if ($null -eq $runtimeOptions) {
@@ -604,7 +603,6 @@ try {
         foreach ($reference in (Get-FrameworkReference -RuntimeOptions $runtimeOptions -Where $runtimeConfigPath)) {
             $selected[$reference.Name] = Select-FrameworkVersion `
                 -SharedRoot $sharedDirectory -Name $reference.Name -Requested $reference.Requested
-            $requestedByName[$reference.Name] = $reference.Requested
         }
     }
     finally {

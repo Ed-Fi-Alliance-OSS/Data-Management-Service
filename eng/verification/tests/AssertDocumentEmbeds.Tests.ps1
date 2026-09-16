@@ -7,10 +7,13 @@
 
 # Two things are pinned here, and they are different claims.
 #
-# The first is the live one: docs/OPERATIONS.md embeds the two committed Compose overlays verbatim.
-# Those files are the artifact an operator composes with -f and the end-to-end tiers run them as
-# committed, so the document is the copy and this is what stops the copy drifting. A chapter edited
-# without its file, or a file edited without its chapter, fails that case.
+# The first is the live one: the committed documents embed their committed files verbatim. Those
+# files are the artifact - the overlays an operator composes with -f and the end-to-end tiers run as
+# committed, and the sample an implementer copies - so each document is the copy and this is what
+# stops the copy drifting. A chapter edited without its file, or a file edited without its chapter,
+# fails that case. It runs through eng/verification/Invoke-DocumentEmbedChecks.ps1 rather than
+# restating which documents are checked, because that script is also what the pull request workflow
+# runs and what the change classifier's own tests are asserted against.
 #
 # The second is that the verifier itself actually detects drift. A guard that passes on a document
 # it never really compared is worse than no guard, so every failure mode gets a fixture that must
@@ -21,15 +24,9 @@
 BeforeAll {
     $script:repositoryRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../.."))
     $script:verifier = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../Assert-DocumentEmbeds.ps1"))
-
-    $script:operationsDocument = Join-Path $script:repositoryRoot "docs/OPERATIONS.md"
-    $script:requiredEmbeds = @(
-        "eng/docker-compose/plugins-dms.yml",
-        "eng/docker-compose/plugins-fetch-dms.yml"
+    $script:embedChecks = [System.IO.Path]::GetFullPath(
+        (Join-Path $PSScriptRoot "../Invoke-DocumentEmbedChecks.ps1")
     )
-
-    $script:pluginsGuide = Join-Path $script:repositoryRoot "src/plugins/EdFi.Api.Plugins/PLUGINS.md"
-    $script:pluginsGuideEmbeds = @("eng/verification/PluginsConsumer/AcmePlugin.cs#sample")
 
     $script:fixtureRoot = Join-Path ([System.IO.Path]::GetTempPath()) "dms1500-embed-tests-$([guid]::NewGuid().ToString('N'))"
     New-Item -ItemType Directory -Path $script:fixtureRoot -Force | Out-Null
@@ -100,33 +97,36 @@ AfterAll {
     }
 }
 
-Describe "Assert-DocumentEmbeds against the committed operations chapter" {
-    It "admits docs/OPERATIONS.md with both plugin overlays embedded verbatim" {
-        $output = & $script:verifier `
-            -DocumentPath $script:operationsDocument `
-            -RequiredEmbed $script:requiredEmbeds
+Describe "Assert-DocumentEmbeds against the committed documents" {
+    It "admits both checked documents, each with its required embeds" {
+        # The required counts are asserted and the block counts are not: requiring a file is the
+        # claim this makes, while a document is free to gain another embedded block, which the
+        # verifier checks for drift either way.
+        $output = @(& $script:embedChecks)
 
-        $output | Should -BeLike "*2 embedded block(s) match their files*"
+        $output | Should -HaveCount 2
+        $output[0] | Should -BeLike "Verified OPERATIONS.md: * match their files, including 2 required."
+        $output[1] | Should -BeLike "Verified PLUGINS.md: * match their files, including 1 required."
     }
 
-    It "names both overlays as required, so dropping a recipe cannot pass" {
-        # Guards the test above rather than the verifier: a required list that silently lost an entry
-        # would keep passing while the chapter lost a recipe.
-        $script:requiredEmbeds | Should -Contain "eng/docker-compose/plugins-dms.yml"
-        $script:requiredEmbeds | Should -Contain "eng/docker-compose/plugins-fetch-dms.yml"
-    }
-}
+    It "still requires both plugin Compose overlays" {
+        # Guards the document table rather than the verifier: an entry that silently vanished from it
+        # would keep the case above passing while the operations chapter lost a recipe.
+        $paths = @(& $script:embedChecks -ListPath)
 
-Describe "Assert-DocumentEmbeds against the packed implementer guide" {
-    It "carries the consumer fixture's sample region verbatim" {
+        $paths | Should -Contain "docs/OPERATIONS.md"
+        $paths | Should -Contain "eng/docker-compose/plugins-dms.yml"
+        $paths | Should -Contain "eng/docker-compose/plugins-fetch-dms.yml"
+    }
+
+    It "still requires the implementer guide's compiled sample region" {
         # The guide's sample is the one an implementer copies, and the fixture it comes from is
         # compiled against the packed contract package by its own check. Pinning the two together is
         # what makes the sample in the guide a sample that has been compiled.
-        $output = & $script:verifier `
-            -DocumentPath $script:pluginsGuide `
-            -RequiredEmbed $script:pluginsGuideEmbeds
+        $paths = @(& $script:embedChecks -ListPath)
 
-        $output | Should -BeLike "*1 embedded block(s) match their files*"
+        $paths | Should -Contain "src/plugins/EdFi.Api.Plugins/PLUGINS.md"
+        $paths | Should -Contain "eng/verification/PluginsConsumer/AcmePlugin.cs"
     }
 }
 
