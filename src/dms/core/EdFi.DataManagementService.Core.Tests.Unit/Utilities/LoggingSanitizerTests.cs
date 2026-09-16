@@ -331,7 +331,8 @@ public class LoggingSanitizerTests
         [Test]
         public void It_preserves_a_surrogate_pair_while_removing_neighbouring_format_characters()
         {
-            LoggingSanitizer.SanitizeCorrelationId("a​\U0001F600‮b").Should().Be("a\U0001F600b");
+            // U+200B ZERO WIDTH SPACE and U+202E RIGHT-TO-LEFT OVERRIDE, both category Cf.
+            LoggingSanitizer.SanitizeCorrelationId("a\u200B\U0001F600\u202Eb").Should().Be("a\U0001F600b");
         }
     }
 
@@ -377,7 +378,8 @@ public class LoggingSanitizerTests
         [Test]
         public void It_removes_a_trailing_lone_high_surrogate_while_removing_format_characters()
         {
-            LoggingSanitizer.SanitizeCorrelationId("a​b\uD83D").Should().Be("ab");
+            // U+200B ZERO WIDTH SPACE, category Cf.
+            LoggingSanitizer.SanitizeCorrelationId("a\u200Bb\uD83D").Should().Be("ab");
         }
 
         [Test]
