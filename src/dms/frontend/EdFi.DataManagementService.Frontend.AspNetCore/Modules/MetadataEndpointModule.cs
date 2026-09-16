@@ -10,17 +10,17 @@ using System.Net;
 using System.Text;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
-using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure.Extensions;
 using Microsoft.Extensions.Options;
+using FrontendAppSettings = EdFi.DataManagementService.Frontend.AspNetCore.Configuration.AppSettings;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Modules;
 
-public partial class MetadataEndpointModule(IOptions<Configuration.AppSettings> appSettings) : IEndpointModule
+public partial class MetadataEndpointModule(IOptions<FrontendAppSettings> appSettings) : IEndpointModule
 {
     private const string DataOpenApiRouteBase = "data";
     private const string ChangeQueriesOpenApiRouteBase = "changeQueries/v1";
@@ -31,7 +31,7 @@ public partial class MetadataEndpointModule(IOptions<Configuration.AppSettings> 
     private static JsonArray GetServers(
         HttpContext httpContext,
         IDataStoreProvider dataStoreProvider,
-        IOptions<Configuration.AppSettings> appSettings,
+        IOptions<FrontendAppSettings> appSettings,
         string openApiRouteBase
     )
     {
@@ -342,7 +342,7 @@ public partial class MetadataEndpointModule(IOptions<Configuration.AppSettings> 
                 IMetadataRouteValidator metadataRouteValidator,
                 IApiService apiService,
                 IDataStoreProvider dataStoreProvider,
-                IOptions<Configuration.AppSettings> options
+                IOptions<FrontendAppSettings> options
             ) =>
             {
                 if (!await metadataRouteValidator.ValidateAsync(httpContext))
@@ -360,7 +360,7 @@ public partial class MetadataEndpointModule(IOptions<Configuration.AppSettings> 
                 IMetadataRouteValidator metadataRouteValidator,
                 IApiService apiService,
                 IDataStoreProvider dataStoreProvider,
-                IOptions<Configuration.AppSettings> options
+                IOptions<FrontendAppSettings> options
             ) =>
             {
                 if (!await metadataRouteValidator.ValidateAsync(httpContext))
@@ -378,7 +378,7 @@ public partial class MetadataEndpointModule(IOptions<Configuration.AppSettings> 
                 IMetadataRouteValidator metadataRouteValidator,
                 IApiService apiService,
                 IDataStoreProvider dataStoreProvider,
-                IOptions<Configuration.AppSettings> options
+                IOptions<FrontendAppSettings> options
             ) =>
             {
                 if (!await metadataRouteValidator.ValidateAsync(httpContext))
@@ -395,7 +395,7 @@ public partial class MetadataEndpointModule(IOptions<Configuration.AppSettings> 
                 HttpContext httpContext,
                 IMetadataRouteValidator metadataRouteValidator,
                 IContentProvider contentProvider,
-                IOptions<Configuration.AppSettings> options,
+                IOptions<FrontendAppSettings> options,
                 IDataStoreProvider dataStoreProvider
             ) =>
             {
@@ -415,7 +415,7 @@ public partial class MetadataEndpointModule(IOptions<Configuration.AppSettings> 
                 IMetadataRouteValidator metadataRouteValidator,
                 IDataStoreProvider dataStoreProvider,
                 IApiService apiService,
-                IOptions<Configuration.AppSettings> options
+                IOptions<FrontendAppSettings> options
             ) =>
             {
                 if (!await metadataRouteValidator.ValidateAsync(httpContext))
@@ -496,7 +496,7 @@ public partial class MetadataEndpointModule(IOptions<Configuration.AppSettings> 
         HttpContext httpContext,
         IApiService apiService,
         IDataStoreProvider dataStoreProvider,
-        IOptions<Configuration.AppSettings> appSettings
+        IOptions<FrontendAppSettings> appSettings
     )
     {
         JsonArray servers = GetServers(httpContext, dataStoreProvider, appSettings, DataOpenApiRouteBase);
@@ -508,7 +508,7 @@ public partial class MetadataEndpointModule(IOptions<Configuration.AppSettings> 
         HttpContext httpContext,
         IApiService apiService,
         IDataStoreProvider dataStoreProvider,
-        IOptions<Configuration.AppSettings> appSettings
+        IOptions<FrontendAppSettings> appSettings
     )
     {
         JsonArray servers = GetServers(httpContext, dataStoreProvider, appSettings, DataOpenApiRouteBase);
@@ -520,7 +520,7 @@ public partial class MetadataEndpointModule(IOptions<Configuration.AppSettings> 
         HttpContext httpContext,
         IApiService apiService,
         IDataStoreProvider dataStoreProvider,
-        IOptions<Configuration.AppSettings> appSettings
+        IOptions<FrontendAppSettings> appSettings
     )
     {
         JsonArray servers = GetServers(
@@ -548,7 +548,7 @@ public partial class MetadataEndpointModule(IOptions<Configuration.AppSettings> 
         string profileName,
         IDataStoreProvider dataStoreProvider,
         IApiService apiService,
-        IOptions<Configuration.AppSettings> appSettings
+        IOptions<FrontendAppSettings> appSettings
     )
     {
         string? tenant = ExtractTenantFromRoute(httpContext);
@@ -614,7 +614,7 @@ public partial class MetadataEndpointModule(IOptions<Configuration.AppSettings> 
     internal static async Task GetSectionMetadata(
         HttpContext httpContext,
         IContentProvider contentProvider,
-        IOptions<Configuration.AppSettings> options,
+        IOptions<FrontendAppSettings> options,
         IDataStoreProvider dataStoreProvider
     )
     {
