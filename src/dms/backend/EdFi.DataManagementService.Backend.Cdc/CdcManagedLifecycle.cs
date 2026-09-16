@@ -336,6 +336,14 @@ public sealed class CdcManagedLifecycle
                 {
                     RequireUnchangedWorker(current.Worker);
                 }
+                if (!resumeReconciled && current is { AwaitingInitialCurrentLag: true })
+                {
+                    // The effect was already authorized. Only the first usable lag is pending.
+                    // Discard the invalid pass and re-read all evidence without another mutation.
+                    // Once completion is reconciled, unknown lag continues to reject immediately.
+                    await Task.Delay(request.Timing.PollInterval, _time, token);
+                    continue;
+                }
                 if (!resumeReconciled && current is { Connector.IsRunning: true, PreStartEligible: true })
                 {
                     // Unchanged RUNNING state cannot reconcile whether an unacknowledged restart

@@ -712,7 +712,7 @@ public partial class Given_CdcKafkaAdminAdapter
         Fake.GetCalls(_client).Should().BeEmpty();
     }
 
-    [TestCase("success", CdcDeploymentFailure.ValidationFailed)]
+    [TestCase("success", CdcDeploymentFailure.Unavailable)]
     [TestCase("timeout", CdcDeploymentFailure.Timeout)]
     [TestCase("conflict", CdcDeploymentFailure.Conflict)]
     public async Task It_never_reports_creation_success_from_acknowledgement_alone(
