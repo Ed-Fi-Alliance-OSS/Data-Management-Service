@@ -468,6 +468,7 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
                 ["logs", "--tail", "400", ProviderContainerName],
                 cancellationToken
             );
+            await CdcSqlFailureCapture.CaptureAsync(result, cancellationToken);
             return CdcSqlServerStartupLogClassifier.Parse(result);
         }
         catch (Exception)

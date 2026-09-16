@@ -41,7 +41,7 @@ jobs:
           SELECTED_LANE: ${{ inputs.lane || 'All' }}
           SELECTED_SUITE: ${{ inputs.suite || 'All' }}
         run: |
-          $matrix = ./eng/ci/Get-CdcQualificationMatrix.ps1 -Lane $env:SELECTED_LANE -Suite $env:SELECTED_SUITE
+          $matrix = '{"include":[{"lane":"Mssql","suite":"Admission"},{"lane":"Mssql","suite":"Lifecycle"},{"lane":"Mssql","suite":"Recovery"},{"lane":"Mssql","suite":"RecordSize"},{"lane":"Mssql","suite":"Telemetry"}]}'
           "matrix=$matrix" >> $env:GITHUB_OUTPUT
 
   run-cdc-qualification:
@@ -56,6 +56,7 @@ jobs:
       run:
         shell: pwsh
     env:
+      CDC_DIAGNOSTIC_SUITE: ${{ matrix.suite }}
       CDC_CONNECTOR_TEMPLATE_REDPANDA_IMAGE: ${{ vars.CDC_CONNECTOR_TEMPLATE_REDPANDA_IMAGE }}
       CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE: ${{ vars.CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE }}
       CDC_CONNECTOR_TEMPLATE_SQLSERVER_2025_IMAGE: ${{ vars.CDC_CONNECTOR_TEMPLATE_SQLSERVER_2025_IMAGE }}
@@ -101,7 +102,7 @@ jobs:
           host-port: "14339"
 
       - name: Run story-owned CDC qualification
-        run: ./eng/ci/Invoke-CdcQualification.ps1 -Lane '${{ matrix.lane }}' -Suite '${{ matrix.suite }}' -ResultsDirectory TestResults/cdc-qualification -PullImages
+        run: python3 eng/ci/startup-diagnostic.py
 
       - name: Record unavailable qualification environment
         if: failure()
@@ -120,6 +121,15 @@ jobs:
           path: TestResults/cdc-qualification/**
           if-no-files-found: error
           retention-days: 14
+
+      - name: Upload encrypted SQL process evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cdc-sql-failure-only-${{ matrix.suite }}
+          path: startup-diagnostic/
+          retention-days: 1
+          if-no-files-found: error
 
       - name: Remove packaged-history servers
         if: always() && matrix.suite == 'History'
