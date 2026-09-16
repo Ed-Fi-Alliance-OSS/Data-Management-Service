@@ -6,6 +6,26 @@
         <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
         <ImplicitUsings>enable</ImplicitUsings>
         <PackageId>EdFi.Api.CustomValidation</PackageId>
+        <!--
+            Declared here rather than inherited from src/dms/Directory.Build.props, which the build
+            script regenerates with the DMS release version on every BuildAndPublish. A csproj
+            property overrides the imported one, so these three are what the pack target and the
+            compiler use.
+
+            The plugin loader's newer-plugin-on-older-host preflight compares AssemblyVersions
+            across contract assemblies, so this contract's version has to move when its public
+            surface moves and must not move when it does not. Under the release-stamped scheme a
+            validator built against one release's contract would be refused by an adjacent release
+            whose contract surface was identical, naming two versions that differ in nothing an
+            implementer can act on.
+
+            1.0.0 is the surface DMS-1432 shipped. Package, assembly and file versions are what is
+            decoupled here; InformationalVersion still records the release the assembly was built
+            in, and nothing compares it.
+        -->
+        <Version>1.0.0</Version>
+        <AssemblyVersion>1.0.0</AssemblyVersion>
+        <FileVersion>1.0.0</FileVersion>
         <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
         <PackageProjectUrl>https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service</PackageProjectUrl>
         <Title>Ed-Fi API Custom Validation Abstractions</Title>

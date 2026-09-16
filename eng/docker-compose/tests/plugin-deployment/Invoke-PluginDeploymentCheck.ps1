@@ -612,7 +612,11 @@ function Invoke-FixtureBuild {
 
     Import-Module (Join-Path $repositoryRoot "package-helpers.psm1") -Force
     $contractVersion = Get-PluginsContractVersion
-    $customValidationVersion = "0.0.0-plugin-deployment"
+
+    # Both contracts declare their own version now, so neither pack takes one from here. An explicit
+    # -DMSVersion would be ignored by the custom-validation pack target and would leave this fixture
+    # pinning a package version nothing produces.
+    $customValidationVersion = Get-CustomValidationContractVersion
 
     Push-Location $repositoryRoot
     try {
@@ -623,7 +627,7 @@ function Invoke-FixtureBuild {
             & "$repositoryRoot/build-dms.ps1" Package -PackageTarget Plugins -Configuration Release
         }
         Invoke-Checked -What "build-dms.ps1 Package -PackageTarget CustomValidation" -Command {
-            & "$repositoryRoot/build-dms.ps1" Package -PackageTarget CustomValidation -DMSVersion $customValidationVersion -Configuration Release
+            & "$repositoryRoot/build-dms.ps1" Package -PackageTarget CustomValidation -Configuration Release
         }
     }
     finally {
