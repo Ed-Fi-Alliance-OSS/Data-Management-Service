@@ -66,6 +66,7 @@ internal sealed class CdcControllerFixtureHooks
 {
     private readonly ConcurrentQueue<CdcControllerFixtureEvent> _trace = new();
     private readonly ConcurrentQueue<object> _connectObservations = new();
+    private readonly ConcurrentQueue<object> _offsetObservations = new();
     private readonly ConcurrentDictionary<(CdcControllerBoundary, CdcControllerEdge), int> _counts = new();
     private readonly ConcurrentQueue<object> _kafkaTopics = new();
     public IReadOnlyList<object> KafkaTopics => _kafkaTopics.ToArray();
@@ -73,6 +74,7 @@ internal sealed class CdcControllerFixtureHooks
     public Action<CdcControllerFixtureEvent> OnBoundary { get; set; } = _ => { };
     public IReadOnlyList<CdcControllerFixtureEvent> Trace => _trace.OrderBy(e => e.Sequence).ToArray();
     public IReadOnlyList<object> ConnectObservations => _connectObservations.ToArray();
+    public IReadOnlyList<object> OffsetObservations => _offsetObservations.ToArray();
 
     public void Hit(CdcControllerBoundary boundary, CdcControllerEdge edge)
     {
@@ -99,6 +101,31 @@ internal sealed class CdcControllerFixtureHooks
         try
         {
             result = await operation(token);
+            if (result is CdcTransportResult<CdcConnectOffsetEvidence>.Observed offset)
+            {
+                _offsetObservations.Enqueue(
+                    new { At = DateTimeOffset.UtcNow, State = offset.Value.State.ToString() }
+                );
+            }
+            if (result is CdcTransportResult<CdcConnectOffsetEvidence>.Unavailable unavailableOffset)
+            {
+                _offsetObservations.Enqueue(
+                    new
+                    {
+                        At = DateTimeOffset.UtcNow,
+                        State = "Unavailable",
+                        unavailableOffset.Diagnostic.Failure,
+                    }
+                );
+            }
+            if (result is CdcTransportResult<CdcConnectOffsetEvidence>.Absent)
+            {
+                _offsetObservations.Enqueue(new { At = DateTimeOffset.UtcNow, State = "Absent" });
+            }
+            while (_offsetObservations.Count > 128)
+            {
+                _offsetObservations.TryDequeue(out _);
+            }
             if (result is CdcTransportResult<CdcKafkaTopicEvidence>.Absent)
             {
                 _kafkaTopics.Enqueue(new { At = DateTimeOffset.UtcNow, State = "Absent" });

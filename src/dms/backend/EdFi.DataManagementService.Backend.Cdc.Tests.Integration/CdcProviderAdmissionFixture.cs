@@ -891,6 +891,8 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
                         DatabaseFailures = _databaseFailures.ToArray(),
                         TelemetryFailures = _telemetryFailures.ToArray(),
                         MetricsResponses = Infrastructure.MetricsEvidence.Observations,
+                        OffsetResponses = Infrastructure.OffsetEvidence.Observations,
+                        OffsetObservations = Hooks.OffsetObservations,
                         KafkaTopics = Hooks.KafkaTopics,
                         ConnectObservations = Hooks.ConnectObservations,
                         ProviderModes,
