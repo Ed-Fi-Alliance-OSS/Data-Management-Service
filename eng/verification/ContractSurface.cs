@@ -311,9 +311,7 @@ public static class ContractSurfaceReader
 
         foreach (PropertyDefinitionHandle handle in type.GetProperties())
         {
-            string? line = DescribeProperty(reader, provider, handle, typeName, typeContext);
-
-            if (line is not null)
+            if (TryDescribeProperty(reader, provider, handle, typeName, typeContext, out string line))
             {
                 yield return line;
             }
@@ -321,9 +319,7 @@ public static class ContractSurfaceReader
 
         foreach (EventDefinitionHandle handle in type.GetEvents())
         {
-            string? line = DescribeEvent(reader, provider, handle, typeName, typeContext);
-
-            if (line is not null)
+            if (TryDescribeEvent(reader, provider, handle, typeName, typeContext, out string line))
             {
                 yield return line;
             }
@@ -345,27 +341,11 @@ public static class ContractSurfaceReader
         GenericContext context = new(typeContext.TypeParameters, methodParameters);
         MethodSignature<string> signature = method.DecodeSignature(provider, context);
 
-        Dictionary<int, Parameter> parameters = [];
-        foreach (ParameterHandle handle in method.GetParameters())
-        {
-            Parameter parameter = reader.GetParameter(handle);
-            if (parameter.SequenceNumber > 0)
-            {
-                parameters[parameter.SequenceNumber] = parameter;
-            }
-        }
-
-        List<string> rendered = [];
-        for (int index = 0; index < signature.ParameterTypes.Length; index++)
-        {
-            rendered.Add(
-                DescribeParameter(
-                    reader,
-                    signature.ParameterTypes[index],
-                    parameters.TryGetValue(index + 1, out Parameter parameter) ? parameter : null
-                )
-            );
-        }
+        List<string> rendered = DescribeSignatureParameters(
+            reader,
+            signature.ParameterTypes,
+            method.GetParameters()
+        );
 
         StringBuilder builder = new();
         builder.Append("METHOD ").Append(typeName).Append('.').Append(reader.GetString(method.Name));
@@ -407,9 +387,22 @@ public static class ContractSurfaceReader
 
             builder.Append(type);
 
+            // The name is part of what a caller compiles against: renaming a parameter breaks every
+            // call site using a named argument, at an unchanged package version and with an
+            // otherwise identical signature.
+            string name = reader.GetString(value.Name);
+            if (!string.IsNullOrEmpty(name))
+            {
+                builder.Append(' ').Append(name);
+            }
+
             if (attributes.HasFlag(ParameterAttributes.Optional))
             {
-                builder.Append(" = ").Append(DescribeConstant(reader, value.GetDefaultValue()));
+                builder
+                    .Append(" = ")
+                    .Append(
+                        DescribeDefaultValue(reader, value.GetDefaultValue(), value.GetCustomAttributes())
+                    );
             }
 
             return builder.ToString();
@@ -450,22 +443,31 @@ public static class ContractSurfaceReader
 
         // A public constant's value is compiled into every consumer, so changing it changes what
         // already-compiled code does without changing a single signature.
-        if (attributes.HasFlag(FieldAttributes.Literal))
+        //
+        // Not gated on FieldAttributes.Literal. A `const decimal` is emitted as static readonly
+        // carrying DecimalConstantAttribute, because the CLR has no decimal literal, so gating on
+        // Literal would drop exactly the constants whose values are least visible elsewhere.
+        string value = DescribeDefaultValue(reader, field.GetDefaultValue(), field.GetCustomAttributes());
+
+        if (attributes.HasFlag(FieldAttributes.Literal) || value != "none")
         {
-            builder.Append(" value=").Append(DescribeConstant(reader, field.GetDefaultValue()));
+            builder.Append(" value=").Append(value);
         }
 
         return builder.ToString();
     }
 
-    private static string? DescribeProperty(
+    private static bool TryDescribeProperty(
         MetadataReader reader,
         ContractSignatureProvider provider,
         PropertyDefinitionHandle handle,
         string typeName,
-        GenericContext context
+        GenericContext context,
+        out string line
     )
     {
+        line = string.Empty;
+
         PropertyDefinition property = reader.GetPropertyDefinition(handle);
         PropertyAccessors accessors = property.GetAccessors();
 
@@ -474,7 +476,7 @@ public static class ContractSurfaceReader
 
         if (getter == "none" && setter == "none")
         {
-            return null;
+            return false;
         }
 
         MethodSignature<string> signature = property.DecodeSignature(provider, context);
@@ -484,7 +486,17 @@ public static class ContractSurfaceReader
 
         if (signature.ParameterTypes.Length > 0)
         {
-            builder.Append('[').Append(string.Join(", ", signature.ParameterTypes)).Append(']');
+            // Indexer parameters carry names too, and a named argument binds to them exactly as it
+            // does on a method. The names come from whichever accessor exists, since a property row
+            // has no parameter rows of its own.
+            MethodDefinitionHandle source = accessors.Getter.IsNil ? accessors.Setter : accessors.Getter;
+
+            builder
+                .Append('[')
+                .Append(
+                    string.Join(", ", DescribeSignatureParameters(reader, signature.ParameterTypes, source))
+                )
+                .Append(']');
         }
 
         builder.Append(" : ").Append(signature.ReturnType);
@@ -492,7 +504,60 @@ public static class ContractSurfaceReader
         builder.Append(" set=").Append(setter);
         builder.Append(" setkind=").Append(SetterKind(reader, provider, accessors.Setter, context));
 
-        return builder.ToString();
+        line = builder.ToString();
+
+        return true;
+    }
+
+    /// <summary>
+    /// Renders one signature's parameters, taking names and modifiers from the owning method when
+    /// there is one.
+    /// </summary>
+    private static List<string> DescribeSignatureParameters(
+        MetadataReader reader,
+        ImmutableArray<string> parameterTypes,
+        MethodDefinitionHandle owner
+    ) =>
+        DescribeSignatureParameters(
+            reader,
+            parameterTypes,
+            owner.IsNil ? default : reader.GetMethodDefinition(owner).GetParameters()
+        );
+
+    private static List<string> DescribeSignatureParameters(
+        MetadataReader reader,
+        ImmutableArray<string> parameterTypes,
+        ParameterHandleCollection owned
+    )
+    {
+        Dictionary<int, Parameter> parameters = [];
+
+        foreach (ParameterHandle handle in owned)
+        {
+            Parameter parameter = reader.GetParameter(handle);
+
+            // Sequence 0 is the return parameter, which carries marshalling and attributes rather
+            // than a position in the argument list.
+            if (parameter.SequenceNumber > 0)
+            {
+                parameters[parameter.SequenceNumber] = parameter;
+            }
+        }
+
+        List<string> rendered = [];
+
+        for (int index = 0; index < parameterTypes.Length; index++)
+        {
+            rendered.Add(
+                DescribeParameter(
+                    reader,
+                    parameterTypes[index],
+                    parameters.TryGetValue(index + 1, out Parameter parameter) ? parameter : null
+                )
+            );
+        }
+
+        return rendered;
     }
 
     // init is an ordinary setter carrying a required modifier of IsExternalInit on its return type,
@@ -527,14 +592,17 @@ public static class ContractSurfaceReader
             : "set";
     }
 
-    private static string? DescribeEvent(
+    private static bool TryDescribeEvent(
         MetadataReader reader,
         ContractSignatureProvider provider,
         EventDefinitionHandle handle,
         string typeName,
-        GenericContext context
+        GenericContext context,
+        out string line
     )
     {
+        line = string.Empty;
+
         EventDefinition eventDefinition = reader.GetEventDefinition(handle);
         EventAccessors accessors = eventDefinition.GetAccessors();
 
@@ -543,7 +611,7 @@ public static class ContractSurfaceReader
 
         if (adder == "none" && remover == "none")
         {
-            return null;
+            return false;
         }
 
         StringBuilder builder = new();
@@ -552,7 +620,9 @@ public static class ContractSurfaceReader
         builder.Append(" add=").Append(adder);
         builder.Append(" remove=").Append(remover);
 
-        return builder.ToString();
+        line = builder.ToString();
+
+        return true;
     }
 
     private static string DescribeGenericParameters(
@@ -610,6 +680,13 @@ public static class ContractSurfaceReader
                     constraintHandle
                 );
                 constraints.Add(TypeName(reader, provider, constraint.Type, context));
+            }
+
+            string annotation = NullableAnnotation(reader, parameter);
+
+            if (annotation.Length > 0)
+            {
+                constraints.Add(annotation);
             }
 
             constraints.Sort(StringComparer.Ordinal);
@@ -876,6 +953,253 @@ public static class ContractSurfaceReader
         if (!handle.IsNil)
         {
             accessors.Add(MetadataTokens.GetRowNumber(handle));
+        }
+    }
+
+    /// <summary>
+    /// A member's compile-time value, from the metadata Constant table when there is one and from
+    /// the attribute that encodes it when there is not.
+    /// </summary>
+    /// <remarks>
+    /// The Constant table cannot hold every constant a C# signature can declare. A decimal default
+    /// or a decimal constant is carried by DecimalConstantAttribute and a DateTime default by
+    /// DateTimeConstantAttribute, because neither type has a CLR literal encoding. Reading only the
+    /// Constant table reports both sides of a changed decimal default as having no default at all,
+    /// and a consumer compiles that value into its own code.
+    ///
+    /// Everything here is read from metadata; no attribute is instantiated and no code from the
+    /// assembly under inspection runs.
+    /// </remarks>
+    private static string DescribeDefaultValue(
+        MetadataReader reader,
+        ConstantHandle constant,
+        CustomAttributeHandleCollection attributes
+    )
+    {
+        if (!constant.IsNil)
+        {
+            return DescribeConstant(reader, constant);
+        }
+
+        foreach (CustomAttributeHandle handle in attributes)
+        {
+            CustomAttribute attribute = reader.GetCustomAttribute(handle);
+
+            if (
+                !TryGetAttributeTypeName(
+                    reader,
+                    attribute,
+                    out string attributeNamespace,
+                    out string attributeName
+                )
+            )
+            {
+                continue;
+            }
+
+            if (attributeNamespace != "System.Runtime.CompilerServices")
+            {
+                continue;
+            }
+
+            switch (attributeName)
+            {
+                case "DecimalConstantAttribute":
+                    return DescribeDecimalConstant(reader, attribute);
+
+                case "DateTimeConstantAttribute":
+                    return DescribeDateTimeConstant(reader, attribute);
+
+                default:
+                    // An encoding this reader does not decode is carried as its name plus the raw
+                    // argument bytes rather than dropped. Two different values then never compare
+                    // equal, which is the property that matters for a publish gate, even though the
+                    // rendering is not human-readable.
+                    if (attributeName.EndsWith("ConstantAttribute", StringComparison.Ordinal))
+                    {
+                        return attributeName
+                            + ":raw:"
+                            + Convert.ToHexString(reader.GetBlobBytes(attribute.Value));
+                    }
+
+                    break;
+            }
+        }
+
+        return "none";
+    }
+
+    // Both DecimalConstantAttribute constructors lay their arguments out identically: a two-byte
+    // prolog, scale, sign, then the high, middle and low 32-bit words.
+    private static string DescribeDecimalConstant(MetadataReader reader, CustomAttribute attribute)
+    {
+        BlobReader blob = reader.GetBlobReader(attribute.Value);
+
+        if (blob.Length < 16)
+        {
+            return "decimal:malformed";
+        }
+
+        if (blob.ReadUInt16() != 1)
+        {
+            return "decimal:malformed";
+        }
+
+        byte scale = blob.ReadByte();
+        byte sign = blob.ReadByte();
+        uint high = blob.ReadUInt32();
+        uint middle = blob.ReadUInt32();
+        uint low = blob.ReadUInt32();
+
+        decimal value = new(
+            unchecked((int)low),
+            unchecked((int)middle),
+            unchecked((int)high),
+            sign != 0,
+            scale
+        );
+
+        return "decimal:" + value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    private static string DescribeDateTimeConstant(MetadataReader reader, CustomAttribute attribute)
+    {
+        BlobReader blob = reader.GetBlobReader(attribute.Value);
+
+        if (blob.Length < 10 || blob.ReadUInt16() != 1)
+        {
+            return "datetime:malformed";
+        }
+
+        // Ticks rather than a formatted date: a format would drag in a calendar and a culture, and
+        // the tick count is what the compiler recorded.
+        return "datetime:" + blob.ReadInt64().ToString(System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>
+    /// The nullable annotation a generic parameter carries, which is how <c>notnull</c> is recorded.
+    /// </summary>
+    /// <remarks>
+    /// notnull is not a CLR constraint flag. The compiler records it as NullableAttribute(1) on the
+    /// type parameter, so a reader that looked only at GenericParameterAttributes and the constraint
+    /// table reports `where T : notnull` and an unconstrained T identically. The attribute can be
+    /// elided in favour of a NullableContextAttribute on the declaring type or method, which is why
+    /// that fallback exists.
+    /// </remarks>
+    private static string NullableAnnotation(MetadataReader reader, GenericParameter parameter)
+    {
+        if (
+            !TryReadNullableByte(reader, parameter.GetCustomAttributes(), "NullableAttribute", out byte value)
+        )
+        {
+            EntityHandle parent = parameter.Parent;
+            CustomAttributeHandleCollection parentAttributes = parent.Kind switch
+            {
+                HandleKind.TypeDefinition => reader
+                    .GetTypeDefinition((TypeDefinitionHandle)parent)
+                    .GetCustomAttributes(),
+                HandleKind.MethodDefinition => reader
+                    .GetMethodDefinition((MethodDefinitionHandle)parent)
+                    .GetCustomAttributes(),
+                _ => default,
+            };
+
+            if (
+                parentAttributes.Count == 0
+                || !TryReadNullableByte(reader, parentAttributes, "NullableContextAttribute", out value)
+            )
+            {
+                return string.Empty;
+            }
+        }
+
+        return value switch
+        {
+            1 => "notnull",
+            _ => "nullable(" + value.ToString(System.Globalization.CultureInfo.InvariantCulture) + ")",
+        };
+    }
+
+    private static bool TryReadNullableByte(
+        MetadataReader reader,
+        CustomAttributeHandleCollection attributes,
+        string attributeName,
+        out byte value
+    )
+    {
+        foreach (CustomAttributeHandle handle in attributes)
+        {
+            CustomAttribute attribute = reader.GetCustomAttribute(handle);
+
+            if (!TryGetAttributeTypeName(reader, attribute, out string attributeNamespace, out string name))
+            {
+                continue;
+            }
+
+            if (attributeNamespace != "System.Runtime.CompilerServices" || name != attributeName)
+            {
+                continue;
+            }
+
+            BlobReader blob = reader.GetBlobReader(attribute.Value);
+
+            // A byte argument is the single-value form. The array form, which annotates a
+            // constructed type rather than a bare type parameter, is not a notnull constraint.
+            if (blob.Length >= 3 && blob.ReadUInt16() == 1)
+            {
+                value = blob.ReadByte();
+
+                return true;
+            }
+        }
+
+        value = 0;
+
+        return false;
+    }
+
+    private static bool TryGetAttributeTypeName(
+        MetadataReader reader,
+        CustomAttribute attribute,
+        out string attributeNamespace,
+        out string attributeName
+    )
+    {
+        attributeNamespace = string.Empty;
+        attributeName = string.Empty;
+
+        switch (attribute.Constructor.Kind)
+        {
+            case HandleKind.MemberReference:
+                MemberReference member = reader.GetMemberReference(
+                    (MemberReferenceHandle)attribute.Constructor
+                );
+
+                if (member.Parent.Kind != HandleKind.TypeReference)
+                {
+                    return false;
+                }
+
+                TypeReference reference = reader.GetTypeReference((TypeReferenceHandle)member.Parent);
+                attributeNamespace = reader.GetString(reference.Namespace);
+                attributeName = reader.GetString(reference.Name);
+
+                return true;
+
+            // An attribute declared in the assembly being read, which is how the compiler emits its
+            // own NullableAttribute into an assembly that does not reference one.
+            case HandleKind.MethodDefinition:
+                MethodDefinition constructor = reader.GetMethodDefinition(
+                    (MethodDefinitionHandle)attribute.Constructor
+                );
+                TypeDefinition declaring = reader.GetTypeDefinition(constructor.GetDeclaringType());
+                attributeNamespace = reader.GetString(declaring.Namespace);
+                attributeName = reader.GetString(declaring.Name);
+
+                return true;
+
+            default:
+                return false;
         }
     }
 
