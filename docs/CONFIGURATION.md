@@ -357,9 +357,12 @@ existed.
 `Allowed` is the only switch. A plugin runs if and only if its directory name
 appears here, and there is no per-feature switch of any kind. A directory present
 under the root but absent from `Allowed` is never opened. When `Allowed` names at
-least one plugin, each such directory also produces one warning naming it; an empty
-`Allowed` asks for nothing and does not inspect the root at all, so it produces no
-warning.
+least one plugin, those directories produce **one aggregate warning** listing all of
+them, not one warning each; where the root cannot be listed at all, a different
+warning says so instead. An empty `Allowed` asks for nothing and does not inspect
+the root, so it produces neither. See
+[When a plugin does not load](./OPERATIONS.md#when-a-plugin-does-not-load-dms-does-not-start)
+for how to read the two.
 
 **The value is split on commas once, and each entry is trimmed.** Whitespace around
 a name is removed before the name is used for anything, an empty entry is dropped

@@ -357,10 +357,25 @@ for these plugins the absence is invisible: a validation plugin that silently di
 load means business rules stop being enforced while writes keep succeeding, and
 nothing surfaces until the data is already wrong.
 
-The one non-fatal case is a directory under the plugin root that `Plugins:Allowed`
-does not name. It is never opened, never probed, and never has its metadata read;
-when the allowlist names at least one plugin, each ignored directory produces one
-warning naming it.
+Two outcomes are warnings rather than failures, and a boot produces **at most one**
+of them. Both come from the same step, which runs only once every allowlisted plugin
+has already loaded, and neither can happen when `Plugins:Allowed` is empty: nothing
+was asked for, so the root is never listed at all.
+
+- **Directories under the plugin root that the allowlist does not name.** One
+  aggregate warning, not one per directory: a single line listing every ignored
+  name, ordinally sorted and comma-separated. Such a directory is never opened,
+  never probed, and never has its metadata read. Replayed through the application
+  logger as `Plugin loader warning UnallowlistedDirectories`, carrying the names.
+- **The plugin root could not be listed.** When enumerating the root fails with an
+  I/O or permission error, whether it holds unallowlisted directories is unknown.
+  That is not worth failing a boot whose plugins all loaded, so it warns instead.
+  Replayed as `Plugin loader warning PluginRootNotListed`, carrying the error
+  message and no directory names.
+
+The second is why the absence of the first proves nothing. An operator who greps for
+ignored directories and finds none has to rule out `PluginRootNotListed` before
+concluding there were none to ignore.
 
 The tables below group every failure by **what you do about it**.
 
