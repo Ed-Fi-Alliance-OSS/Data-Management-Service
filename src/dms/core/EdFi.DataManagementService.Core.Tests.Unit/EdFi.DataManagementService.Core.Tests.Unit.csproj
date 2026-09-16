@@ -33,6 +33,16 @@
             GeneratePathProperty="true"
             ExcludeAssets="all"
         />
+        <!-- The extension packages that complete the supported effective schema sets, restored only so
+             the snapshot hash-neutrality fixtures can read the packaged schema NuGet restored. Assets
+             are excluded so nothing lands in this project's output, and no path property is generated:
+             Directory.Build.targets reads a Data Standard 5.2 extension's path property as a request to
+             bundle it into the staged ApiSchema workspace, which other fixtures load as the bundled set.
+             TPDM already restores through the frontend reference. -->
+        <PackageReference Include="EdFi.DataStandard52.Homograph.ApiSchema" ExcludeAssets="all" />
+        <PackageReference Include="EdFi.DataStandard52.Sample.ApiSchema" ExcludeAssets="all" />
+        <PackageReference Include="EdFi.DataStandard61.Homograph.ApiSchema" ExcludeAssets="all" />
+        <PackageReference Include="EdFi.DataStandard61.Sample.ApiSchema" ExcludeAssets="all" />
     </ItemGroup>
     <ItemGroup>
         <!-- Surfaces the restored package roots so tests can assert the packaged ApiSchema.json

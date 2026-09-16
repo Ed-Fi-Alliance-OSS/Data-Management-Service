@@ -35,13 +35,26 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Startup;
 /// package ever carries snapshot content outside the payloads
 /// <see cref="ApiSchemaInputNormalizer" /> strips.
 /// </para>
+/// <para>
+/// DMS hashes the selected core package together with its extension packages, each as its own
+/// project in the manifest <see cref="EffectiveSchemaHashProvider" /> hashes, so each fixture covers
+/// a complete supported effective schema set rather than a core package alone. Because the per-project
+/// hashes are independent, neutrality over a full set also proves it for every subset a deployment
+/// might select, the bundled core-plus-TPDM set included.
+/// </para>
 /// </remarks>
 public abstract class SnapshotOpenApiHashNeutralityTests
 {
     /// <summary>
-    /// The <c>AssemblyMetadata</c> key under which the build recorded this package's restored root.
+    /// The <c>AssemblyMetadata</c> key under which the build recorded the core package's restored root.
     /// </summary>
-    protected abstract string PackageRootMetadataKey { get; }
+    protected abstract string CorePackageRootMetadataKey { get; }
+
+    /// <summary>
+    /// The extension packages that complete this effective schema set, read from the roots NuGet
+    /// restored beside the core package.
+    /// </summary>
+    protected abstract IReadOnlyList<string> ExtensionPackageIds { get; }
 
     /// <summary>
     /// The reusable component names the upstream snapshot contract introduces. Deleting the
@@ -66,46 +79,72 @@ public abstract class SnapshotOpenApiHashNeutralityTests
         "#/components/responses/SnapshotMethodNotAllowed",
     ];
 
+    /// <summary>
+    /// What one packaged document carried before its snapshot content was removed, and how much of
+    /// that content the removal found. Kept per package so a package that contributed nothing to the
+    /// proof is named rather than averaged away by the others.
+    /// </summary>
+    private sealed record PackagedDocumentFacts(
+        string PackageId,
+        bool IsCore,
+        bool OpenApiBaseDocumentsPresent,
+        int ResourceSchemaCount,
+        int ResourceSchemasWithOpenApiFragments,
+        int AbstractResourcesWithOpenApiFragment,
+        int SnapshotArtifactsRemoved
+    );
+
     private string _apiSchemaVersion = string.Empty;
-    private bool _packagedOpenApiBaseDocumentsPresent;
-    private int _packagedResourceSchemaCount;
-    private int _packagedResourceSchemasWithOpenApiFragments;
-    private int _packagedAbstractResourcesWithOpenApiFragment;
-    private int _snapshotArtifactsRemoved;
+    private readonly List<PackagedDocumentFacts> _packagedDocuments = [];
 
     private string _normalizedJsonDigest = string.Empty;
     private string _normalizedJsonDigestWithoutSnapshotContent = string.Empty;
     private string _effectiveSchemaHash = string.Empty;
     private string _effectiveSchemaHashWithoutSnapshotContent = string.Empty;
     private string _normalizedJson = string.Empty;
-    private JsonObject _normalizedProjectSchema = null!;
+    private IReadOnlyList<JsonObject> _normalizedProjectSchemas = [];
 
     [OneTimeSetUp]
     public void OneTimeSetUp()
     {
-        JsonNode rootNode = PackagedApiSchemaContract.LoadPackagedRootNode(PackageRootMetadataKey);
+        JsonNode coreNode = PackagedApiSchemaContract.LoadPackagedRootNode(CorePackageRootMetadataKey);
+        JsonNode[] extensionNodes =
+        [
+            .. ExtensionPackageIds.Select(packageId =>
+                PackagedApiSchemaContract.LoadPackagedExtensionRootNode(CorePackageRootMetadataKey, packageId)
+            ),
+        ];
+        ApiSchemaDocumentNodes nodes = new(coreNode, extensionNodes);
 
-        _apiSchemaVersion = rootNode["apiSchemaVersion"]?.GetValue<string>() ?? string.Empty;
-        RecordPackagedOpenApiPayloadCounts(rootNode);
+        _apiSchemaVersion = coreNode["apiSchemaVersion"]?.GetValue<string>() ?? string.Empty;
 
-        // The packaged schema as published, normalized and hashed the way startup does it.
-        (_normalizedJson, _normalizedProjectSchema, _effectiveSchemaHash) = NormalizeAndHash(rootNode);
+        // The packaged set as published, normalized and hashed the way startup does it.
+        (_normalizedJson, _normalizedProjectSchemas, _effectiveSchemaHash) = NormalizeAndHash(nodes);
         _normalizedJsonDigest = Sha256Hex(_normalizedJson);
 
-        // The same schema with the snapshot contract deleted from its OpenAPI payloads. Mutated in
-        // place rather than on a clone: the pre-mutation state is already captured above, and a second
-        // full copy of a multi-megabyte document buys nothing.
-        _snapshotArtifactsRemoved = RemoveSnapshotOpenApiContent(rootNode);
-
-        (string withoutSnapshotJson, _, _effectiveSchemaHashWithoutSnapshotContent) = NormalizeAndHash(
-            rootNode
+        // The same set with the snapshot contract deleted from every document's OpenAPI payloads.
+        // Mutated in place rather than on clones: the pre-mutation state is already captured above,
+        // and a second full copy of several multi-megabyte documents buys nothing.
+        _packagedDocuments.Add(
+            RecordAndRemoveSnapshotOpenApiContent(CorePackageRootMetadataKey, coreNode, isCore: true)
         );
+
+        foreach ((string packageId, JsonNode extensionNode) in ExtensionPackageIds.Zip(extensionNodes))
+        {
+            _packagedDocuments.Add(
+                RecordAndRemoveSnapshotOpenApiContent(packageId, extensionNode, isCore: false)
+            );
+        }
+
+        (string withoutSnapshotJson, _, _effectiveSchemaHashWithoutSnapshotContent) = NormalizeAndHash(nodes);
         _normalizedJsonDigestWithoutSnapshotContent = Sha256Hex(withoutSnapshotJson);
     }
 
     [Test]
     public void It_declares_the_apiSchemaVersion_the_snapshot_contract_did_not_bump()
     {
+        // The core's declaration stands for the set: the normalizer rejects an extension whose
+        // apiSchemaVersion differs from the core's, so a normalized set has a single version.
         _apiSchemaVersion
             .Should()
             .Be(
@@ -116,44 +155,79 @@ public abstract class SnapshotOpenApiHashNeutralityTests
     }
 
     [Test]
-    public void It_carries_snapshot_openapi_artifacts_to_neutralize()
+    public void It_normalizes_every_package_in_the_effective_schema_set()
     {
-        // Compared against the resource count rather than zero. Every packaged resource carries the
-        // contract on several operations, so a sweep that found merely "something" would still be
-        // consistent with having missed almost all of it, and neutrality proven over almost nothing is
-        // not neutrality proven. Against a pre-DMS-1371 package this finds nothing at all and fails.
-        _snapshotArtifactsRemoved
+        // The normalizer drops nothing silently, but the fixture's claim is about the set it names, so
+        // the set that reached the hash is checked against that list rather than trusted.
+        _normalizedProjectSchemas
             .Should()
-            .BeGreaterThan(
-                _packagedResourceSchemaCount,
-                "the pinned package publishes the snapshot contract on multiple operations of every "
-                    + "resource, so the neutralized artifact count must exceed the resource count"
+            .HaveCount(
+                1 + ExtensionPackageIds.Count,
+                "the core package and each named extension package must each reach the hashed set as "
+                    + "its own project"
             );
+    }
+
+    [Test]
+    public void It_carries_snapshot_openapi_artifacts_to_neutralize_in_every_package()
+    {
+        // Compared per package against its resource count rather than against zero. Every packaged
+        // resource carries the contract on several operations, so a sweep that found merely
+        // "something" would still be consistent with having missed almost all of it, and neutrality
+        // proven over almost nothing is not neutrality proven. Checked per package so an extension
+        // whose fragments the sweep never reached cannot hide behind the core's count. Against a
+        // pre-DMS-1371 package this finds nothing at all and fails.
+        foreach (PackagedDocumentFacts document in _packagedDocuments)
+        {
+            document
+                .SnapshotArtifactsRemoved.Should()
+                .BeGreaterThan(
+                    document.ResourceSchemaCount,
+                    "the pinned package '{0}' publishes the snapshot contract on multiple operations of "
+                        + "every resource, so the neutralized artifact count must exceed the resource count",
+                    document.PackageId
+                );
+        }
     }
 
     [Test]
     public void It_strips_every_openapi_payload_before_hashing()
     {
-        _packagedOpenApiBaseDocumentsPresent
-            .Should()
-            .BeTrue("the packaged schema must publish base documents");
-        _packagedResourceSchemasWithOpenApiFragments
-            .Should()
-            .Be(
-                _packagedResourceSchemaCount,
-                "every packaged resource schema carries OpenAPI fragments, so stripping them is not a no-op"
-            );
-        _packagedAbstractResourcesWithOpenApiFragment
-            .Should()
-            .BeGreaterThan(0, "the packaged abstract resources carry an OpenAPI fragment");
+        foreach (PackagedDocumentFacts document in _packagedDocuments)
+        {
+            if (document.IsCore)
+            {
+                document
+                    .OpenApiBaseDocumentsPresent.Should()
+                    .BeTrue("the packaged core schema must publish base documents");
+                document
+                    .AbstractResourcesWithOpenApiFragment.Should()
+                    .BeGreaterThan(0, "the packaged core abstract resources carry an OpenAPI fragment");
+            }
 
-        _normalizedProjectSchema.Should().NotContainKey("openApiBaseDocuments");
-        CountChildrenWithProperty(_normalizedProjectSchema["resourceSchemas"], "openApiFragments")
-            .Should()
-            .Be(0);
-        CountChildrenWithProperty(_normalizedProjectSchema["abstractResources"], "openApiFragment")
-            .Should()
-            .Be(0);
+            document
+                .ResourceSchemaCount.Should()
+                .BeGreaterThan(0, "the packaged schema '{0}' must publish resources", document.PackageId);
+            document
+                .ResourceSchemasWithOpenApiFragments.Should()
+                .Be(
+                    document.ResourceSchemaCount,
+                    "every packaged resource schema in '{0}' carries OpenAPI fragments, so stripping "
+                        + "them is not a no-op",
+                    document.PackageId
+                );
+        }
+
+        foreach (JsonObject normalizedProjectSchema in _normalizedProjectSchemas)
+        {
+            normalizedProjectSchema.Should().NotContainKey("openApiBaseDocuments");
+            CountChildrenWithProperty(normalizedProjectSchema["resourceSchemas"], "openApiFragments")
+                .Should()
+                .Be(0);
+            CountChildrenWithProperty(normalizedProjectSchema["abstractResources"], "openApiFragment")
+                .Should()
+                .Be(0);
+        }
     }
 
     [Test]
@@ -198,53 +272,77 @@ public abstract class SnapshotOpenApiHashNeutralityTests
 
     /// <summary>
     /// Normalizes through the production normalizer and hashes through the production hash provider,
-    /// returning the normalized core document's JSON, its projectSchema, and the effective schema hash.
+    /// returning the JSON of every normalized document in hashed order, their projectSchemas, and the
+    /// effective schema hash.
     /// </summary>
     private static (
         string NormalizedJson,
-        JsonObject NormalizedProjectSchema,
+        IReadOnlyList<JsonObject> NormalizedProjectSchemas,
         string EffectiveSchemaHash
-    ) NormalizeAndHash(JsonNode rootNode)
+    ) NormalizeAndHash(ApiSchemaDocumentNodes nodes)
     {
         ApiSchemaInputNormalizer normalizer = new(NullLogger<ApiSchemaInputNormalizer>.Instance);
-        ApiSchemaNormalizationResult result = normalizer.Normalize(new ApiSchemaDocumentNodes(rootNode, []));
+        ApiSchemaNormalizationResult result = normalizer.Normalize(nodes);
 
         if (result is not ApiSchemaNormalizationResult.SuccessResult success)
         {
             throw new InvalidOperationException(
-                $"Normalizing the packaged ApiSchema failed with {result.GetType().Name}."
+                $"Normalizing the packaged ApiSchema set failed with {result.GetType().Name}."
             );
         }
 
-        JsonNode normalizedCore = success.NormalizedNodes.CoreApiSchemaRootNode;
-        JsonObject normalizedProjectSchema =
-            normalizedCore["projectSchema"]?.AsObject()
-            ?? throw new InvalidOperationException("Normalized schema is missing projectSchema.");
+        JsonNode[] normalizedNodes =
+        [
+            success.NormalizedNodes.CoreApiSchemaRootNode,
+            .. success.NormalizedNodes.ExtensionApiSchemaRootNodes,
+        ];
+
+        JsonObject[] normalizedProjectSchemas =
+        [
+            .. normalizedNodes.Select(normalizedNode =>
+                normalizedNode["projectSchema"]?.AsObject()
+                ?? throw new InvalidOperationException("Normalized schema is missing projectSchema.")
+            ),
+        ];
 
         EffectiveSchemaHashProvider hashProvider = new(NullLogger<EffectiveSchemaHashProvider>.Instance);
 
         return (
-            normalizedCore.ToJsonString(),
-            normalizedProjectSchema,
+            string.Join('\n', normalizedNodes.Select(normalizedNode => normalizedNode.ToJsonString())),
+            normalizedProjectSchemas,
             hashProvider.ComputeHash(success.NormalizedNodes)
         );
     }
 
-    private void RecordPackagedOpenApiPayloadCounts(JsonNode rootNode)
+    /// <summary>
+    /// Records what the packaged document carries, then deletes its snapshot content in place.
+    /// </summary>
+    private static PackagedDocumentFacts RecordAndRemoveSnapshotOpenApiContent(
+        string packageId,
+        JsonNode rootNode,
+        bool isCore
+    )
     {
         JsonObject projectSchema =
             rootNode["projectSchema"]?.AsObject()
-            ?? throw new InvalidOperationException("Packaged ApiSchema is missing projectSchema.");
+            ?? throw new InvalidOperationException(
+                $"Packaged ApiSchema '{packageId}' is missing projectSchema."
+            );
 
-        _packagedOpenApiBaseDocumentsPresent = projectSchema.ContainsKey("openApiBaseDocuments");
-        _packagedResourceSchemaCount = (projectSchema["resourceSchemas"] as JsonObject)?.Count ?? 0;
-        _packagedResourceSchemasWithOpenApiFragments = CountChildrenWithProperty(
-            projectSchema["resourceSchemas"],
-            "openApiFragments"
-        );
-        _packagedAbstractResourcesWithOpenApiFragment = CountChildrenWithProperty(
-            projectSchema["abstractResources"],
-            "openApiFragment"
+        return new PackagedDocumentFacts(
+            packageId,
+            isCore,
+            OpenApiBaseDocumentsPresent: projectSchema.ContainsKey("openApiBaseDocuments"),
+            ResourceSchemaCount: (projectSchema["resourceSchemas"] as JsonObject)?.Count ?? 0,
+            ResourceSchemasWithOpenApiFragments: CountChildrenWithProperty(
+                projectSchema["resourceSchemas"],
+                "openApiFragments"
+            ),
+            AbstractResourcesWithOpenApiFragment: CountChildrenWithProperty(
+                projectSchema["abstractResources"],
+                "openApiFragment"
+            ),
+            SnapshotArtifactsRemoved: RemoveSnapshotOpenApiContent(projectSchema)
         );
     }
 
@@ -265,13 +363,8 @@ public abstract class SnapshotOpenApiHashNeutralityTests
     /// removed. Confined to those regions on purpose: the point is to show that content the normalizer
     /// strips cannot reach the hash, so touching anything outside them would prove nothing.
     /// </summary>
-    private static int RemoveSnapshotOpenApiContent(JsonNode rootNode)
+    private static int RemoveSnapshotOpenApiContent(JsonObject projectSchema)
     {
-        if (rootNode["projectSchema"] is not JsonObject projectSchema)
-        {
-            return 0;
-        }
-
         int removed = 0;
 
         if (projectSchema["openApiBaseDocuments"] is JsonNode baseDocuments)
@@ -390,24 +483,39 @@ public abstract class SnapshotOpenApiHashNeutralityTests
 }
 
 /// <summary>
-/// Hash-neutrality of the snapshot OpenAPI contract in the pinned Data Standard 5.2 core package.
+/// Hash-neutrality of the snapshot OpenAPI contract across the full pinned Data Standard 5.2 set: the
+/// core package with the TPDM, Sample, and Homograph extensions, which is what the file-based intake
+/// path serves and what the bundled core-plus-TPDM path is a subset of.
 /// </summary>
 [TestFixture]
-public class Given_the_packaged_DataStandard52_core_ApiSchema_snapshot_contract
+public class Given_the_packaged_DataStandard52_core_TPDM_Sample_and_Homograph_ApiSchema_snapshot_contract
     : SnapshotOpenApiHashNeutralityTests
 {
     /// <inheritdoc />
-    protected override string PackageRootMetadataKey => "DataStandard52ApiSchemaPackageRoot";
+    protected override string CorePackageRootMetadataKey => "DataStandard52ApiSchemaPackageRoot";
+
+    /// <inheritdoc />
+    protected override IReadOnlyList<string> ExtensionPackageIds =>
+        [
+            "EdFi.DataStandard52.TPDM.ApiSchema",
+            "EdFi.DataStandard52.Sample.ApiSchema",
+            "EdFi.DataStandard52.Homograph.ApiSchema",
+        ];
 }
 
 /// <summary>
-/// Hash-neutrality of the snapshot OpenAPI contract in the pinned Data Standard 6.1 core package.
-/// Data Standard 6.1 folds TPDM into core, so this covers a materially larger served surface than 5.2.
+/// Hash-neutrality of the snapshot OpenAPI contract across the full pinned Data Standard 6.1 set: the
+/// core package with the Sample and Homograph extensions. Data Standard 6.1 folds TPDM into core, so
+/// there is no TPDM package to include and the core covers a materially larger surface than 5.2's.
 /// </summary>
 [TestFixture]
-public class Given_the_packaged_DataStandard61_core_ApiSchema_snapshot_contract
+public class Given_the_packaged_DataStandard61_core_Sample_and_Homograph_ApiSchema_snapshot_contract
     : SnapshotOpenApiHashNeutralityTests
 {
     /// <inheritdoc />
-    protected override string PackageRootMetadataKey => "DataStandard61ApiSchemaPackageRoot";
+    protected override string CorePackageRootMetadataKey => "DataStandard61ApiSchemaPackageRoot";
+
+    /// <inheritdoc />
+    protected override IReadOnlyList<string> ExtensionPackageIds =>
+        ["EdFi.DataStandard61.Sample.ApiSchema", "EdFi.DataStandard61.Homograph.ApiSchema"];
 }

@@ -1135,10 +1135,54 @@ internal static class PackagedApiSchemaContract
     }
 
     /// <summary>
+    /// Parses the entire packaged <c>ApiSchema.json</c> of the extension package
+    /// <paramref name="extensionPackageId"/>, restored beside the core package whose root the build
+    /// recorded under <paramref name="corePackageRootMetadataKey"/>.
+    /// </summary>
+    /// <remarks>
+    /// NuGet restores every package to <c>{packages folder}/{lowercase id}/{version}/</c>, and the
+    /// ApiSchema packages are pinned to a single version, so the extension's root is the core root
+    /// with the package segment swapped. It is derived rather than recorded through a generated path
+    /// property because <c>Directory.Build.targets</c> treats a Data Standard 5.2 extension's path
+    /// property as a request to bundle that package into this project's staged ApiSchema workspace,
+    /// which other fixtures load as the bundled set. The path is checked before it is read, so a
+    /// package restored elsewhere, or pinned to a different version, fails here by name.
+    /// </remarks>
+    public static JsonNode LoadPackagedExtensionRootNode(
+        string corePackageRootMetadataKey,
+        string extensionPackageId
+    )
+    {
+        string coreRoot = Path.TrimEndingDirectorySeparator(ResolvePackageRoot(corePackageRootMetadataKey));
+        string version = Path.GetFileName(coreRoot);
+        string packagesFolder =
+            Path.GetDirectoryName(Path.GetDirectoryName(coreRoot))
+            ?? throw new InvalidOperationException(
+                $"Restored package root for '{corePackageRootMetadataKey}' is not inside a packages "
+                    + $"folder: {coreRoot}"
+            );
+
+        string apiSchemaPath = ResolvePackagedApiSchemaPath(
+            Path.Combine(packagesFolder, extensionPackageId.ToLowerInvariant(), version),
+            extensionPackageId
+        );
+
+        return JsonNode.Parse(File.ReadAllText(apiSchemaPath))
+            ?? throw new InvalidOperationException($"Packaged ApiSchema parsed to null: {apiSchemaPath}");
+    }
+
+    /// <summary>
     /// Resolves the packaged <c>ApiSchema.json</c> path from the restored package root the build
     /// recorded under <paramref name="packageRootMetadataKey"/>.
     /// </summary>
-    private static string ResolvePackagedApiSchemaPath(string packageRootMetadataKey)
+    private static string ResolvePackagedApiSchemaPath(string packageRootMetadataKey) =>
+        ResolvePackagedApiSchemaPath(ResolvePackageRoot(packageRootMetadataKey), packageRootMetadataKey);
+
+    /// <summary>
+    /// Reads the restored package root the build recorded under
+    /// <paramref name="packageRootMetadataKey"/>.
+    /// </summary>
+    private static string ResolvePackageRoot(string packageRootMetadataKey)
     {
         string? packageRoot = typeof(PackagedApiSchemaContract)
             .Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
@@ -1155,6 +1199,15 @@ internal static class PackagedApiSchemaContract
             );
         }
 
+        return packageRoot;
+    }
+
+    /// <summary>
+    /// Resolves the packaged <c>ApiSchema.json</c> path under <paramref name="packageRoot"/>, naming
+    /// the package as <paramref name="packageDescription"/> when it is not there.
+    /// </summary>
+    private static string ResolvePackagedApiSchemaPath(string packageRoot, string packageDescription)
+    {
         string apiSchemaPath = Path.Combine(
             packageRoot,
             "contentFiles",
@@ -1167,7 +1220,7 @@ internal static class PackagedApiSchemaContract
         if (!File.Exists(apiSchemaPath))
         {
             throw new FileNotFoundException(
-                $"Packaged ApiSchema not found for '{packageRootMetadataKey}': {apiSchemaPath}",
+                $"Packaged ApiSchema not found for '{packageDescription}': {apiSchemaPath}",
                 apiSchemaPath
             );
         }
