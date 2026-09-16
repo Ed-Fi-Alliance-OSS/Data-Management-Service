@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Globalization;
 using System.Net;
 using System.Text;
 using System.Text.Json.Nodes;
@@ -46,25 +47,80 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
     /// entitled to, but an arbitrary body that merely failed to contain them is not.
     /// </summary>
     /// <remarks>
-    /// Whatever this replaces is recorded on the log under
+    /// A summary of what this replaces is recorded on the log under
     /// <see cref="DiscardedUnauthorizedDetailTemplate"/> rather than dropped, so the body's
     /// <c>correlationId</c> reaches the explanation here for the same reason it does for
-    /// <see cref="GatewayErrorDetail"/>.
+    /// <see cref="GatewayErrorDetail"/>. Summary, not the body: see
+    /// <c>SummarizeUpstreamFieldsForLogging</c> for what is kept and what is deliberately not.
     /// </remarks>
     private const string UnauthorizedFallbackDetail =
         "The upstream identity service rejected the request credentials.";
 
     /// <summary>
-    /// The structured-logging template for the single event that preserves an upstream 401 body
-    /// whose diagnostic content <see cref="UnauthorizedFallbackDetail"/> is about to replace.
+    /// The structured-logging template for the single event that preserves what can safely be
+    /// kept of an upstream 401 body whose diagnostic content <see cref="UnauthorizedFallbackDetail"/>
+    /// is about to replace.
     /// </summary>
     /// <remarks>
-    /// The body is bound to <c>{Content}</c> and never interpolated into the template: a JSON
-    /// error body is made of braces, which the logging pipeline would read as property holes.
+    /// Both summaries are bound as parameters and never interpolated into the template: they are
+    /// built from a JSON error body, so they can contain braces, which the logging pipeline would
+    /// otherwise read as property holes. They are separate parameters rather than one so that a
+    /// structured sink can query them apart, and so that an oversized value in one cannot consume
+    /// the other's share of <see cref="MaxLoggedUpstreamContentLength"/> - the cost being that the
+    /// event's worst-case contribution is two bounded strings rather than one.
     /// </remarks>
     private const string DiscardedUnauthorizedDetailTemplate =
         "Upstream identity service rejected the credentials with no usable error_description; "
-        + "its body is recorded here because it is withheld from the client - {TraceId} - {Content}";
+        + "what its body carried is recorded here because the body is withheld from the client "
+        + "- {TraceId} - standard OAuth error fields: {StandardFields} - other field names "
+        + "present, their values withheld: {OtherFieldNames}";
+
+    /// <summary>
+    /// The RFC 6749 section 5.2 error response members: the only upstream fields whose
+    /// <em>values</em> are written to the log.
+    /// </summary>
+    /// <remarks>
+    /// Ordinal, because JSON member names are case-sensitive and RFC 6749 spells these lowercase.
+    /// <c>error</c> costs nothing at all to log, since it is already forwarded to the client as
+    /// the problem-details <c>title</c> (<see cref="Response.FailureResponse.ForUnauthorized"/>).
+    /// <c>error_description</c> is listed for completeness of the contract rather than because it
+    /// can appear here - its presence is precisely what suppresses this event.
+    /// </remarks>
+    private static readonly HashSet<string> _standardOAuthErrorFields = new(StringComparer.Ordinal)
+    {
+        "error",
+        "error_description",
+        "error_uri",
+    };
+
+    /// <summary>
+    /// Upper bound on how many non-standard field <em>names</em> from an upstream error body reach
+    /// the log.
+    /// </summary>
+    /// <remarks>
+    /// The count is attacker-influenceable just as the length is, and bounding length alone does
+    /// not bound it usefully: ten thousand one-character names fit inside
+    /// <see cref="MaxLoggedUpstreamContentLength"/> and would still produce an unreadable line.
+    /// 20 is roughly an order of magnitude above observed practice - RFC 6749 defines three
+    /// members, and the verbose identity providers add a handful more (Okta's <c>errorCode</c>,
+    /// <c>errorSummary</c>, <c>errorLink</c>, <c>errorId</c>, <c>errorCauses</c>) - which is the
+    /// same headroom argument <see cref="MaxLoggedUpstreamContentLength"/> is chosen on. Exceeding
+    /// it is reported rather than silently swallowed, via
+    /// <see cref="LoggedFieldNameOverflowFormat"/>.
+    /// </remarks>
+    private const int MaxLoggedUpstreamFieldNames = 20;
+
+    /// <summary>
+    /// Appended when <see cref="MaxLoggedUpstreamFieldNames"/> is applied, so an operator can tell
+    /// a body with twenty fields from one with twenty thousand.
+    /// </summary>
+    private const string LoggedFieldNameOverflowFormat = "...[{0} more]";
+
+    /// <summary>
+    /// Stands in for an empty summary, so that an absent group reads as deliberately empty rather
+    /// than as a logging defect.
+    /// </summary>
+    private const string NoUpstreamFieldsMarker = "(none)";
 
     /// <summary>
     /// Upper bound, in characters, on how much of an upstream error body reaches the log.
@@ -174,9 +230,10 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
             var upstreamSuppliedDescription = false;
 
             JsonNode? parsed = JsonNode.Parse(body);
+            JsonObject? obj = null;
             if (parsed is not null)
             {
-                var obj = parsed.AsObject();
+                obj = parsed.AsObject();
                 if (obj.ContainsKey("error"))
                 {
                     error = obj["error"]!.ToString();
@@ -198,16 +255,106 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
                 // credential is not a condition an operator must act on (docs/LOGGING.md) - but
                 // not Debug either, since DMS ships at Information and an unemitted event would
                 // leave the correlation ID pointing at nothing, the defect being fixed.
+                //
+                // `obj` is null only when the body was the JSON literal `null`, which parses to a
+                // null JsonNode. There are no fields to summarize in that case, and the event
+                // still has to fire: the correlation ID must lead somewhere.
+                (string standardFields, string otherFieldNames) = obj is null
+                    ? (NoUpstreamFieldsMarker, NoUpstreamFieldsMarker)
+                    : SummarizeUpstreamFieldsForLogging(obj);
+
                 logger.LogInformation(
                     DiscardedUnauthorizedDetailTemplate,
                     traceId.Value,
-                    SanitizeAndBoundForLogging(body)
+                    standardFields,
+                    otherFieldNames
                 );
             }
 
             return GenerateProblemDetailResponse(
                 HttpStatusCode.Unauthorized,
                 FailureResponse.ForUnauthorized(traceId, error, errorDescription)
+            );
+        }
+
+        // Splits the top-level members of an upstream 401 body into the only two things the log
+        // is allowed to carry: the values of the RFC 6749 section 5.2 error fields, and the bare
+        // *names* of every other member.
+        //
+        // This is the synthesis of two review findings that pull against each other, and it is
+        // worth knowing both before changing it.
+        //
+        // The first finding was that discarding the body outright loses the whole of why the
+        // upstream rejected the request whenever that reason lives in a non-standard member -
+        // `{"error":"invalid_client","reason":"client disabled"}`, where `reason` is the entire
+        // answer. An operator holding a correlation ID would find the request and no explanation.
+        //
+        // The second finding was that the fix for the first copied the whole body into ordinary
+        // production logs, which docs/LOGGING.md forbids outright: Information-level logs must
+        // carry no request or response bodies, credentials or personal information. Sanitizing
+        // and bounding the body answers log injection and log volume; it does not redact
+        // anything. The remedy asked for was "explicitly selected, safe diagnostic fields".
+        //
+        // Taken literally that remedy reinstates the first finding, because the field carrying
+        // the answer is by definition the one nobody knew to put on an allowlist. So: allowlisted
+        // fields by value, everything else by name only. The operator learns that the upstream
+        // also sent a `reason` and takes that to the identity provider's own logs, and DMS
+        // persists no arbitrary payload.
+        //
+        // The residual loss is real and deliberate. The log shows that `reason` was present; it
+        // never shows that it read "client disabled". That is the price of the no-payload policy,
+        // paid knowingly. Do not "restore" full-body logging here without reading both findings.
+        static (string StandardFields, string OtherFieldNames) SummarizeUpstreamFieldsForLogging(
+            JsonObject obj
+        )
+        {
+            List<string> standard = [];
+            List<string> otherNames = [];
+            int otherCount = 0;
+
+            // Enumeration order is the upstream document's own, which JsonObject preserves, so
+            // the summary reads in the order the identity service wrote its body.
+            foreach (KeyValuePair<string, JsonNode?> member in obj)
+            {
+                if (_standardOAuthErrorFields.Contains(member.Key))
+                {
+                    // `member.Value` is null for a JSON null, and a nested object or array
+                    // renders as its JSON text. Neither throws - this must not become a second
+                    // way out of this method, the first (JsonNode.Parse and AsObject on a
+                    // non-object body) being tracked as DMS-1549 - and neither can disturb the
+                    // message template, because the result is bound as a parameter.
+                    standard.Add($"{member.Key}={member.Value?.ToString() ?? "null"}");
+                    continue;
+                }
+
+                otherCount++;
+                if (otherNames.Count < MaxLoggedUpstreamFieldNames)
+                {
+                    otherNames.Add(member.Key);
+                }
+            }
+
+            if (otherCount > otherNames.Count)
+            {
+                otherNames.Add(
+                    string.Format(
+                        CultureInfo.InvariantCulture,
+                        LoggedFieldNameOverflowFormat,
+                        otherCount - otherNames.Count
+                    )
+                );
+            }
+
+            // Sanitized and bounded on the way out, names included: a member name is as
+            // attacker-influenceable as a member value, and an upstream is free to return one
+            // carrying newlines or a megabyte of padding.
+            return (
+                SanitizeAndBoundForLogging(
+                    standard.Count == 0 ? NoUpstreamFieldsMarker : string.Join(", ", standard)
+                ),
+                SanitizeAndBoundForLogging(
+                    otherNames.Count == 0 ? NoUpstreamFieldsMarker : string.Join(", ", otherNames)
+                )
             );
         }
 

@@ -549,12 +549,40 @@ public class OAuthManagerTests
     /// The single information event the 401 fallback emits, or <c>null</c> when it did not fire.
     /// Every call also writes two routine information events ("GetAccessTokenAsync" and
     /// "Forwarding token request"); the fallback event is told apart from those by its
-    /// <c>{Content}</c> parameter, which only it binds.
+    /// <c>{StandardFields}</c> parameter, which only it binds.
     /// </summary>
     private static LogRecord? DiscardedUnauthorizedDetailRecord(RecordingLogger<OAuthManager> logger) =>
         logger.Records.SingleOrDefault(record =>
-            record.Level == LogLevel.Information && record.Properties.ContainsKey("Content")
+            record.Level == LogLevel.Information && record.Properties.ContainsKey("StandardFields")
         );
+
+    /// <summary>
+    /// The marker the fallback event uses for a group of fields that turned out to be empty.
+    /// Spelled out here rather than read from the production constant, for the same reason as
+    /// <see cref="ExpectedGatewayDetail"/>.
+    /// </summary>
+    private const string ExpectedNoFieldsMarker = "(none)";
+
+    /// <summary>
+    /// The number of non-standard field names the fallback event will name before it starts
+    /// counting instead.
+    /// </summary>
+    private const int ExpectedMaxLoggedFieldNames = 20;
+
+    /// <summary>
+    /// The fallback event's fully rendered text, template and every bound parameter together.
+    /// </summary>
+    /// <remarks>
+    /// The value-absence assertions go through this rather than through a single property. A
+    /// leak that reached the log by some parameter the test did not think to check would still
+    /// be a leak, and asserting on one property at a time cannot see it.
+    /// </remarks>
+    private static string RenderedFallbackEvent(RecordingLogger<OAuthManager> logger)
+    {
+        LogRecord? record = DiscardedUnauthorizedDetailRecord(logger);
+        record.Should().NotBeNull();
+        return record!.Message;
+    }
 
     [TestFixture]
     [Parallelizable]
@@ -1020,6 +1048,7 @@ public class OAuthManagerTests
         private string _rawResponseBody = default!;
         private JsonNode _body = default!;
         private LogRecord? _logged;
+        private string _rendered = default!;
 
         [SetUp]
         public async Task Setup()
@@ -1031,6 +1060,7 @@ public class OAuthManagerTests
             _rawResponseBody = await _response.Content.ReadAsStringAsync();
             _body = JsonNode.Parse(_rawResponseBody)!;
             _logged = DiscardedUnauthorizedDetailRecord(logger);
+            _rendered = RenderedFallbackEvent(logger);
         }
 
         [Test]
@@ -1072,19 +1102,41 @@ public class OAuthManagerTests
         }
 
         [Test]
-        public void It_records_the_discarded_reason_on_the_log()
+        public void It_names_the_discarded_non_standard_fields_on_the_log()
         {
-            // The finding itself: searching by correlation ID has to find the explanation, not
-            // just the request.
+            // As much of the first finding as the second finding leaves reachable: searching by
+            // correlation ID finds a request whose upstream rejection carried a `reason` and a
+            // `realm`, which is the handle for pursuing it in the identity provider's own logs.
             _logged.Should().NotBeNull();
-            _logged!.Properties["Content"]!.ToString().Should().Contain(ReasonSentinel);
+            _logged!.Properties["OtherFieldNames"]!
+                .ToString()
+                .Should()
+                .Contain("reason")
+                .And.Contain("realm");
         }
 
         [Test]
-        public void It_records_the_discarded_realm_on_the_log()
+        public void It_does_not_record_the_value_of_any_non_standard_field()
         {
+            // The second finding. `reason` and `realm` are not part of the RFC 6749 section 5.2
+            // error contract, so their contents are arbitrary upstream payload and must not be
+            // persisted - docs/LOGGING.md forbids response bodies in Information-level logs
+            // outright, and neither sanitizing nor bounding redacts anything.
+            //
+            // Against the rendered event rather than one property, because a leak by way of some
+            // other parameter is still a leak.
+            _rendered.Should().NotContain(ReasonSentinel);
+            _rendered.Should().NotContain(InternalRealmSentinel);
+        }
+
+        [Test]
+        public void It_records_the_standard_oauth_error_by_value()
+        {
+            // `error` is allowlisted, and logging it discloses nothing that is not disclosed
+            // already: It_still_surfaces_the_parsed_oauth_error_as_the_title above shows the same
+            // string going to the unauthenticated caller as the problem-details `title`.
             _logged.Should().NotBeNull();
-            _logged!.Properties["Content"]!.ToString().Should().Contain(InternalRealmSentinel);
+            _logged!.Properties["StandardFields"]!.ToString().Should().Be("error=invalid_client");
         }
 
         [Test]
@@ -1108,16 +1160,258 @@ public class OAuthManagerTests
         }
 
         [Test]
-        public void It_binds_the_upstream_body_as_data_rather_than_as_a_message_template()
+        public void It_binds_the_summaries_as_data_rather_than_as_a_message_template()
         {
-            // The upstream body is JSON, so it is made of braces. Interpolating it into the
-            // template would have Microsoft.Extensions.Logging read those braces as property
-            // holes: the event would gain holes named after fragments of the body and lose the
-            // {Content} property entirely. Exactly two properties, with the body intact under
-            // {Content}, is what proves it was passed as a parameter.
+            // Both summaries are built from a JSON body and can therefore contain braces.
+            // Interpolating either into the template would have Microsoft.Extensions.Logging
+            // read those braces as property holes: the event would gain holes named after
+            // fragments of the upstream content and lose the named properties entirely. Exactly
+            // these three properties, and no others, is what proves they were passed as
+            // parameters.
             _logged.Should().NotBeNull();
-            _logged!.Properties.Should().ContainKeys("TraceId", "Content").And.HaveCount(2);
-            _logged.Properties["Content"].Should().Be(_upstreamBody);
+            _logged!
+                .Properties.Should()
+                .ContainKeys("TraceId", "StandardFields", "OtherFieldNames")
+                .And.HaveCount(3);
+        }
+    }
+
+    /// <summary>
+    /// Brad Banister's example from the review, verbatim. The point of it is that <c>reason</c>
+    /// is "the whole of why the upstream rejected the request" and is not an RFC 6749 field, so
+    /// it is precisely the field an allowlist of standard members cannot anticipate. The
+    /// resolution keeps its name and discards its value; this fixture pins both halves.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_The_Reviewers_Example_Unauthorized_Body
+    {
+        private const string ReasonValueSentinel = "client disabled";
+
+        private const string UpstreamBody = """
+            {"error":"invalid_client","reason":"client disabled"}
+            """;
+
+        private LogRecord _logged = default!;
+        private string _rendered = default!;
+        private string _rawResponseBody = default!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            (HttpResponseMessage response, RecordingLogger<OAuthManager> logger) = await UpstreamResponds(
+                HttpStatusCode.Unauthorized,
+                UpstreamBody
+            );
+            _rawResponseBody = await response.Content.ReadAsStringAsync();
+            _logged = DiscardedUnauthorizedDetailRecord(logger)!;
+            _rendered = RenderedFallbackEvent(logger);
+        }
+
+        [Test]
+        public void It_records_the_standard_error_field_by_value()
+        {
+            _logged.Properties["StandardFields"]!.ToString().Should().Be("error=invalid_client");
+        }
+
+        [Test]
+        public void It_records_the_non_standard_field_by_name()
+        {
+            _logged.Properties["OtherFieldNames"]!.ToString().Should().Be("reason");
+        }
+
+        [Test]
+        public void It_never_records_the_non_standard_fields_value()
+        {
+            // The assertion the whole change exists for. An operator learns a `reason` was sent
+            // and goes to the identity provider for what it said; DMS persists none of it.
+            _rendered.Should().NotContain(ReasonValueSentinel);
+        }
+
+        [Test]
+        public void It_still_withholds_the_reason_from_the_client()
+        {
+            _rawResponseBody.Should().NotContain(ReasonValueSentinel);
+        }
+    }
+
+    /// <summary>
+    /// The three RFC 6749 section 5.2 error response members are the allowlist, and all three are
+    /// logged by value. <c>error_description</c> cannot reach this path - its presence is what
+    /// suppresses the event - so <c>error</c> and <c>error_uri</c> are what a standard-only body
+    /// can carry here.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_An_Unauthorized_Upstream_Body_With_Only_Standard_Fields
+    {
+        private const string ErrorUri = "https://idp.example.com/docs/errors/invalid_client";
+
+        private static readonly string _upstreamBody = $$"""
+            { "error": "invalid_client", "error_uri": "{{ErrorUri}}" }
+            """;
+
+        private LogRecord _logged = default!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            (_, RecordingLogger<OAuthManager> logger) = await UpstreamResponds(
+                HttpStatusCode.Unauthorized,
+                _upstreamBody
+            );
+            _logged = DiscardedUnauthorizedDetailRecord(logger)!;
+        }
+
+        [Test]
+        public void It_records_every_standard_field_by_value_in_upstream_order()
+        {
+            _logged.Properties["StandardFields"]!
+                .ToString()
+                .Should()
+                .Be($"error=invalid_client, error_uri={ErrorUri}");
+        }
+
+        [Test]
+        public void It_reports_the_absence_of_non_standard_fields_rather_than_an_empty_string()
+        {
+            // An empty string reads as a logging defect; the marker says the body genuinely
+            // carried nothing beyond the OAuth contract.
+            _logged.Properties["OtherFieldNames"]!
+                .ToString()
+                .Should()
+                .Be(ExpectedNoFieldsMarker);
+        }
+    }
+
+    /// <summary>
+    /// The count of names is attacker-influenceable independently of their length: ten thousand
+    /// one-character names sit far inside the 2048-character bound and would still produce an
+    /// unreadable log line. The cap is on the count, and applying it is reported rather than
+    /// silent.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_An_Unauthorized_Upstream_Body_With_More_Fields_Than_The_Cap
+    {
+        private const int NonStandardFieldCount = 5000;
+
+        private const string LastFieldValueSentinel = "svalue-4999-should-never-be-logged";
+
+        private static readonly string _upstreamBody = BuildBody();
+
+        private static string BuildBody()
+        {
+            var obj = new JsonObject { ["error"] = "invalid_client" };
+            for (int i = 0; i < NonStandardFieldCount; i++)
+            {
+                obj[$"f{i}"] = i == NonStandardFieldCount - 1 ? LastFieldValueSentinel : $"value-{i}";
+            }
+            return obj.ToJsonString();
+        }
+
+        private LogRecord _logged = default!;
+        private string _rendered = default!;
+        private string _otherFieldNames = default!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            (_, RecordingLogger<OAuthManager> logger) = await UpstreamResponds(
+                HttpStatusCode.Unauthorized,
+                _upstreamBody
+            );
+            _logged = DiscardedUnauthorizedDetailRecord(logger)!;
+            _rendered = RenderedFallbackEvent(logger);
+            _otherFieldNames = _logged.Properties["OtherFieldNames"]!.ToString()!;
+        }
+
+        [Test]
+        public void It_names_no_more_fields_than_the_cap_allows()
+        {
+            // The cap plus the one overflow marker.
+            _otherFieldNames
+                .Split(", ", StringSplitOptions.None)
+                .Should()
+                .HaveCount(ExpectedMaxLoggedFieldNames + 1);
+        }
+
+        [Test]
+        public void It_keeps_the_first_names_the_upstream_sent()
+        {
+            _otherFieldNames.Should().StartWith("f0, f1, f2,");
+            _otherFieldNames.Should().Contain($"f{ExpectedMaxLoggedFieldNames - 1}, ");
+        }
+
+        [Test]
+        public void It_reports_how_many_names_it_left_out()
+        {
+            // Visible truncation: without the count an operator cannot tell a body with twenty
+            // fields from one with five thousand, and the second is a signal in its own right.
+            _otherFieldNames
+                .Should()
+                .EndWith($"...[{NonStandardFieldCount - ExpectedMaxLoggedFieldNames} more]");
+        }
+
+        [Test]
+        public void It_records_no_value_from_any_of_the_capped_fields()
+        {
+            _rendered.Should().NotContain(LastFieldValueSentinel);
+            _rendered.Should().NotContain("value-0");
+        }
+
+        [Test]
+        public void It_keeps_the_whole_event_bounded()
+        {
+            _rendered.Length.Should().BeLessThan(2 * ExpectedMaxLoggedContentLength);
+        }
+
+        [Test]
+        public void It_still_records_the_standard_error_by_value()
+        {
+            _logged.Properties["StandardFields"]!.ToString().Should().Be("error=invalid_client");
+        }
+    }
+
+    /// <summary>
+    /// A field name is as attacker-influenceable as a field value, so the names the event records
+    /// go through the same sanitizer the values do. An upstream that returns a member named with
+    /// a CRLF and a forged log prefix must not be able to write a second line into the log.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_An_Unauthorized_Upstream_Body_Whose_Field_Name_Carries_Control_Characters
+    {
+        private static readonly string _upstreamBody = new JsonObject
+        {
+            ["error"] = "invalid_client",
+            ["rea\r\nson"] = "withheld anyway",
+        }.ToJsonString();
+
+        private string _otherFieldNames = default!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            (_, RecordingLogger<OAuthManager> logger) = await UpstreamResponds(
+                HttpStatusCode.Unauthorized,
+                _upstreamBody
+            );
+            _otherFieldNames = DiscardedUnauthorizedDetailRecord(logger)!.Properties[
+                "OtherFieldNames"
+            ]!.ToString()!;
+        }
+
+        [Test]
+        public void It_sanitizes_the_field_name_before_logging_it()
+        {
+            _otherFieldNames.Should().NotContain("\r").And.NotContain("\n");
+        }
+
+        [Test]
+        public void It_still_reports_the_rest_of_the_name()
+        {
+            _otherFieldNames.Should().Be("reason");
         }
     }
 
