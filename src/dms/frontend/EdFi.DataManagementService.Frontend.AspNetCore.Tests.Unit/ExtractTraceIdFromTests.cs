@@ -345,4 +345,135 @@ public class ExtractTraceIdFromTests
             traceId.Value.Should().Be($"upstream{NoBreakSpaceOnly}id");
         }
     }
+
+    /// <summary>
+    /// A host whose <c>AppSettings</c> failed validation - the one condition under which the
+    /// ingestion point cannot read its own configuration, because reading it is what throws.
+    /// Ingestion is total across that condition and owns the fallback itself, so neither
+    /// <c>LoggingMiddleware</c> nor <c>ReportInvalidConfigurationMiddleware</c> carries a
+    /// <c>catch</c> expressing the same policy a second time.
+    /// </summary>
+    [TestFixture]
+    public class Given_App_Settings_That_Cannot_Be_Read : ExtractTraceIdFromTests
+    {
+        /// <summary>
+        /// Both over-length and hostile, so the assertions below distinguish "normalized against
+        /// the documented default" from "handed back whole": the cap is what removes the trailing
+        /// padding, and the allowlist is what removes the CRLF.
+        /// </summary>
+        private const string RawPrefix = "0HN\r\nTRACE";
+
+        private static readonly string _rawTraceIdentifier = RawPrefix + new string('z', 300);
+
+        /// <summary>
+        /// Truncated to <see cref="AppSettings.DefaultCorrelationIdMaxLength"/> first and filtered
+        /// second, which is the one normalization order the pipeline has. Spelled out rather than
+        /// produced by calling the normalizer, so this pins a value rather than restating the
+        /// implementation.
+        /// </summary>
+        private static readonly string _expectedTraceId =
+            "0HNTRACE" + new string('z', AppSettings.DefaultCorrelationIdMaxLength - RawPrefix.Length);
+
+        private DefaultHttpContext _httpContext = null!;
+        private ThrowingOptions _options = null!;
+        private AspNetCoreFrontend.CorrelationIdIngestion _ingestion;
+
+        [SetUp]
+        public void Setup()
+        {
+            _httpContext = new DefaultHttpContext { TraceIdentifier = _rawTraceIdentifier };
+
+            // A client-supplied header is genuinely present and must still be disregarded: the
+            // setting naming the header lives in the configuration that failed to validate, so no
+            // client value was ever considered as a candidate.
+            _httpContext.Request.Headers[CorrelationHeader] = "client-supplied-value";
+            _options = new ThrowingOptions();
+
+            _ingestion = AspNetCoreFrontend.IngestCorrelationIdFrom(_httpContext.Request, _options);
+        }
+
+        [Test]
+        public void It_answers_rather_than_surfacing_the_validation_failure()
+        {
+            _options
+                .Reads.Should()
+                .Be(1, "the fallback is reached by catching the failed read, not by skipping it");
+            _ingestion.TraceId.Value.Should().NotBeNullOrWhiteSpace();
+        }
+
+        [Test]
+        public void It_normalizes_the_server_generated_identifier_against_the_documented_default()
+        {
+            _ingestion.TraceId.Value.Should().Be(_expectedTraceId);
+        }
+
+        [Test]
+        public void It_reports_no_client_supplied_value_so_the_modification_notice_stays_silent()
+        {
+            // What keeps a host stuck in this mode from adding a CorrelationIdModified line to
+            // every short-circuited request it answers.
+            _ingestion.ClientSuppliedAValue.Should().BeFalse();
+            _ingestion.SuppliedLength.Should().Be(0);
+            _ingestion.WasModified.Should().BeFalse();
+        }
+
+        [Test]
+        public void It_caches_the_fallback_so_a_later_call_site_reads_one_value_rather_than_two()
+        {
+            TraceId laterCallSite = AspNetCoreFrontend.ExtractTraceIdFrom(_httpContext.Request, _options);
+
+            laterCallSite.Value.Should().Be(_expectedTraceId);
+            _options
+                .Reads.Should()
+                .Be(1, "the second call site reads the cached ingestion rather than deriving it again");
+            _httpContext
+                .Items[AspNetCoreFrontend.CorrelationIdItemsKey]
+                .Should()
+                .BeOfType<AspNetCoreFrontend.CorrelationIdIngestion>()
+                .Which.TraceId.Value.Should()
+                .Be(_expectedTraceId);
+        }
+
+        [Test]
+        public void It_serves_the_trace_id_entry_point_on_a_request_nothing_ingested_first()
+        {
+            // ExtractTraceIdFrom is what ReportInvalidConfigurationMiddleware calls. On a request
+            // no earlier middleware ingested - a pipeline reordering, or this middleware answering
+            // alone - it inherits the same fallback instead of needing one of its own.
+            DefaultHttpContext uningested = new() { TraceIdentifier = _rawTraceIdentifier };
+
+            TraceId traceId = AspNetCoreFrontend.ExtractTraceIdFrom(
+                uningested.Request,
+                new ThrowingOptions()
+            );
+
+            traceId.Value.Should().Be(_expectedTraceId);
+        }
+
+        /// <summary>
+        /// What the framework leaves a host with when options validation fails: <c>OptionsManager</c>
+        /// caches nothing in that case, so every read runs the validator and every read throws.
+        /// Counted, because "how many times the configuration was read" is what separates a cache
+        /// hit from a second derivation.
+        /// </summary>
+        private sealed class ThrowingOptions : IOptions<AppSettings>
+        {
+            private int _reads;
+
+            public int Reads => _reads;
+
+            public AppSettings Value
+            {
+                get
+                {
+                    _reads++;
+                    throw new OptionsValidationException(
+                        nameof(AppSettings),
+                        typeof(AppSettings),
+                        [$"{nameof(AppSettings.CorrelationIdMaxLength)} failed validation."]
+                    );
+                }
+            }
+        }
+    }
 }

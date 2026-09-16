@@ -1034,10 +1034,11 @@ public class ConfigurationTests
 
         /// <summary>
         /// FR-LOG-6 on the one path where the correlation ID pipeline cannot read its own
-        /// configuration. The middleware and <c>LoggingMiddleware</c> each fall back to normalizing
-        /// the server-generated identifier against <c>DefaultCorrelationIdMaxLength</c>, so the
-        /// <c>correlationId</c> the client reads is still the <c>TraceId</c> it can search the logs
-        /// for. A bodiless 500 offered the client nothing to search with at all.
+        /// configuration. The ingestion point falls back to normalizing the server-generated
+        /// identifier against <c>DefaultCorrelationIdMaxLength</c>, once, and both the middleware
+        /// writing the body and <c>LoggingMiddleware</c> writing the log event reach that one
+        /// result, so the <c>correlationId</c> the client reads is still the <c>TraceId</c> it can
+        /// search the logs for. A bodiless 500 offered the client nothing to search with at all.
         /// </summary>
         [Test]
         public async Task It_carries_the_correlation_id_the_request_was_logged_under()

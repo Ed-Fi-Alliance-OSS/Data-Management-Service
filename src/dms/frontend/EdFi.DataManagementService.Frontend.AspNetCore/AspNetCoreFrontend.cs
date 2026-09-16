@@ -422,6 +422,10 @@ public static class AspNetCoreFrontend
     /// here. This narrows no allowlist: a correlation ID with internal whitespace is still
     /// accepted whole, and <see cref="CorrelationIdNormalizer"/> still preserves whitespace.
     /// Only the all-blank case falls back.
+    ///
+    /// Total, and in particular does not surface <see cref="OptionsValidationException"/>: a host
+    /// whose <c>AppSettings</c> failed validation is answered from
+    /// <see cref="IngestUnreadableConfiguration"/>, so no caller needs to guard this call.
     /// </remarks>
     public static TraceId ExtractTraceIdFrom(HttpRequest request, IOptions<AppSettings> options) =>
         IngestCorrelationIdFrom(request, options).TraceId;
@@ -442,11 +446,19 @@ public static class AspNetCoreFrontend
     /// client-supplied value, for the one caller - <c>LoggingMiddleware</c> - that reports them.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// The result is computed at most once per request and cached on
     /// <see cref="HttpContext.Items"/>, so "normalized once" is a property of the code rather than
     /// of the function happening to be pure. A cache miss still computes, so a caller that somehow
     /// runs ahead of the request-logging middleware behaves exactly as it did before the cache
     /// existed - it simply becomes the caller that populates it.
+    /// </para>
+    /// <para>
+    /// Total: it returns an ingestion for every request, including one whose <c>AppSettings</c>
+    /// cannot be read because validating them is what failed. That case is handled by
+    /// <see cref="IngestUnreadableConfiguration"/> below rather than by any caller, so no call
+    /// site needs - or should grow - a fallback of its own.
+    /// </para>
     /// </remarks>
     internal static CorrelationIdIngestion IngestCorrelationIdFrom(
         HttpRequest request,
@@ -462,7 +474,19 @@ public static class AspNetCoreFrontend
             return ingested;
         }
 
-        AppSettings appSettings = options.Value;
+        AppSettings appSettings;
+        try
+        {
+            // The only statement here that can throw OptionsValidationException, and deliberately
+            // the only one inside the try: a validation failure anywhere further down would be a
+            // different fault with a different answer.
+            appSettings = options.Value;
+        }
+        catch (OptionsValidationException)
+        {
+            return IngestUnreadableConfiguration(request.HttpContext);
+        }
+
         int maxLength = appSettings.CorrelationIdMaxLength;
         string headerName = appSettings.CorrelationIdHeader;
 
@@ -506,24 +530,76 @@ public static class AspNetCoreFrontend
     }
 
     /// <summary>
+    /// This request's one ingestion result for a host whose <c>AppSettings</c> cannot be read at
+    /// all, because validating them is what failed.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The decision lives here, inside the ingestion point, rather than at the call sites that
+    /// encounter it. Both of them - <c>LoggingMiddleware</c> ingesting the request and
+    /// <c>ReportInvalidConfigurationMiddleware</c> reading the correlation ID for the 500 body it
+    /// short-circuits with - would otherwise each need a <c>catch</c> making this same policy
+    /// choice, which is one policy in two places and free to drift apart.
+    /// </para>
+    /// <para>
+    /// There is no validated <c>CorrelationIdMaxLength</c> to normalize against, since
+    /// <c>AppSettings</c> validation is precisely what failed, so
+    /// <see cref="Configuration.AppSettings.DefaultCorrelationIdMaxLength"/> stands in. The
+    /// server-generated identifier still goes through the same <see cref="CorrelationIdNormalizer"/>
+    /// as every other path, so this one cannot emit a differently-shaped value than any other.
+    /// </para>
+    /// <para>
+    /// <see cref="CorrelationIdIngestion.ClientSuppliedAValue"/> is false because no client value
+    /// was considered at all: the header <i>name</i> lives in the configuration that failed to
+    /// validate. There is therefore nothing to report as modified, and <c>LoggingMiddleware</c>'s
+    /// <c>CorrelationIdModified</c> notice stays silent - which also keeps a host stuck in
+    /// invalid-configuration mode from adding a second log line to every short-circuited request.
+    /// </para>
+    /// <para>
+    /// The result is cached exactly as an ordinary ingestion is, because this mode does have a
+    /// second correlation ID call site: <c>ReportInvalidConfigurationMiddleware</c>, registered
+    /// behind <c>LoggingMiddleware</c>, writes a 500 body carrying the correlation ID and reaches
+    /// that value back through <see cref="ExtractTraceIdFrom"/>. The cache is what makes that read a
+    /// hit on this very value, so the body a client can read and the <c>TraceId</c> it can search
+    /// the logs for are one value rather than two that merely agree. Without it the middleware
+    /// re-derives the value on every request such a host answers, paying a second thrown
+    /// <see cref="OptionsValidationException"/> for a string it already had.
+    /// </para>
+    /// <para>
+    /// Worth recognizing for what it is: the cached value derives from the documented default rather
+    /// than from validated configuration, because on this path there is no validated configuration
+    /// to derive it from. Reuse is still what is wanted. Every consumer of it is answering the same
+    /// short-circuited request, and each would otherwise reach that same default by the same route;
+    /// recomputing could only arrive at the same string, at the cost of another exception.
+    /// </para>
+    /// </remarks>
+    private static CorrelationIdIngestion IngestUnreadableConfiguration(HttpContext context) =>
+        CacheIngestionOn(
+            context,
+            CorrelationIdIngestion.ForServerGeneratedIdentifier(
+                CorrelationIdNormalizer.Normalize(
+                    context.TraceIdentifier,
+                    AppSettings.DefaultCorrelationIdMaxLength
+                )
+            )
+        );
+
+    /// <summary>
     /// Records <paramref name="ingestion"/> as this request's one ingestion result, so that every
     /// later correlation ID call site reads it rather than deriving its own.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// Exists so that <see cref="CorrelationIdItemsKey"/> is written in exactly one place. The
-    /// other caller is <c>LoggingMiddleware</c>, which on one path - a host whose
-    /// <c>AppSettings</c> validation failed - cannot reach <see cref="IngestCorrelationIdFrom"/>
-    /// at all, because reading the configuration is what throws there. It builds its ingestion
-    /// from <see cref="Configuration.AppSettings.DefaultCorrelationIdMaxLength"/> instead and
-    /// caches it through here, which is what lets the invalid-configuration response body carry
-    /// the value the request was logged under without re-deriving it.
+    /// Exists so that <see cref="CorrelationIdItemsKey"/> is written in exactly one place, and is
+    /// private so that place stays inside this class: both the ordinary path and
+    /// <see cref="IngestUnreadableConfiguration"/> reach the cache through here, and no middleware
+    /// can write the key behind the ingestion point's back.
     /// </para>
     /// <para>
     /// Returns what it stored so a caller can cache and return in one expression.
     /// </para>
     /// </remarks>
-    internal static CorrelationIdIngestion CacheIngestionOn(
+    private static CorrelationIdIngestion CacheIngestionOn(
         HttpContext context,
         CorrelationIdIngestion ingestion
     )

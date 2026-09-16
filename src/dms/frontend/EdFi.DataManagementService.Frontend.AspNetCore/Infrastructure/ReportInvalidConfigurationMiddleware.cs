@@ -31,8 +31,6 @@ public class ReportInvalidConfigurationMiddleware
     /// </remarks>
     private const string ConfigurationErrorTemplate = "Invalid DMS configuration: {ConfigurationError}";
 
-    public RequestDelegate Next { get; }
-
     /// <summary>
     /// Logs the validation failures once, here, because <c>UseMiddleware</c> constructs the
     /// middleware a single time while the pipeline is built rather than per request. The failures
@@ -40,14 +38,17 @@ public class ReportInvalidConfigurationMiddleware
     /// re-logging them at <c>Critical</c> on every request would add nothing beyond traffic-rate
     /// noise in the sink an operator watches most closely.
     /// </summary>
+    /// <param name="next">
+    /// Required by the <c>UseMiddleware</c> convention and deliberately not stored: this middleware
+    /// short-circuits every request, so there is no path on which the rest of the pipeline runs and
+    /// nothing to be gained from holding a delegate that can never be invoked.
+    /// </param>
     public ReportInvalidConfigurationMiddleware(
         RequestDelegate next,
         List<string> errors,
         ILogger<ReportInvalidConfigurationMiddleware> logger
     )
     {
-        Next = next;
-
         foreach (string error in errors)
         {
             logger.LogCritical(ConfigurationErrorTemplate, error);
@@ -61,10 +62,10 @@ public class ReportInvalidConfigurationMiddleware
     public Task Invoke(HttpContext context)
 #pragma warning restore S2325
     {
-        // Deliberate short-circuit: Next is never called. The validation messages were logged at
-        // Critical once, at startup, and must never reach the response body, so what a client gets
-        // is the generic Ed-Fi 500 - the same shape the Configuration Service's equivalent
-        // middleware writes for the same condition.
+        // Deliberate short-circuit: the rest of the pipeline is never invoked. The validation
+        // messages were logged at Critical once, at startup, and must never reach the response
+        // body, so what a client gets is the generic Ed-Fi 500 - the same shape the Configuration
+        // Service's equivalent middleware writes for the same condition.
         context.Response.StatusCode = StatusCodes.Status500InternalServerError;
         context.Response.ContentType = "application/problem+json";
 
@@ -83,43 +84,25 @@ public class ReportInvalidConfigurationMiddleware
     /// </summary>
     /// <remarks>
     /// <para>
-    /// Every path here is a cache hit, including the one where <c>CorrelationIdMaxLength</c> is
-    /// itself the rejected setting. <c>LoggingMiddleware</c> is registered ahead of this middleware
-    /// and caches its ingestion on <c>HttpContext.Items</c> either way: from validated
-    /// configuration when it can read it, and from
+    /// In practice every call here is a cache hit, including the one where
+    /// <c>CorrelationIdMaxLength</c> is itself the rejected setting. <c>LoggingMiddleware</c> is
+    /// registered ahead of this middleware and caches its ingestion on <c>HttpContext.Items</c>
+    /// either way: from validated configuration when it can read it, and from
     /// <see cref="AppSettings.DefaultCorrelationIdMaxLength"/> when reading it is what failed. The
     /// value is reached through <c>ExtractTraceIdFrom</c> rather than read from <c>Items</c>
     /// directly so that this stays one more ordinary caller of the single ingestion point.
     /// </para>
     /// <para>
-    /// The catch is therefore a backstop rather than the expected route through the unreadable-
-    /// configuration case. It fires only if this middleware ever answers a request that
-    /// <c>LoggingMiddleware</c> did not ingest first - a pipeline reordering in <c>Program.cs</c>,
-    /// say - and it falls back the way <c>LoggingMiddleware</c> does for the same condition, so
-    /// even then the body's <c>correlationId</c> is the value that would have been logged. Leaving
-    /// it in place costs nothing per request: it is the cache hit above, not this, that the
-    /// ordinary invalid-configuration request takes.
+    /// No <c>catch</c> for the unreadable-configuration case, and none should be added here: the
+    /// ingestion point is total and owns that fallback, so a request this middleware ever answers
+    /// without <c>LoggingMiddleware</c> having ingested it first - a pipeline reordering in
+    /// <c>Program.cs</c>, say - is answered from the same documented default by the same code, not
+    /// by a second copy of the policy living at this call site.
     /// </para>
     /// </remarks>
-    private static TraceId CorrelationIdFor(HttpContext context)
-    {
-        try
-        {
-            return AspNetCoreFrontend.ExtractTraceIdFrom(
-                context.Request,
-                context.RequestServices.GetRequiredService<IOptions<AppSettings>>()
-            );
-        }
-        catch (OptionsValidationException)
-        {
-            return AspNetCoreFrontend
-                .CorrelationIdIngestion.ForServerGeneratedIdentifier(
-                    CorrelationIdNormalizer.Normalize(
-                        context.TraceIdentifier,
-                        AppSettings.DefaultCorrelationIdMaxLength
-                    )
-                )
-                .TraceId;
-        }
-    }
+    private static TraceId CorrelationIdFor(HttpContext context) =>
+        AspNetCoreFrontend.ExtractTraceIdFrom(
+            context.Request,
+            context.RequestServices.GetRequiredService<IOptions<AppSettings>>()
+        );
 }
