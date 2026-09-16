@@ -16,7 +16,7 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Modules;
 
 public class XsdMetadataEndpointModule(IOptions<AppSettings> appSettings) : IEndpointModule
 {
-    private readonly string ErrorResourcePath = "Invalid resource path";
+    private const string ErrorResourcePath = "Invalid resource path";
 
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
@@ -32,7 +32,7 @@ public class XsdMetadataEndpointModule(IOptions<AppSettings> appSettings) : IEnd
         }
     }
 
-    private void MapXsdEndpoints(IEndpointRouteBuilder endpoints, string routePattern)
+    private static void MapXsdEndpoints(IEndpointRouteBuilder endpoints, string routePattern)
     {
         endpoints.MapGet($"{routePattern}/metadata/xsd", GetSections);
         endpoints.MapGet($"{routePattern}/metadata/xsd/{{section}}/files", GetXsdMetadataFiles);
@@ -72,7 +72,7 @@ public class XsdMetadataEndpointModule(IOptions<AppSettings> appSettings) : IEnd
         await httpContext.Response.WriteAsSerializedJsonAsync(sections);
     }
 
-    internal async Task GetXsdMetadataFiles(
+    internal static async Task GetXsdMetadataFiles(
         HttpContext httpContext,
         IContentProvider contentProvider,
         IMetadataRouteValidator metadataRouteValidator
@@ -118,7 +118,7 @@ public class XsdMetadataEndpointModule(IOptions<AppSettings> appSettings) : IEnd
         await httpContext.Response.WriteAsSerializedJsonAsync(withFullPath);
     }
 
-    internal async Task<IResult> GetXsdMetadataFileContent(
+    internal static async Task<IResult> GetXsdMetadataFileContent(
         HttpContext httpContext,
         IContentProvider contentProvider,
         IMetadataRouteValidator metadataRouteValidator
