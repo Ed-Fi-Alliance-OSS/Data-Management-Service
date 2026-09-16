@@ -1,7 +1,13 @@
 # Ed-Fi API Plugins
 
-This package defines `EdFiApiPlugin`, the base class a district or vendor implements to extend the
-Ed-Fi Data Management Service or the Ed-Fi DMS Configuration Service without rebuilding either one.
+This package defines `EdFiApiPlugin`, the base class a district or vendor implements to extend an
+Ed-Fi API host without rebuilding it.
+
+> **The supported host today is the Data Management Service.** The contract and the loader are
+> host-neutral, which is why the base class is named for the Ed-Fi API platform rather than for one
+> host, and the Configuration Service could adopt the same loader for very little. It has not:
+> no Configuration Service release loads plugins, and that adoption is deferred. Target the Data
+> Management Service.
 
 A plugin is a directory of assemblies you publish, compiled against this package. An operator drops
 that directory into the host's plugin root and names it in an allowlist. The host loads it into an
@@ -126,8 +132,10 @@ Publish **framework-dependent**, into a directory named for the plugin:
 dotnet publish --no-self-contained -o out/Acme.Dms.Sample
 ```
 
-That produces `Acme.Dms.Sample.dll`, `Acme.Dms.Sample.deps.json`, and a flattened copy of every
-dependency the host does not already carry. All three matter:
+That produces `Acme.Dms.Sample.dll`, `Acme.Dms.Sample.deps.json`, and a flattened copy of **every
+package dependency in your closure**, including ones the host also carries. Shared-framework
+assemblies are the exception and are not copied: a framework-dependent publish leaves those to the
+runtime. All three outputs matter:
 
 - The **`.deps.json` is required.** A plugin directory without one is fatal, because the plugin's
   private dependencies would not resolve and the failure would land on a request rather than at
@@ -137,6 +145,14 @@ dependency the host does not already carry. All three matter:
   (`-r <rid> --no-self-contained`) is fine and is how a plugin ships native assets.
 - Flattening the dependency graph into a runnable directory is your job, not the operator's. Nothing
   on the deploy path runs a NuGet restore.
+
+**Ship the whole publish output, and do not prune it against the host assembly manifest.**
+`dotnet publish` does not inspect the host image and could not subtract its assemblies if it tried.
+Nor should it: what decides which copy runs is **host-first resolution at load time**, not what is on
+disk. If the host carries an assembly, the host's copy is served and yours sits unused; if it does
+not, yours is loaded. Shipping your own copy of something like `Microsoft.Extensions.Primitives` is
+normal and correct, and deleting files because the manifest lists them breaks your plugin on any host
+that turns out not to carry them.
 
 ## Packaging
 
@@ -148,7 +164,7 @@ Acme.Dms.Sample.1.2.0.nupkg
 └── contentFiles/any/any/Acme.Dms.Sample/
     ├── Acme.Dms.Sample.dll
     ├── Acme.Dms.Sample.deps.json
-    └── ...every dependency the host does not carry
+    └── ...every package dependency the publish produced
 ```
 
 A conventional library package declares dependencies and expects a restore to resolve them, and
@@ -188,10 +204,16 @@ copy, because two copies of one assembly means two identities for every type the
 
 ### Two limits on that check, both real
 
-**It fires on major skew, not on minor.** The manifest lists `AssemblyVersion`s and the host compares
-`AssemblyVersion`s. `Microsoft.Extensions.*` holds that version stable across a major version, so a
-plugin built against a newer *minor* of an assembly the host also carries loads without complaint. Do
-not read the manifest as a minor-level compatibility check.
+**For `Microsoft.Extensions.*`, it fires on major skew and not on minor.** The manifest lists
+`AssemblyVersion`s and the host compares `AssemblyVersion`s, and those packages hold that version
+stable across a major version, so a plugin built against a newer *minor* of one of them loads without
+complaint. Do not read the manifest as a minor-level compatibility check for them.
+
+That is a property of how those assemblies version themselves, not a rule about every comparison the
+host makes. **The contract packages are the counterexample**: `EdFi.Api.Plugins` moves its
+`AssemblyVersion` whenever its surface moves, which is at the minor, so a plugin compiled against
+contract 1.1 *is* refused by a host carrying 1.0, by name. Read each row of the manifest with the
+versioning policy of the package it came from in mind.
 
 **When it fires depends on where the assembly comes from.** Skew on anything your own `.deps.json`
 declares is caught at load, before your plugin is even constructed. The manifest's shared-framework
