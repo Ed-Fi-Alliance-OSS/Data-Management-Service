@@ -340,8 +340,10 @@ and lets contribute to its service composition. This section is the **only**
 configuration surface for them: it says what may load, and nothing about where the
 bytes came from. DMS ships no fetcher; getting a plugin directory under the root is
 a deployment step that happens before the process starts. See
-[eng/docker-compose/README.md](../eng/docker-compose/README.md) for the two
-acquisition recipes.
+[Plugins](./OPERATIONS.md#plugins) for the two acquisition recipes, the trust model,
+and what a startup failure means, and
+[eng/docker-compose/README.md](../eng/docker-compose/README.md) for running them
+against a local development stack.
 
 | Parameter | Description                                                                                                                                                                                                                  |
 | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
