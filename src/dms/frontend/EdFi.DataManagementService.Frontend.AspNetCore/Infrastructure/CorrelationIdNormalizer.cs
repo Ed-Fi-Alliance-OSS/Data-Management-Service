@@ -65,10 +65,9 @@ public static class CorrelationIdNormalizer
         }
 
         // A non-positive cap falls back to the documented default rather than throwing, so a
-        // misconfigured host still gets a bounded identifier. This is a policy choice, not the
-        // guard that keeps the surrogate probe below in bounds - those guards are `retained > 0`
-        // and `retained < value.Length`, both stated at the hazard so removing this fallback
-        // cannot reintroduce an index-out-of-range.
+        // misconfigured host still gets a bounded identifier. The fallback must stay positive:
+        // it is also what keeps the surrogate probe below in bounds, since that probe indexes
+        // `value[retained - 1]` and a cap of zero would read value[-1].
         int effectiveMaxLength = maxLength > 0 ? maxLength : AppSettings.DefaultCorrelationIdMaxLength;
 
         string truncated = value;
@@ -85,23 +84,7 @@ public static class CorrelationIdNormalizer
             // allowlist below would delete such an orphan anyway: truncation must not create one,
             // and an orphan the client actually sent has to be reported as a removal rather than
             // as a truncation effect. The ADR's normalization-order section has the reasoning.
-            //
-            // Both bounds are stated here, at the hazard, rather than inferred from distant
-            // tests. `retained > 0` because a cap of zero would index value[-1] - the fallback
-            // above makes that unreachable today, but it is documented as guarding a
-            // misconfiguration, not an index, and could be simplified away. `retained <
-            // value.Length` because value[retained] is the unit the cut discards, which holds
-            // only because of a test twenty lines up that reads as a question about truncation.
-            // The analyzer is right that both are currently redundant; that is why they are
-            // written out rather than left to be re-derived.
-#pragma warning disable S2589 // Conditions are redundant only because of distant, separately-motivated tests
-            if (
-                retained > 0
-                && retained < value.Length
-                && char.IsHighSurrogate(value[retained - 1])
-                && char.IsLowSurrogate(value[retained])
-            )
-#pragma warning restore S2589
+            if (char.IsHighSurrogate(value[retained - 1]) && char.IsLowSurrogate(value[retained]))
             {
                 retained--;
             }
