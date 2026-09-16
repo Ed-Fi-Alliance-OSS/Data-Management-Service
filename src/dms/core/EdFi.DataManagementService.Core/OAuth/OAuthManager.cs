@@ -40,18 +40,17 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
         + "corresponding server log entry.";
 
     /// <summary>
-    /// The client-facing <c>detail</c> of a 401 whose upstream body carried no
-    /// <c>error_description</c>, replacing what used to be the raw upstream body. Same disclosure
-    /// argument as <see cref="GatewayErrorDetail"/>; the two parsed OAuth fields are passed
-    /// through when present because they are part of the OAuth 2.0 error contract the client is
-    /// entitled to, but an arbitrary body that merely failed to contain them is not.
+    /// The client-facing <c>detail</c> of a 401 whose upstream body carried no usable
+    /// <c>error_description</c>.
     /// </summary>
     /// <remarks>
-    /// A summary of what this replaces is recorded on the log under
-    /// <see cref="DiscardedUnauthorizedDetailTemplate"/> rather than dropped, so the body's
-    /// <c>correlationId</c> reaches the explanation here for the same reason it does for
-    /// <see cref="GatewayErrorDetail"/>. Summary, not the body: see
-    /// <c>SummarizeUpstreamFieldsForLogging</c> for what is kept and what is deliberately not.
+    /// Same disclosure argument as <see cref="GatewayErrorDetail"/>. The parsed OAuth
+    /// <c>error</c> and <c>error_description</c> are passed through when present, being part of
+    /// the OAuth 2.0 error contract the client is entitled to, while an arbitrary body that
+    /// merely failed to contain them is not. What this replaces is summarized on the log under
+    /// <see cref="DiscardedUnauthorizedDetailTemplate"/> rather than dropped, so the response's
+    /// <c>correlationId</c> still reaches it - see <c>SummarizeUpstreamFieldsForLogging</c> for
+    /// what that summary keeps and what it deliberately does not.
     /// </remarks>
     private const string UnauthorizedFallbackDetail =
         "The upstream identity service rejected the request credentials.";
@@ -246,9 +245,9 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
         {
             var body = await response.Content.ReadAsStringAsync();
             var error = "Unauthorized";
-            // Not `body`: the fallback used to hand the raw upstream body to the caller whenever
-            // it parsed as a JSON object but happened not to carry an `error_description`, which
-            // is the same unauthenticated disclosure as the 502 branch above.
+            // Not `body`: handing the raw upstream body to the caller whenever it parsed as a
+            // JSON object but carried no `error_description` is the same unauthenticated
+            // disclosure as the 502 branch above.
             var errorDescription = UnauthorizedFallbackDetail;
             var upstreamSuppliedDescription = false;
 
@@ -283,7 +282,7 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
                 // Information rather than the Warning its 502 sibling uses, because a rejected
                 // credential is not a condition an operator must act on (docs/LOGGING.md) - but
                 // not Debug either, since DMS ships at Information and an unemitted event would
-                // leave the correlation ID pointing at nothing, the defect being fixed.
+                // leave the correlation ID pointing at nothing.
                 //
                 // `obj` is null only when the body was the JSON literal `null`, which parses to a
                 // null JsonNode. There are no fields to summarize in that case, and the event
@@ -310,33 +309,21 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
         // is allowed to carry: the values of the RFC 6749 section 5.2 error fields, and the bare
         // *names* of every other member.
         //
-        // This is the synthesis of two review findings that pull against each other, and it is
-        // worth knowing both before changing it.
+        // Names-only is not a hedge, it is what keeps the split usable. The member that explains
+        // the rejection is often a non-standard one - an upstream answering with an `error` of
+        // "invalid_client" and a `reason` of "client disabled" puts the whole answer in `reason`
+        // - so allowlisted fields alone would leave an operator holding a correlation ID and no
+        // explanation. Logging the body instead is closed off by docs/LOGGING.md, which forbids
+        // request and response bodies, credentials and personal information in Information-level
+        // logs. Sanitizing and bounding answer log injection and log volume, and redact nothing.
         //
-        // The first finding was that discarding the body outright loses the whole of why the
-        // upstream rejected the request whenever that reason lives in a non-standard member -
-        // `{"error":"invalid_client","reason":"client disabled"}`, where `reason` is the entire
-        // answer. An operator holding a correlation ID would find the request and no explanation.
-        //
-        // The second finding was that the fix for the first copied the whole body into ordinary
-        // production logs, which docs/LOGGING.md forbids outright: Information-level logs must
-        // carry no request or response bodies, credentials or personal information. Sanitizing
-        // and bounding the body answers log injection and log volume; it does not redact
-        // anything. The remedy asked for was "explicitly selected, safe diagnostic fields".
-        //
-        // Taken literally that remedy reinstates the first finding, because the field carrying
-        // the answer is by definition the one nobody knew to put on an allowlist. So: allowlisted
-        // fields by value, everything else by name only. The operator learns that the upstream
-        // also sent a `reason` and takes that to the identity provider's own logs, and DMS
-        // persists no arbitrary payload.
-        //
-        // The residual loss is real and deliberate. The log shows that `reason` was present; it
-        // never shows that it read "client disabled". That is the price of the no-payload policy,
-        // paid knowingly. Do not "restore" full-body logging here without reading both findings.
+        // The residual loss is deliberate. The log shows that `reason` was present, never that it
+        // read "client disabled", and the operator takes that name to the identity provider's own
+        // logs. Do not "restore" full-body logging here to close the gap.
         //
         // Being on the allowlist buys a field nothing beyond eligibility: an allowlisted name on
-        // a nested object is a way back to the second finding by another route, so what a value
-        // contributes is decided per value, by StandardFieldValueForLogging.
+        // a nested object is arbitrary payload by another route, so what a value contributes is
+        // decided per value, by StandardFieldValueForLogging.
         static (string StandardFields, string OtherFieldNames) SummarizeUpstreamFieldsForLogging(
             JsonObject obj
         )

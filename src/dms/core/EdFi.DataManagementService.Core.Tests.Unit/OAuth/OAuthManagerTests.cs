@@ -1116,9 +1116,9 @@ public class OAuthManagerTests
         [Test]
         public void It_names_the_discarded_non_standard_fields_on_the_log()
         {
-            // As much of the first finding as the second finding leaves reachable: searching by
-            // correlation ID finds a request whose upstream rejection carried a `reason` and a
-            // `realm`, which is the handle for pursuing it in the identity provider's own logs.
+            // The diagnostic that survives the no-payload rule: searching by correlation ID
+            // finds a request whose upstream rejection carried a `reason` and a `realm`, which is
+            // the handle for pursuing it in the identity provider's own logs.
             //
             // Exact equality rather than Contain, so this also pins that the summary holds
             // nothing beyond the two names and that they appear in the upstream document's own
@@ -1130,10 +1130,10 @@ public class OAuthManagerTests
         [Test]
         public void It_does_not_record_the_value_of_any_non_standard_field()
         {
-            // The second finding. `reason` and `realm` are not part of the RFC 6749 section 5.2
-            // error contract, so their contents are arbitrary upstream payload and must not be
-            // persisted - docs/LOGGING.md forbids response bodies in Information-level logs
-            // outright, and neither sanitizing nor bounding redacts anything.
+            // `reason` and `realm` are not part of the RFC 6749 section 5.2 error contract, so
+            // their contents are arbitrary upstream payload and must not be persisted -
+            // docs/LOGGING.md forbids response bodies in Information-level logs outright, and
+            // neither sanitizing nor bounding redacts anything.
             //
             // Against the rendered event rather than one property, because a leak by way of some
             // other parameter is still a leak.
@@ -1422,10 +1422,10 @@ public class OAuthManagerTests
     }
 
     /// <summary>
-    /// A standard field name does not establish that its contents are safe. The reviewer's
-    /// example: an <c>error_uri</c> that arrived as an object nesting a credential, where
-    /// <c>JsonNode.ToString()</c> would have serialized the subtree into the event and neither
-    /// sanitizing nor bounding would have removed any of it.
+    /// A standard field name does not establish that its contents are safe: an <c>error_uri</c>
+    /// that arrived as an object nesting a credential, where <c>JsonNode.ToString()</c> would
+    /// have serialized the subtree into the event and neither sanitizing nor bounding would have
+    /// removed any of it.
     /// </summary>
     [TestFixture]
     [Parallelizable]
