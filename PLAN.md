@@ -174,6 +174,34 @@ The RecordSize operation has a separate resume loop. It does not use the narrow 
 
 Validation checkpoint: all 18 new RecordSize regression cases passed on both providers. The full 224-case selection passed 222 and exposed two existing cancellation tests racing their 200 ms test deadline. Cancellation cases now use a separate test budget; the 200 ms timeout cases and all production deadlines remain unchanged. The complete 224-case selection subsequently passed with zero failures/skips. Terminal-loss tests require an additional containment stop and incident persistence, while rollout mutations remain single-attempt.
 
+### Follow-up: diagnose malformed offset evidence during intact restart
+
+Run [35062017924](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/35062017924)
+on `850cff957` passed 14 SQL Server Lifecycle cases and failed intact restart. After an initial
+post-resume `-1` lag sample, a complete fresh pass classified the committed offset as malformed,
+persisted a source-history incident, and stopped the connector. The reported missing typed
+commit LSN, change LSN, and event serial do not prove those three fields were absent from the
+HTTP response: the parser clears all typed positions on several different rejection paths.
+
+- [x] Capture bounded field kinds and validity classifications from the same offset response
+  consumed by the production adapter, plus its parsed offset state. Do not make another HTTP
+  request or publish offset values, partition names, raw responses, or exception messages.
+- [x] Verify byte preservation, cancellation, read failures, response-size enforcement,
+  diagnostic bounds, and redaction. Keep production parsing and continuity guards unchanged.
+- [x] Replay the failed case once after the diagnostic change. Inspect any recurrence before
+  selecting a behavioral correction; a passing replay does not explain the hosted failure.
+- [ ] Complete the full final-source Contract lane and hosted matrix after the investigation.
+
+The ten focused RecordSize cases passed on `850cff957` (four PostgreSQL and six SQL Server),
+with exact selection, source hashes, pins, and cleanup verified. They did not consume an
+initial `-1` sample. Local and hosted Contract passed all 4,901 cases on that source. The
+diagnostic follow-up passed all 130 offline fixture tests, including 14 new response/state
+checks. The single failed SQL restart case passed once with those diagnostics: all six
+consumed responses were parsed as streaming offsets, no initial `-1` lag occurred, and
+cleanup preserved all seven pre-existing containers. This validates the diagnostic path
+without explaining the hosted failure. The hosted live matrix on `850cff957` has already
+failed and is not final qualification.
+
 ## 10. Validate the final changes locally
 
 Use the CDC qualification fixtures' isolated stacks and nightly image digests. Preserve unrelated Docker containers and remove only resources created by these runs. Run local builds and tests sequentially.
@@ -190,7 +218,7 @@ Use the CDC qualification fixtures' isolated stacks and nightly image digests. P
 - [x] Exercise Kafka provisioning and preserve coverage for policy rejection, delayed metadata, and authorization.
 - [x] Retain the existing PostgreSQL 16/18 compatibility and Compose 2.38.2 evidence; repeat affected cases if subsequent edits change those paths.
 - [x] Verify diagnostic attachments remain bounded and sanitized. Keep raw logs, credentials, connection strings, and full metric bodies out of published evidence.
-- [ ] After the PostgreSQL TCP readiness and RecordSize changes, rerun the complete Contract lane on the final source: expected **4,901 tests** (3,606 controller, 715 CLI, 116 offline, 464 wrappers), including 18 new RecordSize regressions and 11 additional diagnostic checks, zero failures/skips. Earlier Contract passes do not qualify subsequent edits.
+- [ ] After the PostgreSQL TCP readiness, RecordSize, and offset diagnostic changes, rerun the complete Contract lane on the final source: expected **4,915 tests** (3,606 controller, 715 CLI, 130 offline, 464 wrappers), including 18 new RecordSize regressions and 25 additional diagnostic checks, zero failures/skips. Earlier Contract passes do not qualify subsequent edits.
 
 PowerShell 7.4 failed empty-environment-variable tests locally; 7.6 preserves the distinction required by those tests. A skipped live test or environment failure does not count as qualification.
 

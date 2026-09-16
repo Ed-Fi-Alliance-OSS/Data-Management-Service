@@ -159,6 +159,63 @@ public sealed class Given_CdcControllerFixtureHooks
         document.RootElement[0].GetProperty("SampleCount").GetInt32().Should().Be(0);
     }
 
+    [TestCase(CdcConnectOffsetState.AwaitingStreaming)]
+    [TestCase(CdcConnectOffsetState.Malformed)]
+    public async Task It_retains_bounded_parsed_offset_states_without_source_or_position_values(
+        CdcConnectOffsetState state
+    )
+    {
+        var observed = new CdcTransportResult<CdcConnectOffsetEvidence>.Observed(
+            new(
+                state,
+                "private-source-hash",
+                new(CoreCdc.CdcConnectorOffsetMatchResult.Exact, false, false, 123),
+                new(
+                    CoreCdc.CdcConnectorOffsetMatchResult.Exact,
+                    false,
+                    false,
+                    "private-commit",
+                    "private-change",
+                    7
+                )
+            )
+        );
+        for (int index = 0; index < 130; index++)
+        {
+            (
+                await _hooks.InvokeAsync(
+                    CdcControllerBoundary.Observation,
+                    _ => Task.FromResult(observed),
+                    CancellationToken.None
+                )
+            )
+                .Should()
+                .BeSameAs(observed);
+        }
+        await _hooks.InvokeAsync(
+            CdcControllerBoundary.Observation,
+            _ =>
+                Task.FromResult(
+                    new CdcTransportResult<CdcConnectOffsetEvidence>.Unavailable(
+                        new(CdcDeploymentComponent.Connect, CdcDeploymentFailure.Unavailable)
+                    )
+                ),
+            CancellationToken.None
+        );
+        await _hooks.InvokeAsync(
+            CdcControllerBoundary.Observation,
+            _ => Task.FromResult(new CdcTransportResult<CdcConnectOffsetEvidence>.Absent()),
+            CancellationToken.None
+        );
+        _hooks.OffsetObservations.Should().HaveCount(128);
+        string text = System.Text.Json.JsonSerializer.Serialize(_hooks.OffsetObservations);
+        text.Should().NotContain("private").And.NotContain("CommitLsn").And.NotContain("LsnProc");
+        using var document = System.Text.Json.JsonDocument.Parse(text);
+        document.RootElement[125].GetProperty("State").GetString().Should().Be(state.ToString());
+        document.RootElement[126].GetProperty("State").GetString().Should().Be("Unavailable");
+        document.RootElement[127].GetProperty("State").GetString().Should().Be("Absent");
+    }
+
     private sealed class MetricsResponse(string body) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(
