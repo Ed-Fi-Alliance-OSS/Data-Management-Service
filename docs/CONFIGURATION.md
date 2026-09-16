@@ -419,10 +419,16 @@ reads happen before it, and for those two the command line wins:
 - **Serilog's configuration.** `AddServices` calls `ConfigureLogging()`, which reads
   `webAppBuilder.Configuration`, before it calls `AddEnvironmentVariables()`, so the
   `Serilog` section is resolved without the appended source.
-- **`Plugins:Allowed` itself.** The allowlist is read in the plugin-loading bootstrap
-  phase, which runs before the phase that calls `AddServices` at all. That ordering
-  is deliberate: the allowlist decides what may execute, so it is resolved from the
+- **The whole `Plugins` section, not just `Allowed`.** The plugin-loading bootstrap
+  phase binds the section in one go, `Allowed` and `Directory` alike, and it runs
+  before the phase that calls `AddServices` at all. That ordering is deliberate for
+  `Allowed`: the allowlist decides what may execute, so it is resolved from the
   host's own sources rather than from any source a plugin could contribute.
+  `Directory` comes from the same bind and is resolved there whenever the allowlist
+  names anything, so it is a bootstrap read too. A deployment that sets
+  `Plugins__Directory` in the environment and also passes `--Plugins:Directory` on
+  the command line loads from the **command-line** root, which is not necessarily the
+  one it provisioned.
 
 **In the shipped container this is narrow, because there is no command-line source
 to lose to.** `src/dms/run.sh` starts the application as

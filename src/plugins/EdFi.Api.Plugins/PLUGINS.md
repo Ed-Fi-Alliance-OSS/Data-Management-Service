@@ -110,9 +110,11 @@ Ordinally, and each mismatch is fatal on its own:
 4. **`EdFiApiPlugin.Name`**, what your class returns.
 
 The project settings above are what make 2 and 3 agree when your project file is not already named
-for the plugin. The comparison is ordinal and the released image is Linux, so
-`Acme.Dms.Sample` and `acme.dms.sample` are different names — a plugin that loads on a
-case-insensitive developer machine can fail in the image on nothing but capitalisation.
+for the plugin. Every comparison is ordinal, and the host holds to that on **every** filesystem: it
+reads each name back from the directory instead of asking whether a path exists, so
+`Acme.Dms.Sample` and `acme.dms.sample` are two different names on a case-insensitive developer
+machine exactly as they are in the released Linux image. A mis-cased directory, entry assembly or
+`.deps.json` is a named startup failure wherever you run it, not a surprise at deployment.
 
 ## Discovery
 
@@ -217,10 +219,19 @@ host makes. **The contract packages are the counterexample**: `EdFi.Api.Plugins`
 contract 1.1 *is* refused by a host carrying 1.0, by name. Read each row of the manifest with the
 versioning policy of the package it came from in mind.
 
-**When it fires depends on where the assembly comes from.** Skew on anything your own `.deps.json`
-declares is caught at load, before your plugin is even constructed. The manifest's shared-framework
-section is **not** in a framework-dependent `.deps.json` at all, so skew there is caught later, at
+**When it fires depends on how *you* obtained the assembly, not on which section of the manifest
+lists it.** Skew on anything your own `.deps.json` declares a runtime entry for is caught at load,
+before your plugin is even constructed. An assembly you reach **only through a framework reference**
+is declared nowhere in a framework-dependent `.deps.json`, so skew on that one is caught later, at
 first use.
+
+Those are not the same list, and the manifest's shared-framework section is not a shortcut to
+either. `Microsoft.Extensions.Configuration.Abstractions` and
+`Microsoft.Extensions.DependencyInjection.Abstractions` sit in that section *and* are ordinary
+`PackageReference`s for a plugin compiling against the hook signature, which is how the consumer
+fixture takes them. A `PackageReference` puts a runtime entry in your `.deps.json`, so those two are
+checked at load despite where the manifest lists them. Read a manifest section as **where the host
+gets an assembly**, never as when your skew is caught.
 
 That distinction has a cost worth knowing. If the first use falls inside startup, you get the same
 named failure. If it falls on a request — because the assembly is only touched on a request path —

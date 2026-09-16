@@ -765,9 +765,16 @@ try {
             "",
             "## Shared framework: $($section.Name) $($section.Version)",
             "",
-            "Supplied by the runtime rather than by the application. A framework-dependent plugin's",
-            "own ``.deps.json`` declares none of these, so version skew against this section is caught",
-            "at first use rather than at load.",
+            "Supplied by the runtime rather than by the application, which is why an image scan",
+            "rather than a ``.deps.json`` is what finds them.",
+            "",
+            "This section says where the *host* gets an assembly. It does not say when a plugin's",
+            "version skew against one is caught, which depends on how the plugin obtained it. An",
+            "assembly a plugin reaches only through a framework reference is declared nowhere in its",
+            "framework-dependent ``.deps.json``, so skew on that one surfaces at first use. One the",
+            "plugin takes as a ``PackageReference``, which is how the Microsoft.Extensions",
+            "abstractions normally arrive, carries a runtime entry in that file and is checked at",
+            "load, before the plugin is constructed.",
             ""
         )
         $lines += Format-AssemblyTable -Rows $section.Rows

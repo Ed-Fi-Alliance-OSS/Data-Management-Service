@@ -73,17 +73,21 @@ What this does **not** protect against, stated so it is not rediscovered:
   refuse. What you get instead is attribution: the loader announces each plugin
   before entering its hook, so the last line written names the plugin that hung.
 
-### Plugin names are case-sensitive
+### Plugin names are case-sensitive, on every filesystem
 
 Every comparison the loader makes between an allowlist entry, a directory name, an
 assembly name, and the plugin's own declared name is **ordinal**. The released image
 is Linux and its filesystem is case-sensitive, so `Acme.Dms.Identity` and
 `acme.dms.identity` are two different directories there.
 
-A developer machine with a case-insensitive filesystem — Windows, or a default macOS
-volume — will resolve a mis-cased name that the image will not, so a plugin that
-loads locally can fail at deployment on nothing but capitalisation. Write the name
-exactly as the directory is named.
+**A case-insensitive filesystem does not soften that.** The loader never asks whether
+a path exists, because a Windows or default macOS volume answers yes to that question
+for a name that is not the name it was asked about. It lists the parent directory and
+compares the spelling it reads back, ordinally, and it does so for the plugin
+directory, the entry assembly, and the dependency manifest alike. A mis-cased name is
+the same named startup failure on a developer machine as in the image, so it is
+caught where the mistake is made rather than at deployment. Write the name exactly as
+the directory is named.
 
 The one deliberate exception is the duplicate check over `Plugins:Allowed`, which
 folds case: two entries differing only in case are one directory on a
