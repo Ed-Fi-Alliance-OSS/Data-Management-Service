@@ -137,10 +137,13 @@ function ConvertTo-CanonicalAssetSet {
         return ""
     }
 
+    # Deduplicated as well as ordered: NuGet reads this as a set of asset groups, so "compile,compile"
+    # and "compile" are one statement and must not demand a version bump.
     $tokens = @(
         $Assets -split ',' |
             ForEach-Object { $_.Trim().ToLowerInvariant() } |
-            Where-Object { $_.Length -gt 0 }
+            Where-Object { $_.Length -gt 0 } |
+            Select-Object -Unique
     )
 
     if ($tokens.Count -eq 0) {
@@ -383,6 +386,15 @@ function Test-XmlPreserveSpace {
         $Node
     )
 
+    # Two rules, and the order between them is the point.
+    #
+    # Anything inside a <code> element keeps its layout, whatever any node in between says. A sample
+    # is what an implementer copies, and a nested <b xml:space="default"> inside it does not make
+    # the sample's indentation cosmetic. So the whole chain is checked for <code> first.
+    #
+    # Everywhere else the nearest xml:space wins, including an explicit "default" that closes a
+    # preserving ancestor's request. That is what xml:space means, and treating a nearer default as
+    # "not mentioned" would keep preserving below it.
     $current = $Node
 
     while ($null -ne $current) {
@@ -392,15 +404,22 @@ function Test-XmlPreserveSpace {
             if ($element.LocalName -ceq "code") {
                 return $true
             }
+        }
 
+        $current = $current.ParentNode
+    }
+
+    $current = $Node
+
+    while ($null -ne $current) {
+        if ($current -is [System.Xml.XmlElement]) {
+            $element = [System.Xml.XmlElement] $current
             $space = $element.GetAttribute("xml:space")
 
             if ($space -ceq "preserve") {
                 return $true
             }
 
-            # An explicit default closes an ancestor's preserve request, which is what xml:space
-            # means; treating it as "not mentioned" would keep preserving below it.
             if ($space -ceq "default") {
                 return $false
             }
