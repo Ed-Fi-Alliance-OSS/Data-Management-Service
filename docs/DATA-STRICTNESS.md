@@ -200,13 +200,19 @@ are matched case-insensitively:
 | Request-body property names | Yes |
 | Resource endpoint names in the URL path | No |
 | Query parameter names | No |
-| Reserved query parameters (`limit`, `offset`, `totalCount`) | No |
+| Reserved query parameters (`limit`, `offset`, `totalCount`, `pageToken`, `pageSize`, `minChangeVersion`, `maxChangeVersion`, `number`) | No |
 | Descriptor URI values | No |
 
 For example, `GET /ed-fi/SCHOOLS?LiMiT=2` is equivalent to
 `GET /ed-fi/schools?limit=2`, and a descriptor value such as
 `uri://ed-fi.org/GradeLevelDescriptor#Ninth grade` is matched regardless of
 casing.
+
+`number` is consumed as the partition count on `/partitions` alone and is an
+ordinary query parameter name on every other route; all eight are nonetheless
+refused as **declared** query fields when DMS loads an ApiSchema, described
+under [Reserved query parameter
+names](./CURSOR-PAGING.md#reserved-query-parameter-names).
 
 > [!NOTE]
 > Case-insensitive matching of query **values** (the data being filtered on) is
