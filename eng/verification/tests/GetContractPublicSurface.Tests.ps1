@@ -83,6 +83,91 @@ $Body
             -SyncWindow 0
     }
 
+    # Compiles a fixture and then corrupts one byte of it, so that a malformed-metadata case is a
+    # real assembly the reader walks into rather than a hand-written stub it rejects early.
+    #
+    # The byte is located by searching for the exact DecimalConstantAttribute argument blob of the
+    # value the fixture declares, which is why that value is distinctive. Finding anything other than
+    # exactly one occurrence fails the case rather than corrupting an arbitrary byte.
+    function New-CorruptedDecimalFixture {
+        [CmdletBinding(SupportsShouldProcess)]
+        [OutputType([string])]
+        param(
+            [Parameter(Mandatory)][string] $Namespace,
+
+            # Offset within the 18-byte blob to overwrite, and the byte to write there.
+            [Parameter(Mandatory)][int] $Offset,
+            [Parameter(Mandatory)][byte] $Value
+        )
+
+        $path = Join-Path $script:fixtureRoot "$Namespace-corrupt-$([guid]::NewGuid().ToString('N')).dll"
+
+        if (-not $PSCmdlet.ShouldProcess($path, "Corrupt fixture")) {
+            return $null
+        }
+
+        # The attribute is applied explicitly rather than written as `= 1.23m`, so the fixture
+        # controls all three 32-bit words. A compiler-chosen value produces mostly zero bytes, and a
+        # mostly-zero pattern matches at more than one alignment inside the blob heap: the search
+        # then finds a single occurrence that is not the blob meant, and corrupting "the scale byte"
+        # lands on some neighbour's payload instead.
+        Add-Type -OutputAssembly $path -OutputType Library -TypeDefinition @"
+#nullable enable
+namespace $Namespace
+{
+    public class Contract
+    {
+        public void Apply(
+            [System.Runtime.InteropServices.Optional]
+            [System.Runtime.CompilerServices.DecimalConstant(0, 0, 0x0A0B0C0Du, 0x0E0F1011u, 0x12131415u)]
+            decimal amount) { }
+    }
+}
+"@
+
+        # The three words, little-endian, as they sit in the blob after prolog, scale and sign.
+        $anchor = [byte[]] @(
+            0x0D, 0x0C, 0x0B, 0x0A,
+            0x11, 0x10, 0x0F, 0x0E,
+            0x15, 0x14, 0x13, 0x12
+        )
+
+        $bytes = [System.IO.File]::ReadAllBytes($path)
+
+        # Not $matches: that is a PowerShell automatic variable, and assigning to it is both a
+        # PSScriptAnalyzer finding and a way to have the regex engine overwrite the search results.
+        $blobMatches = @()
+
+        for ($index = 0; $index -le $bytes.Length - $anchor.Length; $index++) {
+            $found = $true
+
+            # $position, not $offset. PowerShell variable names are case-insensitive, so an inner
+            # loop counter named $offset silently overwrites the $Offset parameter and every
+            # corruption lands at whatever index the search loop happened to finish on.
+            for ($position = 0; $position -lt $anchor.Length; $position++) {
+                if ($bytes[$index + $position] -ne $anchor[$position]) {
+                    $found = $false
+                    break
+                }
+            }
+
+            if ($found) {
+                $blobMatches += $index
+            }
+        }
+
+        if ($blobMatches.Count -ne 1) {
+            throw "Expected exactly one DecimalConstantAttribute payload in $path, found $($blobMatches.Count). Refusing to corrupt an arbitrary byte."
+        }
+
+        # $Offset is relative to the prolog, which sits four bytes before the anchored words: two
+        # bytes of prolog, then scale and sign.
+        $bytes[$blobMatches[0] - 4 + $Offset] = $Value
+        [System.IO.File]::WriteAllBytes($path, $bytes)
+
+        return $path
+    }
+
     # One case: two bodies in one namespace, and whether their surfaces should differ.
     function Test-SurfaceChange {
         [CmdletBinding()]
@@ -166,6 +251,52 @@ Describe "Get-ContractPublicSurface stability" {
     It "throws for an assembly that does not exist" {
         { & $script:reader -AssemblyPath (Join-Path $script:fixtureRoot "absent.dll") } |
             Should -Throw -ExpectedMessage "*does not exist*"
+    }
+}
+
+Describe "Get-ContractPublicSurface fails closed on malformed metadata" {
+    # A sentinel string such as "decimal:malformed" would make two differently corrupt inputs
+    # compare equal, which for a skip-when-unchanged publish gate means republishing over a package
+    # whose contents were never actually compared.
+
+    It "refuses an attribute whose prolog is not 0x0001" {
+        $corrupt = New-CorruptedDecimalFixture -Namespace "CorruptProlog" -Offset 0 -Value 0x02
+
+        { & $script:reader -AssemblyPath $corrupt } |
+            Should -Throw -ExpectedMessage "*prolog 0x0002*"
+    }
+
+    It "names the member carrying the malformed attribute" {
+        $corrupt = New-CorruptedDecimalFixture -Namespace "CorruptNamesMember" -Offset 0 -Value 0x02
+
+        { & $script:reader -AssemblyPath $corrupt } |
+            Should -Throw -ExpectedMessage "*parameter 'amount'*"
+    }
+
+    It "refuses an attribute declaring named arguments it does not support" {
+        $corrupt = New-CorruptedDecimalFixture -Namespace "CorruptNamedCount" -Offset 16 -Value 0x01
+
+        { & $script:reader -AssemblyPath $corrupt } |
+            Should -Throw -ExpectedMessage "*named argument*"
+    }
+
+    It "refuses an out-of-range decimal scale rather than surfacing an argument exception" {
+        # 29 is one past the maximum a decimal can carry, and the failure has to name the member
+        # rather than arrive as an ArgumentOutOfRangeException from inside the decimal constructor.
+        $corrupt = New-CorruptedDecimalFixture -Namespace "CorruptScale" -Offset 2 -Value 29
+
+        { & $script:reader -AssemblyPath $corrupt } |
+            Should -Throw -ExpectedMessage "*scale 29*"
+    }
+
+    # The property that matters: two differently corrupt inputs must not read as one unchanged
+    # contract. Both throw, so no comparison between them can ever return "identical".
+    It "never reports two differently corrupt assemblies as identical" {
+        $first = New-CorruptedDecimalFixture -Namespace "CorruptPair" -Offset 0 -Value 0x02
+        $second = New-CorruptedDecimalFixture -Namespace "CorruptPair" -Offset 0 -Value 0x03
+
+        { & $script:reader -AssemblyPath $first } | Should -Throw
+        { & $script:reader -AssemblyPath $second } | Should -Throw
     }
 }
 
@@ -491,6 +622,47 @@ Describe "Get-ContractPublicSurface sees a change that the XML type list does no
             Should -BeTrue
     }
 
+    # Which entity carries NullableContextAttribute is a compiler packing decision. Adding a private
+    # member can move it from a method onto the declaring type, and a reader that consulted only the
+    # method then reports an unchanged public constraint as changed, demanding a version bump for a
+    # change no consumer can observe. That is as damaging as a missed change: it breaks the
+    # skip-when-unchanged half of the publish policy.
+    It "ignores a private member that moves the nullable context onto the declaring type" {
+        Test-SurfaceChange -Namespace "MethodContextMoved" `
+            -Before "    public class Contract { public void Apply<T>() where T : notnull { } }" `
+            -After @"
+    public class Contract
+    {
+        public void Apply<T>() where T : notnull { }
+        private string Hidden(string input) => input;
+    }
+"@ | Should -BeFalse
+    }
+
+    It "ignores a private member that moves the nullable context on a nested type" {
+        Test-SurfaceChange -Namespace "NestedContextMoved" `
+            -Before @"
+    public class Outer
+    {
+        public class Contract<T> where T : notnull { }
+    }
+"@ `
+            -After @"
+    public class Outer
+    {
+        public class Contract<T> where T : notnull { }
+        private string Hidden(string input) => input;
+    }
+"@ | Should -BeFalse
+    }
+
+    It "still sees a constraint change on a nested type" {
+        Test-SurfaceChange -Namespace "NestedConstraintChanged" `
+            -Before "    public class Outer { public class Contract<T> where T : notnull { } }" `
+            -After "    public class Outer { public class Contract<T> { } }" |
+            Should -BeTrue
+    }
+
     It "reports notnull by name" {
         $surface = Get-FixtureSurface -Namespace "NotNullRendered" `
             -Body "    public class Contract<T> where T : notnull { }"
@@ -498,8 +670,8 @@ Describe "Get-ContractPublicSurface sees a change that the XML type list does no
         ($surface -join "`n") | Should -BeLike "*generics=T:notnull*"
     }
 
-    # The exclusion this replaces was mine and it was wrong: Apply(value: 1) stops compiling when
-    # the parameter is renamed, at an unchanged package version and with an identical signature.
+    # Apply(value: 1) stops compiling when the parameter is renamed, at an unchanged package version
+    # and with a byte-identical signature, so the name is part of what a consumer binds to.
     It "sees a parameter renamed, which breaks every named argument at the call site" {
         Test-SurfaceChange -Namespace "ParameterRenamed" `
             -Before "    public class Contract { public void Apply(int value) { } }" `
@@ -583,11 +755,14 @@ Describe "Get-ContractPublicSurface ignores what an implementer cannot bind to" 
     }
 
     It "ignores an added attribute that encodes no signature, default or constraint" {
-        # The boundary, stated rather than implied. [Obsolete] and the nullable annotations on
-        # ordinary parameters and return types are attribute-encoded and are not compared; what is
-        # compared is the signature, the declared defaults and the generic constraints, including
-        # the attribute-encoded forms of the latter two. An assembly whose only change is a new
-        # [Obsolete] still compiles for every consumer, which is why this is a clean skip.
+        # The boundary, stated rather than implied. What is compared is the signature, the declared
+        # defaults and the generic constraints, including the attribute-encoded forms of the last
+        # two. Attributes that encode none of those, such as [Obsolete], are outside the comparison.
+        #
+        # That is a deliberate limit rather than a claim of harmlessness: [Obsolete] raises a
+        # diagnostic, and [Obsolete(error: true)], or a consumer building with warnings as errors,
+        # can stop that consumer's build. Widening the gate to arbitrary attributes is a larger
+        # policy decision than this comparison makes.
         Test-SurfaceChange -Namespace "AttributeAdded" `
             -Before '    public class Contract { public void Apply() { } }' `
             -After '    public class Contract { [Obsolete] public void Apply() { } }' |
