@@ -29,6 +29,116 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.Modules;
 public class MetadataModuleTests
 {
     [TestFixture]
+    public class When_Validating_Qualified_Metadata_Routes
+    {
+        private static DataStore DataStoreWithRouteContext(
+            long id,
+            params (string Key, string Value)[] routeContext
+        )
+        {
+            return new DataStore(
+                id,
+                "Test",
+                $"TestInstance{id}",
+                "test-connection-string",
+                routeContext.ToDictionary(
+                    item => new RouteQualifierName(item.Key),
+                    item => new RouteQualifierValue(item.Value)
+                )
+            );
+        }
+
+        [Test]
+        public async Task It_allows_unqualified_metadata_requests()
+        {
+            // Arrange
+            var httpContext = new DefaultHttpContext();
+            var tenantValidator = A.Fake<ITenantValidator>();
+            var dataStoreProvider = A.Fake<IDataStoreProvider>();
+            var validator = new MetadataRouteValidator(tenantValidator, dataStoreProvider);
+
+            // Act
+            bool result = await validator.ValidateAsync(httpContext);
+
+            // Assert
+            result.Should().BeTrue();
+            A.CallTo(() => tenantValidator.ValidateTenantAsync(A<string>._)).MustNotHaveHappened();
+        }
+
+        [Test]
+        public async Task It_allows_matching_tenant_and_route_context()
+        {
+            // Arrange
+            var httpContext = new DefaultHttpContext();
+            httpContext.Request.RouteValues["tenant"] = "Tenant_255901";
+            httpContext.Request.RouteValues["districtId"] = "255901";
+            httpContext.Request.RouteValues["schoolYear"] = "2024";
+
+            var tenantValidator = A.Fake<ITenantValidator>();
+            A.CallTo(() => tenantValidator.ValidateTenantAsync("Tenant_255901")).Returns(true);
+
+            var dataStoreProvider = A.Fake<IDataStoreProvider>();
+            A.CallTo(() => dataStoreProvider.GetAll("Tenant_255901"))
+                .Returns([DataStoreWithRouteContext(1, ("districtId", "255901"), ("schoolYear", "2024"))]);
+
+            var validator = new MetadataRouteValidator(tenantValidator, dataStoreProvider);
+
+            // Act
+            bool result = await validator.ValidateAsync(httpContext);
+
+            // Assert
+            result.Should().BeTrue();
+        }
+
+        [Test]
+        public async Task It_rejects_unknown_tenant()
+        {
+            // Arrange
+            var httpContext = new DefaultHttpContext();
+            httpContext.Request.RouteValues["tenant"] = "UnknownTenant";
+
+            var tenantValidator = A.Fake<ITenantValidator>();
+            A.CallTo(() => tenantValidator.ValidateTenantAsync("UnknownTenant")).Returns(false);
+
+            var dataStoreProvider = A.Fake<IDataStoreProvider>();
+            var validator = new MetadataRouteValidator(tenantValidator, dataStoreProvider);
+
+            // Act
+            bool result = await validator.ValidateAsync(httpContext);
+
+            // Assert
+            result.Should().BeFalse();
+            httpContext.Response.StatusCode.Should().Be((int)HttpStatusCode.NotFound);
+        }
+
+        [Test]
+        public async Task It_rejects_non_matching_route_context()
+        {
+            // Arrange
+            var httpContext = new DefaultHttpContext();
+            httpContext.Request.RouteValues["tenant"] = "Tenant_255901";
+            httpContext.Request.RouteValues["districtId"] = "999999";
+            httpContext.Request.RouteValues["schoolYear"] = "2024";
+
+            var tenantValidator = A.Fake<ITenantValidator>();
+            A.CallTo(() => tenantValidator.ValidateTenantAsync("Tenant_255901")).Returns(true);
+
+            var dataStoreProvider = A.Fake<IDataStoreProvider>();
+            A.CallTo(() => dataStoreProvider.GetAll("Tenant_255901"))
+                .Returns([DataStoreWithRouteContext(1, ("districtId", "255901"), ("schoolYear", "2024"))]);
+
+            var validator = new MetadataRouteValidator(tenantValidator, dataStoreProvider);
+
+            // Act
+            bool result = await validator.ValidateAsync(httpContext);
+
+            // Assert
+            result.Should().BeFalse();
+            httpContext.Response.StatusCode.Should().Be((int)HttpStatusCode.NotFound);
+        }
+    }
+
+    [TestFixture]
     public class When_Getting_Profiles_Endpoint
     {
         [Test]
