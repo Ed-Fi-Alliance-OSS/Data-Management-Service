@@ -7,7 +7,9 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Paging;
 using EdFi.DataManagementService.Core.Startup;
+using EdFi.DataManagementService.Core.Validation;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -463,6 +465,119 @@ public class EffectiveSchemaBootstrapperTests
             }
 
             // Assert
+            A.CallTo(() => _mockEffectiveProvider.Initialize(A<ApiSchemaDocumentNodes>._))
+                .MustNotHaveHappened();
+            A.CallTo(() => _mockEffectiveSchemaSetProvider.Initialize(A<EffectiveSchemaSet>._))
+                .MustNotHaveHappened();
+        }
+    }
+
+    /// <summary>
+    /// A schema declaring a query field spelled like a query parameter DMS consumes as a control
+    /// parameter. DMS refuses to start, and the failure carries the whole of what an operator needs to
+    /// fix the model.
+    /// </summary>
+    [TestFixture]
+    public class Given_Reserved_Query_Parameter_Collision : EffectiveSchemaBootstrapperTests
+    {
+        private IEffectiveApiSchemaProvider _mockEffectiveProvider = null!;
+        private IEffectiveSchemaSetProvider _mockEffectiveSchemaSetProvider = null!;
+        private EffectiveSchemaBootstrapper _bootstrapper = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            var mockSchemaProvider = A.Fake<IApiSchemaProvider>();
+            A.CallTo(() => mockSchemaProvider.GetApiSchemaNodes()).Returns(CreateValidSchemaNodes());
+            A.CallTo(() => mockSchemaProvider.IsSchemaValid).Returns(true);
+
+            // Normalization is the step that detects the collision, so the fake returns the result the
+            // real normalizer would. That the real one produces it for a colliding schema is proven by
+            // the normalizer's own suite; what this fixture proves is what startup does with it.
+            var mockNormalizer = A.Fake<IApiSchemaInputNormalizer>();
+            A.CallTo(() => mockNormalizer.Normalize(A<ApiSchemaDocumentNodes>._))
+                .Returns(
+                    new ApiSchemaNormalizationResult.ReservedQueryParameterCollisionResult([
+                        new ApiSchemaNormalizationResult.ReservedQueryParameterCollision(
+                            "extension[0]",
+                            "tpdm",
+                            "candidates",
+                            "pageSize",
+                            ReservedQueryParameters.All.Single(reserved =>
+                                reserved.Name == CursorRequestValidator.PageSizeParameter
+                            )
+                        ),
+                    ])
+                );
+
+            _mockEffectiveProvider = A.Fake<IEffectiveApiSchemaProvider>();
+            _mockEffectiveSchemaSetProvider = A.Fake<IEffectiveSchemaSetProvider>();
+
+            _bootstrapper = new EffectiveSchemaBootstrapper(
+                mockSchemaProvider,
+                _mockEffectiveProvider,
+                _mockEffectiveSchemaSetProvider,
+                mockNormalizer,
+                CreateBuilder(A.Fake<IEffectiveSchemaHashProvider>(), A.Fake<IResourceKeySeedProvider>()),
+                NullLogger<EffectiveSchemaBootstrapper>.Instance
+            );
+        }
+
+        [Test]
+        public async Task It_refuses_to_start()
+        {
+            Func<Task> act = async () => await _bootstrapper.InitializeAsync(CancellationToken.None);
+
+            await act.Should().ThrowAsync<InvalidOperationException>();
+        }
+
+        [Test]
+        public async Task It_names_the_schema_the_resource_and_the_field()
+        {
+            Func<Task> act = async () => await _bootstrapper.InitializeAsync(CancellationToken.None);
+
+            (await act.Should().ThrowAsync<InvalidOperationException>())
+                .Which.Message.Should()
+                .Contain("Schema 'extension[0]' resource 'tpdm/candidates' declares query field 'pageSize'");
+        }
+
+        [Test]
+        public async Task It_says_what_the_name_is_reserved_for_and_what_to_do()
+        {
+            Func<Task> act = async () => await _bootstrapper.InitializeAsync(CancellationToken.None);
+
+            (await act.Should().ThrowAsync<InvalidOperationException>())
+                .Which.Message.Should()
+                .Contain("cursor paging page size")
+                .And.Contain("Rename the colliding property in the MetaEd model");
+        }
+
+        [Test]
+        public async Task It_does_not_report_the_generic_unknown_result_message()
+        {
+            Func<Task> act = async () => await _bootstrapper.InitializeAsync(CancellationToken.None);
+
+            (await act.Should().ThrowAsync<InvalidOperationException>())
+                .Which.Message.Should()
+                .NotContain(
+                    "Unknown normalization result",
+                    "the collision has its own arm ahead of the default, so an operator is never left "
+                        + "with a message naming nothing"
+                );
+        }
+
+        [Test]
+        public async Task It_does_not_initialize_either_effective_schema_provider()
+        {
+            try
+            {
+                await _bootstrapper.InitializeAsync(CancellationToken.None);
+            }
+            catch (InvalidOperationException)
+            {
+                // Expected
+            }
+
             A.CallTo(() => _mockEffectiveProvider.Initialize(A<ApiSchemaDocumentNodes>._))
                 .MustNotHaveHappened();
             A.CallTo(() => _mockEffectiveSchemaSetProvider.Initialize(A<EffectiveSchemaSet>._))

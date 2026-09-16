@@ -80,6 +80,11 @@ internal sealed class EffectiveSchemaBootstrapper(
                 throw new InvalidOperationException(
                     $"Duplicate projectEndpointName(s) found: {string.Join("; ", failure.Collisions.Select(c => $"'{c.ProjectEndpointName}' in [{string.Join(", ", c.ConflictingSources)}]"))}"
                 ),
+            // Thrown with the description the result builds rather than a message composed here. The
+            // same text is what normalization already logged, and an operator reading the startup
+            // failure needs the resource, the field, and what the name is taken for to act on it.
+            ApiSchemaNormalizationResult.ReservedQueryParameterCollisionResult failure =>
+                throw new InvalidOperationException(failure.Describe()),
             _ => throw new InvalidOperationException("Unknown normalization result"),
         };
 
