@@ -442,6 +442,37 @@ covers the five affected SQL fixture suites (79 expected tests), using productio
 It runs on a temporary branch outside this PR. Inspect any recurrence before making an
 environment or startup change; keep raw logs private. This diagnostic is not final qualification.
 
+### Follow-up: preserve deadline coverage without racing loss observation
+
+On `8e5e94d16`, [DMS CI 35110897520](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/35110897520)
+passed hosted Contract (4,966 checks), but the covered full unit run failed two existing
+`It_contains_initial_loss_across_enclosing_deadlines_during_persistence` cases. The
+workflow case never reached `persist`; the caller-cancellation case never reached the
+callback that cancels the caller. The test exposed lost offsets only during the last
+100 ms of a 900 ms command or 1,250 ms workflow budget, allowing expiry before the
+behavior under test. The complete Core project still passed all 5,426 tests.
+
+- [x] Expose lost offsets immediately after the barrier, then hold the persistence callback
+  across the chosen enclosing deadline. Anchor elapsed time after both timers exist.
+- [x] Give these loss scenarios distinct finite test budgets and explicitly assert that
+  the deadline was crossed inside persistence. Retain the original short no-loss timeout
+  controls, caller-cancellation case, held-session assertion, incident readback,
+  persistence/stop/disposal ordering, closed-publication assertion, and session release.
+- [x] Compare the original and corrected test under identical bounded observation latency,
+  remove temporary instrumentation, and run the full affected class with analyzers enabled.
+- [ ] Repeat complete local/hosted Contract, all 261 live cases, and required PR gates on
+  the final pushed SHA. Production behavior, deadlines, and the approved SQL fixture
+  recreation policy remain unchanged by this test-only follow-up.
+
+Validation of the deadline-test correction: all ten variants passed normally. A matched
+250 ms offset-observation delay reproduced missing persistence in the original test
+(nine passed, one failed); all ten corrected variants passed under the same delay.
+Temporary instrumentation was removed. The complete affected class then passed all
+**86 cases with the CI coverage collector and analyzers enabled**, zero failures/skips.
+Complete final-source Contract passed **4,966 checks**, zero failures/skips, including all ten
+corrected deadline cases and all 34 SQL startup policy cases. Seven tested source hashes
+were verified after formatting. Final-SHA hosted qualification remains required.
+
 ### Final delivery
 
 - [x] Review the final diff against the story contracts. Record the port-fix provenance and explain each production correction.
@@ -460,6 +491,7 @@ Recorded evidence as of this plan update. Results from the final hosted run and 
 
 | Evidence | Result | Limit |
 | --- | --- | --- |
+| [Full run 35110904032](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/35110904032) on `8e5e94d16` | All 261 live tests and 13 jobs passed, including controlled SQL recreation; hosted Contract passed 4,966 | The full covered unit job failed two pre-existing CLI deadline-test cases; validate the test-only correction and qualify the final SHA again. |
 | Approved LSA recreation amendment, local validation | 4,966 Contract and 437 core CDC checks passed; controlled recreation and both affected Lifecycle variants passed | Final hosted Contract, all 261 live cases, and required PR gates must pass on the pushed SHA. |
 | [Full run 35086104754](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/35086104754) on `47e159f71` | All 260 live tests and all 13 jobs passed; local/hosted Contract each passed 4,932; required PR gates passed | Baseline before the approved recreation amendment; does not qualify the amended source. |
 | Local Contract before the PostgreSQL TCP change, `c4a82bf83` | 4,872 passed, zero failures/skips | Must be rerun after the latest fixture edit. |
