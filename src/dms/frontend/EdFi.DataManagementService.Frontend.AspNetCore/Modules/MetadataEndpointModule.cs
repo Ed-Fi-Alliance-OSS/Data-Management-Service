@@ -10,6 +10,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
+using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
@@ -586,13 +587,18 @@ public partial class MetadataEndpointModule(IOptions<FrontendAppSettings> appSet
 
         if (apiService.HasChangeQueriesOpenApiSpecification())
         {
-            var metadataPrefix = baseUrl[
-                ..baseUrl.LastIndexOf("/metadata/specifications", StringComparison.Ordinal)
-            ];
+            const string specificationsSuffix = "/specifications";
+            string requestPath = httpContext.Request.Path.ToString().TrimEnd('/');
+            string metadataPrefix = requestPath.EndsWith(
+                "/metadata/specifications",
+                StringComparison.OrdinalIgnoreCase
+            )
+                ? baseUrl[..^specificationsSuffix.Length]
+                : $"{httpContext.Request.RootUrl()}/metadata";
             sections.Add(
                 new RouteInformation(
                     "Change-Queries",
-                    $"{metadataPrefix}/metadata/changequeries/v1/swagger.json",
+                    $"{metadataPrefix}/changequeries/v1/swagger.json",
                     "Other"
                 )
             );
