@@ -382,9 +382,11 @@ The asymmetry was the point of the difference, and it was also the defect. DMS-1
 reserves eight query parameter names before resource-filter matching runs, of which MetaEd protects
 only three, so an extension author can declare a colliding property that MetaEd and DMS both accept
 and that is then not served as the model declares it. For the seven names reserved on every
-operation that means the filter is silently never applied on a collection GET and reported as an
-invalid query field on the change-query endpoints; for the count it means the split recorded above,
-filtering on the collection GET and shadowed on the sibling operation of the same resource. DMS now
+operation that means the filter is silently never applied, on a collection GET and on the
+change-query endpoints alike; of those seven only `pageToken` and `pageSize` are also reported as an
+invalid query field on a change-query endpoint, because the other five are consumed there as paging
+and change-version controls. For the count it means the split recorded above, filtering on the
+collection GET and shadowed on the sibling operation of the same resource. DMS now
 refuses such a schema at ApiSchema load, for every reserved name including this one. No loadable
 schema can declare a query field named `number`, so the
 difference is no longer observable from a DMS target and is not something the parity harness can

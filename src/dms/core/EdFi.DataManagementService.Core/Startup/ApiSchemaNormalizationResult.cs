@@ -57,11 +57,13 @@ public abstract record ApiSchemaNormalizationResult
     /// <remarks>
     /// A reserved name is removed from resource-filter matching before the query-field lookup runs, so
     /// such a property is not served as the schema declares it. For the seven names reserved on every
-    /// operation that means the filter is silently never applied on a collection GET, and reported as
-    /// an invalid query field on the Change Query endpoints. The partition count is reserved on
-    /// <c>/partitions</c> alone, so a property of that name filters on the collection GET and is
-    /// shadowed on the sibling operation of the same resource, which is the worse of the two outcomes
-    /// because it differs by route rather than being uniformly absent.
+    /// operation that means the filter is silently never applied, on a collection GET and on the
+    /// Change Query endpoints alike. Of those seven only <c>pageToken</c> and <c>pageSize</c> are also
+    /// reported as an invalid query field on a Change Query endpoint; the other five are consumed
+    /// there as paging and change-version controls, so for them the loss is silent on every operation.
+    /// The partition count is reserved on <c>/partitions</c> alone, so a property of that name filters
+    /// on the collection GET and is shadowed on the sibling operation of the same resource, which is
+    /// the worse of the two outcomes because it differs by route rather than being uniformly absent.
     /// </remarks>
     /// <remarks>
     /// MetaEd protects only three of the reserved names, so a model declaring any of the others is
