@@ -1,6 +1,5 @@
 ---
-jira: TBD
-jira_url: TBD
+jira: DMS-1554
 epic: DMS-1504
 source_spike: DMS-1503
 ---

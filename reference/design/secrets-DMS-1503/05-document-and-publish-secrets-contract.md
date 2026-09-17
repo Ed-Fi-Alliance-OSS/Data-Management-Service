@@ -1,6 +1,5 @@
 ---
-jira: TBD
-jira_url: TBD
+jira: DMS-1555
 epic: DMS-1504
 source_spike: DMS-1503
 ---
@@ -79,7 +78,7 @@ Unprefixed paths are relative to the repository root.
 - Tests assert the version independence:
     - the `AssemblyVersion` inside the published nupkg equals the package version
     - a build with an explicit release version leaves the packed contract version untouched
-- The scratch consumer from story 02 is extended to compile against the published package once a version exists on the feed.
+- The scratch consumer from DMS-1552 is extended to compile against the published package once a version exists on the feed.
 
 **Operations documentation**
 

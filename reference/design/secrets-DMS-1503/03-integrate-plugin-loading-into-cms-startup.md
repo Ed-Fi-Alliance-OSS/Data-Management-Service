@@ -1,6 +1,5 @@
 ---
-jira: TBD
-jira_url: TBD
+jira: DMS-1553
 epic: DMS-1504
 source_spike: DMS-1503
 ---
@@ -17,8 +16,8 @@ This spike is that epic, and this story is where CMS gains both composition phas
 - `reference/design/secrets-DMS-1503/design.md` ("### CMS Host Integration", "### Configuration Surface", "### Contract Cardinality")
 - `reference/design/plugins-DMS-1462/design.md` ("### Applicability to the Configuration Service", "### The Two Composition Phases", "### Startup Failure Semantics", "### Observability")
 
-Both contracts the registry declares exist after story 02, and neither is called yet.
-A resolver registered here resolves nothing until the read seam lands in story 04.
+Both contracts the registry declares exist after DMS-1552, and neither is called yet.
+A resolver registered here resolves nothing until the read seam lands in DMS-1554.
 
 **Citation convention.**
 Unprefixed paths are relative to the repository root.
