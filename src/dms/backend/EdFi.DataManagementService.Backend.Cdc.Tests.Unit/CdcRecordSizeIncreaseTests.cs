@@ -913,8 +913,7 @@ internal class Given_CdcRecordSizeIncrease(Ddl.CdcProvider provider) : CdcReadin
     [TestCase(true)]
     public async Task It_bounds_initial_unusable_lag_without_completing_the_rollout(bool cancel)
     {
-        // Keep the explicit cancellation case independent of the shorter deadline case.
-        ShortTiming(cancel ? 1000 : 200);
+        CatchUpTiming(cancel);
         using var caller = new CancellationTokenSource();
         int passes = 0;
         _onCall = step =>
@@ -1137,8 +1136,7 @@ internal class Given_CdcRecordSizeIncrease(Ddl.CdcProvider provider) : CdcReadin
         bool cancel
     )
     {
-        // Cancellation must reach its explicit trigger before the separate timeout under test.
-        ShortTiming(cancel ? 1000 : 200);
+        CatchUpTiming(cancel);
         using var caller = new CancellationTokenSource();
         int observations = 0;
         _onCall = step =>
@@ -1193,6 +1191,26 @@ internal class Given_CdcRecordSizeIncrease(Ddl.CdcProvider provider) : CdcReadin
             _request.Timing.CallTimeout,
             _request.Timing.PollInterval,
             CancellationToken.None
+        );
+    }
+
+    private void CatchUpTiming(bool cancel)
+    {
+        // Journal persistence precedes catch-up, so allow it time to finish under load.
+        // Equal call and wait budgets isolate the overall deadline from per-call expiry.
+        // Caller cancellation has more headroom to reach its explicit third-pass trigger.
+        var wait = TimeSpan.FromSeconds(cancel ? 30 : 10);
+        _request = new(
+            _request.Binding,
+            _request.DmsSettings,
+            _request.ProviderSetup,
+            _request.ConnectEndpoint,
+            _request.WorkerMetricsEndpoint,
+            _request.ConnectorPolicy,
+            _request.WorkerPolicy,
+            _request.ProviderConnectionProperties,
+            _request.KafkaClientSecurityProperties,
+            new(wait, wait, TimeSpan.FromMilliseconds(5))
         );
     }
 
