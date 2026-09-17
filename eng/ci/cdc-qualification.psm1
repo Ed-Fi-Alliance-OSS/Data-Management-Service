@@ -48,7 +48,7 @@ function Get-CdcQualificationReport {
     foreach ($file in Get-ChildItem -LiteralPath (Split-Path -Parent $Path) -Filter 'admission-evidence-sql-*.json' -Recurse) {
         $evidence = Get-Content -LiteralPath $file.FullName -Raw | ConvertFrom-Json -AsHashtable
         if ($evidence.Stage -eq 'unprovisioned-sql-startup') {
-            if ($evidence.Container.Logs.InjectedFailure -eq $true) { $injectedFailures++ }
+            if ($evidence['Container']?['Logs']?['InjectedFailure'] -eq $true) { $injectedFailures++ }
             else {
                 $startupFailures++
                 $signature = if ($evidence.Signature -in @('LsaInitializationTimeout', 'ReasonTwoErrnoEleven')) { $evidence.Signature } else { 'Other' }

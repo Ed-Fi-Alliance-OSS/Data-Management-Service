@@ -151,4 +151,57 @@ public sealed class Given_CdcSqlServerStartupLogEvidence
         evidence.SqlErrorNumbers.Should().BeEmpty();
         JsonSerializer.Serialize(evidence).Should().NotContain("private");
     }
+
+    [Test]
+    public async Task It_collects_resource_groups_without_allowing_a_diagnostic_failure_to_escape()
+    {
+        var docker = new ResourceDockerCli(failInfo: true);
+        Dictionary<string, object> evidence =
+            await CdcConnectorTemplatePinnedImageFixture.ReadSqlServerStartupResourcesAsync(
+                docker,
+                "mcr.microsoft.com/mssql/server:2025-latest",
+                "sql-server",
+                CancellationToken.None
+            );
+
+        evidence["ContainerLimitsState"].Should().Be("Observed");
+        evidence["ImageState"].Should().Be("Observed");
+        evidence["DiskState"].Should().Be("Unavailable");
+        docker.Commands.Should().ContainInOrder("inspect", "info", "image");
+    }
+
+    private sealed class ResourceDockerCli(bool failInfo) : IDockerCli
+    {
+        public bool IsOffline => false;
+        public List<string> Commands { get; } = [];
+
+        public Task RequireDockerAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public Task<DockerCommandResult> RunAsync(
+            IReadOnlyList<string> arguments,
+            CancellationToken cancellationToken
+        ) => RunAllowingFailureAsync(arguments, cancellationToken);
+
+        public Task<DockerCommandResult> RunAllowingFailureAsync(
+            IReadOnlyList<string> arguments,
+            CancellationToken cancellationToken
+        )
+        {
+            Commands.Add(arguments[0]);
+            if (arguments[0] == "info" && failInfo)
+            {
+                return Task.FromException<DockerCommandResult>(
+                    new InvalidOperationException("diagnostic unavailable")
+                );
+            }
+
+            string output = arguments[0] switch
+            {
+                "inspect" => "{\"Memory\":2147483648,\"NanoCpus\":0,\"Ulimits\":[]}",
+                "image" => "17.0.4075.5",
+                _ => "/",
+            };
+            return Task.FromResult(new DockerCommandResult(0, output, string.Empty));
+        }
+    }
 }

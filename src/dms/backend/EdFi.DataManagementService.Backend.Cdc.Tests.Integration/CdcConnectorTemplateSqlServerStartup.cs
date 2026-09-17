@@ -101,7 +101,12 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
                     Container = container,
                     RecreationPermitted = recreationPermitted,
                     Signature = container.RecoverySignature,
-                    Resources = await ReadSqlServerStartupResourcesAsync(cancellationToken),
+                    Resources = await ReadSqlServerStartupResourcesAsync(
+                        _docker,
+                        _settings.ProviderImage,
+                        ProviderContainerName,
+                        cancellationToken
+                    ),
                 }
             ),
             cancellationToken

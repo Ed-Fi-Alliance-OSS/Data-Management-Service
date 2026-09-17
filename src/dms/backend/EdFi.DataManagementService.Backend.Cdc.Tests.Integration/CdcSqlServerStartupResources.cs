@@ -11,7 +11,10 @@ namespace EdFi.DataManagementService.Backend.Cdc.Tests.Integration;
 
 internal sealed partial class CdcConnectorTemplatePinnedImageFixture
 {
-    private async Task<Dictionary<string, object>> ReadSqlServerStartupResourcesAsync(
+    internal static async Task<Dictionary<string, object>> ReadSqlServerStartupResourcesAsync(
+        IDockerCli docker,
+        string providerImage,
+        string providerContainerName,
         CancellationToken cancellationToken
     )
     {
@@ -65,8 +68,8 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
         }
         try
         {
-            var config = await _docker.RunAllowingFailureAsync(
-                ["inspect", "--format", "{{json .HostConfig}}", ProviderContainerName],
+            var config = await docker.RunAllowingFailureAsync(
+                ["inspect", "--format", "{{json .HostConfig}}", providerContainerName],
                 token
             );
             if (config.ExitCode == 0)
@@ -80,7 +83,7 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
         }
         try
         {
-            var root = await _docker.RunAllowingFailureAsync(
+            var root = await docker.RunAllowingFailureAsync(
                 ["info", "--format", "{{.DockerRootDir}}"],
                 token
             );
@@ -106,13 +109,13 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
         }
         try
         {
-            var image = await _docker.RunAllowingFailureAsync(
+            var image = await docker.RunAllowingFailureAsync(
                 [
                     "image",
                     "inspect",
                     "--format",
                     "{{index .Config.Labels \"com.microsoft.version\"}}",
-                    _settings.ProviderImage,
+                    providerImage,
                 ],
                 token
             );

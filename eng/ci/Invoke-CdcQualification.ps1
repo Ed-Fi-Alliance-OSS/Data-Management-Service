@@ -59,7 +59,12 @@ function Invoke-QualificationSuite {
     $report.Name = $Name
     $reports.Add($report)
     Export-CdcQualificationEvidence -RawDirectory $suiteDirectory -Destination (Join-Path $destination $Name)
-    if ($report.Contains('SqlStartupFailures')) {
+    if ($report.Contains('SqlStartupFailures') -and (
+            $report.SqlStartupFailures -gt 0 -or
+            $report.SqlStartupRecoveries -gt 0 -or
+            $report.SqlStartupInjectedFailures -gt 0 -or
+            $report.SqlStartupInjectedRecoveries -gt 0
+        )) {
         Write-Output "SQL startup: observed failures=$($report.SqlStartupFailures), recovered=$($report.SqlStartupRecoveries), injected failures=$($report.SqlStartupInjectedFailures), injected recoveries=$($report.SqlStartupInjectedRecoveries)"
         if ($env:GITHUB_STEP_SUMMARY) {
             "- $Name SQL startup: $($report.SqlStartupFailures) observed failures; $($report.SqlStartupRecoveries) recovered; $($report.SqlStartupInjectedRecoveries) injected recoveries." >> $env:GITHUB_STEP_SUMMARY
