@@ -16,13 +16,14 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
     )
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(TimeSpan.FromSeconds(1));
+        timeout.CancelAfter(TimeSpan.FromSeconds(3));
         CancellationToken token = timeout.Token;
         Dictionary<string, object> evidence = new()
         {
             ["HostState"] = "Unavailable",
             ["ContainerLimitsState"] = "Unavailable",
             ["ImageState"] = "Unavailable",
+            ["DiskState"] = "Unavailable",
             // Docker removes the container cgroup after exit. Do not report a zero usage sample.
             ["ContainerUsageState"] = "UnavailableAfterExit",
         };
@@ -79,6 +80,32 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
         }
         try
         {
+            var root = await _docker.RunAllowingFailureAsync(
+                ["info", "--format", "{{.DockerRootDir}}"],
+                token
+            );
+            // Resolve the filesystem on the local Linux daemon host without publishing its path.
+            if (root.ExitCode == 0 && OperatingSystem.IsLinux())
+            {
+                string path = root.StandardOutput.Trim();
+                DriveInfo drive = DriveInfo
+                    .GetDrives()
+                    .Where(d =>
+                        path == d.Name || path.StartsWith(d.Name.TrimEnd('/') + "/", StringComparison.Ordinal)
+                    )
+                    .OrderByDescending(d => d.Name.Length)
+                    .First();
+                evidence["DockerDiskAvailableBytes"] = drive.AvailableFreeSpace;
+                evidence["DockerDiskTotalBytes"] = drive.TotalSize;
+                evidence["DiskState"] = "Observed";
+            }
+        }
+        catch (Exception)
+        {
+            // Retain unavailable metadata; never replace the startup error.
+        }
+        try
+        {
             var image = await _docker.RunAllowingFailureAsync(
                 [
                     "image",
@@ -102,31 +129,6 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
             {
                 evidence["SqlServerVersion"] = version;
                 evidence["ImageState"] = "Observed";
-            }
-        }
-        catch (Exception)
-        {
-            // Retain unavailable metadata; never replace the startup error.
-        }
-        try
-        {
-            var root = await _docker.RunAllowingFailureAsync(
-                ["info", "--format", "{{.DockerRootDir}}"],
-                token
-            );
-            // Resolve the filesystem on the local Linux daemon host without publishing its path.
-            if (root.ExitCode == 0 && OperatingSystem.IsLinux())
-            {
-                string path = root.StandardOutput.Trim();
-                DriveInfo drive = DriveInfo
-                    .GetDrives()
-                    .Where(d =>
-                        path == d.Name || path.StartsWith(d.Name.TrimEnd('/') + "/", StringComparison.Ordinal)
-                    )
-                    .OrderByDescending(d => d.Name.Length)
-                    .First();
-                evidence["DockerDiskAvailableBytes"] = drive.AvailableFreeSpace;
-                evidence["DockerDiskTotalBytes"] = drive.TotalSize;
             }
         }
         catch (Exception)
