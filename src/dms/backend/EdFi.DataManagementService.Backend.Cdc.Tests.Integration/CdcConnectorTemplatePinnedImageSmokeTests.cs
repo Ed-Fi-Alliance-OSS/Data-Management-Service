@@ -409,6 +409,57 @@ public sealed class Given_PinnedImageConnectorProviderOffsetRetentionComparison
             .BeFalse("negative SQL Server event_serial_no string values fail closed");
     }
 
+    [TestCase("NULL", 0, "00000027:00000758:0005", "NULL", 0, 0)]
+    [TestCase("NULL", 0, "00000027:00000758:0006", "NULL", 0, 1)]
+    [TestCase("NULL", 0, "00000027:00000758:0004", "NULL", 0, -1)]
+    [TestCase("NULL", 0, "00000027:00000758:0005", "00000027:00000758:0004", 2, 1)]
+    [TestCase("00000027:00000758:0004", 2, "00000027:00000758:0005", "NULL", 0, -1)]
+    [TestCase("00000027:00000758:0004", 2, "00000027:00000758:0006", "NULL", 0, 1)]
+    [TestCase("00000027:00000758:0004", 2, "00000027:00000758:0004", "NULL", 0, -1)]
+    [TestCase("NULL", 0, "00000027:00000758:0004", "00000027:00000758:0004", 2, -1)]
+    public void It_orders_idle_commit_boundaries_before_rows_in_the_same_commit(
+        string startingChange,
+        long startingSerial,
+        string observedCommit,
+        string observedChange,
+        long observedSerial,
+        int comparison
+    )
+    {
+        string starting = SqlServerOffset("00000027:00000758:0005", startingChange, startingSerial);
+        string observed = SqlServerOffset(observedCommit, observedChange, observedSerial);
+
+        using var _ = new AssertionScope();
+        RetainsOrAdvances(CdcProvider.SqlServer, starting, observed).Should().Be(comparison >= 0);
+        Advances(CdcProvider.SqlServer, starting, observed).Should().Be(comparison > 0);
+    }
+
+    [TestCase("00000027:00000758:0005", "NULL", 1, "false")]
+    [TestCase("00000027:00000758:0005", "NULL", 2, "false")]
+    [TestCase("00000027:00000758:0005", "NULL", -1, "false")]
+    [TestCase("00000027:00000758:0005", "null", 0, "false")]
+    [TestCase("00000027:00000758:0005", "invalid", 0, "false")]
+    [TestCase("NULL", "NULL", 0, "false")]
+    [TestCase("00000000:00000000:0000", "NULL", 0, "false")]
+    [TestCase("0000027:00000758:0005", "NULL", 0, "false")]
+    [TestCase("00000027:00000758:0005", "NULL", 0, "true")]
+    public void It_rejects_initial_or_malformed_idle_markers_in_either_comparison_operand(
+        string commit,
+        string change,
+        long serial,
+        string snapshot
+    )
+    {
+        string valid = SqlServerOffset("00000027:00000758:0005", "NULL", 0);
+        string rejected = SqlServerOffset(commit, change, serial, snapshot);
+
+        using var _ = new AssertionScope();
+        RetainsOrAdvances(CdcProvider.SqlServer, valid, rejected).Should().BeFalse();
+        RetainsOrAdvances(CdcProvider.SqlServer, rejected, valid).Should().BeFalse();
+        Advances(CdcProvider.SqlServer, valid, rejected).Should().BeFalse();
+        Advances(CdcProvider.SqlServer, rejected, valid).Should().BeFalse();
+    }
+
     private static bool RetainsOrAdvances(CdcProvider provider, string minimum, string observed) =>
         CdcConnectorTemplatePinnedImageFixture.CommittedSourceOffsetRetainsOrAdvances(
             provider,

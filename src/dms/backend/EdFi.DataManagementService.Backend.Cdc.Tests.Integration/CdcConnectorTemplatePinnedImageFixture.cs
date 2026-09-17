@@ -2638,15 +2638,34 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
     )
     {
         if (
-            !TryReadSqlServerLsnJsonProperty(offset, "commit_lsn", out SqlServerConnectorLsn commitLsn)
-            || !TryReadSqlServerLsnJsonProperty(offset, "change_lsn", out SqlServerConnectorLsn changeLsn)
+            !offset.TryGetProperty("commit_lsn", out JsonElement commit)
+            || commit.ValueKind != JsonValueKind.String
+            || !offset.TryGetProperty("change_lsn", out JsonElement change)
+            || change.ValueKind != JsonValueKind.String
             || !TryReadNonNegativeInt64JsonProperty(offset, "event_serial_no", out long eventSerialNo)
+            || CoreCdc.CdcSqlServerProviderPositionParser.ParseLsn(commit.GetString(), "$.commit_lsn").Lsn
+                is not { } commitLsn
         )
         {
             return null;
         }
 
-        return new SqlServerConnectorOffsetPosition(commitLsn, changeLsn, eventSerialNo);
+        if (
+            CoreCdc.CdcSqlServerProviderPositionParser.IsIdleCommitBoundary(
+                commit.GetString(),
+                change.GetString(),
+                eventSerialNo
+            )
+        )
+        {
+            return new SqlServerIdleConnectorOffsetPosition(commitLsn);
+        }
+
+        return
+            CoreCdc.CdcSqlServerProviderPositionParser.ParseLsn(change.GetString(), "$.change_lsn").Lsn
+                is { } changeLsn
+            ? new SqlServerRowConnectorOffsetPosition(new(commitLsn, changeLsn, (ulong)eventSerialNo))
+            : null;
     }
 
     private static bool OffsetIsSnapshot(JsonElement offset)
@@ -2768,59 +2787,6 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
         value = 0;
         return false;
     }
-
-    private static bool TryReadSqlServerLsnJsonProperty(
-        JsonElement element,
-        string propertyName,
-        out SqlServerConnectorLsn value
-    )
-    {
-        value = default;
-        return element.TryGetProperty(propertyName, out JsonElement property)
-            && property.ValueKind == JsonValueKind.String
-            && TryParseSqlServerLsn(property.GetString(), out value);
-    }
-
-    private static bool TryParseSqlServerLsn(string? lsn, out SqlServerConnectorLsn value)
-    {
-        value = default;
-        if (string.IsNullOrWhiteSpace(lsn))
-        {
-            return false;
-        }
-
-        string[] parts = lsn.Split(':');
-        if (parts.Length != 3)
-        {
-            return false;
-        }
-
-        if (
-            !TryParseSqlServerLsnPart(parts[0], expectedLength: 8, out ulong first)
-            || !TryParseSqlServerLsnPart(parts[1], expectedLength: 8, out ulong second)
-            || !TryParseSqlServerLsnPart(parts[2], expectedLength: 4, out ulong third)
-        )
-        {
-            return false;
-        }
-
-        value = new SqlServerConnectorLsn(first, second, third);
-        return true;
-    }
-
-    private static bool TryParseSqlServerLsnPart(string part, int expectedLength, out ulong value)
-    {
-        if (part.Length != expectedLength || !part.All(IsAsciiHexDigit))
-        {
-            value = 0;
-            return false;
-        }
-
-        return ulong.TryParse(part, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out value);
-    }
-
-    private static bool IsAsciiHexDigit(char value) =>
-        value is >= '0' and <= '9' or >= 'A' and <= 'F' or >= 'a' and <= 'f';
 
     private static IReadOnlyDictionary<string, string> ParseStringMap(string json)
     {
@@ -3180,43 +3146,37 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
             LsnProc.CompareTo(((PostgresqlConnectorOffsetPosition)other).LsnProc);
     }
 
-    private sealed record SqlServerConnectorOffsetPosition(
-        SqlServerConnectorLsn CommitLsn,
-        SqlServerConnectorLsn ChangeLsn,
-        long EventSerialNo
-    ) : CdcConnectorProviderOffsetPosition(CdcProvider.SqlServer)
+    private abstract record SqlServerConnectorOffsetPosition(CoreCdc.CdcSqlServerLsn CommitLsn)
+        : CdcConnectorProviderOffsetPosition(CdcProvider.SqlServer)
     {
         protected override int CompareSameProvider(CdcConnectorProviderOffsetPosition other)
         {
             var sqlServerPosition = (SqlServerConnectorOffsetPosition)other;
-            int commitLsnComparison = CommitLsn.CompareTo(sqlServerPosition.CommitLsn);
-            if (commitLsnComparison != 0)
+            int commitComparison = CommitLsn.CompareTo(sqlServerPosition.CommitLsn);
+            if (commitComparison != 0)
             {
-                return commitLsnComparison;
+                return commitComparison;
             }
 
-            int changeLsnComparison = ChangeLsn.CompareTo(sqlServerPosition.ChangeLsn);
-            return changeLsnComparison != 0
-                ? changeLsnComparison
-                : EventSerialNo.CompareTo(sqlServerPosition.EventSerialNo);
+            // An idle boundary resumes inclusively before every captured row in its commit.
+            // Preserve that distinction instead of inventing a change LSN for the marker.
+            return (this, sqlServerPosition) switch
+            {
+                (SqlServerIdleConnectorOffsetPosition, SqlServerIdleConnectorOffsetPosition) => 0,
+                (SqlServerIdleConnectorOffsetPosition, _) => -1,
+                (_, SqlServerIdleConnectorOffsetPosition) => 1,
+                (SqlServerRowConnectorOffsetPosition left, SqlServerRowConnectorOffsetPosition right) =>
+                    left.Position.CompareTo(right.Position),
+                _ => throw new InvalidOperationException("Unsupported SQL Server offset position."),
+            };
         }
     }
 
-    private readonly record struct SqlServerConnectorLsn(ulong First, ulong Second, ulong Third)
-        : IComparable<SqlServerConnectorLsn>
-    {
-        public int CompareTo(SqlServerConnectorLsn other)
-        {
-            int firstComparison = First.CompareTo(other.First);
-            if (firstComparison != 0)
-            {
-                return firstComparison;
-            }
+    private sealed record SqlServerIdleConnectorOffsetPosition(CoreCdc.CdcSqlServerLsn CommitLsn)
+        : SqlServerConnectorOffsetPosition(CommitLsn);
 
-            int secondComparison = Second.CompareTo(other.Second);
-            return secondComparison != 0 ? secondComparison : Third.CompareTo(other.Third);
-        }
-    }
+    private sealed record SqlServerRowConnectorOffsetPosition(CoreCdc.CdcSqlServerProviderPosition Position)
+        : SqlServerConnectorOffsetPosition(Position.CommitLsn);
 }
 
 internal static class CdcConnectorTemplatePinnedImageTestData
