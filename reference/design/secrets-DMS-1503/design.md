@@ -262,6 +262,7 @@ Matching is ordinal and case-sensitive, because vault names are.
 A `${` that is not followed by `secret:` and a well-formed name closed by `}` is not a token and is left alone verbatim, which is what keeps a password that happens to contain `${` from being reinterpreted by an upgrade.
 There is no escape sequence: adding one would impose a rule on every operator's password to serve a case no operator has, and the strict token shape already makes an accidental match implausible rather than merely unlikely.
 A value may carry more than one token, and each resolves independently.
+A resolved value is substituted as opaque text and the result is never rescanned, so a secret whose own text contains `${secret:` is written through unchanged, and resolution terminates in one pass by construction rather than by a depth limit.
 
 **Substitution goes through the provider's connection-string builder, never through textual replacement.**
 This is the one place where the obvious implementation is measurably wrong, so it is specified here rather than left to the implementer.
@@ -395,11 +396,14 @@ The seam is **not a singleton**, and beyond that it takes the lifetime of the re
 The cache behind it **is** a singleton, holding no scoped dependency and receiving the tenant as an argument the same way the resolver does, which is the shape the host-owned `IConnectionStringEncryptionService` beside it already has (`Config.Frontend/Infrastructure/WebApplicationBuilderExtensions.cs:122-125`).
 And `ISecretResolver` is a singleton, for the reasons [The Contract Package](#the-contract-package) gives.
 
-**CMS owns the cache, and a plugin may cache behind it only within the same window.**
-The host's rotation guarantee is that it re-asks the resolver at least every `SecretsSettings:CacheExpirationSeconds`.
-A resolver holding a longer-lived cache of its own answers that re-ask from stale state, and the guarantee silently becomes the plugin's, which no operator can see or configure.
-So the contract states it as an implementer obligation beside the registration rules: a resolver may cache, and not for longer than the host's configured expiration, which it can read from the configuration it was given.
-Nothing enforces it, which is why it is stated rather than assumed.
+**CMS owns the cache, and a resolver does not cache the values it returns.**
+The host's rotation guarantee is that it re-asks the resolver at least every `SecretsSettings:CacheExpirationSeconds`, and that guarantee is worth exactly the freshness of the answer it gets back.
+A resolver that serves a previously fetched value answers the re-ask from its own state, and the two ages add rather than overlap: the host can receive a value already stale by the plugin's window and then hold it for its own, which is a third term in the sum below that no operator can see, configure, or measure.
+So the contract states it as an implementer obligation beside the registration rules, and states it as a distinction rather than as a ban on caching anything.
+A resolver **may** cache its vault client, that client's connection, and its ambient-credential token, none of which affect the age of a secret value.
+A resolver **must not** return a secret value it did not just fetch.
+That is the split that matters, because the expensive thing to construct is the client and the stale thing to hold is the value.
+Nothing enforces it, which is why it is stated rather than assumed, and why the bound below is stated for a conforming resolver rather than for every resolver.
 
 A resolver is a pure function of a name and a tenant, which is what makes a host-owned cache possible at all, and the host is the only party that can state a freshness window an operator can read, configure, and test.
 A plugin-owned cache would make rotation latency a per-vendor property with no configuration surface and no way to observe it.
@@ -411,6 +415,7 @@ Absolute rather than sliding, because the question an operator asks about a rota
 Three hundred seconds is chosen against the interval already in the system rather than by preference: DMS caches data stores for `CacheSettings:DataStoreCacheExpirationSeconds`, 600 by default (`src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/appsettings.json`), and the ODS documentation's own worked examples use a ten-minute vault reload.
 **The two windows add rather than overlap, and the documentation states the sum rather than this number alone.**
 A rotated secret becomes visible to CMS within its own expiration and to DMS within DMS's, so on stock settings a rotation reaches a running DMS within about fifteen minutes and not within five.
+The sum has two terms and not three because a conforming resolver returns what the store holds now, which is what the obligation above buys: a resolver that cached values for the host's own window would make the same sum twenty minutes, and an operator following the revocation advice below on the fifteen would revoke five minutes early and spend the difference on authentication failures.
 **The half of that an operator actually needs is the other one: for that same window DMS keeps using the pre-rotation credential**, which matters when the rotation was a revocation.
 An operator who revokes the old credential at the moment they write the new one has given themselves up to that window of authentication failures, and the documentation says to rotate first and revoke after it has elapsed.
 Choosing a value at or below the consumer's is what keeps this cache from being the dominant term in that sum; choosing a longer one would add a delay nobody asked for on top of one that already exists.
@@ -879,6 +884,7 @@ The per-PR lane packs `EdFi.Api.Secrets` and compiles a scratch consumer against
 | **Passing an unresolvable token through** to the caller rather than failing the read | Rejected | DMS would decrypt it successfully, hand `${secret:...}` to a driver as a password, and surface an authentication failure naming nothing. That is the silent degradation the spine refuses, arriving where it costs the most to diagnose |
 | **Failing CMS startup** when a resolver cannot reach its store | Rejected | CMS serves claim sets, tenants, and applications that have nothing to do with a data store connection string, and a CMS that will not start is a DMS that cannot start. A vault outage fails the reads it actually affects |
 | **A plugin-owned cache**, with the host caching nothing | Rejected | Rotation latency would become a per-vendor property with no configuration surface, no default, and no way for an operator to observe or change it. The contract is a pure function of name and tenant precisely so that the host can cache it |
+| **A resolver that returns its value's remaining freshness**, the host taking the shorter of that and its own window | Rejected | It is the enforceable version of the obligation above, and it costs a permanent contract shape to get there. The additive-only policy fixes a member's signature for the life of the package, and the return type is the one part of it nothing can add to later, so `ValueTask<string>` would have to become a record now, on the strength of a case the obligation already covers. Every implementer would carry the concept, including the ones reading a mounted file for whom the answer is always "now" |
 | **A sliding expiration** on the host cache | Rejected | The question an operator asks is how long until a rotated secret takes effect, and a sliding window's answer is "it depends on traffic". An absolute window answers with a number |
 | **Invalidating the cache from tenant administration** | Rejected | A new tenant has no entries to invalidate and a removed tenant's entries are unreachable by construction, so the coupling would exist to fix a staleness nothing can observe |
 | **An `IChangeToken` or a push channel** from a plugin back into the host | Rejected | No secret store in scope pushes. The contract would be surface with no implementer, and the pull interval every store does offer is already what the host cache's expiration expresses |

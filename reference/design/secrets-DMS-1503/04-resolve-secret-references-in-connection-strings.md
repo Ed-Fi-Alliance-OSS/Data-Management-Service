@@ -123,7 +123,9 @@ Unprefixed paths are relative to the repository root.
     - returns an empty string
 - The no-resolver message and the resolver-failed message are distinct.
 - The log carries the exception type and never the exception message.
-- No response ever carries a decrypted value still containing `${secret:`.
+- No response carries a well-formed token that was recognized in the input and left unresolved.
+- A malformed reference that is no token, such as `${secret:}` or an unterminated `${secret:`, reaches the response verbatim, which is the text the row already stored.
+- A resolved value whose own text contains `${secret:` is written through unchanged and not rescanned, asserted with a resolver returning exactly that.
 - A resolution failure surfaces to the client as the existing generic failure shape (`FailureResults.Unknown`, `Config.Frontend/Modules/DataStoreModule.cs:66-71`).
 - A test correlates the log line by trace identifier and asserts it carries the data store id, tenant, and token name, and never the resolved value.
 
@@ -156,7 +158,7 @@ Unprefixed paths are relative to the repository root.
 - The same row with a failing resolver produces the documented failure.
 - An end-to-end test delivers a fixture secrets plugin published `--no-self-contained` through the `plugins-config.yml` mount, with its resolver backed by a harness-written file.
 - That test brings CMS and DMS up together, creates a data store with a token password, and asserts DMS serves a resource out of it.
-- A second end-to-end run rotates the file and asserts the new value takes effect after the configured expiration and not before, measured against CMS's own endpoint.
+- A second end-to-end run rotates the file and asserts the new value takes effect after the configured expiration and not before, measured against CMS's own endpoint. The fixture resolver reads the file on every call, so the measured window is the host's alone.
 
 **Build**
 

@@ -40,7 +40,11 @@ Unprefixed paths are relative to the repository root.
 - `SecretReference` is a `sealed record` with members `string Name` and `string? Tenant`.
 - `IClientSecretHasher` is declared in the package with its three members and signatures unchanged from `Backend.OpenIddict/Services/IClientSecretHasher.cs`.
 - `ClientSecretHasher` remains in `Backend.OpenIddict`.
-- XML documentation on both contracts states: replace cardinality with a plain `Add` and never a `TryAdd`; singleton and unkeyed registration; and that the tenant is an argument because a plugin instance outlives every tenant.
+- XML documentation on both contracts states:
+    - replace cardinality with a plain `Add` and never a `TryAdd`
+    - singleton and unkeyed registration
+    - that the tenant is an argument because a plugin instance outlives every tenant
+- XML documentation on `ISecretResolver` states the caching obligation as a distinction: the implementer may cache the vault client, its connection, and its ambient-credential token, and must not return a secret value it did not just fetch, because the host caches values in front of it and the rotation window an operator configures is the host's.
 - XML documentation on `SecretReference` states that `Tenant` is null in a single-tenant deployment and carries the tenant name in a multi-tenant one.
 
 **Version stamping**

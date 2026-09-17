@@ -30,10 +30,10 @@ Unprefixed paths are relative to the repository root.
     - that `IdentitySettings:CertificatePassword` and `IdentitySettings:DevCertificatePassword` are absent from `appsettings.json`
     - that `DATABASE_CONNECTION_STRING_ADMIN` is the one deployment credential Phase A structurally cannot serve, because `src/dms/run.sh:14-16` parses it before the .NET host exists
     - the secret reference syntax and where it may appear
-    - `SecretsSettings:CacheExpirationSeconds` and the rotation window it defines
+    - `SecretsSettings:CacheExpirationSeconds` and the rotation window it defines, stated as the sum of that window and DMS's `CacheSettings:DataStoreCacheExpirationSeconds` with both terms named, about fifteen minutes on stock settings
     - that rotating any process-global secret takes a restart regardless of the cache, because each is captured once and never re-read
 - The chapter states the rotation rules:
-    - rotate first, revoke after the propagation window
+    - rotate first, revoke after the propagation window, which is that sum and not CMS's window alone
     - an immediate rotation takes a restart of both hosts, citing `src/dms/core/EdFi.DataManagementService.Core/Configuration/ConfigurationServiceDataStoreProvider.cs:155-165`
     - a rotation retires and rebuilds DMS's connection pool for that data store
 - The chapter states the trust position in every half:
@@ -51,6 +51,7 @@ Unprefixed paths are relative to the repository root.
     - singleton and unkeyed registration, and what the host does otherwise
     - that the tenant is an argument, and why
     - the concurrency-safety obligation
+    - the caching obligation: cache the vault client, its connection, and its ambient-credential token; never return a secret value that was not just fetched, because the operator-visible rotation window is the host's
     - what the host does with a resolver that throws, cancels, or returns nothing
 - The guide states what CMS cannot enforce:
     - the resolve timeout bounds one call, a hung resolver fails a read rather than a request thread, the unreclaimed-thread residual, and the obligation to honour the cancellation token
@@ -61,7 +62,7 @@ Unprefixed paths are relative to the repository root.
 
 - An Azure Key Vault example is a complete `EdFiApiPlugin` subclass overriding `ContributeConfiguration`, reading its vault address from `bootstrapConfiguration`, adding one source, noting that the host places it, and carrying the ambient-credential note.
 - An AWS Systems Manager Parameter Store example meets the same criteria.
-- One resolver example over the same vault client shows the `(name, tenant)` pair turned into a vault path, a tenant-agnostic deployment ignoring the tenant, and the note that the host caches so the plugin need not.
+- One resolver example over the same vault client shows the `(name, tenant)` pair turned into a vault path, a tenant-agnostic deployment ignoring the tenant, and the caching obligation in practice: the example caches the client and not the value.
 
 **Publication**
 
