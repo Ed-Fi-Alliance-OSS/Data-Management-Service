@@ -1,0 +1,100 @@
+---
+jira: DMS-1555
+epic: DMS-1504
+source_spike: DMS-1503
+---
+
+# Story: Document and Publish `EdFi.Api.Secrets`
+
+## Description
+
+Every story before this one proves the packaged path against a local folder feed and publishes nothing.
+This one writes the documentation an operator and an implementer actually use, and publishes the package an external implementer cannot work without, per:
+
+- `reference/design/secrets-DMS-1503/design.md` ("### Trust Model Notes", "### Configuration Surface", "## Level of Effort")
+- `reference/design/plugins-DMS-1462/design.md` ("### The Plugin Contract" for the publish policy and the promotion rule)
+
+Publishing is the last ticket rather than the first: blocked by every other story, blocking none, and it burns a package id permanently, so it wants its own review.
+
+**Citation convention.**
+Unprefixed paths are relative to the repository root.
+`Config.Frontend/` names `src/config/frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore/`.
+
+## Acceptance Criteria
+
+**Operator chapter**
+
+- A chapter in `docs/` states what a secrets plugin is and the two things it can do, and states:
+    - the process-global secrets Phase A serves, named individually: two in DMS, six in CMS, and `OtlpLogging:Headers` in each host
+    - that `IdentitySettings:CertificatePassword` and `IdentitySettings:DevCertificatePassword` are absent from `appsettings.json`
+    - that `DATABASE_CONNECTION_STRING_ADMIN` is the one deployment credential Phase A structurally cannot serve, because `src/dms/run.sh:14-16` parses it before the .NET host exists
+    - the secret reference syntax and where it may appear
+    - `SecretsSettings:CacheExpirationSeconds` and the rotation window it defines, stated as the sum of that window and DMS's `CacheSettings:DataStoreCacheExpirationSeconds` with both terms named, about fifteen minutes on stock settings
+    - that rotating any process-global secret takes a restart regardless of the cache, because each is captured once and never re-read
+- The chapter states the rotation rules:
+    - rotate first, revoke after the propagation window, which is that sum and not CMS's window alone
+    - an immediate rotation takes a restart of both hosts, citing `src/dms/core/EdFi.DataManagementService.Core/Configuration/ConfigurationServiceDataStoreProvider.cs:155-165`
+    - a rotation retires and rebuilds DMS's connection pool for that data store
+- The chapter states the trust position in every half:
+    - full process trust and an operator-controlled allowlist
+    - a static vault credential reduces the problem to one secret, and ambient workload identity reduces it to none
+    - CMS can still produce the resolved value, cached in process and returned re-encrypted on every limited-access read across the four endpoints (`Config.Frontend/Modules/DataStoreModule.cs:23-24`, `Config.Frontend/Modules/DataStoreDerivativeModule.cs:21-22`)
+    - plainly, that an operator whose requirement is that nothing but the vault can produce the secret is not served
+- The chapter states that raising `IdentitySettings:ClientSecretHashingIterations` invalidates every client secret hashed at the old count, with re-issue as the remedy.
+
+**Implementer guide**
+
+- The guide ships as the contract package's readme and is cross-linked from `src/plugins/EdFi.Api.Plugins/PLUGINS.md`, which links back.
+- The guide documents both contracts and their members, and states:
+    - replace cardinality with a plain `Add` and never a `TryAdd`, with the recording-wrapper reason
+    - singleton and unkeyed registration, and what the host does otherwise
+    - that the tenant is an argument, and why
+    - the concurrency-safety obligation
+    - the caching obligation: cache the vault client, its connection, and its ambient-credential token; never return a secret value that was not just fetched, because the operator-visible rotation window is the host's
+    - what the host does with a resolver that throws, cancels, or returns nothing
+- The guide states what CMS cannot enforce:
+    - the resolve timeout bounds one call, a hung resolver fails a read rather than a request thread, the unreclaimed-thread residual, and the obligation to honour the cancellation token
+    - nothing enforces that a resolver not log what it resolved, stated as an implementer obligation
+- Both guides link to `PLUGINS.md` for packaging, delivery, the allowlist, and the trust model rather than restating any of it.
+
+**Worked examples**
+
+- An Azure Key Vault example is a complete `EdFiApiPlugin` subclass overriding `ContributeConfiguration`, reading its vault address from `bootstrapConfiguration`, adding one source, noting that the host places it, and carrying the ambient-credential note.
+- An AWS Systems Manager Parameter Store example meets the same criteria.
+- One resolver example over the same vault client shows the `(name, tenant)` pair turned into a vault path, a tenant-agnostic deployment ignoring the tenant, and the caching obligation in practice: the example caches the client and not the value.
+
+**Publication**
+
+- The prerelease lane packs and pushes `EdFi.Api.Secrets`, with three outcomes:
+    - publishes when the id and version are absent from the feed
+    - skips, exiting zero, when present and unchanged
+    - fails when present and different, naming the id, the version, and which comparison differed
+- The comparison covers three things, each normalized: the assembly's public surface, the XML documentation file, and the nuspec dependency list.
+- The package version is passed explicitly rather than derived from the release tag.
+- The release lane has three outcomes:
+    - skips when the version is present in the release view, which it queries first
+    - promotes from the prerelease view when the version is absent from the release view
+    - fails, naming the package and version, when the version is in neither view
+- Tests assert the version independence:
+    - the `AssemblyVersion` inside the published nupkg equals the package version
+    - a build with an explicit release version leaves the packed contract version untouched
+- The scratch consumer from DMS-1552 is extended to compile against the published package once a version exists on the feed.
+
+**Operations documentation**
+
+- `docs/OPERATIONS.md`'s plugin chapter gains the Configuration Service: the two acquisition recipes, the CMS mount target, and the `plugins-config.yml` overlay.
+- That overlay content is asserted equal to the committed file by the document-versus-file check DMS-1500 established.
+
+**Build**
+
+- `dotnet test src/config/EdFi.DmsConfigurationService.sln` passes, and the packed package installs into the scratch consumer.
+
+## Tasks
+
+1. Write the operator chapter: served secrets, out-of-reach values, rotation order and windows, trust position, and the hashing consequence.
+2. Write the implementer guide as the packed readme and cross-link it with `PLUGINS.md`.
+3. Write the two configuration-source worked examples and the resolver example.
+4. Add the publish-when-absent, skip-when-unchanged, fail-when-changed policy to the config prerelease lane.
+5. Add the three-outcome promotion step to the release lane with an explicit version.
+6. Extend the scratch consumer to the published package and add the version assertions.
+7. Add the Configuration Service section to `docs/OPERATIONS.md` with the document-versus-file check.
