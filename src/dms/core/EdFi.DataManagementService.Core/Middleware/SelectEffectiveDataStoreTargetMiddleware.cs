@@ -63,7 +63,7 @@ internal class SelectEffectiveDataStoreTargetMiddleware(
                 logger.LogInformation(
                     "A snapshot was requested but data store {DataStoreId} ({Name}) has none configured - TraceId: {TraceId}",
                     parent.Id,
-                    LoggingSanitizer.SanitizeForLogging(parent.Name),
+                    LoggingSanitizer.SanitizeInternalValueForLogging(parent.Name),
                     requestInfo.FrontendRequest.TraceId.Value
                 );
 
@@ -76,7 +76,7 @@ internal class SelectEffectiveDataStoreTargetMiddleware(
                 logger.LogInformation(
                     "A snapshot was requested on a request that would modify data store {DataStoreId} ({Name}) - TraceId: {TraceId}",
                     parent.Id,
-                    LoggingSanitizer.SanitizeForLogging(parent.Name),
+                    LoggingSanitizer.SanitizeInternalValueForLogging(parent.Name),
                     requestInfo.FrontendRequest.TraceId.Value
                 );
 

@@ -133,7 +133,7 @@ public class CachedApplicationContextProvider(
                 logger.LogWarning(
                     exception,
                     "Application context not found for clientId: {ClientId}",
-                    LoggingSanitizer.SanitizeForLogging(clientId)
+                    LoggingSanitizer.SanitizeInternalValueForLogging(clientId)
                 );
             }
 

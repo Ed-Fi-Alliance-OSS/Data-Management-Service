@@ -25,7 +25,7 @@ public class ApiSchemaFileLoader(
     {
         logger.LogDebug(
             "Loading API schemas: core={CorePath}, extensions={ExtensionCount}",
-            LoggingSanitizer.SanitizeForLogging(coreSchemaPath),
+            LoggingSanitizer.SanitizeInternalValueForLogging(coreSchemaPath),
             extensionSchemaPaths.Count
         );
 
@@ -72,7 +72,7 @@ public class ApiSchemaFileLoader(
         {
             logger.LogError(
                 "Schema file not found: {FilePath}",
-                LoggingSanitizer.SanitizeForLogging(filePath)
+                LoggingSanitizer.SanitizeInternalValueForLogging(filePath)
             );
             return (null, new ApiSchemaFileLoadResult.FileNotFoundResult(filePath));
         }
@@ -87,7 +87,7 @@ public class ApiSchemaFileLoader(
             logger.LogError(
                 ex,
                 "Failed to read schema file: {FilePath}",
-                LoggingSanitizer.SanitizeForLogging(filePath)
+                LoggingSanitizer.SanitizeInternalValueForLogging(filePath)
             );
             return (null, new ApiSchemaFileLoadResult.FileReadErrorResult(filePath, ex.Message));
         }
@@ -99,7 +99,7 @@ public class ApiSchemaFileLoader(
             {
                 logger.LogError(
                     "Schema file contains null JSON: {FilePath}",
-                    LoggingSanitizer.SanitizeForLogging(filePath)
+                    LoggingSanitizer.SanitizeInternalValueForLogging(filePath)
                 );
                 return (null, new ApiSchemaFileLoadResult.InvalidJsonResult(filePath, "JSON parsed to null"));
             }
@@ -110,7 +110,7 @@ public class ApiSchemaFileLoader(
             logger.LogError(
                 ex,
                 "Schema file contains invalid JSON: {FilePath}",
-                LoggingSanitizer.SanitizeForLogging(filePath)
+                LoggingSanitizer.SanitizeInternalValueForLogging(filePath)
             );
             return (null, new ApiSchemaFileLoadResult.InvalidJsonResult(filePath, ex.Message));
         }

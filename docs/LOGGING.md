@@ -59,14 +59,18 @@ request logging layer:
   or `1228002` (`HttpRequestFailed`). This document is the source of truth for
   these values; CMS and DMS build as separate solutions, so each application
   defines them in its own `RequestLoggingEventIds` class and pins them with its
-  own unit test.
+  own unit test. DMS allocates one further id from the same block, `1228003`
+  (`CorrelationIdModified`), which is not a request log event — see [Notice when
+  a correlation ID is modified](#notice-when-a-correlation-id-is-modified).
 * `SourceContext`: logger category emitted by Serilog/Microsoft logging.
 * `RequestLayer`: DMS-only value of `Frontend` or `Core`. Use this field to
   separate externally visible HTTP request events from core pipeline request
   events when aggregating DMS request volume or failure rates.
 * `TraceId`: the application-visible trace or correlation ID. CMS uses
   `HttpContext.TraceIdentifier`; DMS uses the configured correlation header
-  when present and falls back to `HttpContext.TraceIdentifier`.
+  when present and falls back to `HttpContext.TraceIdentifier`. DMS normalizes
+  this value before logging it — see [Correlation ID
+  normalization](#correlation-id-normalization).
 * `Method`: sanitized HTTP method.
 * `Path`: sanitized request path without the query string.
 * `StatusCode`: HTTP response status code. An unhandled exception before a
@@ -180,12 +184,9 @@ propagates through the request logging middleware, which logs it on
 `HttpRequestFailed` and rethrows it for the host.
 DMS frontend preserves its existing behavior of wrapping the original exception
 after logging and writing its existing JSON error response when the response has
-not started. The `traceId` in that error response body is the raw correlation
-value for the request — the same raw value every other DMS error response body
-returns — while log events always carry the sanitized `TraceId`. The two differ
-only when a client-supplied correlation id contains characters outside the
-logging whitelist; applying that whitelist to a client-reported trace id yields
-the `TraceId` to search for in the logs. DMS core preserves its existing
+not started. The `traceId` in that error response body is the same normalized
+value the request's log events carry, so the ID a client reads from that
+response is the ID to search for in the logs. DMS core preserves its existing
 behavior of wrapping core pipeline failures after logging them.
 
 Information-level request logs must not include request bodies, response
@@ -194,6 +195,216 @@ connection strings, raw query strings, arbitrary headers, route values, or raw
 tenant header values. Remote IP address and user agent are also excluded unless
 a later story defines the privacy, retention, and cardinality requirements for
 those fields.
+
+### Correlation ID normalization
+
+A correlation ID is normalized before it is used anywhere — whether it came from
+the configured correlation header or from `HttpContext.TraceIdentifier`. The
+normalization is three adjustments, applied in this order:
+
+1. **Truncate.** A value longer than `AppSettings:CorrelationIdMaxLength`
+   (default `255`, and constrained to the inclusive range `64`-`1024`) is cut
+   to that length. See [Configuration](./CONFIGURATION.md).
+2. **Back the cut off a split surrogate pair.** The cut in step 1 is made on a
+   UTF-16 code unit, so it can land between the two halves of a non-BMP
+   character. When it does — and only when the two halves really are a
+   well-formed pair — the orphaned leading half is dropped as well, one
+   character short of the cap. This step exists so that truncation cannot
+   *create* an unpaired surrogate that was not in the value to begin with. A
+   half that was already unpaired in the input is left for step 3 to remove, so
+   that it is reported as a character the allowlist removed rather than as an
+   effect of truncation.
+3. **Remove characters outside the allowlist.** The correlation ID allowlist
+   removes **control characters (category `Cc`)**, **format characters (category
+   `Cf`)**, the **Unicode line and paragraph separators** (`U+2028` and
+   `U+2029`, categories `Zl` and `Zp`), and any **unpaired surrogate** (category
+   `Cs`). Every other character is preserved, including punctuation such as
+   `+ = { } @ | , # ( ) [ ] < > " '`, non-ASCII letters, digits and symbols,
+   internal whitespace, and non-BMP characters written as a well-formed
+   surrogate pair.
+
+   Removing the control characters — carriage return, line feed, tab and null
+   included — together with the line and paragraph separators is what prevents
+   log forging: a client-supplied value cannot introduce additional log lines or
+   corrupt structured log output. Bounding the value's size is the length cap's
+   job, not the allowlist's.
+
+   The format characters are removed for a different reason. `Cf` covers the
+   bidirectional embeddings and overrides `U+202A`–`U+202E` (notably
+   RIGHT-TO-LEFT OVERRIDE), the bidirectional isolates `U+2066`–`U+2069`, the
+   zero-width characters `U+200B`–`U+200D` and `U+2060`, the directional marks
+   `U+200E`/`U+200F`, `U+00AD` SOFT HYPHEN and `U+FEFF` BYTE ORDER MARK. None of
+   these can forge a log line — both sinks that receive the value,
+   structured-log parameters and JSON serialization, escape their own output —
+   but each defeats the single guarantee a correlation ID carries, that an
+   operator can *search the logs for the ID the client received*. A bidi
+   override renders the remainder of a log line right-to-left in a viewer, so
+   the ID an operator reads is not the ID that is stored; and a zero-width
+   character makes two visually identical IDs distinct strings, so a copied ID
+   silently fails to match. Both are removed rather than escaped so that the
+   stored value, the displayed value and the value the client holds are the same
+   string.
+
+   The rule is expressed as a Unicode **category** test, not a list of code
+   points, so it stays a single coherent negative test and does not drift as new
+   format characters are assigned.
+
+   The unpaired surrogates are the one part of the removed set that is not a
+   category test, and cannot be: an unpaired surrogate is not a Unicode code
+   point, so a per-code-point rule never sees one. They are removed on the UTF-16
+   decoder's own report that the input is not well-formed. The reason is the
+   parity guarantee itself: `System.Text.Json` writes `U+FFFD` in place of an
+   unpaired surrogate when it serializes the response body, while a log sink
+   receives the raw code unit, so a correlation ID carrying one would reach the
+   client and the logs as two different strings. Removing it makes the guarantee
+   unconditional — **the normalized value is always well-formed UTF-16, whatever
+   arrived** — rather than resting on the fact that Kestrel's default header
+   decoding happens not to produce one. (It does not; but that is host
+   configuration, and `RequestHeaderEncodingSelector` with a non-replacement
+   fallback changes it.) A non-BMP character written as a well-formed pair is
+   unaffected and survives intact.
+
+This allowlist is scoped to correlation IDs and is deliberately broader than the
+stricter one applied to internally-controlled logged values such as `Method` and
+`Path`, because a client-supplied correlation ID normally originates in an
+upstream system's own identifier scheme — narrowing it to alphanumerics would
+defeat the purpose of accepting a client-supplied value at all.
+
+The order matters, and truncating first is deliberate: a long hostile value
+retains less trailing content than it would if characters were removed first. A
+consequence is that an over-length value can yield a result **shorter** than
+`CorrelationIdMaxLength` — either because it also contained characters outside
+the allowlist, which are removed after the cut, or because the cut landed inside
+a surrogate pair, which costs one further character even for a value containing
+nothing the allowlist would remove. Both are intended.
+
+Normalization is applied identically everywhere a correlation ID appears: every
+request log event, and the `correlationId` (or `traceId`) of every error response
+body that carries a correlation ID, whatever the status code and whichever layer
+produced it — including the catch-all `404` for an unmatched route, the `429`
+rate-limit rejection, the `500` written when an unhandled exception escapes the
+pipeline, and the `500` a host short-circuited by invalid configuration answers
+every request with. The ID a client reads from such a response is therefore
+always the ID to search for in the logs. The value really is normalized once per
+request: the request-logging middleware is registered ahead of routing, the rate
+limiter and every endpoint, so it is the first component to read the correlation
+ID, and the result it computes is cached on `HttpContext.Items` for every later
+use. No individual response path re-derives it, so none can drift from the
+logged value.
+(A call site that ever ran ahead of that middleware would compute and cache the
+value itself; normalization is pure and idempotent, so the result would be the
+same.)
+
+Not every error response carries one. The `413` answer to an oversized request
+body writes no response body at all, and the management, metadata and XSD
+metadata endpoints answer an unrecognized path with a `404` that carries no
+`correlationId`. What those three families *do* return differs, and the
+differences matter to whatever is parsing the response:
+
+* **Management endpoints.** An unknown tenant is answered by
+  `ManagementEndpointModule.NotFoundProblem()` with a complete problem-details
+  envelope — `detail`, `type`, `title` and `status` — from which only
+  `correlationId` is missing. That is the most confusing of the three for a
+  client parser: the parse succeeds and the read yields `undefined` rather than
+  failing, so the absence looks like a null correlation ID rather than like a
+  different response shape. A `404` reached instead through `ToResult`, when the
+  core layer answers a management request with that status, is `Results.NotFound()`
+  with no value: no body at all.
+* **Metadata endpoints.** An unmatched path or an unrecognized section is
+  answered with the bare text `Invalid resource path`, which is not JSON and has
+  no fields. A request for an OpenAPI specification that does not exist is
+  answered with a `404` and no body.
+* **XSD metadata endpoints.** An unrecognized section, or a request for an XSD
+  file that does not exist, is answered with the same bare `Invalid resource
+  path` message. An invalid tenant is answered with the same four-member
+  problem-details envelope the management endpoints use, likewise without
+  `correlationId`.
+
+Every one of those requests is still logged with its normalized correlation ID,
+so the value exists — it is simply not in the response. Correlating one of them
+from the client side therefore means searching the request log, and the header
+value the client sent is a dependable search key **only if normalization left it
+unchanged**. That is precisely what cannot be assumed on these paths, because
+they return no normalized value to compare the sent one against: if the value
+contained anything outside the allowlist, or exceeded `CorrelationIdMaxLength`,
+the logs hold the normalized form and a search for what was sent finds nothing.
+The fallback that always works is to correlate on timestamp together with the
+request method and path, all of which every request log event carries.
+
+The `CorrelationIdModified` notice described below (`1228003`) does not close
+this gap. It records *that* a client-supplied value was altered, which lets an
+operator recognize the situation, but it deliberately carries no form of the
+original value — so it does not make what the client believes it sent
+searchable.
+
+A client-supplied header whose value normalizes to nothing but whitespace — one
+made up only of removed characters, such as a lone horizontal tab or a lone
+`U+200B` ZERO WIDTH SPACE, or only of whitespace, such as a run of `U+00A0`
+NO-BREAK SPACE — is treated the same as a header sent empty or omitted: the
+server-generated trace identifier is used, so a client cannot blank the
+operational identifier. Whitespace *within* a correlation ID is preserved; only
+an all-blank value falls back.
+
+A correlation ID that the allowlist or the length cap alters is normalized, not
+rejected — the request still succeeds or fails on its own merits rather than on
+the shape of an operational identifier. A value altered by normalization no
+longer matches the identifier recorded in the upstream system that generated it;
+hosts who need to rule that out entirely can leave
+`AppSettings:CorrelationIdHeader` empty, which disables client-supplied
+correlation IDs and uses the server-generated trace identifier for every request.
+
+#### Notice when a correlation ID is modified
+
+Because the adjustment is silent from the client's point of view, DMS emits one
+Information-level event when the correlation ID a request is answered and logged
+under is **not** the value the client sent.
+
+* `EventId`: `1228003`, `EventName` `CorrelationIdModified`. DMS-only; CMS reads
+  no correlation header and never emits it. It is not a request log event, so
+  collectors filtering on `1228001`/`1228002` will not pick it up.
+* Structured properties: `SuppliedLength` and `NormalizedLength` (numeric
+  `int`), `CharactersRemoved`, `Truncated` and `FellBackToServerIdentifier`
+  (boolean), and `TraceId` (the normalized correlation ID).
+* It is emitted inside the request scope, so it carries the same `Application`,
+  `RequestLayer`, `TraceId`, `Method`, `Path` and `PathBase` properties as that
+  request's `HttpRequestCompleted` event.
+
+The message template is:
+
+```text
+{EventName}: Client-supplied correlation ID was modified by normalization; the original value is deliberately not logged. SuppliedLength {SuppliedLength}, NormalizedLength {NormalizedLength}, CharactersRemoved {CharactersRemoved}, Truncated {Truncated}, FellBackToServerIdentifier {FellBackToServerIdentifier}, TraceId {TraceId}
+```
+
+`FellBackToServerIdentifier` is the flag to alert on. `true` means the
+client-supplied value normalized to blank and was discarded in full for the
+server-generated trace identifier, so the client's own identifier is not
+recoverable from the request at all; `false` means the value was adjusted but
+the client's identifier scheme is still recognizable in `TraceId`.
+
+Nothing is emitted when the host configures no correlation header, when a
+request sends none or sends it empty, or when the value the client sent survives
+normalization unchanged. Those are the overwhelmingly common cases, and a notice
+on them would double the Information-level volume of every request.
+
+**The original value is deliberately absent — not raw, not sanitized, not
+truncated.** The client-supplied correlation ID is exactly the hostile input
+normalization exists to defang, and writing any form of it to a log sink would
+reopen the log-forging vector normalization closes. A sanitized copy would in
+most cases simply reproduce the normalized value already on the line, and a
+truncated copy is still client content. What is logged instead is derived facts
+— two lengths and three booleans — plus the normalized `TraceId`, which is
+already safe and is the key an operator searches on.
+
+**Known limitation.** The consequence is that the event is discoverable by the
+*normalized* ID, not by the value the client actually sent. An operator handed a
+client's original correlation ID still cannot find the request directly; they
+have to work forward from the client's own record of the request (time, method,
+path) or from the normalized ID the client received in the error response body.
+This is accepted rather than solved: reflecting the original is the one thing
+this event must not do.
+
+This behavior is specified as FR-LOG-3 through FR-LOG-6 in
+[PRD v8.1](./PRD-v8.1.md).
 
 ## Log Routing and Export
 

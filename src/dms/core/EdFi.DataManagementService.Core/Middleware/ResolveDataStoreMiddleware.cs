@@ -37,7 +37,9 @@ internal class ResolveDataStoreMiddleware(
         {
             logger.LogError(
                 "No data stores authorized for client - Tenant: {Tenant}, TraceId: {TraceId}",
-                LoggingSanitizer.SanitizeForLogging(requestInfo.FrontendRequest.Tenant ?? "(none)"),
+                LoggingSanitizer.SanitizeInternalValueForLogging(
+                    requestInfo.FrontendRequest.Tenant ?? "(none)"
+                ),
                 requestInfo.FrontendRequest.TraceId.Value
             );
 
@@ -61,7 +63,9 @@ internal class ResolveDataStoreMiddleware(
             logger.LogWarning(
                 ex,
                 "Failed to refresh data store cache for tenant {Tenant} before route resolution - TraceId: {TraceId}",
-                LoggingSanitizer.SanitizeForLogging(requestInfo.FrontendRequest.Tenant ?? "(default)"),
+                LoggingSanitizer.SanitizeInternalValueForLogging(
+                    requestInfo.FrontendRequest.Tenant ?? "(default)"
+                ),
                 requestInfo.FrontendRequest.TraceId.Value
             );
         }
@@ -122,7 +126,7 @@ internal class ResolveDataStoreMiddleware(
                     ? string.Join(
                         ", ",
                         requestQualifiers.Select(kv =>
-                            $"{LoggingSanitizer.SanitizeForLogging(kv.Key.Value)}={LoggingSanitizer.SanitizeForLogging(kv.Value.Value)}"
+                            $"{LoggingSanitizer.SanitizeInternalValueForLogging(kv.Key.Value)}={LoggingSanitizer.SanitizeInternalValueForLogging(kv.Value.Value)}"
                         )
                     )
                     : "(none)";
@@ -134,8 +138,10 @@ internal class ResolveDataStoreMiddleware(
             logger.LogError(
                 "No data store matches route qualifiers [{QualifierDetails}] from authorized data stores [{DataStoreIds}] - Tenant: {Tenant}, TraceId: {TraceId}",
                 qualifierDetails,
-                LoggingSanitizer.SanitizeForLogging(string.Join(", ", checkedDataStoreIds)),
-                LoggingSanitizer.SanitizeForLogging(requestInfo.FrontendRequest.Tenant ?? "(none)"),
+                LoggingSanitizer.SanitizeInternalValueForLogging(string.Join(", ", checkedDataStoreIds)),
+                LoggingSanitizer.SanitizeInternalValueForLogging(
+                    requestInfo.FrontendRequest.Tenant ?? "(none)"
+                ),
                 requestInfo.FrontendRequest.TraceId.Value
             );
 
@@ -155,8 +161,10 @@ internal class ResolveDataStoreMiddleware(
         {
             logger.LogError(
                 "data store {DataStoreId} has no connection string configured - Tenant: {Tenant}, TraceId: {TraceId}",
-                LoggingSanitizer.SanitizeForLogging(matchedInstance.Id.ToString()),
-                LoggingSanitizer.SanitizeForLogging(requestInfo.FrontendRequest.Tenant ?? "(none)"),
+                LoggingSanitizer.SanitizeInternalValueForLogging(matchedInstance.Id.ToString()),
+                LoggingSanitizer.SanitizeInternalValueForLogging(
+                    requestInfo.FrontendRequest.Tenant ?? "(none)"
+                ),
                 requestInfo.FrontendRequest.TraceId.Value
             );
 
@@ -176,8 +184,8 @@ internal class ResolveDataStoreMiddleware(
 
         logger.LogDebug(
             "Selected data store {DataStoreId} ('{Name}') - TraceId: {TraceId}",
-            LoggingSanitizer.SanitizeForLogging(matchedInstance.Id.ToString()),
-            LoggingSanitizer.SanitizeForLogging(matchedInstance.Name),
+            LoggingSanitizer.SanitizeInternalValueForLogging(matchedInstance.Id.ToString()),
+            LoggingSanitizer.SanitizeInternalValueForLogging(matchedInstance.Name),
             requestInfo.FrontendRequest.TraceId.Value
         );
 
@@ -213,7 +221,7 @@ internal class ResolveDataStoreMiddleware(
 
                 logger.LogWarning(
                     logMessage,
-                    LoggingSanitizer.SanitizeForLogging(dataStoreId.Value.ToString()),
+                    LoggingSanitizer.SanitizeInternalValueForLogging(dataStoreId.Value.ToString()),
                     requestInfo.FrontendRequest.TraceId.Value
                 );
                 continue;
@@ -229,8 +237,8 @@ internal class ResolveDataStoreMiddleware(
                     // Multiple matches - not supported
                     logger.LogError(
                         "Multiple data stores match route qualifiers (instances {FirstId} and {SecondId}) - TraceId: {TraceId}",
-                        LoggingSanitizer.SanitizeForLogging(matchedInstance.Id.ToString()),
-                        LoggingSanitizer.SanitizeForLogging(dataStore.Id.ToString()),
+                        LoggingSanitizer.SanitizeInternalValueForLogging(matchedInstance.Id.ToString()),
+                        LoggingSanitizer.SanitizeInternalValueForLogging(dataStore.Id.ToString()),
                         requestInfo.FrontendRequest.TraceId.Value
                     );
 

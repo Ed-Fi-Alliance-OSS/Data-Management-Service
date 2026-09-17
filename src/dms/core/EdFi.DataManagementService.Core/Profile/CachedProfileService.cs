@@ -636,7 +636,7 @@ internal class CachedProfileService(
                 {
                     logger.LogDebug(
                         "Cache miss for profile catalog, fetching from CMS for tenant: {Tenant}",
-                        LoggingSanitizer.SanitizeForLogging(tenantId)
+                        LoggingSanitizer.SanitizeInternalValueForLogging(tenantId)
                     );
 
                     IReadOnlyList<CmsProfileResponse> profiles = await profileCmsProvider.GetProfilesAsync(
@@ -647,7 +647,7 @@ internal class CachedProfileService(
                     {
                         logger.LogDebug(
                             "No profiles found for tenant: {Tenant}",
-                            LoggingSanitizer.SanitizeForLogging(tenantId)
+                            LoggingSanitizer.SanitizeInternalValueForLogging(tenantId)
                         );
                         return new CachedProfileStore(
                             new Dictionary<string, ProfileDefinition>(StringComparer.OrdinalIgnoreCase),
@@ -680,7 +680,7 @@ internal class CachedProfileService(
                             logger.LogWarning(
                                 "Profile fetch returned null. ProfileId: {ProfileId}, Tenant: {Tenant}",
                                 profileId,
-                                LoggingSanitizer.SanitizeForLogging(tenantId)
+                                LoggingSanitizer.SanitizeInternalValueForLogging(tenantId)
                             );
                             continue;
                         }
@@ -694,8 +694,8 @@ internal class CachedProfileService(
                             logger.LogWarning(
                                 "Failed to parse profile definition. ProfileId: {ProfileId}, Name: {Name}, Error: {Error}",
                                 profileResponse.Id,
-                                LoggingSanitizer.SanitizeForLogging(profileResponse.Name),
-                                LoggingSanitizer.SanitizeForLogging(
+                                LoggingSanitizer.SanitizeInternalValueForLogging(profileResponse.Name),
+                                LoggingSanitizer.SanitizeInternalValueForLogging(
                                     parseResult.ErrorMessage ?? "Unknown error"
                                 )
                             );
@@ -714,12 +714,14 @@ internal class CachedProfileService(
                             logger.LogError(
                                 "Profile validation failed with errors. ProfileId: {ProfileId}, Name: {Name}, Errors: {Errors}",
                                 profileResponse.Id,
-                                LoggingSanitizer.SanitizeForLogging(profileResponse.Name),
+                                LoggingSanitizer.SanitizeInternalValueForLogging(profileResponse.Name),
                                 string.Join(
                                     "; ",
                                     validationResult
                                         .Failures.Where(f => f.Severity == ValidationSeverity.Error)
-                                        .Select(f => LoggingSanitizer.SanitizeForLogging(f.Message))
+                                        .Select(f =>
+                                            LoggingSanitizer.SanitizeInternalValueForLogging(f.Message)
+                                        )
                                 )
                             );
                             continue;
@@ -731,12 +733,14 @@ internal class CachedProfileService(
                             logger.LogWarning(
                                 "Profile validation succeeded with warnings. ProfileId: {ProfileId}, Name: {Name}, Warnings: {Warnings}",
                                 profileResponse.Id,
-                                LoggingSanitizer.SanitizeForLogging(profileResponse.Name),
+                                LoggingSanitizer.SanitizeInternalValueForLogging(profileResponse.Name),
                                 string.Join(
                                     "; ",
                                     validationResult
                                         .Failures.Where(f => f.Severity == ValidationSeverity.Warning)
-                                        .Select(f => LoggingSanitizer.SanitizeForLogging(f.Message))
+                                        .Select(f =>
+                                            LoggingSanitizer.SanitizeInternalValueForLogging(f.Message)
+                                        )
                                 )
                             );
                         }
@@ -761,7 +765,7 @@ internal class CachedProfileService(
                     logger.LogDebug(
                         "Cached {Count} profiles for tenant: {Tenant}",
                         profilesByName.Count,
-                        LoggingSanitizer.SanitizeForLogging(tenantId)
+                        LoggingSanitizer.SanitizeInternalValueForLogging(tenantId)
                     );
 
                     return new CachedProfileStore(profilesByName, nameById);
@@ -797,8 +801,8 @@ internal class CachedProfileService(
         {
             logger.LogWarning(
                 "Profile not found in catalog. ProfileName: {ProfileName}, TenantId: {TenantId}",
-                LoggingSanitizer.SanitizeForLogging(profileName),
-                LoggingSanitizer.SanitizeForLogging(tenantId)
+                LoggingSanitizer.SanitizeInternalValueForLogging(profileName),
+                LoggingSanitizer.SanitizeInternalValueForLogging(tenantId)
             );
             return null;
         }
@@ -814,8 +818,8 @@ internal class CachedProfileService(
             {
                 logger.LogDebug(
                     "Cache miss for profile OpenAPI spec, generating. ProfileName: {ProfileName}, TenantId: {TenantId}, SchemaLoadId: {SchemaLoadId}",
-                    LoggingSanitizer.SanitizeForLogging(profileName),
-                    LoggingSanitizer.SanitizeForLogging(tenantId),
+                    LoggingSanitizer.SanitizeInternalValueForLogging(profileName),
+                    LoggingSanitizer.SanitizeInternalValueForLogging(tenantId),
                     apiSchemaLoadId
                 );
 
@@ -830,8 +834,8 @@ internal class CachedProfileService(
 
                 logger.LogDebug(
                     "Cached profile OpenAPI spec. ProfileName: {ProfileName}, TenantId: {TenantId}",
-                    LoggingSanitizer.SanitizeForLogging(profileName),
-                    LoggingSanitizer.SanitizeForLogging(tenantId)
+                    LoggingSanitizer.SanitizeInternalValueForLogging(profileName),
+                    LoggingSanitizer.SanitizeInternalValueForLogging(tenantId)
                 );
 
                 // Return as string for serialization

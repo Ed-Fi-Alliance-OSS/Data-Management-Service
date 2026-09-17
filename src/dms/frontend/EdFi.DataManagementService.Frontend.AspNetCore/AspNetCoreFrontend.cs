@@ -14,6 +14,7 @@ using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Utilities;
+using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure.Extensions;
 using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.Extensions.DependencyInjection;
@@ -396,20 +397,227 @@ public static class AspNetCoreFrontend
     }
 
     /// <summary>
-    /// Takes an HttpRequest and returns a unique trace identifier
+    /// Takes an HttpRequest and returns its correlation ID as a normalized
+    /// <see cref="TraceId"/>. This is the single ingestion point: both candidate sources - the
+    /// configured client header and the server-generated identifier - are normalized here, so
+    /// every downstream log event and error response body carries the identical value.
     /// </summary>
-    public static TraceId ExtractTraceIdFrom(HttpRequest request, IOptions<AppSettings> options)
+    /// <remarks>
+    /// A client-supplied header that normalizes to nothing but whitespace falls through to the
+    /// server-generated identifier, so blankness is tested after normalization rather than before
+    /// it. Why: <c>reference/adr-correlation-id-normalization.md</c>.
+    ///
+    /// The test is <see cref="string.IsNullOrWhiteSpace(string?)"/> rather than a length check
+    /// because whitespace is neither control nor format, and so is retained by the
+    /// correlation-ID allowlist by design: an all-whitespace header would otherwise survive
+    /// normalization intact and become the correlation ID. Kestrel strips leading and trailing
+    /// ASCII optional whitespace, but decodes header bytes as Latin-1 by default, so U+00A0
+    /// NO-BREAK SPACE - whitespace to .NET and not OWS to Kestrel - reaches here. Internal
+    /// whitespace in a correlation ID is still accepted whole; only the all-blank case falls back.
+    ///
+    /// Total, and in particular does not surface <see cref="OptionsValidationException"/>, so no
+    /// caller needs to guard this call.
+    /// </remarks>
+    public static TraceId ExtractTraceIdFrom(HttpRequest request, IOptions<AppSettings> options) =>
+        IngestCorrelationIdFrom(request, options).TraceId;
+
+    /// <summary>
+    /// The key under which the one ingestion result for a request is cached on
+    /// <see cref="HttpContext.Items"/>.
+    /// </summary>
+    /// <remarks>
+    /// Namespaced rather than a bare word, because <c>HttpContext.Items</c> is shared with every
+    /// other middleware, framework component and third-party package in the pipeline.
+    /// </remarks>
+    internal const string CorrelationIdItemsKey =
+        "EdFi.DataManagementService.Frontend.CorrelationIdIngestion";
+
+    /// <summary>
+    /// <see cref="ExtractTraceIdFrom"/> plus the derived facts about what normalization did to a
+    /// client-supplied value, for the one caller - <c>LoggingMiddleware</c> - that reports them.
+    /// </summary>
+    /// <remarks>
+    /// Computed at most once per request and cached on <see cref="HttpContext.Items"/>, so
+    /// "normalized once" is a property of the code rather than of the function happening to be
+    /// pure. A cache miss still computes, so a caller that somehow runs ahead of the
+    /// request-logging middleware simply becomes the one that populates it. Total: every request
+    /// gets an ingestion, including one whose <c>AppSettings</c> cannot be read, through
+    /// <see cref="IngestUnreadableConfiguration"/> below rather than through any caller's own
+    /// fallback.
+    /// </remarks>
+    internal static CorrelationIdIngestion IngestCorrelationIdFrom(
+        HttpRequest request,
+        IOptions<AppSettings> options
+    )
     {
-        string headerName = options.Value.CorrelationIdHeader;
+        IDictionary<object, object?> items = request.HttpContext.Items;
         if (
-            !string.IsNullOrEmpty(headerName)
-            && request.Headers.TryGetValue(headerName, out var correlationId)
-            && !string.IsNullOrEmpty(correlationId)
+            items.TryGetValue(CorrelationIdItemsKey, out object? cached)
+            && cached is CorrelationIdIngestion ingested
         )
         {
-            return new TraceId(correlationId!);
+            return ingested;
         }
-        return new TraceId(request.HttpContext.TraceIdentifier);
+
+        AppSettings appSettings;
+        try
+        {
+            // The only statement here that can throw OptionsValidationException, and deliberately
+            // the only one inside the try: a validation failure anywhere further down would be a
+            // different fault with a different answer.
+            appSettings = options.Value;
+        }
+        catch (OptionsValidationException)
+        {
+            return IngestUnreadableConfiguration(request.HttpContext);
+        }
+
+        int maxLength = appSettings.CorrelationIdMaxLength;
+        string headerName = appSettings.CorrelationIdHeader;
+
+        // Empty when the setting names no header or the request omits it, which is the same
+        // starting point as a header sent empty. Normalize("") short-circuits to string.Empty,
+        // so all three of those cases reach the fallback below through one code path.
+        string clientSupplied =
+            !string.IsNullOrEmpty(headerName)
+            && request.Headers.TryGetValue(headerName, out StringValues headerValue)
+                ? headerValue.ToString()
+                : string.Empty;
+
+        CorrelationIdNormalizer.NormalizationDetail detail = CorrelationIdNormalizer.NormalizeWithDetail(
+            clientSupplied,
+            maxLength
+        );
+
+        string normalized = detail.Value;
+        bool fellBack = string.IsNullOrWhiteSpace(normalized);
+        if (fellBack)
+        {
+            normalized = CorrelationIdNormalizer.Normalize(request.HttpContext.TraceIdentifier, maxLength);
+        }
+
+        // A header that was absent, disabled by configuration, or sent empty is not "a value the
+        // client supplied", so nothing about it is reportable and the flags below are all false.
+        // That is what keeps the normal path - which is the overwhelming majority of requests -
+        // free of a per-request log line.
+        bool clientSuppliedAValue = !string.IsNullOrEmpty(clientSupplied);
+
+        CorrelationIdIngestion result = new(
+            TraceId: new TraceId(normalized),
+            ClientSuppliedAValue: clientSuppliedAValue,
+            SuppliedLength: clientSupplied.Length,
+            Truncated: clientSuppliedAValue && detail.Truncated,
+            CharactersRemoved: clientSuppliedAValue && detail.CharactersRemoved,
+            FellBackToServerIdentifier: clientSuppliedAValue && fellBack
+        );
+
+        return CacheIngestionOn(request.HttpContext, result);
+    }
+
+    /// <summary>
+    /// This request's one ingestion result for a host whose <c>AppSettings</c> cannot be read at
+    /// all, because validating them is what failed.
+    /// </summary>
+    /// <remarks>
+    /// The decision lives here rather than at the two call sites that encounter it -
+    /// <c>LoggingMiddleware</c> ingesting the request, and
+    /// <c>ReportInvalidConfigurationMiddleware</c> reading the correlation ID for the 500 body it
+    /// short-circuits with - which would otherwise each need a <c>catch</c> making this same
+    /// policy choice, one policy in two places and free to drift apart.
+    ///
+    /// <see cref="Configuration.AppSettings.DefaultCorrelationIdMaxLength"/> stands in for the
+    /// cap there is no validated value for, and the server-generated identifier still goes
+    /// through the same <see cref="CorrelationIdNormalizer"/> as every other path, so this one
+    /// cannot emit a differently-shaped value.
+    /// <see cref="CorrelationIdIngestion.ClientSuppliedAValue"/> is false because no client value
+    /// was considered at all: the header <i>name</i> lives in the configuration that failed to
+    /// validate, so the <c>CorrelationIdModified</c> notice stays silent. The result is cached
+    /// like any other, which is what makes the 500 body a client reads and the <c>TraceId</c> it
+    /// searches the logs for one value rather than two that merely agree.
+    ///
+    /// What this mode does to a host, and why: <c>reference/adr-correlation-id-normalization.md</c>.
+    /// </remarks>
+    private static CorrelationIdIngestion IngestUnreadableConfiguration(HttpContext context) =>
+        CacheIngestionOn(
+            context,
+            CorrelationIdIngestion.ForServerGeneratedIdentifier(
+                CorrelationIdNormalizer.Normalize(
+                    context.TraceIdentifier,
+                    AppSettings.DefaultCorrelationIdMaxLength
+                )
+            )
+        );
+
+    /// <summary>
+    /// Records <paramref name="ingestion"/> as this request's one ingestion result, returning what
+    /// it stored so a caller can cache and return in a single expression.
+    /// </summary>
+    /// <remarks>
+    /// Exists so that <see cref="CorrelationIdItemsKey"/> is written in exactly one place, and is
+    /// private so that place stays inside this class - no middleware can write the key behind the
+    /// ingestion point's back.
+    /// </remarks>
+    private static CorrelationIdIngestion CacheIngestionOn(
+        HttpContext context,
+        CorrelationIdIngestion ingestion
+    )
+    {
+        context.Items[CorrelationIdItemsKey] = ingestion;
+        return ingestion;
+    }
+
+    /// <summary>
+    /// One request's correlation ID together with the derived facts about how it was reached.
+    /// Carries no part of the client-supplied value beyond its length and its normalized form.
+    /// </summary>
+    /// <param name="TraceId">The normalized correlation ID every log event and error response body carries.</param>
+    /// <param name="ClientSuppliedAValue">
+    /// Whether the configured correlation header was present on the request with a non-empty value.
+    /// </param>
+    /// <param name="SuppliedLength">
+    /// The length in UTF-16 code units of the client-supplied value, or zero when there was none.
+    /// </param>
+    /// <param name="Truncated">Whether the client-supplied value exceeded the configured length cap.</param>
+    /// <param name="CharactersRemoved">
+    /// Whether the allowlist removed at least one character from the client-supplied value.
+    /// </param>
+    /// <param name="FellBackToServerIdentifier">
+    /// Whether the client-supplied value normalized to blank and was replaced in full by
+    /// <see cref="HttpContext.TraceIdentifier"/>.
+    /// </param>
+    internal readonly record struct CorrelationIdIngestion(
+        TraceId TraceId,
+        bool ClientSuppliedAValue,
+        int SuppliedLength,
+        bool Truncated,
+        bool CharactersRemoved,
+        bool FellBackToServerIdentifier
+    )
+    {
+        /// <summary>
+        /// Whether the value the client sent is not the value the request is correlated by. False
+        /// when no value was supplied, and false when the supplied value survived normalization
+        /// unchanged - the two cases that must stay silent.
+        /// </summary>
+        public bool WasModified =>
+            ClientSuppliedAValue && (Truncated || CharactersRemoved || FellBackToServerIdentifier);
+
+        /// <summary>
+        /// The ingestion result for a request whose correlation ID came from the server-generated
+        /// trace identifier without any client-supplied value being considered. Lives here rather
+        /// than at the call site so <c>AspNetCoreFrontend</c> remains the only production file that
+        /// constructs a <see cref="Core.External.Model.TraceId"/>.
+        /// </summary>
+        /// <param name="normalized">The already-normalized server-generated identifier.</param>
+        internal static CorrelationIdIngestion ForServerGeneratedIdentifier(string normalized) =>
+            new(
+                TraceId: new TraceId(normalized),
+                ClientSuppliedAValue: false,
+                SuppliedLength: 0,
+                Truncated: false,
+                CharactersRemoved: false,
+                FellBackToServerIdentifier: false
+            );
     }
 
     /// <summary>

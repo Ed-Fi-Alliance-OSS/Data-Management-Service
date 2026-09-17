@@ -237,7 +237,7 @@ internal sealed record DocumentCacheReadInvariantDiagnostic
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(message);
 
-        string sanitizedMessage = LoggingSanitizer.SanitizeForLogging(message);
+        string sanitizedMessage = LoggingSanitizer.SanitizeInternalValueForLogging(message);
         Message =
             sanitizedMessage.Length <= MaximumMessageLength
                 ? sanitizedMessage

@@ -13,22 +13,33 @@ using Microsoft.Extensions.Options;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 
-public class LoggingMiddleware(RequestDelegate next, IOptions<AppSettings> appSettings)
+public class LoggingMiddleware
 {
-    private readonly RequestDelegate _next = next ?? throw new ArgumentNullException(nameof(next));
-    private readonly IOptions<AppSettings> _appSettings =
-        appSettings ?? throw new ArgumentNullException(nameof(appSettings));
+    private readonly RequestDelegate _next;
+    private readonly IOptions<AppSettings> _appSettings;
     private const string ApplicationName = "EdFi.DataManagementService";
     private const string RequestLayer = "Frontend";
+
+    public LoggingMiddleware(RequestDelegate next, IOptions<AppSettings> appSettings)
+    {
+        _next = next ?? throw new ArgumentNullException(nameof(next));
+        _appSettings = appSettings ?? throw new ArgumentNullException(nameof(appSettings));
+    }
 
     public async Task Invoke(HttpContext context, ILogger<LoggingMiddleware> logger)
     {
         var stopwatch = Stopwatch.StartNew();
-        var sanitizedMethod = LoggingSanitizer.SanitizeForLogging(context.Request.Method);
-        var sanitizedPath = LoggingSanitizer.SanitizeForLogging(context.Request.Path.Value);
-        var pathBase = LoggingSanitizer.SanitizeForLogging(context.Request.PathBase.Value);
-        var rawTraceId = ExtractTraceId(context) ?? string.Empty;
-        var traceId = LoggingSanitizer.SanitizeForLogging(rawTraceId);
+        var sanitizedMethod = LoggingSanitizer.SanitizeInternalValueForLogging(context.Request.Method);
+        var sanitizedPath = LoggingSanitizer.SanitizeInternalValueForLogging(context.Request.Path.Value);
+        var pathBase = LoggingSanitizer.SanitizeInternalValueForLogging(context.Request.PathBase.Value);
+        // Normalized at the ingestion boundary by AspNetCoreFrontend, so no second,
+        // differently-shaped normalization happens here; Method and Path keep the stricter
+        // SanitizeInternalValueForLogging allowlist above. Registered ahead of routing, the rate
+        // limiter and endpoint execution, this is the first component to ingest the correlation
+        // ID, which is what makes the value it caches the one every later call site reads. No
+        // guard for a host whose AppSettings failed validation: ingestion is total.
+        var ingestion = AspNetCoreFrontend.IngestCorrelationIdFrom(context.Request, _appSettings);
+        var traceId = ingestion.TraceId.Value;
 
         var scopeValues = new Dictionary<string, object>
         {
@@ -49,6 +60,8 @@ public class LoggingMiddleware(RequestDelegate next, IOptions<AppSettings> appSe
 
         using (logger.BeginScope(scopeValues))
         {
+            LogCorrelationIdModification(logger, ingestion, traceId);
+
             if (logger.IsEnabled(LogLevel.Debug))
             {
                 logger.LogDebug("Request started");
@@ -159,11 +172,12 @@ public class LoggingMiddleware(RequestDelegate next, IOptions<AppSettings> appSe
                                 new
                                 {
                                     message = "The server encountered an unexpected condition that prevented it from fulfilling the request.",
-                                    // The error response body echoes the raw correlation value, matching
-                                    // every other DMS error response body (see FailureResponse). Only log
-                                    // properties are sanitized; applying the logging whitelist to a
-                                    // client-reported trace id yields the TraceId to search for in the logs.
-                                    traceId = rawTraceId,
+                                    // The error response body echoes the normalized correlation
+                                    // value so it always matches the TraceId searchable in the
+                                    // logs. Because normalization happens once, at the ingestion
+                                    // boundary, this body carries the same value as every other
+                                    // DMS error response for the same request.
+                                    traceId = traceId,
                                 }
                             )
                         );
@@ -188,16 +202,45 @@ public class LoggingMiddleware(RequestDelegate next, IOptions<AppSettings> appSe
         }
     }
 
-    private string? ExtractTraceId(HttpContext context)
+    /// <summary>
+    /// Emits an Information-level notice when the correlation ID the request is logged and
+    /// answered under is not the value the client sent.
+    /// </summary>
+    /// <remarks>
+    /// <b>The original value is deliberately absent</b> - not raw, not sanitized, not truncated.
+    /// What is logged instead is derived facts - two lengths and three booleans - plus the
+    /// resulting normalized <c>TraceId</c>, which is already safe and is the key an operator
+    /// searches on. Nothing at all is emitted on the normal path: no configured header, none
+    /// sent, or a value that survived normalization unchanged.
+    ///
+    /// Both decisions, and the reverse-lookup limitation they accept, are settled in
+    /// <c>reference/adr-correlation-id-normalization.md</c>.
+    /// </remarks>
+    private static void LogCorrelationIdModification(
+        ILogger<LoggingMiddleware> logger,
+        AspNetCoreFrontend.CorrelationIdIngestion ingestion,
+        string traceId
+    )
     {
-        try
+        if (!ingestion.WasModified || !logger.IsEnabled(LogLevel.Information))
         {
-            return AspNetCoreFrontend.ExtractTraceIdFrom(context.Request, _appSettings).Value;
+            return;
         }
-        catch (OptionsValidationException)
-        {
-            return context.TraceIdentifier;
-        }
+
+        logger.Log(
+            LogLevel.Information,
+            CorrelationIdLoggingEventIds.CorrelationIdModified,
+            "{EventName}: Client-supplied correlation ID was modified by normalization; the original value is deliberately not logged. "
+                + "SuppliedLength {SuppliedLength}, NormalizedLength {NormalizedLength}, CharactersRemoved {CharactersRemoved}, "
+                + "Truncated {Truncated}, FellBackToServerIdentifier {FellBackToServerIdentifier}, TraceId {TraceId}",
+            CorrelationIdLoggingEventIds.CorrelationIdModified.Name,
+            ingestion.SuppliedLength,
+            traceId.Length,
+            ingestion.CharactersRemoved,
+            ingestion.Truncated,
+            ingestion.FellBackToServerIdentifier,
+            traceId
+        );
     }
 
     private static int GetFailureStatusCode(HttpContext context) =>

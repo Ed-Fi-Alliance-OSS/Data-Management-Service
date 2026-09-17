@@ -74,7 +74,7 @@ internal partial class TenantValidationMiddleware(bool multiTenancyEnabled, ILog
         {
             logger.LogWarning(
                 "TenantValidationMiddleware: Invalid tenant format for tenant {Tenant} - {ValidationError} - {TraceId}",
-                LoggingSanitizer.SanitizeForLogging(tenant),
+                LoggingSanitizer.SanitizeInternalValueForLogging(tenant),
                 validationError,
                 requestInfo.FrontendRequest.TraceId.Value
             );

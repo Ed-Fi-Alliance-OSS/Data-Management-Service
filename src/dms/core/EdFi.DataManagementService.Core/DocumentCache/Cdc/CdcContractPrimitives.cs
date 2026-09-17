@@ -258,7 +258,7 @@ internal static class CdcSensitiveText
             return false;
         }
 
-        string sanitized = LoggingSanitizer.SanitizeForLogging(value);
+        string sanitized = LoggingSanitizer.SanitizeInternalValueForLogging(value);
         bool allowCompactPrefixMatch = !IsJsonPath(value);
         return ContainsDirectFragment(value)
             || ContainsDirectFragment(sanitized)
@@ -427,7 +427,7 @@ public sealed record CdcComponent
 
     private static string? Sanitize(string? message)
     {
-        string sanitized = LoggingSanitizer.SanitizeForLogging(message);
+        string sanitized = LoggingSanitizer.SanitizeInternalValueForLogging(message);
         if (string.IsNullOrWhiteSpace(sanitized))
         {
             return null;
@@ -636,7 +636,7 @@ public sealed record CdcDiagnostic
             return "redacted";
         }
 
-        string sanitized = LoggingSanitizer.SanitizeForLogging(value);
+        string sanitized = LoggingSanitizer.SanitizeInternalValueForLogging(value);
         if (CdcSensitiveText.ContainsSensitiveFragment(sanitized))
         {
             return "redacted";
