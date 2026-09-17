@@ -512,6 +512,7 @@ internal class Given_CdcInitialReadiness(Ddl.CdcProvider provider) : CdcReadines
     [TestCase("barrier")]
     [TestCase("projection-2")]
     [TestCase("metrics")]
+    [TestCase("provider")]
     public async Task It_preserves_cancellation_and_disposes_runtime(string stage)
     {
         using var cancellation = new CancellationTokenSource();
@@ -523,7 +524,9 @@ internal class Given_CdcInitialReadiness(Ddl.CdcProvider provider) : CdcReadines
             }
         };
         Func<Task> act = async () => await ReadyAsync(cancellation.Token);
-        await act.Should().ThrowAsync<OperationCanceledException>();
+        (await act.Should().ThrowAsync<OperationCanceledException>())
+            .Which.CancellationToken.Should()
+            .Be(cancellation.Token);
         _disposals.Should().Be(1);
         ReadJournal().WriterPublicationAuthorized.Should().BeFalse();
     }
@@ -771,6 +774,46 @@ internal class Given_CdcInitialReadiness(Ddl.CdcProvider provider) : CdcReadines
             .Be(CdcDeploymentFailure.Timeout);
         _disposals.Should().Be(1);
         ReadJournal().WriterPublicationAuthorized.Should().BeFalse();
+    }
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task It_classifies_a_nested_provider_call_deadline_as_timeout(bool cooperative)
+    {
+        ShortTiming(1000);
+        TaskCompletionSource<Ddl.CdcProviderSetupResult> pending = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        CancellationToken providerToken = default;
+        A.CallTo(() => _provider.SetupAsync(A<Ddl.CdcProviderSetupRequest>._, A<CancellationToken>._))
+            .ReturnsLazily(
+                (Ddl.CdcProviderSetupRequest _, CancellationToken token) =>
+                {
+                    providerToken = token;
+                    return cooperative ? pending.Task.WaitAsync(token) : pending.Task;
+                }
+            );
+        try
+        {
+            // Finish before the five-second workflow deadline: this is the nested call's expiry.
+            var result = await ReadyAsync().WaitAsync(TimeSpan.FromSeconds(4));
+            result.State.Should().Be(CdcTransportEvidenceState.Unavailable);
+            var diagnostic = result.Diagnostics.Should().ContainSingle().Which;
+            diagnostic.Component.Should().Be(CdcDeploymentComponent.ProviderSetup);
+            diagnostic.Failure.Should().Be(CdcDeploymentFailure.Timeout);
+            providerToken.IsCancellationRequested.Should().BeTrue();
+            _disposals.Should().Be(1);
+            ReadJournal().WriterPublicationAuthorized.Should().BeFalse();
+            await using var session = await _store.AcquireAsync(
+                TimeSpan.FromSeconds(1),
+                TimeSpan.FromMilliseconds(5),
+                CancellationToken.None
+            );
+        }
+        finally
+        {
+            pending.TrySetCanceled();
+        }
     }
 
     [Test]
