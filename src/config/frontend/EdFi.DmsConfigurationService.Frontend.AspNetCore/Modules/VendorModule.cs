@@ -298,9 +298,7 @@ public class VendorModule : IEndpointModule
                         id,
                         SanitizeForLog(notFound.FailureMessage)
                     );
-                    return await FinishCompensationAsync(
-                        FailureResults.Unknown(httpContext.TraceIdentifier)
-                    );
+                    return await FinishCompensationAsync(FailureResults.Unknown(httpContext.TraceIdentifier));
                 case ClientUpdateResult.FailureUnknown unknownFailure:
                     logger.LogError(
                         "Error updating the namespace claim of ApiClient {ApiClientId} of Vendor {Id}: {Message}",
@@ -545,11 +543,16 @@ public class VendorModule : IEndpointModule
                 case ApiClientUuidSyncResult.Success or ApiClientUuidSyncResult.AlreadyApplied:
                     return true;
                 case ApiClientUuidSyncResult.FailureNotExistsSafeToDelete:
-                    if (rollbackSuccess.ClientUuid != currentClientUuid)
+                    // The row is gone and nothing references the client the rollback produced,
+                    // so it is removed rather than left orphaned. A replacement that cannot be
+                    // removed survives as an orphaned provider client, which is never a clean
+                    // outcome whatever became of the row.
+                    if (
+                        rollbackSuccess.ClientUuid != currentClientUuid
+                        && !await TryDeleteClientAsync(client, rollbackSuccess.ClientUuid)
+                    )
                     {
-                        // The row is gone and nothing references the client the rollback
-                        // produced, so it is removed rather than left orphaned.
-                        await TryDeleteClientAsync(client, rollbackSuccess.ClientUuid);
+                        return false;
                     }
 
                     return acceptMissing;

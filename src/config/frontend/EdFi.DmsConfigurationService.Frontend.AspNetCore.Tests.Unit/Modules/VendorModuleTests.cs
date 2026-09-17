@@ -2448,4 +2448,116 @@ public class VendorModuleTests
         [Test]
         public void It_mutates_nothing() => AssertNoProviderCallOrVendorUpdate();
     }
+
+    /// <summary>
+    /// The vendor vanished under the locks and the provider replaces the client on every call,
+    /// so each rollback produces a replacement whose row no longer exists. Whether that
+    /// replacement can be removed decides whether the outcome is clean.
+    /// </summary>
+    public abstract class VanishedVendorWithReplacementTestBase : VendorNamespaceUpdateTestBase
+    {
+        [SetUp]
+        public void SetUpVanishedVendorWithReplacement()
+        {
+            _rotateClientUuids = true;
+
+            A.CallTo(() => _vendorRepository.UpdateVendor(A<VendorUpdateCommand>.Ignored))
+                .Returns(new VendorUpdateResult.FailureNotExists());
+
+            // The forward pass persists normally; every rollback then finds the row gone, with
+            // its replacement provably unreferenced.
+            A.CallTo(() =>
+                    _apiClientRepository.SyncApiClientUuid(A<int>.Ignored, A<Guid>.Ignored, A<Guid>.Ignored)
+                )
+                .ReturnsLazily(call =>
+                {
+                    Guid expectedUuid = call.GetArgument<Guid>(1);
+                    bool isRollback = Array.TrueForAll(
+                        _clients,
+                        candidate => candidate.ClientUuid != expectedUuid
+                    );
+                    return Task.FromResult<ApiClientUuidSyncResult>(
+                        isRollback
+                            ? new ApiClientUuidSyncResult.FailureNotExistsSafeToDelete()
+                            : new ApiClientUuidSyncResult.Success()
+                    );
+                });
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_vanished_vendor_whose_replacement_client_cannot_be_deleted
+        : VanishedVendorWithReplacementTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() => _identityProviderRepository.DeleteClientAsync(A<string>.Ignored))
+                .ReturnsLazily(call =>
+                {
+                    _deletedClientUuids.Add(call.GetArgument<string>(0)!);
+                    return Task.FromResult<ClientDeleteResult>(
+                        new ClientDeleteResult.FailureUnknown("the delete was rejected")
+                    );
+                });
+
+            using var client = SetUpClient();
+            await ActUpdateAsync(client);
+        }
+
+        [Test]
+        public void It_refuses_the_clean_not_found() =>
+            _response.StatusCode.Should().NotBe(HttpStatusCode.NotFound);
+
+        [Test]
+        public void It_returns_a_sanitized_server_error() =>
+            _response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+
+        [Test]
+        public async Task It_does_not_leak_the_delete_message() =>
+            (await _response.Content.ReadAsStringAsync()).Should().NotContain("the delete was rejected");
+
+        [Test]
+        public void It_attempted_to_remove_every_replacement() => _deletedClientUuids.Should().HaveCount(3);
+    }
+
+    [TestFixture]
+    public class Given_a_vanished_vendor_whose_replacement_client_delete_throws
+        : VanishedVendorWithReplacementTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() => _identityProviderRepository.DeleteClientAsync(A<string>.Ignored))
+                .Throws(new InvalidOperationException("the provider connection dropped"));
+
+            using var client = SetUpClient();
+            await ActUpdateAsync(client);
+        }
+
+        [Test]
+        public void It_returns_a_sanitized_server_error() =>
+            _response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+    }
+
+    [TestFixture]
+    public class Given_a_vanished_vendor_whose_replacement_client_is_deleted
+        : VanishedVendorWithReplacementTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            using var client = SetUpClient();
+            await ActUpdateAsync(client);
+        }
+
+        [Test]
+        public void It_returns_not_found() => _response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        [Test]
+        public void It_removes_every_replacement_client() =>
+            _deletedClientUuids
+                .Should()
+                .BeEquivalentTo(RollbackCalls.Select(call => call.ReportedUuid.ToString()));
+    }
 }
