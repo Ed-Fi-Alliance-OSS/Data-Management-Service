@@ -189,7 +189,18 @@ internal class Given_CdcRecordSizeIncrease(Ddl.CdcProvider provider) : CdcReadin
         _increase = new(_store, bindings, _kafka, _sizes, _connect, _validation, TimeProvider.System);
     }
 
-    private CdcKafkaBrokerEvidence Brokers() => new(true, [new(0, _brokerLimit, _brokerLimit, _brokerLimit)]);
+    private CdcKafkaBrokerEvidence Brokers() =>
+        new(
+            true,
+            [
+                new(
+                    0,
+                    CdcDeploymentKafkaPolicy.MinimumBrokerRequestBytes(_brokerLimit),
+                    _brokerLimit,
+                    _brokerLimit
+                ),
+            ]
+        );
 
     private CdcKafkaTopicEvidence Topic(string name)
     {

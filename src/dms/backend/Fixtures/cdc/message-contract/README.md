@@ -661,12 +661,14 @@ framing. ASCII padding produces records at `maxRecordBytes - 1` and `maxRecordBy
 for a 16,384-byte budget. Evidence records serialized key/value lengths, framing allowance,
 client version and measured estimate; JSON-body length is not used as the budget.
 The live producer's observed acceptance/rejection is the conformance evidence. The API
-estimate is the pinned producer enforcement calculation, not a packet-capture measurement
-of every byte on the wire.
+estimate is the pinned producer enforcement calculation used by the owning operational
+`maxRecordBytes` contract; it does not bound complete requests on the wire. Broker request
+headroom for supported batching and protocol overhead is separately qualified by DMS-1323.
 
 Generated/read-back settings require compression `none`, explicit `max.request.size`,
 32 MiB `buffer.memory`, and `errors.tolerance=none`. Both topic limits are set/read back;
-Redpanda batch/request limits and observer fetch limits must accommodate the budget.
+Redpanda batch limits and observer fetch limits must accommodate the record budget;
+request capacity must also leave room for protocol overhead and batching.
 The isolated topic has one in-sync replica, so there is no inter-broker replication hop;
 this does not qualify a production multi-broker replication configuration.
 

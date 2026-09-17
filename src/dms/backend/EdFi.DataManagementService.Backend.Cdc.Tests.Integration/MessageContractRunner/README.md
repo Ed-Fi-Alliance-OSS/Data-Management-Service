@@ -67,8 +67,12 @@ the runner additionally observes the pinned Kafka client's framing-aware
 `AbstractRecords.estimateSizeInBytesUpperBound` with current magic and no compression,
 and its client version. This uses the same Kafka API as the producer's local size check;
 .NET does not reproduce the framing calculation. The broker suite separately exercises
-the measured below/above boundary through the actual source producer. The size estimate
-is not a measurement of the complete network request.
+the measured below/above boundary through the actual source producer. Together these
+qualify the `maxRecordBytes` per-record enforcement boundary defined by the owning
+[topic/message contract](../../../../../reference/design/backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#record-size).
+The size estimate is not a measurement of the complete network request. Broker request
+headroom for supported batching and protocol overhead belongs to deployment qualification
+(DMS-1323), separately from these fixtures.
 
 MC-06 adds `converterOnly=true` to invoke the published value converter directly on
 an input schema/value, with the existing key converter and partition observations.

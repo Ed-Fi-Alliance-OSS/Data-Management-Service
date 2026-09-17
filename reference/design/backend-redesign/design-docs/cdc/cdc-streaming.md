@@ -827,9 +827,11 @@ artifact recreation, or status poll clears it. Explicit binding retirement remov
 after the connector and every governed artifact are retired in the required cleanup order.
 
 `maxRecordBytes` is intentionally absent from the binding record. It is a positive signed
-32-bit per-target operational ceiling for the pinned Kafka serialization and one-record
-produce-request framing, not a claim about the largest valid document across configurable
-schemas and extensions. It is not copied from the HTTP request-body limit because cache
+32-bit per-target operational ceiling for the pinned producer's local per-record size
+check after key/value serialization, including its record-batch size estimate with
+compression disabled. It does not bound the complete produce request on the wire or
+claim to describe the largest valid document across configurable schemas and extensions.
+It is not copied from the HTTP request-body limit because cache
 materialization can inject links and the transform adds the public envelope. Deployment
 automation may increase it in place through the coordinated procedure below without
 changing the binding generation or topic.
@@ -1100,15 +1102,20 @@ and live connector validation rejects drift from them. V1 does not rely on produ
 defaults supplied by the Kafka client or pinned Connect image.
 
 The authoritative topic/message contract defines `maxRecordBytes` as an enforced
-operational ceiling for a fully materialized public record and its one-record Kafka
+operational ceiling for the pinned producer's local per-record size estimate after public
+key/value serialization, including record-batch framing but excluding complete-request
 framing. After the real transform and converters serialize each retained record, the
 pinned producer's `max.request.size` check is the authoritative pre-publication guard. An
 over-budget record emits no partial public record, fails the connector task under
 `errors.tolerance=none`, and keeps combined readiness false. The topic sets
 `max.message.bytes` to the same operational value. Before registration, deployment
-automation verifies that broker request, record-batch, and replica-fetch limits accept the
-same budget. A self-managed deployment configures `socket.request.max.bytes`, the
-effective `message.max.bytes`/topic override, `replica.fetch.max.bytes`, and
+automation verifies that record-batch and replica-fetch limits accept that budget. Broker
+request capacity is separate: `socket.request.max.bytes` must be at least
+`maxRecordBytes + 1048576`, with widened arithmetic, and deployment qualification must
+establish sufficient capacity for supported batching and protocol overhead. The 1 MiB
+allowance is an operational floor, not an exact request-size calculation; deployments
+provision larger request limits when needed. A self-managed deployment also configures
+the effective `message.max.bytes`/topic override, `replica.fetch.max.bytes`, and
 `replica.fetch.response.max.bytes` accordingly; a managed deployment must provide an
 equivalent verifiable capability. Independently operated consumers set
 `max.partition.fetch.bytes` and `fetch.max.bytes` to at least the operational value and
@@ -1457,6 +1464,10 @@ readiness. A partial, out-of-order, or unverifiable rollout remains not ready. I
 over-budget record already failed the connector, the task resumes from its uncommitted
 source position after the larger policy is effective.
 
+Broker request limits retain the separate 1 MiB minimum allowance above the new ceiling;
+stronger existing limits are preserved. Deployment qualification must be revisited when
+an increase or batching/configuration change exceeds its qualified request capacity.
+
 For v1, consumer-capacity confirmation is an explicit structured attestation from the
 operator authorized to administer the CDC deployment, using the existing administrative
 trust boundary. The operator obtains confirmation from every affected consumer owner that
@@ -1636,10 +1647,12 @@ Local bootstrap exposes an explicit opt-in such as `-EnableKafkaCdc`.
   exactly one partition, `cleanup.policy=delete`, `retention.ms=-1`, and
   `retention.bytes=-1`; it rejects compaction or any finite time/size retention.
 - Before connector registration, bootstrap verifies producer `max.request.size` and
-  `buffer.memory` plus the broker request, record-batch, and replica-fetch path against
-  `maxRecordBytes`; an unverifiable or smaller limit fails setup rather than relying on
-  Kafka defaults. It also requires deployment-provisioned Kafka Connect worker heap beyond
-  the configured producer buffer.
+  `buffer.memory` plus the record-batch and replica-fetch path against `maxRecordBytes`,
+  and broker request capacity against `maxRecordBytes + 1048576`. An unverifiable or smaller
+  limit fails setup rather than relying on Kafka defaults. These numeric checks do not
+  replace deployment qualification of request capacity for batching and protocol overhead.
+  It also requires deployment-provisioned Kafka Connect worker heap beyond the configured
+  producer buffer.
 - The same workflow provisions and idempotently validates the binding-scoped topic ACLs
   before connector registration. It emits literal public-topic grants for the connector
   and deployment-supplied consumer principals. It grants the connector principal only the

@@ -304,7 +304,8 @@ public sealed class Given_MessageContractRecordSize(CdcProvider provider, string
         baseSize.Should().BeLessThan(Budget - 2);
         _below = MakeRow(Budget - 1 - baseSize, 701);
         _above = MakeRow(Budget + 1 - baseSize, 702);
-        // Kafka's variable-length framing can grow when padding crosses a size tier.
+        // Kafka's variable-length record-batch framing can grow when padding crosses a size tier.
+        // Qualify the local per-record check, not complete wire requests; deployment owns request headroom.
         // Calibrate against the pinned API, then independently exercise both records through the live producer.
         for (int attempt = 0; attempt < 4; attempt++)
         {

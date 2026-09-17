@@ -14,9 +14,15 @@ namespace EdFi.DataManagementService.Backend.Cdc.Tests.Unit;
 
 public partial class Given_CdcKafkaAdminAdapter
 {
-    [TestCase(false)]
-    [TestCase(true)]
-    public async Task It_CdcRecordSizeIncrease_reconciles_deployment_broker_size_changes(bool lostResponse)
+    [TestCase(false, 134_217_728, 135_266_304)]
+    [TestCase(true, 134_217_728, 135_266_304)]
+    [TestCase(false, 200_000_000, 200_000_000)]
+    [TestCase(true, 200_000_000, 200_000_000)]
+    public async Task It_CdcRecordSizeIncrease_reconciles_deployment_broker_size_changes(
+        bool lostResponse,
+        long initialRequestBytes,
+        long expectedRequestBytes
+    )
     {
         var desired = CdcRecordSizeRollout.WithPolicy(_request, 134_217_728, 134_217_728);
         var deployment = A.Fake<ICdcKafkaBrokerSizeDeployment>();
@@ -26,7 +32,15 @@ public partial class Given_CdcKafkaAdminAdapter
                 Task.FromResult(new DescribeClusterResult { AuthorizedOperations = [AclOperation.Describe] }),
         };
         var preservedMessage = _brokerConfig["message.max.bytes"].Value;
-        _brokerConfig["socket.request.max.bytes"].Value = "200000000";
+        _brokerConfig["socket.request.max.bytes"].Value = initialRequestBytes.ToString(
+            CultureInfo.InvariantCulture
+        );
+        if (initialRequestBytes == desired.ConnectorPolicy.MaxRecordBytes)
+        {
+            // Request headroom alone must trigger deployment even when replication already fits.
+            _brokerConfig["replica.fetch.max.bytes"].Value = "134217728";
+            _brokerConfig["replica.fetch.response.max.bytes"].Value = "134217728";
+        }
         A.CallTo(() =>
                 deployment.ApplyAsync(
                     A<CdcDeploymentRequest>._,
@@ -42,7 +56,10 @@ public partial class Given_CdcKafkaAdminAdapter
                 ) =>
                 {
                     var change = changes.Single();
-                    change.SocketRequestMaxBytes.Should().Be(200000000);
+                    change.SocketRequestMaxBytes.Should().Be(expectedRequestBytes);
+                    _brokerConfig["socket.request.max.bytes"].Value = expectedRequestBytes.ToString(
+                        CultureInfo.InvariantCulture
+                    );
                     change.ReplicaFetchMaxBytes.Should().Be(134217728);
                     change.ReplicaFetchResponseMaxBytes.Should().Be(134217728);
                     _brokerConfig["replica.fetch.max.bytes"].Value = "134217728";

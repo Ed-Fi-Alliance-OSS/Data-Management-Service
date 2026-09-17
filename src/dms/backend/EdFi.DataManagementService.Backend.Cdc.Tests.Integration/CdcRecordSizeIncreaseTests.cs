@@ -192,7 +192,7 @@ public sealed partial class Given_Cdc_Controller_Record_Size_Increase(CdcProvide
         after
             .Brokers.Brokers.Should()
             .OnlyContain(b =>
-                b.SocketRequestMaxBytes >= Ceiling
+                b.SocketRequestMaxBytes >= CdcDeploymentKafkaPolicy.MinimumBrokerRequestBytes(Ceiling)
                 && b.ReplicaFetchMaxBytes >= Ceiling
                 && b.ReplicaFetchResponseMaxBytes >= Ceiling
             );

@@ -137,9 +137,12 @@ topic-per-resource are not the v1 contract.
 ## Record Size
 
 Each deployment target has one positive signed 32-bit `maxRecordBytes` operational
-ceiling. It is the maximum byte budget for a one-record produce request under the pinned
-v1 key/value converters and producer, including the lowercase UUID key, final UTF-8 public
-value, Kafka record-batch framing, and produce-request framing. It is deliberately not an
+ceiling applied by the pinned Kafka producer's local per-record size check after the v1
+key/value converters serialize the lowercase UUID key and final UTF-8 public value, with
+compression disabled. It includes the producer's record-batch size estimate; it does not
+bound the complete produce request on the wire. This corrects the earlier operational
+size definition, which incorrectly included produce-request framing in that ceiling; the
+public message format and binding version are unchanged. It is deliberately not an
 immutable binding field and does not claim to describe the largest schema-valid DMS
 document across configurable schemas and extensions. The ordinary HTTP request-body limit
 is not a substitute because materialization can inject links and the public envelope adds
@@ -164,10 +167,16 @@ The operational value drives every relevant Kafka limit rather than relying on d
   bound. `producerBufferBytes` defaults to the greater of `33554432` and
   `maxRecordBytes`; an operator may configure a larger value for throughput;
 - the topic sets `max.message.bytes=<maxRecordBytes>`;
-- bootstrap verifies that the broker request and replication path accepts that budget;
-  for a self-managed broker this includes `socket.request.max.bytes`,
-  `message.max.bytes` or the effective topic override, `replica.fetch.max.bytes`, and
-  `replica.fetch.response.max.bytes`; and
+- bootstrap verifies that the record-batch and replication path accepts that budget,
+  including `message.max.bytes` or the effective topic override,
+  `replica.fetch.max.bytes`, and `replica.fetch.response.max.bytes`;
+- broker request capacity is separate: bootstrap requires `socket.request.max.bytes` to
+  be at least `maxRecordBytes + 1048576` (1 MiB of operational headroom), using widened
+  arithmetic. This is a minimum deployment allowance, not a calculation of protocol
+  overhead or a guarantee for every batching configuration. Deployment qualification
+  must establish sufficient request capacity for its supported batching and protocol
+  overhead and provision a larger value when needed. Equality with `maxRecordBytes`
+  alone is insufficient; and
 - consumers configure both `max.partition.fetch.bytes` and `fetch.max.bytes` to at least
   `maxRecordBytes` and provision enough receive/deserialization memory for one such
   record.
@@ -179,7 +188,14 @@ See Kafka's authoritative
 [consumer](https://kafka.apache.org/40/configuration/consumer-configs/) configuration
 references for those byte-limit semantics.
 
-Bootstrap fails before connector registration when it cannot verify this alignment.
+Operational increases preserve stronger existing broker request limits and retain at
+least 1 MiB above the new record ceiling. Deployment qualification must be revisited when
+an increase or batching/configuration change exceeds its qualified request capacity.
+
+Bootstrap fails before connector registration when it cannot verify these numeric limits.
+The numeric checks do not replace deployment qualification of broker request headroom.
+Message-contract boundary fixtures qualify the pinned producer's per-record enforcement
+calculation and live acceptance/rejection, not complete-request sizing.
 Consumer conformance is a public deployment requirement because the producer cannot
 validate independently operated consumers. A pinned-runtime boundary test sends
 representative materialized envelopes immediately below and above a configured ceiling

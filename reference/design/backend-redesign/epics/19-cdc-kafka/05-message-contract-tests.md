@@ -182,9 +182,13 @@ first and keep this story as the evidence owner.
   barrier. This proves the acknowledgement prerequisite; crossing the barrier alone does
   not establish full readiness or authorize writer publication.
 - Record-size evidence should run through the real transform, converters, partitioner, and
-  producer with compression disabled and an intentionally small `maxRecordBytes` policy. The
-  below-budget fixture publishes, the above-budget fixture fails the connector task before a
-  partial public record appears, and combined-readiness classification remains false until
+  producer with compression disabled and an intentionally small `maxRecordBytes` policy.
+  The ±1-byte fixtures use the pinned producer's local record-batch size estimate and
+  qualify its per-record enforcement boundary, not the complete produce request on the
+  wire. Broker request headroom and supported batching remain deployment qualification
+  owned by DMS-1323 under the corrected operational size definition in the topic/message
+  contract. The below-budget fixture publishes, the above-budget fixture fails the connector
+  task before a partial public record appears, and combined-readiness classification remains false until
   the failing condition is corrected and all required observations are valid again. Direct
   fixture configuration changes may demonstrate resumed publication, but do not qualify the
   supported operational increase procedure. DMS-1323 owns coordinated broker/topic/producer
