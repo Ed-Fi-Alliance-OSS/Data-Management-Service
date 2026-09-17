@@ -218,16 +218,16 @@ internal static class Program
             "The sample validator's AppliesTo does not declare exactly Ed-Fi/Student."
         );
 
+        // The document must also come back unchanged. Nothing in the type system enforces the
+        // read-only rule the readme states, so the sample is held to it here. The snapshot is taken
+        // before the single validation call: taken afterwards, a mutation the sample applies once
+        // would compare equal to itself on a second pass and go unreported.
         JsonNode conforming = JsonNode.Parse($"{{\"studentUniqueId\":\"{ConfiguredPrefix}12345\"}}")!;
+        string beforeValidation = conforming.ToJsonString();
         Assert(
             (await Validate(validator, conforming)).Count == 0,
             "The sample rejected a student unique id carrying the configured prefix."
         );
-
-        // The document must come back unchanged. Nothing in the type system enforces the
-        // read-only rule the readme states, so the sample is held to it here.
-        string beforeValidation = conforming.ToJsonString();
-        _ = await Validate(validator, conforming);
         Assert(
             string.Equals(conforming.ToJsonString(), beforeValidation, StringComparison.Ordinal),
             "The sample mutated the document it was given."
