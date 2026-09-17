@@ -187,9 +187,9 @@ public sealed class Given_Cdc_Controller_Managed_Lifecycle(CdcProvider provider)
                 }
             }
         };
-        // SQL Server's live preflight is slower; leave time for completed resume and catch-up
-        // observations within this one deadline, as in the fixture's provider-specific defaults.
-        var wait = TimeSpan.FromSeconds(provider == CdcProvider.SqlServer ? 60 : 20);
+        // Leave time for live preflight and completed resume before the persistent backlog
+        // consumes the deadline. PostgreSQL preflight can also exceed 20 seconds under load.
+        var wait = TimeSpan.FromMinutes(1);
         // Bound backlog waiting without shortening the fixture's observation freshness window.
         var request = persistent
             ? _fixture.WithTiming(
