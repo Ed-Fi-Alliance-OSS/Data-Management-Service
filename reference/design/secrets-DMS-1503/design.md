@@ -538,7 +538,8 @@ Without that header the resolver would be handed a null tenant on the one call t
 **The tenant is an argument and not ambient state**, which is the spine's inherited input and is load-bearing rather than stylistic: a plugin instance is constructed once per process and outlives every tenant, so a resolver that read a tenant from a static or from an injected accessor would be reading state its own lifetime does not permit it to hold.
 
 **`ValueTask` rather than `Task`**, because a resolver that can answer without going anywhere should not be forced to allocate in order to say so.
-A plugin holding its own cache, or one reading from a mounted file, returns synchronously on most calls, and `ValueTask` is what lets it.
+A resolver reading its secret from a mounted file completes synchronously and is the shape this design's own end-to-end fixture takes.
+It reaches the file on every call rather than answering from state, so the example the contract sets is the one [Freshness, Caching, and the Tenant Set](#freshness-caching-and-the-tenant-set) obliges.
 It buys nothing when the resolver really does make a round trip, and it costs nothing then either, which is the whole case for it: the contract is fixed for the life of the package and this is the shape that leaves an implementer the most room.
 `IClientSecretHasher` keeps `Task`, because moving it is a signature change to a merged interface and the relocation is already changing everything else about where it lives; its call sites are per-client-write and per-token-request rather than per-row.
 
