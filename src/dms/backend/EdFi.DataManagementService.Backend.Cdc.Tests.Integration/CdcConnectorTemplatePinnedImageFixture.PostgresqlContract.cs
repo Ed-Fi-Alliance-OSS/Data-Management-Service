@@ -158,12 +158,8 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
                 (observed.SourcePartitionEvidence.Properties["server"] == request.ConnectorName.Value)
                     .Should()
                     .BeTrue();
-                using JsonDocument offset = JsonDocument.Parse(observed.CanonicalOffsetJson);
-                if (
-                    offset.RootElement.TryGetProperty("lsn_proc", out var lsn)
-                    && lsn.TryGetUInt64(out ulong processed)
-                    && processed >= barrier
-                )
+                ulong processed = ((PostgresqlConnectorOffsetPosition)observed.ProviderPosition).LsnProc;
+                if (processed >= barrier)
                 {
                     await TestContext.Out.WriteLineAsync(
                         $"{phase}: WAL barrier={barrier}, committed lsn_proc={processed}, matching single server partition"

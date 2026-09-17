@@ -239,12 +239,8 @@ public sealed class Given_MessageContractProgressAcknowledgement(CdcProvider pro
                     var status = await fixture.ReadConnectorStatusAsync(request, token);
                     status.ConnectorState.Should().Be("RUNNING");
                     status.TaskStates.Should().Equal("RUNNING");
-                    MessageContractOffsetEntry entry = new(
-                        JsonSerializer.SerializeToElement(snapshot!.SourcePartitionEvidence.Properties),
-                        JsonSerializer.Deserialize<JsonElement>(snapshot.CanonicalOffsetJson)
-                    );
                     var input = admission.ObserveLiveProgress(
-                        entry,
+                        snapshot!.OffsetsResponse,
                         status.ConnectorState,
                         status.TaskStates,
                         _capture,

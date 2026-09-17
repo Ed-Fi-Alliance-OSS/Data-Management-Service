@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json;
+using EdFi.DataManagementService.Backend.Cdc.Tests.Unit;
 using EdFi.DataManagementService.Backend.Ddl;
 using FluentAssertions;
 using FluentAssertions.Execution;
@@ -493,7 +494,7 @@ public sealed class Given_PinnedImageConnectorCommittedSourceOffsetSelection
         CdcConnectorTemplateRequest request = BuildRequest(CdcProvider.Postgresql);
         using JsonDocument document = JsonDocument.Parse(
             """
-            [
+            {"offsets":[
               {
                 "partition": { "server": "dms-binding-g7" },
                 "offset": { "snapshot": "false", "lsn_proc": 100 }
@@ -502,12 +503,12 @@ public sealed class Given_PinnedImageConnectorCommittedSourceOffsetSelection
                 "partition": { "server": "dms-binding-g7" },
                 "offset": { "snapshot": "true", "lsn_proc": 101 }
               }
-            ]
+            ]}
             """
         );
 
         Action act = () =>
-            CdcConnectorTemplatePinnedImageFixture.TrySelectCommittedSourceOffset(
+            CdcConnectorTemplatePinnedImageFixture.TryReadCommittedSourceOffset(
                 request,
                 document.RootElement
             );
@@ -519,6 +520,88 @@ public sealed class Given_PinnedImageConnectorCommittedSourceOffsetSelection
         using var _ = new AssertionScope();
         exception.Diagnostic.PropertyName.Should().Be("kafkaConnect.sourcePartition");
         exception.Diagnostic.ObservedValue.Should().Be("2");
+    }
+
+    [TestCase(100L, "0/64", 100UL)]
+    [TestCase(long.MinValue, "80000000/0", 0x8000000000000000UL)]
+    [TestCase(-1L, "FFFFFFFF/FFFFFFFF", ulong.MaxValue)]
+    public void It_preserves_the_response_and_uses_production_wal_interpretation(
+        long lsnProc,
+        string wal,
+        ulong expectedPosition
+    )
+    {
+        var request = BuildRequest(CdcProvider.Postgresql);
+        using JsonDocument document = JsonDocument.Parse(
+            $$$"""
+            {"offsets":[{"partition":{"server":"dms-binding-g7"},"offset":{"lsn_proc":{{{lsnProc}}}}}]}
+            """
+        );
+        var snapshot = CdcConnectorTemplatePinnedImageFixture.TryReadCommittedSourceOffset(
+            request,
+            document.RootElement
+        );
+        snapshot.Should().NotBeNull();
+        snapshot!.OffsetsResponse.GetRawText().Should().Be(document.RootElement.GetRawText());
+
+        using var admission = new MessageContractAdmissionFixture(
+            request.Binding.Provider,
+            request.Binding,
+            request.ArtifactInventory,
+            "edfi_datastore"
+        );
+        DateTimeOffset firstAt = DateTimeOffset.UtcNow.AddSeconds(-2);
+        var input = admission.ObserveLiveProgress(
+            snapshot.OffsetsResponse,
+            "RUNNING",
+            ["RUNNING"],
+            CoreCdc.CdcProviderBarrierCaptureResult.PostgresqlSuccess(wal, firstAt.AddSeconds(1)),
+            firstAt
+        );
+        input.ProviderBarrier!.CommittedPosition.Should().Be(wal);
+        CoreCdc
+            .CdcInitialAdmissionEvaluator.Evaluate(input)
+            .AdmissionState.Should()
+            .Be(CoreCdc.CdcAdmissionState.Admitted);
+
+        // The snapshot position also drives the live PostgreSQL fence. It must preserve all 64 WAL bits.
+        snapshot
+            .ProviderPosition.Should()
+            .BeOfType<CdcConnectorTemplatePinnedImageFixture.PostgresqlConnectorOffsetPosition>()
+            .Which.LsnProc.Should()
+            .Be(expectedPosition);
+    }
+
+    [Test]
+    public void It_rejects_an_unexpected_partition_in_live_admission_observations()
+    {
+        var request = BuildRequest(CdcProvider.Postgresql);
+        using JsonDocument document = JsonDocument.Parse(
+            """
+            {"offsets":[
+              {"partition":{"server":"dms-binding-g7"},"offset":{"lsn_proc":100}},
+              {"partition":{"server":"unexpected"},"offset":{"lsn_proc":101}}
+            ]}
+            """
+        );
+        using var admission = new MessageContractAdmissionFixture(
+            request.Binding.Provider,
+            request.Binding,
+            request.ArtifactInventory,
+            "edfi_datastore"
+        );
+        DateTimeOffset firstAt = DateTimeOffset.UtcNow.AddSeconds(-2);
+        var input = admission.ObserveLiveProgress(
+            document.RootElement,
+            "RUNNING",
+            ["RUNNING"],
+            CoreCdc.CdcProviderBarrierCaptureResult.PostgresqlSuccess("0/64", firstAt.AddSeconds(1)),
+            firstAt
+        );
+        CoreCdc
+            .CdcInitialAdmissionEvaluator.Evaluate(input)
+            .AdmissionState.Should()
+            .NotBe(CoreCdc.CdcAdmissionState.Admitted);
     }
 
     internal static CdcConnectorTemplateRequest BuildRequest(CdcProvider provider)
@@ -593,8 +676,7 @@ public sealed class Given_PinnedImageConnectorCommittedSourcePartitionShape(
 )
 {
     private bool _matches;
-    private string _selectedOffset = string.Empty;
-    private string _expectedOffset = string.Empty;
+    private Action _readMultiplePartitions = null!;
 
     [SetUp]
     public void Setup()
@@ -614,32 +696,27 @@ public sealed class Given_PinnedImageConnectorCommittedSourcePartitionShape(
                 ? $$"""{"offset":{{offset}}}"""
                 : $$"""{"partition":{{partitionJson}},"offset":{{offset}}}""";
         string valid = $$"""{"partition":{{validPartition}},"offset":{{offset}}}""";
-        using JsonDocument candidateDocument = JsonDocument.Parse($"[{candidate}]");
+        using JsonDocument candidateDocument = JsonDocument.Parse($$"""{"offsets":[{{candidate}}]}""");
         _matches =
-            CdcConnectorTemplatePinnedImageFixture.TrySelectCommittedSourceOffset(
+            CdcConnectorTemplatePinnedImageFixture.TryReadCommittedSourceOffset(
                 request,
                 candidateDocument.RootElement
             )
                 is not null;
 
-        // An ignored malformed partition must neither shadow the valid entry nor count as a duplicate.
-        using JsonDocument mixedDocument = JsonDocument.Parse(
-            expectedMatch ? $"[{candidate}]" : $"[{candidate},{valid}]"
-        );
-        _selectedOffset =
-            CdcConnectorTemplatePinnedImageFixture
-                .TrySelectCommittedSourceOffset(request, mixedDocument.RootElement)
-                ?.CanonicalOffsetJson
-            ?? string.Empty;
-        _expectedOffset = offset;
+        // Every second entry is invalid evidence, even when one exact partition is present.
+        using JsonDocument mixedDocument = JsonDocument.Parse($$"""{"offsets":[{{candidate}},{{valid}}]}""");
+        JsonElement response = mixedDocument.RootElement.Clone();
+        _readMultiplePartitions = () =>
+            CdcConnectorTemplatePinnedImageFixture.TryReadCommittedSourceOffset(request, response);
     }
 
     [Test]
     public void It_matches_only_the_exact_provider_partition() => _matches.Should().Be(expectedMatch);
 
     [Test]
-    public void It_selects_the_valid_offset_despite_unrelated_or_malformed_partitions() =>
-        _selectedOffset.Should().Be(_expectedOffset);
+    public void It_rejects_multiple_entries_even_with_a_valid_partition() =>
+        _readMultiplePartitions.Should().Throw<CdcConnectorTemplatePinnedImageSmokeAssertionException>();
 
     private static IEnumerable<TestFixtureData> Cases()
     {

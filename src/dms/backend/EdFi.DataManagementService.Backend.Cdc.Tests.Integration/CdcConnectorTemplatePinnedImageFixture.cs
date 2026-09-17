@@ -10,11 +10,13 @@ using System.Globalization;
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using EdFi.DataManagementService.Backend.Cdc.Tests.Unit;
 using EdFi.DataManagementService.Backend.Ddl;
 using EdFi.DataManagementService.Backend.External;
 using FluentAssertions;
 using FluentAssertions.Execution;
 using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 using NUnit.Framework;
@@ -2412,44 +2414,32 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
         }
 
         using JsonDocument document = JsonDocument.Parse(responseBody);
-        if (!document.RootElement.TryGetProperty("offsets", out JsonElement offsets))
-        {
-            CdcConnectorTemplatePinnedImageSmokeDiagnostics.Fail(
-                CdcConnectorTemplatePinnedImageSmokeDiagnostics.Build(
-                    code: CdcConnectorTemplateDiagnosticCodes.PinnedImageOffsetProgressFailure,
-                    category: CdcConnectorTemplateDiagnosticCategory.LiveReadBackMismatch,
-                    provider: request.Provider,
-                    propertyName: "kafkaConnect.committedOffset",
-                    safeArtifactOrObjectName: request.ConnectorName,
-                    expectedValue: "offsets array",
-                    observedValue: "missing",
-                    redactionClassification: CdcConnectorTemplateRedactionClassification.Safe
-                ),
-                "Kafka Connect offset read response did not include an offsets array."
-            );
-        }
-
-        return TrySelectCommittedSourceOffset(request, offsets);
+        return TryReadCommittedSourceOffset(request, document.RootElement);
     }
 
-    internal static CdcConnectorSourceOffsetSnapshot? TrySelectCommittedSourceOffset(
+    internal static CdcConnectorSourceOffsetSnapshot? TryReadCommittedSourceOffset(
         CdcConnectorTemplateRequest request,
-        JsonElement offsets
+        JsonElement response
     )
     {
-        List<JsonElement> matchingOffsetDocuments = [];
-        foreach (JsonElement offsetDocument in offsets.EnumerateArray())
-        {
-            if (
-                offsetDocument.TryGetProperty("partition", out JsonElement partition)
-                && SourcePartitionMatches(request, partition)
-            )
-            {
-                matchingOffsetDocuments.Add(offsetDocument);
-            }
-        }
-
-        if (matchingOffsetDocuments.Count > 1)
+        // Parse the complete REST response before projecting the legacy smoke-test snapshot.
+        // Selecting a matching partition first would hide evidence that production rejects.
+        CdcDeploymentRequest observationRequest = CdcDeploymentRequest.CreateDeferred(
+            request.Binding,
+            new ConfigurationBuilder().Build(),
+            () => throw new InvalidOperationException("Offset observation does not provision a provider."),
+            new Uri("http://fixture-connect:8083"),
+            new Uri("http://fixture-connect:9404/metrics"),
+            request.DeploymentPolicy,
+            CdcDeploymentRequestTestData.Worker(
+                heapBytes: (long)request.DeploymentPolicy.EffectiveProducerBufferBytes + 1
+            ),
+            request.ProviderConnectionProperties,
+            request.KafkaClientSecurityProperties,
+            new(TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(30), TimeSpan.FromMilliseconds(10))
+        );
+        CdcConnectOffsetEvidence evidence = CdcConnectOffsetEvidence.Parse(observationRequest, response);
+        if (evidence.State == CdcConnectOffsetState.Multiple)
         {
             CdcConnectorTemplatePinnedImageSmokeDiagnostics.Fail(
                 CdcConnectorTemplatePinnedImageSmokeDiagnostics.Build(
@@ -2459,33 +2449,59 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
                     propertyName: "kafkaConnect.sourcePartition",
                     safeArtifactOrObjectName: request.ConnectorName,
                     expectedValue: "single committed source offset partition",
-                    observedValue: matchingOffsetDocuments.Count.ToString(CultureInfo.InvariantCulture),
+                    observedValue: response
+                        .GetProperty("offsets")
+                        .GetArrayLength()
+                        .ToString(CultureInfo.InvariantCulture),
                     redactionClassification: CdcConnectorTemplateRedactionClassification.Safe
                 ),
-                "Kafka Connect returned more than one committed source offset partition for the rendered connector."
+                "Kafka Connect returned more than one committed source offset partition."
             );
         }
 
-        if (matchingOffsetDocuments.Count == 0)
+        if (evidence.State != CdcConnectOffsetState.Streaming)
         {
             return null;
         }
 
-        JsonElement matchingOffsetDocument = matchingOffsetDocuments[0];
-        if (
-            !matchingOffsetDocument.TryGetProperty("partition", out JsonElement matchingPartition)
-            || !matchingOffsetDocument.TryGetProperty("offset", out JsonElement offset)
-            || ReadCommittedProviderOffsetPosition(request.Provider, offset)
-                is not CdcConnectorProviderOffsetPosition providerPosition
-        )
+        CdcConnectorProviderOffsetPosition position;
+        if (request.Provider == CdcProvider.Postgresql)
         {
-            return null;
+            var comparison = CoreCdc.CdcPostgresqlProviderPosition.CompareCommittedOffsetToBarrier(
+                new(0),
+                evidence.Postgresql
+            );
+            var wal = CoreCdc.CdcPostgresqlProviderPosition.ParseWalLsn(comparison.CommittedPosition);
+            position = new PostgresqlConnectorOffsetPosition(wal.Position!.Value.Value);
+        }
+        else
+        {
+            var offset = evidence.SqlServer;
+            var commit = CoreCdc
+                .CdcSqlServerProviderPositionParser.ParseLsn(offset.CommitLsn, "$.commit_lsn")
+                .Lsn!.Value;
+            position = CoreCdc.CdcSqlServerProviderPositionParser.IsIdleCommitBoundary(
+                offset.CommitLsn,
+                offset.ChangeLsn,
+                offset.EventSerialNo
+            )
+                ? new SqlServerIdleConnectorOffsetPosition(commit)
+                : new SqlServerRowConnectorOffsetPosition(
+                    new(
+                        commit,
+                        CoreCdc
+                            .CdcSqlServerProviderPositionParser.ParseLsn(offset.ChangeLsn, "$.change_lsn")
+                            .Lsn!.Value,
+                        (ulong)offset.EventSerialNo!.Value
+                    )
+                );
         }
 
-        return new CdcConnectorSourceOffsetSnapshot(
-            CanonicalizeJson(offset),
-            BuildSourcePartitionEvidence(matchingPartition),
-            providerPosition
+        return new(
+            CanonicalizeJson(response.GetProperty("offsets")[0].GetProperty("offset")),
+            new(evidence.SourcePartition),
+            position,
+            response.Clone()
         );
     }
 
@@ -2527,25 +2543,6 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
         stateContainer.TryGetProperty("state", out JsonElement state)
         && state.ValueKind == JsonValueKind.String
         && string.Equals(state.GetString(), expectedState, StringComparison.Ordinal);
-
-    private static bool SourcePartitionMatches(CdcConnectorTemplateRequest request, JsonElement partition)
-    {
-        if (
-            partition.ValueKind != JsonValueKind.Object
-            || partition.EnumerateObject().Count() != (request.Provider == CdcProvider.Postgresql ? 1 : 2)
-            || !JsonStringPropertyEquals(partition, "server", request.ConnectorName.Value)
-        )
-        {
-            return false;
-        }
-
-        return request.Provider != CdcProvider.SqlServer
-            || JsonStringPropertyEquals(
-                partition,
-                "database",
-                request.ProviderConnectionProperties.Properties["database.names"]
-            );
-    }
 
     internal static bool CommittedSourceOffsetRetainsOrAdvances(
         CdcProvider provider,
@@ -2687,15 +2684,6 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
             _ => true,
         };
     }
-
-    private static bool JsonStringPropertyEquals(
-        JsonElement element,
-        string propertyName,
-        string expectedValue
-    ) =>
-        element.TryGetProperty(propertyName, out JsonElement property)
-        && property.ValueKind == JsonValueKind.String
-        && string.Equals(property.GetString(), expectedValue, StringComparison.Ordinal);
 
     private static bool TryReadPostgresqlLsnProcJsonProperty(
         JsonElement element,
@@ -3078,25 +3066,6 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
             columns
         );
 
-    private static CdcConnectorTemplateSourcePartitionEvidence BuildSourcePartitionEvidence(
-        JsonElement partition
-    )
-    {
-        IReadOnlyDictionary<string, string> properties = partition
-            .EnumerateObject()
-            .OrderBy(property => property.Name, StringComparer.Ordinal)
-            .ToDictionary(
-                property => property.Name,
-                property =>
-                    property.Value.ValueKind == JsonValueKind.String
-                        ? property.Value.GetString() ?? string.Empty
-                        : property.Value.GetRawText(),
-                StringComparer.Ordinal
-            );
-
-        return new CdcConnectorTemplateSourcePartitionEvidence(properties);
-    }
-
     private sealed record SqlServerCaptureInstanceDefinition(
         CdcSourceTableKind TableKind,
         string SourceTableName,
@@ -3121,7 +3090,8 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
     internal sealed record CdcConnectorSourceOffsetSnapshot(
         string CanonicalOffsetJson,
         CdcConnectorTemplateSourcePartitionEvidence SourcePartitionEvidence,
-        CdcConnectorProviderOffsetPosition ProviderPosition
+        CdcConnectorProviderOffsetPosition ProviderPosition,
+        JsonElement OffsetsResponse
     );
 
     internal abstract record CdcConnectorProviderOffsetPosition(CdcProvider Provider)
@@ -3139,7 +3109,7 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
         protected abstract int CompareSameProvider(CdcConnectorProviderOffsetPosition other);
     }
 
-    private sealed record PostgresqlConnectorOffsetPosition(ulong LsnProc)
+    internal sealed record PostgresqlConnectorOffsetPosition(ulong LsnProc)
         : CdcConnectorProviderOffsetPosition(CdcProvider.Postgresql)
     {
         protected override int CompareSameProvider(CdcConnectorProviderOffsetPosition other) =>

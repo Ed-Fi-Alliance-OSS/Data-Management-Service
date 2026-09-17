@@ -116,7 +116,7 @@ internal sealed class MessageContractAdmissionFixture : IDisposable
     // The production REST/provider adapters consume real offset and task observations. Other admission
     // prerequisites stay focused test inputs; this is not a provider-history or projector workflow.
     public CdcInitialAdmissionEvaluationInput ObserveLiveProgress(
-        MessageContractOffsetEntry entry,
+        JsonElement offsetsResponse,
         string connectorState,
         IReadOnlyList<string> taskStates,
         CdcProviderBarrierCaptureResult capture,
@@ -125,7 +125,7 @@ internal sealed class MessageContractAdmissionFixture : IDisposable
     {
         CdcInitialAdmissionEvaluationInput input = ValidInput();
         _clock.UtcNow = DateTimeOffset.UtcNow;
-        CdcConnectOffsetEvidence evidence = ReadOffsets(entry);
+        CdcConnectOffsetEvidence evidence = ReadOffsets(offsetsResponse.GetRawText());
         CdcConnectorOffsetObservation offset = CdcControllerObservations.Offset(
             Request(),
             OperationId,
@@ -180,14 +180,23 @@ internal sealed class MessageContractAdmissionFixture : IDisposable
         );
     }
 
-    private CdcConnectOffsetEvidence ReadOffsets(params MessageContractOffsetEntry[] entries)
-    {
-        _responses.Body = JsonSerializer.Serialize(
-            new
-            {
-                offsets = entries.Select(entry => new { partition = entry.Partition, offset = entry.Offset }),
-            }
+    private CdcConnectOffsetEvidence ReadOffsets(params MessageContractOffsetEntry[] entries) =>
+        ReadOffsets(
+            JsonSerializer.Serialize(
+                new
+                {
+                    offsets = entries.Select(entry => new
+                    {
+                        partition = entry.Partition,
+                        offset = entry.Offset,
+                    }),
+                }
+            )
         );
+
+    private CdcConnectOffsetEvidence ReadOffsets(string responseBody)
+    {
+        _responses.Body = responseBody;
         return (
             (CdcTransportResult<CdcConnectOffsetEvidence>.Observed)
                 _connect.ReadOffsetEvidenceAsync(Request(), CancellationToken.None).GetAwaiter().GetResult()

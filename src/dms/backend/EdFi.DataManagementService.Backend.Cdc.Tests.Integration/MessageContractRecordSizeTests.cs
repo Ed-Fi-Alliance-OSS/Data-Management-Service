@@ -238,10 +238,7 @@ public sealed class Given_MessageContractRecordSize(CdcProvider provider, string
                 snapshot.Should().NotBeNull();
                 var status = await fixture.ReadConnectorStatusAsync(request, token);
                 var input = admission.ObserveLiveProgress(
-                    new MessageContractOffsetEntry(
-                        JsonSerializer.SerializeToElement(snapshot!.SourcePartitionEvidence.Properties),
-                        JsonSerializer.Deserialize<JsonElement>(snapshot.CanonicalOffsetJson)
-                    ),
+                    snapshot!.OffsetsResponse,
                     status.ConnectorState,
                     status.TaskStates,
                     capture,
