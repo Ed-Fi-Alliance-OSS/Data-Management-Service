@@ -2560,4 +2560,319 @@ public class VendorModuleTests
                 .Should()
                 .BeEquivalentTo(RollbackCalls.Select(call => call.ReportedUuid.ToString()));
     }
+
+    /// <summary>
+    /// The repository update returns an unknown failure or throws, so whether it committed is
+    /// unknown and only the authoritative reread can classify it. The state read is scripted:
+    /// the first two reads are the pre-lock read and the reread under the locks, and the third
+    /// is the resolution.
+    /// </summary>
+    public abstract class AmbiguousVendorUpdateTestBase : VendorNamespaceUpdateTestBase
+    {
+        /// <summary>The scalars the request body carries, as <see cref="ActUpdateAsync"/> sends them.</summary>
+        protected const string RequestedCompany = "Test 11";
+        protected const string RequestedContactEmail = "test@gmail.com";
+
+        protected void ScriptStateReads(params Func<VendorUpdateStateResult>[] reads)
+        {
+            int read = 0;
+            A.CallTo(() => _vendorRepository.GetVendorUpdateState(A<int>.Ignored))
+                .ReturnsLazily(_ =>
+                {
+                    Func<VendorUpdateStateResult> next = reads[Math.Min(read, reads.Length - 1)];
+                    read++;
+                    return Task.FromResult(next());
+                });
+        }
+
+        protected VendorUpdateStateResult OriginalState() =>
+            new VendorUpdateStateResult.Success(
+                new VendorUpdateState("Test Company", "Test", "test@test.com", StoredPrefixes, _clients)
+            );
+
+        protected VendorUpdateStateResult CommittedState() =>
+            new VendorUpdateStateResult.Success(
+                new VendorUpdateState(
+                    RequestedCompany,
+                    "Test",
+                    RequestedContactEmail,
+                    // The same set the request asked for, in the other order, because the stored
+                    // order carries no meaning.
+                    "uri://new.org,uri://old.org",
+                    _clients
+                )
+            );
+
+        protected void FailTheRepositoryUpdate() =>
+            A.CallTo(() => _vendorRepository.UpdateVendor(A<VendorUpdateCommand>.Ignored))
+                .Returns(new VendorUpdateResult.FailureUnknown("the commit outcome is unknown"));
+    }
+
+    [TestFixture]
+    public class Given_an_ambiguous_repository_update_that_committed : AmbiguousVendorUpdateTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            FailTheRepositoryUpdate();
+            ScriptStateReads(OriginalState, OriginalState, CommittedState);
+
+            using var client = SetUpClient();
+            await ActUpdateAsync(client);
+        }
+
+        [Test]
+        public void It_recovers_the_success() => _response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        [Test]
+        public void It_leaves_the_updated_clients_alone() => RollbackCalls.Should().BeEmpty();
+    }
+
+    [TestFixture]
+    public class Given_an_ambiguous_repository_update_that_did_not_commit : AmbiguousVendorUpdateTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            FailTheRepositoryUpdate();
+            ScriptStateReads(OriginalState);
+
+            using var client = SetUpClient();
+            await ActUpdateAsync(client);
+        }
+
+        [Test]
+        public void It_returns_a_sanitized_server_error() =>
+            _response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+
+        [Test]
+        public async Task It_does_not_leak_the_failure_message() =>
+            (await _response.Content.ReadAsStringAsync())
+                .Should()
+                .NotContain("the commit outcome is unknown");
+
+        [Test]
+        public void It_restores_every_client_it_changed() => RollbackCalls.Should().HaveCount(3);
+    }
+
+    [TestFixture]
+    public class Given_a_thrown_repository_update : AmbiguousVendorUpdateTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() => _vendorRepository.UpdateVendor(A<VendorUpdateCommand>.Ignored))
+                .Throws(new InvalidOperationException("the commit connection dropped"));
+            ScriptStateReads(OriginalState);
+
+            using var client = SetUpClient();
+            await ActUpdateAsync(client);
+        }
+
+        [Test]
+        public void It_enters_the_same_resolution_as_a_returned_failure() =>
+            _response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+
+        [Test]
+        public void It_restores_every_client_it_changed() => RollbackCalls.Should().HaveCount(3);
+    }
+
+    [TestFixture]
+    public class Given_a_thrown_repository_update_that_committed : AmbiguousVendorUpdateTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() => _vendorRepository.UpdateVendor(A<VendorUpdateCommand>.Ignored))
+                .Throws(new InvalidOperationException("the commit connection dropped"));
+            ScriptStateReads(OriginalState, OriginalState, CommittedState);
+
+            using var client = SetUpClient();
+            await ActUpdateAsync(client);
+        }
+
+        [Test]
+        public void It_recovers_the_success() => _response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        [Test]
+        public void It_leaves_the_updated_clients_alone() => RollbackCalls.Should().BeEmpty();
+    }
+
+    [TestFixture]
+    public class Given_an_unrecognized_repository_update_result : AmbiguousVendorUpdateTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            // A future result variant this workflow has never seen must not fall through to
+            // success without the reread proving the commit landed.
+            A.CallTo(() => _vendorRepository.UpdateVendor(A<VendorUpdateCommand>.Ignored))
+                .Returns(new VendorUpdateResult());
+            ScriptStateReads(OriginalState);
+
+            using var client = SetUpClient();
+            await ActUpdateAsync(client);
+        }
+
+        [Test]
+        public void It_returns_a_sanitized_server_error() =>
+            _response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+
+        [Test]
+        public void It_restores_every_client_it_changed() => RollbackCalls.Should().HaveCount(3);
+    }
+
+    [TestFixture]
+    public class Given_an_ambiguous_update_with_a_partially_matching_state : AmbiguousVendorUpdateTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            FailTheRepositoryUpdate();
+            // The company was written but the prefixes were not, which matches neither the
+            // command nor the original: nothing can be concluded, so nothing is compensated.
+            ScriptStateReads(
+                OriginalState,
+                OriginalState,
+                () =>
+                    new VendorUpdateStateResult.Success(
+                        new VendorUpdateState(
+                            RequestedCompany,
+                            "Test",
+                            RequestedContactEmail,
+                            StoredPrefixes,
+                            _clients
+                        )
+                    )
+            );
+
+            using var client = SetUpClient();
+            await ActUpdateAsync(client);
+        }
+
+        [Test]
+        public void It_returns_a_sanitized_server_error() =>
+            _response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+
+        [Test]
+        public void It_does_not_guess_at_compensation() => RollbackCalls.Should().BeEmpty();
+    }
+
+    [TestFixture]
+    public class Given_an_ambiguous_update_whose_vendor_vanished : AmbiguousVendorUpdateTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            FailTheRepositoryUpdate();
+            ScriptStateReads(
+                OriginalState,
+                OriginalState,
+                () => new VendorUpdateStateResult.FailureNotExists()
+            );
+
+            using var client = SetUpClient();
+            await ActUpdateAsync(client);
+        }
+
+        [Test]
+        public void It_returns_a_sanitized_server_error() =>
+            _response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+
+        [Test]
+        public void It_still_restores_every_client_it_changed() => RollbackCalls.Should().HaveCount(3);
+    }
+
+    [TestFixture]
+    public class Given_an_ambiguous_update_that_cannot_be_resolved : AmbiguousVendorUpdateTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            FailTheRepositoryUpdate();
+            ScriptStateReads(
+                OriginalState,
+                OriginalState,
+                () => new VendorUpdateStateResult.FailureUnknown("the resolution read failed")
+            );
+
+            using var client = SetUpClient();
+            await ActUpdateAsync(client);
+        }
+
+        [Test]
+        public void It_returns_a_sanitized_server_error() =>
+            _response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+
+        [Test]
+        public async Task It_does_not_leak_the_resolution_message() =>
+            (await _response.Content.ReadAsStringAsync()).Should().NotContain("the resolution read failed");
+
+        [Test]
+        public void It_does_not_guess_at_compensation() => RollbackCalls.Should().BeEmpty();
+    }
+
+    [TestFixture]
+    public class Given_an_ambiguous_update_whose_resolution_throws : AmbiguousVendorUpdateTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            FailTheRepositoryUpdate();
+
+            int read = 0;
+            A.CallTo(() => _vendorRepository.GetVendorUpdateState(A<int>.Ignored))
+                .ReturnsLazily(_ =>
+                {
+                    read++;
+                    if (read > 2)
+                    {
+                        throw new InvalidOperationException("the resolution connection dropped");
+                    }
+
+                    return Task.FromResult(OriginalState());
+                });
+
+            using var client = SetUpClient();
+            await ActUpdateAsync(client);
+        }
+
+        [Test]
+        public void It_returns_a_sanitized_server_error() =>
+            _response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+
+        [Test]
+        public async Task It_does_not_leak_the_failure_message() =>
+            (await _response.Content.ReadAsStringAsync())
+                .Should()
+                .NotContain("the resolution connection dropped");
+
+        [Test]
+        public void It_does_not_guess_at_compensation() => RollbackCalls.Should().BeEmpty();
+    }
+
+    [TestFixture]
+    public class Given_an_ambiguous_update_resolved_under_the_locks : VendorLockTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() => _vendorRepository.UpdateVendor(A<VendorUpdateCommand>.Ignored))
+                .Returns(new VendorUpdateResult.FailureUnknown("the commit outcome is unknown"));
+
+            using var client = SetUpClient();
+            await ActUpdateAsync(client);
+        }
+
+        [Test]
+        public void It_returns_a_sanitized_server_error() =>
+            _response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+
+        [Test]
+        public void It_resolves_and_compensates_before_releasing_the_locks() =>
+            AssertCompensationRanUnderTheLocks();
+
+        [Test]
+        public void It_releases_every_lock_afterwards() => AssertEveryLockReleased();
+    }
 }

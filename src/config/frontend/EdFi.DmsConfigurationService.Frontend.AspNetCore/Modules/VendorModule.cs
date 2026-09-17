@@ -210,8 +210,12 @@ public class VendorModule : IEndpointModule
             }
             catch (Exception ex)
             {
+                // A thrown repository failure enters the same authoritative outcome resolution
+                // as a returned unknown failure.
                 logger.LogError(ex, "Repository update threw for Vendor {Id}", id);
-                return FailureResults.Unknown(httpContext.TraceIdentifier);
+                vendorUpdateResult = new VendorUpdateResult.FailureUnknown(
+                    "The repository update threw an exception."
+                );
             }
 
             switch (vendorUpdateResult)
@@ -231,10 +235,10 @@ public class VendorModule : IEndpointModule
                         id,
                         SanitizeForLog(updateFailure.FailureMessage)
                     );
-                    return FailureResults.Unknown(httpContext.TraceIdentifier);
+                    return await ResolveAmbiguousOutcomeAsync();
                 default:
                     logger.LogError("Unexpected repository update result for Vendor {Id}", id);
-                    return FailureResults.Unknown(httpContext.TraceIdentifier);
+                    return await ResolveAmbiguousOutcomeAsync();
             }
         }
         finally
@@ -406,6 +410,78 @@ public class VendorModule : IEndpointModule
                     return await CompensateUnpersistedClientAsync(client, reportedClientUuid);
             }
         }
+
+        // An unknown or thrown repository outcome leaves the commit's fate unknown, so it is
+        // resolved with the authoritative row-locking read, which waits out any in-flight commit
+        // before classifying the state. The read happens under the locks this request still
+        // holds, so nothing else can move the vendor while it is classified.
+        async Task<IResult> ResolveAmbiguousOutcomeAsync()
+        {
+            VendorUpdateStateResult resolution;
+            try
+            {
+                resolution = await repository.GetVendorUpdateState(id);
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(
+                    ex,
+                    "Resolving the outcome of the failed update for Vendor {Id} threw; no compensation was attempted and stored client state may be inconsistent",
+                    id
+                );
+                return FailureResults.Unknown(httpContext.TraceIdentifier);
+            }
+
+            switch (resolution)
+            {
+                case VendorUpdateStateResult.Success resolved when MatchesCommand(resolved.State):
+                    // The ambiguous transaction committed completely; the identity provider and
+                    // the database already hold the intended state.
+                    return Results.NoContent();
+                case VendorUpdateStateResult.Success resolved when MatchesOriginal(resolved.State):
+                    // The transaction provably did not commit, so the clients this request
+                    // changed are restored and the unknown failure stays a server error.
+                    await RollbackMutatedClientsAsync(acceptMissing: false);
+                    return FailureResults.Unknown(httpContext.TraceIdentifier);
+                case VendorUpdateStateResult.Success:
+                    logger.LogError(
+                        "Vendor {Id} is in a partially matching state after an ambiguous update; no compensation was attempted and stored client state may be inconsistent",
+                        id
+                    );
+                    return FailureResults.Unknown(httpContext.TraceIdentifier);
+                case VendorUpdateStateResult.FailureNotExists:
+                    // The vendor vanished, taking its applications and their ApiClient rows with
+                    // it, so an already-absent provider client and an already-absent row are the
+                    // expected end state.
+                    await RollbackMutatedClientsAsync(acceptMissing: true);
+                    return FailureResults.Unknown(httpContext.TraceIdentifier);
+                case VendorUpdateStateResult.FailureUnknown resolutionFailure:
+                    logger.LogError(
+                        "Could not resolve the outcome of the failed update for Vendor {Id}: {Message}; no compensation was attempted and stored client state may be inconsistent",
+                        id,
+                        SanitizeForLog(resolutionFailure.FailureMessage)
+                    );
+                    return FailureResults.Unknown(httpContext.TraceIdentifier);
+                default:
+                    logger.LogError(
+                        "Could not resolve the outcome of the failed update for Vendor {Id}; no compensation was attempted and stored client state may be inconsistent",
+                        id
+                    );
+                    return FailureResults.Unknown(httpContext.TraceIdentifier);
+            }
+        }
+
+        bool MatchesCommand(VendorUpdateState resolved) =>
+            SameText(resolved.Company, command.Company)
+            && SameText(resolved.ContactName, command.ContactName)
+            && SameText(resolved.ContactEmailAddress, command.ContactEmailAddress)
+            && SamePrefixes(resolved.NamespacePrefixes, command.NamespacePrefixes);
+
+        bool MatchesOriginal(VendorUpdateState resolved) =>
+            SameText(resolved.Company, state.Company)
+            && SameText(resolved.ContactName, state.ContactName)
+            && SameText(resolved.ContactEmailAddress, state.ContactEmailAddress)
+            && SamePrefixes(resolved.NamespacePrefixes, state.NamespacePrefixes);
 
         // The current client's outcome is ambiguous: a returned failure or a thrown call does
         // not prove the provider left it unchanged, so it is restored against the UUID resolved
@@ -771,6 +847,29 @@ public class VendorModule : IEndpointModule
             ),
             statusCode: (int)HttpStatusCode.NotFound
         );
+
+    /// <summary>
+    /// A missing contact value and an empty one are the same absence, so a backend that stores
+    /// one as the other cannot turn a complete match into a partial one.
+    /// </summary>
+    private static bool SameText(string? left, string? right) =>
+        string.Equals(left ?? "", right ?? "", StringComparison.Ordinal);
+
+    /// <summary>
+    /// Namespace prefixes are a set: the stored order carries no meaning, and blank entries and
+    /// surrounding whitespace are stripped on write, so the comparison normalizes both sides the
+    /// same way the repository does.
+    /// </summary>
+    private static bool SamePrefixes(string left, string right) =>
+        NormalizePrefixes(left).SetEquals(NormalizePrefixes(right));
+
+    private static HashSet<string> NormalizePrefixes(string prefixes) =>
+        [
+            .. prefixes.Split(
+                ',',
+                StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
+            ),
+        ];
 
     private static string SanitizeForLog(string? input)
     {
