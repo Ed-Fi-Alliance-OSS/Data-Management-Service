@@ -128,53 +128,117 @@ public class KeycloakClientRepository(
         }
     }
 
+    /// <summary>
+    /// Rewrites one client's namespace-prefixes claim **in place**, under its existing UUID. The
+    /// client's identity therefore survives every outcome — with it the secret, the service
+    /// account and its realm role mappings, the claim-set default scope, and every unrelated
+    /// claim — so no failure arising from this update can invalidate the UUID the database
+    /// already stores. The claim-set scope is never touched, so no scope convergence is needed.
+    /// </summary>
     public async Task<ClientUpdateResult> UpdateClientNamespaceClaimAsync(
         string clientUuid,
         string namespacePrefixes
     )
     {
+        if (!Guid.TryParse(clientUuid, out Guid storedClientUuid))
+        {
+            logger.LogError("The stored client identifier is not a valid UUID");
+            return new ClientUpdateResult.FailureUnknown("The stored client identifier is not a valid UUID.");
+        }
+
+        // The stored-client lookup is classified on its own, before any other phase can fail.
+        // Keycloak answers a missing client with a 404 that Flurl raises as an exception, so
+        // without this phase the disappearance of a stored client would be reported as an
+        // upstream provider fault instead of the internal consistency failure it is.
+        Client client;
         try
         {
-            var client = await keycloakClientFacade.GetClientAsync(_realm, clientUuid);
-
-            // Delete the existing client
-            await keycloakClientFacade.DeleteClientAsync(_realm, clientUuid);
-
-            var protocolMappers = ConfigServiceRoleProtocolMapper();
-            protocolMappers.Add(NamespacePrefixProtocolMapper(namespacePrefixes));
-            Client newClient = new()
-            {
-                ClientId = client.ClientId,
-                Enabled = client.Enabled,
-                Secret = client.Secret,
-                Name = client.Name,
-                ServiceAccountsEnabled = true,
-                DefaultClientScopes = client.DefaultClientScopes,
-                ProtocolMappers = protocolMappers,
-            };
-            // Re-create the client
-            string? newClientId = await keycloakClientFacade.CreateClientAndRetrieveClientIdAsync(
-                _realm,
-                newClient
-            );
-            if (!string.IsNullOrEmpty(newClientId))
-            {
-                return new ClientUpdateResult.Success(Guid.Parse(newClientId));
-            }
-
-            logger.LogError("Update client failure");
-            return new ClientUpdateResult.FailureUnknown($"Error while updating the client: {clientUuid}");
+            client = await keycloakClientFacade.GetClientAsync(_realm, clientUuid);
         }
         catch (FlurlHttpException ex)
         {
-            logger.LogError(ex, "Update client failure");
-            return new ClientUpdateResult.FailureIdentityProvider(ExceptionToKeycloakError(ex));
+            logger.LogError(ex, "Namespace claim update failure while reading the stored client");
+            return ex.StatusCode == 404
+                ? new ClientUpdateResult.FailureNotFound($"Client {clientUuid} not found")
+                : new ClientUpdateResult.FailureIdentityProvider(ExceptionToKeycloakError(ex));
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Update client failure");
+            logger.LogError(ex, "Namespace claim update failure while reading the stored client");
             return new ClientUpdateResult.FailureUnknown(ex.Message);
         }
+
+        if (client is null)
+        {
+            logger.LogError("The stored client {ClientUuid} was not found", SanitizeForLog(clientUuid));
+            return new ClientUpdateResult.FailureNotFound($"Client {clientUuid} not found");
+        }
+
+        List<ClientProtocolMapper> protocolMappers = [.. client.ProtocolMappers ?? []];
+        UpsertNamespacePrefixesClaim(protocolMappers, namespacePrefixes);
+        client.ProtocolMappers = protocolMappers;
+        // The secret is never written back. Keycloak leaves a client's secret untouched when the
+        // representation omits it or carries null, so the fetched value — which a provider is
+        // free to mask — can never overwrite the real credential. The model declares the property
+        // non-nullable, but clearing it is exactly how the update opts out of sending it.
+        client.Secret = null!;
+
+        bool updated;
+        try
+        {
+            updated = await keycloakClientFacade.UpdateClientAsync(_realm, clientUuid, client);
+        }
+        catch (FlurlHttpException ex)
+        {
+            logger.LogError(ex, "Namespace claim update failure while updating the stored client");
+            // The client is addressed directly here, so a 404 is unambiguously its disappearance.
+            return ex.StatusCode == 404
+                ? new ClientUpdateResult.FailureNotFound($"Client {clientUuid} not found")
+                : new ClientUpdateResult.FailureIdentityProvider(ExceptionToKeycloakError(ex));
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Namespace claim update failure while updating the stored client");
+            return new ClientUpdateResult.FailureUnknown(ex.Message);
+        }
+
+        if (!updated)
+        {
+            logger.LogError(
+                "Keycloak did not apply the namespace claim update for client {ClientUuid}",
+                SanitizeForLog(clientUuid)
+            );
+            return new ClientUpdateResult.FailureUnknown($"Error while updating the client: {clientUuid}");
+        }
+
+        return new ClientUpdateResult.Success(storedClientUuid);
+    }
+
+    /// <summary>
+    /// Sets the client's namespace-prefixes claim to the requested value, preserving every
+    /// unrelated mapper. The first matching mapper keeps its identity and configuration and only
+    /// its value changes; any further duplicates are removed so exactly one mapper carries the
+    /// claim. A client carrying no such mapper receives the fully configured one.
+    /// </summary>
+    private void UpsertNamespacePrefixesClaim(
+        List<ClientProtocolMapper> protocolMappers,
+        string namespacePrefixes
+    )
+    {
+        ClientProtocolMapper? namespaceClaim = protocolMappers.Find(mapper =>
+            HasClaimName(mapper, "namespacePrefixes")
+        );
+
+        if (namespaceClaim is null)
+        {
+            protocolMappers.Add(NamespacePrefixProtocolMapper(namespacePrefixes));
+            return;
+        }
+
+        namespaceClaim.Config["claim.value"] = namespacePrefixes;
+        protocolMappers.RemoveAll(mapper =>
+            !ReferenceEquals(mapper, namespaceClaim) && HasClaimName(mapper, "namespacePrefixes")
+        );
     }
 
     public async Task<ClientDeleteResult> DeleteClientAsync(string clientUuid)

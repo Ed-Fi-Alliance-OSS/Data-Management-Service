@@ -64,6 +64,24 @@ public class KeycloakClientRepositoryTests
         return new FlurlHttpException(call);
     }
 
+    protected static ClientProtocolMapper ClaimMapper(string name, string claimName, string value) =>
+        new()
+        {
+            Name = name,
+            Protocol = "openid-connect",
+            ProtocolMapper = "oidc-hardcoded-claim-mapper",
+            Config = new Dictionary<string, string> { { "claim.name", claimName }, { "claim.value", value } },
+        };
+
+    protected static ClientProtocolMapper MapperWithoutClaimName() =>
+        new()
+        {
+            Name = "Configuration service role mapper",
+            Protocol = "openid-connect",
+            ProtocolMapper = "oidc-usermodel-realm-role-mapper",
+            Config = new Dictionary<string, string> { { "multivalued", "true" } },
+        };
+
     [TestFixture]
     public class Given_ResetCredentialsAsync : KeycloakClientRepositoryTests
     {
@@ -462,28 +480,6 @@ public class KeycloakClientRepositoryTests
                 .Invokes(call => _scopeCallOrder.Add($"assign:{call.GetArgument<string>(2)}"))
                 .Returns(true);
         }
-
-        protected static ClientProtocolMapper ClaimMapper(string name, string claimName, string value) =>
-            new()
-            {
-                Name = name,
-                Protocol = "openid-connect",
-                ProtocolMapper = "oidc-hardcoded-claim-mapper",
-                Config = new Dictionary<string, string>
-                {
-                    { "claim.name", claimName },
-                    { "claim.value", value },
-                },
-            };
-
-        protected static ClientProtocolMapper MapperWithoutClaimName() =>
-            new()
-            {
-                Name = "Configuration service role mapper",
-                Protocol = "openid-connect",
-                ProtocolMapper = "oidc-usermodel-realm-role-mapper",
-                Config = new Dictionary<string, string> { { "multivalued", "true" } },
-            };
 
         protected async Task ActUpdateAsync(int[]? dataStoreIds = null) =>
             _result = await _repository.UpdateClientAsync(
@@ -973,5 +969,483 @@ public class KeycloakClientRepositoryTests
 
         [Test]
         public void It_never_deletes_or_recreates_the_client() => AssertClientIdentityPreserved();
+    }
+
+    /// <summary>
+    /// Shared arrangement for the Vendor namespace-claim update. The stored client carries a
+    /// mapper with no <c>claim.name</c> at all, so any claim lookup that indexes the
+    /// configuration blindly fails here rather than in production, alongside the
+    /// education-organization and data-store claims whose survival the update must not disturb.
+    /// </summary>
+    public abstract class NamespaceClaimUpdateTestBase : KeycloakClientRepositoryTests
+    {
+        protected const string NewPrefixes = "uri://ed-fi.org,uri://new.org";
+
+        protected string _clientUuid = null!;
+        protected Client _storedClient = null!;
+        protected ClientUpdateResult _result = null!;
+        protected List<Client> _clientUpdates = null!;
+
+        [SetUp]
+        public void SetUpNamespaceClaimDefaults()
+        {
+            _clientUuid = Guid.NewGuid().ToString();
+            _clientUpdates = [];
+
+            _storedClient = new Client
+            {
+                ClientId = "test-client",
+                Secret = "ExistingSecret123!",
+                Name = "Original Client",
+                Enabled = true,
+                ServiceAccountsEnabled = true,
+                DefaultClientScopes = ["claim-set-scope"],
+                ProtocolMappers =
+                [
+                    MapperWithoutClaimName(),
+                    ClaimMapper("Namespace Prefixes", "namespacePrefixes", "uri://ed-fi.org"),
+                    ClaimMapper("Education Organization Ids", "educationOrganizationIds", "100"),
+                    ClaimMapper("Data Store IDs", "dataStoreIds", "7,8"),
+                ],
+            };
+
+            A.CallTo(() => _keycloakClientFacade.GetClientAsync("edfi", _clientUuid)).Returns(_storedClient);
+
+            A.CallTo(() => _keycloakClientFacade.UpdateClientAsync("edfi", _clientUuid, A<Client>.Ignored))
+                .Invokes(call => _clientUpdates.Add(call.GetArgument<Client>(2)!))
+                .Returns(true);
+        }
+
+        protected async Task ActUpdateAsync(string? namespacePrefixes = null) =>
+            _result = await _repository.UpdateClientNamespaceClaimAsync(
+                _clientUuid,
+                namespacePrefixes ?? NewPrefixes
+            );
+
+        protected Client AppliedClient() => _clientUpdates.Single();
+
+        protected static List<ClientProtocolMapper> NamespaceClaims(Client applied) =>
+            [
+                .. applied.ProtocolMappers.Where(mapper =>
+                    mapper.Config is not null
+                    && mapper.Config.TryGetValue("claim.name", out string? claimName)
+                    && claimName == "namespacePrefixes"
+                ),
+            ];
+
+        protected static string? ClaimValue(Client applied, string claimName) =>
+            applied
+                .ProtocolMappers.FirstOrDefault(mapper =>
+                    mapper.Config is not null
+                    && mapper.Config.TryGetValue("claim.name", out string? configured)
+                    && configured == claimName
+                )
+                ?.Config["claim.value"];
+
+        /// <summary>
+        /// The whole point of the change: the stored client is never destroyed, so the UUID the
+        /// database holds stays valid and the client keeps its secret, service account, and realm
+        /// role mappings with no reassignment.
+        /// </summary>
+        protected void AssertClientIdentityPreserved()
+        {
+            A.CallTo(() => _keycloakClientFacade.DeleteClientAsync(A<string>.Ignored, A<string>.Ignored))
+                .MustNotHaveHappened();
+            A.CallTo(() =>
+                    _keycloakClientFacade.CreateClientAndRetrieveClientIdAsync(
+                        A<string>.Ignored,
+                        A<Client>.Ignored
+                    )
+                )
+                .MustNotHaveHappened();
+        }
+
+        protected void AssertNoProviderMutation()
+        {
+            A.CallTo(() =>
+                    _keycloakClientFacade.UpdateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<Client>.Ignored
+                    )
+                )
+                .MustNotHaveHappened();
+            AssertClientIdentityPreserved();
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_namespace_claim_update_replacing_an_existing_claim : NamespaceClaimUpdateTestBase
+    {
+        [SetUp]
+        public async Task Act() => await ActUpdateAsync();
+
+        [Test]
+        public void It_returns_success_carrying_the_stored_uuid()
+        {
+            _result.Should().BeOfType<ClientUpdateResult.Success>();
+            ((ClientUpdateResult.Success)_result).ClientUuid.Should().Be(Guid.Parse(_clientUuid));
+        }
+
+        [Test]
+        public void It_never_deletes_or_recreates_the_client() => AssertClientIdentityPreserved();
+
+        [Test]
+        public void It_updates_the_client_once_under_its_existing_uuid()
+        {
+            _clientUpdates.Should().HaveCount(1);
+            A.CallTo(() => _keycloakClientFacade.UpdateClientAsync("edfi", _clientUuid, A<Client>.Ignored))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [Test]
+        public void It_applies_the_requested_namespace_prefixes() =>
+            ClaimValue(AppliedClient(), "namespacePrefixes").Should().Be(NewPrefixes);
+
+        [Test]
+        public void It_leaves_exactly_one_namespace_claim() =>
+            NamespaceClaims(AppliedClient()).Should().ContainSingle();
+
+        [Test]
+        public void It_preserves_the_education_organization_and_data_store_claims()
+        {
+            ClaimValue(AppliedClient(), "educationOrganizationIds").Should().Be("100");
+            ClaimValue(AppliedClient(), "dataStoreIds").Should().Be("7,8");
+        }
+
+        [Test]
+        public void It_preserves_unrelated_protocol_mappers() =>
+            AppliedClient()
+                .ProtocolMappers.Should()
+                .Contain(mapper => mapper.Name == "Configuration service role mapper");
+
+        [Test]
+        public void It_omits_the_secret_from_the_update() => AppliedClient().Secret.Should().BeNull();
+
+        [Test]
+        public void It_preserves_the_name_and_enabled_state()
+        {
+            AppliedClient().Name.Should().Be("Original Client");
+            AppliedClient().Enabled.Should().BeTrue();
+        }
+
+        [Test]
+        public void It_performs_no_role_service_account_or_scope_work()
+        {
+            A.CallTo(() => _keycloakClientFacade.GetRolesAsync(A<string>.Ignored)).MustNotHaveHappened();
+            A.CallTo(() =>
+                    _keycloakClientFacade.GetUserForServiceAccountAsync(A<string>.Ignored, A<string>.Ignored)
+                )
+                .MustNotHaveHappened();
+            A.CallTo(() =>
+                    _keycloakClientFacade.AddRealmRoleMappingsToUserAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<IEnumerable<Role>>.Ignored
+                    )
+                )
+                .MustNotHaveHappened();
+            A.CallTo(() =>
+                    _keycloakClientFacade.UpdateDefaultClientScopeAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored
+                    )
+                )
+                .MustNotHaveHappened();
+            A.CallTo(() =>
+                    _keycloakClientFacade.DeleteDefaultClientScopeAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored
+                    )
+                )
+                .MustNotHaveHappened();
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_namespace_claim_update_adding_a_missing_claim : NamespaceClaimUpdateTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            _storedClient.ProtocolMappers =
+            [
+                MapperWithoutClaimName(),
+                ClaimMapper("Education Organization Ids", "educationOrganizationIds", "100"),
+            ];
+
+            await ActUpdateAsync();
+        }
+
+        [Test]
+        public void It_returns_success() => _result.Should().BeOfType<ClientUpdateResult.Success>();
+
+        [Test]
+        public void It_appends_a_single_fully_configured_namespace_claim()
+        {
+            ClientProtocolMapper added = NamespaceClaims(AppliedClient()).Should().ContainSingle().Subject;
+            added.ProtocolMapper.Should().Be("oidc-hardcoded-claim-mapper");
+            added.Config["claim.value"].Should().Be(NewPrefixes);
+            added.Config["access.token.claim"].Should().Be("true");
+        }
+
+        [Test]
+        public void It_preserves_the_existing_mappers()
+        {
+            ClaimValue(AppliedClient(), "educationOrganizationIds").Should().Be("100");
+            AppliedClient()
+                .ProtocolMappers.Should()
+                .Contain(mapper => mapper.Name == "Configuration service role mapper");
+        }
+
+        [Test]
+        public void It_never_deletes_or_recreates_the_client() => AssertClientIdentityPreserved();
+    }
+
+    [TestFixture]
+    public class Given_a_namespace_claim_update_whose_client_carries_duplicate_claims
+        : NamespaceClaimUpdateTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            _storedClient.ProtocolMappers =
+            [
+                ClaimMapper("Namespace Prefixes", "namespacePrefixes", "uri://first.org"),
+                ClaimMapper("Duplicate Namespace Prefixes", "namespacePrefixes", "uri://second.org"),
+                ClaimMapper("Education Organization Ids", "educationOrganizationIds", "100"),
+            ];
+
+            await ActUpdateAsync();
+        }
+
+        [Test]
+        public void It_returns_success() => _result.Should().BeOfType<ClientUpdateResult.Success>();
+
+        [Test]
+        public void It_collapses_the_duplicates_onto_the_first_mapper()
+        {
+            ClientProtocolMapper survivor = NamespaceClaims(AppliedClient()).Should().ContainSingle().Subject;
+            survivor.Name.Should().Be("Namespace Prefixes");
+            survivor.Config["claim.value"].Should().Be(NewPrefixes);
+        }
+
+        [Test]
+        public void It_preserves_the_unrelated_claim() =>
+            ClaimValue(AppliedClient(), "educationOrganizationIds").Should().Be("100");
+    }
+
+    [TestFixture]
+    public class Given_a_namespace_claim_update_whose_client_has_no_protocol_mappers
+        : NamespaceClaimUpdateTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            _storedClient.ProtocolMappers = null!;
+
+            await ActUpdateAsync();
+        }
+
+        [Test]
+        public void It_returns_success() => _result.Should().BeOfType<ClientUpdateResult.Success>();
+
+        [Test]
+        public void It_adds_the_namespace_claim() =>
+            NamespaceClaims(AppliedClient()).Should().ContainSingle();
+    }
+
+    [TestFixture]
+    public class Given_a_namespace_claim_update_whose_stored_client_lookup_reports_not_found
+        : NamespaceClaimUpdateTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() => _keycloakClientFacade.GetClientAsync("edfi", _clientUuid))
+                .Throws(CreateFlurlHttpException(HttpStatusCode.NotFound));
+
+            await ActUpdateAsync();
+        }
+
+        [Test]
+        public void It_returns_failure_not_found() =>
+            _result.Should().BeOfType<ClientUpdateResult.FailureNotFound>();
+
+        [Test]
+        public void It_performs_no_provider_mutation() => AssertNoProviderMutation();
+    }
+
+    [TestFixture]
+    public class Given_a_namespace_claim_update_whose_stored_client_lookup_fails_at_keycloak
+        : NamespaceClaimUpdateTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() => _keycloakClientFacade.GetClientAsync("edfi", _clientUuid))
+                .Throws(CreateFlurlHttpException(HttpStatusCode.Forbidden));
+
+            await ActUpdateAsync();
+        }
+
+        [Test]
+        public void It_returns_failure_identity_provider() =>
+            _result.Should().BeOfType<ClientUpdateResult.FailureIdentityProvider>();
+
+        [Test]
+        public void It_performs_no_provider_mutation() => AssertNoProviderMutation();
+    }
+
+    [TestFixture]
+    public class Given_a_namespace_claim_update_whose_stored_client_lookup_throws_an_unexpected_error
+        : NamespaceClaimUpdateTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() => _keycloakClientFacade.GetClientAsync("edfi", _clientUuid))
+                .Throws(new InvalidOperationException("transport misconfigured"));
+
+            await ActUpdateAsync();
+        }
+
+        [Test]
+        public void It_returns_failure_unknown() =>
+            _result.Should().BeOfType<ClientUpdateResult.FailureUnknown>();
+
+        [Test]
+        public void It_performs_no_provider_mutation() => AssertNoProviderMutation();
+    }
+
+    [TestFixture]
+    public class Given_a_namespace_claim_update_whose_stored_client_is_absent : NamespaceClaimUpdateTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() => _keycloakClientFacade.GetClientAsync("edfi", _clientUuid))
+                .Returns(Task.FromResult<Client>(null!));
+
+            await ActUpdateAsync();
+        }
+
+        [Test]
+        public void It_returns_failure_not_found() =>
+            _result.Should().BeOfType<ClientUpdateResult.FailureNotFound>();
+
+        [Test]
+        public void It_performs_no_provider_mutation() => AssertNoProviderMutation();
+    }
+
+    [TestFixture]
+    public class Given_a_namespace_claim_update_whose_client_update_reports_not_found
+        : NamespaceClaimUpdateTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() => _keycloakClientFacade.UpdateClientAsync("edfi", _clientUuid, A<Client>.Ignored))
+                .Throws(CreateFlurlHttpException(HttpStatusCode.NotFound, HttpMethod.Put));
+
+            await ActUpdateAsync();
+        }
+
+        [Test]
+        public void It_returns_failure_not_found() =>
+            _result.Should().BeOfType<ClientUpdateResult.FailureNotFound>();
+
+        [Test]
+        public void It_never_deletes_or_recreates_the_client() => AssertClientIdentityPreserved();
+    }
+
+    [TestFixture]
+    public class Given_a_namespace_claim_update_whose_client_update_reports_no_change
+        : NamespaceClaimUpdateTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() => _keycloakClientFacade.UpdateClientAsync("edfi", _clientUuid, A<Client>.Ignored))
+                .Returns(false);
+
+            await ActUpdateAsync();
+        }
+
+        [Test]
+        public void It_returns_failure_unknown() =>
+            _result.Should().BeOfType<ClientUpdateResult.FailureUnknown>();
+
+        [Test]
+        public void It_never_deletes_or_recreates_the_client() => AssertClientIdentityPreserved();
+    }
+
+    [TestFixture]
+    public class Given_a_namespace_claim_update_whose_client_update_fails_at_keycloak
+        : NamespaceClaimUpdateTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() => _keycloakClientFacade.UpdateClientAsync("edfi", _clientUuid, A<Client>.Ignored))
+                .Throws(CreateFlurlHttpException(HttpStatusCode.BadGateway, HttpMethod.Put));
+
+            await ActUpdateAsync();
+        }
+
+        [Test]
+        public void It_returns_failure_identity_provider() =>
+            _result.Should().BeOfType<ClientUpdateResult.FailureIdentityProvider>();
+
+        [Test]
+        public void It_never_deletes_or_recreates_the_client() => AssertClientIdentityPreserved();
+    }
+
+    [TestFixture]
+    public class Given_a_namespace_claim_update_whose_client_update_throws_an_unexpected_error
+        : NamespaceClaimUpdateTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() => _keycloakClientFacade.UpdateClientAsync("edfi", _clientUuid, A<Client>.Ignored))
+                .Throws(new InvalidOperationException("transport misconfigured"));
+
+            await ActUpdateAsync();
+        }
+
+        [Test]
+        public void It_returns_failure_unknown() =>
+            _result.Should().BeOfType<ClientUpdateResult.FailureUnknown>();
+
+        [Test]
+        public void It_never_deletes_or_recreates_the_client() => AssertClientIdentityPreserved();
+    }
+
+    [TestFixture]
+    public class Given_a_namespace_claim_update_whose_stored_identifier_is_not_a_uuid
+        : NamespaceClaimUpdateTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            _clientUuid = "not-a-uuid";
+
+            await ActUpdateAsync();
+        }
+
+        [Test]
+        public void It_returns_failure_unknown() =>
+            _result.Should().BeOfType<ClientUpdateResult.FailureUnknown>();
+
+        [Test]
+        public void It_never_reads_the_client() =>
+            A.CallTo(() => _keycloakClientFacade.GetClientAsync(A<string>.Ignored, A<string>.Ignored))
+                .MustNotHaveHappened();
+
+        [Test]
+        public void It_performs_no_provider_mutation() => AssertNoProviderMutation();
     }
 }
