@@ -21,6 +21,12 @@ public sealed class Given_CdcSqlServerFixtureStartup
         Last errno: 2
         """;
 
+    internal const string ReasonTwoFailureLog = """
+        This program has encountered a fatal error and cannot continue running.
+        Reason: 0x00000002
+        Last errno: 11
+        """;
+
     private readonly List<string> _events = [];
     private CdcSqlServerContainerState _state = null!;
     private int _starts;
@@ -43,7 +49,7 @@ public sealed class Given_CdcSqlServerFixtureStartup
         _failReplacement = false;
         _blockedPhase = string.Empty;
         _failedPhase = string.Empty;
-        _budgets = CdcSqlServerStartupBudgets.Default;
+        _budgets = CdcSqlServerStartupBudgets.Default with { RecoveryDelay = TimeSpan.Zero };
     }
 
     [Test]
@@ -117,6 +123,61 @@ public sealed class Given_CdcSqlServerFixtureStartup
     {
         await RunAsync();
         _events.Should().Equal("start-1", "inspect", "retain-1-True", "remove", "start-2", "ready");
+    }
+
+    [Test]
+    public async Task It_recovers_the_observed_reason_two_signature_and_returns_recovery_evidence()
+    {
+        _state = _state with
+        {
+            Logs = CdcSqlServerStartupLogClassifier.Parse(new(0, ReasonTwoFailureLog, "")),
+        };
+        CdcSqlServerStartupResult result = await RunAsync(CancellationToken.None);
+        result.Should().Be(new CdcSqlServerStartupResult(2, "ReasonTwoErrnoEleven", false));
+        _events.Should().Equal("start-1", "inspect", "retain-1-True", "remove", "start-2", "ready");
+    }
+
+    [Test]
+    public void It_cancels_the_backoff_without_starting_a_replacement()
+    {
+        _budgets = _budgets with
+        {
+            RecoveryDelay = TimeSpan.FromSeconds(5),
+            Overall = TimeSpan.FromMilliseconds(100),
+        };
+        Assert.CatchAsync<OperationCanceledException>(RunAsync);
+        _events.Should().Contain("remove").And.NotContain("start-2");
+    }
+
+    [TestCase("reason")]
+    [TestCase("errno")]
+    [TestCase("oom")]
+    [TestCase("memory")]
+    [TestCase("truncated")]
+    [TestCase("sql-error")]
+    [TestCase("signal")]
+    [TestCase("mapping")]
+    [TestCase("running")]
+    public void It_rejects_near_matches_to_the_reason_two_signature(string mismatch)
+    {
+        var logs = CdcSqlServerStartupLogClassifier.Parse(new(0, ReasonTwoFailureLog, ""));
+        _state = _state with
+        {
+            Status = mismatch == "running" ? "running" : "exited",
+            OomKilled = mismatch == "oom",
+            Logs = logs with
+            {
+                FatalReasonCodes = mismatch == "reason" ? [2U, 6U] : logs.FatalReasonCodes,
+                LastErrnos = mismatch == "errno" ? [11, 12] : logs.LastErrnos,
+                MemoryMessage = mismatch == "memory",
+                MappingMessage = mismatch == "mapping",
+                Truncated = mismatch == "truncated",
+                SqlErrorNumbers = mismatch == "sql-error" ? [701] : [],
+                Signals = mismatch == "signal" ? ["SIGKILL"] : [],
+            },
+        };
+        Assert.ThrowsAsync<InvalidOperationException>(RunAsync);
+        _events.Should().Equal("start-1", "inspect", "retain-1-False");
     }
 
     [Test]
@@ -258,7 +319,7 @@ public sealed class Given_CdcSqlServerFixtureStartup
 
     private Task RunAsync() => RunAsync(CancellationToken.None);
 
-    private Task RunAsync(CancellationToken token) =>
+    private Task<CdcSqlServerStartupResult> RunAsync(CancellationToken token) =>
         CdcSqlServerFixtureStartup.RunAsync(
             async cancellation =>
             {

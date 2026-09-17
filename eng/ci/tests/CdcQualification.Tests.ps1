@@ -29,6 +29,27 @@ Describe 'CDC qualification result boundary' {
         Write-Report
         (Get-CdcQualificationReport $script:report 0).Status | Should -Be 'Passed'
     }
+    It 'reports recovered startup failures without hiding them or counting injected failures as flakes' {
+        Write-Report
+        '{"Stage":"unprovisioned-sql-startup","Signature":"ReasonTwoErrnoEleven","Container":{"Logs":{"InjectedFailure":false}}}' |
+            Set-Content (Join-Path $TestDrive 'admission-evidence-sql-startup-real.json')
+        '{"Stage":"unprovisioned-sql-recovery","Outcome":"Ready","Injected":false}' |
+            Set-Content (Join-Path $TestDrive 'admission-evidence-sql-recovery-real.json')
+        '{"Stage":"unprovisioned-sql-startup","Signature":"LsaInitializationTimeout","Container":{"Logs":{"InjectedFailure":true}}}' |
+            Set-Content (Join-Path $TestDrive 'admission-evidence-sql-startup-injected.json')
+        '{"Stage":"unprovisioned-sql-recovery","Outcome":"Ready","Injected":true}' |
+            Set-Content (Join-Path $TestDrive 'admission-evidence-sql-recovery-injected.json')
+        $result = Get-CdcQualificationReport $script:report 0
+        $result.Status | Should -Be 'Passed'
+        $result.SqlStartupFailures | Should -Be 1
+        $result.SqlStartupRecoveries | Should -Be 1
+        $result.SqlStartupInjectedFailures | Should -Be 1
+        $result.SqlStartupInjectedRecoveries | Should -Be 1
+        $result.SqlStartupFailureSignatures.ReasonTwoErrnoEleven | Should -Be 1
+        Write-Report -Outcome Failed -Message 'Expected ready CDC evidence'
+        (Get-CdcQualificationReport $script:report 1).Status | Should -Be 'Failed'
+    }
+
     It 'rejects skipped cases instead of counting them as qualification' {
         Write-Report -Outcome NotExecuted
         $result = Get-CdcQualificationReport $script:report 0

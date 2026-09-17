@@ -40,9 +40,33 @@ function Get-CdcQualificationReport {
     elseif ($skipped -gt 0) { 'SkippedQualification' }
     elseif (-not $complete -or $results.Count -eq 0) { 'ReportIncomplete' }
     else { 'Passed' }
+    # Attachments survive passing tests too. Count observed failures separately from the
+    # deliberate process exits used to qualify the recovery mechanism itself.
+    $startupFailures = 0; $startupRecoveries = 0
+    $injectedFailures = 0; $injectedRecoveries = 0
+    $signatures = @{}
+    foreach ($file in Get-ChildItem -LiteralPath (Split-Path -Parent $Path) -Filter 'admission-evidence-sql-*.json' -Recurse) {
+        $evidence = Get-Content -LiteralPath $file.FullName -Raw | ConvertFrom-Json -AsHashtable
+        if ($evidence.Stage -eq 'unprovisioned-sql-startup') {
+            if ($evidence.Container.Logs.InjectedFailure -eq $true) { $injectedFailures++ }
+            else {
+                $startupFailures++
+                $signature = if ($evidence.Signature -in @('LsaInitializationTimeout', 'ReasonTwoErrnoEleven')) { $evidence.Signature } else { 'Other' }
+                if (-not $signatures.ContainsKey($signature)) { $signatures[$signature] = 0 }
+                $signatures[$signature]++
+            }
+        }
+        elseif ($evidence.Stage -eq 'unprovisioned-sql-recovery' -and $evidence.Outcome -eq 'Ready') {
+            if ($evidence.Injected -eq $true) { $injectedRecoveries++ }
+            else { $startupRecoveries++ }
+        }
+    }
     return [ordered]@{
         Status = $status; Total = $results.Count; Passed = $passed; Failed = $failed
         Skipped = $skipped; EnvironmentFailures = $environmentFailures
+        SqlStartupFailures = $startupFailures; SqlStartupRecoveries = $startupRecoveries
+        SqlStartupInjectedFailures = $injectedFailures; SqlStartupInjectedRecoveries = $injectedRecoveries
+        SqlStartupFailureSignatures = $signatures
         Diagnostics = @($results | Where-Object outcome -ne 'Passed' | ForEach-Object {
             [ordered]@{
                 TestId = $_.GetAttribute('testId')
