@@ -5,6 +5,7 @@
 
 using System.Net;
 using EdFi.DmsConfigurationService.Backend.Repositories;
+using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.DataModel.Infrastructure;
 using EdFi.DmsConfigurationService.DataModel.Model.Application;
 using EdFi.DmsConfigurationService.DataModel.Model.Vendor;
@@ -144,70 +145,227 @@ public class VendorModule : IEndpointModule
         };
     }
 
+    /// <summary>
+    /// Updates the vendor and re-applies the resulting namespace prefixes to the identity
+    /// provider client of every ApiClient the vendor owns.
+    ///
+    /// Every affected client's stable identity is resolved before any state is mutated; the
+    /// identity provider is mutated before the database commit, so a provider failure returns
+    /// with the vendor row untouched; and the UUID each successful provider call reports is
+    /// persisted to that client's row, under a guard that refuses to overwrite a newer writer,
+    /// before the next client is touched. A provider that preserves the client's identity
+    /// reports the stored UUID, which the guard resolves as already applied.
+    /// </summary>
     private static async Task<IResult> Update(
         int id,
         VendorUpdateCommand command,
         VendorUpdateCommand.Validator validator,
         HttpContext httpContext,
         IVendorRepository repository,
+        IApiClientRepository apiClientRepository,
         IIdentityProviderRepository clientRepository,
-        ILogger<ApplicationModule> logger
+        ILogger<VendorModule> logger
     )
     {
         PutGuards.GuardRouteIdMatchesBodyId(id, command.Id);
 
         await validator.GuardAsync(command);
 
-        var vendorUpdateResult = await repository.UpdateVendor(command);
-
-        if (vendorUpdateResult is VendorUpdateResult.Success result)
+        VendorUpdateState state;
+        switch (await repository.GetVendorUpdateState(id))
         {
-            foreach (var clientUuid in result.AffectedClientUuids)
-            {
-                var clientUpdateResult = await clientRepository.UpdateClientNamespaceClaimAsync(
-                    clientUuid.ToString(),
-                    command.NamespacePrefixes
+            case VendorUpdateStateResult.Success success:
+                state = success.State;
+                break;
+            case VendorUpdateStateResult.FailureNotExists:
+                return VendorNotFound();
+            case VendorUpdateStateResult.FailureUnknown failure:
+                logger.LogError(
+                    "Error reading the update state of Vendor {Id}: {Message}",
+                    id,
+                    SanitizeForLog(failure.FailureMessage)
                 );
+                return FailureResults.Unknown(httpContext.TraceIdentifier);
+            default:
+                logger.LogError("Unexpected result reading the update state of Vendor {Id}", id);
+                return FailureResults.Unknown(httpContext.TraceIdentifier);
+        }
 
-                switch (clientUpdateResult)
-                {
-                    case ClientUpdateResult.Success:
-                        continue;
-                    case ClientUpdateResult.FailureIdentityProvider failureIdentityProvider:
-                        logger.LogError(
-                            "Failure updating client: {FailureMessage}",
-                            failureIdentityProvider.IdentityProviderError.FailureMessage
-                        );
-                        return FailureResults.BadGateway(
-                            failureIdentityProvider.IdentityProviderError.FailureMessage,
-                            httpContext.TraceIdentifier
-                        );
-                    case ClientUpdateResult.FailureNotFound notFound:
-                        logger.LogError(notFound.FailureMessage);
-                        return FailureResults.Unknown(httpContext.TraceIdentifier);
-                    case ClientUpdateResult.FailureUnknown unknownFailure:
-                        logger.LogError(
-                            "Error updating apiClient {ClientUuid}: {Message}",
-                            clientUuid,
-                            unknownFailure.FailureMessage
-                        );
-                        return FailureResults.Unknown(httpContext.TraceIdentifier);
-                }
+        foreach (VendorApiClient client in state.Clients)
+        {
+            if (await ApplyNamespaceClaimAsync(client) is { } clientFailure)
+            {
+                return clientFailure;
             }
         }
 
-        return vendorUpdateResult switch
+        VendorUpdateResult vendorUpdateResult;
+        try
         {
-            VendorUpdateResult.Success => Results.NoContent(),
-            VendorUpdateResult.FailureNotExists => Results.Json(
+            vendorUpdateResult = await repository.UpdateVendor(command);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Repository update threw for Vendor {Id}", id);
+            return FailureResults.Unknown(httpContext.TraceIdentifier);
+        }
+
+        switch (vendorUpdateResult)
+        {
+            case VendorUpdateResult.Success:
+                return Results.NoContent();
+            case VendorUpdateResult.FailureNotExists:
+                return VendorNotFound();
+            case VendorUpdateResult.FailureUnknown updateFailure:
+                logger.LogError(
+                    "Repository update failed for Vendor {Id}: {Message}",
+                    id,
+                    SanitizeForLog(updateFailure.FailureMessage)
+                );
+                return FailureResults.Unknown(httpContext.TraceIdentifier);
+            default:
+                logger.LogError("Unexpected repository update result for Vendor {Id}", id);
+                return FailureResults.Unknown(httpContext.TraceIdentifier);
+        }
+
+        IResult VendorNotFound() =>
+            Results.Json(
                 FailureResponse.ForNotFound(
                     $"Vendor {id} not found. It may have been recently deleted.",
                     httpContext.TraceIdentifier
                 ),
                 statusCode: (int)HttpStatusCode.NotFound
-            ),
-            _ => FailureResults.Unknown(httpContext.TraceIdentifier),
-        };
+            );
+
+        // Returns null once the client is done: its provider claim carries the requested
+        // prefixes and the UUID the provider reported is stored on its row.
+        async Task<IResult?> ApplyNamespaceClaimAsync(VendorApiClient client)
+        {
+            ClientUpdateResult clientUpdateResult;
+            try
+            {
+                clientUpdateResult = await clientRepository.UpdateClientNamespaceClaimAsync(
+                    client.ClientUuid.ToString(),
+                    command.NamespacePrefixes
+                );
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(
+                    ex,
+                    "The namespace claim update threw for ApiClient {ApiClientId} of Vendor {Id}",
+                    client.Id,
+                    id
+                );
+                return FailureResults.Unknown(httpContext.TraceIdentifier);
+            }
+
+            switch (clientUpdateResult)
+            {
+                case ClientUpdateResult.Success success:
+                    return await PersistClientUuidAsync(client, success.ClientUuid);
+                case ClientUpdateResult.FailureIdentityProvider failureIdentityProvider:
+                    logger.LogError(
+                        "Identity provider error updating the namespace claim of ApiClient {ApiClientId} of Vendor {Id}: {Message}",
+                        client.Id,
+                        id,
+                        SanitizeForLog(failureIdentityProvider.IdentityProviderError.FailureMessage)
+                    );
+                    return FailureResults.BadGateway(
+                        "Identity provider error during client update",
+                        httpContext.TraceIdentifier
+                    );
+                case ClientUpdateResult.FailureNotFound notFound:
+                    // The stored identity-provider client disappeared: an internal consistency
+                    // failure, not caller input and not an upstream fault.
+                    logger.LogError(
+                        "Client not found in the identity provider while updating ApiClient {ApiClientId} of Vendor {Id}: {Message}",
+                        client.Id,
+                        id,
+                        SanitizeForLog(notFound.FailureMessage)
+                    );
+                    return FailureResults.Unknown(httpContext.TraceIdentifier);
+                case ClientUpdateResult.FailureUnknown unknownFailure:
+                    logger.LogError(
+                        "Error updating the namespace claim of ApiClient {ApiClientId} of Vendor {Id}: {Message}",
+                        client.Id,
+                        id,
+                        SanitizeForLog(unknownFailure.FailureMessage)
+                    );
+                    return FailureResults.Unknown(httpContext.TraceIdentifier);
+                default:
+                    logger.LogError(
+                        "Unexpected identity provider result updating ApiClient {ApiClientId} of Vendor {Id}",
+                        client.Id,
+                        id
+                    );
+                    return FailureResults.Unknown(httpContext.TraceIdentifier);
+            }
+        }
+
+        async Task<IResult?> PersistClientUuidAsync(VendorApiClient client, Guid reportedClientUuid)
+        {
+            ApiClientUuidSyncResult syncResult;
+            try
+            {
+                syncResult = await apiClientRepository.SyncApiClientUuid(
+                    client.Id,
+                    client.ClientUuid,
+                    reportedClientUuid
+                );
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(
+                    ex,
+                    "Persisting the identity-provider client UUID threw for ApiClient {ApiClientId} of Vendor {Id}; stored client state is inconsistent",
+                    client.Id,
+                    id
+                );
+                return FailureResults.Unknown(httpContext.TraceIdentifier);
+            }
+
+            switch (syncResult)
+            {
+                case ApiClientUuidSyncResult.Success or ApiClientUuidSyncResult.AlreadyApplied:
+                    return null;
+                case ApiClientUuidSyncResult.FailureStaleState:
+                    logger.LogError(
+                        "The stored client state for ApiClient {ApiClientId} of Vendor {Id} changed during this request; the reported client UUID was not persisted and stored client state is inconsistent",
+                        client.Id,
+                        id
+                    );
+                    return FailureResults.Unknown(httpContext.TraceIdentifier);
+                case ApiClientUuidSyncResult.FailureNotExists
+                or ApiClientUuidSyncResult.FailureNotExistsSafeToDelete:
+                    logger.LogError(
+                        "ApiClient {ApiClientId} of Vendor {Id} no longer exists; the reported client UUID was not persisted and stored client state is inconsistent",
+                        client.Id,
+                        id
+                    );
+                    return FailureResults.Unknown(httpContext.TraceIdentifier);
+                case ApiClientUuidSyncResult.FailureUnknown syncFailure:
+                    logger.LogError(
+                        "Failed to persist the identity-provider client UUID for ApiClient {ApiClientId} of Vendor {Id}: {Message}; stored client state is inconsistent",
+                        client.Id,
+                        id,
+                        SanitizeForLog(syncFailure.FailureMessage)
+                    );
+                    return FailureResults.Unknown(httpContext.TraceIdentifier);
+                default:
+                    logger.LogError(
+                        "Unexpected result persisting the identity-provider client UUID for ApiClient {ApiClientId} of Vendor {Id}; stored client state is inconsistent",
+                        client.Id,
+                        id
+                    );
+                    return FailureResults.Unknown(httpContext.TraceIdentifier);
+            }
+        }
+    }
+
+    private static string SanitizeForLog(string? input)
+    {
+        return LoggingUtility.SanitizeForLog(input);
     }
 
     private static async Task<IResult> Delete(

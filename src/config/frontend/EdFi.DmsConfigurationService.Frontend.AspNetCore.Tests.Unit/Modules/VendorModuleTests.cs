@@ -6,6 +6,7 @@
 using System.Net;
 using System.Text;
 using System.Text.Json.Nodes;
+using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.DataModel.Model;
@@ -30,8 +31,23 @@ public class VendorModuleTests
 {
     private readonly IVendorRepository _vendorRepository = A.Fake<IVendorRepository>();
     private readonly IApplicationRepository _applicationRepository = A.Fake<IApplicationRepository>();
+    private readonly IApiClientRepository _apiClientRepository = A.Fake<IApiClientRepository>();
+    private readonly IIdentityProviderRepository _identityProviderRepository =
+        A.Fake<IIdentityProviderRepository>();
     private readonly HttpContext _httpContext = A.Fake<HttpContext>();
     private readonly WebApplicationFactoryTracker<Program> _factoryTracker = new();
+
+    protected VendorModuleTests()
+    {
+        // A vendor with no clients keeps every pre-existing fixture exercising exactly the
+        // repository result it arranges; the namespace-claim fixtures below supply their own.
+        A.CallTo(() => _vendorRepository.GetVendorUpdateState(A<int>.Ignored))
+            .Returns(
+                new VendorUpdateStateResult.Success(
+                    new VendorUpdateState("Test Company", "Test", "test@test.com", "Test Prefix", [])
+                )
+            );
+    }
 
     [TearDown]
     public void DisposeWebApplicationFactories() => _factoryTracker.DisposeTrackedFactories();
@@ -65,7 +81,9 @@ public class VendorModuleTests
                     collection
                         .AddTransient((_) => _httpContext)
                         .AddTransient((_) => _vendorRepository)
-                        .AddTransient((_) => _applicationRepository);
+                        .AddTransient((_) => _applicationRepository)
+                        .AddTransient((_) => _apiClientRepository)
+                        .AddTransient((_) => _identityProviderRepository);
                 }
             );
         });
@@ -938,5 +956,449 @@ public class VendorModuleTests
             body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request:parameter");
             body["status"]!.GetValue<int>().Should().Be(400);
         }
+    }
+
+    /// <summary>
+    /// Arranges a vendor that owns three clients across two applications, with the identity
+    /// provider and the guarded UUID synchronization served from one mutable client state, so a
+    /// fixture can observe exactly which provider client each call targeted and which UUID was
+    /// persisted to which row.
+    /// </summary>
+    public abstract class VendorNamespaceUpdateTestBase : VendorModuleTests
+    {
+        protected sealed record ProviderCall(string TargetedUuid, Guid ReportedUuid);
+
+        protected sealed record SyncCall(int ApiClientId, Guid ExpectedUuid, Guid NewUuid);
+
+        private readonly object _stateLock = new();
+
+        protected Dictionary<int, Guid> _storedUuids = [];
+        protected List<ProviderCall> _providerCalls = [];
+        protected List<SyncCall> _syncCalls = [];
+        protected VendorApiClient[] _clients = [];
+
+        /// <summary>
+        /// Models a provider that replaces the client on every namespace update, which is what
+        /// Keycloak did before this ticket and what any future recreating provider would do.
+        /// The workflow must persist whatever UUID comes back either way.
+        /// </summary>
+        protected bool _rotateClientUuids;
+
+        protected HttpResponseMessage _response = null!;
+
+        [SetUp]
+        public void SetUpNamespaceUpdateDefaults()
+        {
+            _providerCalls = [];
+            _syncCalls = [];
+            _rotateClientUuids = false;
+
+            _clients =
+            [
+                new VendorApiClient(51, "client-51", Guid.NewGuid(), 10),
+                new VendorApiClient(52, "client-52", Guid.NewGuid(), 10),
+                new VendorApiClient(53, "client-53", Guid.NewGuid(), 30),
+            ];
+            _storedUuids = _clients.ToDictionary(client => client.Id, client => client.ClientUuid);
+
+            A.CallTo(() => _vendorRepository.GetVendorUpdateState(A<int>.Ignored))
+                .ReturnsLazily(_ =>
+                    Task.FromResult<VendorUpdateStateResult>(
+                        new VendorUpdateStateResult.Success(
+                            new VendorUpdateState(
+                                "Test Company",
+                                "Test",
+                                "test@test.com",
+                                "uri://old.org",
+                                _clients
+                            )
+                        )
+                    )
+                );
+
+            A.CallTo(() => _vendorRepository.UpdateVendor(A<VendorUpdateCommand>.Ignored))
+                .Returns(new VendorUpdateResult.Success([]));
+
+            A.CallTo(() =>
+                    _identityProviderRepository.UpdateClientNamespaceClaimAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored
+                    )
+                )
+                .ReturnsLazily(call => RecordProviderCall(call.GetArgument<string>(0)!));
+
+            A.CallTo(() =>
+                    _apiClientRepository.SyncApiClientUuid(A<int>.Ignored, A<Guid>.Ignored, A<Guid>.Ignored)
+                )
+                .ReturnsLazily(call =>
+                    RecordSync(call.GetArgument<int>(0), call.GetArgument<Guid>(1), call.GetArgument<Guid>(2))
+                );
+        }
+
+        private Task<ClientUpdateResult> RecordProviderCall(string targetedUuid)
+        {
+            Guid reportedUuid = _rotateClientUuids ? Guid.NewGuid() : Guid.Parse(targetedUuid);
+            lock (_stateLock)
+            {
+                _providerCalls.Add(new ProviderCall(targetedUuid, reportedUuid));
+            }
+
+            return Task.FromResult<ClientUpdateResult>(new ClientUpdateResult.Success(reportedUuid));
+        }
+
+        private Task<ApiClientUuidSyncResult> RecordSync(int apiClientId, Guid expectedUuid, Guid newUuid)
+        {
+            lock (_stateLock)
+            {
+                _syncCalls.Add(new SyncCall(apiClientId, expectedUuid, newUuid));
+                if (!_storedUuids.TryGetValue(apiClientId, out Guid storedUuid))
+                {
+                    return Task.FromResult<ApiClientUuidSyncResult>(
+                        new ApiClientUuidSyncResult.FailureNotExistsSafeToDelete()
+                    );
+                }
+
+                if (storedUuid == newUuid)
+                {
+                    return Task.FromResult<ApiClientUuidSyncResult>(
+                        new ApiClientUuidSyncResult.AlreadyApplied()
+                    );
+                }
+
+                if (storedUuid != expectedUuid)
+                {
+                    return Task.FromResult<ApiClientUuidSyncResult>(
+                        new ApiClientUuidSyncResult.FailureStaleState()
+                    );
+                }
+
+                _storedUuids[apiClientId] = newUuid;
+                return Task.FromResult<ApiClientUuidSyncResult>(new ApiClientUuidSyncResult.Success());
+            }
+        }
+
+        protected async Task ActUpdateAsync(HttpClient client) =>
+            _response = await client.PutAsync(
+                "/v3/vendors/1",
+                new StringContent(
+                    """
+                    {
+                        "id": 1,
+                        "company": "Test 11",
+                        "contactName": "Test",
+                        "contactEmailAddress": "test@gmail.com",
+                        "namespacePrefixes": "uri://old.org,uri://new.org"
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+
+        protected void AssertNoProviderCallOrVendorUpdate()
+        {
+            _providerCalls.Should().BeEmpty();
+            A.CallTo(() => _vendorRepository.UpdateVendor(A<VendorUpdateCommand>.Ignored))
+                .MustNotHaveHappened();
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_vendor_update_whose_provider_preserves_the_client_uuid
+        : VendorNamespaceUpdateTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            using var client = SetUpClient();
+            await ActUpdateAsync(client);
+        }
+
+        [Test]
+        public void It_returns_no_content() => _response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        [Test]
+        public void It_targets_every_resolved_client_exactly_once() =>
+            _providerCalls
+                .Select(call => call.TargetedUuid)
+                .Should()
+                .Equal(_clients.Select(client => client.ClientUuid.ToString()));
+
+        [Test]
+        public void It_persists_the_reported_uuid_for_every_client() =>
+            _syncCalls
+                .Should()
+                .Equal(
+                    _clients.Select(client => new SyncCall(client.Id, client.ClientUuid, client.ClientUuid))
+                );
+
+        [Test]
+        public void It_leaves_the_stored_uuids_unchanged() =>
+            _storedUuids
+                .Should()
+                .Equal(_clients.ToDictionary(client => client.Id, client => client.ClientUuid));
+    }
+
+    [TestFixture]
+    public class Given_a_vendor_update_whose_provider_rotates_the_client_uuid : VendorNamespaceUpdateTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            _rotateClientUuids = true;
+            using var client = SetUpClient();
+            await ActUpdateAsync(client);
+        }
+
+        [Test]
+        public void It_returns_no_content() => _response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        [Test]
+        public void It_persists_every_rotated_uuid_against_its_resolved_predecessor() =>
+            _syncCalls
+                .Should()
+                .Equal(
+                    _clients.Select(
+                        (client, index) =>
+                            new SyncCall(client.Id, client.ClientUuid, _providerCalls[index].ReportedUuid)
+                    )
+                );
+
+        [Test]
+        public void It_stores_the_rotated_uuid_on_every_row() =>
+            _storedUuids
+                .Should()
+                .Equal(
+                    _clients
+                        .Select((client, index) => (client.Id, _providerCalls[index].ReportedUuid))
+                        .ToDictionary(pair => pair.Id, pair => pair.ReportedUuid)
+                );
+
+        [Test]
+        public void It_never_leaves_a_row_pointing_at_a_replaced_client() =>
+            _storedUuids.Values.Should().NotIntersectWith(_clients.Select(client => client.ClientUuid));
+    }
+
+    [TestFixture]
+    public class Given_a_vendor_update_for_a_vendor_with_no_clients : VendorNamespaceUpdateTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            _clients = [];
+            _storedUuids = [];
+            using var client = SetUpClient();
+            await ActUpdateAsync(client);
+        }
+
+        [Test]
+        public void It_returns_no_content() => _response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        [Test]
+        public void It_calls_the_identity_provider_for_nothing() => _providerCalls.Should().BeEmpty();
+
+        // One fixture instance serves every test in the class, so the fakes accumulate calls
+        // across them. The assertion is therefore that the vendor update was reached at all.
+        [Test]
+        public void It_still_updates_the_vendor() =>
+            A.CallTo(() => _vendorRepository.UpdateVendor(A<VendorUpdateCommand>.Ignored)).MustHaveHappened();
+    }
+
+    [TestFixture]
+    public class Given_a_vendor_update_for_a_missing_vendor : VendorNamespaceUpdateTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() => _vendorRepository.GetVendorUpdateState(A<int>.Ignored))
+                .Returns(new VendorUpdateStateResult.FailureNotExists());
+
+            using var client = SetUpClient();
+            await ActUpdateAsync(client);
+        }
+
+        [Test]
+        public void It_returns_not_found() => _response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        [Test]
+        public void It_mutates_nothing() => AssertNoProviderCallOrVendorUpdate();
+    }
+
+    [TestFixture]
+    public class Given_a_vendor_update_whose_state_read_fails : VendorNamespaceUpdateTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() => _vendorRepository.GetVendorUpdateState(A<int>.Ignored))
+                .Returns(new VendorUpdateStateResult.FailureUnknown("connection reset by peer"));
+
+            using var client = SetUpClient();
+            await ActUpdateAsync(client);
+        }
+
+        [Test]
+        public void It_returns_a_sanitized_server_error() =>
+            _response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+
+        [Test]
+        public async Task It_does_not_leak_the_failure_message() =>
+            (await _response.Content.ReadAsStringAsync()).Should().NotContain("connection reset by peer");
+
+        [Test]
+        public void It_mutates_nothing() => AssertNoProviderCallOrVendorUpdate();
+    }
+
+    [TestFixture]
+    public class Given_a_vendor_update_with_an_invalid_body : VendorNamespaceUpdateTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            using var client = SetUpClient();
+            _response = await client.PutAsync(
+                "/v3/vendors/1",
+                new StringContent(
+                    """
+                    {
+                        "id": 1,
+                        "company": "",
+                        "contactName": "Test",
+                        "contactEmailAddress": "test@gmail.com",
+                        "namespacePrefixes": "uri://new.org"
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+        }
+
+        [Test]
+        public void It_returns_bad_request() => _response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        [Test]
+        public void It_never_reads_the_update_state() =>
+            A.CallTo(() => _vendorRepository.GetVendorUpdateState(A<int>.Ignored)).MustNotHaveHappened();
+
+        [Test]
+        public void It_mutates_nothing() => AssertNoProviderCallOrVendorUpdate();
+    }
+
+    [TestFixture]
+    public class Given_a_provider_failure_on_the_second_client : VendorNamespaceUpdateTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() =>
+                    _identityProviderRepository.UpdateClientNamespaceClaimAsync(
+                        _clients[1].ClientUuid.ToString(),
+                        A<string>.Ignored
+                    )
+                )
+                .Returns(
+                    new ClientUpdateResult.FailureIdentityProvider(
+                        new IdentityProviderError.Unreachable("keycloak is unreachable")
+                    )
+                );
+
+            using var client = SetUpClient();
+            await ActUpdateAsync(client);
+        }
+
+        [Test]
+        public void It_returns_bad_gateway() => _response.StatusCode.Should().Be(HttpStatusCode.BadGateway);
+
+        [Test]
+        public async Task It_does_not_leak_the_provider_message() =>
+            (await _response.Content.ReadAsStringAsync()).Should().NotContain("keycloak is unreachable");
+
+        [Test]
+        public void It_stops_before_the_third_client() => _providerCalls.Should().HaveCount(1);
+
+        [Test]
+        public void It_does_not_update_the_vendor() =>
+            A.CallTo(() => _vendorRepository.UpdateVendor(A<VendorUpdateCommand>.Ignored))
+                .MustNotHaveHappened();
+    }
+
+    [TestFixture]
+    public class Given_a_missing_stored_client_on_the_second_client : VendorNamespaceUpdateTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() =>
+                    _identityProviderRepository.UpdateClientNamespaceClaimAsync(
+                        _clients[1].ClientUuid.ToString(),
+                        A<string>.Ignored
+                    )
+                )
+                .Returns(new ClientUpdateResult.FailureNotFound("Client not found"));
+
+            using var client = SetUpClient();
+            await ActUpdateAsync(client);
+        }
+
+        [Test]
+        public void It_returns_a_sanitized_server_error() =>
+            _response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+
+        [Test]
+        public void It_does_not_update_the_vendor() =>
+            A.CallTo(() => _vendorRepository.UpdateVendor(A<VendorUpdateCommand>.Ignored))
+                .MustNotHaveHappened();
+    }
+
+    [TestFixture]
+    public class Given_a_stale_uuid_sync_on_the_second_client : VendorNamespaceUpdateTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            _rotateClientUuids = true;
+            // A non-participating writer re-pointed the row between the snapshot and the sync.
+            _storedUuids[_clients[1].Id] = Guid.NewGuid();
+
+            using var client = SetUpClient();
+            await ActUpdateAsync(client);
+        }
+
+        [Test]
+        public void It_returns_a_sanitized_server_error() =>
+            _response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+
+        [Test]
+        public void It_stops_before_the_third_client() => _providerCalls.Should().HaveCount(2);
+
+        [Test]
+        public void It_does_not_overwrite_the_newer_writer() =>
+            _storedUuids[_clients[1].Id].Should().NotBe(_providerCalls[1].ReportedUuid);
+
+        [Test]
+        public void It_does_not_update_the_vendor() =>
+            A.CallTo(() => _vendorRepository.UpdateVendor(A<VendorUpdateCommand>.Ignored))
+                .MustNotHaveHappened();
+    }
+
+    [TestFixture]
+    public class Given_a_vendor_that_vanishes_before_the_repository_update : VendorNamespaceUpdateTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() => _vendorRepository.UpdateVendor(A<VendorUpdateCommand>.Ignored))
+                .Returns(new VendorUpdateResult.FailureNotExists());
+
+            using var client = SetUpClient();
+            await ActUpdateAsync(client);
+        }
+
+        [Test]
+        public void It_returns_not_found() => _response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        [Test]
+        public void It_still_applied_every_provider_claim() => _providerCalls.Should().HaveCount(3);
     }
 }
