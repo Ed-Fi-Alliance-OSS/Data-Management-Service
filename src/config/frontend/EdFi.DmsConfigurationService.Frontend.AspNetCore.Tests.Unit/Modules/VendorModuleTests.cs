@@ -34,6 +34,7 @@ public class VendorModuleTests
     private readonly IApiClientRepository _apiClientRepository = A.Fake<IApiClientRepository>();
     private readonly IIdentityProviderRepository _identityProviderRepository =
         A.Fake<IIdentityProviderRepository>();
+    private readonly RecordingLockManager _lockManager = new();
     private readonly HttpContext _httpContext = A.Fake<HttpContext>();
     private readonly WebApplicationFactoryTracker<Program> _factoryTracker = new();
 
@@ -83,7 +84,8 @@ public class VendorModuleTests
                         .AddTransient((_) => _vendorRepository)
                         .AddTransient((_) => _applicationRepository)
                         .AddTransient((_) => _apiClientRepository)
-                        .AddTransient((_) => _identityProviderRepository);
+                        .AddTransient((_) => _identityProviderRepository)
+                        .AddSingleton<IApplicationLockManager>(_lockManager);
                 }
             );
         });
@@ -91,6 +93,28 @@ public class VendorModuleTests
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Add("X-Test-Scope", AuthorizationScopes.AdminScope.Name);
         return client;
+    }
+
+    private static async Task AssertLockConflictContract(HttpResponseMessage response)
+    {
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        JsonNode actualResponse = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
+        string correlationId = actualResponse["correlationId"]!.GetValue<string>();
+        correlationId.Should().NotBeNullOrWhiteSpace();
+        JsonNode expectedResponse = JsonNode.Parse(
+            """
+            {
+              "detail": "Unable to process the request due to a concurrent modification. Retry the request.",
+              "type": "urn:ed-fi:api:conflict",
+              "title": "Conflict",
+              "status": 409,
+              "correlationId": "{correlationId}",
+              "validationErrors": {},
+              "errors": []
+            }
+            """.Replace("{correlationId}", correlationId)
+        )!;
+        JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
     }
 
     [TestFixture]
@@ -1400,5 +1424,491 @@ public class VendorModuleTests
 
         [Test]
         public void It_still_applied_every_provider_claim() => _providerCalls.Should().HaveCount(3);
+    }
+
+    /// <summary>
+    /// Records every acquisition in order and hands out handles that remember their disposal, so
+    /// a fixture can assert both the order the aggregate locks were taken in and that every one
+    /// was released. Acquisition outcomes are scripted per position.
+    /// </summary>
+    private sealed class RecordingLockManager : IApplicationLockManager
+    {
+        private int _acquisitions;
+
+        public List<int> AcquiredApplicationIds { get; } = [];
+
+        public List<RecordingLockHandle> Handles { get; } = [];
+
+        /// <summary>
+        /// One-based acquisition position whose outcome is replaced, and the result to serve.
+        /// </summary>
+        public int ScriptedPosition { get; set; }
+
+        public ApplicationLockResult? ScriptedResult { get; set; }
+
+        public Exception? ScriptedException { get; set; }
+
+        public Action? OnAcquire { get; set; }
+
+        public void Reset()
+        {
+            _acquisitions = 0;
+            AcquiredApplicationIds.Clear();
+            Handles.Clear();
+            ScriptedPosition = 0;
+            ScriptedResult = null;
+            ScriptedException = null;
+            OnAcquire = null;
+        }
+
+        public Task<ApplicationLockResult> AcquireAsync(
+            int applicationId,
+            CancellationToken cancellationToken
+        )
+        {
+            int position = Interlocked.Increment(ref _acquisitions);
+            AcquiredApplicationIds.Add(applicationId);
+            OnAcquire?.Invoke();
+
+            if (position == ScriptedPosition)
+            {
+                if (ScriptedException is not null)
+                {
+                    throw ScriptedException;
+                }
+
+                if (ScriptedResult is not null)
+                {
+                    return Task.FromResult(ScriptedResult);
+                }
+            }
+
+            var handle = new RecordingLockHandle();
+            Handles.Add(handle);
+            return Task.FromResult<ApplicationLockResult>(new ApplicationLockResult.Acquired(handle));
+        }
+    }
+
+    private sealed class RecordingLockHandle : IAsyncDisposable
+    {
+        public bool Disposed { get; private set; }
+
+        public ValueTask DisposeAsync()
+        {
+            Disposed = true;
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    /// <summary>
+    /// A vendor whose clients are returned in a deliberately non-ascending application order, so
+    /// an implementation that locked in the order the clients arrive rather than in ascending
+    /// application id order is caught.
+    /// </summary>
+    public abstract class VendorLockTestBase : VendorNamespaceUpdateTestBase
+    {
+        protected const int LowerApplicationId = 10;
+        protected const int HigherApplicationId = 30;
+
+        [SetUp]
+        public void SetUpLockDefaults()
+        {
+            _lockManager.Reset();
+            _clients =
+            [
+                new VendorApiClient(53, "client-53", Guid.NewGuid(), HigherApplicationId),
+                new VendorApiClient(51, "client-51", Guid.NewGuid(), LowerApplicationId),
+                new VendorApiClient(52, "client-52", Guid.NewGuid(), HigherApplicationId),
+            ];
+            _storedUuids = _clients.ToDictionary(client => client.Id, client => client.ClientUuid);
+        }
+
+        protected void AssertEveryLockReleased() =>
+            _lockManager.Handles.Should().OnlyContain(handle => handle.Disposed);
+    }
+
+    [TestFixture]
+    public class Given_a_vendor_update_with_clients_across_applications : VendorLockTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            using var client = SetUpClient();
+            await ActUpdateAsync(client);
+        }
+
+        [Test]
+        public void It_returns_no_content() => _response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        [Test]
+        public void It_acquires_one_lock_per_application_in_ascending_order() =>
+            _lockManager.AcquiredApplicationIds.Should().Equal(LowerApplicationId, HigherApplicationId);
+
+        [Test]
+        public void It_releases_every_lock() => AssertEveryLockReleased();
+
+        [Test]
+        public void It_updates_every_client() => _providerCalls.Should().HaveCount(3);
+    }
+
+    [TestFixture]
+    public class Given_a_vendor_update_for_a_vendor_owning_no_clients_at_all : VendorLockTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            _clients = [];
+            _storedUuids = [];
+            using var client = SetUpClient();
+            await ActUpdateAsync(client);
+        }
+
+        [Test]
+        public void It_returns_no_content() => _response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        [Test]
+        public void It_acquires_no_lock() => _lockManager.AcquiredApplicationIds.Should().BeEmpty();
+    }
+
+    [TestFixture]
+    public class Given_a_vendor_update_whose_under_lock_state_differs : VendorLockTestBase
+    {
+        private Guid[] _underLockUuids = [];
+
+        [SetUp]
+        public async Task Act()
+        {
+            // Another workflow committed new client UUIDs for the same applications while this
+            // request waited for the locks. The reread is authoritative, so the provider must be
+            // addressed with the committed UUIDs, never the ones read before the locks.
+            VendorApiClient[] preReadClients = _clients;
+            VendorApiClient[] underLockClients =
+            [
+                .. preReadClients.Select(client => client with { ClientUuid = Guid.NewGuid() }),
+            ];
+            _underLockUuids = [.. underLockClients.Select(client => client.ClientUuid)];
+            _storedUuids = underLockClients.ToDictionary(client => client.Id, client => client.ClientUuid);
+
+            bool firstRead = true;
+            A.CallTo(() => _vendorRepository.GetVendorUpdateState(A<int>.Ignored))
+                .ReturnsLazily(_ =>
+                {
+                    VendorApiClient[] clients = firstRead ? preReadClients : underLockClients;
+                    firstRead = false;
+                    return Task.FromResult<VendorUpdateStateResult>(
+                        new VendorUpdateStateResult.Success(
+                            new VendorUpdateState(
+                                "Test Company",
+                                "Test",
+                                "test@test.com",
+                                "uri://old.org",
+                                clients
+                            )
+                        )
+                    );
+                });
+
+            using var client = SetUpClient();
+            await ActUpdateAsync(client);
+        }
+
+        [Test]
+        public void It_returns_no_content() => _response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        [Test]
+        public void It_targets_the_uuids_read_under_the_locks() =>
+            _providerCalls
+                .Select(call => call.TargetedUuid)
+                .Should()
+                .BeEquivalentTo(_underLockUuids.Select(uuid => uuid.ToString()));
+    }
+
+    [TestFixture]
+    public class Given_a_vendor_update_whose_application_set_drifts_once : VendorLockTestBase
+    {
+        private int _stateReads;
+
+        [SetUp]
+        public async Task Act()
+        {
+            // One fixture instance serves every test in the class, so the read counter is reset
+            // for each run rather than carried over from the previous one.
+            _stateReads = 0;
+            VendorApiClient[] driftedClients =
+            [
+                .. _clients,
+                new VendorApiClient(54, "client-54", Guid.NewGuid(), 40),
+            ];
+
+            A.CallTo(() => _vendorRepository.GetVendorUpdateState(A<int>.Ignored))
+                .ReturnsLazily(_ =>
+                {
+                    _stateReads++;
+                    // The second read — the one under the first set of locks — reports an
+                    // application the request never locked, so the attempt must be abandoned.
+                    VendorApiClient[] clients = _stateReads == 2 ? driftedClients : _clients;
+                    return Task.FromResult<VendorUpdateStateResult>(
+                        new VendorUpdateStateResult.Success(
+                            new VendorUpdateState(
+                                "Test Company",
+                                "Test",
+                                "test@test.com",
+                                "uri://old.org",
+                                clients
+                            )
+                        )
+                    );
+                });
+
+            using var client = SetUpClient();
+            await ActUpdateAsync(client);
+        }
+
+        [Test]
+        public void It_returns_no_content() => _response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        [Test]
+        public void It_retries_the_acquisition() =>
+            _lockManager
+                .AcquiredApplicationIds.Should()
+                .Equal(LowerApplicationId, HigherApplicationId, LowerApplicationId, HigherApplicationId);
+
+        [Test]
+        public void It_releases_every_lock() => AssertEveryLockReleased();
+    }
+
+    [TestFixture]
+    public class Given_a_vendor_update_whose_application_set_keeps_drifting : VendorLockTestBase
+    {
+        private int _stateReads;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _stateReads = 0;
+            A.CallTo(() => _vendorRepository.GetVendorUpdateState(A<int>.Ignored))
+                .ReturnsLazily(_ =>
+                {
+                    _stateReads++;
+                    // Every reread reports one more application than the pre-read did.
+                    VendorApiClient[] clients =
+                        _stateReads % 2 == 0
+                            ?
+                            [
+                                .. _clients,
+                                new VendorApiClient(
+                                    60 + _stateReads,
+                                    $"client-{60 + _stateReads}",
+                                    Guid.NewGuid(),
+                                    40 + _stateReads
+                                ),
+                            ]
+                            : _clients;
+                    return Task.FromResult<VendorUpdateStateResult>(
+                        new VendorUpdateStateResult.Success(
+                            new VendorUpdateState(
+                                "Test Company",
+                                "Test",
+                                "test@test.com",
+                                "uri://old.org",
+                                clients
+                            )
+                        )
+                    );
+                });
+
+            using var client = SetUpClient();
+            await ActUpdateAsync(client);
+        }
+
+        [Test]
+        public async Task It_returns_the_retriable_conflict_contract() =>
+            await AssertLockConflictContract(_response);
+
+        [Test]
+        public void It_gives_up_after_three_attempts() =>
+            _lockManager.AcquiredApplicationIds.Should().HaveCount(6);
+
+        [Test]
+        public void It_releases_every_lock() => AssertEveryLockReleased();
+
+        [Test]
+        public void It_mutates_nothing() => AssertNoProviderCallOrVendorUpdate();
+    }
+
+    [TestFixture]
+    public class Given_a_vendor_update_whose_first_lock_times_out : VendorLockTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            _lockManager.ScriptedPosition = 1;
+            _lockManager.ScriptedResult = new ApplicationLockResult.FailureTimeout();
+
+            using var client = SetUpClient();
+            await ActUpdateAsync(client);
+        }
+
+        [Test]
+        public async Task It_returns_the_retriable_conflict_contract() =>
+            await AssertLockConflictContract(_response);
+
+        [Test]
+        public void It_stops_at_the_first_acquisition() =>
+            _lockManager.AcquiredApplicationIds.Should().Equal(LowerApplicationId);
+
+        [Test]
+        public void It_mutates_nothing() => AssertNoProviderCallOrVendorUpdate();
+    }
+
+    [TestFixture]
+    public class Given_a_vendor_update_whose_second_lock_times_out : VendorLockTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            _lockManager.ScriptedPosition = 2;
+            _lockManager.ScriptedResult = new ApplicationLockResult.FailureTimeout();
+
+            using var client = SetUpClient();
+            await ActUpdateAsync(client);
+        }
+
+        [Test]
+        public async Task It_returns_the_retriable_conflict_contract() =>
+            await AssertLockConflictContract(_response);
+
+        [Test]
+        public void It_releases_the_lock_it_already_held() => AssertEveryLockReleased();
+
+        [Test]
+        public void It_mutates_nothing() => AssertNoProviderCallOrVendorUpdate();
+    }
+
+    [TestFixture]
+    public class Given_a_vendor_update_whose_lock_infrastructure_fails : VendorLockTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            _lockManager.ScriptedPosition = 2;
+            _lockManager.ScriptedResult = new ApplicationLockResult.FailureUnknown(
+                "the lock connection dropped"
+            );
+
+            using var client = SetUpClient();
+            await ActUpdateAsync(client);
+        }
+
+        [Test]
+        public void It_returns_a_sanitized_server_error() =>
+            _response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+
+        [Test]
+        public async Task It_does_not_leak_the_failure_message() =>
+            (await _response.Content.ReadAsStringAsync()).Should().NotContain("the lock connection dropped");
+
+        [Test]
+        public void It_releases_the_lock_it_already_held() => AssertEveryLockReleased();
+
+        [Test]
+        public void It_mutates_nothing() => AssertNoProviderCallOrVendorUpdate();
+    }
+
+    [TestFixture]
+    public class Given_a_vendor_update_whose_lock_acquisition_throws : VendorLockTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            _lockManager.ScriptedPosition = 2;
+            _lockManager.ScriptedException = new OperationCanceledException(
+                "the application lock acquisition was cancelled"
+            );
+
+            using var client = SetUpClient();
+            await ActUpdateAsync(client);
+        }
+
+        [Test]
+        public void It_does_not_return_success() =>
+            _response.StatusCode.Should().NotBe(HttpStatusCode.NoContent);
+
+        [Test]
+        public void It_releases_the_lock_it_already_held() => AssertEveryLockReleased();
+
+        [Test]
+        public void It_mutates_nothing() => AssertNoProviderCallOrVendorUpdate();
+    }
+
+    [TestFixture]
+    public class Given_a_vendor_update_whose_under_lock_reread_fails : VendorLockTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            bool firstRead = true;
+            A.CallTo(() => _vendorRepository.GetVendorUpdateState(A<int>.Ignored))
+                .ReturnsLazily(_ =>
+                {
+                    if (firstRead)
+                    {
+                        firstRead = false;
+                        return Task.FromResult<VendorUpdateStateResult>(
+                            new VendorUpdateStateResult.Success(
+                                new VendorUpdateState(
+                                    "Test Company",
+                                    "Test",
+                                    "test@test.com",
+                                    "uri://old.org",
+                                    _clients
+                                )
+                            )
+                        );
+                    }
+
+                    return Task.FromResult<VendorUpdateStateResult>(
+                        new VendorUpdateStateResult.FailureNotExists()
+                    );
+                });
+
+            using var client = SetUpClient();
+            await ActUpdateAsync(client);
+        }
+
+        [Test]
+        public void It_returns_not_found() => _response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        [Test]
+        public void It_releases_every_lock() => AssertEveryLockReleased();
+
+        [Test]
+        public void It_mutates_nothing() => AssertNoProviderCallOrVendorUpdate();
+    }
+
+    [TestFixture]
+    public class Given_a_vendor_update_that_fails_at_the_provider_under_lock : VendorLockTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() =>
+                    _identityProviderRepository.UpdateClientNamespaceClaimAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored
+                    )
+                )
+                .Returns(new ClientUpdateResult.FailureUnknown("the provider rejected the update"));
+
+            using var client = SetUpClient();
+            await ActUpdateAsync(client);
+        }
+
+        [Test]
+        public void It_returns_a_sanitized_server_error() =>
+            _response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+
+        [Test]
+        public void It_still_releases_every_lock() => AssertEveryLockReleased();
     }
 }

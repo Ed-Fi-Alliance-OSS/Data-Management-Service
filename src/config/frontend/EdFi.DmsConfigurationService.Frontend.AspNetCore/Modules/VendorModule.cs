@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Net;
+using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.DataModel.Infrastructure;
@@ -149,12 +150,13 @@ public class VendorModule : IEndpointModule
     /// Updates the vendor and re-applies the resulting namespace prefixes to the identity
     /// provider client of every ApiClient the vendor owns.
     ///
-    /// Every affected client's stable identity is resolved before any state is mutated; the
-    /// identity provider is mutated before the database commit, so a provider failure returns
-    /// with the vendor row untouched; and the UUID each successful provider call reports is
-    /// persisted to that client's row, under a guard that refuses to overwrite a newer writer,
-    /// before the next client is touched. A provider that preserves the client's identity
-    /// reports the stored UUID, which the guard resolves as already applied.
+    /// Every affected client's stable identity is resolved before any state is mutated, and the
+    /// aggregate lock of every application owning one of those clients is held across the whole
+    /// mutation. The identity provider is mutated before the database commit, so a provider
+    /// failure returns with the vendor row untouched, and the UUID each successful provider call
+    /// reports is persisted to that client's row, under a guard that refuses to overwrite a
+    /// newer writer, before the next client is touched. A provider that preserves the client's
+    /// identity reports the stored UUID, which the guard resolves as already applied.
     /// </summary>
     private static async Task<IResult> Update(
         int id,
@@ -164,6 +166,7 @@ public class VendorModule : IEndpointModule
         IVendorRepository repository,
         IApiClientRepository apiClientRepository,
         IIdentityProviderRepository clientRepository,
+        IApplicationLockManager lockManager,
         ILogger<VendorModule> logger
     )
     {
@@ -171,71 +174,58 @@ public class VendorModule : IEndpointModule
 
         await validator.GuardAsync(command);
 
-        VendorUpdateState state;
-        switch (await repository.GetVendorUpdateState(id))
+        // Invalid input never consumes a lock: acquisition follows the guards above.
+        (IResult? lockFailure, VendorUpdateState? lockedState, List<IAsyncDisposable> heldLocks) =
+            await AcquireVendorLocksAsync(id, repository, lockManager, httpContext, logger);
+        if (lockFailure is not null)
         {
-            case VendorUpdateStateResult.Success success:
-                state = success.State;
-                break;
-            case VendorUpdateStateResult.FailureNotExists:
-                return VendorNotFound();
-            case VendorUpdateStateResult.FailureUnknown failure:
-                logger.LogError(
-                    "Error reading the update state of Vendor {Id}: {Message}",
-                    id,
-                    SanitizeForLog(failure.FailureMessage)
-                );
-                return FailureResults.Unknown(httpContext.TraceIdentifier);
-            default:
-                logger.LogError("Unexpected result reading the update state of Vendor {Id}", id);
-                return FailureResults.Unknown(httpContext.TraceIdentifier);
+            return lockFailure;
         }
 
-        foreach (VendorApiClient client in state.Clients)
-        {
-            if (await ApplyNamespaceClaimAsync(client) is { } clientFailure)
-            {
-                return clientFailure;
-            }
-        }
-
-        VendorUpdateResult vendorUpdateResult;
+        VendorUpdateState state = lockedState!;
         try
         {
-            vendorUpdateResult = await repository.UpdateVendor(command);
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Repository update threw for Vendor {Id}", id);
-            return FailureResults.Unknown(httpContext.TraceIdentifier);
-        }
+            foreach (VendorApiClient client in state.Clients)
+            {
+                if (await ApplyNamespaceClaimAsync(client) is { } clientFailure)
+                {
+                    return clientFailure;
+                }
+            }
 
-        switch (vendorUpdateResult)
-        {
-            case VendorUpdateResult.Success:
-                return Results.NoContent();
-            case VendorUpdateResult.FailureNotExists:
-                return VendorNotFound();
-            case VendorUpdateResult.FailureUnknown updateFailure:
-                logger.LogError(
-                    "Repository update failed for Vendor {Id}: {Message}",
-                    id,
-                    SanitizeForLog(updateFailure.FailureMessage)
-                );
+            VendorUpdateResult vendorUpdateResult;
+            try
+            {
+                vendorUpdateResult = await repository.UpdateVendor(command);
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Repository update threw for Vendor {Id}", id);
                 return FailureResults.Unknown(httpContext.TraceIdentifier);
-            default:
-                logger.LogError("Unexpected repository update result for Vendor {Id}", id);
-                return FailureResults.Unknown(httpContext.TraceIdentifier);
-        }
+            }
 
-        IResult VendorNotFound() =>
-            Results.Json(
-                FailureResponse.ForNotFound(
-                    $"Vendor {id} not found. It may have been recently deleted.",
-                    httpContext.TraceIdentifier
-                ),
-                statusCode: (int)HttpStatusCode.NotFound
-            );
+            switch (vendorUpdateResult)
+            {
+                case VendorUpdateResult.Success:
+                    return Results.NoContent();
+                case VendorUpdateResult.FailureNotExists:
+                    return VendorNotFound(id, httpContext);
+                case VendorUpdateResult.FailureUnknown updateFailure:
+                    logger.LogError(
+                        "Repository update failed for Vendor {Id}: {Message}",
+                        id,
+                        SanitizeForLog(updateFailure.FailureMessage)
+                    );
+                    return FailureResults.Unknown(httpContext.TraceIdentifier);
+                default:
+                    logger.LogError("Unexpected repository update result for Vendor {Id}", id);
+                    return FailureResults.Unknown(httpContext.TraceIdentifier);
+            }
+        }
+        finally
+        {
+            await DisposeLocksAsync(heldLocks);
+        }
 
         // Returns null once the client is done: its provider claim carries the requested
         // prefixes and the UUID the provider reported is stored on its row.
@@ -362,6 +352,183 @@ public class VendorModule : IEndpointModule
             }
         }
     }
+
+    /// <summary>
+    /// Resolves the vendor, acquires the aggregate lock of every application that owns one of
+    /// its clients — deduplicated and in ascending application id order, the same total order
+    /// the Application and ApiClient workflows use, so no cycle between them is possible — and
+    /// rereads the vendor under those locks. The reread is authoritative: it reflects any
+    /// workflow that committed while this one waited. A vendor whose set of owning applications
+    /// changed while the locks were being acquired is retried a bounded number of times, and
+    /// persistent drift is answered as a retriable concurrency conflict. A vendor that owns no
+    /// clients mutates no provider client, so it takes no lock at all.
+    /// </summary>
+    private static async Task<(
+        IResult? Failure,
+        VendorUpdateState? State,
+        List<IAsyncDisposable> Locks
+    )> AcquireVendorLocksAsync(
+        int id,
+        IVendorRepository repository,
+        IApplicationLockManager lockManager,
+        HttpContext httpContext,
+        ILogger<VendorModule> logger
+    )
+    {
+        const int maxAttempts = 3;
+        for (int attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            (IResult? preReadFailure, VendorUpdateState? preReadState) = await ReadVendorUpdateStateAsync(
+                id,
+                repository,
+                httpContext,
+                logger
+            );
+            if (preReadFailure is not null)
+            {
+                return (preReadFailure, null, []);
+            }
+
+            int[] applicationIdsToLock = ApplicationIdsOf(preReadState!);
+            if (applicationIdsToLock.Length == 0)
+            {
+                return (null, preReadState, []);
+            }
+
+            List<IAsyncDisposable> heldLocks = [];
+            try
+            {
+                foreach (int applicationIdToLock in applicationIdsToLock)
+                {
+                    ApplicationLockResult lockResult = await lockManager.AcquireAsync(
+                        applicationIdToLock,
+                        httpContext.RequestAborted
+                    );
+                    if (LockFailureResult(lockResult, httpContext, logger) is { } lockFailure)
+                    {
+                        await DisposeLocksAsync(heldLocks);
+                        return (lockFailure, null, []);
+                    }
+
+                    heldLocks.Add(((ApplicationLockResult.Acquired)lockResult).Handle);
+                }
+
+                (IResult? underLockFailure, VendorUpdateState? underLockState) =
+                    await ReadVendorUpdateStateAsync(id, repository, httpContext, logger);
+                if (underLockFailure is not null)
+                {
+                    await DisposeLocksAsync(heldLocks);
+                    return (underLockFailure, null, []);
+                }
+
+                if (!ApplicationIdsOf(underLockState!).SequenceEqual(applicationIdsToLock))
+                {
+                    // An application was added to or removed from the vendor, or a client moved
+                    // between applications, while the locks were being acquired; retry against
+                    // the new set rather than mutate a client whose aggregate is unlocked.
+                    await DisposeLocksAsync(heldLocks);
+                    continue;
+                }
+
+                return (null, underLockState, heldLocks);
+            }
+            catch
+            {
+                // A thrown acquisition or reread — including a propagated cancellation — must
+                // not leak the locks already held.
+                await DisposeLocksAsync(heldLocks);
+                throw;
+            }
+        }
+
+        logger.LogWarning(
+            "The applications owning the clients of Vendor {Id} kept changing during lock acquisition",
+            id
+        );
+        return (RetriableConflict(httpContext), null, []);
+    }
+
+    private static int[] ApplicationIdsOf(VendorUpdateState state) =>
+        [.. state.Clients.Select(client => client.ApplicationId).Distinct().Order()];
+
+    private static async Task<(IResult? Failure, VendorUpdateState? State)> ReadVendorUpdateStateAsync(
+        int id,
+        IVendorRepository repository,
+        HttpContext httpContext,
+        ILogger<VendorModule> logger
+    )
+    {
+        switch (await repository.GetVendorUpdateState(id))
+        {
+            case VendorUpdateStateResult.Success success:
+                return (null, success.State);
+            case VendorUpdateStateResult.FailureNotExists:
+                return (VendorNotFound(id, httpContext), null);
+            case VendorUpdateStateResult.FailureUnknown failure:
+                logger.LogError(
+                    "Error reading the update state of Vendor {Id}: {Message}",
+                    id,
+                    SanitizeForLog(failure.FailureMessage)
+                );
+                return (FailureResults.Unknown(httpContext.TraceIdentifier), null);
+            default:
+                logger.LogError("Unexpected result reading the update state of Vendor {Id}", id);
+                return (FailureResults.Unknown(httpContext.TraceIdentifier), null);
+        }
+    }
+
+    /// <summary>
+    /// Maps a failed lock acquisition: a timeout is a retriable concurrency conflict, and an
+    /// infrastructure failure is a sanitized server error. Returns null when the lock was
+    /// acquired.
+    /// </summary>
+    private static IResult? LockFailureResult(
+        ApplicationLockResult lockResult,
+        HttpContext httpContext,
+        ILogger<VendorModule> logger
+    )
+    {
+        switch (lockResult)
+        {
+            case ApplicationLockResult.FailureTimeout:
+                return RetriableConflict(httpContext);
+            case ApplicationLockResult.FailureUnknown failure:
+                logger.LogError(
+                    "Failed to acquire the application lock: {Message}",
+                    SanitizeForLog(failure.FailureMessage)
+                );
+                return FailureResults.Unknown(httpContext.TraceIdentifier);
+            default:
+                return null;
+        }
+    }
+
+    private static IResult RetriableConflict(HttpContext httpContext) =>
+        Results.Json(
+            FailureResponse.ForConflict(
+                "Unable to process the request due to a concurrent modification. Retry the request.",
+                httpContext.TraceIdentifier
+            ),
+            contentType: "application/problem+json",
+            statusCode: (int)HttpStatusCode.Conflict
+        );
+
+    private static async Task DisposeLocksAsync(List<IAsyncDisposable> heldLocks)
+    {
+        foreach (IAsyncDisposable heldLock in heldLocks)
+        {
+            await heldLock.DisposeAsync();
+        }
+    }
+
+    private static IResult VendorNotFound(int id, HttpContext httpContext) =>
+        Results.Json(
+            FailureResponse.ForNotFound(
+                $"Vendor {id} not found. It may have been recently deleted.",
+                httpContext.TraceIdentifier
+            ),
+            statusCode: (int)HttpStatusCode.NotFound
+        );
 
     private static string SanitizeForLog(string? input)
     {
