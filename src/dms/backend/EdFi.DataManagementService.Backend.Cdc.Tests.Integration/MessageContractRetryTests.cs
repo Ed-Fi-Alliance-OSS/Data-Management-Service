@@ -32,6 +32,7 @@ public sealed class Given_MessageContractRetry(CdcProvider provider, string scen
     private bool _offsetAdvanced;
     private bool _partitionIdentityRetained;
     private string _phase = "startup";
+    private string _pendingDeliveryPhase = "not-started";
 
     [OneTimeSetUp]
     public async Task Setup()
@@ -97,15 +98,18 @@ public sealed class Given_MessageContractRetry(CdcProvider provider, string scen
             _interruption = await fixture.InterruptDeliveryAndRestartWorkerAsync(
                 async cancellation =>
                 {
+                    _pendingDeliveryPhase = "write-update";
                     await fixture.WriteMaterializedRowAsync(
                         JsonSerializer.SerializeToElement(updated),
                         true,
                         cancellation
                     );
+                    _pendingDeliveryPhase = "write-delete";
                     await fixture.DeleteCanonicalRowAsync(
                         _shared.CacheRow.GetProperty("documentId").GetInt64(),
                         cancellation
                     );
+                    _pendingDeliveryPhase = "observe-source";
                     DateTimeOffset deadline = DateTimeOffset.UtcNow.AddSeconds(90);
                     while (DateTimeOffset.UtcNow < deadline)
                     {
@@ -117,6 +121,7 @@ public sealed class Given_MessageContractRetry(CdcProvider provider, string scen
                         }
                         await Task.Delay(TimeSpan.FromMilliseconds(250), cancellation);
                     }
+                    _pendingDeliveryPhase = "observation-deadline";
                     throw new AssertionException(
                         "Pending source update/delete observation timed out; details redacted."
                     );
@@ -165,7 +170,10 @@ public sealed class Given_MessageContractRetry(CdcProvider provider, string scen
         {
             // This helper owns fixed diagnostic prose and strips callback/Docker exception text.
             throw new AssertionException(
-                $"{scenarioPrefix} failed in {_phase}; completed fences={JsonSerializer.Serialize(_fences)}; {failure.Message}"
+                $"{scenarioPrefix} failed in {_phase}; pending phase={_pendingDeliveryPhase}; "
+                    + $"pending records={_pendingSource.Count}, updates={_pendingSource.Count(r => Matches(r, "DocumentCache", "u"))}, "
+                    + $"deletes={_pendingSource.Count(r => Matches(r, "Document", "d"))}; "
+                    + $"completed fences={JsonSerializer.Serialize(_fences)}; {failure.Message}"
             );
         }
         catch (OperationCanceledException)
