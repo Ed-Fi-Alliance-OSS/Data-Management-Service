@@ -27,7 +27,8 @@ public sealed class Given_SqlServer_Controller_Admission
     [SetUp]
     public async Task Setup()
     {
-        _timeout = new(TimeSpan.FromMinutes(8));
+        // Include Docker startup and fresh database provisioning before bounded admission.
+        _timeout = new(TimeSpan.FromMinutes(12));
         _fixture = await CdcProviderAdmissionFixture.StartAsync(CdcProvider.SqlServer, Token);
     }
 
@@ -499,6 +500,9 @@ public sealed class Given_SqlServer_Controller_Admission
         await _fixture.RegisterAsync(Token);
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(Token);
         int collections = 0;
+        // Keep the normal provider-call and observation budgets so real preflight reaches
+        // the injected metrics fault instead of expiring at an unrelated provider read.
+        var request = _fixture.Request;
         var admission = _fixture.AdmissionWithMetrics(
             async (actual, ct) =>
             {
@@ -515,21 +519,13 @@ public sealed class Given_SqlServer_Controller_Admission
                 }
                 if (fault == "expired")
                 {
-                    await Task.Delay(TimeSpan.FromSeconds(11), ct);
+                    await Task.Delay(request.Timing.MaximumObservationAge + TimeSpan.FromSeconds(1), ct);
                     return actual;
                 }
                 return new CdcTransportResult<CdcConnectorTelemetryObservation>.Unavailable(
                     new(CdcDeploymentComponent.Metrics, CdcDeploymentFailure.Unavailable)
                 );
             }
-        );
-        var request = _fixture.WithTiming(
-            new(
-                TimeSpan.FromSeconds(20),
-                TimeSpan.FromSeconds(45),
-                TimeSpan.FromMilliseconds(250),
-                TimeSpan.FromSeconds(10)
-            )
         );
         if (fault == "cancelled")
         {

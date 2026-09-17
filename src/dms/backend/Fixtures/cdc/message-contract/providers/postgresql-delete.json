@@ -1,0 +1,117 @@
+{
+  "formatVersion": 1,
+  "provider": "postgresql",
+  "unavailableValuePlaceholder": "__debezium_unavailable_value",
+  "schemas": {
+    "row": {
+      "type": "STRUCT",
+      "optional": true,
+      "fields": {
+        "DocumentUuid": {
+          "type": "STRING",
+          "optional": false,
+          "name": "io.debezium.data.Uuid",
+          "version": 1
+        }
+      }
+    }
+  },
+  "sourceTopic": "contract-source.dms.Document",
+  "sourcePartition": {
+    "server": "contract-source"
+  },
+  "sourceOffset": {
+    "lsn": 123456,
+    "txId": 123
+  },
+  "operation": "d",
+  "keySchema": {
+    "type": "STRUCT",
+    "optional": false,
+    "name": "contract.Document.Key",
+    "fields": {
+      "DocumentUuid": {
+        "type": "STRING",
+        "optional": false,
+        "name": "io.debezium.data.Uuid",
+        "version": 1
+      }
+    }
+  },
+  "key": {
+    "DocumentUuid": {
+      "$cacheRow": "documentUuid"
+    }
+  },
+  "valueSchema": {
+    "type": "STRUCT",
+    "optional": false,
+    "name": "contract.Document.Envelope",
+    "fields": {
+      "before": {
+        "$schema": "row"
+      },
+      "after": {
+        "$schema": "row"
+      },
+      "source": {
+        "type": "STRUCT",
+        "optional": false,
+        "fields": {
+          "connector": {
+            "type": "STRING",
+            "optional": false
+          },
+          "name": {
+            "type": "STRING",
+            "optional": false
+          },
+          "db": {
+            "type": "STRING",
+            "optional": false
+          },
+          "schema": {
+            "type": "STRING",
+            "optional": false
+          },
+          "table": {
+            "type": "STRING",
+            "optional": false
+          }
+        },
+        "name": "io.debezium.connector.postgresql.Source"
+      },
+      "op": {
+        "type": "STRING",
+        "optional": false
+      }
+    }
+  },
+  "value": {
+    "before": {
+      "DocumentUuid": {
+        "$cacheRow": "documentUuid"
+      }
+    },
+    "after": null,
+    "source": {
+      "connector": "postgresql",
+      "name": "contract-source",
+      "db": "contract_db",
+      "schema": "dms",
+      "table": "Document"
+    },
+    "op": "d"
+  },
+  "headers": [
+    {
+      "key": "fixture-header",
+      "schema": {
+        "type": "STRING",
+        "optional": false
+      },
+      "value": "fixture-value"
+    }
+  ],
+  "timestamp": 1785420916123
+}

@@ -1,0 +1,15 @@
+{
+  "formatVersion": 1,
+  "contentVersion": 9223372036854775807,
+  "documentProperties": {
+    "numericContract": {
+      "integers": [9007199254740992, 9007199254740993, 9223372036854775808, 9223372036854775809, -9007199254740993],
+      "nested": [
+        {"decimal": 0.1234567890123456789012345678901, "exponent": 1234567890123456789012345678901e-31},
+        {"decimal": 0.1234567890123456789012345678902, "largeExponent": -9.8765432109876543210987654321e40, "tinyExponent": 1.2345678901234567890123456789e-40},
+        [1, 1.0, 1e0, -0.000, null, true, false, "9007199254740993", "école 雪 \"quoted\"\nline"]
+      ],
+      "siblings": [{"optional": null, "label": "first"}, {"label": "second"}]
+    }
+  }
+}

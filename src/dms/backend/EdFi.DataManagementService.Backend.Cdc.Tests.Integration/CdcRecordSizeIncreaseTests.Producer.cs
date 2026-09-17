@@ -97,7 +97,10 @@ public sealed partial class Given_Cdc_Controller_Record_Size_Increase
                 OffsetAtFailure = Position(failedOffset),
             }
         );
-        var result = await IncreaseAsync();
+        // Producer recovery also performs a final ordinary readiness pass after capacity
+        // alignment. Use the five-minute SQL Server window for this full sequence on both
+        // providers, preserving the fixture's per-call budget and observation freshness.
+        var result = await IncreaseAsync(waitTimeout: TimeSpan.FromMinutes(5));
         _evidence.Add(result);
         result.Succeeded.Should().BeTrue("{0}", JsonSerializer.Serialize(result));
         result.Ready.Should().BeTrue();

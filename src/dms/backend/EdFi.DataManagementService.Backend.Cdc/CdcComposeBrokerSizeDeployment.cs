@@ -76,7 +76,10 @@ public sealed class CdcComposeBrokerSizeDeployment : ICdcKafkaBrokerSizeDeployme
         var limit = limits.Single();
         Require(
             limit.BrokerId >= 0
-                && limit.SocketRequestMaxBytes >= request.ConnectorPolicy.MaxRecordBytes
+                && limit.SocketRequestMaxBytes
+                    >= CdcDeploymentKafkaPolicy.MinimumBrokerRequestBytes(
+                        request.ConnectorPolicy.MaxRecordBytes
+                    )
                 && limit.ReplicaFetchMaxBytes >= request.ConnectorPolicy.MaxRecordBytes
                 && limit.ReplicaFetchResponseMaxBytes >= request.ConnectorPolicy.MaxRecordBytes
         );

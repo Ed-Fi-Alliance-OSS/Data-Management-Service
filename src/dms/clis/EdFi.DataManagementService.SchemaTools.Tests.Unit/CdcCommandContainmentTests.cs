@@ -1184,6 +1184,9 @@ internal class Given_Cdc_command_managed_start(Ddl.CdcProvider provider) : CdcRe
         (await CommandAsync(CdcCommandOperation.Retire)).Succeeded.Should().BeTrue();
 
         (await File.ReadAllTextAsync(historyPath)).Should().Be(originalHistory);
+        ReadJournal()
+            .Operations.Should()
+            .NotContain(operation => operation.Effect == CdcWorkflowEffect.ReserveBinding);
         _trace.Should().NotContain("resume").And.NotContain("initialize");
     }
 

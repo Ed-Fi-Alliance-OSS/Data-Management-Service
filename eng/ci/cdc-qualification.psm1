@@ -84,7 +84,7 @@ function Export-CdcQualificationEvidence {
     param([string] $RawDirectory, [string] $Destination)
 
     New-Item -ItemType Directory -Path $Destination -Force | Out-Null
-    $attachmentPattern = '^(?:admission-evidence-|cdc-controller-|managed-lifecycle-|native-recovery-|cdc-history-|record-size-|\d+-)[a-zA-Z0-9_.-]+\.json$'
+    $attachmentPattern = '^(?:cdc-message-contract-|admission-evidence-|cdc-controller-|managed-lifecycle-|native-recovery-|cdc-history-|record-size-|\d+-)[a-zA-Z0-9_.-]+\.json$'
     foreach ($file in Get-ChildItem -LiteralPath $RawDirectory -Filter '*.trx' -Recurse) {
         [xml] $trx = Get-Content -LiteralPath $file.FullName -Raw
         # Assertion diffs and stdout can contain a whole record or an unlabelled password.
@@ -126,4 +126,23 @@ function Export-CdcQualificationEvidence {
     }
 }
 
-Export-ModuleMember -Function Get-CdcQualificationReport, Export-CdcQualificationEvidence
+function Get-CdcQualificationProviderSuite {
+    <# .SYNOPSIS
+    Returns the ordered provider suites and their complete test filters for execution and CI scheduling.
+    #>
+    param([ValidateSet('Postgresql', 'Mssql')][string] $Provider)
+
+    $categories = [ordered]@{
+        Admission = 'CdcControllerAdmission'; Lifecycle = 'CdcControllerManagedLifecycle'
+        Recovery = 'CdcControllerNativeRecovery'; RecordSize = 'CdcControllerRecordSize'
+        Telemetry = 'CdcConnectorTelemetryQualification'; History = 'CdcPublicationHistory'
+    }
+    $filters = [ordered]@{}
+    foreach ($phase in $categories.Keys) {
+        $filters[$phase] = "Category=$($categories[$phase])&Category=$($Provider)Integration"
+    }
+    $filters['MessageContract'] = "(Category=CdcMessageContractSerialized|Category=CdcMessageContractKafka)&Category=$($Provider)Integration"
+    return $filters
+}
+
+Export-ModuleMember -Function Get-CdcQualificationReport, Export-CdcQualificationEvidence, Get-CdcQualificationProviderSuite

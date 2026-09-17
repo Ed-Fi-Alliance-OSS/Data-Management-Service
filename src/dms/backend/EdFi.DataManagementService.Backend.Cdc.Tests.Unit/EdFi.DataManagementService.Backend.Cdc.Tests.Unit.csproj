@@ -25,4 +25,5 @@
     <ItemGroup>
         <ProjectReference Include="..\EdFi.DataManagementService.Backend.Cdc\EdFi.DataManagementService.Backend.Cdc.csproj" />
     </ItemGroup>
+    <Import Project="../Fixtures/cdc/message-contract/MessageContractFixtures.props" />
 </Project>
