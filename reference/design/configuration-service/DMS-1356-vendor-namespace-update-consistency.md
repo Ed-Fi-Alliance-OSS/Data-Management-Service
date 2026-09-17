@@ -7,7 +7,7 @@
 | Ticket | [DMS-1356](https://edfi.atlassian.net/browse/DMS-1356) — *Vendor namespace-prefix updates strand recreated Keycloak client UUIDs and bypass workflow serialization* |
 | Branch | `DMS-1356` (created from `main` at `5a8c5ac82`) |
 | Parent design record | `reference/design/configuration-service/DMS-1218-cms-error-response-compliance.md`, §9.1 "Workflow serialization", §9.1 "Provider update atomicity (INV-65)", §12.8 fourth-review finding V-1, §12.8.1 T-1 |
-| Revision | R2 — implementation spec **approved by the architect on 2026-09-17** with two amendments (§5.3 ambiguous current-client outcome; §9.5/§11 E2E scope), both applied in this revision. Q-1..Q-4 answered in §16. No code changed before Step 0.1. |
+| Revision | R3 — **implemented**. The R2 specification was approved by the architect on 2026-09-17 with two amendments (§5.3 ambiguous current-client outcome; §9.5/§11 E2E scope), both applied then. Q-1..Q-4 are answered in §16. §17 records what landed, §18 the verification evidence, and §19 the limitations found while implementing. |
 | Author | Samuel Lugo with Claude Code |
 
 Facts are tagged **[JIRA]** (ticket text), **[REPO]** (verified in the repository at `5a8c5ac82`), or **[DESIGN]** (a decision this spec proposes). Every **[DESIGN]** item is open to challenge until approval.
@@ -451,3 +451,82 @@ Each step is one commit. After each commit: SHA, files, behavior, tests run with
 | Q-4 | Step 3.1 **may land as its own local commit**, explicitly an intermediate checkpoint that is neither push-ready nor merge-ready; approval stop still required after it | Step 3.1 carries the caveat in its commit message |
 
 **Guardrails for the implementation (architect):** preserve the DMS-1218 lock, error-response, and compensation invariants; do not broaden into insert workflows, Application vendor moves, `DeleteVendor` provider cleanup, schema/DDL, or `RelationalMappingVersion`; keep every commit focused and local-only until the final gates pass; before push or completion run the targeted unit, PostgreSQL and SQL Server integration, formatting, and Keycloak plus self-contained E2E gates listed here, reporting MSSQL skipped counts explicitly.
+
+---
+
+## 17. As implemented
+
+Every commit below is on branch `DMS-1356`, in plan order. Each landed behind its own review gate.
+
+| Step | Commit | What it changed |
+|---|---|---|
+| 0.1 | `526bfe60d` | This document (R2, approved) and its `README.md` link |
+| 1.1 | `cbdec18a7` | Keycloak `UpdateClientNamespaceClaimAsync` becomes an identity-preserving in-place update (D-1) |
+| 1.2 | `ac43e7427` | OpenIddict regression fixtures for the same operation; no production change |
+| 2.1 | `aa5ea0473` | `IVendorRepository.GetVendorUpdateState` with its records, both relational implementations, PostgreSQL fixtures, and the three R2 spec corrections |
+| 2.2 | `c62ef6e85` | The mirrored SQL Server fixtures |
+| 3.1 | `cb878fc65` | Resolve before mutate, persist every reported UUID, commit the vendor row last (no locks, no compensation) |
+| 3.2 | `071df239f` | Lock participation: ascending acquisition, authoritative reread, bounded drift retry, release on every path |
+| 3.3 | `a04ad5dea` | Compensation, including the ambiguous current-client rule |
+| 3.3a | `1d3e9b48b` | Review finding: a replacement client that cannot be removed fails the restoration |
+| 3.4 | `9250c17f1` | Ambiguous `UpdateVendor` outcome resolved by the authoritative reread |
+| 4.1 | `d19c613e9` | PostgreSQL workflow-concurrency fixtures against the real lock manager |
+| 4.2 | `d810b2430` | The mirrored SQL Server concurrency fixtures |
+| 5.1 | `a53b0bae5` | E2E scenario and three step definitions, proven against real Keycloak |
+
+**Deviations from the plan, and why.**
+
+* **The SQL Server `GetVendorUpdateState` implementation landed in Step 2.1, not 2.2.** Adding the interface member breaks that project's compilation, so a commit without it would not build. Its fixtures stayed in Step 2.2 as planned. Approved in review.
+* **Step 3.1 landed as its own commit** carrying an explicit "intermediate checkpoint, not push-ready" caveat, per Q-4.
+* **Nothing else departed from the approved phases.** No insert workflow, Application vendor move, `DeleteVendor` provider cleanup, schema, or `RelationalMappingVersion` change was made.
+
+**Still outstanding:** Step 6.2, removing `VendorUpdateResult.Success.AffectedClientUuids` and the unlocked post-commit query that produced the defect (Q-2). The workflow already ignores it.
+
+## 18. Verification table (executable)
+
+| ID | Lane | Command shape | Result |
+|---|---|---|---|
+| V-1 | CMS backend unit | `dotnet test backend/…Backend.Tests.Unit` | 717 passed, 0 failed, 0 skipped |
+| V-2 | CMS frontend unit | `dotnet test frontend/…AspNetCore.Tests.Unit` | 1334 passed, 0 failed, 0 skipped |
+| V-3 | PostgreSQL integration | `dotnet test backend/…Postgresql.Tests.Integration` | 454 passed, 0 failed, 0 skipped |
+| V-4 | SQL Server integration | same with `ConnectionStrings__MssqlAdmin` exported | 468 passed, 0 failed, **0 skipped** |
+| V-5 | E2E, Keycloak | `./build-config.ps1 E2ETest -Configuration Release -IdentityProvider keycloak -E2ETestFilter 'FullyQualifiedName~Vendor'` | 24 passed, 0 skipped |
+| V-6 | E2E, self-contained | same with `-IdentityProvider self-contained` | 24 passed, 0 skipped |
+| V-7 | E2E, SQL Server | same with `-EnvironmentFile './.env.config.mssql.e2e' -E2ETestFilter 'TestCategory=MssqlRepresentative'` | 23 passed, 0 skipped |
+| V-8 | Formatting | `dotnet csharpier check` on every touched file | clean |
+| V-9 | Solution build | `dotnet build EdFi.DmsConfigurationService.sln --no-incremental` | succeeded, no warnings |
+
+**Mutation sensitivity.** Every guarded branch is pinned by a fixture demonstrated to fail under a targeted mutation, the DMS-1218 INV-62 bar.
+
+| Mutation | Fixtures that fail |
+|---|---|
+| Keycloak namespace update restored to delete-and-recreate | 29 of the 38 repository fixtures |
+| OpenIddict namespace update reports a rotated UUID | the unchanged-identifier fixture |
+| Vendor row lock removed from the state read | the two-connection blocking fixture (PostgreSQL; see the SQL Server limitation below) |
+| Client ordering reduced to the row id | both ordering fixtures, on both backends |
+| Tenant predicate removed | the foreign-tenant fixture, on both backends |
+| The workflow discards the reported UUID (the original defect) | 19 of 60 module fixtures |
+| Lock acquisition reversed | 3 module fixtures; and on both backends the inverse-move concurrency fixture deadlocks until both requests time out |
+| Drift check neutered | 5 module fixtures |
+| Locks not released | 3 module fixtures |
+| Pre-lock snapshot used instead of the reread | the authoritative-reread fixture |
+| Rollback of already-changed clients skipped | 12 module fixtures |
+| A known failed rollback no longer downgrades the response | 2 module fixtures |
+| The ambiguous client's own restoration skipped | 3 module fixtures |
+| Replacement-deletion guard inverted | 3 module fixtures |
+| Replacement deletion result discarded (the review finding) | 3 module fixtures |
+| Prefix comparison neutered in the command match | the partial-state fixture |
+| Compensation skipped on a proven non-commit | 3 module fixtures |
+| Compensation performed on a partial match | the no-guessing fixture |
+| Lock manager bypassed in the vendor workflow | 6 concurrency assertions, on both backends |
+| Container image rebuilt from the pre-fix code | the E2E scenario, at the first ApiClient update after the vendor change, with the sanitized 500 of a stored client that no longer exists |
+
+## 19. Limitations found during implementation
+
+These are recorded because each one bounds what the evidence above actually proves.
+
+* **The SQL Server row-lock hint is not discriminated by its fixture.** Under read committed, SQL Server already blocks a plain select on an uncommitted update, so the blocking fixture passes with or without `UPDLOCK, HOLDLOCK`. The hint is kept because it matches `GetApplicationUpdateState` and holds the row for the whole snapshot rather than one statement. The PostgreSQL fixture does discriminate, because its multi-version reads do not block without the explicit row lock.
+* **The E2E stored-identifier assertions prove stability, not liveness.** They pass against the pre-fix code too, because the rows keep their stale identifiers unchanged. What fails without the fix is the operations that follow, which address the provider by that identifier.
+* **`-SkipDockerBuild` runs the previously built image.** An E2E run after a code change without rebuilding the image tests the old code and can produce false evidence in either direction. The pre-fix comparison in the mutation table was rerun with the image rebuilt for exactly this reason, after a first attempt silently tested the fixed code.
+* **Pre-existing stranded rows are not repaired.** A row already pointing at a client deleted by an earlier vendor update cannot be recovered by CMS, which has no `clientId`-based provider re-resolution. Operators delete and recreate such ApiClients.
+* **Non-participating writers remain excluded**, as recorded in §4 D-2: ApiClient and Application inserts read the vendor's stored prefixes without taking the aggregate locks, so a client created during a vendor update receives the stored prefixes and is not repaired by that request.
