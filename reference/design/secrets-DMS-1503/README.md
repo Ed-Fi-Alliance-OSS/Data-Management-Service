@@ -83,7 +83,7 @@ The repository ships fixture plugins for its own tests, backed by a file rather 
 ## Filing
 
 **Filed 2026-09-17**, ahead of the pull request's approval and at the spike owner's direction, which is a deliberate departure from the gate DMS-1462 used.
-All five are stories under epic [DMS-1504](https://edfi.atlassian.net/browse/DMS-1504) in sprint API Platform Planning, each carrying the story from this directory in its description field and a stakeholder-facing executive summary beside it.
+All five are stories under epic [DMS-1504](https://edfi.atlassian.net/browse/DMS-1504) in sprint API Platform Refinement, each carrying the story from this directory in its description field and a stakeholder-facing executive summary beside it.
 Jira `Blocks` links record the dependency column above, including the plugin-foundation prerequisites DMS-1496 through DMS-1501, and each story relates to the spike DMS-1503.
 DMS-1555 is filed with the others and is release-gated in the same way DMS-1501 is.
 
