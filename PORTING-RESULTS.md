@@ -1,5 +1,115 @@
 # DMS-1324 port execution
 
+## Rebase onto main after DMS-1323 and qualification fixes (2026-09-16)
+
+Rebasing the existing branch preserves the message-contract work without another port.
+The 24 commits after `7f08169fb` were replayed onto main
+`5a8c5ac8275a0e8994846a6995a1bb03cd95cdaf`, which includes DMS-1323 (#1237)
+and the nightly qualification/startup fixes (#1255). The original tip `82194749d`
+is preserved at `backup/DMS-1324-port-before-main-rebase-20260916`; the rebased
+implementation tip was `24aa7b837`.
+
+Three conflict hunks involved the shared pinned-image fixture and startup cleanup tests.
+Resolutions retain main's startup diagnostics, SQL Server readiness/recovery and provider
+probes alongside this branch's producer isolation, request options and command-failure
+injection. Previously ported telemetry, lifecycle, Kafka policy and Compose fixes reconcile
+with main. The qualified image and relational mapping version remain unchanged from main.
+CSharpier formatting and `git diff --check` passed.
+
+### Completed qualification (2026-09-17)
+
+Qualification uses the shipped immutable Connect image, PostgreSQL 18.4, SQL Server 2025,
+.NET 10, Pester 5.7.1 and isolated PowerShell 7.6.6. Results below describe complete
+selected suite reports; earlier port results elsewhere in this document are historical.
+The latest code revision is `87cbaf64a`.
+
+| Lane | Selected result | Evidence prefix under `TestResults/` |
+| --- | --- | --- |
+| Contract | 6,183 passed: 4,611 controller unit, 715 CLI unit, 387 offline integration, 470 PowerShell | `main-rebase-contract-20260916-06` |
+| Kafka | 49 passed: 48 secured, one authorization-disabled | `main-rebase-kafka-20260916-01` |
+| PostgreSQL | 604 passed across all eight reports | `main-rebase-postgresql-20260916-`: Admission `02`, Lifecycle `03`, RecordSize `04`, MessageContract `05`; NativeRecovery, Telemetry, History and provider cleanup from `01` |
+| MSSQL | 606 passed across all eight reports | `main-rebase-mssql-20260916-`: RecordSize `04`; Lifecycle, NativeRecovery, Telemetry, History, provider cleanup and MessageContract from `01`; isolated Admission `03` |
+
+All 22 selected reports pass: **7,442 checks**, with zero failed, skipped or environment-failure cases.
+Provider case audits compare full parameterized names with current discovery, including
+all 502 PostgreSQL and 496 SQL Server message cases. The executable story manifest matches
+all 937 mapped unit and 1,031 mapped integration cases to passing results, with none missing.
+The PostgreSQL message export contains six expected JSON files; SQL Server contains five.
+Qualified-image records match and all 463 exported TRX attachment links resolve. All 16
+provider suite reports match their exact expected case sets, with none missing or extra.
+
+The original full PostgreSQL and MSSQL invocations retain their nonzero exits and failed
+reports. Only the individually identified passing suites and complete replacement runs
+count as acceptance evidence; no failure is hidden by relabeling an original invocation.
+
+### Qualification repairs and evidence
+
+- `6d77f6e55`: two record-size unit tests allowed deadlines to expire before reaching their
+  intended catch-up boundary under load. Equal call/wait budgets now allow preceding journal
+  persistence, preserving repeated-observation, elapsed-deadline and cancellation assertions.
+  All 12 focused cases and complete Contract 06 pass.
+- `f6928cdb7`: the shipped Debezium 3.6.0.Final connector can initially expose numeric
+  `{lsn, txId, ts_usec}` without a processed LSN. Inspection and execution of the published
+  offset class, plus live REST observations, confirmed this shape. After clarifying the
+  owning design, the adapter recognizes only that exact seed as `AwaitingStreaming` during
+  initial registration within its existing deadline. It supplies no committed position or
+  barrier/readiness evidence; reappearance after establishment fails closed. All 80 focused
+  offset/registration cases and complete PostgreSQL Admission and Lifecycle pass.
+- `ecd57161c`: a Kafka adapter unit test's 20 ms metadata scheduling allowance could expire
+  before deployment inspection began. A one-second fixture allowance retains the original
+  inspection-token cancellation and timeout-result assertions. All 169 focused cases and
+  complete Contract 06 pass.
+- `2abadebde`: nested provider-call expiry escaped initial readiness as caller cancellation.
+  The shared orchestration now normalizes only its own child-call expiry to a timeout,
+  preserving enclosing-operation and caller cancellation. Four new regression cases failed
+  before the repair; all 212 focused readiness/setup cases pass, including original-token
+  cancellation checks. Complete Contract 06 qualifies the production change.
+- `3efb03d19`: PostgreSQL's persistent-backlog fixture exhausted its 20-second window during
+  preflight, before resume. It now uses the existing SQL Server one-minute window, retaining
+  single-resume, repeated-polling, blocked-queue and elapsed-deadline assertions. Complete
+  Lifecycle 03 passes all 15 cases.
+- `213613572`: PostgreSQL producer recovery completed capacity alignment, resume, two healthy
+  observations and durable rollout, then exhausted its three-minute budget during final
+  readiness. This case uses the existing five-minute SQL Server workflow budget. The focused
+  rerun passed with a 1,500,597-byte replay on the same binding; complete RecordSize 04 passes
+  all 17 cases, preserving readiness and no-offset-reset assertions.
+- `57dfdac7d`: MSSQL admission now allows twelve minutes for Docker startup, provisioning and
+  bounded admission. Lag-fault cases retain the shared provider-call/freshness budgets so
+  preflight reaches the injected fault; expiration derives from that freshness window.
+  Admission 02 passes fresh-source admission and all four lag-fault cases. Its 35/36 result
+  retains one startup failure before the source-mismatch behavioral assertions.
+- `836b613ce`: three PostgreSQL message cases shared a retry-fixture setup failure while
+  observing pending delivery. Bounded callback-phase and source-event-count diagnostics were
+  added without changing timeouts or assertions. Focused retry passes all three cases and
+  complete MessageContract 05 passes all 502; the original failure did not recur.
+- `87cbaf64a`: SQL RecordSize's step-five interruption rejected a valid idle commit boundary
+  (`change_lsn="NULL"`, `event_serial_no=0`) already supported by main's Core parser. The
+  shared test helper now reuses Core parsing and idle-marker recognition: idle precedes all
+  rows within its commit, retains an identical idle boundary and advances earlier commits.
+  Initial/malformed markers still fail closed. Seventeen offline cases were added; four
+  valid comparisons fail against the old helper, and all 24 focused retention/selection
+  checks pass afterward. Complete Contract 06 and all 17 SQL RecordSize 04 cases pass.
+
+### Admission requalification and resource ownership
+
+MSSQL Admission 01 and 02 each retained a SQL Server startup fatal reason 2 / errno 11.
+These occurred before behavioral assertions and are outside the narrowly qualified LSA
+recreation case; automatic retries were not broadened. The deliberate LSA recreation case
+in the passing 17-case Lifecycle suite is separate from these environment failures.
+
+The complete isolated Admission 03 run passes all 36 expected cases with no failures,
+skips or environment failures. Its 72 exported attachment links resolve and the qualified
+image matches. Runtime was **87.27 minutes**, within the existing nightly 120-minute budget;
+that policy remains unchanged. Admission 02 took 126.33 minutes under concurrent load.
+SQL RecordSize 04 took 93.54 minutes.
+
+Admission 03 started after all other task lanes ended and both dedicated history servers
+were removed, without shared history admin endpoints. The startup observer captured no new
+fatal startup and was stopped after qualification. Both its process and Docker event child
+are absent. Final Docker inventory contains exactly the five pre-task containers; no
+qualification containers remain. Sanitized reports stay in `TestResults`; private logs
+and credentials are not publication artifacts.
+
 ## Rebase onto refreshed DMS-1323 (2026-09-12)
 
 - Replayed all 23 port commits from the original base `c3ae3bfff` onto
