@@ -111,36 +111,8 @@ internal static class CustomValidationPluginScenario
         response.Content.Headers.ContentType?.MediaType.Should().Be(JsonContentType);
 
         using JsonDocument document = JsonDocument.Parse(body);
-        JsonElement root = document.RootElement;
 
-        MemberNamesOf(root).Should().BeEquivalentTo(_clientVisibleMembers);
-        root.GetProperty("detail").GetString().Should().Be(ValidationErrorsArmDetail);
-        root.GetProperty("type").GetString().Should().Be(ValidationErrorsArmType);
-        root.GetProperty("title").GetString().Should().Be(ValidationErrorsArmTitle);
-        root.GetProperty("status").GetInt32().Should().Be(400);
-        root.GetProperty("correlationId").GetString().Should().NotBeNullOrWhiteSpace();
-
-        JsonElement validationErrors = root.GetProperty("validationErrors");
-        validationErrors.ValueKind.Should().Be(JsonValueKind.Object);
-        validationErrors
-            .TryGetProperty("$.firstName", out JsonElement messages)
-            .Should()
-            .BeTrue("the fixture reported its failure against that path");
-        messages.ValueKind.Should().Be(JsonValueKind.Array);
-        messages
-            .EnumerateArray()
-            .Select(message => message.GetString())
-            .Should()
-            .ContainSingle()
-            .Which.Should()
-            .Contain("reserved rejection token");
-
-        JsonElement errors = root.GetProperty("errors");
-        errors.ValueKind.Should().Be(JsonValueKind.Array);
-        errors
-            .GetArrayLength()
-            .Should()
-            .Be(0, "a path-level failure leaves the other arm empty rather than absent");
+        ShouldCarryThePathLevelRejection(document.RootElement);
 
         // The rejection happens ahead of the backend, so the write never reached the database.
         (await StudentCountAsync(harness, FailingStudentUniqueId))
@@ -243,18 +215,11 @@ internal static class CustomValidationPluginScenario
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, body);
 
         using JsonDocument document = JsonDocument.Parse(body);
-        JsonElement root = document.RootElement;
 
-        MemberNamesOf(root).Should().BeEquivalentTo(_clientVisibleMembers);
-        root.GetProperty("detail").GetString().Should().Be(ValidationErrorsArmDetail);
-        root.GetProperty("type").GetString().Should().Be(ValidationErrorsArmType);
-        root.GetProperty("title").GetString().Should().Be(ValidationErrorsArmTitle);
-        root.GetProperty("status").GetInt32().Should().Be(400);
-        root.GetProperty("validationErrors")
-            .TryGetProperty("$.firstName", out _)
-            .Should()
-            .BeTrue("the update pipeline surfaces a custom failure the same way the upsert one does");
-        root.GetProperty("errors").GetArrayLength().Should().Be(0);
+        // The same assertion the POST case makes, against the same rejected value, because "the
+        // update pipeline surfaces a custom failure the same way the upsert one does" is a claim
+        // about the whole body rather than about one member name being present.
+        ShouldCarryThePathLevelRejection(document.RootElement);
 
         using HttpResponseMessage read = await harness.HttpClient.GetAsync(locationPath);
         string readBody = await read.Content.ReadAsStringAsync();
@@ -463,6 +428,48 @@ internal static class CustomValidationPluginScenario
             .GetValue<string>()
             .Should()
             .Be(RejectOnPathToken, "with no validator registered the token is ordinary text");
+    }
+
+    /// <summary>
+    /// The whole 400 body a path-level rejection produces, asserted the same way wherever it
+    /// arrives.
+    /// </summary>
+    /// <remarks>
+    /// Shared by the POST and the PUT case rather than written twice, because the story's claim is
+    /// that both pipelines answer with the <em>same</em> shape: two assertions written separately
+    /// can agree that a member exists while disagreeing about everything inside it. Every member is
+    /// read to a value, so an empty array, a null, or a message from some other rule fails here.
+    /// </remarks>
+    private static void ShouldCarryThePathLevelRejection(JsonElement root)
+    {
+        MemberNamesOf(root).Should().BeEquivalentTo(_clientVisibleMembers);
+        root.GetProperty("detail").GetString().Should().Be(ValidationErrorsArmDetail);
+        root.GetProperty("type").GetString().Should().Be(ValidationErrorsArmType);
+        root.GetProperty("title").GetString().Should().Be(ValidationErrorsArmTitle);
+        root.GetProperty("status").GetInt32().Should().Be(400);
+        root.GetProperty("correlationId").GetString().Should().NotBeNullOrWhiteSpace();
+
+        JsonElement validationErrors = root.GetProperty("validationErrors");
+        validationErrors.ValueKind.Should().Be(JsonValueKind.Object);
+        validationErrors
+            .TryGetProperty("$.firstName", out JsonElement messages)
+            .Should()
+            .BeTrue("the fixture reported its failure against that path");
+        messages.ValueKind.Should().Be(JsonValueKind.Array);
+        messages
+            .EnumerateArray()
+            .Select(message => message.GetString())
+            .Should()
+            .ContainSingle()
+            .Which.Should()
+            .Contain("reserved rejection token");
+
+        JsonElement errors = root.GetProperty("errors");
+        errors.ValueKind.Should().Be(JsonValueKind.Array);
+        errors
+            .GetArrayLength()
+            .Should()
+            .Be(0, "a path-level failure leaves the other arm empty rather than absent");
     }
 
     /// <summary>The one failing PUT body, shared by the allowlisted and the disabled case.</summary>

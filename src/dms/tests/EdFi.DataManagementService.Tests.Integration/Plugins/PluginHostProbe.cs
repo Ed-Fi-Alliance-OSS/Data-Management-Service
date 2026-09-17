@@ -61,9 +61,19 @@ internal static class PluginHostProbe
     /// A temporary plugin root holding copies of fixtures staged under <paramref name="sourceRoot"/>.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// Named rather than declared as an overload of <see cref="CreatePluginRoot"/>: an overload
     /// taking a leading string beside a params-string method would rebind every existing call that
     /// passes more than one fixture name, silently turning the first name into a source root.
+    /// </para>
+    /// <para>
+    /// The two staging checks live here rather than in a test of their own, because this is the last
+    /// point at which either can still be diagnosed. A caller stages in <c>OneTimeSetUp</c> and the
+    /// host boots in the per-test <c>SetUp</c> that follows, so a fixture the build never produced
+    /// otherwise surfaces as a raw <see cref="DirectoryNotFoundException"/> out of the copy, and one
+    /// missing its entry assembly as a loader fatal out of host startup. Both arrive before any test
+    /// body runs, which is why a test asserting these could only ever run once they had passed.
+    /// </para>
     /// </remarks>
     public static string CreatePluginRootFromSource(string sourceRoot, params string[] fixtureNames)
     {
@@ -75,7 +85,29 @@ internal static class PluginHostProbe
 
         foreach (string fixtureName in fixtureNames)
         {
-            CopyDirectory(Path.Combine(sourceRoot, fixtureName), Path.Combine(root, fixtureName));
+            string source = Path.Combine(sourceRoot, fixtureName);
+
+            if (!Directory.Exists(source))
+            {
+                throw new InvalidOperationException(
+                    $"The build staged no '{fixtureName}' under '{sourceRoot}'. The fixture plugins are "
+                        + "published by this project's staging targets during Build."
+                );
+            }
+
+            string destination = Path.Combine(root, fixtureName);
+            CopyDirectory(source, destination);
+
+            string entryAssembly = Path.Combine(destination, $"{fixtureName}.dll");
+
+            if (!File.Exists(entryAssembly))
+            {
+                throw new InvalidOperationException(
+                    $"'{source}' holds no '{fixtureName}.dll'. A fixture is staged as a "
+                        + "framework-dependent publish directory named after its entry assembly, which is "
+                        + "the file the loader opens."
+                );
+            }
         }
 
         Directory.CreateDirectory(root);

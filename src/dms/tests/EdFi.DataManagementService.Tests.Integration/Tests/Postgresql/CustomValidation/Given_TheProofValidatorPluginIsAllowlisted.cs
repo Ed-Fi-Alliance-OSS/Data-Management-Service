@@ -7,7 +7,6 @@ using EdFi.DataManagementService.Tests.Integration.Fixtures;
 using EdFi.DataManagementService.Tests.Integration.Plugins;
 using EdFi.DataManagementService.Tests.Integration.Postgresql;
 using EdFi.DataManagementService.Tests.Integration.Scenarios;
-using FluentAssertions;
 
 namespace EdFi.DataManagementService.Tests.Integration.Tests.Postgresql.CustomValidation;
 
@@ -40,7 +39,8 @@ public sealed class Given_TheProofValidatorPluginIsAllowlisted : PostgresqlApiIn
     /// <remarks>
     /// OneTimeSetUp rather than SetUp: the base class reads <see cref="AdditionalHostSettings"/>
     /// while booting the host in its own per-test SetUp, and a derived SetUp runs after that one,
-    /// so a root created there would not exist yet when the loader looked for it.
+    /// so a root created there would not exist yet when the loader looked for it. Staging that
+    /// produced nothing usable is named here, by the copy itself, which is ahead of the first boot.
     /// </remarks>
     [OneTimeSetUp]
     public void StageThePlugin() =>
@@ -51,21 +51,6 @@ public sealed class Given_TheProofValidatorPluginIsAllowlisted : PostgresqlApiIn
 
     [OneTimeTearDown]
     public void RemoveThePlugin() => PluginHostProbe.DeleteIfPresent(_pluginRoot);
-
-    /// <summary>
-    /// Not an acceptance criterion. It turns a staging failure into a named one rather than into a
-    /// confusing 201 from every case below.
-    /// </summary>
-    [Test]
-    public void It_staged_the_fixture_plugin()
-    {
-        string directory = Path.Combine(_pluginRoot, CustomValidationPluginScenario.PluginName);
-
-        Directory.Exists(directory).Should().BeTrue();
-        File.Exists(Path.Combine(directory, $"{CustomValidationPluginScenario.PluginName}.dll"))
-            .Should()
-            .BeTrue("the fixture is published as a framework-dependent plugin directory");
-    }
 
     [Test]
     public Task It_rejects_a_matching_post_on_the_validation_errors_arm() =>
