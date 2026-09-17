@@ -1,6 +1,6 @@
 # ADR: Correlation ID normalization contract (FR-LOG-3..6)
 
-**Status:** Accepted — implemented in DMS (`src/dms`). Does not apply to CMS (`src/config`); see
+**Status:** Implemented in DMS (`src/dms`). Does not apply to CMS (`src/config`); see
 [Scope boundaries](#scope-boundaries). \
 **Date:** 2026-09-13 \
 **Author:** Stephen Fuqua.

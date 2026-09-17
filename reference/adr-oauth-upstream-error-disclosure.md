@@ -1,7 +1,6 @@
 # ADR: Upstream identity service error disclosure at the token proxy
 
-**Status:** Proposed — implemented in DMS (`src/dms`) on branch
-`copilot/dms-1457-validate-correlation-id`, pending review. Does not apply to CMS (`src/config`);
+**Status:** Implemented in DMS (`src/dms`). Does not apply to CMS (`src/config`);
 see [Scope boundaries](#scope-boundaries). \
 **Date:** 2026-09-17 \
 **Author:** Stephen Fuqua.
@@ -25,12 +24,12 @@ times in a single review cycle, each time by a fix for the previous one (see
 `OAuthManager.GetAccessTokenAsync` forwards a client-credentials token request upstream and then
 branches on the upstream status:
 
-| Upstream status | DMS behavior |
-| --- | --- |
-| `200` | the upstream response is returned unaltered |
-| `401` | `GenerateUnauthorizedResponse` builds a DMS problem-details `401` |
-| anything else | `502 Bad Gateway` with a fixed detail |
-| transport failure (`catch`) | `502 Bad Gateway` with the same fixed detail |
+| Upstream status             | DMS behavior                                                      |
+| --------------------------- | ----------------------------------------------------------------- |
+| `200`                       | the upstream response is returned unaltered                       |
+| `401`                       | `GenerateUnauthorizedResponse` builds a DMS problem-details `401` |
+| anything else               | `502 Bad Gateway` with a fixed detail                             |
+| transport failure (`catch`) | `502 Bad Gateway` with the same fixed detail                      |
 
 Three facts drive everything below.
 
@@ -58,12 +57,12 @@ fills.
 
 ### The client receives contract fields, never a body
 
-| Case | `title` | `detail` |
-| --- | --- | --- |
-| `502`, upstream-error branch | `"Upstream service unavailable"` | `GatewayErrorDetail` |
-| `502`, `catch` branch | `"Upstream service unavailable"` | `GatewayErrorDetail` |
+| Case                                    | `title`                                | `detail`                      |
+| --------------------------------------- | -------------------------------------- | ----------------------------- |
+| `502`, upstream-error branch            | `"Upstream service unavailable"`       | `GatewayErrorDetail`          |
+| `502`, `catch` branch                   | `"Upstream service unavailable"`       | `GatewayErrorDetail`          |
 | `401` with a usable `error_description` | the `error` value, or `"Unauthorized"` | the `error_description` value |
-| `401` without one | the `error` value, or `"Unauthorized"` | `UnauthorizedFallbackDetail` |
+| `401` without one                       | the `error` value, or `"Unauthorized"` | `UnauthorizedFallbackDetail`  |
 
 The two `502` branches are **deliberately indistinguishable from outside**. An upstream that
 returned a well-formed HTTP error and an upstream that could not be reached at all are different
@@ -120,12 +119,12 @@ echoed to an unauthenticated caller.
 
 What a member contributes is therefore decided **per value**, in `StandardFieldValueForLogging`:
 
-| Upstream value | Log | Client |
-| --- | --- | --- |
-| JSON string, number or boolean | the value | forwarded per the table above |
-| JSON object or array | `(malformed)` | fixed title / detail |
-| JSON `null` | `null` | fixed title / detail |
-| any shape, for `error_uri` | `(withheld)` | not applicable |
+| Upstream value                 | Log           | Client                        |
+| ------------------------------ | ------------- | ----------------------------- |
+| JSON string, number or boolean | the value     | forwarded per the table above |
+| JSON object or array           | `(malformed)` | fixed title / detail          |
+| JSON `null`                    | `null`        | fixed title / detail          |
+| any shape, for `error_uri`     | `(withheld)`  | not applicable                |
 
 `null` is kept distinct from `(malformed)` so an operator can tell an upstream that sent nothing
 from one that sent something unloggable.
@@ -254,7 +253,7 @@ first three was introduced by the fix for the one before it.
 
 ---
 
-_Drafted with AI assistance (Claude) from the PR #1251 review history and the implementation on
-the_ `copilot/dms-1457-validate-correlation-id` _branch. The behavior tables reflect the code as of
+*Drafted with AI assistance (Claude) from the PR #1251 review history and the implementation on
+the* `copilot/dms-1457-validate-correlation-id` *branch. The behavior tables reflect the code as of
 the branch HEAD on 2026-09-17 and were checked against the tests, but the decisions recorded here
-should be confirmed by the team before this ADR is marked Accepted._
+should be confirmed by the team before this ADR is marked Accepted.*
