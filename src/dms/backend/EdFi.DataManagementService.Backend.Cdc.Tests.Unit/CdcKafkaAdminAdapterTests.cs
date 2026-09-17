@@ -871,7 +871,10 @@ public partial class Given_CdcKafkaAdminAdapter
     [Test]
     public async Task It_propagates_timeout_to_the_deployment_inspection_token()
     {
-        _request = WithTimeout(_request, TimeSpan.FromMilliseconds(20));
+        // Metadata is dispatched through Task.Run before deployment inspection starts.
+        // Give that prerequisite scheduling headroom so its timeout does not bypass
+        // the inspection token whose cancellation this test verifies.
+        _request = WithTimeout(_request, TimeSpan.FromSeconds(1));
         TaskCompletionSource cancelled = new(TaskCreationOptions.RunContinuationsAsynchronously);
         A.CallTo(() => _authorization.InspectAsync(A<IReadOnlyList<int>>._, A<CancellationToken>._))
             .ReturnsLazily(
