@@ -1,0 +1,233 @@
+<Project>
+    <!--
+        Packs the two published contracts into a local folder feed, then publishes the custom
+        validation proof plugin against that feed into this project's output as a real plugin
+        directory.
+
+        Why this is not an entry in PluginIntegrationFixtures.targets' two lists, and why it does
+        not import src/dms/PluginFixtureStaging.targets: that shared file publishes every fixture
+        with one fixed command carrying no version properties, no package source and no cache
+        override, and its prune removes the whole PluginFixtures tree. This fixture consumes its
+        contracts as packed nupkgs rather than by project reference, which is the whole point of the
+        story it belongs to, so it needs a pack step ahead of the publish and two version arguments
+        and an isolated package cache during it. That is a different staging shape rather than a
+        longer list, and the shared file's own header records that generalizing it is not wanted -
+        the plugin hosting test project already declines to import it for the same kind of reason.
+
+        So this file owns its own stage root, CustomValidationPluginFixture, which the shared prune
+        can never reach, and the shared machinery is left exactly as it was.
+
+        Freshness is a recorded fingerprint rather than an Inputs/Outputs comparison against the
+        staged files, for the reason the shared file explains: a publish copies files, a copy
+        carries the source file's modification time, so a staged file is routinely older than an
+        input that has just been edited and the comparison would find the tree out of date forever.
+        Hashing the input list rather than only comparing timestamps is also what makes a deleted
+        input invalidate the record, which a timestamp comparison alone cannot do, and hashing the
+        staged list is what notices an output that has gone missing.
+    -->
+    <PropertyGroup>
+        <!-- This file's directory walked up to the repository root, so each path below reads once. -->
+        <CustomValidationFixtureRepositoryRoot
+        >$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)', '..', '..', '..', '..'))</CustomValidationFixtureRepositoryRoot>
+        <CustomValidationFixtureName>Acme.CustomValidationProof</CustomValidationFixtureName>
+        <CustomValidationFixtureProject
+        >$(CustomValidationFixtureRepositoryRoot)eng/fixtures/plugins/$(CustomValidationFixtureName)/$(CustomValidationFixtureName).csproj</CustomValidationFixtureProject>
+        <!--
+            The feed the fixture's own nuget.config names. Its path cannot vary by configuration,
+            because a nuget.config cannot expand an MSBuild property, so the configuration is
+            carried in the package version instead: a Debug and a Release build write two
+            differently named nupkgs into this one folder and never race over a file. Both
+            PackageReferences are bracket-pinned, so several nupkgs per id resolve to the pinned one
+            or fail rather than silently resolving another.
+        -->
+        <CustomValidationFixtureFeed
+        >$(CustomValidationFixtureRepositoryRoot)eng/fixtures/plugins/.local-feed</CustomValidationFixtureFeed>
+        <CustomValidationFixturePackageVersion
+        >0.0.0-cvp-$(Configuration.ToLowerInvariant())</CustomValidationFixturePackageVersion>
+        <CustomValidationContractProject
+        >$(CustomValidationFixtureRepositoryRoot)src/dms/core/EdFi.DataManagementService.CustomValidation/EdFi.DataManagementService.CustomValidation.csproj</CustomValidationContractProject>
+        <CustomValidationPluginsContractProject
+        >$(CustomValidationFixtureRepositoryRoot)src/plugins/EdFi.Api.Plugins/EdFi.Api.Plugins.csproj</CustomValidationPluginsContractProject>
+    </PropertyGroup>
+
+    <!--
+        Everything whose change can alter what the pack and the publish produce, as directories
+        rather than as a hand-written list of files: an enumeration of the files a closure happens
+        to reach today silently omits the next one somebody adds. bin/ and obj/ are excluded
+        everywhere, because generated sources change on every build and would leave the record
+        permanently out of date. The feed and the scratch package cache are outputs of this file and
+        are not inputs to it.
+
+        Each directory is written out rather than derived from an item transform, because an item
+        transform does not glob: '%(Directory)**/*' arrives as one item whose identity is that
+        literal string, so a transform here would watch nothing at all.
+    -->
+    <ItemGroup>
+        <!-- These rules themselves, since a change to them changes what they produce. -->
+        <CustomValidationFixtureInput Include="$(MSBuildThisFileFullPath)" />
+
+        <!-- The fixture: its sources, its csproj, and the nuget.config that binds it to the feed. -->
+        <CustomValidationFixtureInput
+            Include="$(CustomValidationFixtureRepositoryRoot)eng/fixtures/plugins/$(CustomValidationFixtureName)/**/*"
+            Exclude="$(CustomValidationFixtureRepositoryRoot)eng/fixtures/plugins/$(CustomValidationFixtureName)/bin/**;$(CustomValidationFixtureRepositoryRoot)eng/fixtures/plugins/$(CustomValidationFixtureName)/obj/**"
+        />
+
+        <!-- The two contracts that are packed into the feed. -->
+        <CustomValidationFixtureInput
+            Include="$(CustomValidationFixtureRepositoryRoot)src/dms/core/EdFi.DataManagementService.CustomValidation/**/*;$(CustomValidationFixtureRepositoryRoot)src/plugins/EdFi.Api.Plugins/**/*"
+            Exclude="$(CustomValidationFixtureRepositoryRoot)src/dms/core/EdFi.DataManagementService.CustomValidation/bin/**;$(CustomValidationFixtureRepositoryRoot)src/dms/core/EdFi.DataManagementService.CustomValidation/obj/**;$(CustomValidationFixtureRepositoryRoot)src/plugins/EdFi.Api.Plugins/bin/**;$(CustomValidationFixtureRepositoryRoot)src/plugins/EdFi.Api.Plugins/obj/**"
+        />
+
+        <!--
+            The build metadata a pack of those two reads: the props each tree carries, the central
+            package versions they chain to, and the NuGet configuration their restore reads.
+        -->
+        <CustomValidationFixtureInput
+            Include="$(CustomValidationFixtureRepositoryRoot)src/dms/Directory.Build.props;$(CustomValidationFixtureRepositoryRoot)src/dms/Directory.Build.targets;$(CustomValidationFixtureRepositoryRoot)src/plugins/Directory.Build.props;$(CustomValidationFixtureRepositoryRoot)src/Directory.Packages.props;$(CustomValidationFixtureRepositoryRoot)src/nuget.config"
+        />
+    </ItemGroup>
+
+    <Target
+        Name="PruneCustomValidationFixturePlugin"
+        Condition="'$(BuildingPluginFixtures)' != 'true' AND '$(DesignTimeBuild)' != 'true'"
+    >
+        <PropertyGroup>
+            <CustomValidationFixtureStageRoot
+            >$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', '$(OutDir)', 'CustomValidationPluginFixture'))</CustomValidationFixtureStageRoot>
+            <CustomValidationFixtureStampDir
+            >$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', '$(IntermediateOutputPath)', 'customvalidationproof'))</CustomValidationFixtureStampDir>
+            <CustomValidationFixtureFingerprintFile
+            >$(CustomValidationFixtureStampDir)staging.fingerprint</CustomValidationFixtureFingerprintFile>
+            <!--
+                A package cache of this staging's own, because the global packages folder is
+                consulted before any source: an already-extracted package of the same version would
+                otherwise satisfy the fixture's restore and validate bits the current pack did not
+                produce. It is emptied on every repack below, which is what keeps a fixed local
+                version honest.
+            -->
+            <CustomValidationFixturePackageCache
+            >$(CustomValidationFixtureStampDir)packages</CustomValidationFixturePackageCache>
+            <CustomValidationFixtureInputList>@(CustomValidationFixtureInput->'%(Identity)@%(ModifiedTime)', '|')</CustomValidationFixtureInputList>
+            <CustomValidationFixtureFingerprintPrefix
+            >$(Configuration)+$(NETCoreSdkRuntimeIdentifier)+$(CustomValidationFixturePackageVersion)+$([MSBuild]::StableStringHash($(CustomValidationFixtureInputList)))</CustomValidationFixtureFingerprintPrefix>
+        </PropertyGroup>
+
+        <ItemGroup Condition="Exists('$(CustomValidationFixtureStageRoot)')">
+            <CustomValidationFixtureStagedFile Include="$(CustomValidationFixtureStageRoot)**/*" />
+        </ItemGroup>
+
+        <PropertyGroup>
+            <CustomValidationFixtureStagedList>@(CustomValidationFixtureStagedFile->'%(RecursiveDir)%(Filename)%(Extension)', '|')</CustomValidationFixtureStagedList>
+            <CustomValidationFixtureFingerprint
+            >$(CustomValidationFixtureFingerprintPrefix)+$([MSBuild]::StableStringHash($(CustomValidationFixtureStagedList)))</CustomValidationFixtureFingerprint>
+        </PropertyGroup>
+
+        <ReadLinesFromFile
+            File="$(CustomValidationFixtureFingerprintFile)"
+            Condition="Exists('$(CustomValidationFixtureFingerprintFile)')"
+        >
+            <Output TaskParameter="Lines" ItemName="CustomValidationFixturePreviousLine" />
+        </ReadLinesFromFile>
+
+        <PropertyGroup>
+            <CustomValidationFixturePrevious>@(CustomValidationFixturePreviousLine)</CustomValidationFixturePrevious>
+            <CustomValidationFixtureStale
+                Condition="'$(CustomValidationFixturePrevious)' != '$(CustomValidationFixtureFingerprint)'"
+            >true</CustomValidationFixtureStale>
+        </PropertyGroup>
+
+        <!--
+            Removed wholesale rather than patched, so a file dropped from the fixture's closure
+            cannot survive as a leftover: dotnet publish overwrites what it produces and removes
+            nothing it no longer produces. The path is composed from OutDir and a literal, so it is
+            always inside this project's own output.
+        -->
+        <RemoveDir
+            Directories="$(CustomValidationFixtureStageRoot)"
+            Condition="'$(CustomValidationFixtureStale)' == 'true' AND '$(CustomValidationFixtureStageRoot)' != '' AND Exists('$(CustomValidationFixtureStageRoot)')"
+        />
+        <Delete
+            Files="$(CustomValidationFixtureFingerprintFile)"
+            Condition="'$(CustomValidationFixtureStale)' == 'true'"
+        />
+    </Target>
+
+    <Target
+        Name="StageCustomValidationFixturePlugin"
+        AfterTargets="Build"
+        DependsOnTargets="PruneCustomValidationFixturePlugin"
+        Condition="'$(BuildingPluginFixtures)' != 'true' AND '$(DesignTimeBuild)' != 'true'"
+        Inputs="@(CustomValidationFixtureInput)"
+        Outputs="$(CustomValidationFixtureFingerprintFile)"
+    >
+        <!--
+            Both emptied before anything is produced. The feed is not, because a Debug and a Release
+            build each own their own file in it and neither may delete the other's.
+        -->
+        <RemoveDir
+            Directories="$(CustomValidationFixtureStageRoot);$(CustomValidationFixturePackageCache)"
+            Condition="'$(CustomValidationFixtureStageRoot)' != '' AND '$(CustomValidationFixturePackageCache)' != ''"
+        />
+        <MakeDir Directories="$(CustomValidationFixtureFeed)" />
+
+        <!--
+            The pack neither builds nor restores, deliberately. Both contracts are already in this
+            project's reference closure, so this target runs after the build that produced them and
+            packing can take those exact assemblies. It also keeps the pack from touching either
+            project's committed lock file, which a restore could rewrite for a story that has no
+            business editing them.
+
+            PackageVersion rather than Version, so only the nupkg's version moves. Both trees
+            set AssemblyVersion and FileVersion explicitly - 8.0.0 under src/dms and 1.0.0 under
+            src/plugins - and the loader's newer-plugin-on-older-host preflight compares contract
+            AssemblyVersions, so a local repack must not move them. Under host-first resolution the
+            host serves the plugin its own copies of both assemblies at run time, and identical
+            assembly versions are what keeps that from being recorded as a substitution.
+        -->
+        <Exec
+            Command="&quot;$(DOTNET_HOST_PATH)&quot; pack &quot;$(CustomValidationContractProject)&quot; --configuration $(Configuration) --no-build --no-restore --output &quot;$(CustomValidationFixtureFeed)&quot; -p:PackageVersion=$(CustomValidationFixturePackageVersion) -p:BuildingPluginFixtures=true --nologo --verbosity quiet"
+            EnvironmentVariables="DOTNET_CLI_DO_NOT_USE_MSBUILD_SERVER=1;MSBUILDDISABLENODEREUSE=1"
+            WorkingDirectory="$(MSBuildProjectDirectory)"
+        />
+        <Exec
+            Command="&quot;$(DOTNET_HOST_PATH)&quot; pack &quot;$(CustomValidationPluginsContractProject)&quot; --configuration $(Configuration) --no-build --no-restore --output &quot;$(CustomValidationFixtureFeed)&quot; -p:PackageVersion=$(CustomValidationFixturePackageVersion) -p:BuildingPluginFixtures=true --nologo --verbosity quiet"
+            EnvironmentVariables="DOTNET_CLI_DO_NOT_USE_MSBUILD_SERVER=1;MSBUILDDISABLENODEREUSE=1"
+            WorkingDirectory="$(MSBuildProjectDirectory)"
+        />
+
+        <!--
+            The publish forces its restore, because the fixture keeps its own obj/ between builds
+            and an existing project.assets.json naming the same version would otherwise let the
+            restore stand without reading the nupkg this target just wrote. Emptying the package
+            cache above and forcing the restore here are the two halves of the same guarantee, and
+            neither alone is enough.
+
+            NUGET_PACKAGES points the restore at that cache. No runtime identifier: a
+            runtime-specific publish restores its references with that identifier too, and the
+            framework-dependent publish is what the plugin contract documents.
+        -->
+        <Exec
+            Command="&quot;$(DOTNET_HOST_PATH)&quot; publish &quot;$(CustomValidationFixtureProject)&quot; --configuration $(Configuration) --no-self-contained --force --output &quot;$(CustomValidationFixtureStageRoot)$(CustomValidationFixtureName)&quot; -p:PluginsPackageVersion=$(CustomValidationFixturePackageVersion) -p:CustomValidationPackageVersion=$(CustomValidationFixturePackageVersion) -p:BuildingPluginFixtures=true --nologo --verbosity quiet"
+            EnvironmentVariables="DOTNET_CLI_DO_NOT_USE_MSBUILD_SERVER=1;MSBUILDDISABLENODEREUSE=1;NUGET_PACKAGES=$(CustomValidationFixturePackageCache)"
+            WorkingDirectory="$(MSBuildProjectDirectory)"
+        />
+
+        <ItemGroup>
+            <CustomValidationFixtureAfterPublish Include="$(CustomValidationFixtureStageRoot)**/*" />
+        </ItemGroup>
+
+        <PropertyGroup>
+            <CustomValidationFixtureStagedListAfterPublish>@(CustomValidationFixtureAfterPublish->'%(RecursiveDir)%(Filename)%(Extension)', '|')</CustomValidationFixtureStagedListAfterPublish>
+            <CustomValidationFixtureFingerprintAfterPublish
+            >$(CustomValidationFixtureFingerprintPrefix)+$([MSBuild]::StableStringHash($(CustomValidationFixtureStagedListAfterPublish)))</CustomValidationFixtureFingerprintAfterPublish>
+        </PropertyGroup>
+
+        <MakeDir Directories="$(CustomValidationFixtureStampDir)" />
+        <WriteLinesToFile
+            File="$(CustomValidationFixtureFingerprintFile)"
+            Lines="$(CustomValidationFixtureFingerprintAfterPublish)"
+            Overwrite="true"
+            WriteOnlyWhenDifferent="true"
+        />
+    </Target>
+</Project>

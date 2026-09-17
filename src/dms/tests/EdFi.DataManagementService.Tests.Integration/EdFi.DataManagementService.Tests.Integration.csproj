@@ -50,6 +50,13 @@
         file for why staging lives here rather than in the tree the fixture sources sit in.
     -->
     <Import Project="PluginIntegrationFixtures.targets" />
+    <!--
+        Packs the two published contracts into a local folder feed and publishes the custom
+        validation proof plugin against it, into a stage root of its own. Separate from the file
+        above because that one's shared machinery publishes every fixture with one fixed command and
+        no package feed; see the targets file for the whole reason.
+    -->
+    <Import Project="CustomValidationFixturePlugin.targets" />
     <ItemGroup>
         <InternalsVisibleTo Include="EdFi.DataManagementService.Performance.Harness" />
     </ItemGroup>

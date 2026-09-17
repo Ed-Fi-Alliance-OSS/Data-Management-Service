@@ -482,3 +482,7 @@ tmpclaude*
 *.lscache
 
 docs/superpowers/
+
+# Local folder feed the custom validation proof plugin fixture restores its two contract
+# packages from. Written by the integration test project's CustomValidationFixturePlugin.targets.
+/eng/fixtures/plugins/.local-feed/

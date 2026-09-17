@@ -40,8 +40,32 @@ internal static class PluginHostProbe
     /// <summary>Where the build staged the fixture plugin directories.</summary>
     public static string StagedFixtureRoot => Path.Combine(AppContext.BaseDirectory, "PluginFixtures");
 
+    /// <summary>
+    /// Where the build staged the custom validation proof plugin.
+    /// </summary>
+    /// <remarks>
+    /// A second root rather than another directory under <see cref="StagedFixtureRoot"/>, because
+    /// that one is produced by the shared staging machinery and this fixture is produced by
+    /// CustomValidationFixturePlugin.targets, which packs its two contracts into a folder feed
+    /// first. Keeping the roots apart is what lets the shared prune remove its whole tree without
+    /// reaching this one.
+    /// </remarks>
+    public static string CustomValidationFixtureRoot =>
+        Path.Combine(AppContext.BaseDirectory, "CustomValidationPluginFixture");
+
     /// <summary>A temporary plugin root holding copies of the named staged fixtures.</summary>
-    public static string CreatePluginRoot(params string[] fixtureNames)
+    public static string CreatePluginRoot(params string[] fixtureNames) =>
+        CreatePluginRootFromSource(StagedFixtureRoot, fixtureNames);
+
+    /// <summary>
+    /// A temporary plugin root holding copies of fixtures staged under <paramref name="sourceRoot"/>.
+    /// </summary>
+    /// <remarks>
+    /// Named rather than declared as an overload of <see cref="CreatePluginRoot"/>: an overload
+    /// taking a leading string beside a params-string method would rebind every existing call that
+    /// passes more than one fixture name, silently turning the first name into a source root.
+    /// </remarks>
+    public static string CreatePluginRootFromSource(string sourceRoot, params string[] fixtureNames)
     {
         string root = Path.Combine(
             Path.GetTempPath(),
@@ -51,7 +75,7 @@ internal static class PluginHostProbe
 
         foreach (string fixtureName in fixtureNames)
         {
-            CopyDirectory(Path.Combine(StagedFixtureRoot, fixtureName), Path.Combine(root, fixtureName));
+            CopyDirectory(Path.Combine(sourceRoot, fixtureName), Path.Combine(root, fixtureName));
         }
 
         Directory.CreateDirectory(root);
