@@ -98,9 +98,7 @@ public class XsdMetaDataModuleTests
     }
 
     [TestCase(false, "", "")]
-    [TestCase(true, "", "")]
     [TestCase(false, "districtId,schoolYear", "")]
-    [TestCase(true, "districtId,schoolYear", "")]
     [TestCase(true, "", "/tenant1")]
     [TestCase(true, "districtId,schoolYear", "/tenant1")]
     [TestCase(false, "districtId,schoolYear", "/255901/2024")]
@@ -152,6 +150,38 @@ public class XsdMetaDataModuleTests
         fileResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         fileResponse.Content.Headers.ContentType!.MediaType.Should().Be("application/xml");
         (await fileResponse.Content.ReadAsStringAsync()).Should().Be("test-content");
+    }
+
+    [TestCase("/metadata/xsd")]
+    [TestCase("/metadata/xsd/ed-fi/files")]
+    [TestCase("/metadata/xsd/ed-fi/file1.xsd")]
+    public async Task MultiTenant_XsdMetaData_Returns_404_For_Unqualified_Routes(string path)
+    {
+        var metadataRouteValidator = A.Fake<IMetadataRouteValidator>();
+        A.CallTo(() => metadataRouteValidator.ValidateAsync(A<HttpContext>._, A<CancellationToken>._))
+            .Returns(true);
+        A.CallTo(() => _contentProvider!.TryLoadXsdContent("file1.xsd", "ed-fi"))
+            .Returns(new Lazy<Stream>(() => new MemoryStream(Encoding.UTF8.GetBytes("test-content"))));
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Test");
+            builder.ConfigureServices(collection =>
+            {
+                TestMockHelper.AddEssentialMocks(collection);
+                collection.AddTransient(_ => _apiService!);
+                collection.AddTransient(_ => _contentProvider!);
+                collection.AddTransient(_ => metadataRouteValidator);
+                collection.Configure<FrontendAppSettings>(options => options.MultiTenancy = true);
+            });
+        });
+        using var client = factory.CreateClient();
+
+        using var response = await client.GetAsync(path);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        A.CallTo(() => metadataRouteValidator.ValidateAsync(A<HttpContext>._, A<CancellationToken>._))
+            .MustNotHaveHappened();
+        A.CallTo(() => _contentProvider!.TryLoadXsdContent(A<string>._, A<string>._)).MustNotHaveHappened();
     }
 
     [Test]

@@ -25,11 +25,7 @@ public class XsdMetadataEndpointModule(IOptions<AppSettings> appSettings) : IEnd
             appSettings.Value.MultiTenancy
         );
 
-        List<string> routePatterns = [string.Empty];
-        if (appSettings.Value.MultiTenancy)
-        {
-            routePatterns.Add("/{tenant}");
-        }
+        List<string> routePatterns = appSettings.Value.MultiTenancy ? ["/{tenant}"] : [string.Empty];
 
         if (!string.IsNullOrEmpty(routePattern) && !routePatterns.Contains(routePattern))
         {
