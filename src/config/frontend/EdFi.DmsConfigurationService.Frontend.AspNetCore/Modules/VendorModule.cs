@@ -152,11 +152,15 @@ public class VendorModule : IEndpointModule
     ///
     /// Every affected client's stable identity is resolved before any state is mutated, and the
     /// aggregate lock of every application owning one of those clients is held across the whole
-    /// mutation. The identity provider is mutated before the database commit, so a provider
-    /// failure returns with the vendor row untouched, and the UUID each successful provider call
-    /// reports is persisted to that client's row, under a guard that refuses to overwrite a
-    /// newer writer, before the next client is touched. A provider that preserves the client's
-    /// identity reports the stored UUID, which the guard resolves as already applied.
+    /// mutation and its compensation. The identity provider is mutated before the database
+    /// commit, so a provider failure returns with the vendor row untouched, and the UUID each
+    /// successful provider call reports is persisted to that client's row, under a guard that
+    /// refuses to overwrite a newer writer, before the next client is touched. A provider that
+    /// preserves the client's identity reports the stored UUID, which the guard resolves as
+    /// already applied.
+    ///
+    /// A failure part way through restores the clients this request already changed, so the
+    /// operation never returns success with the database and the identity provider disagreeing.
     /// </summary>
     private static async Task<IResult> Update(
         int id,
@@ -183,6 +187,12 @@ public class VendorModule : IEndpointModule
         }
 
         VendorUpdateState state = lockedState!;
+
+        // Each client this request has changed, with the identity-provider client it is now
+        // known to carry, so compensation addresses the client that exists rather than the one
+        // the snapshot named.
+        List<(VendorApiClient Client, Guid CurrentUuid)> mutatedClients = [];
+
         try
         {
             foreach (VendorApiClient client in state.Clients)
@@ -209,7 +219,12 @@ public class VendorModule : IEndpointModule
                 case VendorUpdateResult.Success:
                     return Results.NoContent();
                 case VendorUpdateResult.FailureNotExists:
-                    return VendorNotFound(id, httpContext);
+                    // The vendor vanished under the locks, taking its applications and their
+                    // ApiClient rows with it, so a provider client that is already gone and a
+                    // row that no longer exists are both the expected end state.
+                    return await RollbackMutatedClientsAsync(acceptMissing: true)
+                        ? VendorNotFound(id, httpContext)
+                        : FailureResults.Unknown(httpContext.TraceIdentifier);
                 case VendorUpdateResult.FailureUnknown updateFailure:
                     logger.LogError(
                         "Repository update failed for Vendor {Id}: {Message}",
@@ -228,7 +243,8 @@ public class VendorModule : IEndpointModule
         }
 
         // Returns null once the client is done: its provider claim carries the requested
-        // prefixes and the UUID the provider reported is stored on its row.
+        // prefixes and the UUID the provider reported is stored on its row. Any other outcome
+        // compensates and returns the response the caller receives.
         async Task<IResult?> ApplyNamespaceClaimAsync(VendorApiClient client)
         {
             ClientUpdateResult clientUpdateResult;
@@ -247,7 +263,10 @@ public class VendorModule : IEndpointModule
                     client.Id,
                     id
                 );
-                return FailureResults.Unknown(httpContext.TraceIdentifier);
+                return await CompensateAmbiguousClientAsync(
+                    client,
+                    FailureResults.Unknown(httpContext.TraceIdentifier)
+                );
             }
 
             switch (clientUpdateResult)
@@ -261,20 +280,27 @@ public class VendorModule : IEndpointModule
                         id,
                         SanitizeForLog(failureIdentityProvider.IdentityProviderError.FailureMessage)
                     );
-                    return FailureResults.BadGateway(
-                        "Identity provider error during client update",
-                        httpContext.TraceIdentifier
+                    return await CompensateAmbiguousClientAsync(
+                        client,
+                        FailureResults.BadGateway(
+                            "Identity provider error during client update",
+                            httpContext.TraceIdentifier
+                        )
                     );
                 case ClientUpdateResult.FailureNotFound notFound:
                     // The stored identity-provider client disappeared: an internal consistency
-                    // failure, not caller input and not an upstream fault.
+                    // failure, not caller input and not an upstream fault. There is nothing to
+                    // restore for this client, and a client this workflow did not delete is
+                    // never recreated.
                     logger.LogError(
                         "Client not found in the identity provider while updating ApiClient {ApiClientId} of Vendor {Id}: {Message}",
                         client.Id,
                         id,
                         SanitizeForLog(notFound.FailureMessage)
                     );
-                    return FailureResults.Unknown(httpContext.TraceIdentifier);
+                    return await FinishCompensationAsync(
+                        FailureResults.Unknown(httpContext.TraceIdentifier)
+                    );
                 case ClientUpdateResult.FailureUnknown unknownFailure:
                     logger.LogError(
                         "Error updating the namespace claim of ApiClient {ApiClientId} of Vendor {Id}: {Message}",
@@ -282,14 +308,20 @@ public class VendorModule : IEndpointModule
                         id,
                         SanitizeForLog(unknownFailure.FailureMessage)
                     );
-                    return FailureResults.Unknown(httpContext.TraceIdentifier);
+                    return await CompensateAmbiguousClientAsync(
+                        client,
+                        FailureResults.Unknown(httpContext.TraceIdentifier)
+                    );
                 default:
                     logger.LogError(
                         "Unexpected identity provider result updating ApiClient {ApiClientId} of Vendor {Id}",
                         client.Id,
                         id
                     );
-                    return FailureResults.Unknown(httpContext.TraceIdentifier);
+                    return await CompensateAmbiguousClientAsync(
+                        client,
+                        FailureResults.Unknown(httpContext.TraceIdentifier)
+                    );
             }
         }
 
@@ -308,48 +340,255 @@ public class VendorModule : IEndpointModule
             {
                 logger.LogError(
                     ex,
-                    "Persisting the identity-provider client UUID threw for ApiClient {ApiClientId} of Vendor {Id}; stored client state is inconsistent",
+                    "Persisting the identity-provider client UUID threw for ApiClient {ApiClientId} of Vendor {Id}",
                     client.Id,
                     id
                 );
-                return FailureResults.Unknown(httpContext.TraceIdentifier);
+                return await CompensateUnpersistedClientAsync(client, reportedClientUuid);
             }
 
             switch (syncResult)
             {
                 case ApiClientUuidSyncResult.Success or ApiClientUuidSyncResult.AlreadyApplied:
+                    mutatedClients.Add((client, reportedClientUuid));
                     return null;
                 case ApiClientUuidSyncResult.FailureStaleState:
                     logger.LogError(
-                        "The stored client state for ApiClient {ApiClientId} of Vendor {Id} changed during this request; the reported client UUID was not persisted and stored client state is inconsistent",
+                        "The stored client state for ApiClient {ApiClientId} of Vendor {Id} changed during this request; the reported client UUID was not persisted",
                         client.Id,
                         id
                     );
-                    return FailureResults.Unknown(httpContext.TraceIdentifier);
-                case ApiClientUuidSyncResult.FailureNotExists
-                or ApiClientUuidSyncResult.FailureNotExistsSafeToDelete:
+                    return await CompensateUnpersistedClientAsync(client, reportedClientUuid);
+                case ApiClientUuidSyncResult.FailureNotExistsSafeToDelete:
                     logger.LogError(
-                        "ApiClient {ApiClientId} of Vendor {Id} no longer exists; the reported client UUID was not persisted and stored client state is inconsistent",
+                        "ApiClient {ApiClientId} of Vendor {Id} no longer exists; the reported client UUID was not persisted",
                         client.Id,
                         id
                     );
-                    return FailureResults.Unknown(httpContext.TraceIdentifier);
+                    if (reportedClientUuid != client.ClientUuid)
+                    {
+                        // The provider replaced the client and no row references the
+                        // replacement, so it is removed rather than left orphaned.
+                        await TryDeleteClientAsync(client, reportedClientUuid);
+                        return await FinishCompensationAsync(
+                            FailureResults.Unknown(httpContext.TraceIdentifier)
+                        );
+                    }
+
+                    return await CompensateUnpersistedClientAsync(
+                        client,
+                        reportedClientUuid,
+                        acceptMissing: true
+                    );
+                case ApiClientUuidSyncResult.FailureNotExists:
+                    logger.LogError(
+                        "ApiClient {ApiClientId} of Vendor {Id} no longer exists and its reported client UUID is still referenced; nothing was deleted",
+                        client.Id,
+                        id
+                    );
+                    return await CompensateUnpersistedClientAsync(
+                        client,
+                        reportedClientUuid,
+                        acceptMissing: true
+                    );
                 case ApiClientUuidSyncResult.FailureUnknown syncFailure:
                     logger.LogError(
-                        "Failed to persist the identity-provider client UUID for ApiClient {ApiClientId} of Vendor {Id}: {Message}; stored client state is inconsistent",
+                        "Failed to persist the identity-provider client UUID for ApiClient {ApiClientId} of Vendor {Id}: {Message}",
                         client.Id,
                         id,
                         SanitizeForLog(syncFailure.FailureMessage)
                     );
-                    return FailureResults.Unknown(httpContext.TraceIdentifier);
+                    return await CompensateUnpersistedClientAsync(client, reportedClientUuid);
                 default:
                     logger.LogError(
-                        "Unexpected result persisting the identity-provider client UUID for ApiClient {ApiClientId} of Vendor {Id}; stored client state is inconsistent",
+                        "Unexpected result persisting the identity-provider client UUID for ApiClient {ApiClientId} of Vendor {Id}",
                         client.Id,
                         id
                     );
-                    return FailureResults.Unknown(httpContext.TraceIdentifier);
+                    return await CompensateUnpersistedClientAsync(client, reportedClientUuid);
             }
+        }
+
+        // The current client's outcome is ambiguous: a returned failure or a thrown call does
+        // not prove the provider left it unchanged, so it is restored against the UUID resolved
+        // under the lock. When that cannot be proven the possible inconsistency is logged and
+        // the original classification stands, because an unreachable provider that refused the
+        // update most likely refused the rollback too and this client's state is unknown rather
+        // than known wrong.
+        async Task<IResult> CompensateAmbiguousClientAsync(VendorApiClient client, IResult originalFailure)
+        {
+            if (!await RestoreClientAsync(client, client.ClientUuid, acceptMissing: false))
+            {
+                logger.LogError(
+                    "Could not restore the namespace claim of ApiClient {ApiClientId} of Vendor {Id} after its update failed; stored client state may be inconsistent",
+                    client.Id,
+                    id
+                );
+            }
+
+            return await FinishCompensationAsync(originalFailure);
+        }
+
+        // The provider applied the claim but the database did not accept the UUID, so the
+        // provider client this request mutated is restored; its row is left to whichever writer
+        // owns it.
+        async Task<IResult> CompensateUnpersistedClientAsync(
+            VendorApiClient client,
+            Guid reportedClientUuid,
+            bool acceptMissing = false
+        )
+        {
+            if (!await RestoreClientAsync(client, reportedClientUuid, acceptMissing))
+            {
+                logger.LogError(
+                    "Could not restore the namespace claim of ApiClient {ApiClientId} of Vendor {Id} after its UUID could not be persisted; stored client state may be inconsistent",
+                    client.Id,
+                    id
+                );
+            }
+
+            return await FinishCompensationAsync(FailureResults.Unknown(httpContext.TraceIdentifier));
+        }
+
+        // Restores every client this request changed before the failure. A failure here is a
+        // KNOWN inconsistency — the client was definitely changed and definitely not restored —
+        // so it replaces the original classification with the sanitized server error.
+        async Task<IResult> FinishCompensationAsync(IResult originalFailure) =>
+            await RollbackMutatedClientsAsync(acceptMissing: false)
+                ? originalFailure
+                : FailureResults.Unknown(httpContext.TraceIdentifier);
+
+        // Every client is attempted even after one restoration fails, so the smallest possible
+        // number of clients is left carrying prefixes the vendor row never received.
+        async Task<bool> RollbackMutatedClientsAsync(bool acceptMissing)
+        {
+            bool allRestored = true;
+            for (int index = mutatedClients.Count - 1; index >= 0; index--)
+            {
+                (VendorApiClient client, Guid currentUuid) = mutatedClients[index];
+                if (!await RestoreClientAsync(client, currentUuid, acceptMissing))
+                {
+                    allRestored = false;
+                    logger.LogError(
+                        "Could not restore the namespace claim of ApiClient {ApiClientId} of Vendor {Id}; stored client state is inconsistent",
+                        client.Id,
+                        id
+                    );
+                }
+            }
+
+            mutatedClients.Clear();
+            return allRestored;
+        }
+
+        // Re-applies the vendor's stored prefixes to one provider client and persists whatever
+        // UUID the rollback reports, guarded by the UUID this request last observed for it.
+        async Task<bool> RestoreClientAsync(
+            VendorApiClient client,
+            Guid currentClientUuid,
+            bool acceptMissing
+        )
+        {
+            ClientUpdateResult rollbackResult;
+            try
+            {
+                rollbackResult = await clientRepository.UpdateClientNamespaceClaimAsync(
+                    currentClientUuid.ToString(),
+                    state.NamespacePrefixes
+                );
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(
+                    ex,
+                    "The namespace claim rollback threw for ApiClient {ApiClientId} of Vendor {Id}",
+                    client.Id,
+                    id
+                );
+                return false;
+            }
+
+            if (rollbackResult is ClientUpdateResult.FailureNotFound)
+            {
+                // A provider client that is already gone is the expected end state only when
+                // the aggregate itself disappeared.
+                return acceptMissing;
+            }
+
+            if (rollbackResult is not ClientUpdateResult.Success rollbackSuccess)
+            {
+                return false;
+            }
+
+            ApiClientUuidSyncResult syncResult;
+            try
+            {
+                syncResult = await apiClientRepository.SyncApiClientUuid(
+                    client.Id,
+                    currentClientUuid,
+                    rollbackSuccess.ClientUuid
+                );
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(
+                    ex,
+                    "Persisting the rolled-back client UUID threw for ApiClient {ApiClientId} of Vendor {Id}",
+                    client.Id,
+                    id
+                );
+                return false;
+            }
+
+            switch (syncResult)
+            {
+                case ApiClientUuidSyncResult.Success or ApiClientUuidSyncResult.AlreadyApplied:
+                    return true;
+                case ApiClientUuidSyncResult.FailureNotExistsSafeToDelete:
+                    if (rollbackSuccess.ClientUuid != currentClientUuid)
+                    {
+                        // The row is gone and nothing references the client the rollback
+                        // produced, so it is removed rather than left orphaned.
+                        await TryDeleteClientAsync(client, rollbackSuccess.ClientUuid);
+                    }
+
+                    return acceptMissing;
+                case ApiClientUuidSyncResult.FailureNotExists:
+                    return acceptMissing;
+                default:
+                    return false;
+            }
+        }
+
+        async Task<bool> TryDeleteClientAsync(VendorApiClient client, Guid clientUuid)
+        {
+            ClientDeleteResult deleteResult;
+            try
+            {
+                deleteResult = await clientRepository.DeleteClientAsync(clientUuid.ToString());
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(
+                    ex,
+                    "Deleting the replacement identity-provider client of ApiClient {ApiClientId} of Vendor {Id} threw; stored client state is inconsistent",
+                    client.Id,
+                    id
+                );
+                return false;
+            }
+
+            if (deleteResult is ClientDeleteResult.Success or ClientDeleteResult.FailureClientNotFound)
+            {
+                return true;
+            }
+
+            logger.LogError(
+                "Could not delete the replacement identity-provider client of ApiClient {ApiClientId} of Vendor {Id}; stored client state is inconsistent",
+                client.Id,
+                id
+            );
+            return false;
         }
     }
 

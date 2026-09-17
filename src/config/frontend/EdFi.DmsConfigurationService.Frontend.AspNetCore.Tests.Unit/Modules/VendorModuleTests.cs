@@ -990,16 +990,28 @@ public class VendorModuleTests
     /// </summary>
     public abstract class VendorNamespaceUpdateTestBase : VendorModuleTests
     {
-        protected sealed record ProviderCall(string TargetedUuid, Guid ReportedUuid);
+        protected sealed record ProviderCall(string TargetedUuid, Guid ReportedUuid, string Prefixes);
 
         protected sealed record SyncCall(int ApiClientId, Guid ExpectedUuid, Guid NewUuid);
 
         private readonly object _stateLock = new();
 
+        protected const string StoredPrefixes = "uri://old.org";
+        protected const string RequestedPrefixes = "uri://old.org,uri://new.org";
+
         protected Dictionary<int, Guid> _storedUuids = [];
         protected List<ProviderCall> _providerCalls = [];
         protected List<SyncCall> _syncCalls = [];
+        protected List<string> _deletedClientUuids = [];
         protected VendorApiClient[] _clients = [];
+
+        /// <summary>The claim updates that carry the newly requested prefixes.</summary>
+        protected List<ProviderCall> UpdateCalls =>
+            [.. _providerCalls.Where(call => call.Prefixes == RequestedPrefixes)];
+
+        /// <summary>The claim updates that put the vendor's stored prefixes back.</summary>
+        protected List<ProviderCall> RollbackCalls =>
+            [.. _providerCalls.Where(call => call.Prefixes == StoredPrefixes)];
 
         /// <summary>
         /// Models a provider that replaces the client on every namespace update, which is what
@@ -1015,6 +1027,7 @@ public class VendorModuleTests
         {
             _providerCalls = [];
             _syncCalls = [];
+            _deletedClientUuids = [];
             _rotateClientUuids = false;
 
             _clients =
@@ -1033,7 +1046,7 @@ public class VendorModuleTests
                                 "Test Company",
                                 "Test",
                                 "test@test.com",
-                                "uri://old.org",
+                                StoredPrefixes,
                                 _clients
                             )
                         )
@@ -1049,7 +1062,20 @@ public class VendorModuleTests
                         A<string>.Ignored
                     )
                 )
-                .ReturnsLazily(call => RecordProviderCall(call.GetArgument<string>(0)!));
+                .ReturnsLazily(call =>
+                    RecordProviderCall(call.GetArgument<string>(0)!, call.GetArgument<string>(1)!)
+                );
+
+            A.CallTo(() => _identityProviderRepository.DeleteClientAsync(A<string>.Ignored))
+                .ReturnsLazily(call =>
+                {
+                    lock (_stateLock)
+                    {
+                        _deletedClientUuids.Add(call.GetArgument<string>(0)!);
+                    }
+
+                    return Task.FromResult<ClientDeleteResult>(new ClientDeleteResult.Success());
+                });
 
             A.CallTo(() =>
                     _apiClientRepository.SyncApiClientUuid(A<int>.Ignored, A<Guid>.Ignored, A<Guid>.Ignored)
@@ -1059,12 +1085,12 @@ public class VendorModuleTests
                 );
         }
 
-        private Task<ClientUpdateResult> RecordProviderCall(string targetedUuid)
+        private Task<ClientUpdateResult> RecordProviderCall(string targetedUuid, string prefixes)
         {
             Guid reportedUuid = _rotateClientUuids ? Guid.NewGuid() : Guid.Parse(targetedUuid);
             lock (_stateLock)
             {
-                _providerCalls.Add(new ProviderCall(targetedUuid, reportedUuid));
+                _providerCalls.Add(new ProviderCall(targetedUuid, reportedUuid, prefixes));
             }
 
             return Task.FromResult<ClientUpdateResult>(new ClientUpdateResult.Success(reportedUuid));
@@ -1118,6 +1144,23 @@ public class VendorModuleTests
                     "application/json"
                 )
             );
+
+        /// <summary>
+        /// Every client the request changed carries the vendor's stored prefixes again, and no
+        /// row was left pointing at a client the rollback replaced.
+        /// </summary>
+        protected void AssertClientsRestored(params VendorApiClient[] clients)
+        {
+            foreach (VendorApiClient client in clients)
+            {
+                RollbackCalls
+                    .Should()
+                    .Contain(
+                        call => call.ReportedUuid == _storedUuids[client.Id],
+                        $"ApiClient {client.Id} should have been restored and its row synchronized"
+                    );
+            }
+        }
 
         protected void AssertNoProviderCallOrVendorUpdate()
         {
@@ -1315,10 +1358,12 @@ public class VendorModuleTests
         [SetUp]
         public async Task Act()
         {
+            // Only the claim update fails; putting the stored prefixes back still works, so the
+            // failing client's own state is provably restored.
             A.CallTo(() =>
                     _identityProviderRepository.UpdateClientNamespaceClaimAsync(
                         _clients[1].ClientUuid.ToString(),
-                        A<string>.Ignored
+                        RequestedPrefixes
                     )
                 )
                 .Returns(
@@ -1339,12 +1384,109 @@ public class VendorModuleTests
             (await _response.Content.ReadAsStringAsync()).Should().NotContain("keycloak is unreachable");
 
         [Test]
-        public void It_stops_before_the_third_client() => _providerCalls.Should().HaveCount(1);
+        public void It_stops_before_the_third_client() =>
+            UpdateCalls.Should().NotContain(call => call.TargetedUuid == _clients[2].ClientUuid.ToString());
+
+        [Test]
+        public void It_restores_the_ambiguous_client_and_the_one_already_changed() =>
+            RollbackCalls
+                .Select(call => call.TargetedUuid)
+                .Should()
+                .BeEquivalentTo(_clients[1].ClientUuid.ToString(), _clients[0].ClientUuid.ToString());
 
         [Test]
         public void It_does_not_update_the_vendor() =>
             A.CallTo(() => _vendorRepository.UpdateVendor(A<VendorUpdateCommand>.Ignored))
                 .MustNotHaveHappened();
+    }
+
+    [TestFixture]
+    public class Given_a_provider_failure_whose_own_rollback_cannot_be_proven : VendorNamespaceUpdateTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            // The provider refuses every call for this client, so whether its claim changed is
+            // unknown rather than known wrong.
+            A.CallTo(() =>
+                    _identityProviderRepository.UpdateClientNamespaceClaimAsync(
+                        _clients[1].ClientUuid.ToString(),
+                        A<string>.Ignored
+                    )
+                )
+                .Returns(
+                    new ClientUpdateResult.FailureIdentityProvider(
+                        new IdentityProviderError.Unreachable("keycloak is unreachable")
+                    )
+                );
+
+            using var client = SetUpClient();
+            await ActUpdateAsync(client);
+        }
+
+        [Test]
+        public void It_keeps_the_original_classification() =>
+            _response.StatusCode.Should().Be(HttpStatusCode.BadGateway);
+
+        [Test]
+        public void It_still_restores_the_client_it_had_already_changed() =>
+            RollbackCalls
+                .Select(call => call.TargetedUuid)
+                .Should()
+                .Contain(_clients[0].ClientUuid.ToString());
+
+        [Test]
+        public void It_does_not_update_the_vendor() =>
+            A.CallTo(() => _vendorRepository.UpdateVendor(A<VendorUpdateCommand>.Ignored))
+                .MustNotHaveHappened();
+    }
+
+    [TestFixture]
+    public class Given_a_failed_rollback_of_a_known_mutated_client : VendorNamespaceUpdateTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            // The second client's update fails, and restoring the FIRST client — which this
+            // request definitely changed — also fails. That is a known inconsistency, so the
+            // upstream classification is replaced by the sanitized server error.
+            A.CallTo(() =>
+                    _identityProviderRepository.UpdateClientNamespaceClaimAsync(
+                        _clients[1].ClientUuid.ToString(),
+                        RequestedPrefixes
+                    )
+                )
+                .Returns(
+                    new ClientUpdateResult.FailureIdentityProvider(
+                        new IdentityProviderError.Unreachable("keycloak is unreachable")
+                    )
+                );
+            A.CallTo(() =>
+                    _identityProviderRepository.UpdateClientNamespaceClaimAsync(
+                        _clients[0].ClientUuid.ToString(),
+                        StoredPrefixes
+                    )
+                )
+                .Returns(new ClientUpdateResult.FailureUnknown("the rollback was rejected"));
+
+            using var client = SetUpClient();
+            await ActUpdateAsync(client);
+        }
+
+        [Test]
+        public void It_downgrades_to_a_sanitized_server_error() =>
+            _response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+
+        [Test]
+        public async Task It_does_not_leak_the_rollback_message() =>
+            (await _response.Content.ReadAsStringAsync()).Should().NotContain("the rollback was rejected");
+
+        [Test]
+        public void It_still_restored_the_ambiguous_client() =>
+            RollbackCalls
+                .Select(call => call.TargetedUuid)
+                .Should()
+                .Contain(_clients[1].ClientUuid.ToString());
     }
 
     [TestFixture]
@@ -1368,6 +1510,17 @@ public class VendorModuleTests
         [Test]
         public void It_returns_a_sanitized_server_error() =>
             _response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+
+        [Test]
+        public void It_never_recreates_the_missing_client() =>
+            RollbackCalls.Should().NotContain(call => call.TargetedUuid == _clients[1].ClientUuid.ToString());
+
+        [Test]
+        public void It_restores_the_client_it_had_already_changed() =>
+            RollbackCalls
+                .Select(call => call.TargetedUuid)
+                .Should()
+                .Contain(_clients[0].ClientUuid.ToString());
 
         [Test]
         public void It_does_not_update_the_vendor() =>
@@ -1394,11 +1547,19 @@ public class VendorModuleTests
             _response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
 
         [Test]
-        public void It_stops_before_the_third_client() => _providerCalls.Should().HaveCount(2);
+        public void It_stops_before_the_third_client() =>
+            UpdateCalls.Should().NotContain(call => call.TargetedUuid == _clients[2].ClientUuid.ToString());
+
+        [Test]
+        public void It_restores_the_client_it_mutated_at_the_provider() =>
+            RollbackCalls
+                .Select(call => call.TargetedUuid)
+                .Should()
+                .Contain(UpdateCalls[1].ReportedUuid.ToString());
 
         [Test]
         public void It_does_not_overwrite_the_newer_writer() =>
-            _storedUuids[_clients[1].Id].Should().NotBe(_providerCalls[1].ReportedUuid);
+            _storedUuids[_clients[1].Id].Should().NotBe(UpdateCalls[1].ReportedUuid);
 
         [Test]
         public void It_does_not_update_the_vendor() =>
@@ -1423,7 +1584,10 @@ public class VendorModuleTests
         public void It_returns_not_found() => _response.StatusCode.Should().Be(HttpStatusCode.NotFound);
 
         [Test]
-        public void It_still_applied_every_provider_claim() => _providerCalls.Should().HaveCount(3);
+        public void It_applied_every_provider_claim() => UpdateCalls.Should().HaveCount(3);
+
+        [Test]
+        public void It_restores_every_client_it_changed() => RollbackCalls.Should().HaveCount(3);
     }
 
     /// <summary>
@@ -1438,6 +1602,12 @@ public class VendorModuleTests
         public List<int> AcquiredApplicationIds { get; } = [];
 
         public List<RecordingLockHandle> Handles { get; } = [];
+
+        /// <summary>
+        /// Reads the number of identity-provider calls made so far, captured by each handle when
+        /// it is released, so a fixture can prove compensation ran before the locks were let go.
+        /// </summary>
+        public Func<int>? ProviderCallCount { get; set; }
 
         /// <summary>
         /// One-based acquisition position whose outcome is replaced, and the result to serve.
@@ -1483,19 +1653,22 @@ public class VendorModuleTests
                 }
             }
 
-            var handle = new RecordingLockHandle();
+            var handle = new RecordingLockHandle(ProviderCallCount);
             Handles.Add(handle);
             return Task.FromResult<ApplicationLockResult>(new ApplicationLockResult.Acquired(handle));
         }
     }
 
-    private sealed class RecordingLockHandle : IAsyncDisposable
+    private sealed class RecordingLockHandle(Func<int>? providerCallCount) : IAsyncDisposable
     {
         public bool Disposed { get; private set; }
+
+        public int ProviderCallsWhenReleased { get; private set; } = -1;
 
         public ValueTask DisposeAsync()
         {
             Disposed = true;
+            ProviderCallsWhenReleased = providerCallCount?.Invoke() ?? -1;
             return ValueTask.CompletedTask;
         }
     }
@@ -1509,11 +1682,13 @@ public class VendorModuleTests
     {
         protected const int LowerApplicationId = 10;
         protected const int HigherApplicationId = 30;
+        protected const int DriftedApplicationId = 40;
 
         [SetUp]
         public void SetUpLockDefaults()
         {
             _lockManager.Reset();
+            _lockManager.ProviderCallCount = () => _providerCalls.Count;
             _clients =
             [
                 new VendorApiClient(53, "client-53", Guid.NewGuid(), HigherApplicationId),
@@ -1525,6 +1700,15 @@ public class VendorModuleTests
 
         protected void AssertEveryLockReleased() =>
             _lockManager.Handles.Should().OnlyContain(handle => handle.Disposed);
+
+        /// <summary>
+        /// Compensation is only safe while the aggregates are still serialized, so every
+        /// identity-provider call must precede the release of the locks.
+        /// </summary>
+        protected void AssertCompensationRanUnderTheLocks() =>
+            _lockManager
+                .Handles.Should()
+                .OnlyContain(handle => handle.ProviderCallsWhenReleased == _providerCalls.Count);
     }
 
     [TestFixture]
@@ -1601,7 +1785,7 @@ public class VendorModuleTests
                                 "Test Company",
                                 "Test",
                                 "test@test.com",
-                                "uri://old.org",
+                                StoredPrefixes,
                                 clients
                             )
                         )
@@ -1637,8 +1821,9 @@ public class VendorModuleTests
             VendorApiClient[] driftedClients =
             [
                 .. _clients,
-                new VendorApiClient(54, "client-54", Guid.NewGuid(), 40),
+                new VendorApiClient(54, "client-54", Guid.NewGuid(), DriftedApplicationId),
             ];
+            _storedUuids = driftedClients.ToDictionary(client => client.Id, client => client.ClientUuid);
 
             A.CallTo(() => _vendorRepository.GetVendorUpdateState(A<int>.Ignored))
                 .ReturnsLazily(_ =>
@@ -1646,14 +1831,16 @@ public class VendorModuleTests
                     _stateReads++;
                     // The second read — the one under the first set of locks — reports an
                     // application the request never locked, so the attempt must be abandoned.
-                    VendorApiClient[] clients = _stateReads == 2 ? driftedClients : _clients;
+                    // Every read from then on keeps that application, so the retry has to lock
+                    // the new set rather than simply see the drift disappear.
+                    VendorApiClient[] clients = _stateReads >= 2 ? driftedClients : _clients;
                     return Task.FromResult<VendorUpdateStateResult>(
                         new VendorUpdateStateResult.Success(
                             new VendorUpdateState(
                                 "Test Company",
                                 "Test",
                                 "test@test.com",
-                                "uri://old.org",
+                                StoredPrefixes,
                                 clients
                             )
                         )
@@ -1668,10 +1855,20 @@ public class VendorModuleTests
         public void It_returns_no_content() => _response.StatusCode.Should().Be(HttpStatusCode.NoContent);
 
         [Test]
-        public void It_retries_the_acquisition() =>
+        public void It_retries_against_the_drifted_application_set() =>
             _lockManager
                 .AcquiredApplicationIds.Should()
-                .Equal(LowerApplicationId, HigherApplicationId, LowerApplicationId, HigherApplicationId);
+                .Equal(
+                    LowerApplicationId,
+                    HigherApplicationId,
+                    LowerApplicationId,
+                    HigherApplicationId,
+                    DriftedApplicationId
+                );
+
+        [Test]
+        public void It_updates_the_client_of_the_newly_locked_application() =>
+            UpdateCalls.Should().HaveCount(4);
 
         [Test]
         public void It_releases_every_lock() => AssertEveryLockReleased();
@@ -1710,7 +1907,7 @@ public class VendorModuleTests
                                 "Test Company",
                                 "Test",
                                 "test@test.com",
-                                "uri://old.org",
+                                StoredPrefixes,
                                 clients
                             )
                         )
@@ -1860,7 +2057,7 @@ public class VendorModuleTests
                                     "Test Company",
                                     "Test",
                                     "test@test.com",
-                                    "uri://old.org",
+                                    StoredPrefixes,
                                     _clients
                                 )
                             )
@@ -1910,5 +2107,345 @@ public class VendorModuleTests
 
         [Test]
         public void It_still_releases_every_lock() => AssertEveryLockReleased();
+    }
+
+    [TestFixture]
+    public class Given_a_safe_to_delete_sync_for_a_rotated_uuid : VendorNamespaceUpdateTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            _rotateClientUuids = true;
+            // The row vanished and nothing references the client the provider created for it.
+            A.CallTo(() =>
+                    _apiClientRepository.SyncApiClientUuid(_clients[1].Id, A<Guid>.Ignored, A<Guid>.Ignored)
+                )
+                .Returns(new ApiClientUuidSyncResult.FailureNotExistsSafeToDelete());
+
+            using var client = SetUpClient();
+            await ActUpdateAsync(client);
+        }
+
+        [Test]
+        public void It_returns_a_sanitized_server_error() =>
+            _response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+
+        [Test]
+        public void It_deletes_the_replacement_client_rather_than_orphaning_it() =>
+            _deletedClientUuids.Should().Equal(UpdateCalls[1].ReportedUuid.ToString());
+
+        [Test]
+        public void It_restores_the_client_it_had_already_changed() =>
+            RollbackCalls
+                .Select(call => call.TargetedUuid)
+                .Should()
+                .Contain(UpdateCalls[0].ReportedUuid.ToString());
+    }
+
+    [TestFixture]
+    public class Given_a_safe_to_delete_sync_for_a_stable_uuid : VendorNamespaceUpdateTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            // The provider preserved the client's identity, so there is no replacement to
+            // delete: deleting here would destroy the client the row used to point at.
+            A.CallTo(() =>
+                    _apiClientRepository.SyncApiClientUuid(_clients[1].Id, A<Guid>.Ignored, A<Guid>.Ignored)
+                )
+                .Returns(new ApiClientUuidSyncResult.FailureNotExistsSafeToDelete());
+
+            using var client = SetUpClient();
+            await ActUpdateAsync(client);
+        }
+
+        [Test]
+        public void It_returns_a_sanitized_server_error() =>
+            _response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+
+        [Test]
+        public void It_deletes_nothing() => _deletedClientUuids.Should().BeEmpty();
+
+        [Test]
+        public void It_restores_the_claim_of_the_client_whose_row_vanished() =>
+            RollbackCalls
+                .Select(call => call.TargetedUuid)
+                .Should()
+                .Contain(_clients[1].ClientUuid.ToString());
+    }
+
+    [TestFixture]
+    public class Given_a_referenced_missing_row_sync : VendorNamespaceUpdateTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            _rotateClientUuids = true;
+            // The row is gone but another row still references the reported client, so deleting
+            // it would destroy a client that is in use.
+            A.CallTo(() =>
+                    _apiClientRepository.SyncApiClientUuid(_clients[1].Id, A<Guid>.Ignored, A<Guid>.Ignored)
+                )
+                .Returns(new ApiClientUuidSyncResult.FailureNotExists());
+
+            using var client = SetUpClient();
+            await ActUpdateAsync(client);
+        }
+
+        [Test]
+        public void It_returns_a_sanitized_server_error() =>
+            _response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+
+        [Test]
+        public void It_deletes_nothing() => _deletedClientUuids.Should().BeEmpty();
+    }
+
+    [TestFixture]
+    public class Given_an_unknown_sync_failure : VendorNamespaceUpdateTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() =>
+                    _apiClientRepository.SyncApiClientUuid(_clients[1].Id, A<Guid>.Ignored, A<Guid>.Ignored)
+                )
+                .Returns(new ApiClientUuidSyncResult.FailureUnknown("the row could not be written"));
+
+            using var client = SetUpClient();
+            await ActUpdateAsync(client);
+        }
+
+        [Test]
+        public void It_returns_a_sanitized_server_error() =>
+            _response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+
+        [Test]
+        public async Task It_does_not_leak_the_failure_message() =>
+            (await _response.Content.ReadAsStringAsync()).Should().NotContain("the row could not be written");
+
+        [Test]
+        public void It_restores_both_touched_clients() =>
+            RollbackCalls
+                .Select(call => call.TargetedUuid)
+                .Should()
+                .BeEquivalentTo(_clients[1].ClientUuid.ToString(), _clients[0].ClientUuid.ToString());
+    }
+
+    [TestFixture]
+    public class Given_an_unrecognized_provider_result : VendorNamespaceUpdateTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            // A future result variant this workflow has never seen must not fall through to
+            // success.
+            A.CallTo(() =>
+                    _identityProviderRepository.UpdateClientNamespaceClaimAsync(
+                        _clients[1].ClientUuid.ToString(),
+                        RequestedPrefixes
+                    )
+                )
+                .Returns(new ClientUpdateResult());
+
+            using var client = SetUpClient();
+            await ActUpdateAsync(client);
+        }
+
+        [Test]
+        public void It_returns_a_sanitized_server_error() =>
+            _response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+
+        [Test]
+        public void It_restores_the_client_it_had_already_changed() =>
+            RollbackCalls
+                .Select(call => call.TargetedUuid)
+                .Should()
+                .Contain(_clients[0].ClientUuid.ToString());
+
+        [Test]
+        public void It_does_not_update_the_vendor() =>
+            A.CallTo(() => _vendorRepository.UpdateVendor(A<VendorUpdateCommand>.Ignored))
+                .MustNotHaveHappened();
+    }
+
+    [TestFixture]
+    public class Given_a_thrown_provider_call : VendorNamespaceUpdateTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() =>
+                    _identityProviderRepository.UpdateClientNamespaceClaimAsync(
+                        _clients[1].ClientUuid.ToString(),
+                        RequestedPrefixes
+                    )
+                )
+                .Throws(new InvalidOperationException("the provider connection dropped"));
+
+            using var client = SetUpClient();
+            await ActUpdateAsync(client);
+        }
+
+        [Test]
+        public void It_returns_a_sanitized_server_error() =>
+            _response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+
+        [Test]
+        public void It_restores_the_ambiguous_client_and_the_one_already_changed() =>
+            RollbackCalls
+                .Select(call => call.TargetedUuid)
+                .Should()
+                .BeEquivalentTo(_clients[1].ClientUuid.ToString(), _clients[0].ClientUuid.ToString());
+    }
+
+    [TestFixture]
+    public class Given_a_vanished_vendor_whose_rollback_fails : VendorNamespaceUpdateTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() => _vendorRepository.UpdateVendor(A<VendorUpdateCommand>.Ignored))
+                .Returns(new VendorUpdateResult.FailureNotExists());
+            A.CallTo(() =>
+                    _identityProviderRepository.UpdateClientNamespaceClaimAsync(
+                        _clients[0].ClientUuid.ToString(),
+                        StoredPrefixes
+                    )
+                )
+                .Returns(new ClientUpdateResult.FailureUnknown("the rollback was rejected"));
+
+            using var client = SetUpClient();
+            await ActUpdateAsync(client);
+        }
+
+        [Test]
+        public void It_replaces_the_not_found_with_a_sanitized_server_error() =>
+            _response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+
+        // The rejected rollback is stubbed ahead of the recorder, so it never reaches the
+        // recorded list; the two that did reach it prove the loop kept going.
+        [Test]
+        public void It_continues_restoring_after_the_rejection() =>
+            RollbackCalls
+                .Select(call => call.TargetedUuid)
+                .Should()
+                .BeEquivalentTo(_clients[2].ClientUuid.ToString(), _clients[1].ClientUuid.ToString());
+
+        [Test]
+        public void It_attempted_the_client_whose_rollback_was_rejected() =>
+            A.CallTo(() =>
+                    _identityProviderRepository.UpdateClientNamespaceClaimAsync(
+                        _clients[0].ClientUuid.ToString(),
+                        StoredPrefixes
+                    )
+                )
+                .MustHaveHappened();
+    }
+
+    [TestFixture]
+    public class Given_a_vanished_vendor_whose_provider_clients_are_already_gone
+        : VendorNamespaceUpdateTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            // The vendor and its applications cascaded away, so every provider client this
+            // request updated has already been removed with them. That is the expected end
+            // state, not a failure.
+            A.CallTo(() => _vendorRepository.UpdateVendor(A<VendorUpdateCommand>.Ignored))
+                .Returns(new VendorUpdateResult.FailureNotExists());
+            A.CallTo(() =>
+                    _identityProviderRepository.UpdateClientNamespaceClaimAsync(
+                        A<string>.Ignored,
+                        StoredPrefixes
+                    )
+                )
+                .Returns(new ClientUpdateResult.FailureNotFound("Client not found"));
+
+            using var client = SetUpClient();
+            await ActUpdateAsync(client);
+        }
+
+        [Test]
+        public void It_returns_not_found() => _response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [TestFixture]
+    public class Given_a_compensating_vendor_update : VendorLockTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() =>
+                    _identityProviderRepository.UpdateClientNamespaceClaimAsync(
+                        _clients[2].ClientUuid.ToString(),
+                        RequestedPrefixes
+                    )
+                )
+                .Returns(new ClientUpdateResult.FailureUnknown("the provider rejected the update"));
+
+            using var client = SetUpClient();
+            await ActUpdateAsync(client);
+        }
+
+        [Test]
+        public void It_returns_a_sanitized_server_error() =>
+            _response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+
+        [Test]
+        public void It_compensates_before_releasing_the_locks() => AssertCompensationRanUnderTheLocks();
+
+        [Test]
+        public void It_releases_every_lock_afterwards() => AssertEveryLockReleased();
+    }
+
+    [TestFixture]
+    public class Given_a_vendor_update_whose_under_lock_reread_throws : VendorLockTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            bool firstRead = true;
+            A.CallTo(() => _vendorRepository.GetVendorUpdateState(A<int>.Ignored))
+                .ReturnsLazily(_ =>
+                {
+                    if (!firstRead)
+                    {
+                        throw new InvalidOperationException("the state read connection dropped");
+                    }
+
+                    firstRead = false;
+                    return Task.FromResult<VendorUpdateStateResult>(
+                        new VendorUpdateStateResult.Success(
+                            new VendorUpdateState(
+                                "Test Company",
+                                "Test",
+                                "test@test.com",
+                                StoredPrefixes,
+                                _clients
+                            )
+                        )
+                    );
+                });
+
+            using var client = SetUpClient();
+            await ActUpdateAsync(client);
+        }
+
+        [Test]
+        public void It_returns_a_sanitized_server_error() =>
+            _response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+
+        [Test]
+        public async Task It_does_not_leak_the_failure_message() =>
+            (await _response.Content.ReadAsStringAsync())
+                .Should()
+                .NotContain("the state read connection dropped");
+
+        [Test]
+        public void It_releases_every_lock_it_held() => AssertEveryLockReleased();
+
+        [Test]
+        public void It_mutates_nothing() => AssertNoProviderCallOrVendorUpdate();
     }
 }
