@@ -40,6 +40,29 @@ internal static class CustomValidationPluginScenario
     /// <summary>The value the fixture validator answers with a resource-level failure.</summary>
     public const string RejectOnResourceToken = "custom-validation-proof-reject-resource";
 
+    /// <summary>The identity every case that sends the failing POST uses.</summary>
+    /// <remarks>
+    /// One definition rather than a value per case, and that is what the negative control rests on:
+    /// the allowlisted class and the disabled class have to put the same bytes on the wire, so that
+    /// the only difference between a request that is refused and one that is accepted is
+    /// <c>Plugins:Allowed</c>. A per-case identity would have changed the document as well as the
+    /// setting and proved nothing. Every case leases its own database, so one identity reused across
+    /// them cannot collide.
+    /// </remarks>
+    private const string FailingStudentUniqueId = "cvp-failing-student-001";
+
+    /// <summary>The identity both PUT cases create before they update it.</summary>
+    private const string PutTargetStudentUniqueId = "cvp-put-target-001";
+
+    /// <summary>The stored value a rejected PUT must leave alone.</summary>
+    private const string StoredFirstName = "Grace";
+
+    /// <summary>An ordinary value, which is all the passing control differs by.</summary>
+    private const string PassingFirstName = "Ada";
+
+    /// <summary>The identity of the document core schema validation refuses in the parity case.</summary>
+    private const string SchemaInvalidStudentUniqueId = "cvp-schema-invalid-001";
+
     private const string StudentsEndpoint = "/data/ed-fi/students";
     private const string ItemsEndpoint = "/data/ed-fi/profileRootOnlyMergeItems";
     private const string JsonContentType = "application/json";
@@ -77,9 +100,11 @@ internal static class CustomValidationPluginScenario
         ApiIntegrationHarness harness
     )
     {
-        const string uniqueId = "cvp-reject-path-001";
-
-        using HttpResponseMessage response = await PostStudentAsync(harness, uniqueId, RejectOnPathToken);
+        using HttpResponseMessage response = await PostStudentAsync(
+            harness,
+            FailingStudentUniqueId,
+            RejectOnPathToken
+        );
         string body = await response.Content.ReadAsStringAsync();
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, body);
@@ -118,7 +143,7 @@ internal static class CustomValidationPluginScenario
             .Be(0, "a path-level failure leaves the other arm empty rather than absent");
 
         // The rejection happens ahead of the backend, so the write never reached the database.
-        (await StudentCountAsync(harness, uniqueId))
+        (await StudentCountAsync(harness, FailingStudentUniqueId))
             .Should()
             .Be(0, "a rejected write must persist nothing");
     }
@@ -128,9 +153,11 @@ internal static class CustomValidationPluginScenario
     /// </summary>
     public static async Task It_rejects_a_matching_post_on_the_errors_arm(ApiIntegrationHarness harness)
     {
-        const string uniqueId = "cvp-reject-resource-001";
-
-        using HttpResponseMessage response = await PostStudentAsync(harness, uniqueId, RejectOnResourceToken);
+        using HttpResponseMessage response = await PostStudentAsync(
+            harness,
+            FailingStudentUniqueId,
+            RejectOnResourceToken
+        );
         string body = await response.Content.ReadAsStringAsync();
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, body);
@@ -163,7 +190,7 @@ internal static class CustomValidationPluginScenario
             .Should()
             .BeEmpty("a document-level failure leaves the other arm empty rather than absent");
 
-        (await StudentCountAsync(harness, uniqueId)).Should().Be(0);
+        (await StudentCountAsync(harness, FailingStudentUniqueId)).Should().Be(0);
     }
 
     /// <summary>
@@ -172,10 +199,11 @@ internal static class CustomValidationPluginScenario
     /// </summary>
     public static async Task It_accepts_a_matching_post_that_passes(ApiIntegrationHarness harness)
     {
-        const string uniqueId = "cvp-passes-001";
-        const string firstName = "Ada";
-
-        using HttpResponseMessage response = await PostStudentAsync(harness, uniqueId, firstName);
+        using HttpResponseMessage response = await PostStudentAsync(
+            harness,
+            FailingStudentUniqueId,
+            PassingFirstName
+        );
         string body = await response.Content.ReadAsStringAsync();
 
         response.StatusCode.Should().Be(HttpStatusCode.Created, body);
@@ -185,7 +213,7 @@ internal static class CustomValidationPluginScenario
         string readBody = await read.Content.ReadAsStringAsync();
 
         read.StatusCode.Should().Be(HttpStatusCode.OK, readBody);
-        JsonNode.Parse(readBody)!.AsObject()["firstName"]!.GetValue<string>().Should().Be(firstName);
+        JsonNode.Parse(readBody)!.AsObject()["firstName"]!.GetValue<string>().Should().Be(PassingFirstName);
     }
 
     /// <summary>
@@ -195,17 +223,13 @@ internal static class CustomValidationPluginScenario
         ApiIntegrationHarness harness
     )
     {
-        const string uniqueId = "cvp-reject-put-001";
-        const string storedFirstName = "Grace";
+        (string locationPath, string etag) = await CreateStudentAsync(
+            harness,
+            PutTargetStudentUniqueId,
+            StoredFirstName
+        );
 
-        (string locationPath, string etag) = await CreateStudentAsync(harness, uniqueId, storedFirstName);
-
-        var payload = new JsonObject
-        {
-            ["id"] = locationPath.Split('/')[^1],
-            ["studentUniqueId"] = uniqueId,
-            ["firstName"] = RejectOnPathToken,
-        };
+        JsonObject payload = FailingPutPayload(locationPath);
 
         using var content = new StringContent(payload.ToJsonString(), Encoding.UTF8, JsonContentType);
         using var request = new HttpRequestMessage(HttpMethod.Put, locationPath) { Content = content };
@@ -239,7 +263,7 @@ internal static class CustomValidationPluginScenario
         JsonNode.Parse(readBody)!.AsObject()["firstName"]!
             .GetValue<string>()
             .Should()
-            .Be(storedFirstName, "a rejected update must not have changed what is stored");
+            .Be(StoredFirstName, "a rejected update must not have changed what is stored");
     }
 
     /// <summary>
@@ -267,10 +291,7 @@ internal static class CustomValidationPluginScenario
 
         matching
             .StatusCode.Should()
-            .Be(
-                HttpStatusCode.BadRequest,
-                await matching.Content.ReadAsStringAsync()
-            );
+            .Be(HttpStatusCode.BadRequest, await matching.Content.ReadAsStringAsync());
 
         using HttpResponseMessage carryingTheToken = await PostMergeItemAsync(
             harness,
@@ -314,14 +335,14 @@ internal static class CustomValidationPluginScenario
     {
         using HttpResponseMessage custom = await PostStudentAsync(
             harness,
-            "cvp-parity-001",
+            FailingStudentUniqueId,
             RejectOnPathToken
         );
         string customBody = await custom.Content.ReadAsStringAsync();
 
         // Schema-invalid rather than rule-invalid: firstName is required and absent, so this never
         // reaches the custom validator and is answered by DocumentValidator.
-        var schemaInvalid = new JsonObject { ["studentUniqueId"] = "cvp-parity-002" };
+        var schemaInvalid = new JsonObject { ["studentUniqueId"] = SchemaInvalidStudentUniqueId };
         using var content = new StringContent(schemaInvalid.ToJsonString(), Encoding.UTF8, JsonContentType);
         using HttpResponseMessage core = await harness.HttpClient.PostAsync(StudentsEndpoint, content);
         string coreBody = await core.Content.ReadAsStringAsync();
@@ -381,15 +402,23 @@ internal static class CustomValidationPluginScenario
 
     /// <summary>
     /// With the plugin's name absent from the allowlist and nothing else changed, the same failing
-    /// request succeeds.
+    /// POST succeeds.
     /// </summary>
+    /// <remarks>
+    /// The request is built from the same identity and the same rejected value as
+    /// <see cref="It_rejects_a_matching_post_on_the_validation_errors_arm"/> and goes to the same
+    /// endpoint, so the two cases serialize the same bytes. That is what makes this a control on
+    /// <c>Plugins:Allowed</c> rather than on the document.
+    /// </remarks>
     public static async Task It_accepts_the_failing_post_when_the_plugin_is_not_allowlisted(
         ApiIntegrationHarness harness
     )
     {
-        const string uniqueId = "cvp-disabled-post-001";
-
-        using HttpResponseMessage response = await PostStudentAsync(harness, uniqueId, RejectOnPathToken);
+        using HttpResponseMessage response = await PostStudentAsync(
+            harness,
+            FailingStudentUniqueId,
+            RejectOnPathToken
+        );
         string body = await response.Content.ReadAsStringAsync();
 
         response
@@ -398,24 +427,27 @@ internal static class CustomValidationPluginScenario
                 HttpStatusCode.Created,
                 $"the byte-identical request is refused only when the plugin is allowlisted: {body}"
             );
-        (await StudentCountAsync(harness, uniqueId)).Should().Be(1);
+        (await StudentCountAsync(harness, FailingStudentUniqueId)).Should().Be(1);
     }
 
     /// <summary>The same for the update pipeline.</summary>
+    /// <remarks>
+    /// Built from <see cref="FailingPutPayload"/>, the same definition the allowlisted PUT case
+    /// uses, so every client-controlled member matches. The document's <c>id</c> and the If-Match
+    /// ETag necessarily differ, because each case leases its own database and both values are
+    /// assigned by the server rather than chosen by the client.
+    /// </remarks>
     public static async Task It_accepts_the_failing_put_when_the_plugin_is_not_allowlisted(
         ApiIntegrationHarness harness
     )
     {
-        const string uniqueId = "cvp-disabled-put-001";
+        (string locationPath, string etag) = await CreateStudentAsync(
+            harness,
+            PutTargetStudentUniqueId,
+            StoredFirstName
+        );
 
-        (string locationPath, string etag) = await CreateStudentAsync(harness, uniqueId, "Grace");
-
-        var payload = new JsonObject
-        {
-            ["id"] = locationPath.Split('/')[^1],
-            ["studentUniqueId"] = uniqueId,
-            ["firstName"] = RejectOnPathToken,
-        };
+        JsonObject payload = FailingPutPayload(locationPath);
 
         using var content = new StringContent(payload.ToJsonString(), Encoding.UTF8, JsonContentType);
         using var request = new HttpRequestMessage(HttpMethod.Put, locationPath) { Content = content };
@@ -432,6 +464,22 @@ internal static class CustomValidationPluginScenario
             .Should()
             .Be(RejectOnPathToken, "with no validator registered the token is ordinary text");
     }
+
+    /// <summary>The one failing PUT body, shared by the allowlisted and the disabled case.</summary>
+    /// <remarks>
+    /// Every client-controlled member is identical between the two: the identity, the rejected
+    /// value, and the endpoint. <paramref name="locationPath"/> supplies <c>id</c>, which is
+    /// server-assigned and therefore differs between two isolated databases, as does the If-Match
+    /// ETag the caller sends with it. Those two are the only differences, and they are not
+    /// differences a client chooses.
+    /// </remarks>
+    private static JsonObject FailingPutPayload(string locationPath) =>
+        new()
+        {
+            ["id"] = locationPath.Split('/')[^1],
+            ["studentUniqueId"] = PutTargetStudentUniqueId,
+            ["firstName"] = RejectOnPathToken,
+        };
 
     // Awaited rather than returned as a Task: the content has to outlive the request, and returning
     // the task from inside a using block disposes it while the request is still in flight.

@@ -18,8 +18,10 @@ namespace EdFi.DataManagementService.Tests.Integration.Tests.Postgresql.CustomVa
 /// <para>
 /// This is what proves the validator was reached through the plugin the story added rather than
 /// through some other path. Every setting the allowlisted class uses is repeated here verbatim
-/// except <c>Plugins:Allowed</c>, and the requests the cases send are byte-identical to the ones
-/// that are refused there.
+/// except <c>Plugins:Allowed</c>, and both cases build their request from the same shared
+/// definition the allowlisted class uses, so the POST serializes the same bytes there and here.
+/// The PUT matches in every member a client chooses; its <c>id</c> and If-Match ETag are assigned
+/// by the server and differ because each case leases its own database.
 /// </para>
 /// <para>
 /// Removing the only name leaves the allowlist empty, and an empty allowlist never probes the
