@@ -1,0 +1,99 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+        <!--
+        An executable rather than a library, so the lane can run the assertions in Program.cs
+        instead of only compiling them. A library would prove the samples compile and prove
+        nothing about what ContributeServices actually registers.
+        -->
+        <OutputType>Exe</OutputType>
+        <RootNamespace>CustomValidatorPluginConsumer</RootNamespace>
+    </PropertyGroup>
+
+    <!--
+    Declared as properties so CI can point this at the two versions it just packed without
+    editing a tracked file. Neither default is produced by anything, which is the point: a
+    developer who builds this without packing first gets a restore failure naming a version
+    that does not exist, rather than a quiet success against whatever was lying around.
+
+      ./build-dms.ps1 Build -Configuration Release
+      ./build-dms.ps1 Package -PackageTarget CustomValidation -DMSVersion 0.0.0-local -Configuration Release
+      ./build-dms.ps1 Package -PackageTarget Plugins -Configuration Release
+
+    The plugin contract's version is its own surface version, read from
+    src/plugins/Directory.Build.props by Get-PluginsContractVersion, and is not the DMS release
+    version. The custom-validation package is still release-stamped, so the two are passed
+    separately rather than derived from one another.
+
+    Both are pinned exactly, in [brackets]. A bare version is a floor, not a pin, so with more
+    than one nupkg in the local folder feed NuGet resolves a different one and warns via NU1603
+    instead of failing, which would let this check validate an artifact other than the one just
+    packed.
+  -->
+    <PropertyGroup>
+        <CustomValidationPackageVersion Condition="'$(CustomValidationPackageVersion)' == ''"
+            >0.0.0-local</CustomValidationPackageVersion
+        >
+        <PluginsPackageVersion Condition="'$(PluginsPackageVersion)' == ''"
+            >0.0.0-local</PluginsPackageVersion
+        >
+    </PropertyGroup>
+
+    <!--
+    Deliberately outside central package management, and carrying no ProjectReference into
+    src/ - a project reference would defeat the entire point of the check. It is in no .sln and
+    nothing in the repository builds it except the runner beside it.
+
+    This is the third verification consumer and it is deliberately separate from the two that
+    exist, because it makes a statement neither of them can:
+
+      - eng/verification/CustomValidationConsumer proves EdFi.Api.CustomValidation compiles for
+        a consumer whose closure is the contract plus DI and Options, with no plugin contract in
+        sight. That isolation is the check, so adding EdFi.Api.Plugins to it would remove the
+        property it exists to hold. Its CI step also runs before the plugin package is packed.
+      - eng/verification/PluginsConsumer proves the same for EdFi.Api.Plugins alone.
+      - This project proves the two contracts COMPOSE: that the samples CUSTOM-VALIDATION.md
+        publishes compile as an outside implementer would compile them, against the two packed
+        contracts and nothing else from Ed-Fi.
+
+    The five references below are exactly what the samples use, and no more. Declaring exactly
+    that is what makes this project match an external implementer rather than one with a richer
+    closure. Nothing here declares a FrameworkReference: a plugin is served the host's shared
+    framework at load time, and naming one here would put assemblies in this project's compile
+    closure that an implementer's own project would not have.
+  -->
+    <ItemGroup>
+        <PackageReference Include="EdFi.Api.CustomValidation" Version="[$(CustomValidationPackageVersion)]" />
+        <PackageReference Include="EdFi.Api.Plugins" Version="[$(PluginsPackageVersion)]" />
+        <!--
+      The three Microsoft.Extensions packages the samples need and neither contract supplies.
+      EdFi.Api.CustomValidation declares no dependency at all, and EdFi.Api.Plugins declares
+      only the two Abstractions assemblies its own hook signature names, so:
+
+        - Microsoft.Extensions.DependencyInjection.Abstractions carries IServiceCollection,
+          ServiceDescriptor and TryAddEnumerable. EdFi.Api.Plugins declares it too; naming it
+          here is what keeps this project behaving like an outside one rather than one that
+          happens to inherit what it needs.
+        - Microsoft.Extensions.Options carries IOptions<T> and the Action<TOptions> overload of
+          Configure.
+        - Microsoft.Extensions.Options.ConfigurationExtensions carries
+          OptionsConfigurationServiceCollectionExtensions, which is the section-binding overload
+          services.Configure<T>(configuration.GetSection(...)), and it brings
+          Microsoft.Extensions.Configuration.Binder transitively, which is what actually binds.
+          This is the one the sibling custom-validation consumer does not declare, correctly:
+          its sample binds through the Action<TOptions> overload alone.
+
+      These versions are deliberately independent of src/Directory.Packages.props and of
+      Dependabot, whose nuget scope is directory: src/. An outside implementer picks their own,
+      and this project exists to behave like one. What they cannot go below is the floor
+      EdFi.Api.Plugins declares, since NuGet prefers a version declared here over the same
+      package pulled in transitively.
+    -->
+        <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.1" />
+        <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.1" />
+        <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.1" />
+    </ItemGroup>
+</Project>

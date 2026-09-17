@@ -531,6 +531,24 @@ jobs:
             -PackageVersion $contractVersion `
             -NuGetPackagesDirectory (Join-Path $env:RUNNER_TEMP "nuget-verify-plugins-$([guid]::NewGuid().ToString('N'))")
 
+      # After both packs, necessarily: this is the one check that restores both contracts, because
+      # the samples CUSTOM-VALIDATION.md publishes are a validator and the plugin that registers
+      # it. Placing it earlier would restore an EdFi.Api.Plugins that had not been packed yet.
+      - name: Compile and Run the Documented Custom Validator Samples
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          Import-Module ./package-helpers.psm1
+          $contractVersion = Get-PluginsContractVersion
+          $packageVersion = "${{ steps.versions.outputs.dms-semver }}" -replace "dms-v", ""
+
+          # Two versions from two sources, deliberately: the custom-validation package is still
+          # release-stamped, and the plugin contract is versioned on its own public surface.
+          ./eng/verification/Invoke-CustomValidatorPluginConsumerCheck.ps1 `
+            -CustomValidationPackageVersion $packageVersion `
+            -PluginsPackageVersion $contractVersion `
+            -NuGetPackagesDirectory (Join-Path $env:RUNNER_TEMP "nuget-verify-validator-plugin-$([guid]::NewGuid().ToString('N'))")
+
       # Not preinstalled on the runner image, and this is the only Pester use in this job. The
       # bootstrap and MSSQL lanes install the same pinned version the same way.
       - name: Install Pester

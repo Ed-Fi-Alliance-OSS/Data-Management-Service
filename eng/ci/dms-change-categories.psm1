@@ -72,6 +72,11 @@ $script:DocumentEmbedPathPrefix = @(
     'eng/docker-compose/'
     'eng/verification/'
     'src/plugins/'
+    # The custom-validation contract's packed readme is the third checked document, and it lives
+    # under src/dms/ rather than under any prefix above. The embed job gates on this flag alone and
+    # not on dms_relevant, so without this entry a pull request editing that readme would reach no
+    # rule here and skip the guard entirely.
+    'src/dms/core/EdFi.DataManagementService.CustomValidation/'
 )
 
 # Promoted-suite categories. Each names one or two integration lanes that a pull request runs only
