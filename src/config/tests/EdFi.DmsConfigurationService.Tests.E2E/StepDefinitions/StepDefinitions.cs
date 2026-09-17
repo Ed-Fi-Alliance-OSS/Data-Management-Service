@@ -628,6 +628,62 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
         _ids[identifier] = responseJson["id"]!.ToString();
     }
 
+    /// <summary>
+    /// Captures any scalar property of the current response under a caller-chosen name, so a
+    /// scenario can record a value it will later compare against or substitute into a URL. The
+    /// captured name joins the same pool the id captures use.
+    /// </summary>
+    [Then("the response body property {string} is captured as {string}")]
+    [Given("the response body property {string} is captured as {string}")]
+    public async Task ThenTheResponseBodyPropertyIsCapturedAs(string property, string identifier)
+    {
+        JsonNode responseJson = JsonNode.Parse(await _apiResponse.TextAsync())!;
+        responseJson[property]
+            .Should()
+            .NotBeNull($"the previous response should include a '{property}' property");
+        _ids[identifier] = responseJson[property]!.ToString();
+    }
+
+    /// <summary>
+    /// Asserts that a property of the current response still holds a previously captured value.
+    /// This is how a scenario proves an identifier survived an operation rather than being
+    /// replaced by it.
+    /// </summary>
+    [Then("the response body property {string} equals the value captured as {string}")]
+    public async Task ThenTheResponseBodyPropertyEqualsTheValueCapturedAs(
+        string property,
+        string identifier
+    )
+    {
+        _ids.Should().ContainKey(identifier, $"a value should have been captured as '{identifier}'");
+        JsonNode responseJson = JsonNode.Parse(await _apiResponse.TextAsync())!;
+        responseJson[property]
+            .Should()
+            .NotBeNull($"the current response should include a '{property}' property");
+        responseJson[property]!
+            .ToString()
+            .Should()
+            .Be(_ids[identifier], $"'{property}' should still be the value captured as '{identifier}'");
+    }
+
+    /// <summary>
+    /// Reads the namespacePrefixes claim of the access token in the current response. The
+    /// existing namespace step issues its own token from the last application's credentials,
+    /// which cannot check a specific client among several.
+    /// </summary>
+    [Then("the token carries {string} in the namespacePrefixes claim")]
+    public async Task ThenTheTokenCarriesTheNamespacePrefix(string namespacePrefix)
+    {
+        JsonNode responseJson = JsonNode.Parse(await _apiResponse.TextAsync())!;
+        responseJson["access_token"].Should().NotBeNull("response should include an access_token");
+        string accessToken = responseJson["access_token"]!.GetValue<string>();
+
+        JwtTokenValidator
+            .ValidateNamespace(accessToken, namespacePrefix)
+            .Should()
+            .BeTrue($"the token should carry '{namespacePrefix}' in its namespacePrefixes claim");
+    }
+
     [Then("the response body credentials are captured as {string}")]
     [Given("the response body credentials are captured as {string}")]
     public async Task ThenTheResponseBodyCredentialsAreCapturedAs(string slot)
