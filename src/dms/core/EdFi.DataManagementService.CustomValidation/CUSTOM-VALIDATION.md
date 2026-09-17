@@ -541,10 +541,15 @@ which contract versions it carries. Tying the version to the release version ins
 refuse a validator built against an identical contract, naming two versions that differ in nothing an
 implementer could act on.
 
-For a locally built package, use the version recorded in the produced nupkg's metadata. Build-time
-version overrides can differ from the published contract version; do not infer either contract's
-package version from the DMS release number or from the other contract's version. Choose versions
-compatible with the assemblies carried by the target host.
+**That policy describes the published package.** At the time of writing this package is built and
+its contents verified on every pull request, and it is **not published**; publication is a recorded
+deferred item. Until it happens the build stamps the package with the Data Management Service
+release version, so a locally produced nupkg carries that number rather than the independent
+contract version the policy describes. Read the policy as what the published package will carry,
+not as a description of a locally built one, and take a local package's version from the nupkg's own
+metadata rather than inferring it from the DMS release number or from the sibling contract's
+version. The sibling `EdFi.Api.Plugins` contract already versions itself independently, and
+`PLUGINS.md` documents that as current fact for that package.
 
 ### Additive-only, for the life of the package
 
@@ -587,9 +592,16 @@ is **not** caught at load, because that method is not JIT-compiled until it is f
 surfaces as a logged 500 on the first write that matches your `AppliesTo`. The process starts
 cleanly and stays up until such a write arrives.
 
-This is reachable only by a validator that reached around the contract into host assemblies, which
-[Supported versus possible](#supported-versus-possible) tells you not to do. Within the contract's
-own surface, the additive-only policy means there is nothing here to hit.
+Within **this contract's own surface** the additive-only policy means there is nothing here to hit.
+Everything else your plugin binds to is a different matter, and supported dependencies are not
+exempt. The load check compares assembly versions, and the `Microsoft.Extensions.*` packages this
+guide tells you to declare hold theirs stable across a major version, so building against a newer
+*minor* of one of them and calling a member it added passes the check and lands here instead. See
+[Two limits on that check](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/src/plugins/EdFi.Api.Plugins/PLUGINS.md#two-limits-on-that-check-both-real).
+
+A validator that reached around the contract into host assemblies, which
+[Supported versus possible](#supported-versus-possible) tells you not to do, widens the exposure
+further, because nothing about those assemblies is version-disciplined on your behalf.
 
 ### Target framework
 
@@ -622,8 +634,11 @@ it decides from the document in hand, the resource it belongs to, the operation,
 that requires a lookup against what is already persisted cannot be expressed within the supported
 surface.
 
-Do not assume that host services reachable through constructor injection are part of this contract.
-Only documented contract capabilities carry its compatibility guarantees.
+A store-read capability is a **recorded deferred item**, not an oversight. It is additive to this
+surface, since a validator would obtain it by constructor injection rather than as a new parameter,
+so adding it later breaks no signature. Until it is documented as a contract capability, host
+services you reach by constructor injection are outside this contract and carry none of its
+compatibility guarantees.
 
 ### Supported versus possible
 
@@ -633,9 +648,9 @@ reference a host assembly and constructor-inject services such as `IDocumentStor
 
 What it forfeits is this package's compatibility promise. Those assemblies carry no semver commitment
 to validator authors, so a host upgrade can change or remove what you depended on, and the
-[additive-only guarantee](#additive-only-for-the-life-of-the-package) covers none of it. It is also
-the only way to reach [the failure mode that neither compatibility direction
-catches](#the-case-neither-direction-catches).
+[additive-only guarantee](#additive-only-for-the-life-of-the-package) covers none of it. It also
+broadens your exposure to [the failure mode that neither compatibility direction
+catches](#the-case-neither-direction-catches), which supported dependencies can already reach.
 
 This is stated as a line you are choosing to cross, not an enforcement. There is none.
 
@@ -650,8 +665,9 @@ version's contract**, and it needs two things this version lacks rather than one
    identifier, and `ValidateAsync` never receives one. There is no `DocumentUuid` parameter, and
    `ValidationScope` carries route qualifiers rather than the route.
 
-Store access alone would not close this gap: the rule also requires a reliable identifier for the
-persisted document.
+**Both are recorded deferred items**, store access and document identity, and neither absence is an
+oversight. Store access alone would not close this gap: the rule also requires a reliable identifier
+for the persisted document.
 
 ### Why the document body is not a substitute for identity
 
@@ -659,11 +675,12 @@ The obvious move after reading the above is to reach for `$.id` in the document.
 
 - On `Update`, the pipeline does require a body `id` matching the route id. But that check reads the
   **parsed request body**, while your validator receives the **profile-effective** body, and a
-  writable profile's member filter can hide `id` from the latter while the former still carries it:
-  an `IncludeOnly` filter that does not name `id` drops it, and an `ExcludeOnly` filter that names it
-  drops it too. The surrogate `$.id` is not a resource identity member, so the identity preservation
-  that keeps a natural key such as `studentUniqueId` present does **not** keep `$.id` present. It can
-  therefore be absent from what you receive even on a request that was required to send it.
+  writable profile's member filter can hide `id` from the latter while the former still carries it.
+  An `IncludeOnly` content type drops `id` unavoidably: it keeps only the members it names, and `id`
+  is server-generated, so no profile is permitted to name it. The surrogate `$.id` is not a resource
+  identity member either, so the identity preservation that keeps a natural key such as
+  `studentUniqueId` present does **not** keep `$.id` present. It can therefore be absent from what
+  you receive even on a request that was required to send it.
 - On `Upsert`, the body carries no `id` at all by construction. A submitted `id` is rejected with a
   400 before a validator ever runs.
 
