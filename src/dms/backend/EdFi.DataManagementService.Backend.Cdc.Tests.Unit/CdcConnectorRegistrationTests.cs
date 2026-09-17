@@ -928,6 +928,7 @@ internal class Given_CdcConnectorRegistration(Ddl.CdcProvider provider) : CdcReg
 
     [TestCase(CdcConnectOffsetState.Missing)]
     [TestCase(CdcConnectOffsetState.Snapshot)]
+    [TestCase(CdcConnectOffsetState.AwaitingStreaming)]
     public async Task It_waits_for_initial_streaming_offsets_without_resetting(CdcConnectOffsetState initial)
     {
         ShortTiming(500);

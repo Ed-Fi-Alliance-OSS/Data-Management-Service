@@ -391,6 +391,7 @@ public class Given_CdcConnectRestAdapter_offsets
 {
     [TestCase(CdcProvider.Postgresql, "{\"lsn_proc\":42}")]
     [TestCase(CdcProvider.Postgresql, "{\"lsn_proc\":-1}")]
+    [TestCase(CdcProvider.Postgresql, """{"lsn":43,"txId":1,"ts_usec":1000000,"lsn_proc":42}""")]
     [TestCase(
         CdcProvider.SqlServer,
         "{\"commit_lsn\":\"00000001:00000002:0003\",\"change_lsn\":\"00000001:00000002:0004\",\"event_serial_no\":2}"

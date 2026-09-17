@@ -543,6 +543,14 @@ strict `lsn`, `lsn_commit`, a replication-slot flush position, or formatted stri
 heartbeat table is part of the publication, so the next action-query update from an idle
 database drives logical decoding beyond the captured WAL position.
 
+Before it has a completely processed LSN, the pinned connector can commit an initial
+offset containing only the numeric `lsn`, `txId`, and `ts_usec` fields. Recognize this
+exact initial-context shape as awaiting streaming during initial registration, not as
+an absent offset or a streaming position. Registration may wait within its existing
+deadline for a later `lsn_proc`; it must not substitute `lsn` or recreate the connector.
+This marker supplies no provider-barrier or readiness evidence. Its reappearance after
+establishment fails closed, as does malformed or unrecognized offset evidence.
+
 **SQL Server adapter**
 
 After the projection-health response selected by the applicable readiness sequence, read
