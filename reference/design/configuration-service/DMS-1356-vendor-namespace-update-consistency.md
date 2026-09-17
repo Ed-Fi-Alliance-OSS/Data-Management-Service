@@ -150,7 +150,7 @@ All bodies are `application/problem+json` through the existing `FailureResults`/
 | Provider tests | `backend/EdFi.DmsConfigurationService.Backend.Tests.Unit/KeycloakClientRepositoryTests.cs`, `OpenIddictClientRepositoryTests.cs` | New fixtures |
 | Repository contract | `backend/EdFi.DmsConfigurationService.Backend/Repositories/IVendorRepository.cs` | `GetVendorUpdateState`, `VendorUpdateState`, `VendorApiClient`, `VendorUpdateStateResult` |
 | Repositories | `backend/…Postgresql/Repositories/VendorRepository.cs`, `backend/…Mssql/Repositories/VendorRepository.cs` | Implement the read |
-| Repository tests | `backend/…Postgresql.Tests.Integration/VendorTests.cs`, `…Mssql.Tests.Integration/VendorTests.cs` (or a new `VendorConsistencyOperationTests.cs` per backend) | State-read fixtures |
+| Repository tests | a new `VendorConsistencyOperationTests.cs` in each of `backend/…Postgresql.Tests.Integration/` and `…Mssql.Tests.Integration/` (Q-3) | State-read fixtures |
 | Workflow | `frontend/…AspNetCore/Modules/VendorModule.cs` | `Update` rewritten per §5 |
 | Workflow tests | `frontend/…AspNetCore.Tests.Unit/Modules/VendorModuleTests.cs` | `Given_…` fixtures per §9.1 |
 | Workflow integration | `backend/…Postgresql.Tests.Integration/WorkflowConcurrencyTests.cs`, `…Mssql.Tests.Integration/WorkflowConcurrencyTests.cs` | Vendor fixtures per §9.3 |
@@ -269,7 +269,7 @@ A vendor test base registers fakes for `IVendorRepository`, `IApiClientRepositor
 
 ### 9.3 Backend integration — PostgreSQL and SQL Server (both, identical fixture sets)
 
-**Repository** (`Given_a_vendor_update_state_read…` in each backend's `VendorTests.cs` or a new `VendorConsistencyOperationTests.cs`):
+**Repository** (`Given_a_vendor_update_state_read…` in each backend's new `VendorConsistencyOperationTests.cs`):
 * returns scalars, prefixes, and clients across two applications with the owning `ApplicationId` and in the documented order;
 * missing vendor → `FailureNotExists`; foreign-tenant vendor → `FailureNotExists` (multitenant provider);
 * two-connection test: read blocks while another transaction holds an uncommitted vendor-row update and then observes the committed value (mirrors `Given_an_application_update_state_read_during_an_uncommitted_update`).
@@ -337,7 +337,7 @@ Each step is one commit. After each commit: SHA, files, behavior, tests run with
 * Non-goals: `UpdateClientAsync`, scope convergence, role handling.
 * Contract: §4 D-1. Failure: phase-aware classification; no partial state is possible because there is a single mutating call.
 * Tests: §9.2 Keycloak fixtures; run the whole `Backend.Tests.Unit` project. Evidence: the identity-preserved fixture fails when run against the previous implementation (record the failing assertion).
-* Risks: Keycloak.Net `Client.ProtocolMappers` null on a client with none → materialize with `?? []` as `UpdateClientAsync` does. A representation with duplicate `namespacePrefixes` mappers → all removed, one appended.
+* Risks: Keycloak.Net `Client.ProtocolMappers` null on a client with none → materialize with `?? []` as `UpdateClientAsync` does. A representation with duplicate `namespacePrefixes` mappers → the first keeps its identity and configuration and takes the new value, the rest are removed.
 * Checkpoint: no `DeleteClientAsync`/`CreateClientAndRetrieveClientIdAsync` reachable from the method; all fixtures green; CSharpier clean.
 
 **Step 1.2 — OpenIddict regression fixtures.** Scope: tests only. Checkpoint: fixtures pin the same-UUID return and the merged JSON.

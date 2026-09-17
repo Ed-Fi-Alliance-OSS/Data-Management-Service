@@ -366,6 +366,99 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.Repositories
             }
         }
 
+        /// <summary>
+        /// Reads the vendor's update-relevant state and every ApiClient it owns in one
+        /// transaction that row-locks the Vendor row, so the snapshot waits out any in-flight
+        /// vendor update and the client list belongs to that same snapshot. Applications and
+        /// clients are reached only through the tenant-scoped vendor row, so they need no
+        /// further tenant predicate. Namespace prefixes are ordered deterministically because
+        /// the table records no insertion order.
+        /// </summary>
+        public async Task<VendorUpdateStateResult> GetVendorUpdateState(int vendorId)
+        {
+            await using var connection = new SqlConnection(databaseOptions.Value.DatabaseConnection);
+            await connection.OpenAsync();
+            await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync();
+            try
+            {
+                var vendorSql = $"""
+                    SELECT v.Company, v.ContactName, v.ContactEmailAddress
+                    FROM dmscs.Vendor v WITH (UPDLOCK, HOLDLOCK)
+                    WHERE v.Id = @Id AND {TenantContext.TenantWhereClause("v")};
+                    """;
+                var vendor = await connection.QuerySingleOrDefaultAsync<(
+                    string Company,
+                    string? ContactName,
+                    string? ContactEmailAddress
+                )?>(vendorSql, new { Id = vendorId, TenantId }, transaction);
+
+                if (vendor is null)
+                {
+                    await transaction.CommitAsync();
+                    return new VendorUpdateStateResult.FailureNotExists();
+                }
+
+                var namespacePrefixes = await connection.QueryAsync<string>(
+                    """
+                    SELECT NamespacePrefix FROM dmscs.VendorNamespacePrefix
+                    WHERE VendorId = @VendorId
+                    ORDER BY NamespacePrefix;
+                    """,
+                    new { VendorId = vendorId },
+                    transaction
+                );
+
+                VendorApiClient[] clients =
+                [
+                    .. await connection.QueryAsync<VendorApiClient>(
+                        """
+                        SELECT ac.Id, ac.ClientId, ac.ClientUuid, ac.ApplicationId
+                        FROM dmscs.ApiClient ac
+                        JOIN dmscs.Application a ON a.Id = ac.ApplicationId
+                        WHERE a.VendorId = @VendorId
+                        ORDER BY ac.ApplicationId, ac.Id;
+                        """,
+                        new { VendorId = vendorId },
+                        transaction
+                    ),
+                ];
+
+                await transaction.CommitAsync();
+
+                return new VendorUpdateStateResult.Success(
+                    new VendorUpdateState(
+                        vendor.Value.Company,
+                        vendor.Value.ContactName,
+                        vendor.Value.ContactEmailAddress,
+                        string.Join(',', namespacePrefixes),
+                        clients
+                    )
+                );
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Get vendor update state failure");
+                await RollbackSafelyAsync(transaction);
+                return new VendorUpdateStateResult.FailureUnknown(ex.Message);
+            }
+        }
+
+        /// <summary>
+        /// Rolls the transaction back without letting a rollback failure replace the intended
+        /// failure result; the disposal of the transaction remains the backstop.
+        /// </summary>
+        private async Task RollbackSafelyAsync(SqlTransaction transaction)
+        {
+            try
+            {
+                await transaction.RollbackAsync();
+            }
+            catch (Exception rollbackException)
+            {
+                logger.LogError(rollbackException, "Transaction rollback failed");
+            }
+        }
+
         public async Task<VendorDeleteResult> DeleteVendor(int id)
         {
             await using var connection = new SqlConnection(databaseOptions.Value.DatabaseConnection);

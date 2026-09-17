@@ -17,6 +17,14 @@ public interface IVendorRepository
     Task<VendorUpdateResult> UpdateVendor(VendorUpdateCommand command);
     Task<VendorDeleteResult> DeleteVendor(int id);
     Task<VendorApplicationsResult> GetVendorApplications(int vendorId);
+
+    /// <summary>
+    /// Reads the update-relevant state of a Vendor and every ApiClient it owns inside one
+    /// transaction that row-locks the Vendor row. Locking the row waits out any in-flight vendor
+    /// update, so the returned snapshot reflects that transaction's final outcome, and the client
+    /// list belongs to the same snapshot.
+    /// </summary>
+    Task<VendorUpdateStateResult> GetVendorUpdateState(int vendorId);
 }
 
 public record VendorInsertResult
@@ -86,6 +94,39 @@ public record VendorUpdateResult
     /// Unexpected exception thrown and caught
     /// </summary>
     public record FailureUnknown(string FailureMessage) : VendorUpdateResult();
+}
+
+/// <summary>
+/// One ApiClient owned by a vendor, carrying the stable identity a namespace-claim update needs:
+/// the row to write, the identity-provider client to mutate, and the application aggregate whose
+/// lock serializes the mutation.
+/// </summary>
+public record VendorApiClient(int Id, string ClientId, Guid ClientUuid, int ApplicationId);
+
+/// <summary>
+/// The complete state a Vendor update mutates, together with every ApiClient the vendor owns.
+/// </summary>
+public record VendorUpdateState(
+    string Company,
+    string? ContactName,
+    string? ContactEmailAddress,
+    string NamespacePrefixes,
+    VendorApiClient[] Clients
+);
+
+public record VendorUpdateStateResult
+{
+    public record Success(VendorUpdateState State) : VendorUpdateStateResult();
+
+    /// <summary>
+    /// The vendor does not exist, or belongs to another tenant.
+    /// </summary>
+    public record FailureNotExists() : VendorUpdateStateResult();
+
+    /// <summary>
+    /// Unexpected exception thrown and caught
+    /// </summary>
+    public record FailureUnknown(string FailureMessage) : VendorUpdateStateResult();
 }
 
 public record VendorDeleteResult
