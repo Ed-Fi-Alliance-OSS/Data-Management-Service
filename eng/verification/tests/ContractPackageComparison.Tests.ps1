@@ -334,6 +334,72 @@ Describe "ConvertTo-CanonicalXmlDocumentation keeps distinctions a reader can se
             Should -BeFalse
     }
 
+    # PowerShell's XML adapter answers $element.Name with the value of an attribute called "name"
+    # when the element has one, so <param name="x"> and <typeparam name="x"> both read as "x" and
+    # text moved between the two element kinds compared equal.
+    It "distinguishes two element kinds that share one name attribute" {
+        Test-DocumentationChanged `
+            -Left '<member name="M:X.Y"><param name="value">The value.</param></member>' `
+            -Right '<member name="M:X.Y"><typeparam name="value">The value.</typeparam></member>' |
+            Should -BeTrue
+    }
+
+    It "distinguishes see from seealso carrying one cref" {
+        Test-DocumentationChanged `
+            -Left '<member name="M:X.Y"><summary><see cref="T:A" /></summary></member>' `
+            -Right '<member name="M:X.Y"><summary><seealso cref="T:A" /></summary></member>' |
+            Should -BeTrue
+    }
+
+    # Inline markup sits inside a sentence, so the space between two inline elements, or between
+    # prose and an inline element, is text an implementer reads: "a b" and "ab" are different
+    # documentation.
+    It "keeps the space between two inline elements" {
+        Test-DocumentationChanged `
+            -Left '<member name="M:X.Y"><summary><c>a</c> <c>b</c></summary></member>' `
+            -Right '<member name="M:X.Y"><summary><c>a</c><c>b</c></summary></member>' |
+            Should -BeTrue
+    }
+
+    It "keeps the space between prose and an inline element" {
+        Test-DocumentationChanged `
+            -Left '<member name="M:X.Y"><summary>must not <c>null</c></summary></member>' `
+            -Right '<member name="M:X.Y"><summary>must not<c>null</c></summary></member>' |
+            Should -BeTrue
+    }
+
+    It "reads inline spacing written across a line break as one space" {
+        Test-DocumentationChanged `
+            -Left "<member name=`"M:X.Y`"><summary><c>a</c> <c>b</c></summary></member>" `
+            -Right "<member name=`"M:X.Y`"><summary><c>a</c>`n            <c>b</c></summary></member>" |
+            Should -BeFalse
+    }
+
+    # Whitespace touching a block element's boundary is formatting: indentation between <para>
+    # elements, or between a member's <summary> and <remarks>, says nothing an implementer reads.
+    It "ignores formatting whitespace between block elements" {
+        Test-DocumentationChanged `
+            -Left "<member name=`"M:X.Y`"><summary>`n            <para>one</para>`n            <para>two</para>`n        </summary>`n        <remarks>three</remarks></member>" `
+            -Right '<member name="M:X.Y"><summary><para>one</para><para>two</para></summary><remarks>three</remarks></member>' |
+            Should -BeFalse
+    }
+
+    It "ignores indentation inside a block element that also holds inline markup" {
+        Test-DocumentationChanged `
+            -Left "<member name=`"M:X.Y`"><summary>`n            Pass <c>a</c> or <c>b</c>.`n        </summary></member>" `
+            -Right '<member name="M:X.Y"><summary>Pass <c>a</c> or <c>b</c>.</summary></member>' |
+            Should -BeFalse
+    }
+
+    # A comment describes the file rather than the contract, so one dropped into a sentence must
+    # not split that sentence into two text runs that compare differently from the whole.
+    It "ignores a comment splitting a sentence" {
+        Test-DocumentationChanged `
+            -Left '<member name="M:X.Y"><summary>a <!-- note --> b</summary></member>' `
+            -Right '<member name="M:X.Y"><summary>a b</summary></member>' |
+            Should -BeFalse
+    }
+
     It "ignores the order two members are declared in" {
         Test-DocumentationChanged `
             -Left '<member name="M:X.A"><summary>a</summary></member><member name="M:X.B"><summary>b</summary></member>' `

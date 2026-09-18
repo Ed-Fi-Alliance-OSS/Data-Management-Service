@@ -297,8 +297,11 @@ really marks the word up, and those are different contracts: one shows an implem
 brackets, the other shows bold. Every name, attribute and text run is escaped so that no content can
 imitate the delimiters around it.
 
-Insignificant whitespace is normalized, so re-wrapping a comment at a different column is not a
-contract change. Whitespace inside a <code> element, inside CDATA, or under any node carrying
+Insignificant whitespace is normalized, so re-wrapping a comment at a different column, or
+indenting block elements differently, is not a contract change. Whitespace an implementer reads is
+kept: the space between two inline elements, or between prose and an inline element, is collapsed
+to one space rather than dropped, because "<c>a</c> <c>b</c>" and "<c>a</c><c>b</c>" render as
+different text. Whitespace inside a <code> element, inside CDATA, or under any node carrying
 xml:space="preserve" is kept exactly, including a node inheriting that request from an ancestor as
 high as <doc> or the <member> itself. An implementer copies that text and its layout is part of what
 they copy, which is also why the document is parsed with whitespace preserved: the default
@@ -401,7 +404,9 @@ function Test-XmlPreserveSpace {
         if ($current -is [System.Xml.XmlElement]) {
             $element = [System.Xml.XmlElement] $current
 
-            if ($element.LocalName -ceq "code") {
+            # psbase, for the reason ConvertTo-CanonicalXmlNode gives: the adapter would answer a
+            # <code LocalName="..."> attribute here rather than the element's name.
+            if ($element.psbase.LocalName -ceq "code") {
                 return $true
             }
         }
@@ -431,6 +436,21 @@ function Test-XmlPreserveSpace {
     return $false
 }
 
+# The documentation elements that sit inside a sentence. The space between two of these, or between
+# one of them and prose, is text an implementer reads: "<c>a</c> <c>b</c>" renders as "a b" and
+# "<c>a</c><c>b</c>" as "ab". Every other element is treated as a block, and whitespace touching a
+# block boundary is formatting. An element outside this set that is really inline would have the
+# spacing beside it normalized away, which is the older, narrower behaviour rather than a false
+# difference; an inline element wrongly treated as block would demand a version bump for
+# indentation, so the set is kept to names both shipped contracts actually use inline.
+$script:inlineDocumentationElements = [System.Collections.Generic.HashSet[string]]::new(
+    [string[]] @(
+        "a", "b", "br", "c", "em", "i", "paramref", "see", "span", "strong", "sub", "sup", "tt",
+        "typeparamref", "u"
+    ),
+    [System.StringComparer]::Ordinal
+)
+
 <#
 .DESCRIPTION
 One node's children, serialized structurally so that no content can be mistaken for markup.
@@ -438,6 +458,19 @@ One node's children, serialized structurally so that no content can be mistaken 
 Text is emitted as T{...}, an element as E{name}A{...}[...], and CDATA as C{...}, with every value
 escaped. Child order is preserved because it is the order an implementer reads; attributes are
 ordered by name so that a reordering is not a change.
+
+Names are read through psbase. PowerShell's XML adapter answers $element.Name with the value of an
+attribute called "name" when the element carries one, so <param name="x"> and <typeparam name="x">
+both read as "x" through the adapter and text moved between the two element kinds compared equal.
+
+Outside a preserved context, text is normalized in two steps. Consecutive text nodes are first
+merged into one run, across comments and processing instructions, which describe the file rather
+than the contract and must not split a sentence into two runs. Each run then has its whitespace
+collapsed to single spaces, and a leading or trailing space is kept only where the run touches
+inline content: another text run, CDATA, or an element in the inline set above. At the parent's
+edge or beside a block element the space is formatting and is dropped, so indentation between
+<para> elements or around a <summary> never moves the canonical form, while the space between two
+<c> elements does.
 #>
 function ConvertTo-CanonicalXmlNode {
     [CmdletBinding()]
@@ -453,7 +486,10 @@ function ConvertTo-CanonicalXmlNode {
         $Preserve
     )
 
-    $builder = [System.Text.StringBuilder]::new()
+    # First pass: the children as a list of items, with consecutive text-like nodes merged into one
+    # run. Comments and processing instructions are dropped here without ending a run.
+    $items = [System.Collections.Generic.List[hashtable]]::new()
+    $run = $null
 
     foreach ($child in $Node.ChildNodes) {
         $nodeType = $child.NodeType
@@ -463,10 +499,61 @@ function ConvertTo-CanonicalXmlNode {
             $nodeType -eq [System.Xml.XmlNodeType]::Whitespace -or
             $nodeType -eq [System.Xml.XmlNodeType]::SignificantWhitespace
         ) {
-            $text = $child.Value
+            if ($null -eq $run) {
+                $run = [System.Text.StringBuilder]::new()
+            }
+
+            [void] $run.Append($child.Value)
+
+            continue
+        }
+
+        if (
+            $nodeType -eq [System.Xml.XmlNodeType]::Comment -or
+            $nodeType -eq [System.Xml.XmlNodeType]::ProcessingInstruction
+        ) {
+            continue
+        }
+
+        if ($null -ne $run) {
+            $items.Add(@{ Kind = "Text"; Value = $run.ToString() })
+            $run = $null
+        }
+
+        if ($nodeType -eq [System.Xml.XmlNodeType]::CDATA) {
+            $items.Add(@{ Kind = "CData"; Value = $child.Value })
+
+            continue
+        }
+
+        if ($nodeType -eq [System.Xml.XmlNodeType]::Element) {
+            $items.Add(@{ Kind = "Element"; Element = [System.Xml.XmlElement] $child })
+        }
+    }
+
+    if ($null -ne $run) {
+        $items.Add(@{ Kind = "Text"; Value = $run.ToString() })
+    }
+
+    # Second pass: serialize, with each text run's edges decided by what it touches.
+    $builder = [System.Text.StringBuilder]::new()
+
+    for ($index = 0; $index -lt $items.Count; $index++) {
+        $item = $items[$index]
+
+        if ($item.Kind -ceq "Text") {
+            $text = $item.Value
 
             if (-not $Preserve) {
-                $text = ([regex]::Replace($text, '\s+', ' ')).Trim()
+                $text = [regex]::Replace($text, '\s+', ' ')
+
+                if (-not (Test-InlineNeighbour -Items $items -Index ($index - 1))) {
+                    $text = $text.TrimStart()
+                }
+
+                if (-not (Test-InlineNeighbour -Items $items -Index ($index + 1))) {
+                    $text = $text.TrimEnd()
+                }
 
                 # A run that was only formatting contributes nothing, so indentation outside a
                 # preserved context does not move the canonical form.
@@ -480,43 +567,69 @@ function ConvertTo-CanonicalXmlNode {
             continue
         }
 
-        if ($nodeType -eq [System.Xml.XmlNodeType]::CDATA) {
+        if ($item.Kind -ceq "CData") {
             # Always verbatim: an author chose CDATA to stop the parser touching the content.
-            [void] $builder.Append("C{").Append((ConvertTo-CanonicalXmlText -Value $child.Value)).Append("}")
+            [void] $builder.Append("C{").Append((ConvertTo-CanonicalXmlText -Value $item.Value)).Append("}")
 
             continue
         }
 
-        if ($nodeType -eq [System.Xml.XmlNodeType]::Element) {
-            $element = [System.Xml.XmlElement] $child
+        $element = [System.Xml.XmlElement] $item.Element
 
-            # The element's own walk is the whole answer, and inheriting the caller's value with -or
-            # would be wrong: Test-XmlPreserveSpace already climbs ancestors and stops at the nearest
-            # of code, xml:space="preserve" or xml:space="default", so a nearer default must be able
-            # to reset a preserving ancestor. Or-ing the inherited true made that reset unreachable.
-            $childPreserve = Test-XmlPreserveSpace -Node $element
+        # The element's own walk is the whole answer, and inheriting the caller's value with -or
+        # would be wrong: Test-XmlPreserveSpace already climbs ancestors and stops at the nearest
+        # of code, xml:space="preserve" or xml:space="default", so a nearer default must be able
+        # to reset a preserving ancestor. Or-ing the inherited true made that reset unreachable.
+        $childPreserve = Test-XmlPreserveSpace -Node $element
 
-            $attributes = ConvertTo-OrdinalOrder -Value @(
-                $element.Attributes |
-                    ForEach-Object {
-                        (ConvertTo-CanonicalXmlText -Value $_.Name) + "=" +
-                        (ConvertTo-CanonicalXmlText -Value $_.Value)
-                    }
-            )
+        $attributes = ConvertTo-OrdinalOrder -Value @(
+            $element.Attributes |
+                ForEach-Object {
+                    (ConvertTo-CanonicalXmlText -Value $_.psbase.Name) + "=" +
+                    (ConvertTo-CanonicalXmlText -Value $_.psbase.Value)
+                }
+        )
 
-            [void] $builder.Append("E{").Append((ConvertTo-CanonicalXmlText -Value $element.Name)).Append("}")
-            [void] $builder.Append("A{").Append($attributes -join ";").Append("}")
-            [void] $builder.Append("[")
-            [void] $builder.Append((ConvertTo-CanonicalXmlNode -Node $element -Preserve $childPreserve))
-            [void] $builder.Append("]")
-
-            continue
-        }
-
-        # Comments and processing instructions describe the file rather than the contract.
+        [void] $builder.Append("E{").Append((ConvertTo-CanonicalXmlText -Value $element.psbase.Name)).Append("}")
+        [void] $builder.Append("A{").Append($attributes -join ";").Append("}")
+        [void] $builder.Append("[")
+        [void] $builder.Append((ConvertTo-CanonicalXmlNode -Node $element -Preserve $childPreserve))
+        [void] $builder.Append("]")
     }
 
     return $builder.ToString()
+}
+
+<#
+.DESCRIPTION
+True when the item at the index is inline content a text run's edge should keep its space beside:
+another text run, CDATA, or an element from the inline set. False past either end of the list,
+which is the parent's boundary, and false beside a block element.
+#>
+function Test-InlineNeighbour {
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param(
+        [Parameter(Mandatory)]
+        [System.Collections.Generic.List[hashtable]]
+        $Items,
+
+        [Parameter(Mandatory)]
+        [int]
+        $Index
+    )
+
+    if ($Index -lt 0 -or $Index -ge $Items.Count) {
+        return $false
+    }
+
+    $neighbour = $Items[$Index]
+
+    if ($neighbour.Kind -cne "Element") {
+        return $true
+    }
+
+    return $script:inlineDocumentationElements.Contains(([System.Xml.XmlElement] $neighbour.Element).psbase.LocalName)
 }
 
 <#
