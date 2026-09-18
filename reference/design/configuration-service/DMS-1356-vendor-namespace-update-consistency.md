@@ -456,23 +456,26 @@ Each step is one commit. After each commit: SHA, files, behavior, tests run with
 
 ## 17. As implemented
 
-Every commit below is on branch `DMS-1356`, in plan order. Each landed behind its own review gate.
+Every commit below is on branch `DMS-1356`, in plan order. Each landed behind its own review
+gate. The identifiers are the ones the branch carries after it was rebased onto `c0da1a75f`.
 
 | Step | Commit | What it changed |
 |---|---|---|
-| 0.1 | `526bfe60d` | This document (R2, approved) and its `README.md` link |
-| 1.1 | `cbdec18a7` | Keycloak `UpdateClientNamespaceClaimAsync` becomes an identity-preserving in-place update (D-1) |
-| 1.2 | `ac43e7427` | OpenIddict regression fixtures for the same operation; no production change |
-| 2.1 | `aa5ea0473` | `IVendorRepository.GetVendorUpdateState` with its records, both relational implementations, PostgreSQL fixtures, and the three R2 spec corrections |
-| 2.2 | `c62ef6e85` | The mirrored SQL Server fixtures |
-| 3.1 | `cb878fc65` | Resolve before mutate, persist every reported UUID, commit the vendor row last (no locks, no compensation) |
-| 3.2 | `071df239f` | Lock participation: ascending acquisition, authoritative reread, bounded drift retry, release on every path |
-| 3.3 | `a04ad5dea` | Compensation, including the ambiguous current-client rule |
-| 3.3a | `1d3e9b48b` | Review finding: a replacement client that cannot be removed fails the restoration |
-| 3.4 | `9250c17f1` | Ambiguous `UpdateVendor` outcome resolved by the authoritative reread |
-| 4.1 | `d19c613e9` | PostgreSQL workflow-concurrency fixtures against the real lock manager |
-| 4.2 | `d810b2430` | The mirrored SQL Server concurrency fixtures |
-| 5.1 | `a53b0bae5` | E2E scenario and three step definitions, proven against real Keycloak |
+| 0.1 | `fe20d3d2d` | This document (R2, approved) and its `README.md` link |
+| 1.1 | `92b189a6d` | Keycloak `UpdateClientNamespaceClaimAsync` becomes an identity-preserving in-place update (D-1) |
+| 1.2 | `032607869` | OpenIddict regression fixtures for the same operation; no production change |
+| 2.1 | `96599ce79` | `IVendorRepository.GetVendorUpdateState` with its records, both relational implementations, PostgreSQL fixtures, and the three R2 spec corrections |
+| 2.2 | `529375db9` | The mirrored SQL Server fixtures |
+| 3.1 | `2c08cbba1` | Resolve before mutate, persist every reported UUID, commit the vendor row last (no locks, no compensation) |
+| 3.2 | `7d45ee95f` | Lock participation: ascending acquisition, authoritative reread, bounded drift retry, release on every path |
+| 3.3 | `c1db1e3a1` | Compensation, including the ambiguous current-client rule |
+| 3.3a | `8b671de92` | Review finding: a replacement client that cannot be removed fails the restoration |
+| 3.4 | `d5cab6a33` | Ambiguous `UpdateVendor` outcome resolved by the authoritative reread |
+| 4.1 | `929c2299b` | PostgreSQL workflow-concurrency fixtures against the real lock manager |
+| 4.2 | `c864c69b4` | The mirrored SQL Server concurrency fixtures |
+| 5.1 | `d0bdc1f51` | E2E scenario and three step definitions, proven against real Keycloak |
+| 6.1 | `802b929a7` | This section, §18 and §19, and the two dated corrections to DMS-1218 §9.1 |
+| 6.2 | `2aca69dcc` | `VendorUpdateResult.Success.AffectedClientUuids` and the unlocked post-commit client query removed from both repositories (Q-2) |
 
 **Deviations from the plan, and why.**
 
@@ -480,7 +483,7 @@ Every commit below is on branch `DMS-1356`, in plan order. Each landed behind it
 * **Step 3.1 landed as its own commit** carrying an explicit "intermediate checkpoint, not push-ready" caveat, per Q-4.
 * **Nothing else departed from the approved phases.** No insert workflow, Application vendor move, `DeleteVendor` provider cleanup, schema, or `RelationalMappingVersion` change was made.
 
-**Still outstanding:** Step 6.2, removing `VendorUpdateResult.Success.AffectedClientUuids` and the unlocked post-commit query that produced the defect (Q-2). The workflow already ignores it.
+**No implementation steps remain.** Every phase of the approved plan has landed, including the Q-2 cleanup in Step 6.2.
 
 ## 18. Verification table (executable)
 
@@ -490,11 +493,17 @@ Every commit below is on branch `DMS-1356`, in plan order. Each landed behind it
 | V-2 | CMS frontend unit | `dotnet test frontend/…AspNetCore.Tests.Unit` | 1334 passed, 0 failed, 0 skipped |
 | V-3 | PostgreSQL integration | `dotnet test backend/…Postgresql.Tests.Integration` | 454 passed, 0 failed, 0 skipped |
 | V-4 | SQL Server integration | same with `ConnectionStrings__MssqlAdmin` exported | 468 passed, 0 failed, **0 skipped** |
-| V-5 | E2E, Keycloak | `./build-config.ps1 E2ETest -Configuration Release -IdentityProvider keycloak -E2ETestFilter 'FullyQualifiedName~Vendor'` | 24 passed, 0 skipped |
-| V-6 | E2E, self-contained | same with `-IdentityProvider self-contained` | 24 passed, 0 skipped |
-| V-7 | E2E, SQL Server | same with `-EnvironmentFile './.env.config.mssql.e2e' -E2ETestFilter 'TestCategory=MssqlRepresentative'` | 23 passed, 0 skipped |
-| V-8 | Formatting | `dotnet csharpier check` on every touched file | clean |
+| V-5 | E2E, Keycloak, whole suite | `./build-config.ps1 E2ETest -Configuration Release -IdentityProvider keycloak` | 217 passed, 0 failed, 7 skipped (the self-contained-only scenarios) |
+| V-6 | E2E, self-contained, whole suite | same with `-IdentityProvider self-contained` | 220 passed, 0 failed, 4 skipped (the Keycloak-only scenarios) |
+| V-7 | E2E, SQL Server | same with `-EnvironmentFile './.env.config.mssql.e2e' -E2ETestFilter 'TestCategory=MssqlRepresentative'` | 23 passed, 0 failed, 0 skipped |
+| V-8 | Formatting | `dotnet csharpier check .` from `src/config` | 439 files, clean |
 | V-9 | Solution build | `dotnet build EdFi.DmsConfigurationService.sln --no-incremental` | succeeded, no warnings |
+
+The table above is the full gate run before the push, against the branch's original base. The
+branch was then rebased onto `c0da1a75f`, whose only change under `src/config` is one line of
+prose in a doc comment. The rebase was confirmed with a lighter gate — `git diff --check`, V-8,
+V-9, V-1 and V-2 — all of which passed unchanged; the heavier lanes were not rerun because no
+CMS behavior differed in the rebased result.
 
 **Mutation sensitivity.** Every guarded branch is pinned by a fixture demonstrated to fail under a targeted mutation, the DMS-1218 INV-62 bar.
 
