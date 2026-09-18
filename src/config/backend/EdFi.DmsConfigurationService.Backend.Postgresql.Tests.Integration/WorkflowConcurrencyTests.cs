@@ -51,9 +51,13 @@ public abstract class WorkflowConcurrencyTestBase : DatabaseTestBase
     /// <summary>
     /// Wraps the real lock manager so the first workflow holds its first lock until the
     /// gate opens. Both moves then overlap inside lock acquisition before either owns its
-    /// second lock, which is the window where an unordered acquisition deadlocks.
+    /// second lock, which is the window where an unordered acquisition deadlocks. A lock-set
+    /// acquisition counts as one acquisition, exactly as the workflow that made it sees it.
+    /// With <paramref name="holdFirstAcquisition"/> false the gate starts open and the wrapper
+    /// only observes when each acquisition is entered and granted.
     /// </summary>
-    private sealed class GatedLockManager(IApplicationLockManager inner) : IApplicationLockManager
+    private sealed class GatedLockManager(IApplicationLockManager inner, bool holdFirstAcquisition = true)
+        : IApplicationLockManager
     {
         private int _acquisitions;
         private readonly TaskCompletionSource _gateOpened = new(
@@ -71,10 +75,17 @@ public abstract class WorkflowConcurrencyTestBase : DatabaseTestBase
 
         public void Open() => _gateOpened.TrySetResult();
 
-        public async Task<ApplicationLockResult> AcquireAsync(
+        public Task<ApplicationLockResult> AcquireAsync(
             int applicationId,
             CancellationToken cancellationToken
-        )
+        ) => TrackAsync(() => inner.AcquireAsync(applicationId, cancellationToken));
+
+        public Task<ApplicationLockResult> AcquireAllAsync(
+            IReadOnlyCollection<int> applicationIds,
+            CancellationToken cancellationToken
+        ) => TrackAsync(() => inner.AcquireAllAsync(applicationIds, cancellationToken));
+
+        private async Task<ApplicationLockResult> TrackAsync(Func<Task<ApplicationLockResult>> acquire)
         {
             int acquisition = Interlocked.Increment(ref _acquisitions);
             if (acquisition == 2)
@@ -82,11 +93,14 @@ public abstract class WorkflowConcurrencyTestBase : DatabaseTestBase
                 SecondAcquisitionEntered.TrySetResult();
             }
 
-            ApplicationLockResult result = await inner.AcquireAsync(applicationId, cancellationToken);
+            ApplicationLockResult result = await acquire();
             if (acquisition == 1 && result is ApplicationLockResult.Acquired)
             {
                 FirstAcquisitionHeld.TrySetResult();
-                await _gateOpened.Task;
+                if (holdFirstAcquisition)
+                {
+                    await _gateOpened.Task;
+                }
             }
 
             if (acquisition == 2 && result is ApplicationLockResult.Acquired)
@@ -607,16 +621,19 @@ public abstract class WorkflowConcurrencyTestBase : DatabaseTestBase
     /// workflows perform. The generous acquire timeout keeps a paused-holder scenario from
     /// timing out instead of blocking.
     /// </summary>
-    private protected HttpClient SetUpWorkflowClient(bool gateFirstAcquisition = false)
+    private protected HttpClient SetUpWorkflowClient(
+        bool gateFirstAcquisition = false,
+        bool observeAcquisitions = false
+    )
     {
         IApplicationLockManager lockManager = new PostgresqlApplicationLockManager(
             Configuration.DatabaseOptions,
             Options.Create(new ApplicationLockOptions { AcquireTimeout = TimeSpan.FromSeconds(30) }),
             NullLogger<PostgresqlApplicationLockManager>.Instance
         );
-        if (gateFirstAcquisition)
+        if (gateFirstAcquisition || observeAcquisitions)
         {
-            _acquisitionGate = new GatedLockManager(lockManager);
+            _acquisitionGate = new GatedLockManager(lockManager, holdFirstAcquisition: gateFirstAcquisition);
             lockManager = _acquisitionGate;
         }
 
@@ -1255,6 +1272,88 @@ public abstract class WorkflowConcurrencyTestBase : DatabaseTestBase
         [Test]
         public void It_leaves_every_client_addressable_by_its_persisted_uuid() =>
             _storedUuidsAfterCompletion.Should().BeSubsetOf(_issuedClaimUuids);
+    }
+
+    /// <summary>
+    /// Two vendor updates over the same two applications. The first pauses inside its first
+    /// provider call while holding its lock set; the second is observed entering its own lock-set
+    /// acquisition and must not reread or mutate until the first has committed. It then targets
+    /// the client identities the first persisted, so the two updates serialize on one lock set
+    /// each rather than interleave.
+    /// </summary>
+    [TestFixture]
+    public class Given_two_vendor_updates_over_the_same_applications : WorkflowConcurrencyTestBase
+    {
+        private HttpStatusCode _firstStatus;
+        private HttpStatusCode _secondStatus;
+        private bool _secondCompletedWhileFirstPaused;
+        private int _vendorStateReadsWhileFirstPaused;
+        private int _vendorStateReadsAfterCompletion;
+        private NamespaceUpdate[] _claimUpdates = [];
+
+        [SetUp]
+        public async Task Act()
+        {
+            SetUpWorkflowFakes((801, 81), (802, 82));
+            // The first update pauses inside its first claim update, after its lock set over
+            // applications 81 and 82 is held and its authoritative reread is done.
+            _pausedNamespaceCall = 1;
+            using var client = SetUpWorkflowClient(observeAcquisitions: true);
+
+            Task<HttpResponseMessage> firstUpdate = TrackRequest(
+                client.PutAsync("/v3/vendors/1", VendorBody())
+            );
+            await _namespaceCallStarted.Task.WaitAsync(TimeSpan.FromSeconds(30));
+
+            Task<HttpResponseMessage> secondUpdate = TrackRequest(
+                client.PutAsync("/v3/vendors/1", VendorBody())
+            );
+            // The second update has done its pre-read and is inside its lock-set acquisition,
+            // which the first update's held set blocks.
+            await _acquisitionGate!.SecondAcquisitionEntered.Task.WaitAsync(TimeSpan.FromSeconds(30));
+            _secondCompletedWhileFirstPaused = secondUpdate.IsCompleted;
+            _vendorStateReadsWhileFirstPaused = VendorStateReads;
+
+            _namespaceCallReleased.SetResult();
+            _firstStatus = (await firstUpdate).StatusCode;
+            _secondStatus = (await secondUpdate).StatusCode;
+            _vendorStateReadsAfterCompletion = VendorStateReads;
+            _claimUpdates = NamespaceClaimUpdates();
+        }
+
+        [Test]
+        public void It_holds_the_second_update_before_its_reread_while_the_first_is_paused()
+        {
+            _secondCompletedWhileFirstPaused.Should().BeFalse();
+            // Two reads by the first update (pre-read and under-lock reread), one pre-read by
+            // the second; its under-lock reread waits for the first to release its lock set.
+            _vendorStateReadsWhileFirstPaused.Should().Be(3);
+        }
+
+        [Test]
+        public void It_rereads_the_second_update_only_after_the_first_released() =>
+            _vendorStateReadsAfterCompletion.Should().Be(4);
+
+        [Test]
+        public void It_targets_the_clients_the_first_update_persisted()
+        {
+            _claimUpdates.Should().HaveCount(4);
+            _claimUpdates[2].TargetedUuid.Should().Be(_claimUpdates[0].IssuedUuid.ToString());
+            _claimUpdates[3].TargetedUuid.Should().Be(_claimUpdates[1].IssuedUuid.ToString());
+        }
+
+        [Test]
+        public void It_leaves_every_client_addressable_by_its_persisted_uuid()
+        {
+            CurrentClientUuid(801).Should().Be(_claimUpdates[2].IssuedUuid);
+            CurrentClientUuid(802).Should().Be(_claimUpdates[3].IssuedUuid);
+        }
+
+        [Test]
+        public void It_completes_the_first_update() => _firstStatus.Should().Be(HttpStatusCode.NoContent);
+
+        [Test]
+        public void It_completes_the_second_update() => _secondStatus.Should().Be(HttpStatusCode.NoContent);
     }
 
     [TestFixture]

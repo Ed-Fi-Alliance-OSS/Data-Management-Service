@@ -3142,9 +3142,14 @@ public class ApiClientModuleTests
         public Task<ApplicationLockResult> AcquireAsync(
             int applicationId,
             CancellationToken cancellationToken
+        ) => AcquireAllAsync([applicationId], cancellationToken);
+
+        public Task<ApplicationLockResult> AcquireAllAsync(
+            IReadOnlyCollection<int> applicationIds,
+            CancellationToken cancellationToken
         )
         {
-            AcquiredApplicationIds.Add(applicationId);
+            AcquiredApplicationIds.AddRange(applicationIds);
             var handle = new RecordingLockHandle();
             Handles.Add(handle);
             return Task.FromResult<ApplicationLockResult>(new ApplicationLockResult.Acquired(handle));

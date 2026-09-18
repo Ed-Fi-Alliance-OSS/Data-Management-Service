@@ -7,7 +7,7 @@
 | Ticket | [DMS-1356](https://edfi.atlassian.net/browse/DMS-1356) — *Vendor namespace-prefix updates strand recreated Keycloak client UUIDs and bypass workflow serialization* |
 | Branch | `DMS-1356` (created from `main` at `5a8c5ac82`) |
 | Parent design record | `reference/design/configuration-service/DMS-1218-cms-error-response-compliance.md`, §9.1 "Workflow serialization", §9.1 "Provider update atomicity (INV-65)", §12.8 fourth-review finding V-1, §12.8.1 T-1 |
-| Revision | R3 — **implemented**. The R2 specification was approved by the architect on 2026-09-17 with two amendments (§5.3 ambiguous current-client outcome; §9.5/§11 E2E scope), both applied then. Q-1..Q-4 are answered in §16. §17 records what landed, §18 the verification evidence, and §19 the limitations found while implementing. |
+| Revision | R4 — **implemented**. The R2 specification was approved by the architect on 2026-09-17 with two amendments (§5.3 ambiguous current-client outcome; §9.5/§11 E2E scope), both applied then. Q-1..Q-4 are answered in §16. §17 records what landed, §18 the verification evidence, and §19 the limitations found while implementing. R4 (2026-09-18) replaces the R3 fan-out cap with a single-session lock set on a dedicated, bounded lock pool (§17 Step 7.1); the third review's findings and their dispositions are in §20. |
 | Author | Samuel Lugo with Claude Code |
 
 Facts are tagged **[JIRA]** (ticket text), **[REPO]** (verified in the repository at `5a8c5ac82`), or **[DESIGN]** (a decision this spec proposes). Every **[DESIGN]** item is open to challenge until approval.
@@ -62,7 +62,8 @@ Make `PUT /v3/vendors/{id}` a participating, consistency-preserving writer of id
 ```
 P0  Guards ........ route/body id match; FluentValidation. Nothing consumed on failure.
 P1  Pre-read ...... GetVendorUpdateState(id)  → 404 / 500 / snapshot S0 (no lock held)
-P2  Locks ......... distinct ApplicationIds of S0.Clients, ascending; acquire one by one
+P2  Locks ......... distinct ApplicationIds of S0.Clients, ascending, as ONE lock set on one
+                    database session (IApplicationLockManager.AcquireAllAsync)
 P3  Re-read ....... GetVendorUpdateState(id) under locks → S1
                     ApplicationId set(S1) != set(S0) → release all, retry from P1 (max 3) → 409
 P4  Provider ...... for each client c in S1.Clients (ordered by ApplicationId, then ApiClient.Id):
@@ -102,8 +103,8 @@ All compensation runs **under the held locks**. "Roll back" a client means `Upda
 | P4 sync returns `FailureUnknown`, unrecognized, or throws | Treated as stale: roll back the claim of *k*, then 1..*k*-1 | **500** | **500** |
 | P5 `UpdateVendor` → `FailureNotExists` (vendor vanished under our locks; cascades delete its applications and rows) | Roll back every client's claim (provider `FailureNotFound` is idempotent success; sync `FailureNotExists*` accepted as the expected row absence; a rotated recreated client that is `SafeToDelete` is deleted) | **404** | **500** |
 | P5 `UpdateVendor` → `FailureUnknown` or throws | D-4 resolution: matches command → nothing; matches original → roll back every client; partial/unresolvable/vanished → log, no compensation beyond the vanished-vendor rule above | **204** / **500** / **500** | **500** |
-| P2 lock timeout (any position) | Dispose the locks already held | **409** conflict (retry) | — |
-| P2 lock infrastructure failure | Dispose held locks | **500** | — |
+| P2 lock timeout (any position in the set) | The lock manager releases the locks the session already took before it reports the timeout | **409** conflict (retry) | — |
+| P2 lock infrastructure failure | Same release inside the lock manager | **500** | — |
 | P2/P3 throws or is cancelled | Dispose held locks, rethrow | `GlobalExceptionHandler` 500 / client abort | — |
 | P3 drift on the third attempt | Locks released | **409** conflict | — |
 | P1/P3 `GetVendorUpdateState` → `FailureUnknown` | Locks released | **500** | — |
@@ -118,7 +119,6 @@ All bodies are `application/problem+json` through the existing `FailureResults`/
 | Situation | Status | `type` | Detail |
 |---|---|---|---|
 | Lock timeout; persistent drift | 409 | `urn:ed-fi:api:conflict` | `Unable to process the request due to a concurrent modification. Retry the request.` (identical to Application/ApiClient) |
-| Clients span more applications than one update may lock (§13 fan-out cap) | 409 | `urn:ed-fi:api:conflict` | `The clients of this vendor span more than the 25 applications a single vendor update may lock. This request cannot succeed until fewer applications own this vendor's clients.` The condition is deterministic, so the body carries no retry wording |
 | Provider `FailureIdentityProvider` after complete rollback | 502 | `urn:ed-fi:api:bad-gateway` | `FailureResults.BadGateway("Identity provider error during client update", trace)`; `errors[0]` is the INV-41 fixed fallback |
 | Stored provider client missing (`FailureNotFound`) | 500 | `urn:ed-fi:api:internal-server-error` | `FailureResults.Unknown` |
 | Internal consistency failure (stale sync, missing row, partial state, unresolvable outcome) | 500 | same | `FailureResults.Unknown`; the inconsistency is logged at Error with vendor id, ApiClient id, and the UUIDs involved |
@@ -134,7 +134,7 @@ All bodies are `application/problem+json` through the existing `FailureResults`/
 
 | Invariant | How this ticket preserves it |
 |---|---|
-| Per-application aggregate lock domain (`dmscs:application:{id}`), ascending acquisition, held through compensation | Vendor update acquires the same locks from the same `IApplicationLockManager`, ascending, released only in P6. No new lock resource is introduced, so Application/ApiClient/Vendor workflows share one domain. |
+| Per-application aggregate lock domain (`dmscs:application:{id}`), ascending acquisition, held through compensation | Vendor update acquires the same locks from the same `IApplicationLockManager`, ascending, released only in P6. **[R4]** They are taken as one lock set on one database session (`AcquireAllAsync`), on exactly the same lock keys/resources, so a lock set and the single-application locks of the Application/ApiClient workflows contend with each other and the three workflows still share one domain and one total order. |
 | Guarded UUID sync refuses stale state; a recreated client is deleted only when proven unreferenced | Only `SyncApiClientUuid` writes `ClientUuid`; deletion happens only on `FailureNotExistsSafeToDelete` **and** only for a UUID this request itself received from a recreate (returned ≠ expected). |
 | Lock timeout → retriable 409; lock infrastructure → sanitized 500 | Same helper shape and same body. |
 | INV-45/INV-66: stored provider client disappearance is a sanitized 500, never 404 or 502 | `FailureNotFound` from the namespace update is 500 in both providers; the Keycloak lookup phase is classified separately. |
@@ -158,7 +158,7 @@ All bodies are `application/problem+json` through the existing `FailureResults`/
 | E2E | `tests/EdFi.DmsConfigurationService.Tests.E2E/Features/Vendors.feature`, `StepDefinitions/StepDefinitions.cs` | Scenario and two capture/compare steps per §9.5 |
 | Docs | this file; `reference/design/configuration-service/README.md`; `DMS-1218-cms-error-response-compliance.md` §9.1 dated corrections | Record the change |
 
-Not changed: `ApplicationModule.cs`, `ApiClientModule.cs`, lock managers, `IApplicationRepository`, `IApiClientRepository`, `OpenIddictClientRepository.cs`, `IIdentityProviderRepository.cs` (no new result variants), database schema.
+Not changed: `ApplicationModule.cs`, `ApiClientModule.cs`, ~~lock managers~~, `IApplicationRepository`, `IApiClientRepository`, `OpenIddictClientRepository.cs`, `IIdentityProviderRepository.cs` (no new result variants), database schema. **[Corrected 2026-09-18, R4]** — the lock contract and both lock managers gained the lock-set operation and the dedicated lock pool (§17 Step 7.1); the single-application operation and its callers are unchanged.
 
 ## 8. Repository contract **[DESIGN]**
 
@@ -420,7 +420,7 @@ Each step is one commit. After each commit: SHA, files, behavior, tests run with
 
 | Risk | Mitigation |
 |---|---|
-| A vendor with many applications holds many session locks for the duration of N provider calls | Each lock is one dedicated connection held until the workflow releases it, so `AcquireTimeout` does not bound the cost: the fan-out is explicitly capped instead. A vendor whose clients span more than the capped number of distinct applications acquires no lock at all and receives a 409 conflict of its own: the fan-out is a property of the vendor rather than of concurrent activity, so its detail states the deterministic condition instead of inviting a retry that would fail identically. Ordering is ascending so no cycle with Application/ApiClient workflows is possible. Document the connection cost and the cap in the as-implemented section. |
+| A vendor with many applications holds many session locks for the duration of N provider calls | ~~Each lock is one dedicated connection held until the workflow releases it, so `AcquireTimeout` does not bound the cost: the fan-out is explicitly capped instead (25 applications; deterministic 409).~~ **[Superseded 2026-09-18, R4]** The cap never addressed the actual hazard: lock connections were drawn from the repositories' pool, so concurrent workflows could exhaust it well below any per-request cap while each held a lock and waited on a repository call (hold-and-wait). R4 removes the connection growth instead of bounding the fan-out: the vendor update takes its whole application set as **one lock set on one database session** (`IApplicationLockManager.AcquireAllAsync`, deduplicated and ascending, on the same lock keys/resources), and both lock managers draw their sessions from a **dedicated, bounded pool** (`ApplicationLockConnectionPool`: its own application name, `Max Pool Size` 20, `Min Pool Size` 0, built by the manager from the configured database connection so it is the same pool for every acquisition). Lock holders and lock waiters can exhaust only that pool, never the repository pool the same workflow, or any other request, still needs. The cap and its response helper are removed; vendors above 25 applications, including company/contact edits, follow the normal workflow. Ordering is ascending so no cycle with Application/ApiClient workflows is possible. |
 | Deadlock with a two-lock ApiClient move | Impossible under a total order; pinned by the inverse-move fixture on both backends. |
 | Keycloak representation from `GetClientAsync` carries fields the `PUT` interprets destructively | Same representation round-trip already used by `UpdateClientAsync` and probed in V-32. |
 | A non-participating writer changes a row mid-request | Detected by the sync guard (`FailureStaleState`), never overwritten, answered 500 with rollback of this request's own mutations. |
@@ -477,6 +477,9 @@ gate. The identifiers are the ones the branch carries after it was rebased onto 
 | 5.1 | `d0bdc1f51` | E2E scenario and three step definitions, proven against real Keycloak |
 | 6.1 | `802b929a7` | This section, §18 and §19, and the two dated corrections to DMS-1218 §9.1 |
 | 6.2 | `2aca69dcc` | `VendorUpdateResult.Success.AffectedClientUuids` and the unlocked post-commit client query removed from both repositories (Q-2) |
+| R1 | `9263922fb` | First review round: the 25-application fan-out cap (retriable 409), `RollbackSafelyAsync` in both `UpdateVendor` catch blocks, and the provider-target / stored-guard UUID split in `RestoreClientAsync` |
+| R2 | `a35a31ce4` | Second review round: the cap refusal became its own deterministic 409 body; the replacement-client delete result flowed into compensation through an (inert, see R4) `currentClientClean` flag |
+| 7.1 (R4) | 2026-09-18, third review round | Third review round (§20): `IApplicationLockManager.AcquireAllAsync` — one lock set per vendor workflow on one database session, deduplicated and ascending, on the existing lock keys/resources — implemented by both lock managers, whose sessions now come from the dedicated bounded pool `ApplicationLockConnectionPool`; the fan-out cap and `ApplicationLockCapConflict` removed; the inert `currentClientClean` parameter removed without changing any failure classification |
 
 **Deviations from the plan, and why.**
 
@@ -484,7 +487,9 @@ gate. The identifiers are the ones the branch carries after it was rebased onto 
 * **Step 3.1 landed as its own commit** carrying an explicit "intermediate checkpoint, not push-ready" caveat, per Q-4.
 * **Nothing else departed from the approved phases.** No insert workflow, Application vendor move, `DeleteVendor` provider cleanup, schema, or `RelationalMappingVersion` change was made.
 
-**No implementation steps remain.** Every phase of the approved plan has landed, including the Q-2 cleanup in Step 6.2.
+**No implementation steps remain.** Every phase of the approved plan has landed, including the Q-2 cleanup in Step 6.2, and the R4 correction of the review-round cap (Step 7.1).
+
+**How Step 7.1 preserves the approved contract.** The single-application `AcquireAsync` is unchanged for the Application and ApiClient workflows and is now the one-element case of the set operation. Per key, the lock set keeps the per-lock `AcquireTimeout` window, the deadline re-check, and cancellation propagation of the single operation; a timeout, failure, or cancellation part way through the set releases the keys the session already holds through the same release path a handle uses (release each, evict the session from the lock pool if a release fails, then dispose), so a partial acquisition never rides a pooled connection. The vendor workflow keeps the pre-read, the authoritative reread under the set, the bounded drift retry (a new set per attempt), the lock hold through UUID persistence, vendor persistence, and compensation, and D-3 always-re-sync; the only change in `VendorModule` is that one `AcquireAllAsync` call replaces the per-application loop and the cap check.
 
 ## 18. Verification table (executable)
 
@@ -504,7 +509,40 @@ The table above is the full gate run before the push, against the branch's origi
 branch was then rebased onto `c0da1a75f`, whose only change under `src/config` is one line of
 prose in a doc comment. The rebase was confirmed with a lighter gate — `git diff --check`, V-8,
 V-9, V-1 and V-2 — all of which passed unchanged; the heavier lanes were not rerun because no
-CMS behavior differed in the rebased result.
+CMS behavior differed in the rebased result. **It is historical evidence** for the R3 revision;
+the R4 table below is what was run on the final revision.
+
+**R4 (Step 7.1) verification, run on the final revision, 2026-09-18.** The new fixtures are:
+`VendorModuleTests` — `Given_a_vendor_update_spanning_many_applications` (40 applications, one
+lock set, every client updated and synced, vendor committed) and
+`Given_a_company_contact_edit_of_a_vendor_spanning_many_applications` (unchanged prefixes, every
+client still re-synchronized, company/contact committed), plus the lock-failure fixtures
+restated for one lock set per attempt and the one-set-per-attempt assertions on the drift fixtures;
+`ApplicationLockManagerTests` on both backends — `Given_a_lock_set_acquired_on_one_session`,
+`Given_a_lock_set_whose_higher_lock_is_held_elsewhere` (partial-acquisition cleanup and ascending
+order through the release seam), `Given_a_lock_set_contending_with_a_single_application_lock`,
+`Given_a_cancelled_lock_set_acquisition_while_contending`, `Given_the_lock_connection_string`, and
+`Given_the_lock_pool_saturated_by_lock_sessions` (repository connection still opens with every lock
+session held; every lock held on a session of the dedicated pool; the 21st session refused);
+`WorkflowConcurrencyTests` on both backends — `Given_two_vendor_updates_over_the_same_applications`
+(deterministic coordination through the paused provider call and the acquisition observer).
+
+| ID | Lane | Command shape | Result |
+|---|---|---|---|
+| R4-1 | CMS frontend unit (whole project) | `dotnet test frontend/…AspNetCore.Tests.Unit` | 1351 passed, 0 failed, 0 skipped |
+| R4-2 | PostgreSQL integration (whole project, incl. lock manager, vendor consistency, workflow concurrency) | `dotnet test backend/…Postgresql.Tests.Integration` | 481 passed, 0 failed, 0 skipped |
+| R4-3 | SQL Server integration (whole project) | same with `ConnectionStrings__MssqlAdmin` exported | 495 passed, 0 failed, **0 skipped** |
+| R4-4 | E2E, Keycloak, scenario 19 only, image rebuilt | teardown → `Build -Configuration Release` → `E2ETest -Configuration Release -IdentityProvider keycloak -E2ETestFilter 'Name~_19VendorNamespace_PrefixUpdateKeepsEveryAffectedClientAddressable'` | 1 passed, 0 failed, 0 skipped (image rebuilt `--no-cache` from this revision; container env `AppSettings__IdentityProvider=keycloak`, `AppSettings__Datastore=postgresql`) |
+| R4-5 | E2E, self-contained (OpenIddict), scenario 19 only | same with `-IdentityProvider self-contained` | 1 passed, 0 failed, 0 skipped (same image, stack restarted with `-SkipDockerBuild`; container env `self-contained` / `postgresql`) |
+| R4-6 | E2E, SQL Server × Keycloak, scenario 19 only | same with `-EnvironmentFile './.env.config.mssql.e2e'` | 1 passed, 0 failed, 0 skipped (same image; container env `keycloak` / `mssql`) |
+| R4-7 | Formatting | `dotnet csharpier check .` from `src/config` | clean (see §19 for the whole-tree note) |
+| R4-8 | Solution build | `dotnet build EdFi.DmsConfigurationService.sln` | succeeded, 0 warnings |
+
+**R4 mutation sensitivity.** Each mutation was applied to the final revision, the named fixtures run, and the source restored (verified by an unchanged diff and a clean CSharpier check). PostgreSQL lock manager acquires the set in the requested order instead of ascending — 2 assertions fail (the higher-first fixture and the one-session fixture). Lock connection string returned unchanged (sessions drawn from the repository pool) — 4 assertions fail (repository connection cannot open with every lock session held; no lock-holding session carries the dedicated pool name; the pool-name and pool-bound assertions of the connection-string fixture). Timeout branch leaks the session instead of releasing the keys already held — 2 assertions fail (the lower lock is not released and the release seam records nothing). `VendorModule` locks only the first application of the set — 3 assertions fail across the across-applications, many-applications, and company/contact fixtures. The R3 mutation table above still applies to every branch this revision did not touch.
+
+The whole E2E suite was deliberately not rerun for R4: the change is confined to lock acquisition
+inside the vendor workflow and the lock managers, and scenario 19 is the only E2E scenario that
+exercises them across a real provider. The whole-suite E2E rows V-5..V-7 are R3 evidence.
 
 **Mutation sensitivity.** Every guarded branch is pinned by a fixture demonstrated to fail under a targeted mutation, the DMS-1218 INV-62 bar.
 
@@ -539,4 +577,20 @@ These are recorded because each one bounds what the evidence above actually prov
 * **The E2E stored-identifier assertions prove stability, not liveness.** They pass against the pre-fix code too, because the rows keep their stale identifiers unchanged. What fails without the fix is the operations that follow, which address the provider by that identifier.
 * **`-SkipDockerBuild` runs the previously built image.** An E2E run after a code change without rebuilding the image tests the old code and can produce false evidence in either direction. The pre-fix comparison in the mutation table was rerun with the image rebuilt for exactly this reason, after a first attempt silently tested the fixed code.
 * **Pre-existing stranded rows are not repaired.** A row already pointing at a client deleted by an earlier vendor update cannot be recovered by CMS, which has no `clientId`-based provider re-resolution. Operators delete and recreate such ApiClients.
-* **Non-participating writers remain excluded**, as recorded in §4 D-2: ApiClient and Application inserts read the vendor's stored prefixes without taking the aggregate locks, so a client created during a vendor update receives the stored prefixes and is not repaired by that request.
+* **Non-participating writers remain excluded**, as recorded in §4 D-2: ApiClient and Application inserts read the vendor's stored prefixes without taking the aggregate locks, so a client created during a vendor update receives the stored prefixes and is not repaired by that request. **Deferred, not fixed** (third review, §20).
+* **The lock pool bound is a constant, not a setting.** `ApplicationLockConnectionPool.MaxPoolSize` is 20 sessions per CMS process. A burst of more than 20 concurrent lock-holding or lock-waiting workflows makes the 21st acquisition wait for the driver's connect timeout and then fail as `FailureUnknown`, which the modules answer with the sanitized 500 they already use for lock-infrastructure failures; the repository pool is unaffected. The Application and ApiClient workflows still take one single-application lock per acquisition (a parent-changing ApiClient move takes two sessions), unchanged and out of this ticket's scope.
+* **Ordering is proven through the release seam, not observed live.** The integration fixture that requests a set with the higher id first while the higher lock is held elsewhere proves the lower lock was taken first because the release seam records exactly that key on the timeout; a fixture watching the two acquisitions in flight would need timing assumptions.
+
+## 20. Third review (2026-09-18) — findings and dispositions
+
+The third review was checked against `a35a31ce4`, Jira, the repository, the existing tests, and upstream Keycloak 26.1 source before any code changed. Each finding is recorded here as fixed, rejected with evidence, or deferred, so that a later round does not reopen it without a concrete counterexample.
+
+| Finding | Disposition |
+|---|---|
+| `currentClientClean` is inert | **Fixed (simplification).** Its only caller already passed `FailureResults.Unknown` as the original failure, so both branches produced the same 500. The parameter is removed; the replacement-client delete attempt, its failure logging, and the rollback of previously changed clients are unchanged. No failure classification changed. |
+| The 25-application cap blocks company/contact edits | **Fixed, together with the connection finding.** The cap and `ApplicationLockCapConflict` are removed; vendors above 25 affected applications, including unchanged-prefix company/contact edits, run the normal workflow. No unchanged-prefix shortcut was introduced (D-3 stands): an unchanged request may be recovering provider drift after a failed compensation, and comparing the request with stored prefixes cannot establish that provider state is already correct. |
+| Dedicated lock connections can exhaust the repository pool | **Fixed (design defect).** Each application lock retained a connection from the pool the subsequent repository operations needed, so concurrent workflows could exhaust it below any cap. The claim that a workflow holds "two more connections" simultaneously was not established (the inspected repository operations acquire connections sequentially), but the hold-and-wait starvation risk was. Correction: one lock set per vendor workflow on one session (removes the fan-out), and a dedicated bounded lock pool (removes the remaining hold-and-wait on the repository pool). Not done: a pool per request, disabled pooling, or raised pool limits. |
+| A stranded `ClientUuid` blocks vendor updates | **Rejected as a repair requirement; behavior preserved.** The workflow logs the affected vendor and client, compensates previous mutations, and returns a sanitized 500. Jira permits this failure outcome and §3.6/§12 exclude repairing pre-existing stranded rows. The missing client is neither skipped, recreated, nor reported as success. |
+| Keycloak `PUT` does not delete omitted mappers | **Rejected; contradicted by upstream source.** Keycloak 26.1 `RepresentationToModel.updateClientProtocolMappers` removes existing mappers omitted from the representation, and `ClientResource.update` invokes it; the local stack pins Keycloak 26.1 (V-32 probed the same behavior). No mapper handling changed. |
+| Rollback UUID inequality guard (`rollbackSuccess.ClientUuid != providerClientUuid`) | **Kept.** Provider UUID replacement is covered by Jira and exercised by the rotating-provider fixtures; the guard is not dead because the current providers preserve UUIDs. |
+| Concurrent Application/ApiClient insertion keeps old prefixes | **Deferred (documented exclusion, D-2 / §12 / §19).** Not expanded into creation-workflow serialization. |

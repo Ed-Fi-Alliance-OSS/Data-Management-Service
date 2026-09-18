@@ -179,7 +179,7 @@ public class VendorModule : IEndpointModule
         await validator.GuardAsync(command);
 
         // Invalid input never consumes a lock: acquisition follows the guards above.
-        (IResult? lockFailure, VendorUpdateState? lockedState, List<IAsyncDisposable> heldLocks) =
+        (IResult? lockFailure, VendorUpdateState? lockedState, IAsyncDisposable? heldLock) =
             await AcquireVendorLocksAsync(id, repository, lockManager, httpContext, logger);
         if (lockFailure is not null)
         {
@@ -243,7 +243,7 @@ public class VendorModule : IEndpointModule
         }
         finally
         {
-            await DisposeLocksAsync(heldLocks);
+            await DisposeLockAsync(heldLock);
         }
 
         // Returns null once the client is done: its provider claim carries the requested
@@ -371,11 +371,11 @@ public class VendorModule : IEndpointModule
                     {
                         // The provider replaced the client and no row references the
                         // replacement, so it is removed rather than left orphaned. A replacement
-                        // that cannot be removed is failed cleanup, not a silent success.
-                        bool replacementDeleted = await TryDeleteClientAsync(client, reportedClientUuid);
+                        // that cannot be removed is logged as a known inconsistency; the
+                        // response is the sanitized server error either way.
+                        await TryDeleteClientAsync(client, reportedClientUuid);
                         return await FinishCompensationAsync(
-                            FailureResults.Unknown(httpContext.TraceIdentifier),
-                            currentClientClean: replacementDeleted
+                            FailureResults.Unknown(httpContext.TraceIdentifier)
                         );
                     }
 
@@ -530,17 +530,11 @@ public class VendorModule : IEndpointModule
 
         // Restores every client this request changed before the failure. A failure here is a
         // KNOWN inconsistency — the client was definitely changed and definitely not restored —
-        // so it replaces the original classification with the sanitized server error. A caller
-        // that already failed to clean up the client it was working on passes
-        // currentClientClean: false; the clients changed before it are still restored, and the
-        // same known inconsistency is reported.
-        async Task<IResult> FinishCompensationAsync(IResult originalFailure, bool currentClientClean = true)
-        {
-            bool priorClientsRestored = await RollbackMutatedClientsAsync(acceptMissing: false);
-            return currentClientClean && priorClientsRestored
+        // so it replaces the original classification with the sanitized server error.
+        async Task<IResult> FinishCompensationAsync(IResult originalFailure) =>
+            await RollbackMutatedClientsAsync(acceptMissing: false)
                 ? originalFailure
                 : FailureResults.Unknown(httpContext.TraceIdentifier);
-        }
 
         // Every client is attempted even after one restoration fails, so the smallest possible
         // number of clients is left carrying prefixes the vendor row never received.
@@ -689,21 +683,20 @@ public class VendorModule : IEndpointModule
 
     /// <summary>
     /// Resolves the vendor, acquires the aggregate lock of every application that owns one of
-    /// its clients — deduplicated and in ascending application id order, the same total order
-    /// the Application and ApiClient workflows use, so no cycle between them is possible — and
-    /// rereads the vendor under those locks. The reread is authoritative: it reflects any
-    /// workflow that committed while this one waited. A vendor whose set of owning applications
-    /// changed while the locks were being acquired is retried a bounded number of times, and
-    /// persistent drift is answered as a retriable concurrency conflict. A vendor that owns no
-    /// clients mutates no provider client, so it takes no lock at all, and a vendor whose clients
-    /// span more applications than one update may lock is refused without acquiring any lock, as a
-    /// deterministic conflict rather than the retriable one, because no retry can bring that vendor
-    /// under the cap.
+    /// its clients as a single lock set on one database session — deduplicated and in ascending
+    /// application id order, the same total order the Application and ApiClient workflows use,
+    /// so no cycle between them is possible — and rereads the vendor under those locks. The
+    /// reread is authoritative: it reflects any workflow that committed while this one waited. A
+    /// vendor whose set of owning applications changed while the locks were being acquired is
+    /// retried a bounded number of times, and persistent drift is answered as a retriable
+    /// concurrency conflict. A vendor that owns no clients mutates no provider client, so it
+    /// takes no lock at all. The connection cost of the lock set is one session however many
+    /// applications it spans, so the fan-out needs no cap.
     /// </summary>
     private static async Task<(
         IResult? Failure,
         VendorUpdateState? State,
-        List<IAsyncDisposable> Locks
+        IAsyncDisposable? Lock
     )> AcquireVendorLocksAsync(
         int id,
         IVendorRepository repository,
@@ -713,14 +706,6 @@ public class VendorModule : IEndpointModule
     )
     {
         const int maxAttempts = 3;
-
-        // Every acquired application lock holds its own dedicated database connection until this
-        // workflow releases it, which is after the provider calls have run, so an uncapped
-        // fan-out lets one vendor update hold an unbounded share of the connection pool. A vendor
-        // above the cap takes no lock at all and is refused deterministically: the fan-out is a
-        // property of the vendor rather than of concurrent activity, so the same request fails the
-        // same way until fewer applications own the vendor's clients.
-        const int maxLockedApplications = 25;
 
         for (int attempt = 1; attempt <= maxAttempts; attempt++)
         {
@@ -732,50 +717,33 @@ public class VendorModule : IEndpointModule
             );
             if (preReadFailure is not null)
             {
-                return (preReadFailure, null, []);
+                return (preReadFailure, null, null);
             }
 
             int[] applicationIdsToLock = ApplicationIdsOf(preReadState!);
             if (applicationIdsToLock.Length == 0)
             {
-                return (null, preReadState, []);
+                return (null, preReadState, null);
             }
 
-            if (applicationIdsToLock.Length > maxLockedApplications)
+            ApplicationLockResult lockResult = await lockManager.AcquireAllAsync(
+                applicationIdsToLock,
+                httpContext.RequestAborted
+            );
+            if (LockFailureResult(lockResult, httpContext, logger) is { } lockFailure)
             {
-                logger.LogWarning(
-                    "The clients of Vendor {Id} span {ApplicationCount} applications, more than the {MaximumApplicationCount} this update may lock; no lock was acquired",
-                    id,
-                    applicationIdsToLock.Length,
-                    maxLockedApplications
-                );
-                return (ApplicationLockCapConflict(httpContext, maxLockedApplications), null, []);
+                return (lockFailure, null, null);
             }
 
-            List<IAsyncDisposable> heldLocks = [];
+            IAsyncDisposable heldLock = ((ApplicationLockResult.Acquired)lockResult).Handle;
             try
             {
-                foreach (int applicationIdToLock in applicationIdsToLock)
-                {
-                    ApplicationLockResult lockResult = await lockManager.AcquireAsync(
-                        applicationIdToLock,
-                        httpContext.RequestAborted
-                    );
-                    if (LockFailureResult(lockResult, httpContext, logger) is { } lockFailure)
-                    {
-                        await DisposeLocksAsync(heldLocks);
-                        return (lockFailure, null, []);
-                    }
-
-                    heldLocks.Add(((ApplicationLockResult.Acquired)lockResult).Handle);
-                }
-
                 (IResult? underLockFailure, VendorUpdateState? underLockState) =
                     await ReadVendorUpdateStateAsync(id, repository, httpContext, logger);
                 if (underLockFailure is not null)
                 {
-                    await DisposeLocksAsync(heldLocks);
-                    return (underLockFailure, null, []);
+                    await DisposeLockAsync(heldLock);
+                    return (underLockFailure, null, null);
                 }
 
                 if (!ApplicationIdsOf(underLockState!).SequenceEqual(applicationIdsToLock))
@@ -783,17 +751,17 @@ public class VendorModule : IEndpointModule
                     // An application was added to or removed from the vendor, or a client moved
                     // between applications, while the locks were being acquired; retry against
                     // the new set rather than mutate a client whose aggregate is unlocked.
-                    await DisposeLocksAsync(heldLocks);
+                    await DisposeLockAsync(heldLock);
                     continue;
                 }
 
-                return (null, underLockState, heldLocks);
+                return (null, underLockState, heldLock);
             }
             catch
             {
-                // A thrown acquisition or reread — including a propagated cancellation — must
-                // not leak the locks already held.
-                await DisposeLocksAsync(heldLocks);
+                // A thrown reread — including a propagated cancellation — must not leak the
+                // locks already held.
+                await DisposeLockAsync(heldLock);
                 throw;
             }
         }
@@ -802,7 +770,7 @@ public class VendorModule : IEndpointModule
             "The applications owning the clients of Vendor {Id} kept changing during lock acquisition",
             id
         );
-        return (RetriableConflict(httpContext), null, []);
+        return (RetriableConflict(httpContext), null, null);
     }
 
     private static int[] ApplicationIdsOf(VendorUpdateState state) =>
@@ -870,25 +838,9 @@ public class VendorModule : IEndpointModule
             statusCode: (int)HttpStatusCode.Conflict
         );
 
-    /// <summary>
-    /// The refusal a vendor above the application-lock cap receives. It carries the same conflict
-    /// status and type as a concurrency conflict, but the condition is a property of the vendor
-    /// rather than of concurrent activity, so the detail states what has to change instead of
-    /// inviting a retry that would fail identically.
-    /// </summary>
-    private static IResult ApplicationLockCapConflict(HttpContext httpContext, int maximumApplications) =>
-        Results.Json(
-            FailureResponse.ForConflict(
-                $"The clients of this vendor span more than the {maximumApplications} applications a single vendor update may lock. This request cannot succeed until fewer applications own this vendor's clients.",
-                httpContext.TraceIdentifier
-            ),
-            contentType: "application/problem+json",
-            statusCode: (int)HttpStatusCode.Conflict
-        );
-
-    private static async Task DisposeLocksAsync(List<IAsyncDisposable> heldLocks)
+    private static async Task DisposeLockAsync(IAsyncDisposable? heldLock)
     {
-        foreach (IAsyncDisposable heldLock in heldLocks)
+        if (heldLock is not null)
         {
             await heldLock.DisposeAsync();
         }

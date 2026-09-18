@@ -1591,9 +1591,11 @@ public class VendorModuleTests
     }
 
     /// <summary>
-    /// Records every acquisition in order and hands out handles that remember their disposal, so
-    /// a fixture can assert both the order the aggregate locks were taken in and that every one
-    /// was released. Acquisition outcomes are scripted per position.
+    /// Records every acquisition in order — each lock set contributes its application ids in the
+    /// order the module requested them — and hands out one handle per acquisition that remembers
+    /// its disposal, so a fixture can assert the order the aggregate locks were requested in, how
+    /// many sessions the workflow took, and that every one was released. Acquisition outcomes are
+    /// scripted per acquisition position.
     /// </summary>
     private sealed class RecordingLockManager : IApplicationLockManager
     {
@@ -1634,10 +1636,15 @@ public class VendorModuleTests
         public Task<ApplicationLockResult> AcquireAsync(
             int applicationId,
             CancellationToken cancellationToken
+        ) => AcquireAllAsync([applicationId], cancellationToken);
+
+        public Task<ApplicationLockResult> AcquireAllAsync(
+            IReadOnlyCollection<int> applicationIds,
+            CancellationToken cancellationToken
         )
         {
             int position = Interlocked.Increment(ref _acquisitions);
-            AcquiredApplicationIds.Add(applicationId);
+            AcquiredApplicationIds.AddRange(applicationIds);
             OnAcquire?.Invoke();
 
             if (position == ScriptedPosition)
@@ -1685,10 +1692,10 @@ public class VendorModuleTests
         protected const int DriftedApplicationId = 40;
 
         /// <summary>
-        /// The most applications one vendor update may lock, mirroring the cap in
-        /// <c>VendorModule.AcquireVendorLocksAsync</c>.
+        /// Enough applications that a per-application connection cost would have been refused
+        /// under the fan-out cap this workflow used to carry.
         /// </summary>
-        protected const int MaximumLockedApplications = 25;
+        protected const int ManyApplications = 40;
 
         [SetUp]
         public void SetUpLockDefaults()
@@ -1706,7 +1713,7 @@ public class VendorModuleTests
 
         /// <summary>
         /// Gives the vendor one client in each of <paramref name="applicationCount" /> distinct
-        /// applications, so a fixture can sit exactly at or just above the lock cap.
+        /// applications.
         /// </summary>
         protected void SpreadClientsAcrossApplications(int applicationCount)
         {
@@ -1728,31 +1735,37 @@ public class VendorModuleTests
             _lockManager.Handles.Should().OnlyContain(handle => handle.Disposed);
 
         /// <summary>
-        /// The refusal a vendor above the lock cap receives. It carries the conflict status and
-        /// type of the retriable conflict, but its detail states the deterministic condition,
-        /// because no retry can bring the vendor under the cap.
+        /// Every owning application was requested in one lock set, in ascending order, so the
+        /// workflow took exactly one lock session however many applications it spans.
         /// </summary>
-        protected static async Task AssertApplicationLockCapConflictContract(HttpResponseMessage response)
+        protected void AssertOneLockSetOverEveryApplication()
         {
-            response.StatusCode.Should().Be(HttpStatusCode.Conflict);
-            JsonNode actualResponse = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
-            string correlationId = actualResponse["correlationId"]!.GetValue<string>();
-            correlationId.Should().NotBeNullOrWhiteSpace();
-            JsonNode expectedResponse = JsonNode.Parse(
-                $$"""
-                {
-                  "detail": "The clients of this vendor span more than the {{MaximumLockedApplications}} applications a single vendor update may lock. This request cannot succeed until fewer applications own this vendor's clients.",
-                  "type": "urn:ed-fi:api:conflict",
-                  "title": "Conflict",
-                  "status": 409,
-                  "correlationId": "{correlationId}",
-                  "validationErrors": {},
-                  "errors": []
-                }
-                """.Replace("{correlationId}", correlationId)
-            )!;
-            JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
+            _lockManager.Handles.Should().HaveCount(1);
+            _lockManager
+                .AcquiredApplicationIds.Should()
+                .Equal(_clients.Select(client => client.ApplicationId).Distinct().Order());
         }
+
+        /// <summary>
+        /// A company and contact edit that leaves the namespace prefixes exactly as stored.
+        /// </summary>
+        protected async Task ActCompanyContactEditAsync(HttpClient client) =>
+            _response = await client.PutAsync(
+                "/v3/vendors/1",
+                new StringContent(
+                    $$"""
+                    {
+                        "id": 1,
+                        "company": "Renamed Company",
+                        "contactName": "Renamed Contact",
+                        "contactEmailAddress": "renamed@test.com",
+                        "namespacePrefixes": "{{StoredPrefixes}}"
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
 
         /// <summary>
         /// Compensation is only safe while the aggregates are still serialized, so every
@@ -1778,8 +1791,11 @@ public class VendorModuleTests
         public void It_returns_no_content() => _response.StatusCode.Should().Be(HttpStatusCode.NoContent);
 
         [Test]
-        public void It_acquires_one_lock_per_application_in_ascending_order() =>
+        public void It_acquires_one_lock_set_in_ascending_application_order()
+        {
+            _lockManager.Handles.Should().HaveCount(1);
             _lockManager.AcquiredApplicationIds.Should().Equal(LowerApplicationId, HigherApplicationId);
+        }
 
         [Test]
         public void It_releases_every_lock() => AssertEveryLockReleased();
@@ -1920,6 +1936,9 @@ public class VendorModuleTests
                 );
 
         [Test]
+        public void It_takes_one_lock_set_per_attempt() => _lockManager.Handles.Should().HaveCount(2);
+
+        [Test]
         public void It_updates_the_client_of_the_newly_locked_application() =>
             UpdateCalls.Should().HaveCount(4);
 
@@ -1976,8 +1995,11 @@ public class VendorModuleTests
             await AssertLockConflictContract(_response);
 
         [Test]
-        public void It_gives_up_after_three_attempts() =>
+        public void It_gives_up_after_three_attempts()
+        {
+            _lockManager.Handles.Should().HaveCount(3);
             _lockManager.AcquiredApplicationIds.Should().HaveCount(6);
+        }
 
         [Test]
         public void It_releases_every_lock() => AssertEveryLockReleased();
@@ -1987,17 +2009,17 @@ public class VendorModuleTests
     }
 
     /// <summary>
-    /// A vendor whose clients span exactly as many applications as one update may lock still
-    /// runs, so the cap refuses only the fan-out above it and not an ordinary multi-application
-    /// vendor.
+    /// A vendor whose clients span many applications. The lock set costs one database session
+    /// however many applications it spans, so there is no fan-out cap: the request runs the
+    /// normal workflow over every client and commits the vendor row once.
     /// </summary>
     [TestFixture]
-    public class Given_a_vendor_at_the_application_lock_cap : VendorLockTestBase
+    public class Given_a_vendor_update_spanning_many_applications : VendorLockTestBase
     {
         [SetUp]
         public async Task Act()
         {
-            SpreadClientsAcrossApplications(MaximumLockedApplications);
+            SpreadClientsAcrossApplications(ManyApplications);
             using var client = SetUpClient();
             await ActUpdateAsync(client);
         }
@@ -2006,53 +2028,73 @@ public class VendorModuleTests
         public void It_returns_no_content() => _response.StatusCode.Should().Be(HttpStatusCode.NoContent);
 
         [Test]
-        public void It_locks_every_application_in_ascending_order() =>
-            _lockManager
-                .AcquiredApplicationIds.Should()
-                .Equal(_clients.Select(client => client.ApplicationId));
+        public void It_acquires_every_application_as_one_lock_set() => AssertOneLockSetOverEveryApplication();
 
         [Test]
-        public void It_releases_every_lock() => AssertEveryLockReleased();
+        public void It_releases_the_lock_set() => AssertEveryLockReleased();
 
         [Test]
-        public void It_updates_every_client() => UpdateCalls.Should().HaveCount(MaximumLockedApplications);
+        public void It_updates_every_client() => UpdateCalls.Should().HaveCount(ManyApplications);
+
+        [Test]
+        public void It_persists_every_client_uuid() =>
+            _syncCalls.Select(call => call.ApiClientId).Should().BeEquivalentTo(_clients.Select(c => c.Id));
+
+        [Test]
+        public void It_commits_the_vendor_row() =>
+            A.CallTo(() => _vendorRepository.UpdateVendor(A<VendorUpdateCommand>.Ignored)).MustHaveHappened();
     }
 
     /// <summary>
-    /// A vendor whose clients span more applications than one update may lock. Every lock holds
-    /// its own dedicated connection until the workflow, the provider calls included, finishes, so
-    /// the request is refused before a single lock is taken rather than allowed to drain the
-    /// connection pool. The refusal is deterministic — the same vendor fails the same way on every
-    /// attempt — so it must not carry the retriable conflict's invitation to retry.
+    /// A company and contact edit of a vendor spanning many applications, with the prefixes
+    /// unchanged. Under the fan-out cap such an edit was refused outright. It now runs the normal
+    /// workflow, and the provider is still re-synchronized for every client: an unchanged
+    /// prefix value proves nothing about the provider, which may be recovering from a failed
+    /// compensation (D-3).
     /// </summary>
     [TestFixture]
-    public class Given_a_vendor_above_the_application_lock_cap : VendorLockTestBase
+    public class Given_a_company_contact_edit_of_a_vendor_spanning_many_applications : VendorLockTestBase
     {
         [SetUp]
         public async Task Act()
         {
-            SpreadClientsAcrossApplications(MaximumLockedApplications + 1);
+            SpreadClientsAcrossApplications(ManyApplications);
             using var client = SetUpClient();
-            await ActUpdateAsync(client);
+            await ActCompanyContactEditAsync(client);
         }
 
         [Test]
-        public async Task It_returns_the_deterministic_cap_conflict_contract() =>
-            await AssertApplicationLockCapConflictContract(_response);
+        public void It_returns_no_content() => _response.StatusCode.Should().Be(HttpStatusCode.NoContent);
 
         [Test]
-        public async Task It_does_not_invite_a_retry() =>
-            (await _response.Content.ReadAsStringAsync()).Should().NotContain("Retry the request");
+        public void It_acquires_every_application_as_one_lock_set() => AssertOneLockSetOverEveryApplication();
 
         [Test]
-        public void It_acquires_no_lock() => _lockManager.AcquiredApplicationIds.Should().BeEmpty();
+        public void It_releases_the_lock_set() => AssertEveryLockReleased();
 
         [Test]
-        public void It_mutates_nothing() => AssertNoProviderCallOrVendorUpdate();
+        public void It_still_resynchronizes_every_client_with_the_stored_prefixes() =>
+            _providerCalls
+                .Should()
+                .HaveCount(ManyApplications)
+                .And.OnlyContain(call => call.Prefixes == StoredPrefixes);
+
+        [Test]
+        public void It_commits_the_company_and_contact_change() =>
+            A.CallTo(() =>
+                    _vendorRepository.UpdateVendor(
+                        A<VendorUpdateCommand>.That.Matches(command =>
+                            command.Company == "Renamed Company"
+                            && command.ContactName == "Renamed Contact"
+                            && command.NamespacePrefixes == StoredPrefixes
+                        )
+                    )
+                )
+                .MustHaveHappened();
     }
 
     [TestFixture]
-    public class Given_a_vendor_update_whose_first_lock_times_out : VendorLockTestBase
+    public class Given_a_vendor_update_whose_lock_set_times_out : VendorLockTestBase
     {
         [SetUp]
         public async Task Act()
@@ -2069,32 +2111,11 @@ public class VendorModuleTests
             await AssertLockConflictContract(_response);
 
         [Test]
-        public void It_stops_at_the_first_acquisition() =>
-            _lockManager.AcquiredApplicationIds.Should().Equal(LowerApplicationId);
+        public void It_requested_the_whole_set_in_ascending_order() =>
+            _lockManager.AcquiredApplicationIds.Should().Equal(LowerApplicationId, HigherApplicationId);
 
         [Test]
-        public void It_mutates_nothing() => AssertNoProviderCallOrVendorUpdate();
-    }
-
-    [TestFixture]
-    public class Given_a_vendor_update_whose_second_lock_times_out : VendorLockTestBase
-    {
-        [SetUp]
-        public async Task Act()
-        {
-            _lockManager.ScriptedPosition = 2;
-            _lockManager.ScriptedResult = new ApplicationLockResult.FailureTimeout();
-
-            using var client = SetUpClient();
-            await ActUpdateAsync(client);
-        }
-
-        [Test]
-        public async Task It_returns_the_retriable_conflict_contract() =>
-            await AssertLockConflictContract(_response);
-
-        [Test]
-        public void It_releases_the_lock_it_already_held() => AssertEveryLockReleased();
+        public void It_holds_no_lock() => _lockManager.Handles.Should().BeEmpty();
 
         [Test]
         public void It_mutates_nothing() => AssertNoProviderCallOrVendorUpdate();
@@ -2106,7 +2127,7 @@ public class VendorModuleTests
         [SetUp]
         public async Task Act()
         {
-            _lockManager.ScriptedPosition = 2;
+            _lockManager.ScriptedPosition = 1;
             _lockManager.ScriptedResult = new ApplicationLockResult.FailureUnknown(
                 "the lock connection dropped"
             );
@@ -2124,7 +2145,7 @@ public class VendorModuleTests
             (await _response.Content.ReadAsStringAsync()).Should().NotContain("the lock connection dropped");
 
         [Test]
-        public void It_releases_the_lock_it_already_held() => AssertEveryLockReleased();
+        public void It_holds_no_lock() => _lockManager.Handles.Should().BeEmpty();
 
         [Test]
         public void It_mutates_nothing() => AssertNoProviderCallOrVendorUpdate();
@@ -2136,7 +2157,7 @@ public class VendorModuleTests
         [SetUp]
         public async Task Act()
         {
-            _lockManager.ScriptedPosition = 2;
+            _lockManager.ScriptedPosition = 1;
             _lockManager.ScriptedException = new OperationCanceledException(
                 "the application lock acquisition was cancelled"
             );
@@ -2150,7 +2171,7 @@ public class VendorModuleTests
             _response.StatusCode.Should().NotBe(HttpStatusCode.NoContent);
 
         [Test]
-        public void It_releases_the_lock_it_already_held() => AssertEveryLockReleased();
+        public void It_holds_no_lock() => _lockManager.Handles.Should().BeEmpty();
 
         [Test]
         public void It_mutates_nothing() => AssertNoProviderCallOrVendorUpdate();

@@ -22,6 +22,53 @@ public interface IApplicationLockManager
     /// converted to a timeout or failure result.
     /// </summary>
     Task<ApplicationLockResult> AcquireAsync(int applicationId, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Acquires the exclusive locks of every given Application aggregate on a single database
+    /// session, so one workflow spanning many applications holds one connection rather than one
+    /// per application. The ids are deduplicated and acquired in ascending order, the same total
+    /// order every single-application caller follows, on the same lock resources, so a lock-set
+    /// holder and a single-application holder contend with each other and no cycle between them
+    /// is possible. A failure to acquire any lock in the set releases the locks already taken on
+    /// the session before the failure result is returned. Disposing the handle releases the whole
+    /// set. Cancellation propagates as <see cref="OperationCanceledException"/>. The set must not
+    /// be empty.
+    /// </summary>
+    Task<ApplicationLockResult> AcquireAllAsync(
+        IReadOnlyCollection<int> applicationIds,
+        CancellationToken cancellationToken
+    );
+}
+
+/// <summary>
+/// The connection pool the lock managers draw their sessions from. A lock session stays open for
+/// as long as its workflow holds the lock, which spans identity-provider calls, so the sessions
+/// are pooled separately from the repositories' connections: the pool is identified by its own
+/// application name and bounded on its own, so lock holders and lock waiters can exhaust only
+/// this pool and never starve the repository operations the same workflow, or any other request,
+/// still has to perform.
+/// </summary>
+public static class ApplicationLockConnectionPool
+{
+    public const string ApplicationName = "EdFi.DmsConfigurationService.ApplicationLock";
+
+    public const int MaxPoolSize = 20;
+
+    /// <summary>
+    /// Normalizes a requested lock set: distinct application ids in ascending order. Both
+    /// managers acquire exactly this sequence.
+    /// </summary>
+    public static int[] OrderedDistinct(IReadOnlyCollection<int> applicationIds)
+    {
+        ArgumentNullException.ThrowIfNull(applicationIds);
+        int[] ordered = [.. applicationIds.Distinct().Order()];
+        if (ordered.Length == 0)
+        {
+            throw new ArgumentException("At least one application id is required.", nameof(applicationIds));
+        }
+
+        return ordered;
+    }
 }
 
 public record ApplicationLockResult

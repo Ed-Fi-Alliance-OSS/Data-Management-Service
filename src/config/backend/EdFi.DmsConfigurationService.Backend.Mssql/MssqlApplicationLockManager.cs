@@ -13,15 +13,19 @@ using Microsoft.Extensions.Options;
 namespace EdFi.DmsConfigurationService.Backend.Mssql;
 
 /// <summary>
-/// SQL Server session-owned application lock per Application aggregate, held on a dedicated
-/// connection for the lifetime of the returned handle. The connection is held across the owning
-/// workflow's identity-provider calls, so the hold duration is bounded by those calls, not by
-/// the acquire timeout. Session termination releases the lock unconditionally, so a crashed
-/// instance cannot leak it.
+/// SQL Server session-owned application locks per Application aggregate, held on one dedicated
+/// connection per acquisition for the lifetime of the returned handle. A lock set is acquired on
+/// a single session, in ascending application id order, so a workflow spanning many
+/// applications holds one connection. The connection is held across the owning workflow's
+/// identity-provider calls, so the hold duration is bounded by those calls, not by the acquire
+/// timeout; lock sessions therefore come from their own bounded pool
+/// (<see cref="ApplicationLockConnectionPool"/>) and never occupy the repositories' pool.
+/// Session termination releases the locks unconditionally, so a crashed instance cannot leak
+/// them.
 /// </summary>
 internal sealed class MssqlApplicationLockManager : IApplicationLockManager
 {
-    private readonly IOptions<DatabaseOptions> _databaseOptions;
+    private readonly string _lockConnectionString;
     private readonly IOptions<ApplicationLockOptions> _lockOptions;
     private readonly ILogger<MssqlApplicationLockManager> _logger;
     private readonly Func<SqlConnection, string, Task> _unlockAsync;
@@ -41,66 +45,69 @@ internal sealed class MssqlApplicationLockManager : IApplicationLockManager
         Func<SqlConnection, string, Task> unlockAsync
     )
     {
-        _databaseOptions = databaseOptions;
+        _lockConnectionString = BuildLockConnectionString(databaseOptions.Value.DatabaseConnection);
         _lockOptions = lockOptions;
         _logger = logger;
         _unlockAsync = unlockAsync;
     }
 
-    public async Task<ApplicationLockResult> AcquireAsync(
-        int applicationId,
+    public Task<ApplicationLockResult> AcquireAsync(int applicationId, CancellationToken cancellationToken) =>
+        AcquireOrderedAsync([applicationId], cancellationToken);
+
+    public Task<ApplicationLockResult> AcquireAllAsync(
+        IReadOnlyCollection<int> applicationIds,
+        CancellationToken cancellationToken
+    ) =>
+        AcquireOrderedAsync(ApplicationLockConnectionPool.OrderedDistinct(applicationIds), cancellationToken);
+
+    /// <summary>
+    /// The lock sessions' connection string: the configured database connection with the pool
+    /// renamed and bounded, so the same string, and therefore the same pool, is used for every
+    /// acquisition in the process.
+    /// </summary>
+    internal static string BuildLockConnectionString(string databaseConnection) =>
+        new SqlConnectionStringBuilder(databaseConnection)
+        {
+            ApplicationName = ApplicationLockConnectionPool.ApplicationName,
+            Pooling = true,
+            MinPoolSize = 0,
+            MaxPoolSize = ApplicationLockConnectionPool.MaxPoolSize,
+        }.ConnectionString;
+
+    /// <summary>
+    /// Acquires every resource on one session, each within its own acquire window. Any outcome
+    /// other than the whole set being held (a timeout, a failure, a cancellation) releases the
+    /// resources already taken and closes the session before the result leaves this method.
+    /// </summary>
+    private async Task<ApplicationLockResult> AcquireOrderedAsync(
+        int[] applicationIds,
         CancellationToken cancellationToken
     )
     {
-        string resource = ComputeLockResource(applicationId);
         SqlConnection? connection = null;
+        List<string> heldResources = [];
         try
         {
-            connection = new SqlConnection(_databaseOptions.Value.DatabaseConnection);
+            connection = new SqlConnection(_lockConnectionString);
             await connection.OpenAsync(cancellationToken);
 
-            TimeSpan timeout = _lockOptions.Value.AcquireTimeout;
-            var elapsed = Stopwatch.StartNew();
-            using var command = new SqlCommand("sp_getapplock", connection)
+            foreach (int applicationId in applicationIds)
             {
-                CommandType = CommandType.StoredProcedure,
-                // sp_getapplock itself waits up to @LockTimeout; the command timeout only needs
-                // to outlast that wait.
-                CommandTimeout = (int)timeout.TotalSeconds + 30,
-            };
-            command.Parameters.AddWithValue("@Resource", resource);
-            command.Parameters.AddWithValue("@LockMode", "Exclusive");
-            command.Parameters.AddWithValue("@LockOwner", "Session");
-            command.Parameters.AddWithValue("@LockTimeout", (int)timeout.TotalMilliseconds);
-            SqlParameter returnValue = command.Parameters.Add("@ReturnValue", SqlDbType.Int);
-            returnValue.Direction = ParameterDirection.ReturnValue;
+                string resource = ComputeLockResource(applicationId);
+                if (
+                    await TryGetApplockAsync(connection, resource, applicationId, cancellationToken) is
+                    { } failure
+                )
+                {
+                    return failure;
+                }
 
-            await command.ExecuteNonQueryAsync(cancellationToken);
-
-            int status = (int)returnValue.Value;
-            if (status >= 0)
-            {
-                _logger.LogDebug(
-                    "Acquired the application lock for Application {ApplicationId} after waiting {LockWaitMilliseconds} ms",
-                    applicationId,
-                    elapsed.ElapsedMilliseconds
-                );
-                var handle = new Handle(this, connection, resource, applicationId);
-                connection = null;
-                return new ApplicationLockResult.Acquired(handle);
+                heldResources.Add(resource);
             }
 
-            ApplicationLockResult failure = ClassifyFailedLockStatus(status, cancellationToken);
-            if (failure is ApplicationLockResult.FailureTimeout)
-            {
-                _logger.LogWarning(
-                    "Timed out acquiring the application lock for Application {ApplicationId} after {LockWaitMilliseconds} ms",
-                    applicationId,
-                    elapsed.ElapsedMilliseconds
-                );
-            }
-
-            return failure;
+            var handle = new Handle(this, connection, [.. heldResources], applicationIds);
+            connection = null;
+            return new ApplicationLockResult.Acquired(handle);
         }
         catch (OperationCanceledException)
         {
@@ -120,8 +127,8 @@ internal sealed class MssqlApplicationLockManager : IApplicationLockManager
         {
             _logger.LogError(
                 ex,
-                "Failed to acquire the application lock for Application {ApplicationId}",
-                applicationId
+                "Failed to acquire the application lock for Applications {ApplicationIds}",
+                Describe(applicationIds)
             );
             return new ApplicationLockResult.FailureUnknown(ex.Message);
         }
@@ -129,9 +136,64 @@ internal sealed class MssqlApplicationLockManager : IApplicationLockManager
         {
             if (connection is not null)
             {
-                await connection.DisposeAsync();
+                // The set was not acquired in full: whatever this session already holds is
+                // released through the same path a handle uses, evicting the session if a
+                // release fails, so a partial acquisition can never ride a pooled connection.
+                await new Handle(this, connection, [.. heldResources], applicationIds).DisposeAsync();
             }
         }
+    }
+
+    /// <summary>
+    /// Returns null once the resource is held by this session; otherwise the classified failure.
+    /// </summary>
+    private async Task<ApplicationLockResult?> TryGetApplockAsync(
+        SqlConnection connection,
+        string resource,
+        int applicationId,
+        CancellationToken cancellationToken
+    )
+    {
+        TimeSpan timeout = _lockOptions.Value.AcquireTimeout;
+        var elapsed = Stopwatch.StartNew();
+        using var command = new SqlCommand("sp_getapplock", connection)
+        {
+            CommandType = CommandType.StoredProcedure,
+            // sp_getapplock itself waits up to @LockTimeout; the command timeout only needs
+            // to outlast that wait.
+            CommandTimeout = (int)timeout.TotalSeconds + 30,
+        };
+        command.Parameters.AddWithValue("@Resource", resource);
+        command.Parameters.AddWithValue("@LockMode", "Exclusive");
+        command.Parameters.AddWithValue("@LockOwner", "Session");
+        command.Parameters.AddWithValue("@LockTimeout", (int)timeout.TotalMilliseconds);
+        SqlParameter returnValue = command.Parameters.Add("@ReturnValue", SqlDbType.Int);
+        returnValue.Direction = ParameterDirection.ReturnValue;
+
+        await command.ExecuteNonQueryAsync(cancellationToken);
+
+        int status = (int)returnValue.Value;
+        if (status >= 0)
+        {
+            _logger.LogDebug(
+                "Acquired the application lock for Application {ApplicationId} after waiting {LockWaitMilliseconds} ms",
+                applicationId,
+                elapsed.ElapsedMilliseconds
+            );
+            return null;
+        }
+
+        ApplicationLockResult failure = ClassifyFailedLockStatus(status, cancellationToken);
+        if (failure is ApplicationLockResult.FailureTimeout)
+        {
+            _logger.LogWarning(
+                "Timed out acquiring the application lock for Application {ApplicationId} after {LockWaitMilliseconds} ms",
+                applicationId,
+                elapsed.ElapsedMilliseconds
+            );
+        }
+
+        return failure;
     }
 
     /// <summary>
@@ -191,11 +253,20 @@ internal sealed class MssqlApplicationLockManager : IApplicationLockManager
         ThrowIfReleaseFailed((int)returnValue.Value);
     }
 
+    private static string Describe(int[] applicationIds) =>
+        string.Join(",", applicationIds.Select(id => id.ToString(CultureInfo.InvariantCulture)));
+
+    /// <summary>
+    /// Owns one lock session and the resources it holds. Disposal releases every resource,
+    /// attempting each even after one fails, and evicts the session from the pool when any
+    /// release failed so a still-held lock cannot be handed to the next borrower of the
+    /// connection.
+    /// </summary>
     private sealed class Handle(
         MssqlApplicationLockManager manager,
         SqlConnection connection,
-        string resource,
-        int applicationId
+        string[] resources,
+        int[] applicationIds
     ) : IAsyncDisposable
     {
         private readonly Stopwatch _held = Stopwatch.StartNew();
@@ -209,22 +280,29 @@ internal sealed class MssqlApplicationLockManager : IApplicationLockManager
             }
 
             bool evict = false;
-            try
+            foreach (string resource in resources)
             {
-                await manager._unlockAsync(connection, resource);
-                manager._logger.LogDebug(
-                    "Released the application lock for Application {ApplicationId} after holding it {LockHoldMilliseconds} ms",
-                    applicationId,
-                    _held.ElapsedMilliseconds
-                );
+                try
+                {
+                    await manager._unlockAsync(connection, resource);
+                }
+                catch (Exception ex)
+                {
+                    evict = true;
+                    manager._logger.LogError(
+                        ex,
+                        "Failed to release an application lock for Applications {ApplicationIds} after holding it {LockHoldMilliseconds} ms; evicting the connection so the lock cannot leak into the pool",
+                        Describe(applicationIds),
+                        _held.ElapsedMilliseconds
+                    );
+                }
             }
-            catch (Exception ex)
+
+            if (!evict && resources.Length > 0)
             {
-                evict = true;
-                manager._logger.LogError(
-                    ex,
-                    "Failed to release the application lock for Application {ApplicationId} after holding it {LockHoldMilliseconds} ms; evicting the connection so the lock cannot leak into the pool",
-                    applicationId,
+                manager._logger.LogDebug(
+                    "Released the application locks for Applications {ApplicationIds} after holding them {LockHoldMilliseconds} ms",
+                    Describe(applicationIds),
                     _held.ElapsedMilliseconds
                 );
             }
