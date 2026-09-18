@@ -356,12 +356,19 @@ public class IdentityModule : IEndpointModule
             return FailureResults.BadRequest("The token parameter is missing.", httpContext.TraceIdentifier);
         }
 
+        // The route requires authentication, so the caller's own client_id is available here. It is
+        // read by the same claim name IntrospectToken uses above, which a real Keycloak-issued JWT
+        // was verified to carry as well, so no per-provider branching is needed.
+        string callerClientId = httpContext.User.FindFirst("client_id")?.Value ?? string.Empty;
+
         // Check if token manager supports revocation via interface
         if (tokenManager is ITokenRevocationManager revocationManager)
         {
             try
             {
-                await revocationManager.RevokeTokenAsync(model.Token);
+                // A token belonging to another client is left alone by the manager and still
+                // reported as 200 OK, so nothing is leaked about whether it exists or who owns it.
+                await revocationManager.RevokeTokenAsync(model.Token, callerClientId);
                 return Results.Ok(); // RFC 7009: Always return 200 OK for revocation
             }
             catch
