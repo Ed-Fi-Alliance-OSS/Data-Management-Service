@@ -541,15 +541,15 @@ which contract versions it carries. Tying the version to the release version ins
 refuse a validator built against an identical contract, naming two versions that differ in nothing an
 implementer could act on.
 
-**That policy describes the published package.** At the time of writing this package is built and
-its contents verified on every pull request, and it is **not published**; publication is a recorded
-deferred item. Until it happens the build stamps the package with the Data Management Service
-release version, so a locally produced nupkg carries that number rather than the independent
-contract version the policy describes. Read the policy as what the published package will carry,
-not as a description of a locally built one, and take a local package's version from the nupkg's own
-metadata rather than inferring it from the DMS release number or from the sibling contract's
-version. The sibling `EdFi.Api.Plugins` contract already versions itself independently, and
-`PLUGINS.md` documents that as current fact for that package.
+**That policy is what the package carries, published or built locally.** The project file declares
+`Version`, `AssemblyVersion` and `FileVersion` itself, so a nupkg packed from this repository is
+`EdFi.Api.CustomValidation.1.0.0.nupkg` with an assembly at `1.0.0.0` whatever release version the
+build was given; the build and release lanes assert exactly that on every pull request and on every
+prerelease. The sibling `EdFi.Api.Plugins` contract declares its own version the same way, in
+`src/plugins/Directory.Build.props`, so the two numbers move independently of each other and of the
+Data Management Service release. Read a package's version from the nupkg's own metadata, never from
+the DMS release number or from the other contract's version. [Getting the package](#getting-the-package)
+below names the feed, and [Versioning](#versioning) states what moves the number.
 
 ### Additive-only, for the life of the package
 
