@@ -742,12 +742,11 @@ try {
 
     $lines += @(
         "",
-        "Every value above is the ``AssemblyVersion`` observed in the image. Read each against the",
-        "versioning policy of the package it comes from: a contract that declares its own version,",
-        "as ``EdFi.Api.Plugins`` does, states that version here and moves it only when its public",
-        "surface moves, while a contract that inherits the Data Management Service release version",
-        "states that instead. An observed assembly version is not necessarily a contract package",
-        "version.",
+        "Every value above is the ``AssemblyVersion`` observed in the image. Both contracts declare",
+        "their own version and move it only when their public surface moves, so neither states the",
+        "Data Management Service release version and neither changes because a release happened.",
+        "Read each against the versioning policy of the package it comes from: an observed assembly",
+        "version is not necessarily a contract package version.",
         "",
         "## Application assemblies",
         "",

@@ -13,9 +13,9 @@
     PackageReference would quietly widen every implementer's dependency closure; and an accidental
     public type would widen the surface the first published version commits to.
 
-    Only the per-PR lane calls this today, because the package is deliberately built and never
-    published. Whoever wires the publishing lane calls it there too: it is the check that decides
-    what the first published version contains, and once published that content cannot be taken back.
+    The per-PR lane calls this on every pull request, and the prerelease pack job calls it on the
+    packed artifact before that artifact is uploaded for publication: it is the check that decides
+    what a published version contains, and once published that content cannot be taken back.
 #>
 [CmdletBinding()]
 param(
@@ -36,6 +36,14 @@ param(
     [Parameter(Mandatory)]
     [string]
     $PackageId,
+
+    # The version the package must declare, which the caller reads from the contract's own csproj
+    # via Get-CustomValidationContractVersion. Passed in rather than read here so that this script
+    # asserts against the lane's single declared version instead of re-deriving one and agreeing
+    # with itself.
+    [Parameter(Mandatory)]
+    [string]
+    $ExpectedPackageVersion,
 
     # The assembly the package must carry. Asserted by name because the name is part of what an
     # already-compiled validator binds to, so changing it is a breaking change that "some dll is
@@ -95,6 +103,14 @@ $metadata = $nuspec.package.metadata
 if ($metadata.id -ne $PackageId) {
     throw "Unexpected package id: $($metadata.id)"
 }
+
+# The contract carries its own semantic version rather than the DMS release version. Asserting it
+# here is what stops a pack lane from quietly reintroducing -p:PackageVersion=`$DMSVersion, which
+# overrides the csproj because a command-line global property outranks a project property.
+if ($metadata.version -ne $ExpectedPackageVersion) {
+    throw "Unexpected package version: expected $ExpectedPackageVersion, found $($metadata.version). The custom-validation contract is versioned on its own surface, not on the DMS release."
+}
+
 if ($metadata.license.'#text' -ne "Apache-2.0") {
     throw "Missing or unexpected license expression: $($metadata.license.'#text')"
 }
@@ -184,6 +200,20 @@ if ($assemblies.Count -ne 1) {
 }
 if ($assemblies[0].BaseName -ne $AssemblyName) {
     throw "Unexpected assembly name: expected $AssemblyName, found $($assemblies[0].BaseName)"
+}
+
+# What the loader's skew preflight actually compares. AssemblyVersion is a four-part value while the
+# package version is semantic, so the expected value is the package version's major.minor.patch with
+# a zero revision. This is the same derivation the sibling plugin-contract verifier makes, and the
+# two have to agree: a package version an implementer resolved and an AssemblyVersion the preflight
+# compares must state the same contract.
+$expectedAssemblyVersion = [version] "$(($ExpectedPackageVersion -split '-', 2)[0]).0"
+$actualAssemblyVersion = [System.Reflection.AssemblyName]::GetAssemblyName(
+    $assemblies[0].FullName
+).Version
+
+if ($actualAssemblyVersion -ne $expectedAssemblyVersion) {
+    throw "Unexpected AssemblyVersion in $($assemblies[0].Name): expected $expectedAssemblyVersion, found $actualAssemblyVersion. The csproj declares the contract's version, and a release-stamped Directory.Build.props or a -p:AssemblyVersion on the command line must not reach it."
 }
 
 # The contract's rules live in the XML doc comments, so the XML file is part of the deliverable. It
@@ -294,4 +324,4 @@ if ($null -ne $metadata.dependencies) {
     }
 }
 
-Write-Output "Verified $([System.IO.Path]::GetFileName($PackageFile)): id, metadata, the packed readme is the committed implementer guide carrying all $($requiredSampleClaim.Count) sample blocks, the guide and ICustomResourceValidator's documentation agree on plugin delivery, $($assemblies[0].Name), XML docs, $($actualTypes.Count) exported types, and empty dependency set."
+Write-Output "Verified $([System.IO.Path]::GetFileName($PackageFile)): id, version $($metadata.version), metadata, the packed readme is the committed implementer guide carrying all $($requiredSampleClaim.Count) sample blocks, the guide and ICustomResourceValidator's documentation agree on plugin delivery, $($assemblies[0].Name) at AssemblyVersion $actualAssemblyVersion, XML docs, $($actualTypes.Count) exported types, and empty dependency set."

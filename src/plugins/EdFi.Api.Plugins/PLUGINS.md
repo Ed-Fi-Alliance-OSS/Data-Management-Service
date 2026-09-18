@@ -17,8 +17,9 @@ This guide is about packaging and delivering a plugin. For the custom-validation
 what a validator receives and what it returns — see
 [CUSTOM-VALIDATION.md](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/src/dms/core/EdFi.DataManagementService.CustomValidation/CUSTOM-VALIDATION.md).
 
-The release notes of a Data Management Service release state which contract versions that release
-carries. That is what tells you which version of this package to build against for a given host.
+The host assembly manifest attached to a Data Management Service release states which contract
+versions that release carries. That is what tells you which version of this package to build against
+for a given host.
 
 > **Links out of this readme point at the current documentation on `main`**, not at the
 > documentation for the package version you resolved. Where the two could differ — a rule this
@@ -365,12 +366,49 @@ The full catalogue of failures, grouped by what an operator does about each, is 
 
 This package carries its own semantic version, independent of the Data Management Service release
 version, because the host compares contract assembly versions when it decides whether a plugin can
-run. The version moves when the public surface moves, and only then. Tying it to the release version
-would have an 8.3 host refuse a plugin built against an identical 8.4 contract, naming two versions
-that differ in nothing you could act on.
+run. Tying it to the release version would have an 8.3 host refuse a plugin built against an
+identical 8.4 contract, naming two versions that differ in nothing you could act on.
+
+The version moves when **what you compile and resolve against** moves, which is three things rather
+than one:
+
+- the assembly's public and protected surface, read from its metadata: a type or member added,
+  removed or renamed, a signature, parameter name, default value, constant or generic constraint
+  changed;
+- the XML documentation that ships beside the assembly, because this contract's load-bearing rules
+  live only in `///` comments and a rule rewritten there is a changed contract your IDE shows you;
+- the package's declared dependencies, because they decide what your project inherits without any
+  signature changing.
+
+The publish lane enforces that. It compares those three against the version already on the feed and
+refuses to republish a version whose contract differs, naming which of the three changed. A changed
+readme is not one of them: prose can be fixed without a bump. A version that is on the feed is never
+overwritten: an unchanged contract at that version is skipped and a changed one is refused, so the
+bytes you restore for a version are the bytes everyone restores for it.
 
 A breaking change to this contract is not a version bump; it is a **new package id**, with a new base
 class the host discovers alongside the old one for as long as both are supported.
+
+## Getting the package
+
+Both contract packages are published to the Ed-Fi Azure Artifacts feed:
+
+```text
+https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json
+```
+
+```xml
+<PackageReference Include="EdFi.Api.Plugins" Version="[1.0.0]" />
+```
+
+The second contract, `EdFi.Api.CustomValidation`, is on the same feed and carries its own version in
+the same way; add it only if your plugin registers a validator. Each contract declares its version in
+its own source - `src/plugins/Directory.Build.props` for this one, the project file for the other -
+so their numbers move independently of each other and of the Data Management Service release.
+
+Pin the version exactly, in brackets, as above. A bare version is a minimum rather than a pin, and
+the host assembly manifest attached to the Data Management Service release you are targeting states
+which contract versions that release carries.
 
 ## License
 
