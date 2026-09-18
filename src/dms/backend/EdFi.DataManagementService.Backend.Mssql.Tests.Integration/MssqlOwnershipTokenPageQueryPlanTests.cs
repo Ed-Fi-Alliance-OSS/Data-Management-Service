@@ -5,6 +5,7 @@
 
 using System.Globalization;
 using System.Text;
+using System.Xml.Linq;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
@@ -51,9 +52,9 @@ public class Given_A_Mssql_Ownership_Token_Page_Query_Plan
     private const int SeededRowCount = 2_000;
 
     /// <summary>
-    /// The upper bound on rows carrying the queried token. Small against the seeded volume, which is the
-    /// whole point: the queried token names a fraction of the collection and the plan has to reach it
-    /// without touching the rest.
+    /// The rows the seed gives the queried token. Small against the seeded volume, which is the whole
+    /// point: the queried token names a fraction of the collection and the plan has to reach it without
+    /// touching the rest.
     /// </summary>
     private const int MatchingTokenRowCount = 50;
 
@@ -138,14 +139,77 @@ public class Given_A_Mssql_Ownership_Token_Page_Query_Plan
 
         string plan = await CapturePlanAsync(keyset);
 
-        plan.Should().Contain("[IX_Document_CreatedByOwnershipTokenId]");
-        plan.Should()
-            .Contain(
-                "PhysicalOp=\"Index Seek\"",
+        DocumentAccess documentAccess = SoleDocumentAccess(plan);
+
+        documentAccess
+            .PhysicalOp.Should()
+            .Be(
+                "Index Seek",
                 "the ownership predicate is an equality membership test against the filtered index's key "
                     + "column, so the matching rows are sought rather than found by scanning the table"
             );
+        documentAccess
+            .Index.Should()
+            .Be(
+                "[IX_Document_CreatedByOwnershipTokenId]",
+                "the seek has to land on the index this change filters rather than on any other index "
+                    + "that could serve the predicate"
+            );
+        documentAccess
+            .IsFiltered.Should()
+            .BeTrue(
+                "an index of the same name carrying every row would seek just as well and would say "
+                    + "nothing about the filter this change adds"
+            );
     }
+
+    /// <summary>
+    /// The one showplan operator that reads <c>dms.Document</c>, described by how it reached the table.
+    /// </summary>
+    /// <remarks>
+    /// Read structurally rather than by substring because the plan also reaches the root table through
+    /// its primary key for the join, so the index name, the access method and the filtered flag all have
+    /// to come off the same operator. Separate substring assertions over the whole plan are satisfied by
+    /// a plan that scanned this index and sought a different one, which is the regression worth catching.
+    /// </remarks>
+    private static DocumentAccess SoleDocumentAccess(string plan)
+    {
+        XNamespace showplan = "http://schemas.microsoft.com/sqlserver/2004/07/showplan";
+
+        var accesses = XDocument
+            .Parse(plan)
+            .Descendants(showplan + "Object")
+            .Where(o =>
+                (string?)o.Attribute("Schema") == "[dms]" && (string?)o.Attribute("Table") == "[Document]"
+            )
+            .Select(o => new { Object = o, Operator = o.Ancestors(showplan + "RelOp").FirstOrDefault() })
+            .Where(access => access.Operator is not null)
+            .Select(access => new DocumentAccess(
+                (string?)access.Operator!.Attribute("PhysicalOp"),
+                (string?)access.Object.Attribute("Index"),
+                IsFilteredIndex(access.Object)
+            ))
+            .ToList();
+
+        accesses
+            .Should()
+            .ContainSingle(
+                "the compiled page selection reads dms.Document once, so one operator carries the whole "
+                    + "answer about how the ownership predicate was served"
+            );
+
+        return accesses[0];
+    }
+
+    /// <summary>
+    /// Whether the showplan object names a filtered index. The attribute is written only for one, and the
+    /// boolean renders in either form depending on the engine version.
+    /// </summary>
+    private static bool IsFilteredIndex(XElement showplanObject) =>
+        (string?)showplanObject.Attribute("Filtered") is "1" or "true";
+
+    /// <summary>How one showplan operator reached <c>dms.Document</c>.</summary>
+    private sealed record DocumentAccess(string? PhysicalOp, string? Index, bool IsFiltered);
 
     /// <summary>
     /// The seeded collection's shape, asserted here rather than left implicit. A queried-token share that
@@ -179,16 +243,10 @@ public class Given_A_Mssql_Ownership_Token_Page_Query_Plan
 
         matchingRows
             .Should()
-            .BeGreaterThan(
-                0,
-                "the queried token has to actually be present for an index seek to return anything"
-            );
-        matchingRows
-            .Should()
-            .BeLessThanOrEqualTo(
+            .Be(
                 MatchingTokenRowCount,
-                "the queried token has to name a small fraction of the collection for an index seek to be "
-                    + "the plan the optimizer would choose"
+                "the seed gives the queried token exactly this many rows, a small fraction of the "
+                    + "collection, which is what makes an index seek the plan the optimizer would choose"
             );
     }
 
