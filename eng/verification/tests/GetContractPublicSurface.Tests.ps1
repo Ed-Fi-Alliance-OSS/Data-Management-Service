@@ -63,24 +63,41 @@ $Body
         return [string[]] @(& $script:reader -AssemblyPath $path)
     }
 
-    # $null when the two surfaces are identical. -CaseSensitive and -SyncWindow 0 are both load
-    # bearing: the surface is sorted ordinally, and a case-insensitive comparison would call a
-    # case-only rename identical.
+    # $null when the two surfaces are ordinally identical, position by position, otherwise the lines
+    # each side holds that the other does not. Ordinal is load bearing: the surface is sorted
+    # ordinally, and both PowerShell's -ceq and Compare-Object -CaseSensitive compare by culture,
+    # under which a case-only rename or an ignorable character reads as no change.
     # An empty surface is a legitimate result: an assembly whose only public type became internal
     # exports nothing an implementer can bind to, and that is precisely a change worth failing a
     # publish over. So both sides admit null and empty.
     function Compare-Surface {
         [CmdletBinding()]
+        [OutputType([object[]])]
         param(
             [Parameter(Mandatory)][AllowNull()][AllowEmptyCollection()][string[]] $Left,
             [Parameter(Mandatory)][AllowNull()][AllowEmptyCollection()][string[]] $Right
         )
 
-        return Compare-Object `
-            -ReferenceObject ([string[]] @($Left)) `
-            -DifferenceObject ([string[]] @($Right)) `
-            -CaseSensitive `
-            -SyncWindow 0
+        $leftLines = [string[]] @($Left)
+        $rightLines = [string[]] @($Right)
+
+        if ([System.Linq.Enumerable]::SequenceEqual($leftLines, $rightLines, [System.StringComparer]::Ordinal)) {
+            return $null
+        }
+
+        $leftSet = [System.Collections.Generic.HashSet[string]]::new($leftLines, [System.StringComparer]::Ordinal)
+        $rightSet = [System.Collections.Generic.HashSet[string]]::new($rightLines, [System.StringComparer]::Ordinal)
+
+        $differences = @(
+            @($leftLines | Where-Object { -not $rightSet.Contains($_) } | ForEach-Object { "<= $_" }) +
+            @($rightLines | Where-Object { -not $leftSet.Contains($_) } | ForEach-Object { "=> $_" })
+        )
+
+        if ($differences.Count -eq 0) {
+            $differences = @("the same lines in a different order or count")
+        }
+
+        return , $differences
     }
 
     # Compiles a fixture and then corrupts one byte of it, so that a malformed-metadata case is a
