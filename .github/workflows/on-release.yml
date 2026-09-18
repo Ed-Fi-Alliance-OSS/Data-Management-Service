@@ -70,6 +70,14 @@ jobs:
       - name: Checkout the repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # The two contract promotions below compare feed-listed versions through NuGet's own parsers,
+      # which package-helpers.psm1 loads from the installed .NET SDK. The runner image ships some
+      # SDK, but which one is the image's choice; this pins the same SDK every other job uses.
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.0.x'
+
       - name: Promote EdFi.Api Package
         shell: pwsh
         run: |
@@ -119,8 +127,9 @@ jobs:
       # version to promote from the release tag; a contract's version deliberately does not move
       # with the release, so promoting it at the release version would ask the feed for a version
       # that does not exist. Each reads its own declared version instead, and has three outcomes:
-      # already in the release view is a no-op, present only in the prerelease view is promoted,
-      # and absent from both fails rather than reporting success for a version that never shipped.
+      # already in the Release view is a no-op; on the feed (its Local view, where every pushed
+      # version lives) but not yet released is promoted; and absent from both fails rather than
+      # reporting success for a version that is not on the feed to be promoted.
       - name: Promote EdFi.Api.Plugins Package
         # A final release is one vX.Y.Z tag covering both products: a prerelease is a dms-pre-* or
         # cs-pre-* tag, and this workflow fires on released rather than prereleased, so those never
