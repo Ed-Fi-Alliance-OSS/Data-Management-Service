@@ -1,0 +1,61 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <!--
+        The validator plugin the custom-validation end-to-end proof loads. It consumes the two
+        contracts as packed nupkgs from a local folder feed rather than by project reference, which
+        is how an outside implementer consumes them; a project reference would prove the source tree
+        and not the packages.
+
+        It lives under eng/ rather than under src/ because nothing here can inherit what src/
+        imposes. src/Directory.Packages.props turns on central package management, which forbids the
+        inline pinned Version below. src/dms/Directory.Build.props forces a committed lock file,
+        SARIF output and the analyzer set onto everything beneath it. A nested Directory.Build.props
+        stops the props chain but not src/dms/Directory.Build.targets, which MSBuild finds by
+        walking up on its own. eng/ carries no Directory.Build.* and no Directory.Packages.props at
+        all, which is why the sibling deployment fixture
+        (eng/docker-compose/tests/plugin-deployment/Acme.SampleValidator) sits there too.
+
+        The four names the loader requires to agree all read Acme.CustomValidationProof: this
+        directory, the assembly name, the published file name, and the plugin's own Name.
+
+        It carries no lock file and belongs to no solution. The only thing that builds it is
+        src/dms/tests/EdFi.DataManagementService.Tests.Integration/CustomValidationFixturePlugin.targets.
+    -->
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+        <AssemblyName>Acme.CustomValidationProof</AssemblyName>
+        <RootNamespace>Acme.CustomValidationProof</RootNamespace>
+        <IsPackable>false</IsPackable>
+    </PropertyGroup>
+
+    <!--
+        Both versions arrive from the staging target, which packs the two contracts under exactly
+        these values. The defaults below exist only so that a bare build fails with a restore error
+        naming a version that does not exist, rather than quietly succeeding against whatever
+        happens to be in the feed. Each is pinned in [brackets]: a bare version is a floor, not a
+        pin, so with more than one nupkg per id in a folder feed NuGet resolves a different one and
+        warns instead of failing.
+    -->
+    <PropertyGroup>
+        <PluginsPackageVersion Condition="'$(PluginsPackageVersion)' == ''">0.0.0-local</PluginsPackageVersion>
+        <CustomValidationPackageVersion
+            Condition="'$(CustomValidationPackageVersion)' == ''"
+        >0.0.0-local</CustomValidationPackageVersion>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="EdFi.Api.Plugins" Version="[$(PluginsPackageVersion)]" />
+        <PackageReference Include="EdFi.Api.CustomValidation" Version="[$(CustomValidationPackageVersion)]" />
+        <!--
+            Named here rather than leaned on transitively. EdFi.Api.Plugins does carry both, because
+            its own hook signature names IConfiguration and IServiceCollection, but the registration
+            code below uses those types directly and a direct use is declared directly. The versions
+            are an outside implementer's choice and are independent of what DMS resolves, though
+            they cannot go below the floor the contract declares.
+        -->
+        <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.1" />
+        <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.1" />
+    </ItemGroup>
+</Project>

@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.ObjectModel;
 using System.Data.Common;
 using System.Globalization;
 using EdFi.DataManagementService.Backend;
@@ -269,6 +270,23 @@ public abstract class ApiIntegrationTestBase
     /// </summary>
     protected virtual void ConfigureAdditionalServices(IServiceCollection services) { }
 
+    /// <summary>
+    /// Configuration this fixture's host needs that the settings above do not cover, applied with
+    /// <c>UseSetting</c>. Empty by default, so no existing fixture changes behavior.
+    /// </summary>
+    /// <remarks>
+    /// This is the seam a fixture uses for settings that are read while the host is bootstrapping
+    /// rather than resolved from the container, which <see cref="ConfigureAdditionalServices"/>
+    /// cannot reach. The plugin root and allowlist are the case it exists for: the loader reads
+    /// <c>Plugins:Directory</c> and <c>Plugins:Allowed</c> before <c>AddServices</c> runs, and
+    /// <c>UseSetting</c> writes into the host's configuration ahead of that.
+    /// Values are read once per host boot, during <c>SetUp</c>, so anything a derived fixture must
+    /// name here has to exist by then; a fixture staging a temporary directory creates it in
+    /// <c>OneTimeSetUp</c>, which runs first.
+    /// </remarks>
+    protected virtual IReadOnlyDictionary<string, string> AdditionalHostSettings =>
+        ReadOnlyDictionary<string, string>.Empty;
+
     [SetUp]
     public async Task ApiIntegrationSetUp()
     {
@@ -312,6 +330,7 @@ public abstract class ApiIntegrationTestBase
         var assignedProfileNames = AssignedProfileNames;
         var suppressHydratedRowsOnce = SuppressHydratedRowsOnce;
         var multiTenancy = MultiTenancy;
+        var additionalHostSettings = AdditionalHostSettings;
         var applicationContextConfigurationProviderOverride = ApplicationContextConfigurationProviderOverride;
         MutableNamespacePrefixJwtValidationService? jwtValidationServiceOverride =
             CreateJwtValidationService();
@@ -392,6 +411,13 @@ public abstract class ApiIntegrationTestBase
             builder.UseSetting("ConfigurationServiceSettings:ClientId", "test-cms-client");
             builder.UseSetting("ConfigurationServiceSettings:ClientSecret", "test-cms-secret");
             builder.UseSetting("ConfigurationServiceSettings:Scope", "edfi_admin_api/full_access");
+
+            // Last, so a fixture naming a key the block above also sets wins rather than being
+            // silently overwritten by the shared default.
+            foreach ((string key, string value) in additionalHostSettings)
+            {
+                builder.UseSetting(key, value);
+            }
 
             builder.ConfigureServices(services =>
             {
