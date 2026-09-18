@@ -69,7 +69,17 @@ For self-contained tokens, CMS issues a token with a GUID `jti`, persists it in 
 token's status by `jti` after standard validation. A request is authorized only when
 the stored status is `valid`. CMS exposes:
 
-- `POST /connect/revoke` (RFC 7009) — sets the token status to `revoked`.
+- `POST /connect/revoke` (RFC 7009) — sets the token status to `revoked`. The caller
+  must be authenticated (`401` without a valid bearer token) and may only revoke a
+  token whose `client_id` claim matches the caller's own, so one client cannot
+  revoke another's tokens. The target token's signature, issuer and audience are
+  verified before its `client_id` is trusted; otherwise a forged token naming the
+  caller could carry a victim's `jti`. A token that fails verification, carries no
+  `client_id`, or belongs to another client is a **silent no-op that still returns
+  `200 OK`** — per RFC 7009 the outcome is indistinguishable from revoking an
+  unknown token, so nothing leaks about the token's existence or owner. This
+  `client_id` check is uniform across self-contained and Keycloak-issued tokens,
+  which use the same claim name.
 - `POST /connect/introspect` (RFC 7662) — reports active/inactive status.
 
 This is **not** one-time-use enforcement (a valid token remains reusable until it
@@ -136,7 +146,9 @@ externally-issued tokens), the following compensating controls bound the risk:
   tokens already in circulation on these paths.
 - **Server-side revocation (CMS self-contained only).** The per-request `jti`
   status check plus `/connect/revoke` provide immediate revocation for
-  self-contained tokens.
+  self-contained tokens. Revocation is itself an authenticated, ownership-checked
+  operation: a client can revoke only its own tokens, so the control cannot be
+  turned into a denial-of-service against other clients.
 - **No sensitive-detail leakage on failure.** DMS authentication failures return
   a fixed `application/problem+json` `401` body — `type`
   `urn:ed-fi:api:security:authentication`, `title` `Authentication Failed`,
@@ -164,8 +176,17 @@ The behaviors above are exercised by automated tests:
   `ValidateTokenAsync` accepts a token whose status is `valid` on repeated
   presentation (reusable while valid) and **rejects** expired (lifetime check, before
   the status lookup), revoked, unknown-`jti`, missing-`jti`, and malformed-`jti`
-  tokens; `RevokeTokenAsync` delegates revocation for a valid `jti` and is a no-op
-  for missing/malformed `jti`.
+  tokens; `RevokeTokenAsync` delegates revocation for a valid `jti` owned by the
+  calling client and is a no-op — repository never called — for a missing/malformed
+  `jti`, a token owned by another client, a token carrying no `client_id`, an absent
+  caller `client_id`, and a token forged to name the caller while embedding another
+  `jti`. The owned-token case also asserts the stored status is never queried,
+  pinning revocation as idempotent for an already-revoked token.
+- CMS — `EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit/Modules/IdentityModuleTests.cs`:
+  `/connect/revoke` returns `401` to an unauthenticated caller, `400` when the
+  `token` form field is missing, and `200 OK` for an owned token (revoked), a token
+  owned by another client (not revoked), a forged token (not revoked), and a
+  malformed token (not revoked).
 
 **End-to-end tests**
 
@@ -180,7 +201,8 @@ The behaviors above are exercised by automated tests:
   unit test above.)
 - CMS — `EdFi.DmsConfigurationService.Tests.E2E/Features/OwaspCriticalPaths.feature`:
   a revoked self-contained token is rejected on reuse (token issued → revoked via
-  `/connect/revoke` → reused → `401`).
+  `/connect/revoke`, authenticated with that same token so the caller owns it →
+  reused → `401`).
 
 ## Dynamic scanning
 
