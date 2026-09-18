@@ -47,6 +47,7 @@ env:
   CONFIGURATION: "Release"
   CUSTOM_VALIDATION_PACKAGE_NAME: "EdFi.Api.CustomValidation"
   PLUGINS_PACKAGE_NAME: "EdFi.Api.Plugins"
+  IDENTITY_PACKAGE_NAME: "EdFi.Api.Identity"
   MSSQL_IMAGE: "mcr.microsoft.com/mssql/server:2025-latest"
   MSSQL_CONTAINER_MEMORY: "10g"
   MSSQL_MEMORY_LIMIT_MB: "4096"
@@ -257,6 +258,7 @@ jobs:
             "eng/ci/tests/DmsPullRequestCiBudget.Tests.ps1",
             "eng/ci/tests/UnitTestCoverage.Tests.ps1",
             "eng/ci/tests/PullCiImages.Tests.ps1",
+            "eng/ci/tests/DocumentCacheAdminPackageTarget.Tests.ps1",
             "eng/DatabaseTemplates/tests/Template-Management.Tests.ps1",
             "eng/DatabaseTemplates/tests/Template-WorkflowInputs.Tests.ps1",
             "eng/smoke_test/tests/SmokeTest.Tests.ps1",
@@ -530,6 +532,34 @@ jobs:
           ./eng/verification/Invoke-PluginsConsumerCheck.ps1 `
             -PackageVersion $contractVersion `
             -NuGetPackagesDirectory (Join-Path $env:RUNNER_TEMP "nuget-verify-plugins-$([guid]::NewGuid().ToString('N'))")
+
+      - name: Create Identity NuGet Package
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          # No -DMSVersion. The identity contract is versioned on its own public surface,
+          # independently of the DMS release, the same way EdFi.Api.Plugins is. The target reads
+          # src/dms/core/EdFi.DataManagementService.Identity/EdFi.DataManagementService.Identity.csproj
+          # and ignores the release version entirely.
+          ./build-dms.ps1 Package `
+            -Configuration ${{ env.CONFIGURATION }} `
+            -PackageTarget Identity
+
+      - name: Assert Identity Package Contents
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          Import-Module ./package-helpers.psm1
+          $contractVersion = Get-PluginsContractVersion `
+            -PropsPath "src/dms/core/EdFi.DataManagementService.Identity/EdFi.DataManagementService.Identity.csproj"
+
+          # A fresh extraction directory per run. The script refuses a non-empty one rather than
+          # emptying it, so a warm runner would otherwise fail here.
+          ./eng/verification/Assert-IdentityPackage.ps1 `
+            -PackageFile "${{ env.IDENTITY_PACKAGE_NAME }}.$contractVersion.nupkg" `
+            -ExtractTo (Join-Path $env:RUNNER_TEMP "identity-nupkg-$([guid]::NewGuid().ToString('N'))") `
+            -PackageId "${{ env.IDENTITY_PACKAGE_NAME }}" `
+            -ExpectedPackageVersion $contractVersion
 
       # After both packs, necessarily: this is the one check that restores both contracts, because
       # the samples CUSTOM-VALIDATION.md publishes are a validator and the plugin that registers

@@ -427,6 +427,9 @@
       "EdFi.Api.CustomValidation": {
         "type": "Project"
       },
+      "EdFi.Api.Identity": {
+        "type": "Project"
+      },
       "edfi.datamanagementservice.backend.external": {
         "type": "Project",
         "dependencies": {

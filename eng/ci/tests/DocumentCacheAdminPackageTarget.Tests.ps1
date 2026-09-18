@@ -88,6 +88,11 @@ Describe "DocumentCacheAdmin package target" {
     # fixture's own target: the ValidateSet list, the All dispatch order, and the single-target
     # dispatch map are exact-set comparisons. Every package target the build script gains therefore
     # lands here, whatever this file is named after.
+    #
+    # The single-target assertion earns that description only because it compares the switch's key
+    # set. It previously checked each target key on its own, so a target added to both the
+    # ValidateSet and the switch was invisible to it; the Identity target was added that way and only
+    # the first two assertions caught it.
     It "recognizes DocumentCacheAdmin as a public PackageTarget value" {
         $packageTargetParameter = $script:buildScriptAst.ParamBlock.Parameters |
             Where-Object { $_.Name.VariablePath.UserPath -eq "PackageTarget" } |
@@ -102,7 +107,15 @@ Describe "DocumentCacheAdmin package target" {
         $validateSet | Should -Not -BeNullOrEmpty
 
         $targetValues = @($validateSet.PositionalArguments | ForEach-Object { $_.Value })
-        $targetValues | Should -Be @("All", "Api", "SchemaTools", "CustomValidation", "DocumentCacheAdmin", "Plugins")
+        $targetValues | Should -Be @(
+            "All",
+            "Api",
+            "SchemaTools",
+            "CustomValidation",
+            "DocumentCacheAdmin",
+            "Plugins",
+            "Identity"
+        )
     }
 
     It "dispatches PackageTarget All to every package builder" {
@@ -113,18 +126,32 @@ Describe "DocumentCacheAdmin package target" {
             "BuildSchemaToolsPackage",
             "BuildCustomValidationPackage",
             "BuildDocumentCacheAdminPackage",
-            "BuildPluginsPackage"
+            "BuildPluginsPackage",
+            "BuildIdentityPackage"
         )
     }
 
     It "dispatches each single package target to exactly its package builder" {
         $commandsByTarget = Get-BuildPackageSwitchCommandMap
 
-        $commandsByTarget["Api"] | Should -Be @("BuildApiPackage")
-        $commandsByTarget["SchemaTools"] | Should -Be @("BuildSchemaToolsPackage")
-        $commandsByTarget["CustomValidation"] | Should -Be @("BuildCustomValidationPackage")
-        $commandsByTarget["DocumentCacheAdmin"] | Should -Be @("BuildDocumentCacheAdminPackage")
-        $commandsByTarget["Plugins"] | Should -Be @("BuildPluginsPackage")
+        $expectedByTarget = [ordered]@{
+            "Api"                = @("BuildApiPackage")
+            "SchemaTools"        = @("BuildSchemaToolsPackage")
+            "CustomValidation"   = @("BuildCustomValidationPackage")
+            "DocumentCacheAdmin" = @("BuildDocumentCacheAdminPackage")
+            "Plugins"            = @("BuildPluginsPackage")
+            "Identity"           = @("BuildIdentityPackage")
+        }
+
+        # The switch's own clause keys, compared as a set, so a target added to the script without
+        # being named here fails rather than going unchecked. The parser reports the default clause
+        # separately from Clauses, so "All" plus the single targets is the whole key set.
+        @($commandsByTarget.Keys | Sort-Object) |
+            Should -Be @(@("All") + @($expectedByTarget.Keys) | Sort-Object)
+
+        foreach ($target in $expectedByTarget.Keys) {
+            $commandsByTarget[$target] | Should -Be $expectedByTarget[$target]
+        }
     }
 
     It "preserves the existing API package builder behavior" {

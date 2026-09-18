@@ -1,0 +1,70 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <Nullable>enable</Nullable>
+        <IsPackable>true</IsPackable>
+        <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <PackageId>EdFi.Api.Identity</PackageId>
+        <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+        <PackageProjectUrl>https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service</PackageProjectUrl>
+        <Title>Ed-Fi API Identity Contract</Title>
+        <Description>Public contract for implementing Identity Management behavior in the Ed-Fi Data Management Service.</Description>
+        <PackageReadmeFile>IDENTITY.md</PackageReadmeFile>
+        <!--
+            The contract's load-bearing rules (context-equality, async token handling, sanitized
+            failure mapping, UniqueId constraints) live only in /// comments, so the XML file has to
+            ship or an implementer's IDE shows them nothing.
+        -->
+        <GenerateDocumentationFile>true</GenerateDocumentationFile>
+        <!--
+            VersionPrefix, AssemblyVersion, FileVersion, and InformationalVersion are all declared
+            here, and all read 1.0.0, because this contract is versioned independently of the DMS
+            release, the same way EdFi.Api.Plugins is (src/plugins/Directory.Build.props). Everything
+            else under src/dms instead inherits src/dms/Directory.Build.props, which
+            SetDMSAssemblyInfo regenerates with the DMS release version on every BuildAndPublish;
+            there is no tree-level props file this project can opt out through, so these four
+            properties have to be declared in the csproj itself. Directory.Build.props is imported
+            before this file's own PropertyGroup, so these declarations win over whatever
+            SetDMSAssemblyInfo wrote there - the same MSBuild evaluation order the plugins tree
+            relies on.
+
+            VersionPrefix rather than Version: Get-PluginsContractVersion (package-helpers.psm1)
+            reads //PropertyGroup/VersionPrefix from a caller-supplied -PropsPath, and pointing that
+            path at this csproj has to work unchanged.
+
+            InformationalVersion is one property beyond what the ticket's list names, because
+            without it declared here the packed DLL's ProductVersion falls back to the regenerated
+            props file's value (currently 8.0.0) instead of this contract's own version.
+
+            None of this holds inside a Docker-built image: the Dockerfile passes global
+            /p:Version and /p:InformationalVersion (not AssemblyVersion or FileVersion) when a
+            release VERSION is supplied, and a global property wins over one declared in any
+            referenced project, so those two still read the DMS release version there. See the
+            version-stamping note above the publish RUN step in src/dms/Dockerfile, which explains
+            why AssemblyVersion and FileVersion are deliberately not passed.
+        -->
+        <VersionPrefix>1.0.0</VersionPrefix>
+        <AssemblyVersion>1.0.0</AssemblyVersion>
+        <FileVersion>1.0.0</FileVersion>
+        <InformationalVersion>1.0.0</InformationalVersion>
+    </PropertyGroup>
+    <!--
+        This project declares no PackageReference and no ProjectReference, on purpose, and both
+        halves matter.
+
+        No PackageReference: the recommended surface uses JsonNode and JsonObject, which are
+        System.Text.Json.Nodes types that resolve out of the shared framework. So the dependency
+        closure an implementer inherits is empty, and referencing this package obliges them to
+        nothing they did not choose.
+
+        No ProjectReference: the types in IIdentityService's signatures are declared here rather
+        than borrowed from EdFi.DataManagementService.Core.External. That decouples DMS's internal
+        model from what implementers compile against - a field added there for an internal reason
+        is not a published-API change - and it is what lets this ship as a small, independently
+        versioned package rather than dragging that assembly's whole public surface along.
+    -->
+    <ItemGroup>
+        <None Include="IDENTITY.md" Pack="true" PackagePath="\" />
+    </ItemGroup>
+</Project>

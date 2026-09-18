@@ -464,6 +464,9 @@
       "EdFi.Api.CustomValidation": {
         "type": "Project"
       },
+      "EdFi.Api.Identity": {
+        "type": "Project"
+      },
       "edfi.datamanagementservice.backend": {
         "type": "Project",
         "dependencies": {
@@ -573,6 +576,7 @@
         "dependencies": {
           "Be.Vlaanderen.Basisregisters.Generators.Guid.Deterministic": "[4.0.0, )",
           "EdFi.Api.CustomValidation": "[1.0.0, )",
+          "EdFi.Api.Identity": "[1.0.0, )",
           "EdFi.DataManagementService.Backend.External": "[1.0.0, )",
           "EdFi.DataManagementService.Core.External": "[1.0.0, )",
           "FastGuid": "[1.4.1, )",
