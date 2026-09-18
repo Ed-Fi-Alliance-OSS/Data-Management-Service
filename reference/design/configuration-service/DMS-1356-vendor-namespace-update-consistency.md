@@ -53,7 +53,16 @@ Make `PUT /v3/vendors/{id}` a participating, consistency-preserving writer of id
 
 ### D-4 Ambiguous repository outcome resolution reuses the row-locking state read
 
-`UpdateVendor` returning `FailureUnknown` or throwing is resolved with the new `GetVendorUpdateState` under the still-held locks: a complete match with the command (scalars and normalized prefix set) means the transaction committed → **204**; a match with the original snapshot means it did not → provider rollback → **500**; anything else → **500** with the state logged. This is the `ResolveAmbiguousOutcomeAsync` pattern of `ApplicationModule.Update`.
+`UpdateVendor` returning `FailureUnknown` or throwing is resolved with the new `GetVendorUpdateState` under the still-held locks, classified on the scalars and the normalized prefix set. The reread compares business values only — the commit also writes audit fields the comparison never sees — so **only a state that moved off the original values proves the commit landed**:
+
+| Matches command | Matches original | Outcome |
+|---|---|---|
+| Yes | No | Committed → **204**, no compensation |
+| No | Yes | Provably not committed → provider rollback → **500** |
+| Yes | Yes | **No-op request: neither commit nor rollback is established** → provider rollback → **500** |
+| No | No | Partial/unclassifiable → **500** with the state logged, no compensation |
+
+The overlapping row is the no-op `PUT`, whose requested values already equal the stored ones. Equal business values cannot prove the failed write committed, and the workflow returns **204** only on a confirmed commit, so it takes the same conservative path as the proven rollback rather than recovering a success. Compensation there restores the vendor's stored prefixes — which a no-op has just asked for anyway — through the same guarded persistence of any returned UUIDs. A `VendorUpdateResult.Success` never reaches this resolution, so an ordinary no-op `PUT` still returns **204**. This is the `ResolveAmbiguousOutcomeAsync` pattern of `ApplicationModule.Update`, narrowed by the `!MatchesOriginal` conjunct on its recovered-success arm.
 
 ## 5. Behavioral contract of `PUT /v3/vendors/{id}` (target)
 
@@ -102,7 +111,7 @@ All compensation runs **under the held locks**. "Roll back" a client means `Upda
 | P4 sync returns `FailureNotExists` (row missing, UUID referenced elsewhere) | Nothing deleted; roll back the claim of *k*, then 1..*k*-1 | **500** | **500** |
 | P4 sync returns `FailureUnknown`, unrecognized, or throws | Treated as stale: roll back the claim of *k*, then 1..*k*-1 | **500** | **500** |
 | P5 `UpdateVendor` → `FailureNotExists` (vendor vanished under our locks; cascades delete its applications and rows) | Roll back every client's claim (provider `FailureNotFound` is idempotent success; sync `FailureNotExists*` accepted as the expected row absence; a rotated recreated client that is `SafeToDelete` is deleted) | **404** | **500** |
-| P5 `UpdateVendor` → `FailureUnknown` or throws | D-4 resolution: matches command → nothing; matches original → roll back every client; partial/unresolvable/vanished → log, no compensation beyond the vanished-vendor rule above | **204** / **500** / **500** | **500** |
+| P5 `UpdateVendor` → `FailureUnknown` or throws | D-4 resolution: matches the command **and not** the original → nothing; matches the original (including the no-op overlap, where the commit stays unproven) → roll back every client; partial/unresolvable/vanished → log, no compensation beyond the vanished-vendor rule above | **204** / **500** / **500** | **500** |
 | P2 lock timeout (any position in the set) | The lock manager releases the locks the session already took before it reports the timeout | **409** conflict (retry) | — |
 | P2 lock infrastructure failure | Same release inside the lock manager | **500** | — |
 | P2/P3 throws or is cancelled | Dispose held locks, rethrow | `GlobalExceptionHandler` 500 / client abort | — |

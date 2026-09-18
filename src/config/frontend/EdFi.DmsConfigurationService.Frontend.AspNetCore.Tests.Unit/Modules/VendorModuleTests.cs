@@ -3075,4 +3075,200 @@ public class VendorModuleTests
         [Test]
         public void It_releases_every_lock_afterwards() => AssertEveryLockReleased();
     }
+
+    /// <summary>
+    /// A vendor whose stored values are already the ones the request body carries, so the PUT is
+    /// a no-op and a resolving reread matches the command and the original at once. That overlap
+    /// proves nothing: the predicates compare business values, while the commit also writes audit
+    /// fields they never see.
+    ///
+    /// Compensation re-applies the vendor's stored prefixes, which here are the requested ones,
+    /// so the compensating claim updates cannot be told from the forward ones by the prefixes
+    /// they carry. They are identified by position instead: the forward pass issues one call per
+    /// client in resolution order, and everything after it compensates, newest mutation first.
+    /// </summary>
+    public abstract class NoOpAmbiguousVendorUpdateTestBase : AmbiguousVendorUpdateTestBase
+    {
+        /// <summary>The state every read returns: the values the request body asks for.</summary>
+        protected VendorUpdateStateResult NoOpState() =>
+            new VendorUpdateStateResult.Success(
+                new VendorUpdateState(
+                    RequestedCompany,
+                    "Test",
+                    RequestedContactEmail,
+                    RequestedPrefixes,
+                    _clients
+                )
+            );
+
+        /// <summary>The claim updates of the forward pass, one per client in resolution order.</summary>
+        protected List<ProviderCall> ForwardCalls => [.. _providerCalls.Take(_clients.Length)];
+
+        /// <summary>Every claim update the forward pass did not issue: the compensating ones.</summary>
+        protected List<ProviderCall> CompensationCalls => [.. _providerCalls.Skip(_clients.Length)];
+
+        /// <summary>The clients in the order compensation restores them: newest mutation first.</summary>
+        protected VendorApiClient[] CompensationOrder => [.. Enumerable.Reverse(_clients)];
+    }
+
+    [TestFixture]
+    public class Given_an_ambiguous_no_op_update : NoOpAmbiguousVendorUpdateTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            FailTheRepositoryUpdate();
+            // Every read returns the requested values, because the vendor already holds them.
+            ScriptStateReads(NoOpState);
+
+            using var client = SetUpClient();
+            await ActUpdateAsync(client);
+        }
+
+        [Test]
+        public void It_does_not_recover_a_success_the_reread_cannot_prove() =>
+            _response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+
+        [Test]
+        public async Task It_does_not_leak_the_failure_message() =>
+            (await _response.Content.ReadAsStringAsync())
+                .Should()
+                .NotContain("the commit outcome is unknown");
+
+        [Test]
+        public void It_mutates_every_resolved_client_once() =>
+            ForwardCalls
+                .Select(call => call.TargetedUuid)
+                .Should()
+                .Equal(_clients.Select(client => client.ClientUuid.ToString()));
+
+        [Test]
+        public void It_restores_every_client_it_changed() =>
+            CompensationCalls
+                .Select(call => call.TargetedUuid)
+                .Should()
+                .Equal(CompensationOrder.Select(client => client.ClientUuid.ToString()));
+
+        [Test]
+        public void It_issues_every_claim_update_with_the_prefixes_the_request_asked_for() =>
+            _providerCalls.Should().OnlyContain(call => call.Prefixes == RequestedPrefixes);
+    }
+
+    [TestFixture]
+    public class Given_a_thrown_repository_update_on_a_no_op : NoOpAmbiguousVendorUpdateTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() => _vendorRepository.UpdateVendor(A<VendorUpdateCommand>.Ignored))
+                .Throws(new InvalidOperationException("the commit connection dropped"));
+            ScriptStateReads(NoOpState);
+
+            using var client = SetUpClient();
+            await ActUpdateAsync(client);
+        }
+
+        [Test]
+        public void It_enters_the_same_unresolved_outcome_as_a_returned_failure() =>
+            _response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+
+        [Test]
+        public async Task It_does_not_leak_the_thrown_message() =>
+            (await _response.Content.ReadAsStringAsync())
+                .Should()
+                .NotContain("the commit connection dropped");
+
+        [Test]
+        public void It_restores_every_client_it_changed() =>
+            CompensationCalls
+                .Select(call => call.TargetedUuid)
+                .Should()
+                .Equal(CompensationOrder.Select(client => client.ClientUuid.ToString()));
+    }
+
+    [TestFixture]
+    public class Given_an_ambiguous_no_op_update_whose_provider_rotates_the_client_uuid
+        : NoOpAmbiguousVendorUpdateTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            _rotateClientUuids = true;
+            FailTheRepositoryUpdate();
+            ScriptStateReads(NoOpState);
+
+            using var client = SetUpClient();
+            await ActUpdateAsync(client);
+        }
+
+        [Test]
+        public void It_returns_a_sanitized_server_error() =>
+            _response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+
+        [Test]
+        public void It_compensates_against_the_client_the_forward_pass_left_live() =>
+            CompensationCalls
+                .Select(call => call.TargetedUuid)
+                .Should()
+                .Equal(Enumerable.Reverse(ForwardCalls).Select(call => call.ReportedUuid.ToString()));
+
+        [Test]
+        public void It_persists_every_compensating_uuid_under_the_uuid_its_row_now_holds()
+        {
+            // Anchored on the count, so the expectation cannot go vacuously empty if the
+            // workflow ever stops compensating at all.
+            CompensationCalls.Should().HaveCount(_clients.Length);
+            _syncCalls
+                .Skip(_clients.Length)
+                .Should()
+                .Equal(
+                    CompensationCalls.Select(
+                        (call, index) =>
+                            new SyncCall(
+                                CompensationOrder[index].Id,
+                                Guid.Parse(call.TargetedUuid),
+                                call.ReportedUuid
+                            )
+                    )
+                );
+        }
+
+        [Test]
+        public void It_leaves_every_row_pointing_at_the_client_compensation_produced() =>
+            _storedUuids
+                .Should()
+                .Equal(
+                    CompensationCalls
+                        .Select((call, index) => (CompensationOrder[index].Id, call.ReportedUuid))
+                        .ToDictionary(pair => pair.Id, pair => pair.ReportedUuid)
+                );
+    }
+
+    [TestFixture]
+    public class Given_a_successful_no_op_update : NoOpAmbiguousVendorUpdateTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            // The repository confirms the commit, so nothing is ambiguous: a no-op PUT stays an
+            // ordinary success and never reaches the resolution the overlap made conservative.
+            ScriptStateReads(NoOpState);
+
+            using var client = SetUpClient();
+            await ActUpdateAsync(client);
+        }
+
+        [Test]
+        public void It_returns_no_content() => _response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        [Test]
+        public void It_mutates_every_resolved_client_once() =>
+            ForwardCalls
+                .Select(call => call.TargetedUuid)
+                .Should()
+                .Equal(_clients.Select(client => client.ClientUuid.ToString()));
+
+        [Test]
+        public void It_does_not_compensate() => CompensationCalls.Should().BeEmpty();
+    }
 }

@@ -417,6 +417,13 @@ public class VendorModule : IEndpointModule
         // resolved with the authoritative row-locking read, which waits out any in-flight commit
         // before classifying the state. The read happens under the locks this request still
         // holds, so nothing else can move the vendor while it is classified.
+        //
+        // The read can only classify the outcome when the requested values differ from the
+        // original ones. Only a state that moved off the original values proves the commit
+        // landed: these predicates compare business values, and the commit also writes audit
+        // fields they never see, so a state that still matches the original values is never
+        // proof of a commit however it got there. An unproven commit is answered conservatively,
+        // never as success.
         async Task<IResult> ResolveAmbiguousOutcomeAsync()
         {
             VendorUpdateStateResult resolution;
@@ -436,13 +443,21 @@ public class VendorModule : IEndpointModule
 
             switch (resolution)
             {
-                case VendorUpdateStateResult.Success resolved when MatchesCommand(resolved.State):
-                    // The ambiguous transaction committed completely; the identity provider and
-                    // the database already hold the intended state.
+                case VendorUpdateStateResult.Success resolved
+                    when MatchesCommand(resolved.State) && !MatchesOriginal(resolved.State):
+                    // The row moved off the original values and onto the requested ones, which
+                    // only the commit could have done; the identity provider and the database
+                    // already hold the intended state.
                     return Results.NoContent();
                 case VendorUpdateStateResult.Success resolved when MatchesOriginal(resolved.State):
-                    // The transaction provably did not commit, so the clients this request
-                    // changed are restored and the unknown failure stays a server error.
+                    // The row still holds the original values. Either the transaction did not
+                    // commit, or the request was a no-op whose requested values equal the
+                    // original ones and the reread establishes neither commit nor rollback. The
+                    // unresolved case takes the same conservative path as the proven rollback:
+                    // the clients this request changed are restored to the vendor's stored
+                    // prefixes — which a no-op has just asked for anyway, so restoring them
+                    // leaves the provider holding the values the caller wanted either way — and
+                    // the unknown failure stays a server error rather than an unproven 204.
                     await RollbackMutatedClientsAsync(acceptMissing: false);
                     return FailureResults.Unknown(httpContext.TraceIdentifier);
                 case VendorUpdateStateResult.Success:
