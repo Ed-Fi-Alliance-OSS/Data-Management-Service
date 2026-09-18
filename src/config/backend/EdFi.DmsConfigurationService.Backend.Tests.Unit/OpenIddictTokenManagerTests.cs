@@ -74,13 +74,15 @@ public class OpenIddictTokenManagerTests
     private static string CreateSignedToken(
         RsaSecurityKey signingKey,
         IEnumerable<Claim> claims,
-        bool expired = false
+        bool expired = false,
+        string? issuer = null,
+        string? audience = null
     )
     {
         var now = DateTime.UtcNow;
         var jwt = new JwtSecurityToken(
-            issuer: TestIssuer,
-            audience: TestAudience,
+            issuer: issuer ?? TestIssuer,
+            audience: audience ?? TestAudience,
             claims: claims,
             notBefore: expired ? now.AddMinutes(-15) : now.AddMinutes(-5),
             expires: expired ? now.AddMinutes(-10) : now.AddMinutes(10),
@@ -451,7 +453,7 @@ public class OpenIddictTokenManagerTests
     /// Registers the supplied public key as the only active key, so tokens signed with its
     /// private half pass verification.
     /// </summary>
-    private void GivenTheActivePublicKeyIs(string keyId, byte[] publicKeySpki) =>
+    private void CreateActivePublicKey(string keyId, byte[] publicKeySpki) =>
         A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync())
             .Returns(
                 new[]
@@ -470,7 +472,7 @@ public class OpenIddictTokenManagerTests
         public async Task Act()
         {
             var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
-            GivenTheActivePublicKeyIs(keyId, publicKeySpki);
+            CreateActivePublicKey(keyId, publicKeySpki);
 
             _jti = Guid.NewGuid();
             A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti)).Returns(true);
@@ -517,7 +519,7 @@ public class OpenIddictTokenManagerTests
         public async Task Act()
         {
             var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
-            GivenTheActivePublicKeyIs(keyId, publicKeySpki);
+            CreateActivePublicKey(keyId, publicKeySpki);
 
             string token = CreateSignedToken(
                 signingKey,
@@ -553,7 +555,7 @@ public class OpenIddictTokenManagerTests
         public async Task Act()
         {
             var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
-            GivenTheActivePublicKeyIs(keyId, publicKeySpki);
+            CreateActivePublicKey(keyId, publicKeySpki);
 
             string token = CreateSignedToken(
                 signingKey,
@@ -589,7 +591,7 @@ public class OpenIddictTokenManagerTests
         public async Task Act()
         {
             var (keyId, publicKeySpki, _) = CreateSigningKey();
-            GivenTheActivePublicKeyIs(keyId, publicKeySpki);
+            CreateActivePublicKey(keyId, publicKeySpki);
 
             // Signed with a key the service does not know, but claiming the caller's client_id.
             // The "kid" header names the service's real key so the failure is a genuine
@@ -631,7 +633,7 @@ public class OpenIddictTokenManagerTests
         public async Task Act()
         {
             var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
-            GivenTheActivePublicKeyIs(keyId, publicKeySpki);
+            CreateActivePublicKey(keyId, publicKeySpki);
 
             string token = CreateSignedToken(signingKey, new[] { new Claim("client_id", OwnerClientId) });
 
@@ -660,7 +662,7 @@ public class OpenIddictTokenManagerTests
         public async Task Act()
         {
             var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
-            GivenTheActivePublicKeyIs(keyId, publicKeySpki);
+            CreateActivePublicKey(keyId, publicKeySpki);
 
             string token = CreateSignedToken(
                 signingKey,
@@ -696,7 +698,7 @@ public class OpenIddictTokenManagerTests
         public async Task Act()
         {
             var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
-            GivenTheActivePublicKeyIs(keyId, publicKeySpki);
+            CreateActivePublicKey(keyId, publicKeySpki);
 
             string token = CreateSignedToken(
                 signingKey,
@@ -708,6 +710,205 @@ public class OpenIddictTokenManagerTests
             );
 
             _result = await CreateConfiguredTokenManager().RevokeTokenAsync(token, string.Empty);
+        }
+
+        [Test]
+        public void It_returns_false()
+        {
+            _result.Should().BeFalse();
+        }
+
+        [Test]
+        public void It_does_not_call_the_repository()
+        {
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+        }
+    }
+
+    // An empty client_id claim and a missing one reach the ownership comparison by different
+    // routes — FirstOrDefault finds a claim whose value is "" versus finding no claim at all —
+    // even though both must end in the same no-op.
+    [TestFixture]
+    public class Given_RevokeTokenAsync_WithATokenCarryingAnEmptyClientId : OpenIddictTokenManagerTests
+    {
+        private bool _result;
+
+        [SetUp]
+        public async Task Act()
+        {
+            var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
+            CreateActivePublicKey(keyId, publicKeySpki);
+
+            string token = CreateSignedToken(
+                signingKey,
+                new[]
+                {
+                    new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+                    new Claim("client_id", string.Empty),
+                }
+            );
+
+            _result = await CreateConfiguredTokenManager().RevokeTokenAsync(token, OwnerClientId);
+        }
+
+        [Test]
+        public void It_returns_false()
+        {
+            _result.Should().BeFalse();
+        }
+
+        [Test]
+        public void It_does_not_call_the_repository()
+        {
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+        }
+    }
+
+    // The ownership comparison is deliberately case-sensitive (StringComparison.Ordinal).
+    // Switching it to OrdinalIgnoreCase would make the ownership boundary depend on the deployed
+    // database engine's collation and would let one client revoke another's token wherever client
+    // ids differ only by case, so this fixture exists to fail loudly if anyone loosens it.
+    // See docs/parking-lot.md for the upstream minting defect that makes such a pair possible.
+    [TestFixture]
+    public class Given_RevokeTokenAsync_WithATokenWhoseClientIdDiffersOnlyByCase : OpenIddictTokenManagerTests
+    {
+        private bool _result;
+
+        [SetUp]
+        public async Task Act()
+        {
+            var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
+            CreateActivePublicKey(keyId, publicKeySpki);
+
+            string token = CreateSignedToken(
+                signingKey,
+                new[]
+                {
+                    new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+                    new Claim("client_id", "Owner-Client"),
+                }
+            );
+
+            _result = await CreateConfiguredTokenManager().RevokeTokenAsync(token, "owner-client");
+        }
+
+        [Test]
+        public void It_returns_false()
+        {
+            _result.Should().BeFalse();
+        }
+
+        [Test]
+        public void It_does_not_call_the_repository()
+        {
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+        }
+    }
+
+    // Issuer and audience verification is load-bearing for the ownership boundary, not just
+    // signature verification: a token minted by a different issuer (or for a different audience)
+    // could carry any client_id it liked. These two fixtures sign with the service's own
+    // registered key so that only the issuer/audience claim is wrong.
+    [TestFixture]
+    public class Given_RevokeTokenAsync_WithATokenFromAnotherIssuer : OpenIddictTokenManagerTests
+    {
+        private bool _result;
+
+        [SetUp]
+        public async Task Act()
+        {
+            var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
+            CreateActivePublicKey(keyId, publicKeySpki);
+
+            string token = CreateSignedToken(
+                signingKey,
+                new[]
+                {
+                    new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+                    new Claim("client_id", OwnerClientId),
+                },
+                issuer: "https://attacker.example.test"
+            );
+
+            _result = await CreateConfiguredTokenManager().RevokeTokenAsync(token, OwnerClientId);
+        }
+
+        [Test]
+        public void It_returns_false()
+        {
+            _result.Should().BeFalse();
+        }
+
+        [Test]
+        public void It_does_not_call_the_repository()
+        {
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+        }
+    }
+
+    [TestFixture]
+    public class Given_RevokeTokenAsync_WithATokenForAnotherAudience : OpenIddictTokenManagerTests
+    {
+        private bool _result;
+
+        [SetUp]
+        public async Task Act()
+        {
+            var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
+            CreateActivePublicKey(keyId, publicKeySpki);
+
+            string token = CreateSignedToken(
+                signingKey,
+                new[]
+                {
+                    new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+                    new Claim("client_id", OwnerClientId),
+                },
+                audience: "some-other-service"
+            );
+
+            _result = await CreateConfiguredTokenManager().RevokeTokenAsync(token, OwnerClientId);
+        }
+
+        [Test]
+        public void It_returns_false()
+        {
+            _result.Should().BeFalse();
+        }
+
+        [Test]
+        public void It_does_not_call_the_repository()
+        {
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+        }
+    }
+
+    // Verification includes the lifetime check, so revoking an already-expired token is a no-op.
+    // That is a real behavior change from the previous unvalidated ReadJwtToken path, which would
+    // have marked it revoked by jti. Pinned here so it stays a deliberate decision: a caller
+    // tidying up an old token gets 200 OK while nothing is written.
+    [TestFixture]
+    public class Given_RevokeTokenAsync_WithAnExpiredOwnedToken : OpenIddictTokenManagerTests
+    {
+        private bool _result;
+
+        [SetUp]
+        public async Task Act()
+        {
+            var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
+            CreateActivePublicKey(keyId, publicKeySpki);
+
+            string token = CreateSignedToken(
+                signingKey,
+                new[]
+                {
+                    new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+                    new Claim("client_id", OwnerClientId),
+                },
+                expired: true
+            );
+
+            _result = await CreateConfiguredTokenManager().RevokeTokenAsync(token, OwnerClientId);
         }
 
         [Test]

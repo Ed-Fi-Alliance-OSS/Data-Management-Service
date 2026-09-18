@@ -26,7 +26,12 @@ The CMS exposes standard OAuth 2.0 endpoints:
 |---|---|---|
 | `POST /connect/token` | Issue an access token (client credentials grant only) | Anonymous (client credentials in the request) |
 | `POST /connect/introspect` | Introspect a token (RFC 7662) | Anonymous |
-| `POST /connect/revoke` | Revoke a token (RFC 7009) | Required — `Authorization: Bearer <token>` |
+| `POST /connect/revoke` | Revoke a token (RFC 7009) | Required — `Authorization: Bearer <token>` [^revoke] |
+
+[^revoke]: Authentication is required in **both** provider modes, but revocation itself
+only happens in `self-contained` mode. In `keycloak` mode `/connect/revoke` is a no-op
+that returns `200 OK` and revokes nothing, however the caller authenticates. See
+[Which provider modes actually perform the check](#which-provider-modes-actually-perform-the-check).
 
 In `self-contained` mode, `/connect/token` also accepts credentials via HTTP
 Basic authentication in addition to the form body.
@@ -48,6 +53,26 @@ own bearer token. Verification comes first on purpose: trusting an unverified
 `client_id` would let a caller forge a token naming itself while embedding
 another client's `jti`.
 
+Two distinct tokens are in play on every revocation request, which is easy to
+conflate. The **caller's** token is the one in the `Authorization` header and
+establishes *who is asking*; the **target** token is the one in the `token` form
+field and is *what gets revoked*. They are frequently the same token — a client
+logging itself out — but need not be:
+
+```http
+POST /connect/revoke HTTP/1.1
+Authorization: Bearer eyJ...CALLER    <- identifies the caller; its client_id must match
+Content-Type: application/x-www-form-urlencoded
+
+token=eyJ...TARGET                    <- the token to revoke; its client_id is compared
+```
+
+A client revoking one of its *other* outstanding tokens (say, rotating a leaked
+credential while keeping its current session alive) supplies two different tokens
+that both carry the same `client_id`, and the revocation succeeds. A client
+supplying a target token minted for a different `client_id` gets `200 OK` and no
+revocation.
+
 When the token cannot be verified, carries no `client_id`, or belongs to a
 different client, nothing is revoked and the response is still `200 OK`. Per
 RFC 7009 this is indistinguishable from revoking an unknown token, so the
@@ -58,7 +83,37 @@ Because verification includes the lifetime check, a target token already past it
 `exp` (plus the validator's clock-skew allowance) is also a no-op. This is a
 deliberate narrowing: revocation previously parsed the target token without
 verifying it and would revoke an expired token by `jti`. An expired token is
-already rejected everywhere else, so there is nothing left to revoke.
+already rejected everywhere else, so there is nothing left to revoke. A practical
+consequence for anyone reading the `dmscs.OpenIddictToken` table or an admin status
+view directly: an expired token keeps its stored status (typically `valid`) rather
+than being flipped to `revoked` by a revocation attempt, so "not `revoked`" in the
+table does not imply "still usable".
+
+### Confirming that a revocation actually took effect
+
+Every outcome of `POST /connect/revoke` is an identical bodyless `200 OK` — success,
+wrong owner, unverifiable token, expired token, and (in `keycloak` mode) not
+attempted at all. That is required by RFC 7009 and is deliberate, but it means the
+`200` alone is **not** evidence that anything was revoked. Anyone who must be certain
+— containing a leaked credential, for example — has to confirm out of band:
+
+```http
+POST /connect/introspect
+Content-Type: application/x-www-form-urlencoded
+
+token=eyJ...TARGET
+```
+
+A revoked token reports `{"active": false}`. If it still reports `{"active": true}`,
+the revocation did not take effect and the credential is still live. Treat
+containment as incomplete until introspection confirms it.
+
+This matters because silent no-ops are reachable in practice, not just in theory:
+a target token whose `client_id` differs from the caller's only by letter case is
+rejected by the case-sensitive ownership comparison even though both tokens belong
+to the same registered client (see `docs/parking-lot.md`). An operator who assumed
+`200 OK` meant success would believe a leaked credential was contained when it was
+not.
 
 ### Which provider modes actually perform the check
 

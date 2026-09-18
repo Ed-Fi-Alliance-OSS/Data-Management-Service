@@ -91,6 +91,31 @@ once a token is revoked, every subsequent use is rejected. This is the strongest
 replay control available in the platform and applies only to the self-contained
 provider scheme.
 
+#### A `200 OK` from `/connect/revoke` does not confirm revocation
+
+Every outcome of the revocation endpoint is an identical bodyless `200 OK` —
+success, wrong owner, unverifiable token, expired token, and (in Keycloak mode) not
+attempted at all. RFC 7009 requires this, and it is what stops the endpoint from
+becoming an oracle for token existence and ownership, but it also means the status
+code carries no confirmation. **Incident response must not treat `200 OK` as proof
+that a leaked credential was contained.**
+
+Confirm with introspection instead: `POST /connect/introspect` with the same token
+reports `{"active": false}` once revocation has taken effect, and `{"active": true}`
+if it has not. Only the introspection result is evidence.
+
+The gap is reachable, not hypothetical. A target token whose `client_id` differs
+from the caller's only by letter case fails the case-sensitive ownership comparison
+even though both tokens were issued to the same registered client — see
+`docs/parking-lot.md` for the upstream minting defect that makes such a pair
+possible. An operator relying on the `200` would wrongly believe a live credential
+had been revoked.
+
+Note also that an expired target token is left with its stored status untouched
+rather than being marked `revoked`, so a `revoked`/`valid` reading taken straight
+from `dmscs.OpenIddictToken` or an admin status view does not by itself indicate
+whether a token is still usable.
+
 ### Keycloak / external IdP — delegated to the IdP
 
 When tokens are issued by Keycloak or another external IdP, DMS and CMS validate

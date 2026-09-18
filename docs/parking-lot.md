@@ -33,6 +33,13 @@ target token's `client_id` to the caller's with `StringComparison.Ordinal`, so t
 `Acme-Client` token cannot revoke the `acme-client` token. Per RFC 7009 the caller still receives
 `200 OK`, so the failure is silent and visible only in a Debug-level log line.
 
+**Why this deserves priority beyond its apparent rarity:** the silent failure lands squarely on an
+incident-response path. Someone revoking a leaked credential sees `200 OK`, concludes the token is
+dead, and stops responding — while the token stays valid until it expires on its own. The defect
+converts a containment action into false confidence, which is worse than an outright error would
+be. Until it is fixed, revocation must be confirmed with `POST /connect/introspect`
+(`{"active": false}`), as documented in `CS-AUTH.md` and `docs/OWASP-AUTH-COVERAGE.md`.
+
 **Why it is out of scope**
 
 - The defect is in the **minting path**, which predates this branch and which

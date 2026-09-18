@@ -1,5 +1,12 @@
 # Todo: Authorize and Authenticate `/connect/revoke`
 
+> **Checkbox legend**
+> `- [ ]` not done &nbsp;·&nbsp; `- [x]` done and verified &nbsp;·&nbsp; `- [~]` **partially met** —
+> the intent is satisfied by a documented substitute rather than as literally written (typically a
+> manual/curl step that needed a running service, covered by an automated test instead, or a
+> PR-description step the implementation agent could not perform). Every `[~]` item names its
+> substitute inline.
+
 See `tasks/plan.md` for full context, architecture decisions, and the parking-lot rule. Read the
 "Standing Rule: Parking Lot" section there before starting — do not fix unrelated bugs you find
 along the way; log them to `docs/parking-lot.md` instead.
