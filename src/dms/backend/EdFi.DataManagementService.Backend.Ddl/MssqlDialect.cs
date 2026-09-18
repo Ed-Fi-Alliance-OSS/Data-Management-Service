@@ -122,7 +122,8 @@ public sealed class MssqlDialect : SqlDialectBase
         string indexName,
         IReadOnlyList<DbColumnName> columns,
         bool isUnique = false,
-        IReadOnlyList<DbColumnName>? includeColumns = null
+        IReadOnlyList<DbColumnName>? includeColumns = null,
+        DbColumnName? notNullFilterColumn = null
     )
     {
         ArgumentNullException.ThrowIfNull(indexName);
@@ -144,6 +145,17 @@ public sealed class MssqlDialect : SqlDialectBase
             ? $" INCLUDE ({string.Join(", ", includeColumns.Select(c => QuoteIdentifier(c.Value)))})"
             : "";
 
+        var filterClause = notNullFilterColumn is { } f
+            ? $" WHERE {QuoteIdentifier(f.Value)} IS NOT NULL"
+            : "";
+
+        // The statement renders on one physical line, WHERE clause included: a wrapped filter would
+        // reach the emitted script as a line carrying no index name, which is how the goldens are read.
+        // It is built as a local only to keep the formatter from splitting the qualified-table call
+        // across three lines inside the template below.
+        var createStatement =
+            $"CREATE {uniqueKeyword}INDEX {quotedIndex} ON {QualifyTable(table)} ({columnList}){includeClause}{filterClause};";
+
         return $"""
             IF NOT EXISTS (
                 SELECT 1 FROM sys.indexes i
@@ -151,7 +163,7 @@ public sealed class MssqlDialect : SqlDialectBase
                 JOIN sys.schemas s ON t.schema_id = s.schema_id
                 WHERE s.name = N'{escapedSchema}' AND t.name = N'{escapedTable}' AND i.name = N'{escapedIndex}'
             )
-            CREATE {uniqueKeyword}INDEX {quotedIndex} ON {QualifyTable(table)} ({columnList}){includeClause};
+            {createStatement}
             """;
     }
 

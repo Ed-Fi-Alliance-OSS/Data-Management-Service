@@ -164,6 +164,10 @@ public static class ProvisionedSchemaManifestEmitter
             w.WriteString("table_name", entry.TableName);
             w.WriteString("index_name", entry.IndexName);
             w.WriteBoolean("is_unique", entry.IsUnique);
+            if (entry.Filter is not null)
+            {
+                w.WriteString("filter", NormalizeDefinition(entry.Filter));
+            }
             w.WritePropertyName("columns");
             w.WriteStartArray();
             foreach (var col in entry.Columns)

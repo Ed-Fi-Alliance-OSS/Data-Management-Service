@@ -778,6 +778,10 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     {
         _ddl.Should()
             .Contain(
+                "CREATE INDEX IF NOT EXISTS \"IX_Document_CreatedByOwnershipTokenId\" ON \"dms\".\"Document\" (\"CreatedByOwnershipTokenId\") WHERE \"CreatedByOwnershipTokenId\" IS NOT NULL;"
+            );
+        _ddl.Should()
+            .NotContain(
                 "CREATE INDEX IF NOT EXISTS \"IX_Document_CreatedByOwnershipTokenId\" ON \"dms\".\"Document\" (\"CreatedByOwnershipTokenId\");"
             );
     }
@@ -1902,6 +1906,10 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     {
         _ddl.Should()
             .Contain(
+                "CREATE INDEX [IX_Document_CreatedByOwnershipTokenId] ON [dms].[Document] ([CreatedByOwnershipTokenId]) WHERE [CreatedByOwnershipTokenId] IS NOT NULL;"
+            );
+        _ddl.Should()
+            .NotContain(
                 "CREATE INDEX [IX_Document_CreatedByOwnershipTokenId] ON [dms].[Document] ([CreatedByOwnershipTokenId]);"
             );
     }

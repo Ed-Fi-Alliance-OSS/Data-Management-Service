@@ -95,7 +95,7 @@ CREATE TABLE dms.Document (
 );
 
 CREATE INDEX IX_Document_CreatedByOwnershipTokenId
-    ON dms.Document (CreatedByOwnershipTokenId);
+    ON dms.Document (CreatedByOwnershipTokenId) WHERE CreatedByOwnershipTokenId IS NOT NULL;
 ```
 
 **SQL Server**
@@ -126,7 +126,7 @@ CREATE TABLE dms.Document (
 );
 
 CREATE INDEX IX_Document_CreatedByOwnershipTokenId
-    ON dms.Document (CreatedByOwnershipTokenId);
+    ON dms.Document (CreatedByOwnershipTokenId) WHERE CreatedByOwnershipTokenId IS NOT NULL;
 ```
 
 Notes:

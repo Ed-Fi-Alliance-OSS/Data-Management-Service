@@ -94,13 +94,19 @@ public interface ISqlDialect
     /// <param name="columns">The columns to include in the index.</param>
     /// <param name="isUnique">Whether the index should enforce uniqueness.</param>
     /// <param name="includeColumns">Optional non-key columns for the INCLUDE clause.</param>
+    /// <param name="notNullFilterColumn">
+    /// Optional single column to filter the index on. When provided, the statement appends
+    /// <c>WHERE &lt;quoted column&gt; IS NOT NULL</c> after the INCLUDE clause. No raw SQL
+    /// fragment is accepted; only a single column's IS NOT NULL predicate is supported.
+    /// </param>
     /// <returns>The idempotent CREATE INDEX statement.</returns>
     string CreateIndexIfNotExists(
         DbTableName table,
         string indexName,
         IReadOnlyList<DbColumnName> columns,
         bool isUnique = false,
-        IReadOnlyList<DbColumnName>? includeColumns = null
+        IReadOnlyList<DbColumnName>? includeColumns = null,
+        DbColumnName? notNullFilterColumn = null
     );
 
     /// <summary>
