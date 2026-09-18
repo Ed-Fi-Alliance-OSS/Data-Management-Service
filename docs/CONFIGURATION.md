@@ -360,9 +360,9 @@ Neither carries the Data Management Service release version. Each declares its o
 semantic version, in its own source, and moves it only when its public surface, its
 XML documentation or its declared dependencies change, because the loader compares
 contract assembly versions when it decides whether a plugin may run. Which contract
-versions a given release carries is stated in that release's notes and in the host
-assembly manifest published beside it. None of this is configuration: it is what a
-vendor compiles against before the directory this section governs ever exists.
+versions a given release carries is stated in the host assembly manifest attached to
+that release. None of this is configuration: it is what a vendor compiles against
+before the directory this section governs ever exists.
 
 | Parameter | Description                                                                                                                                                                                                                  |
 | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

@@ -5,13 +5,13 @@
 
 #Requires -Version 7
 
-# Promotion, at release time and in the prerelease lane.
+# Promotion at release time.
 #
-# A contract's version deliberately does not move with the release, which is what makes both of
-# these different from the three release-stamped packages beside them. At release time the version
-# to promote is read from the contract's own source rather than from the release tag, and the
-# question "has this version already been promoted" cannot be answered by absence from the
-# prerelease view, because a version that was never published is absent from there too.
+# A contract's version deliberately does not move with the release, which is what makes this
+# different from the three release-stamped packages beside it. The version to promote is read from
+# the contract's own source rather than from the release tag, and the question "has this version
+# already been promoted" cannot be answered by absence from the feed's Local view, because a version
+# that was never pushed is absent from there too.
 #
 # Every case runs against injected lookups and an injected promotion, so nothing here mutates a
 # feed or needs a credential. The default lookup's own failure branches are exercised separately at
@@ -46,7 +46,7 @@ BeforeAll {
         [OutputType([scriptblock])]
         param(
             [string[]] $ReleaseVersions = @(),
-            [string[]] $PrereleaseVersions = @(),
+            [string[]] $LocalVersions = @(),
 
             # Views the feed refuses to answer for, by name.
             [string[]] $FailingViews = @()
@@ -69,45 +69,43 @@ BeforeAll {
                 return @{ Found = $true; Versions = $ReleaseVersions }
             }
 
-            if ($ViewIndexUrl -like "*@Prerelease/*") {
-                if ($PrereleaseVersions.Count -eq 0) {
+            if ($ViewIndexUrl -like "*@Local/*") {
+                if ($LocalVersions.Count -eq 0) {
                     return @{ Found = $false; Versions = @() }
                 }
 
-                return @{ Found = $true; Versions = $PrereleaseVersions }
+                return @{ Found = $true; Versions = $LocalVersions }
             }
 
             throw "unexpected view index URL: $ViewIndexUrl"
         }.GetNewClosure()
     }
 
-    # A prerelease view that is empty until something is promoted into it, which is what makes the
-    # second run of an idempotent promotion see the result of the first.
-    function Get-GrowingViewLookup {
-        [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'The closure parameters are the injected seam signature, whether or not this fake reads each one.')]
+    # A Local-only feed that also records every view index URL it was asked, in order, so a case
+    # can assert which views were consulted and not only what the answer was.
+    function Get-RecordingViewLookup {
+        [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'Read inside the closure, and the closure parameters are the injected seam signature.')]
         [CmdletBinding()]
         [OutputType([scriptblock])]
         param(
-            # AllowEmptyCollection because an empty list is the starting state this fake exists to
-            # model: nothing has been promoted yet.
             [Parameter(Mandatory)]
             [AllowEmptyCollection()]
             [System.Collections.Generic.List[string]]
-            $Promoted
+            $Asked,
+
+            [string[]] $LocalVersions = @()
         )
 
         return {
             param([string] $ViewIndexUrl, [string] $PackageName, [string] $ApiKey)
 
-            if ($ViewIndexUrl -like "*@Release/*") {
-                return @{ Found = $false; Versions = @() }
+            $Asked.Add($ViewIndexUrl)
+
+            if ($ViewIndexUrl -like "*@Local/*" -and $LocalVersions.Count -gt 0) {
+                return @{ Found = $true; Versions = $LocalVersions }
             }
 
-            if ($Promoted.Count -eq 0) {
-                return @{ Found = $false; Versions = @() }
-            }
-
-            return @{ Found = $true; Versions = @("1.0.0") }
+            return @{ Found = $false; Versions = @() }
         }.GetNewClosure()
     }
 
@@ -190,13 +188,15 @@ Describe "Get-ViewScopedServiceIndexUrl" {
             Should -BeExactly "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi@Release/nuget/v3/index.json"
     }
 
-    It "scopes to the prerelease view the same way" {
-        Get-ViewScopedServiceIndexUrl -ServiceIndexUrl $script:serviceIndexUrl -ViewName "Prerelease" |
-            Should -BeExactly "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi@Prerelease/nuget/v3/index.json"
+    # The Local view is the feed's own population: every pushed version is a member. Scoping to it
+    # by name states which view is being asked rather than leaving that implicit in an unscoped URL.
+    It "scopes to the Local view the same way" {
+        Get-ViewScopedServiceIndexUrl -ServiceIndexUrl $script:serviceIndexUrl -ViewName "Local" |
+            Should -BeExactly "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi@Local/nuget/v3/index.json"
     }
 
-    # Returning the URL unchanged would ask the unscoped feed, which answers a different question:
-    # "is this version on the feed at all" rather than "is it in this view".
+    # Returning the URL unchanged would leave the view implicit, and a URL with no feed segment
+    # cannot be scoped to any view at all.
     It "refuses a URL with no packaging segment rather than returning it unscoped" {
         { Get-ViewScopedServiceIndexUrl -ServiceIndexUrl "https://nuget.org/v3/index.json" -ViewName "Release" } |
             Should -Throw -ExpectedMessage "*no /_packaging/<feed>/ segment*"
@@ -225,7 +225,7 @@ Describe "Invoke-ContractPromotion at release time" {
         $recorder.Calls.Count | Should -Be 0
     }
 
-    It "promotes when the version is in the prerelease view only" {
+    It "promotes when the version is on the feed and not yet in the release view" {
         $recorder = Get-PromotionRecorder
 
         $result = Invoke-ContractPromotion `
@@ -235,7 +235,7 @@ Describe "Invoke-ContractPromotion at release time" {
             -ServiceIndexUrl $script:serviceIndexUrl `
             -PackageName $script:packageName `
             -Version "1.0.0" `
-            -GetViewVersions (Get-ViewLookup -PrereleaseVersions @("1.0.0")) `
+            -GetViewVersions (Get-ViewLookup -LocalVersions @("1.0.0")) `
             -Promote $recorder.Script
 
         $result | Should -BeLike "*promoted to the Release view*"
@@ -245,8 +245,8 @@ Describe "Invoke-ContractPromotion at release time" {
         $recorder.Calls[0].PackageName | Should -BeExactly $script:packageName
     }
 
-    # Without this branch a version that never reached the feed is indistinguishable from one
-    # already promoted, and a missed publish would log "nothing to do" and exit zero.
+    # Without this branch a version that is not on the feed is indistinguishable from one already
+    # promoted, and a missed publish would log "nothing to do" and exit zero.
     It "fails when the version is in neither view, naming the package and the version" {
         $recorder = Get-PromotionRecorder
 
@@ -265,7 +265,7 @@ Describe "Invoke-ContractPromotion at release time" {
         $recorder.Calls.Count | Should -Be 0
     }
 
-    It "does not promote a different version that happens to be in the prerelease view" {
+    It "does not promote a different version that happens to be on the feed" {
         $recorder = Get-PromotionRecorder
 
         {
@@ -276,7 +276,7 @@ Describe "Invoke-ContractPromotion at release time" {
                 -ServiceIndexUrl $script:serviceIndexUrl `
                 -PackageName $script:packageName `
                 -Version "1.1.0" `
-                -GetViewVersions (Get-ViewLookup -PrereleaseVersions @("1.0.0")) `
+                -GetViewVersions (Get-ViewLookup -LocalVersions @("1.0.0")) `
                 -Promote $recorder.Script
         } | Should -Throw
 
@@ -312,14 +312,14 @@ Describe "Invoke-ContractPromotion at release time" {
                 -ServiceIndexUrl $script:serviceIndexUrl `
                 -PackageName $script:packageName `
                 -Version "1.0.0" `
-                -GetViewVersions (Get-ViewLookup -PrereleaseVersions @("1.0.0") -FailingViews @("Release")) `
+                -GetViewVersions (Get-ViewLookup -LocalVersions @("1.0.0") -FailingViews @("Release")) `
                 -Promote $recorder.Script
         } | Should -Throw -ExpectedMessage "*401*"
 
         $recorder.Calls.Count | Should -Be 0
     }
 
-    It "fails when the prerelease view cannot be read" {
+    It "fails when the Local view cannot be read" {
         $recorder = Get-PromotionRecorder
 
         {
@@ -330,134 +330,32 @@ Describe "Invoke-ContractPromotion at release time" {
                 -ServiceIndexUrl $script:serviceIndexUrl `
                 -PackageName $script:packageName `
                 -Version "1.0.0" `
-                -GetViewVersions (Get-ViewLookup -FailingViews @("Prerelease")) `
+                -GetViewVersions (Get-ViewLookup -FailingViews @("Local")) `
                 -Promote $recorder.Script
         } | Should -Throw -ExpectedMessage "*401*"
 
         $recorder.Calls.Count | Should -Be 0
     }
-}
 
-Describe "Invoke-ContractPrereleasePromotion in the prerelease lane" {
-    # First publication: the push just happened, so nothing is in either view yet.
-    It "promotes a version that is in neither view" {
+    # The second lookup asks the Local view by name. Asking a Prerelease view instead would ask a
+    # population nothing in this repository promotes into, and every release would fail.
+    It "asks the Release view and then the Local view, and nothing else" {
+        $asked = [System.Collections.Generic.List[string]]::new()
         $recorder = Get-PromotionRecorder
 
-        $result = Invoke-ContractPrereleasePromotion `
+        Invoke-ContractPromotion `
             -PackagesURL "https://packages.invalid" `
             -Username "user" `
             -Password $script:password `
             -ServiceIndexUrl $script:serviceIndexUrl `
             -PackageName $script:packageName `
             -Version "1.0.0" `
-            -GetViewVersions (Get-ViewLookup) `
-            -Promote $recorder.Script
-
-        $result | Should -BeLike "*promoted to the Prerelease view*"
-        $recorder.Calls.Count | Should -Be 1
-        $recorder.Calls[0].ViewId | Should -BeExactly "prerelease"
-        $recorder.Calls[0].Version | Should -BeExactly "1.0.0"
-    }
-
-    # The unchanged rerun: the package was already published, the publish check skipped cleanly, and
-    # membership is missing because an earlier prerelease predates this step. It is repaired.
-    It "repairs missing membership on an unchanged rerun" {
-        $recorder = Get-PromotionRecorder
-
-        Invoke-ContractPrereleasePromotion `
-            -PackagesURL "https://packages.invalid" `
-            -Username "user" `
-            -Password $script:password `
-            -ServiceIndexUrl $script:serviceIndexUrl `
-            -PackageName $script:packageName `
-            -Version "1.0.0" `
-            -GetViewVersions (Get-ViewLookup) `
+            -GetViewVersions (Get-RecordingViewLookup -Asked $asked -LocalVersions @("1.0.0")) `
             -Promote $recorder.Script | Out-Null
 
-        $recorder.Calls.Count | Should -Be 1
-    }
-
-    It "does nothing when the version is already in the prerelease view" {
-        $recorder = Get-PromotionRecorder
-
-        $result = Invoke-ContractPrereleasePromotion `
-            -PackagesURL "https://packages.invalid" `
-            -Username "user" `
-            -Password $script:password `
-            -ServiceIndexUrl $script:serviceIndexUrl `
-            -PackageName $script:packageName `
-            -Version "1.0.0" `
-            -GetViewVersions (Get-ViewLookup -PrereleaseVersions @("1.0.0")) `
-            -Promote $recorder.Script
-
-        $result | Should -BeLike "*already in the Prerelease view*"
-        $recorder.Calls.Count | Should -Be 0
-    }
-
-    # A released contract keeps its release-view membership. Putting it back into Prerelease is not
-    # what this step is for, and doing it on every prerelease would churn the view.
-    It "leaves a version that is already in the release view alone" {
-        $recorder = Get-PromotionRecorder
-
-        $result = Invoke-ContractPrereleasePromotion `
-            -PackagesURL "https://packages.invalid" `
-            -Username "user" `
-            -Password $script:password `
-            -ServiceIndexUrl $script:serviceIndexUrl `
-            -PackageName $script:packageName `
-            -Version "1.0.0" `
-            -GetViewVersions (Get-ViewLookup -ReleaseVersions @("1.0.0")) `
-            -Promote $recorder.Script
-
-        $result | Should -BeLike "*already in the Release view*"
-        $recorder.Calls.Count | Should -Be 0
-    }
-
-    It "fails rather than promoting when a view cannot be read" {
-        $recorder = Get-PromotionRecorder
-
-        {
-            Invoke-ContractPrereleasePromotion `
-                -PackagesURL "https://packages.invalid" `
-                -Username "user" `
-                -Password $script:password `
-                -ServiceIndexUrl $script:serviceIndexUrl `
-                -PackageName $script:packageName `
-                -Version "1.0.0" `
-                -GetViewVersions (Get-ViewLookup -FailingViews @("Prerelease")) `
-                -Promote $recorder.Script
-        } | Should -Throw
-
-        $recorder.Calls.Count | Should -Be 0
-    }
-
-    It "is idempotent across two runs, promoting once" {
-        $recorder = Get-PromotionRecorder
-        $promoted = [System.Collections.Generic.List[string]]::new()
-
-        # The view gains the version after the first promotion, which is what the second run sees.
-        $lookup = Get-GrowingViewLookup -Promoted $promoted
-
-        $promote = {
-            param($Arguments)
-
-            $promoted.Add($Arguments.Version)
-            $recorder.Calls.Add($Arguments)
-        }.GetNewClosure()
-
-        foreach ($run in 1..2) {
-            Invoke-ContractPrereleasePromotion `
-                -PackagesURL "https://packages.invalid" `
-                -Username "user" `
-                -Password $script:password `
-                -ServiceIndexUrl $script:serviceIndexUrl `
-                -PackageName $script:packageName `
-                -Version "1.0.0" `
-                -GetViewVersions $lookup `
-                -Promote $promote | Out-Null
-        }
-
-        $recorder.Calls.Count | Should -Be 1
+        $asked.Count | Should -Be 2
+        $asked[0] | Should -BeExactly "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi@Release/nuget/v3/index.json"
+        $asked[1] | Should -BeExactly "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi@Local/nuget/v3/index.json"
     }
 }
 
