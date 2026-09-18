@@ -53,6 +53,53 @@ namespace EdFi.DataManagementService.Identity;
 /// account; keeping provider detail out of operator-visible logs at higher levels is the provider's
 /// obligation, not something the host can enforce.
 /// </para>
+/// <para>
+/// <b>Timeout and retry.</b> The identity pipeline wraps no resilience pipeline, so DMS never retries
+/// any call on this interface and imposes no timeout of its own on one. That applies to every
+/// operation below, not only to issuance. A provider owns its upstream timeouts, and one it does not
+/// handle itself surfaces as a thrown exception and therefore as the sanitized <c>502</c> described
+/// above. Where an operation below notes that a client may retry it, that means the client reissuing
+/// the HTTP request; it never means DMS re-invoking the provider on its own account.
+/// <c>CreateAsync</c> documents what this rule costs when an issuance response is lost.
+/// </para>
+/// <para>
+/// <b>Request and response payloads.</b> DMS treats these payloads as opaque JSON and validates
+/// nothing about their contents at runtime, but their shape is defined rather than provider-chosen:
+/// the deployment's OpenAPI document pins it, so a provider returning a different shape serves a
+/// response that does not conform to the API it is backing. DMS does reject duplicate property names
+/// and structurally malformed arrays before invoking a provider.
+/// </para>
+/// <para>
+/// Create and search request objects, and every returned identity, share one set of standard
+/// identifying properties, all of them nullable: <c>LastSurname</c>, <c>FirstName</c>,
+/// <c>MiddleName</c>, <c>GenerationCodeSuffix</c>, <c>SexType</c>, <c>BirthDate</c> as a
+/// <c>date-time</c> string, <c>BirthOrder</c> as an integer, and <c>BirthLocation</c> as an object
+/// with nullable <c>City</c>, <c>StateAbbreviation</c>, <c>InternationalProvince</c>, and
+/// <c>Country</c> string children.
+/// </para>
+/// <para>
+/// On a request, a client expresses an unknown value either as <c>null</c> or by omitting the
+/// property, and a provider should treat the two alike unless its own validation requires the field;
+/// a request never carries <c>UniqueId</c> or <c>Score</c>. DMS does not require the standard
+/// properties, validate their values, or reject custom ones, so the provider decides which its
+/// integration needs and answers <see cref="IdentityResultStatus.InvalidProperties"/> when the
+/// supplied data is insufficient.
+/// </para>
+/// <para>
+/// On a response, a returned identity is an <c>IdentityResponse</c> object carrying every standard
+/// property above plus a required non-empty <c>UniqueId</c> and a required <c>Score</c>. A provider
+/// represents a standard attribute its upstream system does not support as <c>null</c> rather than
+/// omitting the property, and still sends <c>BirthLocation</c> itself with null children when
+/// birth-location data is unsupported. <c>Score</c> is the confidence indicator: null for an identity
+/// returned outside a search, and a number from 0 through 100 for every search match. DMS neither
+/// reads <c>Score</c> nor applies any threshold to it.
+/// </para>
+/// <para>
+/// A provider may add custom properties to request objects, to <c>IdentityResponse</c>, and to
+/// <c>BirthLocation</c>; DMS passes them through without inspecting them.
+/// <see cref="IdentityResult.Payload"/> and <see cref="IdentityAsyncResult.Payload"/> document which
+/// of these shapes each operation and status must carry.
+/// </para>
 /// </summary>
 public interface IIdentityService
 {
@@ -117,7 +164,7 @@ public interface IIdentityService
     /// natural-key data.
     /// </item>
     /// </list>
-    /// DMS applies no timeout to this call and never retries it. If the response is lost - a
+    /// The host-wide no-timeout, no-retry rule above lands hardest here. If the response is lost - a
     /// connection abort or an upstream <c>502</c> - the outcome is an unknown issuance the client
     /// cannot safely resolve by retrying; the provider must document how a repeated create for the
     /// same identifying data behaves, either idempotent on an upstream key or duplicate issuance with a
@@ -128,7 +175,10 @@ public interface IIdentityService
     /// establish whether the identity was issued, the client stops rather than retrying and resolves
     /// the outcome through the provider's documented operator or upstream reconciliation process.
     /// </summary>
-    /// <param name="request">The create request body, an implementer-defined JSON object.</param>
+    /// <param name="request">
+    /// The create request body: a JSON object carrying the standard identifying properties documented
+    /// on <see cref="IIdentityService"/>, plus any custom properties this provider supports.
+    /// </param>
     /// <param name="context">The tenant, route-qualifier, and client context of the request.</param>
     /// <param name="cancellationToken">
     /// Cancellation observed before or during the call propagates without a replacement problem
@@ -158,6 +208,7 @@ public interface IIdentityService
     /// <paramref name="context"/> and authorize <see cref="IdentityRequestContext.ClientId"/> before
     /// lookup; a missing or denied grant, an unknown namespace, and no matching identity all return
     /// <see cref="IdentityResultStatus.NotFound"/>.
+    /// DMS applies no timeout to this call and never retries it, under the host-wide rule above.
     /// </summary>
     /// <param name="uniqueId">The UniqueId to look up, guaranteed non-blank.</param>
     /// <param name="context">The tenant, route-qualifier, and client context of the request.</param>
@@ -221,6 +272,9 @@ public interface IIdentityService
     /// <see cref="IdentityResultStatus.Success"/> with a token, DMS has already answered <c>202</c> and
     /// the client's connection is irrelevant to the job; cancellation applies only to this call while it
     /// is in flight.
+    /// DMS applies no timeout to this call and never retries it, under the host-wide rule above; the
+    /// client-retry allowance above concerns a client reissuing its own poll, not DMS re-invoking a
+    /// provider.
     /// </summary>
     /// <param name="uniqueIds">The UniqueIds to resolve, one entry per requested identity.</param>
     /// <param name="context">The tenant, route-qualifier, and client context of the request.</param>
@@ -250,9 +304,12 @@ public interface IIdentityService
     /// A request with no matching identity is represented as <see cref="IdentityResultStatus.Success"/>
     /// with an empty match group, not <see cref="IdentityResultStatus.NotFound"/>;
     /// <see cref="IdentityResultStatus.NotFound"/> is reserved for an unknown or unauthorized namespace.
+    /// DMS applies no timeout to this call and never retries it, under the host-wide rule above.
     /// </summary>
     /// <param name="requests">
-    /// The search criteria, one implementer-defined JSON object per requested match group.
+    /// The search criteria, one JSON object per requested match group, each carrying the standard
+    /// identifying properties documented on <see cref="IIdentityService"/> plus any custom properties
+    /// this provider supports. Each group's matches are returned in the corresponding positional entry.
     /// </param>
     /// <param name="context">The tenant, route-qualifier, and client context of the request.</param>
     /// <param name="cancellationToken">
@@ -313,6 +370,9 @@ public interface IIdentityService
     /// may return <see cref="IdentityResultStatus.JobFailed"/>.
     /// </item>
     /// </list>
+    /// DMS applies no timeout to this call and never retries it, under the host-wide rule above; the
+    /// repeated-poll allowance above concerns a client reissuing its own poll, not DMS re-invoking a
+    /// provider.
     /// </summary>
     /// <param name="requestToken">
     /// The token previously returned by <c>FindAsync</c> or <c>SearchAsync</c>, passed through

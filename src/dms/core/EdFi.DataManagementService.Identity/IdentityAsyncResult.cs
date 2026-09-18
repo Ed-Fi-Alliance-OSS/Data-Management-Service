@@ -29,8 +29,32 @@ public sealed record IdentityAsyncResult
     /// The result payload, or null when the status carries none. A synchronous <c>Success</c> carries
     /// a complete payload with wire <c>Status: "Complete"</c>; a pending job instead returns
     /// <c>Success</c> with a usable <see cref="RequestToken"/> and no payload here, because the result
-    /// data does not exist yet. DMS performs no runtime validation of this payload; a provider is
-    /// responsible for the shape and correctness of what it returns.
+    /// data does not exist yet. Wire <c>Status: "Incomplete"</c> is legal only when polling
+    /// <c>ResultsAsync</c>, never as a synchronous find or search answer.
+    /// <para>
+    /// That complete payload is an <c>IdentitySearchResponse</c>: a JSON object whose properties are
+    /// </para>
+    /// <list type="bullet">
+    /// <item><c>Status</c>, a required string that is either <c>"Complete"</c> or <c>"Incomplete"</c>.</item>
+    /// <item>
+    /// <c>SearchResponses</c>, an array the complete shape requires, holding exactly one entry per
+    /// submitted UniqueId or search request, in request order. Only an incomplete results poll may omit
+    /// it or send it empty.
+    /// </item>
+    /// <item>
+    /// a required <c>Responses</c> array on each <c>SearchResponses</c> entry: zero or one
+    /// <c>IdentityResponse</c> for a find, zero or more for a search, every search match carrying a
+    /// numeric <c>Score</c>. A request that matched nothing is an entry with an empty <c>Responses</c>
+    /// array - not <see cref="IdentityResultStatus.NotFound"/>, and not a dropped entry, because the
+    /// entries are positional.
+    /// </item>
+    /// </list>
+    /// DMS performs no runtime validation of this payload, but the shape above is what the deployment's
+    /// OpenAPI document pins; see <see cref="IIdentityService"/> for the standard properties of an
+    /// <c>IdentityResponse</c> and <see cref="IdentityResult.Payload"/> for the shapes the synchronous
+    /// operations carry. A <see cref="IdentityResultStatus.Success"/> that is neither a complete payload
+    /// nor a usable <see cref="RequestToken"/> is provider contract misuse and becomes a
+    /// provider-contract-violation <c>502</c>.
     /// </summary>
     public JsonNode? Payload { get; init; }
 

@@ -31,8 +31,32 @@ public sealed record IdentityResult
     public required IdentityResultStatus Status { get; init; }
 
     /// <summary>
-    /// The result payload, or null when the status carries none. DMS performs no runtime validation
-    /// of this payload; a provider is responsible for the shape and correctness of what it returns.
+    /// The result payload. DMS performs no runtime validation of it, but its shape is defined rather
+    /// than provider-chosen; each operation and status below names the shape it must carry, built from
+    /// the standard properties documented on <see cref="IIdentityService"/>.
+    /// <list type="bullet">
+    /// <item>
+    /// <c>CreateAsync</c> <see cref="IdentityResultStatus.Success"/> carries a JSON string holding the
+    /// newly issued UniqueId - a bare string, not an object wrapping one.
+    /// </item>
+    /// <item>
+    /// <c>GetByIdAsync</c> <see cref="IdentityResultStatus.Success"/> carries a single
+    /// <c>IdentityResponse</c> object for the matched identity.
+    /// </item>
+    /// <item>
+    /// <c>ResultsAsync</c> carries an <c>IdentitySearchResponse</c> object, whose shape is documented on
+    /// <see cref="IdentityAsyncResult.Payload"/>, with wire <c>Status: "Complete"</c> for
+    /// <see cref="IdentityResultStatus.Success"/> and wire <c>Status: "Incomplete"</c> for
+    /// <see cref="IdentityResultStatus.Incomplete"/>. The object is required even for an incomplete
+    /// poll; it simply carries no result data yet and may omit <c>SearchResponses</c> or send it empty.
+    /// </item>
+    /// </list>
+    /// Null is correct only for a status that carries no payload:
+    /// <see cref="IdentityResultStatus.NotFound"/>, <see cref="IdentityResultStatus.InvalidProperties"/>,
+    /// and <see cref="IdentityResultStatus.JobFailed"/>. A <see cref="IdentityResultStatus.Success"/> or
+    /// <see cref="IdentityResultStatus.Incomplete"/> with no payload is provider contract misuse and
+    /// becomes a provider-contract-violation <c>502</c>. A payload present but shaped differently is
+    /// served to the client verbatim, so it is a provider defect the host does not detect on its behalf.
     /// </summary>
     public JsonNode? Payload { get; init; }
 
