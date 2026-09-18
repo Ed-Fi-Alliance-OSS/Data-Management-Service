@@ -30,12 +30,14 @@
 
     Comparison by the caller is ordinal. Lines are sorted with StringComparer.Ordinal here, and
     callers must compare them the same way: PowerShell's default string equality is
-    case-insensitive, under which a rename differing only in case reads as no change at all.
+    case-insensitive, and neither -ceq nor Compare-Object -CaseSensitive is ordinal either, both
+    comparing by culture, under which a rename differing only in case or in an ignorable character
+    such as a soft hyphen reads as no change at all.
 
 .EXAMPLE
     $left = ./eng/verification/Get-ContractPublicSurface.ps1 -AssemblyPath ./published/lib/net10.0/EdFi.Api.Plugins.dll
     $right = ./eng/verification/Get-ContractPublicSurface.ps1 -AssemblyPath ./packed/lib/net10.0/EdFi.Api.Plugins.dll
-    $null -eq (Compare-Object $left $right -CaseSensitive -SyncWindow 0)
+    [System.Linq.Enumerable]::SequenceEqual([string[]] $left, [string[]] $right, [System.StringComparer]::Ordinal)
 #>
 [CmdletBinding()]
 [OutputType([string[]])]

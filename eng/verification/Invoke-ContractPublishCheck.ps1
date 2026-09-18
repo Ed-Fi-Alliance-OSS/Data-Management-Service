@@ -31,6 +31,14 @@
 
     This script decides; it does not push. The caller acts on ShouldPush.
 
+    With -ConfirmPublished the same script answers a second question after the caller has pushed, or
+    has skipped pushing: does the feed now serve exactly the bytes of the packed file? The version
+    must be listed - a healthy feed that has not yet indexed a fresh push is polled within a bounded
+    window, and any other failure is fatal at once - the three comparisons run as always, and the
+    downloaded archive's SHA-256 is compared with the packed file's. AttachEvidence is true only in
+    confirm mode and only when the bytes are identical; a decision to push is never reported as a
+    publication, because a push can fail after the decision was made.
+
 .NOTES
     Feed access is three injected script blocks so that every behaviour of this policy is testable
     without a network or a credential. The defaults perform the real requests.
@@ -45,7 +53,10 @@
         fault rather than an absent package.
 
 .OUTPUTS
-    A PSCustomObject with ShouldPush, Reason, PackageId, PackageVersion and Comparisons.
+    Exactly one object typed EdFi.ContractPublishDecision on the success stream, on every path, with
+    Mode (decide | confirm), ShouldPush, Reason (absent | unchanged | confirmed), PackageId,
+    PackageVersion, PublishedBytesIdentical, AttachEvidence and Comparisons. Status text goes to the
+    information stream.
 #>
 [CmdletBinding()]
 param(
@@ -93,7 +104,26 @@ param(
 
     # The target framework whose lib/ folder carries the contract assembly.
     [string]
-    $TargetFramework = "net10.0"
+    $TargetFramework = "net10.0",
+
+    # Confirm mode: the version must be on the feed, and the result says whether the feed serves the
+    # packed file's exact bytes. See the description.
+    [switch]
+    $ConfirmPublished,
+
+    # How long confirm mode waits for a healthy feed to list a version it does not yet list, and the
+    # interval between polls.
+    [ValidateRange(1, 3600)]
+    [int]
+    $SettleTimeoutSeconds = 60,
+
+    [ValidateRange(1, 3600)]
+    [int]
+    $SettleIntervalSeconds = 10,
+
+    # Waits the given number of seconds. Injectable so the settle window is testable in no time.
+    [scriptblock]
+    $Delay
 )
 
 $ErrorActionPreference = "Stop"
@@ -101,6 +131,10 @@ $ErrorActionPreference = "Stop"
 Import-Module (Join-Path $PSScriptRoot "ContractPackageComparison.psm1") -Force
 
 $surfaceReader = Join-Path $PSScriptRoot "Get-ContractPublicSurface.ps1"
+
+if ($null -eq $Delay) {
+    $Delay = { param([int] $Seconds) Start-Sleep -Seconds $Seconds }
+}
 
 function Get-FeedRequestHeader {
     [CmdletBinding()]
@@ -305,9 +339,14 @@ function Read-ContractPackage {
     }
 }
 
-# Ordinal and position-sensitive. Both sides are already sorted where order does not matter, and
-# PowerShell's default comparison is case-insensitive, under which a rule reworded only in case
-# would read as unchanged.
+# Ordinal and position-sensitive. Both sides are already sorted where order does not matter.
+#
+# Equality is decided by walking both lists in step with StringComparison.Ordinal. Neither
+# Compare-Object -CaseSensitive nor PowerShell's -ceq is ordinal: both compare by culture, under which
+# a soft hyphen (U+00AD) or another ignorable character is no difference at all, and a rule reworded
+# with one would read as unchanged. The readable report is built separately, as two ordinal set
+# differences, so one inserted line reads as one line rather than as every line after it shifted;
+# when the sets agree but the lists do not, the report says so rather than coming back empty.
 function Compare-CanonicalList {
     [CmdletBinding()]
     [OutputType([string[]], [object[]])]
@@ -316,23 +355,83 @@ function Compare-CanonicalList {
         [Parameter(Mandatory)][AllowNull()][AllowEmptyCollection()][string[]] $Packed
     )
 
-    $differences = @(
-        Compare-Object `
-            -ReferenceObject ([string[]] @($Published)) `
-            -DifferenceObject ([string[]] @($Packed)) `
-            -CaseSensitive `
-            -SyncWindow 0 |
-            ForEach-Object {
-                if ($_.SideIndicator -eq "<=") {
-                    "only in the published package: $($_.InputObject)"
-                }
-                else {
-                    "only in the packed package: $($_.InputObject)"
-                }
+    $left = [string[]] @($Published)
+    $right = [string[]] @($Packed)
+
+    $equal = $left.Length -eq $right.Length
+
+    if ($equal) {
+        for ($index = 0; $index -lt $left.Length; $index++) {
+            if (-not [string]::Equals($left[$index], $right[$index], [System.StringComparison]::Ordinal)) {
+                $equal = $false
+                break
             }
+        }
+    }
+
+    if ($equal) {
+        return , [string[]] @()
+    }
+
+    $publishedSet = [System.Collections.Generic.HashSet[string]]::new($left, [System.StringComparer]::Ordinal)
+    $packedSet = [System.Collections.Generic.HashSet[string]]::new($right, [System.StringComparer]::Ordinal)
+
+    $differences = [System.Collections.Generic.List[string]]::new()
+
+    foreach ($line in $left) {
+        if (-not $packedSet.Contains($line)) {
+            $differences.Add("only in the published package: $line")
+        }
+    }
+
+    foreach ($line in $right) {
+        if (-not $publishedSet.Contains($line)) {
+            $differences.Add("only in the packed package: $line")
+        }
+    }
+
+    if ($differences.Count -eq 0) {
+        if ($left.Length -ne $right.Length) {
+            $differences.Add("the same entries, but the published package lists $($left.Length) and the packed package lists $($right.Length); one repeats an entry the other does not")
+        }
+        else {
+            $differences.Add("the same $($left.Length) entries in a different order")
+        }
+    }
+
+    return , [string[]] $differences.ToArray()
+}
+
+# The one object this script writes to the success stream, on every path. Status text goes to the
+# information stream, so a caller that captures the output receives the decision and nothing else.
+function Get-PublishDecision {
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory)][bool] $ShouldPush,
+        [Parameter(Mandatory)][string] $Reason,
+        [Parameter(Mandatory)][bool] $PublishedBytesIdentical,
+        [Parameter(Mandatory)][bool] $AttachEvidence,
+        [Parameter(Mandatory)][AllowEmptyCollection()] $Comparisons
     )
 
-    return , [string[]] $differences
+    $mode = "decide"
+
+    if ($ConfirmPublished) {
+        $mode = "confirm"
+    }
+
+    return [pscustomobject]@{
+        PSTypeName              = "EdFi.ContractPublishDecision"
+        Mode                    = $mode
+        ShouldPush              = $ShouldPush
+        Reason                  = $Reason
+        PackageId               = $PackageId
+        PackageVersion          = $normalizedVersion
+        PublishedBytesIdentical = $PublishedBytesIdentical
+        AttachEvidence          = $AttachEvidence
+        Comparisons             = $Comparisons
+    }
 }
 
 $normalizedId = ConvertTo-NormalizedPackageId -PackageId $PackageId
@@ -358,21 +457,29 @@ if (
 
 $baseAddress = $baseAddress.TrimEnd('/')
 
-$published = & $GetPublishedVersions $baseAddress $normalizedId $FeedApiKey
+# One read of the version index, validated. Every malformed answer throws here, so the only way to
+# read "not listed" is a healthy feed that does not list the version.
+function Test-VersionListed {
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param()
 
-if ($null -eq $published -or $null -eq $published.Found) {
-    throw "The feed lookup for $PackageId returned no result. A feed that cannot be read is not an absent package."
-}
+    $published = & $GetPublishedVersions $baseAddress $normalizedId $FeedApiKey
 
-# A Found that is not a boolean is not an answer. PowerShell would treat any non-empty value as
-# true, so a lookup returning a string or an object would decide the branch by accident.
-if ($published.Found -isnot [bool]) {
-    throw "The feed lookup for $PackageId reported Found as '$($published.Found)', which is not a boolean. That is a malformed result, not an absent package."
-}
+    if ($null -eq $published -or $null -eq $published.Found) {
+        throw "The feed lookup for $PackageId returned no result. A feed that cannot be read is not an absent package."
+    }
 
-$publishedVersions = @()
+    # A Found that is not a boolean is not an answer. PowerShell would treat any non-empty value as
+    # true, so a lookup returning a string or an object would decide the branch by accident.
+    if ($published.Found -isnot [bool]) {
+        throw "The feed lookup for $PackageId reported Found as '$($published.Found)', which is not a boolean. That is a malformed result, not an absent package."
+    }
 
-if ($published.Found) {
+    if (-not $published.Found) {
+        return $false
+    }
+
     if ($null -eq $published.Versions) {
         throw "The feed reported $PackageId as present and listed no versions. That is a malformed response, not an absent version."
     }
@@ -390,18 +497,34 @@ if ($published.Found) {
                 ConvertTo-NormalizedPackageVersion -Version ([string] $_)
             }
     )
+
+    return $publishedVersions -contains $normalizedVersion
 }
 
-if (-not $published.Found -or $publishedVersions -notcontains $normalizedVersion) {
-    Write-Output "$PackageId $normalizedVersion is not on the feed; it will be published."
+$listed = Test-VersionListed
 
-    return [pscustomobject]@{
-        ShouldPush     = $true
-        Reason         = "absent"
-        PackageId      = $PackageId
-        PackageVersion = $normalizedVersion
-        Comparisons    = @()
+if ($ConfirmPublished -and -not $listed) {
+    # A push that reported success is indexed by Azure Artifacts asynchronously, so a healthy feed
+    # may not list the version for a moment. Only that case is retried: every other failure has
+    # already thrown inside Test-VersionListed, because an unreadable or malformed feed is not a
+    # feed that has not caught up yet.
+    $polls = [int] [math]::Ceiling($SettleTimeoutSeconds / [double] $SettleIntervalSeconds)
+
+    for ($poll = 1; $poll -le $polls -and -not $listed; $poll++) {
+        Write-Information "$PackageId $normalizedVersion is not listed yet; waiting $SettleIntervalSeconds s (poll $poll of $polls)." -InformationAction Continue
+        & $Delay $SettleIntervalSeconds
+        $listed = Test-VersionListed
     }
+
+    if (-not $listed) {
+        throw "$PackageId $normalizedVersion is not listed on the feed after $SettleTimeoutSeconds seconds ($polls polls). A push that reported success should be visible by now; the publication cannot be confirmed and no evidence may be attached for it."
+    }
+}
+
+if (-not $listed) {
+    Write-Information "$PackageId $normalizedVersion is not on the feed; it will be published." -InformationAction Continue
+
+    return Get-PublishDecision -ShouldPush $true -Reason "absent" -PublishedBytesIdentical $false -AttachEvidence $false -Comparisons @()
 }
 
 $downloadPath = Join-Path $scratch "$normalizedId.$normalizedVersion.published.nupkg"
@@ -450,12 +573,18 @@ if ($changed.Count -gt 0) {
     )
 }
 
-Write-Output "$PackageId $normalizedVersion is already published, unchanged: public surface, XML documentation and declared dependencies all match."
+# Semantic equality is not byte identity: a nupkg is not reproducible, so a rerun of the pack job
+# yields a different archive of the same contract. Whether the feed serves these exact bytes is what
+# decides whether this run's SBOM and provenance describe anything a consumer can restore.
+$publishedHash = (Get-FileHash -LiteralPath $downloadPath -Algorithm SHA256).Hash.ToLowerInvariant()
+$packedHash = (Get-FileHash -LiteralPath $PackageFile -Algorithm SHA256).Hash.ToLowerInvariant()
+$bytesIdentical = $publishedHash -ceq $packedHash
 
-return [pscustomobject]@{
-    ShouldPush     = $false
-    Reason         = "unchanged"
-    PackageId      = $PackageId
-    PackageVersion = $normalizedVersion
-    Comparisons    = $comparisons
-}
+Write-Information "$PackageId $normalizedVersion is already published, unchanged: public surface, XML documentation and declared dependencies all match. The feed's archive is $(if ($bytesIdentical) { 'byte-identical to' } else { 'a different archive from' }) the packed file (feed $publishedHash, packed $packedHash)." -InformationAction Continue
+
+return Get-PublishDecision `
+    -ShouldPush $false `
+    -Reason $(if ($ConfirmPublished) { "confirmed" } else { "unchanged" }) `
+    -PublishedBytesIdentical $bytesIdentical `
+    -AttachEvidence ($ConfirmPublished.IsPresent -and $bytesIdentical) `
+    -Comparisons $comparisons
