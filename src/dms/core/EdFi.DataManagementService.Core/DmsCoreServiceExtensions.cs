@@ -11,6 +11,7 @@ using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.Handler;
+using EdFi.DataManagementService.Core.Identity;
 using EdFi.DataManagementService.Core.Management;
 using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Profile;
@@ -19,6 +20,7 @@ using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Core.Startup;
 using EdFi.DataManagementService.Core.Telemetry;
 using EdFi.DataManagementService.Core.Validation;
+using EdFi.DataManagementService.Identity;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -147,7 +149,13 @@ public static class DmsCoreServiceExtensions
             .AddSingleton<GetTokenInfoHandler>()
             .AddSingleton<AvailableChangeVersionsHandler>()
             // Collection-read observability
-            .AddSingleton<ICollectionPagingTelemetry, CollectionPagingTelemetry>();
+            .AddSingleton<ICollectionPagingTelemetry, CollectionPagingTelemetry>()
+            // Identity host default, replaced by a plugin's own IIdentityService registration.
+            // AddSingleton (not TryAddSingleton) is deliberate and load-bearing: a later plugin
+            // recording wrapper must be able to observe a real descriptor here to report on identity
+            // plugin registration, and TryAdd would silently hide a declined plugin candidate from
+            // that inspection.
+            .AddSingleton<IIdentityService, NoIdentityService>();
 
         return services;
 

@@ -64,6 +64,7 @@ COPY frontend/EdFi.DataManagementService.Frontend.AspNetCore/*.csproj frontend/E
 COPY core/EdFi.DataManagementService.Core/*.csproj core/EdFi.DataManagementService.Core/packages.lock.json ./core/EdFi.DataManagementService.Core/
 COPY core/EdFi.DataManagementService.Core.External/*.csproj core/EdFi.DataManagementService.Core.External/packages.lock.json ./core/EdFi.DataManagementService.Core.External/
 COPY core/EdFi.DataManagementService.CustomValidation/*.csproj core/EdFi.DataManagementService.CustomValidation/packages.lock.json ./core/EdFi.DataManagementService.CustomValidation/
+COPY core/EdFi.DataManagementService.Identity/*.csproj core/EdFi.DataManagementService.Identity/packages.lock.json ./core/EdFi.DataManagementService.Identity/
 COPY backend/EdFi.DataManagementService.Backend/*.csproj backend/EdFi.DataManagementService.Backend/packages.lock.json ./backend/EdFi.DataManagementService.Backend/
 COPY backend/EdFi.DataManagementService.Backend.External/*.csproj backend/EdFi.DataManagementService.Backend.External/packages.lock.json ./backend/EdFi.DataManagementService.Backend.External/
 COPY backend/EdFi.DataManagementService.Backend.Ddl/*.csproj backend/EdFi.DataManagementService.Backend.Ddl/packages.lock.json ./backend/EdFi.DataManagementService.Backend.Ddl/
@@ -90,6 +91,7 @@ COPY frontend/EdFi.DataManagementService.Frontend.AspNetCore/ ./frontend/EdFi.Da
 COPY core/EdFi.DataManagementService.Core/ ./core/EdFi.DataManagementService.Core/
 COPY core/EdFi.DataManagementService.Core.External/ ./core/EdFi.DataManagementService.Core.External/
 COPY core/EdFi.DataManagementService.CustomValidation/ ./core/EdFi.DataManagementService.CustomValidation/
+COPY core/EdFi.DataManagementService.Identity/ ./core/EdFi.DataManagementService.Identity/
 COPY backend/EdFi.DataManagementService.Backend/ ./backend/EdFi.DataManagementService.Backend/
 COPY backend/EdFi.DataManagementService.Backend.External/ ./backend/EdFi.DataManagementService.Backend.External/
 COPY backend/EdFi.DataManagementService.Backend.Ddl/ ./backend/EdFi.DataManagementService.Backend.Ddl/
