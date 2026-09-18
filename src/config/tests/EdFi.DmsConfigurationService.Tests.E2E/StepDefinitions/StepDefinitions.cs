@@ -650,10 +650,7 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
     /// replaced by it.
     /// </summary>
     [Then("the response body property {string} equals the value captured as {string}")]
-    public async Task ThenTheResponseBodyPropertyEqualsTheValueCapturedAs(
-        string property,
-        string identifier
-    )
+    public async Task ThenTheResponseBodyPropertyEqualsTheValueCapturedAs(string property, string identifier)
     {
         _ids.Should().ContainKey(identifier, $"a value should have been captured as '{identifier}'");
         JsonNode responseJson = JsonNode.Parse(await _apiResponse.TextAsync())!;

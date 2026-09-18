@@ -556,7 +556,7 @@ public abstract class WorkflowConcurrencyTestBase : DatabaseTestBase
             await _vendorRepositoryUpdateReleased.Task;
         }
 
-        return new VendorUpdateResult.Success([]);
+        return new VendorUpdateResult.Success();
     }
 
     private async Task<ApiClientUpdateResult> ApplyApiClientRepositoryUpdateAsync(

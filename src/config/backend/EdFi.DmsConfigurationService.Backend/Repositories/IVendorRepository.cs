@@ -81,9 +81,11 @@ public record VendorGetResult
 public record VendorUpdateResult
 {
     /// <summary>
-    /// Successfully updated vendor
+    /// Successfully updated vendor. The affected clients are not reported here: a caller that
+    /// needs them resolves them through <see cref="IVendorRepository.GetVendorUpdateState"/>
+    /// before mutating anything, which reads them under the lock rather than after the commit.
     /// </summary>
-    public record Success(List<Guid> AffectedClientUuids) : VendorUpdateResult();
+    public record Success() : VendorUpdateResult();
 
     /// <summary>
     /// Vendor id not found

@@ -138,7 +138,7 @@ public class AuthorizationTests
                 );
 
             A.CallTo(() => _vendorRepository.UpdateVendor(A<VendorUpdateCommand>.Ignored))
-                .Returns(new VendorUpdateResult.Success(new List<Guid>()));
+                .Returns(new VendorUpdateResult.Success());
 
             A.CallTo(() => _vendorRepository.DeleteVendor(A<int>.Ignored))
                 .Returns(new VendorDeleteResult.Success());

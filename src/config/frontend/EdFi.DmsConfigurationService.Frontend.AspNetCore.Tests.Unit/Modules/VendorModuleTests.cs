@@ -155,7 +155,7 @@ public class VendorModuleTests
                 );
 
             A.CallTo(() => _vendorRepository.UpdateVendor(A<VendorUpdateCommand>.Ignored))
-                .Returns(new VendorUpdateResult.Success(new List<Guid>()));
+                .Returns(new VendorUpdateResult.Success());
 
             A.CallTo(() => _vendorRepository.DeleteVendor(A<int>.Ignored))
                 .Returns(new VendorDeleteResult.Success());
@@ -1054,7 +1054,7 @@ public class VendorModuleTests
                 );
 
             A.CallTo(() => _vendorRepository.UpdateVendor(A<VendorUpdateCommand>.Ignored))
-                .Returns(new VendorUpdateResult.Success([]));
+                .Returns(new VendorUpdateResult.Success());
 
             A.CallTo(() =>
                     _identityProviderRepository.UpdateClientNamespaceClaimAsync(

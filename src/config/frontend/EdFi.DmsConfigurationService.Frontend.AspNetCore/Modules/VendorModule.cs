@@ -864,12 +864,7 @@ public class VendorModule : IEndpointModule
         NormalizePrefixes(left).SetEquals(NormalizePrefixes(right));
 
     private static HashSet<string> NormalizePrefixes(string prefixes) =>
-        [
-            .. prefixes.Split(
-                ',',
-                StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
-            ),
-        ];
+        [.. prefixes.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)];
 
     private static string SanitizeForLog(string? input)
     {
