@@ -23,5 +23,44 @@
     </ItemGroup>
     <ItemGroup>
         <ProjectReference Include="..\EdFi.DataManagementService.ApiSchemaDownloader\EdFi.DataManagementService.ApiSchemaDownloader.csproj" />
+        <!-- The snapshot package-bump proof hashes the published package sets through the production
+             normalizer and hash provider, so it must run the real ones rather than a restatement of
+             them. The payload fixtures still read their packages with System.Text.Json alone. -->
+        <ProjectReference Include="..\..\core\EdFi.DataManagementService.Core\EdFi.DataManagementService.Core.csproj" />
     </ItemGroup>
+    <ItemGroup>
+        <!-- Every ApiSchema family the payload fixtures download. Each is downloaded at its own
+             centrally pinned version, recorded below, so the suite follows the pin instead of a
+             literal that has to be remembered when the pin moves. -->
+        <ApiSchemaPackageFamily Include="EdFi.DataStandard52.ApiSchema" />
+        <ApiSchemaPackageFamily Include="EdFi.DataStandard52.TPDM.ApiSchema" />
+        <ApiSchemaPackageFamily Include="EdFi.DataStandard52.Sample.ApiSchema" />
+        <ApiSchemaPackageFamily Include="EdFi.DataStandard52.Homograph.ApiSchema" />
+        <ApiSchemaPackageFamily Include="EdFi.DataStandard61.ApiSchema" />
+        <ApiSchemaPackageFamily Include="EdFi.DataStandard61.Sample.ApiSchema" />
+        <ApiSchemaPackageFamily Include="EdFi.DataStandard61.Homograph.ApiSchema" />
+    </ItemGroup>
+    <!-- Records each family's centrally pinned version as assembly metadata keyed by package id, so
+         the fixtures resolve a version per family rather than assuming the seven pins agree. -->
+    <Target Name="RecordPinnedApiSchemaPackageVersions" BeforeTargets="GetAssemblyAttributes">
+        <ItemGroup>
+            <!-- Unqualified %(Identity) batches over both item types at once, one bucket per identity,
+                 so this keeps exactly the PackageVersion items whose identity is also an
+                 ApiSchemaPackageFamily: an MSBuild join. -->
+            <_PinnedApiSchemaPackageVersion
+                Include="@(PackageVersion)"
+                Condition="'%(Identity)' != '' and '@(ApiSchemaPackageFamily)' != ''"
+            />
+        </ItemGroup>
+        <Error
+            Condition="'@(_PinnedApiSchemaPackageVersion->Count())' != '@(ApiSchemaPackageFamily->Count())'"
+            Text="Every ApiSchemaPackageFamily must have a centrally pinned PackageVersion. Pinned: @(_PinnedApiSchemaPackageVersion). Expected: @(ApiSchemaPackageFamily)."
+        />
+        <ItemGroup>
+            <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+                <_Parameter1>ApiSchemaPackageVersion:%(_PinnedApiSchemaPackageVersion.Identity)</_Parameter1>
+                <_Parameter2>%(_PinnedApiSchemaPackageVersion.Version)</_Parameter2>
+            </AssemblyAttribute>
+        </ItemGroup>
+    </Target>
 </Project>

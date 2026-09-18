@@ -421,6 +421,9 @@ internal static class OpenApiSnapshotContractAssertions
     private static string? StringValueOf(JsonObject jsonObject, string propertyName) =>
         jsonObject[propertyName] is JsonValue value && value.TryGetValue(out string? text) ? text : null;
 
+    private static bool? BooleanValueOf(JsonObject jsonObject, string propertyName) =>
+        jsonObject[propertyName] is JsonValue value && value.TryGetValue(out bool flag) ? flag : null;
+
     /// <summary>
     /// Renders one step of a location path: dotted when the key reads as an identifier, bracketed and
     /// quoted otherwise, so a path key containing slashes stays unambiguous.
@@ -466,14 +469,16 @@ internal static class OpenApiSnapshotContractAssertions
                 UseSnapshotParameterName
             );
 
-        StringValueOf(parameter!.AsObject(), "name")
+        JsonObject parameterObject = parameter!.AsObject();
+
+        StringValueOf(parameterObject, "name")
             .Should()
             .Be(
                 UseSnapshotParameterName,
                 "the {0} document's snapshot parameter is a named header",
                 documentName
             );
-        StringValueOf(parameter.AsObject(), "in")
+        StringValueOf(parameterObject, "in")
             .Should()
             .Be(
                 "header",
@@ -481,8 +486,21 @@ internal static class OpenApiSnapshotContractAssertions
                 documentName,
                 UseSnapshotParameterName
             );
-        parameter["schema"]
-            ?["type"]?.GetValue<string>()
+
+        // Read out before asserting rather than reached through ?., which skips the assertion
+        // altogether on a parameter declaring no schema, no type, or no default - the shapes this is
+        // here to reject.
+        JsonObject? schema = parameterObject["schema"] as JsonObject;
+
+        schema
+            .Should()
+            .NotBeNull(
+                "the {0} document must declare a schema for {1}",
+                documentName,
+                UseSnapshotParameterName
+            );
+
+        StringValueOf(schema!, "type")
             .Should()
             .Be(
                 "boolean",
@@ -490,8 +508,7 @@ internal static class OpenApiSnapshotContractAssertions
                 documentName,
                 UseSnapshotParameterName
             );
-        parameter["schema"]
-            ?["default"]?.GetValue<bool>()
+        BooleanValueOf(schema!, "default")
             .Should()
             .BeFalse(
                 "the {0} document must default {1} to false so an unaware client is unaffected",

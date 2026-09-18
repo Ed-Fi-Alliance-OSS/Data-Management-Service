@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Reflection;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.ApiSchemaDownloader.Services;
 using FakeItEasy;
@@ -26,8 +27,10 @@ namespace EdFi.DataManagementService.ApiSchemaDownloader.Tests.Unit;
 /// <para>
 /// Responsibilities are split deliberately. This asserts what the package payloads contain; the Core
 /// fixtures assert what DMS assembles and serves from them. So this reads the payload with
-/// System.Text.Json alone and takes no dependency on the Core assembly, which also keeps the CLI test
-/// project's reference graph as it was.
+/// System.Text.Json alone rather than through Core's loading and assembly code, which would fold the
+/// two questions into one. The project does reference Core, for the package-bump hash proof in
+/// <see cref="SnapshotOpenApiPackageBumpHashTests" />, which has to hash through the production
+/// normalizer to mean anything; nothing in this file uses it.
 /// </para>
 /// </remarks>
 [TestFixture]
@@ -37,9 +40,10 @@ public class SnapshotOpenApiPackagePayloadTests
         "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json";
 
     /// <summary>
-    /// The pinned version, which every active version-selection surface in this repository selects.
+    /// The prefix under which the build records each family's centrally pinned version, one entry per
+    /// <c>ApiSchemaPackageFamily</c> in this project file.
     /// </summary>
-    private const string SnapshotContractVersion = "1.0.335";
+    private const string PinnedVersionMetadataPrefix = "ApiSchemaPackageVersion:";
 
     /// <summary>
     /// The last version published before the upstream snapshot work (DMS-1371). Used to prove these
@@ -113,7 +117,11 @@ public class SnapshotOpenApiPackagePayloadTests
 
         foreach (PackageFamily family in _families.Where(family => family.IsCore))
         {
-            PackagePayload payload = await AnalyzeAsync(downloader, family, SnapshotContractVersion);
+            PackagePayload payload = await AnalyzeAsync(
+                downloader,
+                family,
+                PinnedVersionOf(family.PackageId)
+            );
             _payloads[family.PackageId] = payload;
             coreComponentsByDataStandard[family.DataStandard] = payload.BaseDocumentComponents;
         }
@@ -123,7 +131,7 @@ public class SnapshotOpenApiPackagePayloadTests
             _payloads[family.PackageId] = await AnalyzeAsync(
                 downloader,
                 family,
-                SnapshotContractVersion,
+                PinnedVersionOf(family.PackageId),
                 coreComponentsByDataStandard[family.DataStandard]
             );
         }
@@ -374,6 +382,41 @@ public class SnapshotOpenApiPackagePayloadTests
                 "no mutation in the pre-bump package carries the snapshot 405"
             );
         _preSnapshotCorePayload.SnapshotReferencesUsed.Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// The version of <paramref name="packageId"/> that <c>src/Directory.Packages.props</c> pins, as
+    /// the build recorded it.
+    /// </summary>
+    /// <remarks>
+    /// Resolved per family rather than from one shared literal. The seven families are expected to
+    /// move together, but nothing in this suite enforces that, so reading each family's own pin means
+    /// a run against drifted pins downloads what each family is actually pinned to instead of
+    /// silently testing one family's version seven times. It also means moving a pin moves what this
+    /// suite downloads, with no literal here to remember.
+    /// </remarks>
+    private static string PinnedVersionOf(string packageId)
+    {
+        string? version = typeof(SnapshotOpenApiPackagePayloadTests)
+            .Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
+            .SingleOrDefault(attribute =>
+                string.Equals(
+                    attribute.Key,
+                    PinnedVersionMetadataPrefix + packageId,
+                    StringComparison.Ordinal
+                )
+            )
+            ?.Value;
+
+        if (string.IsNullOrWhiteSpace(version))
+        {
+            throw new InvalidOperationException(
+                $"The build recorded no centrally pinned version for '{packageId}'. It must be listed "
+                    + "as an ApiSchemaPackageFamily in this project file."
+            );
+        }
+
+        return version;
     }
 
     private static async Task<PackagePayload> AnalyzeAsync(

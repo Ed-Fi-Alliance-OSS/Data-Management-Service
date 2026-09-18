@@ -39,11 +39,20 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                     $"an independently served document must define '{parameterComponent}' rather than "
                         + "resolve it out of a sibling document"
                 );
-            parameter!["name"]?.GetValue<string>().Should().Be(parameterComponent);
-            parameter["in"]?.GetValue<string>().Should().Be("header");
-            parameter["schema"]?["type"]?.GetValue<string>().Should().Be("boolean");
-            parameter["schema"]
-                ?["default"]?.GetValue<bool>()
+
+            JsonObject parameterObject = parameter!.AsObject();
+
+            // Every value is read out before it is asserted on. Reached through ?., a served document
+            // that declares no schema, no type, or no default would skip the assertion rather than
+            // fail it, and a scenario would pass against a document advertising no contract at all.
+            StringValueOf(parameterObject, "name").Should().Be(parameterComponent);
+            StringValueOf(parameterObject, "in").Should().Be("header");
+
+            JsonObject? schema = parameterObject["schema"] as JsonObject;
+
+            schema.Should().NotBeNull($"'{parameterComponent}' must declare a schema");
+            StringValueOf(schema!, "type").Should().Be("boolean");
+            BooleanValueOf(schema!, "default")
                 .Should()
                 .BeFalse("an unaware client must be unaffected by the header existing");
         }
@@ -173,6 +182,12 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 
         private async Task<JsonNode?> ServedComponentAsync(string section, string name) =>
             (await ServedOpenApiDocumentAsync())["components"]?[section]?[name];
+
+        private static string? StringValueOf(JsonObject jsonObject, string propertyName) =>
+            jsonObject[propertyName] is JsonValue value && value.TryGetValue(out string? text) ? text : null;
+
+        private static bool? BooleanValueOf(JsonObject jsonObject, string propertyName) =>
+            jsonObject[propertyName] is JsonValue value && value.TryGetValue(out bool flag) ? flag : null;
 
         /// <summary>
         /// Every reference in the document that does not resolve inside that same document.

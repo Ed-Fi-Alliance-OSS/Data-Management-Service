@@ -457,5 +457,46 @@ public class OpenApiSnapshotContractAssertionsTests
 
             assert.Should().Throw<Exception>();
         }
+
+        // The three absences below are the ones a null-conditional walk reaches past: with nothing to
+        // read, there is nothing to compare, and an assertion that never runs is an assertion that
+        // never fails. A parameter that declares no type or no default advertises no contract at all,
+        // so each has to be rejected as firmly as a wrong one.
+        [Test]
+        public void It_fails_when_the_parameter_declares_no_schema()
+        {
+            JsonNode document = SelfResolving();
+            document["components"]!["parameters"]![UseSnapshotParameterName]!.AsObject().Remove("schema");
+
+            Action assert = () => AssertUseSnapshotParameterShape(document, "resources");
+
+            assert.Should().Throw<Exception>();
+        }
+
+        [Test]
+        public void It_fails_when_the_parameter_schema_declares_no_type()
+        {
+            JsonNode document = SelfResolving();
+            document["components"]!["parameters"]![UseSnapshotParameterName]!["schema"]!
+                .AsObject()
+                .Remove("type");
+
+            Action assert = () => AssertUseSnapshotParameterShape(document, "resources");
+
+            assert.Should().Throw<Exception>();
+        }
+
+        [Test]
+        public void It_fails_when_the_parameter_schema_declares_no_default()
+        {
+            JsonNode document = SelfResolving();
+            document["components"]!["parameters"]![UseSnapshotParameterName]!["schema"]!
+                .AsObject()
+                .Remove("default");
+
+            Action assert = () => AssertUseSnapshotParameterShape(document, "resources");
+
+            assert.Should().Throw<Exception>();
+        }
     }
 }

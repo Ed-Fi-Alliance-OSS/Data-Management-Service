@@ -42,6 +42,15 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Startup;
 /// hashes are independent, neutrality over a full set also proves it for every subset a deployment
 /// might select, the bundled core-plus-TPDM set included.
 /// </para>
+/// <para>
+/// This is the structural half of the story's hash-neutrality coverage and deliberately not the whole
+/// of it. An unrelated schema change that shipped alongside the snapshot contract would sit in both
+/// operands here and pass unnoticed. The historical half is
+/// <c>SnapshotOpenApiPackageBumpHashTests</c> in the ApiSchemaDownloader integration suite, which
+/// hashes the published package sets on both sides of the bump that introduced the contract. It lives
+/// there because central package management pins one version per package, so this fixture can only
+/// ever see the current one.
+/// </para>
 /// </remarks>
 public abstract class SnapshotOpenApiHashNeutralityTests
 {
