@@ -31,6 +31,37 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.Modules;
 public class MetadataModuleTests
 {
     [TestFixture]
+    public class When_Requesting_Tenant_Only_Metadata_With_Required_Route_Qualifiers
+    {
+        [TestCase("/tenant1/metadata/dependencies")]
+        [TestCase("/tenant1/metadata/specifications")]
+        public async Task It_returns_not_found_instead_of_matching_discovery(string requestPath)
+        {
+            // Arrange
+            await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.ConfigureServices(collection =>
+                {
+                    TestMockHelper.AddEssentialMocks(collection);
+                    collection.Configure<FrontendAppSettings>(options =>
+                    {
+                        options.MultiTenancy = true;
+                        options.RouteQualifierSegments = "districtId,schoolYear";
+                    });
+                });
+            });
+            using var client = factory.CreateClient();
+
+            // Act
+            var response = await client.GetAsync(requestPath);
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        }
+    }
+
+    [TestFixture]
     public class When_Mapping_Qualified_Metadata_Routes
     {
         private sealed class RejectingMetadataRouteValidator : IMetadataRouteValidator

@@ -247,6 +247,8 @@ public partial class MetadataEndpointModule(IOptions<FrontendAppSettings> appSet
     {
         MapMetadataEndpoints(endpoints, string.Empty, validateRoute: false);
 
+        MapTenantOnlyMetadataRejections(endpoints);
+
         string routePattern = FixedRoutePattern.Build(
             appSettings.Value.GetRouteQualifierSegmentsArray(),
             appSettings.Value.MultiTenancy
@@ -256,6 +258,20 @@ public partial class MetadataEndpointModule(IOptions<FrontendAppSettings> appSet
         {
             MapMetadataEndpoints(endpoints, routePattern, validateRoute: true);
         }
+    }
+
+    private void MapTenantOnlyMetadataRejections(IEndpointRouteBuilder endpoints)
+    {
+        if (!appSettings.Value.MultiTenancy || appSettings.Value.GetRouteQualifierSegmentsArray().Length == 0)
+        {
+            return;
+        }
+
+        // These routes would otherwise match the fully-qualified discovery route with
+        // "metadata" and the endpoint name as route qualifier values. Metadata endpoints
+        // require all configured route qualifiers, so reserve the tenant-only forms as 404.
+        endpoints.MapGet("/{tenant}/metadata/dependencies", () => Results.NotFound());
+        endpoints.MapGet("/{tenant}/metadata/specifications", () => Results.NotFound());
     }
 
     private static void MapMetadataEndpoints(
