@@ -744,6 +744,11 @@ jobs:
     defaults:
       run:
         shell: pwsh
+    outputs:
+      # Whether this run pushed the package. The release-attachment job attaches this contract's
+      # SBOM and provenance only when it did: they describe the bytes this run packed, and on a
+      # skip-unchanged run those bytes are not the ones on the feed.
+      should-push: ${{ steps.publish-check.outputs.should-push }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -830,6 +835,9 @@ jobs:
     defaults:
       run:
         shell: pwsh
+    outputs:
+      # Same contract as publish-package-plugins exposes, for the same reason.
+      should-push: ${{ steps.publish-check.outputs.should-push }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -923,6 +931,13 @@ jobs:
       # refused package must not be attached to the release. The EdFi.Api and SchemaTools publish
       # jobs push a version that is new every release, so a failure there is an infrastructure
       # fault rather than a rejected package, and this job never waited on them.
+      #
+      # Each contract's steps below are also gated on that job's should-push output. A contract's
+      # version does not move with the release, so most prereleases find it already on the feed,
+      # unchanged, and push nothing; the nupkg this run packed is then not the nupkg on the feed,
+      # because a nupkg is not byte-reproducible, and its SBOM and provenance describe bytes nobody
+      # can restore. Only the prerelease that pushed a contract attaches that contract's evidence,
+      # and the release that published a version is where its evidence stays.
       - publish-package-plugins
       - publish-package-custom-validation
     if: ${{ startsWith(github.event.release.tag_name, 'dms-') && !contains(github.event.release.tag_name, 'alpha') }}
@@ -968,11 +983,16 @@ jobs:
         with:
           name: edfiApiSchemaTools.intoto.jsonl
 
+      # Each contract's download and upload steps run only when this run pushed that contract; see
+      # the note on needs above. The two contracts are gated independently, so a run that pushed
+      # one and found the other unchanged attaches exactly the pushed one's evidence.
       - name: Prepare Plugins SBOM download directory
+        if: ${{ needs.publish-package-plugins.outputs.should-push == 'true' }}
         shell: pwsh
         run: New-Item -ItemType Directory -Force plugins/_manifest/spdx_2.2 | Out-Null
 
       - name: Download Plugins SBOM
+        if: ${{ needs.publish-package-plugins.outputs.should-push == 'true' }}
         uses: Ed-Fi-Alliance-OSS/slsa-github-generator/.github/actions/secure-download-artifact@v2.0.0
         with:
           name: "${{ env.PLUGINS_PACKAGE_NAME }}-SBOM"
@@ -980,15 +1000,18 @@ jobs:
           sha256: "${{ needs.sbom-create-plugins.outputs.sbom-hash-code }}"
 
       - name: Download Plugins Provenance
+        if: ${{ needs.publish-package-plugins.outputs.should-push == 'true' }}
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: edfiApiPlugins.intoto.jsonl
 
       - name: Prepare Custom Validation SBOM download directory
+        if: ${{ needs.publish-package-custom-validation.outputs.should-push == 'true' }}
         shell: pwsh
         run: New-Item -ItemType Directory -Force custom-validation/_manifest/spdx_2.2 | Out-Null
 
       - name: Download Custom Validation SBOM
+        if: ${{ needs.publish-package-custom-validation.outputs.should-push == 'true' }}
         uses: Ed-Fi-Alliance-OSS/slsa-github-generator/.github/actions/secure-download-artifact@v2.0.0
         with:
           name: "${{ env.CUSTOM_VALIDATION_PACKAGE_NAME }}-SBOM"
@@ -996,9 +1019,28 @@ jobs:
           sha256: "${{ needs.sbom-create-custom-validation.outputs.sbom-hash-code }}"
 
       - name: Download Custom Validation Provenance
+        if: ${{ needs.publish-package-custom-validation.outputs.should-push == 'true' }}
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: edfiApiCustomValidation.intoto.jsonl
+
+      - name: Resolve release id
+        id: release
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          # Resolved once for the contract upload steps below. The DMS and SchemaTools step keeps its
+          # own lookup, unchanged, because it predates this and always uploads.
+          $release = "${{ steps.prepare-version.outputs.semver }}"
+          $repo = "${{ github.repository }}"
+          $gh_headers = @{
+              "Accept"        = "application/vnd.github+json"
+              "Authorization" = "Bearer ${{ secrets.GITHUB_TOKEN }}"
+          }
+          $response = Invoke-RestMethod -Uri "https://api.github.com/repos/$repo/releases/tags/$release" -Headers $gh_headers
+
+          "release-id=$($response.id)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
       - name: Attach DMS SBOM and Provenance to release
         shell: pwsh
@@ -1062,45 +1104,56 @@ jobs:
               -Headers $gh_headers `
               -InFile $schemaToolsProvenanceFile
 
-          # The contract packages. Every asset name carries its own package id, so a reader of the
-          # release page can tell which contract an SBOM or a provenance file describes.
-          $pluginsSbomFile = "plugins/${{ env.MANIFEST_FILE }}"
-          $pluginsSbomUploadName = "${{ env.PLUGINS_PACKAGE_NAME }}-SBOM.zip"
+      # The contract packages, one step each and each gated on its own publish job's should-push.
+      # Every asset name carries its own package id, so a reader of the release page can tell which
+      # contract an SBOM or a provenance file describes.
+      - name: Attach Plugins Contract SBOM and Provenance to release
+        if: ${{ needs.publish-package-plugins.outputs.should-push == 'true' }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
 
-          Compress-Archive $pluginsSbomFile -DestinationPath $pluginsSbomUploadName
+          $uploadUrl = "https://uploads.github.com/repos/${{ github.repository }}/releases/${{ steps.release.outputs.release-id }}/assets"
+          $gh_headers = @{
+              "Accept"        = "application/vnd.github+json"
+              "Authorization" = "Bearer ${{ secrets.GITHUB_TOKEN }}"
+              "Content-Type"  = "application/octet-stream"
+          }
 
-          Write-Host "Uploading Plugins SBOM as $pluginsSbomUploadName"
-          Invoke-RestMethod -Method POST `
-              -Uri "$($uploadUrl)?name=$($pluginsSbomUploadName)" `
-              -Headers $gh_headers `
-              -InFile $pluginsSbomUploadName
+          $sbomFile = "plugins/${{ env.MANIFEST_FILE }}"
+          $sbomUploadName = "${{ env.PLUGINS_PACKAGE_NAME }}-SBOM.zip"
+          Compress-Archive $sbomFile -DestinationPath $sbomUploadName
 
-          $pluginsProvenanceFile = "edfiApiPlugins.intoto.jsonl"
+          Write-Host "Uploading Plugins SBOM as $sbomUploadName"
+          Invoke-RestMethod -Method POST -Uri "$($uploadUrl)?name=$($sbomUploadName)" -Headers $gh_headers -InFile $sbomUploadName
 
-          Write-Host "Uploading Plugins Provenance as $pluginsProvenanceFile"
-          Invoke-RestMethod -Method POST `
-              -Uri "$($uploadUrl)?name=$($pluginsProvenanceFile)" `
-              -Headers $gh_headers `
-              -InFile $pluginsProvenanceFile
+          $provenanceFile = "edfiApiPlugins.intoto.jsonl"
+          Write-Host "Uploading Plugins Provenance as $provenanceFile"
+          Invoke-RestMethod -Method POST -Uri "$($uploadUrl)?name=$($provenanceFile)" -Headers $gh_headers -InFile $provenanceFile
 
-          $customValidationSbomFile = "custom-validation/${{ env.MANIFEST_FILE }}"
-          $customValidationSbomUploadName = "${{ env.CUSTOM_VALIDATION_PACKAGE_NAME }}-SBOM.zip"
+      - name: Attach Custom Validation Contract SBOM and Provenance to release
+        if: ${{ needs.publish-package-custom-validation.outputs.should-push == 'true' }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
 
-          Compress-Archive $customValidationSbomFile -DestinationPath $customValidationSbomUploadName
+          $uploadUrl = "https://uploads.github.com/repos/${{ github.repository }}/releases/${{ steps.release.outputs.release-id }}/assets"
+          $gh_headers = @{
+              "Accept"        = "application/vnd.github+json"
+              "Authorization" = "Bearer ${{ secrets.GITHUB_TOKEN }}"
+              "Content-Type"  = "application/octet-stream"
+          }
 
-          Write-Host "Uploading Custom Validation SBOM as $customValidationSbomUploadName"
-          Invoke-RestMethod -Method POST `
-              -Uri "$($uploadUrl)?name=$($customValidationSbomUploadName)" `
-              -Headers $gh_headers `
-              -InFile $customValidationSbomUploadName
+          $sbomFile = "custom-validation/${{ env.MANIFEST_FILE }}"
+          $sbomUploadName = "${{ env.CUSTOM_VALIDATION_PACKAGE_NAME }}-SBOM.zip"
+          Compress-Archive $sbomFile -DestinationPath $sbomUploadName
 
-          $customValidationProvenanceFile = "edfiApiCustomValidation.intoto.jsonl"
+          Write-Host "Uploading Custom Validation SBOM as $sbomUploadName"
+          Invoke-RestMethod -Method POST -Uri "$($uploadUrl)?name=$($sbomUploadName)" -Headers $gh_headers -InFile $sbomUploadName
 
-          Write-Host "Uploading Custom Validation Provenance as $customValidationProvenanceFile"
-          Invoke-RestMethod -Method POST `
-              -Uri "$($uploadUrl)?name=$($customValidationProvenanceFile)" `
-              -Headers $gh_headers `
-              -InFile $customValidationProvenanceFile
+          $provenanceFile = "edfiApiCustomValidation.intoto.jsonl"
+          Write-Host "Uploading Custom Validation Provenance as $provenanceFile"
+          Invoke-RestMethod -Method POST -Uri "$($uploadUrl)?name=$($provenanceFile)" -Headers $gh_headers -InFile $provenanceFile
 
   docker-publish-dms:
     name: Publish DMS to Docker Hub
