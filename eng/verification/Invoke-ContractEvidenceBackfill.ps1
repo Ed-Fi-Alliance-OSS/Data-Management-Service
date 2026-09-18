@@ -391,19 +391,21 @@ else {
 # 1. The run.
 $run = & $GetRun $ApiBaseUrl $Repository $RunId $RunAttempt $Token
 
-if ($null -eq $run -or [string] $run.id -cne $RunId) {
+# Every identity comparison below is ordinal (Test-OrdinalEqual): these are exact ids, names and
+# paths, and a culture comparison would let a name differing by an ignorable character pass.
+if ($null -eq $run -or -not (Test-OrdinalEqual -Left ([string] $run.id) -Right $RunId)) {
     throw "The run metadata does not describe run $RunId (it reports '$($run.id)')."
 }
 
-if ([string] $run.repository.full_name -cne $Repository) {
+if (-not (Test-OrdinalEqual -Left ([string] $run.repository.full_name) -Right $Repository)) {
     throw "Run $RunId belongs to '$($run.repository.full_name)', not $Repository."
 }
 
-if ([string] $run.path -cne $WorkflowPath) {
+if (-not (Test-OrdinalEqual -Left ([string] $run.path) -Right $WorkflowPath)) {
     throw "Run $RunId ran '$($run.path)', not $WorkflowPath. Only that workflow's runs publish the contracts."
 }
 
-if (-not [string]::IsNullOrWhiteSpace($RunAttempt) -and [string] $run.run_attempt -cne $RunAttempt) {
+if (-not [string]::IsNullOrWhiteSpace($RunAttempt) -and -not (Test-OrdinalEqual -Left ([string] $run.run_attempt) -Right $RunAttempt)) {
     throw "Run $RunId reports attempt '$($run.run_attempt)', not $RunAttempt."
 }
 
@@ -428,11 +430,11 @@ function Select-RunArtifact {
     if (-not [string]::IsNullOrWhiteSpace($ExplicitId)) {
         $artifact = & $GetArtifact $ApiBaseUrl $Repository $ExplicitId $Token
 
-        if ($null -eq $artifact -or [string] $artifact.id -cne $ExplicitId) {
+        if ($null -eq $artifact -or -not (Test-OrdinalEqual -Left ([string] $artifact.id) -Right $ExplicitId)) {
             throw "Artifact $ExplicitId could not be read."
         }
 
-        if ([string] $artifact.name -cne $ExpectedName) {
+        if (-not (Test-OrdinalEqual -Left ([string] $artifact.name) -Right $ExpectedName)) {
             throw "Artifact $ExplicitId is named '$($artifact.name)', not $ExpectedName. An explicit id selects among artifacts of that name; it does not substitute another artifact."
         }
     }
@@ -441,7 +443,7 @@ function Select-RunArtifact {
             $script:listedArtifacts = @(& $ListRunArtifacts $ApiBaseUrl $Repository $RunId $Token)
         }
 
-        $candidates = @($script:listedArtifacts | Where-Object { [string] $_.name -ceq $ExpectedName })
+        $candidates = @($script:listedArtifacts | Where-Object { Test-OrdinalEqual -Left ([string] $_.name) -Right $ExpectedName })
 
         if ($candidates.Count -eq 0) {
             throw "Run $RunId carries no artifact named $ExpectedName. Either the run never produced it or it has expired and been removed; the generator's provenance artifact is kept five days and the nupkg and SBOM artifacts thirty, and expired evidence cannot be recreated."
@@ -455,11 +457,11 @@ function Select-RunArtifact {
         $artifact = $candidates[0]
     }
 
-    if ([string] $artifact.workflow_run.id -cne $RunId) {
+    if (-not (Test-OrdinalEqual -Left ([string] $artifact.workflow_run.id) -Right $RunId)) {
         throw "Artifact $($artifact.id) ($($artifact.name)) belongs to run '$($artifact.workflow_run.id)', not $RunId."
     }
 
-    if ([string] $artifact.workflow_run.repository_id -cne $repositoryId) {
+    if (-not (Test-OrdinalEqual -Left ([string] $artifact.workflow_run.repository_id) -Right $repositoryId)) {
         throw "Artifact $($artifact.id) ($($artifact.name)) belongs to repository id '$($artifact.workflow_run.repository_id)', not $repositoryId ($Repository)."
     }
 
@@ -521,7 +523,7 @@ if (-not (Test-Path -LiteralPath $feedPackagePath -PathType Leaf)) {
 
 $feedSha256 = Get-FileSha256 -Path $feedPackagePath
 
-if ($feedSha256 -cne $packageSha256) {
+if (-not (Test-OrdinalEqual -Left $feedSha256 -Right $packageSha256)) {
     throw "The feed serves $PackageId $PackageVersion with SHA-256 $feedSha256; run $RunId's artifact is $packageSha256. This run did not publish the bytes on the feed, so its evidence must not be attached. Find the run that did."
 }
 

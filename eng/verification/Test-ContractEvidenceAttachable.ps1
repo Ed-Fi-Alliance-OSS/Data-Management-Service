@@ -60,21 +60,30 @@ function Format-Result {
     return $Value
 }
 
+# Ordinal throughout: these are exact tokens GitHub emits, and -eq or -ceq would compare by culture.
+function Test-Token {
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param([AllowEmptyString()][string] $Value, [Parameter(Mandatory)][string] $Expected)
+
+    return [string]::Equals($Value, $Expected, [System.StringComparison]::Ordinal)
+}
+
 $attach = $false
 
-if ($PublishResult -cne "success") {
+if (-not (Test-Token -Value $PublishResult -Expected "success")) {
     $reason = "The publish job's result was $(Format-Result $PublishResult), so this run published nothing to attach evidence for."
 }
-elseif ($AttachEvidence -cne "true" -and $AttachEvidence -cne "false") {
+elseif (-not (Test-Token -Value $AttachEvidence -Expected "true") -and -not (Test-Token -Value $AttachEvidence -Expected "false")) {
     throw "The publish job succeeded but reported attach-evidence as $(Format-Result $AttachEvidence) rather than true or false. A publisher that produced no decision cannot be trusted either way."
 }
-elseif ($AttachEvidence -ceq "false") {
+elseif (Test-Token -Value $AttachEvidence -Expected "false") {
     $reason = "The publish job did not confirm that the feed serves this run's bytes, so this run's evidence describes nothing on the feed."
 }
-elseif ($SbomResult -cne "success") {
+elseif (-not (Test-Token -Value $SbomResult -Expected "success")) {
     $reason = "The SBOM job's result was $(Format-Result $SbomResult), so there is no SBOM to attach."
 }
-elseif ($ProvenanceResult -cne "success") {
+elseif (-not (Test-Token -Value $ProvenanceResult -Expected "success")) {
     $reason = "The provenance job's result was $(Format-Result $ProvenanceResult), so there is no provenance to attach."
 }
 else {

@@ -241,12 +241,14 @@ if ([string]::IsNullOrWhiteSpace($localDigest)) {
     throw "The content digest of $FilePath is empty; nothing is uploaded."
 }
 
-if (-not [string]::IsNullOrWhiteSpace($ExpectedDigest) -and $localDigest -cne $ExpectedDigest.Trim().ToLowerInvariant()) {
+if (-not [string]::IsNullOrWhiteSpace($ExpectedDigest) -and -not (Test-OrdinalEqual -Left $localDigest -Right $ExpectedDigest.Trim().ToLowerInvariant())) {
     throw "The content digest of $FilePath is $localDigest, but $($ExpectedDigest.Trim().ToLowerInvariant()) was expected. This is not the file that was meant to be attached; nothing is uploaded."
 }
 
+# Ordinal, not -ceq: a culture comparison would match a name that differs by an ignorable character,
+# and for a starter that would delete an asset that is not this one.
 $allAssets = @(& $GetAssets $ApiBaseUrl $Repository $ReleaseId $Token)
-$existing = @($allAssets | Where-Object { [string] $_.name -ceq $AssetName })
+$existing = @($allAssets | Where-Object { Test-OrdinalEqual -Left ([string] $_.name) -Right $AssetName })
 
 if ($existing.Count -gt 1) {
     throw "Release $ReleaseId carries $($existing.Count) assets named $AssetName. That cannot be reconciled automatically; inspect the release."
@@ -262,7 +264,7 @@ if ($existing.Count -eq 0) {
 $asset = $existing[0]
 $state = [string] $asset.state
 
-if ($state -ceq "starter") {
+if (Test-OrdinalEqual -Left $state -Right "starter") {
     # An upload that never completed. It blocks the name and describes nothing, so it is the one
     # thing that may be removed.
     Write-Information "Release $ReleaseId carries an incomplete $AssetName (state starter, id $($asset.id)); deleting it before uploading." -InformationAction Continue
@@ -272,7 +274,7 @@ if ($state -ceq "starter") {
     return Get-PublicationResult -Action "replaced-starter" -Digest $localDigest -AssetId $created.id
 }
 
-if ($state -cne "uploaded") {
+if (-not (Test-OrdinalEqual -Left $state -Right "uploaded")) {
     throw "Release $ReleaseId carries $AssetName in state '$state'. Only a complete (uploaded) asset can be compared and only an incomplete (starter) one can be removed; inspect the release."
 }
 
@@ -294,7 +296,7 @@ if (-not (Test-Path -LiteralPath $downloaded -PathType Leaf)) {
 
 $remoteDigest = [string] (& $ContentDigest $downloaded)
 
-if ($remoteDigest -ceq $localDigest) {
+if (Test-OrdinalEqual -Left $remoteDigest -Right $localDigest) {
     Write-Information "Release $ReleaseId already carries $AssetName with content digest $localDigest; nothing to do." -InformationAction Continue
 
     return Get-PublicationResult -Action "skipped" -Digest $localDigest -AssetId $asset.id
