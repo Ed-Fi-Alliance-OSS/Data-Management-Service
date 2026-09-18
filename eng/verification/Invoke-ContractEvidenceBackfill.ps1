@@ -47,10 +47,13 @@
     not proof that the envelope is genuine.
 
     Retention bounds what can be recovered. The generator uploads its provenance artifact with a
-    five-day retention; the nupkg and SBOM artifacts are kept for thirty days. An expired or missing
-    artifact fails here with its expiry, and no expired evidence can be recreated. If a copy of the
-    same provenance bytes is kept under another artifact name, select it with
-    -ProvenanceArtifactName; the file inside is checked and uploaded the same way.
+    five-day retention. Every prerelease run since the retained-copy jobs were added also keeps that
+    same envelope, unchanged, as a second artifact named <provenance-name>-retained with thirty-day
+    retention, alongside the thirty-day nupkg and SBOM artifacts; select it with
+    -ProvenanceArtifactName <provenance-name>-retained, and the file inside is checked and uploaded
+    exactly as the original would be. Runs from before that change have only the generator's
+    five-day artifact: nothing was preserved retroactively. An expired or missing artifact fails
+    here with its expiry, and no expired evidence can be recreated.
 
     Uploads go through Publish-ReleaseAsset.ps1, so a retry after a partial upload skips an asset
     whose content is already there, replaces an interrupted one, and refuses to overwrite an asset
@@ -446,7 +449,7 @@ function Select-RunArtifact {
         $candidates = @($script:listedArtifacts | Where-Object { Test-OrdinalEqual -Left ([string] $_.name) -Right $ExpectedName })
 
         if ($candidates.Count -eq 0) {
-            throw "Run $RunId carries no artifact named $ExpectedName. Either the run never produced it or it has expired and been removed; the generator's provenance artifact is kept five days and the nupkg and SBOM artifacts thirty, and expired evidence cannot be recreated."
+            throw "Run $RunId carries no artifact named $ExpectedName. Either the run never produced it or it has expired and been removed. The generator's own provenance artifact is kept five days; runs since the retained-copy jobs were added also keep it as <provenance-name>-retained for thirty days, as are the nupkg and SBOM artifacts. Expired evidence cannot be recreated."
         }
 
         if ($candidates.Count -gt 1) {
@@ -466,7 +469,7 @@ function Select-RunArtifact {
     }
 
     if ($artifact.expired -eq $true) {
-        throw "Artifact $($artifact.id) ($($artifact.name)) expired at $($artifact.expires_at). The generator's provenance artifact is kept five days and the nupkg and SBOM artifacts thirty; expired evidence cannot be recreated, and no other bytes may be attested in its place."
+        throw "Artifact $($artifact.id) ($($artifact.name)) expired at $($artifact.expires_at). The generator's own provenance artifact is kept five days; runs since the retained-copy jobs were added also keep it as <provenance-name>-retained for thirty days, as are the nupkg and SBOM artifacts. Expired evidence cannot be recreated, and no other bytes may be attested in its place."
     }
 
     return $artifact

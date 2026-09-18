@@ -477,9 +477,9 @@ jobs:
           Import-Module ./package-helpers.psm1
           $contractVersion = Get-CustomValidationContractVersion
 
-          # Asserts on what is inside the artifact, not that a file appeared. The package is not
-          # published yet, so this is the only thing standing between a broken csproj and a broken
-          # first release.
+          # Asserts on what is inside the artifact, not that a file appeared. The prerelease pack
+          # job runs this same assertion on the artifact before it is uploaded for publication;
+          # running it on every pull request catches a broken csproj before it reaches a release.
           ./eng/verification/Assert-CustomValidationPackage.ps1 `
             -PackageFile "${{ env.CUSTOM_VALIDATION_PACKAGE_NAME }}.$contractVersion.nupkg" `
             -ExtractTo (Join-Path $env:RUNNER_TEMP "custom-validation-nupkg") `
