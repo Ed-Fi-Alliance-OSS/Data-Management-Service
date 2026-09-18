@@ -394,7 +394,9 @@ and has no successor.
 > that name is the partition-count parameter. This is an intentional difference
 > from Ed-Fi ODS/API 7.3.2: ODS/API applies a single supplied `?number=` as both
 > the partition count and the resource-property filter, while DMS uses it only as
-> the partition count on this route.
+> the partition count on this route. MetaEd refuses `number` as a property name
+> for a model targeting Ed-Fi API 8.1 or later, so this can arise only from a
+> schema built against an earlier target or with an older MetaEd.
 
 ## Related settings
 
