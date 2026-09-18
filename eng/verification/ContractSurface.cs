@@ -869,7 +869,9 @@ public static class ContractSurfaceReader
         // Flow annotations keep their roles. [NotNull] on the getter's return and [NotNull] on the
         // setter's value parameter are different promises, so the getter return row, the setter
         // value row and the property row are rendered as three labelled sets rather than one bag.
-        if (!accessors.Getter.IsNil)
+        // Only for accessors that are themselves part of the surface: an annotation on a private
+        // accessor, which the line already reads as get=none or set=none, binds nobody outside.
+        if (getter != "none")
         {
             AppendFlowAttributes(
                 builder,
@@ -884,7 +886,7 @@ public static class ContractSurfaceReader
             );
         }
 
-        if (!accessors.Setter.IsNil)
+        if (setter != "none")
         {
             AppendFlowAttributes(
                 builder,
