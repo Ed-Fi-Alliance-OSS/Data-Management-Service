@@ -100,7 +100,7 @@ BeforeAll {
     function Get-Envelope {
         [CmdletBinding()]
         [OutputType([string])]
-        param([Parameter(Mandatory)][string] $Statement, [string] $Signature = "c2lnbmF0dXJl")
+        param([Parameter(Mandatory)][string] $Statement, [AllowEmptyString()][string] $Signature = "c2lnbmF0dXJl")
 
         return [ordered]@{
             payloadType = "application/vnd.in-toto+json"
@@ -386,6 +386,67 @@ BeforeAll {
         }
     }
 
+    # Fixtures for the GitHub-default cases live under one per-process path that a mock body can
+    # reach through a function: a mock runs in the scope of the script under test, where this
+    # file's variables are not visible.
+    function Get-HttpFixtureRoot {
+        [CmdletBinding()]
+        [OutputType([string])]
+        param()
+
+        return Join-Path ([System.IO.Path]::GetTempPath()) "dms1501-backfill-http-$PID"
+    }
+
+    function Get-HttpArtifact {
+        [CmdletBinding()]
+        [OutputType([pscustomobject])]
+        param([Parameter(Mandatory)][int] $Id, [Parameter(Mandatory)][string] $Name)
+
+        $artifact = Get-FakeArtifact -Id $Id -Name $Name
+        $artifact.archive_download_url = "https://api.github.com/repos/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/artifacts/$Id/zip"
+
+        return $artifact
+    }
+
+    # Writes one artifact zip the way actions/upload-artifact stores a single file: at the root.
+    function Write-ArtifactZip {
+        [CmdletBinding(SupportsShouldProcess)]
+        [OutputType([string])]
+        param([Parameter(Mandatory)][string] $Name, [Parameter(Mandatory)][string] $EntryName, [Parameter(Mandatory)][string] $Content)
+
+        $zipPath = Join-Path (Get-HttpFixtureRoot) $Name
+
+        if (-not $PSCmdlet.ShouldProcess($zipPath, "Write artifact zip")) {
+            return $zipPath
+        }
+
+        New-Item -ItemType Directory -Path (Get-HttpFixtureRoot) -Force | Out-Null
+
+        if (Test-Path -LiteralPath $zipPath) {
+            Remove-Item -LiteralPath $zipPath -Force
+        }
+
+        $archive = [System.IO.Compression.ZipFile]::Open($zipPath, [System.IO.Compression.ZipArchiveMode]::Create)
+
+        try {
+            $entry = $archive.CreateEntry($EntryName)
+            $stream = $entry.Open()
+
+            try {
+                $bytes = [System.Text.Encoding]::UTF8.GetBytes($Content)
+                $stream.Write($bytes, 0, $bytes.Length)
+            }
+            finally {
+                $stream.Dispose()
+            }
+        }
+        finally {
+            $archive.Dispose()
+        }
+
+        return $zipPath
+    }
+
     function Invoke-Backfill {
         [CmdletBinding()]
         param(
@@ -425,6 +486,152 @@ BeforeAll {
 AfterAll {
     if ($script:fixtureRoot -and (Test-Path -LiteralPath $script:fixtureRoot)) {
         Remove-Item -LiteralPath $script:fixtureRoot -Recurse -Force
+    }
+
+    if (Test-Path -LiteralPath (Get-HttpFixtureRoot)) {
+        Remove-Item -LiteralPath (Get-HttpFixtureRoot) -Recurse -Force
+    }
+}
+
+Describe "Read-ProvenanceStatement requires the shape of a signed envelope" {
+    It "reads the generator's envelope shape" {
+        $path = Write-Fixture -Path (Join-Path (New-FixtureDirectory) "ok.intoto.jsonl") -Content (Get-Envelope -Statement (Get-Statement -Sha256 ("ab" * 32)))
+
+        $envelope = Read-ProvenanceStatement -Path $path
+
+        $envelope.SignatureCount | Should -Be 1
+        $envelope.Statement.subject[0].digest.sha256 | Should -BeExactly ("ab" * 32)
+    }
+
+    # @($null) is a one-element array, so a missing signatures member counted as one signature.
+    It "refuses an envelope with no signatures member" {
+        $content = [ordered]@{
+            payloadType = "application/vnd.in-toto+json"
+            payload     = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes((Get-Statement -Sha256 ("ab" * 32))))
+        } | ConvertTo-Json -Compress
+        $path = Write-Fixture -Path (Join-Path (New-FixtureDirectory) "unsigned.intoto.jsonl") -Content $content
+
+        { Read-ProvenanceStatement -Path $path } | Should -Throw -ExpectedMessage "*no signatures*"
+    }
+
+    It "refuses an envelope whose signatures member is null" {
+        $content = [ordered]@{
+            payloadType = "application/vnd.in-toto+json"
+            payload     = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes((Get-Statement -Sha256 ("ab" * 32))))
+            signatures  = $null
+        } | ConvertTo-Json -Compress
+        $path = Write-Fixture -Path (Join-Path (New-FixtureDirectory) "null-signatures.intoto.jsonl") -Content $content
+
+        { Read-ProvenanceStatement -Path $path } | Should -Throw -ExpectedMessage "*no signatures*"
+    }
+
+    It "refuses an envelope whose signatures array is empty" {
+        $content = '{"payloadType":"application/vnd.in-toto+json","payload":"' +
+            [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes((Get-Statement -Sha256 ("ab" * 32)))) +
+            '","signatures":[]}'
+        $path = Write-Fixture -Path (Join-Path (New-FixtureDirectory) "empty-signatures.intoto.jsonl") -Content $content
+
+        { Read-ProvenanceStatement -Path $path } | Should -Throw -ExpectedMessage "*no signatures*"
+    }
+
+    It "refuses a signature entry with no sig value" {
+        $path = Write-Fixture -Path (Join-Path (New-FixtureDirectory) "blank-sig.intoto.jsonl") -Content (Get-Envelope -Statement (Get-Statement -Sha256 ("ab" * 32)) -Signature "")
+
+        { Read-ProvenanceStatement -Path $path } | Should -Throw -ExpectedMessage "*no sig value*"
+    }
+
+    It "refuses another payload type" {
+        $content = (Get-Envelope -Statement (Get-Statement -Sha256 ("ab" * 32))) -replace "application/vnd.in-toto\+json", "application/json"
+        $path = Write-Fixture -Path (Join-Path (New-FixtureDirectory) "other-type.intoto.jsonl") -Content $content
+
+        { Read-ProvenanceStatement -Path $path } | Should -Throw -ExpectedMessage "*payloadType*"
+    }
+}
+
+Describe "Invoke-ContractEvidenceBackfill's GitHub and feed defaults" {
+    # The injected seams above never run the code that talks to GitHub or the feed. This case runs
+    # the defaults with only the HTTP cmdlets mocked: the run read, a two-page artifact listing, the
+    # artifact zips, the feed's flat container and the release lookup. Only the upload is injected,
+    # so nothing here can reach a real release.
+    It "reads the run, pages through the artifacts, downloads and verifies, then publishes" {
+        $packageContent = "package bytes for the http case"
+        $packageSha = [System.Convert]::ToHexString([System.Security.Cryptography.SHA256]::HashData([System.Text.Encoding]::UTF8.GetBytes($packageContent))).ToLowerInvariant()
+
+        Write-ArtifactZip -Name "nuget.zip" -EntryName $script:packageFileName -Content $packageContent | Out-Null
+        Write-ArtifactZip -Name "sbom.zip" -EntryName "manifest.spdx.json" -Content (Get-Manifest -Sha256 $packageSha) | Out-Null
+        Write-ArtifactZip -Name "prov.zip" -EntryName $script:provenanceName -Content (Get-Envelope -Statement (Get-Statement -Sha256 $packageSha)) | Out-Null
+        [System.IO.File]::WriteAllText((Join-Path (Get-HttpFixtureRoot) "feed.nupkg"), $packageContent)
+
+        Mock Invoke-RestMethod {
+            if ($Uri -like "*/actions/runs/35352662171") {
+                return [pscustomobject]@{
+                    id          = [long] 35352662171
+                    path        = ".github/workflows/on-prerelease.yml"
+                    head_sha    = "c5f0241305b201f3296c392e1683028375f26ae7"
+                    run_attempt = 1
+                    repository  = [pscustomobject]@{ id = 744612924; full_name = "Ed-Fi-Alliance-OSS/Data-Management-Service" }
+                }
+            }
+
+            if ($Uri -like "*/actions/runs/35352662171/artifacts?per_page=100&page=1") {
+                return [pscustomobject]@{ total_count = 103; artifacts = @(1..100 | ForEach-Object { Get-HttpArtifact -Id (1000 + $_) -Name "other-$_" }) }
+            }
+
+            if ($Uri -like "*/actions/runs/35352662171/artifacts?per_page=100&page=2") {
+                return [pscustomobject]@{
+                    total_count = 103
+                    artifacts   = @(
+                        (Get-HttpArtifact -Id 1 -Name "EdFi.Api.TestContract-NuGet"),
+                        (Get-HttpArtifact -Id 2 -Name "EdFi.Api.TestContract-SBOM"),
+                        (Get-HttpArtifact -Id 3 -Name "edfiApiTestContract.intoto.jsonl")
+                    )
+                }
+            }
+
+            if ($Uri -like "*/releases/tags/v8.1.0") {
+                return [pscustomobject]@{ id = 777; tag_name = "v8.1.0" }
+            }
+
+            if ($Uri -like "*/nuget/v3/index.json") {
+                return [pscustomobject]@{ resources = @([pscustomobject]@{ '@id' = "https://feed.invalid/flat2/"; '@type' = "PackageBaseAddress/3.0.0" }) }
+            }
+
+            throw "unexpected request: $Uri"
+        }
+        Mock Invoke-WebRequest {
+            if ($Uri -like "*/actions/artifacts/1/zip") { Copy-Item -LiteralPath (Join-Path (Get-HttpFixtureRoot) "nuget.zip") -Destination $OutFile; return }
+            if ($Uri -like "*/actions/artifacts/2/zip") { Copy-Item -LiteralPath (Join-Path (Get-HttpFixtureRoot) "sbom.zip") -Destination $OutFile; return }
+            if ($Uri -like "*/actions/artifacts/3/zip") { Copy-Item -LiteralPath (Join-Path (Get-HttpFixtureRoot) "prov.zip") -Destination $OutFile; return }
+            if ($Uri -like "https://feed.invalid/flat2/edfi.api.testcontract/1.0.0/edfi.api.testcontract.1.0.0.nupkg") { Copy-Item -LiteralPath (Join-Path (Get-HttpFixtureRoot) "feed.nupkg") -Destination $OutFile; return }
+
+            throw "unexpected download: $Uri"
+        }
+
+        $publications = [System.Collections.Generic.List[hashtable]]::new()
+        $publish = {
+            param([hashtable] $Arguments)
+
+            $publications.Add($Arguments)
+
+            return [pscustomobject]@{ Action = "uploaded"; AssetName = $Arguments.AssetName }
+        }.GetNewClosure()
+
+        $result = & $script:backfill `
+            -Repository $script:repository `
+            -RunId $script:runId `
+            -PackageId $script:packageId `
+            -PackageVersion $script:packageVersion `
+            -ReleaseTag "v8.1.0" `
+            -ProvenanceArtifactName $script:provenanceName `
+            -WorkingDirectory (Join-Path (New-FixtureDirectory) "work") `
+            -Token "not-a-real-token" `
+            -Publish $publish
+
+        $result.PackageSha256 | Should -BeExactly $packageSha
+        $result.ReleaseId | Should -BeExactly "777"
+        $publications.Count | Should -Be 2
+        Should -Invoke Invoke-RestMethod -Times 1 -Exactly -ParameterFilter { $Uri -like "*artifacts?per_page=100&page=2" }
+        Should -Invoke Invoke-WebRequest -Times 4 -Exactly
     }
 }
 

@@ -29,6 +29,31 @@ $script:sbomManifestEntryName = "manifest.spdx.json"
 
 <#
 .DESCRIPTION
+Ordinal string equality. Every exact-name and identity comparison in these helpers goes through
+this: PowerShell's -eq and -ceq compare by culture, under which a name containing an ignorable
+character such as a soft hyphen (U+00AD) equals the name without it, and an asset or artifact
+selected "by exact name" would then be a different asset.
+#>
+function Test-OrdinalEqual {
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param(
+        [AllowNull()]
+        [AllowEmptyString()]
+        [string]
+        $Left,
+
+        [AllowNull()]
+        [AllowEmptyString()]
+        [string]
+        $Right
+    )
+
+    return [string]::Equals($Left, $Right, [System.StringComparison]::Ordinal)
+}
+
+<#
+.DESCRIPTION
 The lowercase hexadecimal SHA-256 of one file's bytes.
 #>
 function Get-FileSha256 {
@@ -109,7 +134,7 @@ function Get-SbomArchiveContentDigest {
             throw "The SBOM archive $Path carries $($entries.Count) entries ($names); exactly one, $ManifestEntryName, is allowed."
         }
 
-        if ($entries[0].FullName -cne $ManifestEntryName) {
+        if (-not (Test-OrdinalEqual -Left $entries[0].FullName -Right $ManifestEntryName)) {
             throw "The SBOM archive $Path carries '$($entries[0].FullName)' rather than $ManifestEntryName."
         }
 
@@ -214,7 +239,7 @@ function Read-ProvenanceStatement {
         throw "Cannot read the provenance envelope $Path : it is not JSON. $($_.Exception.Message)"
     }
 
-    if ($null -eq $envelope -or [string] $envelope.payloadType -cne "application/vnd.in-toto+json") {
+    if ($null -eq $envelope -or -not (Test-OrdinalEqual -Left ([string] $envelope.payloadType) -Right "application/vnd.in-toto+json")) {
         throw "The provenance envelope $Path does not declare payloadType application/vnd.in-toto+json."
     }
 
@@ -222,10 +247,20 @@ function Read-ProvenanceStatement {
         throw "The provenance envelope $Path carries no payload."
     }
 
-    $signatures = @($envelope.signatures)
+    # Nulls are dropped before counting: @($null) is a one-element array, so a missing or null
+    # signatures member would otherwise read as one signature. An entry without a sig value is not
+    # a signature either. This is structure, not verification: the envelope has to have the shape of
+    # a signed envelope before its statement is read at all.
+    $signatures = @($envelope.signatures | Where-Object { $null -ne $_ })
 
     if ($signatures.Count -eq 0) {
         throw "The provenance envelope $Path carries no signatures."
+    }
+
+    foreach ($signature in $signatures) {
+        if ([string]::IsNullOrWhiteSpace([string] $signature.sig)) {
+            throw "The provenance envelope $Path carries a signature entry with no sig value."
+        }
     }
 
     try {
@@ -303,7 +338,7 @@ function Assert-ProvenanceDescribesPackage {
         $PredicateType = "https://slsa.dev/provenance/v0.2"
     )
 
-    if ([string] $Statement.predicateType -cne $PredicateType) {
+    if (-not (Test-OrdinalEqual -Left ([string] $Statement.predicateType) -Right $PredicateType)) {
         throw "The provenance statement declares predicateType '$($Statement.predicateType)', not $PredicateType."
     }
 
@@ -319,7 +354,7 @@ function Assert-ProvenanceDescribesPackage {
         throw "The provenance statement names $($subjects.Count) subjects; exactly one, $SubjectName, is expected."
     }
 
-    if ([string] $subjects[0].name -cne $SubjectName) {
+    if (-not (Test-OrdinalEqual -Left ([string] $subjects[0].name) -Right $SubjectName)) {
         throw "The provenance statement names subject '$($subjects[0].name)', not $SubjectName."
     }
 
@@ -329,7 +364,7 @@ function Assert-ProvenanceDescribesPackage {
         throw "The provenance statement's subject carries no sha256 digest."
     }
 
-    if ($subjectDigest.ToLowerInvariant() -cne $SubjectSha256.ToLowerInvariant()) {
+    if (-not (Test-OrdinalEqual -Left $subjectDigest.ToLowerInvariant() -Right $SubjectSha256.ToLowerInvariant())) {
         throw "The provenance statement's subject sha256 is $subjectDigest; the package is $SubjectSha256. This provenance does not describe this package."
     }
 
@@ -340,21 +375,21 @@ function Assert-ProvenanceDescribesPackage {
         throw "The provenance statement's config source is '$($configSource.uri)', not this repository ($expectedUriPrefix...)."
     }
 
-    if ([string] $configSource.entryPoint -cne $WorkflowPath) {
+    if (-not (Test-OrdinalEqual -Left ([string] $configSource.entryPoint) -Right $WorkflowPath)) {
         throw "The provenance statement's entry point is '$($configSource.entryPoint)', not $WorkflowPath."
     }
 
-    if (([string] $configSource.digest.sha1).ToLowerInvariant() -cne $HeadSha.ToLowerInvariant()) {
+    if (-not (Test-OrdinalEqual -Left ([string] $configSource.digest.sha1).ToLowerInvariant() -Right $HeadSha.ToLowerInvariant())) {
         throw "The provenance statement's source commit is '$($configSource.digest.sha1)'; the run's head is $HeadSha."
     }
 
     $environment = $Statement.predicate.invocation.environment
 
-    if ([string] $environment.github_run_id -cne $RunId) {
+    if (-not (Test-OrdinalEqual -Left ([string] $environment.github_run_id) -Right $RunId)) {
         throw "The provenance statement records run '$($environment.github_run_id)', not $RunId."
     }
 
-    if (-not [string]::IsNullOrWhiteSpace($RunAttempt) -and [string] $environment.github_run_attempt -cne $RunAttempt) {
+    if (-not [string]::IsNullOrWhiteSpace($RunAttempt) -and -not (Test-OrdinalEqual -Left ([string] $environment.github_run_attempt) -Right $RunAttempt)) {
         throw "The provenance statement records run attempt '$($environment.github_run_attempt)', not $RunAttempt."
     }
 }
@@ -415,28 +450,28 @@ function Assert-SbomDescribesPackage {
     }
 
     $rootId = [string] $described[0]
-    $roots = @($manifest.packages | Where-Object { [string] $_.SPDXID -ceq $rootId })
+    $roots = @($manifest.packages | Where-Object { Test-OrdinalEqual -Left ([string] $_.SPDXID) -Right $rootId })
 
     if ($roots.Count -ne 1) {
         throw "The SBOM manifest $ManifestPath names root package '$rootId' but carries $($roots.Count) package entries with that id."
     }
 
-    if ([string] $roots[0].name -cne $PackageId) {
+    if (-not (Test-OrdinalEqual -Left ([string] $roots[0].name) -Right $PackageId)) {
         throw "The SBOM manifest $ManifestPath describes package '$($roots[0].name)', not $PackageId."
     }
 
-    if ([string] $roots[0].versionInfo -cne $PackageVersion) {
+    if (-not (Test-OrdinalEqual -Left ([string] $roots[0].versionInfo) -Right $PackageVersion)) {
         throw "The SBOM manifest $ManifestPath describes $PackageId version '$($roots[0].versionInfo)', not $PackageVersion."
     }
 
     $expectedFileName = "./$PackageFileName"
-    $files = @($manifest.files | Where-Object { [string] $_.fileName -ceq $expectedFileName })
+    $files = @($manifest.files | Where-Object { Test-OrdinalEqual -Left ([string] $_.fileName) -Right $expectedFileName })
 
     if ($files.Count -ne 1) {
         throw "The SBOM manifest $ManifestPath lists $($files.Count) files named $expectedFileName; exactly one is expected."
     }
 
-    $checksums = @($files[0].checksums | Where-Object { [string] $_.algorithm -ceq "SHA256" })
+    $checksums = @($files[0].checksums | Where-Object { Test-OrdinalEqual -Left ([string] $_.algorithm) -Right "SHA256" })
 
     if ($checksums.Count -ne 1) {
         throw "The SBOM manifest $ManifestPath carries $($checksums.Count) SHA256 checksums for $expectedFileName; exactly one is expected."
@@ -444,7 +479,7 @@ function Assert-SbomDescribesPackage {
 
     $listed = ([string] $checksums[0].checksumValue).ToLowerInvariant()
 
-    if ($listed -cne $PackageSha256.ToLowerInvariant()) {
+    if (-not (Test-OrdinalEqual -Left $listed -Right $PackageSha256.ToLowerInvariant())) {
         throw "The SBOM manifest $ManifestPath records SHA256 $listed for $expectedFileName; the package is $PackageSha256. This SBOM does not describe this package."
     }
 }
@@ -480,6 +515,7 @@ function ConvertFrom-Sha256SumBase64 {
 }
 
 Export-ModuleMember -Function `
+    Test-OrdinalEqual, `
     Get-FileSha256, `
     Get-ProvenanceContentDigest, `
     Get-SbomArchiveContentDigest, `
