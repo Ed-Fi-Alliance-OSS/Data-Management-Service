@@ -42,15 +42,11 @@
         Condition="'$(BuildingPluginFixtures)' != 'true' AND '$(DesignTimeBuild)' != 'true'"
     >
         <PropertyGroup>
-            <PluginStagedFixtureStageRoot
-            >$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', '$(OutDir)', 'PluginFixtures'))</PluginStagedFixtureStageRoot>
-            <PluginStagedFixtureStampDir
-            >$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', '$(IntermediateOutputPath)', 'pluginfixtures'))</PluginStagedFixtureStampDir>
-            <PluginStagedFixtureFingerprintFile
-            >$(PluginStagedFixtureStampDir)staging.fingerprint</PluginStagedFixtureFingerprintFile>
+            <PluginStagedFixtureStageRoot>$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', '$(OutDir)', 'PluginFixtures'))</PluginStagedFixtureStageRoot>
+            <PluginStagedFixtureStampDir>$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', '$(IntermediateOutputPath)', 'pluginfixtures'))</PluginStagedFixtureStampDir>
+            <PluginStagedFixtureFingerprintFile>$(PluginStagedFixtureStampDir)staging.fingerprint</PluginStagedFixtureFingerprintFile>
             <PluginStagedFixtureInputList>@(PluginStagedFixtureInput->'%(Identity)@%(ModifiedTime)', '|')</PluginStagedFixtureInputList>
-            <PluginStagedFixtureFingerprintPrefix
-            >$(Configuration)+$(NETCoreSdkRuntimeIdentifier)+@(PluginStagedFixture->'%(StagedName)', '&amp;')+$([MSBuild]::StableStringHash($(PluginStagedFixtureInputList)))</PluginStagedFixtureFingerprintPrefix>
+            <PluginStagedFixtureFingerprintPrefix>$(Configuration)+$(NETCoreSdkRuntimeIdentifier)+@(PluginStagedFixture->'%(StagedName)', '&amp;')+$([MSBuild]::StableStringHash($(PluginStagedFixtureInputList)))</PluginStagedFixtureFingerprintPrefix>
         </PropertyGroup>
 
         <ItemGroup Condition="Exists('$(PluginStagedFixtureStageRoot)')">
@@ -59,8 +55,7 @@
 
         <PropertyGroup>
             <PluginStagedFixtureStagedList>@(PluginStagedFixtureStagedFile->'%(RecursiveDir)%(Filename)%(Extension)', '|')</PluginStagedFixtureStagedList>
-            <PluginStagedFixtureFingerprint
-            >$(PluginStagedFixtureFingerprintPrefix)+$([MSBuild]::StableStringHash($(PluginStagedFixtureStagedList)))</PluginStagedFixtureFingerprint>
+            <PluginStagedFixtureFingerprint>$(PluginStagedFixtureFingerprintPrefix)+$([MSBuild]::StableStringHash($(PluginStagedFixtureStagedList)))</PluginStagedFixtureFingerprint>
             <!--
                 The evaluated input set, so a test can assert what the rules actually watch rather than
                 reading this file and believing it.
@@ -79,7 +74,8 @@
             <PluginStagedFixturePrevious>@(PluginStagedFixturePreviousLine)</PluginStagedFixturePrevious>
             <PluginStagedFixtureStale
                 Condition="'$(PluginStagedFixturePrevious)' != '$(PluginStagedFixtureFingerprint)'"
-            >true</PluginStagedFixtureStale>
+                >true</PluginStagedFixtureStale
+            >
         </PropertyGroup>
 
         <!--
@@ -130,8 +126,7 @@
 
         <PropertyGroup>
             <PluginStagedFixtureStagedListAfterPublish>@(PluginStagedFixtureAfterPublish->'%(RecursiveDir)%(Filename)%(Extension)', '|')</PluginStagedFixtureStagedListAfterPublish>
-            <PluginStagedFixtureFingerprintAfterPublish
-            >$(PluginStagedFixtureFingerprintPrefix)+$([MSBuild]::StableStringHash($(PluginStagedFixtureStagedListAfterPublish)))</PluginStagedFixtureFingerprintAfterPublish>
+            <PluginStagedFixtureFingerprintAfterPublish>$(PluginStagedFixtureFingerprintPrefix)+$([MSBuild]::StableStringHash($(PluginStagedFixtureStagedListAfterPublish)))</PluginStagedFixtureFingerprintAfterPublish>
         </PropertyGroup>
 
         <MakeDir Directories="$(PluginStagedFixtureStampDir)" />

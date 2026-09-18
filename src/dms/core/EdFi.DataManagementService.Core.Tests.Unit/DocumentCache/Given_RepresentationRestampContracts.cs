@@ -16,26 +16,33 @@ public class Given_RepresentationRestampContracts
     [Test]
     public void It_serializes_the_new_tokens_in_lower_camel_case()
     {
-        JsonSerializer.Serialize(DocumentCacheAdministrativeCommand.RepresentationRestamp)
+        JsonSerializer
+            .Serialize(DocumentCacheAdministrativeCommand.RepresentationRestamp)
             .Should()
             .Be("\"representationRestamp\"");
-        JsonSerializer.Serialize(DocumentCacheAdministrativeCommandConfirmation.RepresentationRestamp)
+        JsonSerializer
+            .Serialize(DocumentCacheAdministrativeCommandConfirmation.RepresentationRestamp)
             .Should()
             .Be("\"representationRestamp\"");
-        JsonSerializer.Serialize(DocumentCacheAdministrativeCommandPhase.StampDocuments)
+        JsonSerializer
+            .Serialize(DocumentCacheAdministrativeCommandPhase.StampDocuments)
             .Should()
             .Be("\"stampDocuments\"");
         JsonSerializer.Serialize(DocumentCacheRepresentationRestampMode.Tracking).Should().Be("\"tracking\"");
-        JsonSerializer.Serialize(DocumentCacheRepresentationRestampOperationState.Incomplete)
+        JsonSerializer
+            .Serialize(DocumentCacheRepresentationRestampOperationState.Incomplete)
             .Should()
             .Be("\"incomplete\"");
-        JsonSerializer.Serialize(DocumentCacheRepresentationRestampClaimLevel.ProjectionWorkQueued)
+        JsonSerializer
+            .Serialize(DocumentCacheRepresentationRestampClaimLevel.ProjectionWorkQueued)
             .Should()
             .Be("\"projectionWorkQueued\"");
-        JsonSerializer.Serialize(DocumentCacheAdministrativeCommandPhase.CreateManifest)
+        JsonSerializer
+            .Serialize(DocumentCacheAdministrativeCommandPhase.CreateManifest)
             .Should()
             .Be("\"createManifest\"");
-        JsonSerializer.Serialize(DocumentCacheAdministrativeCommandPhase.SelectDocuments)
+        JsonSerializer
+            .Serialize(DocumentCacheAdministrativeCommandPhase.SelectDocuments)
             .Should()
             .Be("\"selectDocuments\"");
     }
@@ -47,10 +54,13 @@ public class Given_RepresentationRestampContracts
         Guid second = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
         var scope = new DocumentCacheRepresentationRestampDocumentUuidsScope([second, first]);
 
-        scope.TryCanonicalize(projectorPageSize: 2, out DocumentCacheRepresentationRestampScope canonical)
+        scope
+            .TryCanonicalize(projectorPageSize: 2, out DocumentCacheRepresentationRestampScope canonical)
             .Should()
             .BeTrue();
-        ((DocumentCacheRepresentationRestampDocumentUuidsScope)canonical).DocumentUuids.Should().Equal(first, second);
+        ((DocumentCacheRepresentationRestampDocumentUuidsScope)canonical)
+            .DocumentUuids.Should()
+            .Equal(first, second);
         new DocumentCacheRepresentationRestampDocumentUuidsScope([first, second, Guid.NewGuid()])
             .TryCanonicalize(2, out _)
             .Should()
@@ -80,28 +90,32 @@ public class Given_RepresentationRestampContracts
     {
         var target = new DocumentCacheAdministrativeTargetKey("tenant", 1);
         var scope = new DocumentCacheRepresentationRestampResourceScope("Ed-Fi", "students");
-        Action blank = () => new DocumentCacheRepresentationRestampPreviewRequest(
-            target,
-            null,
-            DocumentCacheRepresentationRestampMode.Tracking,
-            " ",
-            scope
-        );
+        Action blank = () =>
+            new DocumentCacheRepresentationRestampPreviewRequest(
+                target,
+                null,
+                DocumentCacheRepresentationRestampMode.Tracking,
+                " ",
+                scope
+            );
         blank.Should().Throw<ArgumentException>();
-        Action longReason = () => new DocumentCacheRepresentationRestampPreviewRequest(
-            target,
-            null,
-            DocumentCacheRepresentationRestampMode.Tracking,
-            new string('x', 1025),
-            scope
-        );
+        Action longReason = () =>
+            new DocumentCacheRepresentationRestampPreviewRequest(
+                target,
+                null,
+                DocumentCacheRepresentationRestampMode.Tracking,
+                new string('x', 1025),
+                scope
+            );
         longReason.Should().Throw<ArgumentException>();
     }
 
     [Test]
     public void It_deserializes_closed_and_drained_as_an_admission_token()
     {
-        JsonSerializer.Deserialize<DocumentCacheOfflineWriterAdmission>("\"closedAndDrained\"")!
-            .Confirmed.Should().BeTrue();
+        JsonSerializer
+            .Deserialize<DocumentCacheOfflineWriterAdmission>("\"closedAndDrained\"")!
+            .Confirmed.Should()
+            .BeTrue();
     }
 }

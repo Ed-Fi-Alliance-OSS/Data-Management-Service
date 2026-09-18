@@ -35,7 +35,10 @@
         <ProjectReference Include="..\..\clis\EdFi.DataManagementService.DocumentCacheAdmin\EdFi.DataManagementService.DocumentCacheAdmin.csproj" />
     </ItemGroup>
     <ItemGroup>
-        <Compile Include="..\..\clis\EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration\DocumentCacheAdminCliIntegrationHarness.cs" Link="DocumentCacheAdminCliIntegrationHarness.cs" />
+        <Compile
+            Include="..\..\clis\EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration\DocumentCacheAdminCliIntegrationHarness.cs"
+            Link="DocumentCacheAdminCliIntegrationHarness.cs"
+        />
     </ItemGroup>
     <ItemGroup>
         <Compile
@@ -49,7 +52,10 @@
     </ItemGroup>
     <!-- The governed cleanup qualification invokes the production CLI through the wrapper's native tool boundary. -->
     <ItemGroup>
-        <ProjectReference Include="../../clis/EdFi.DataManagementService.SchemaTools/EdFi.DataManagementService.SchemaTools.csproj" ReferenceOutputAssembly="false" />
+        <ProjectReference
+            Include="../../clis/EdFi.DataManagementService.SchemaTools/EdFi.DataManagementService.SchemaTools.csproj"
+            ReferenceOutputAssembly="false"
+        />
     </ItemGroup>
     <!-- Compile the production provisioning owners into this test assembly; no CLI executable dependency. -->
     <ItemGroup>
@@ -75,7 +81,11 @@
         />
     </ItemGroup>
     <ItemGroup>
-        <None Include="../Fixtures/document-cache/materialized-documents/descriptor-school-type/expected-cache-row.json" Link="Fixtures/record-size-cache-row.json" CopyToOutputDirectory="PreserveNewest" />
+        <None
+            Include="../Fixtures/document-cache/materialized-documents/descriptor-school-type/expected-cache-row.json"
+            Link="Fixtures/record-size-cache-row.json"
+            CopyToOutputDirectory="PreserveNewest"
+        />
         <None
             Include="../../clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/Fixtures/minimal-api-schema.json"
             Link="Fixtures/minimal-api-schema.json"

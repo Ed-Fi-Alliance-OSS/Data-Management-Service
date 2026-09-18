@@ -14,19 +14,13 @@
         explained.
     -->
     <ItemGroup>
-        <PluginStagedFixture
-            Include="$(MSBuildThisFileDirectory)../../../plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Plugins/Acme.DmsContributor/Acme.DmsContributor.csproj"
-        >
+        <PluginStagedFixture Include="$(MSBuildThisFileDirectory)../../../plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Plugins/Acme.DmsContributor/Acme.DmsContributor.csproj">
             <StagedName>Acme.DmsContributor</StagedName>
         </PluginStagedFixture>
-        <PluginStagedFixture
-            Include="$(MSBuildThisFileDirectory)../../../plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Plugins/Acme.DmsHookTouch/Acme.DmsHookTouch.csproj"
-        >
+        <PluginStagedFixture Include="$(MSBuildThisFileDirectory)../../../plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Plugins/Acme.DmsHookTouch/Acme.DmsHookTouch.csproj">
             <StagedName>Acme.DmsHookTouch</StagedName>
         </PluginStagedFixture>
-        <PluginStagedFixture
-            Include="$(MSBuildThisFileDirectory)../../../plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Plugins/Acme.HookThrows/Acme.HookThrows.csproj"
-        >
+        <PluginStagedFixture Include="$(MSBuildThisFileDirectory)../../../plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Plugins/Acme.HookThrows/Acme.HookThrows.csproj">
             <StagedName>Acme.HookThrows</StagedName>
         </PluginStagedFixture>
     </ItemGroup>
@@ -42,8 +36,7 @@
         root below is one readable path rather than four parent steps.
     -->
     <PropertyGroup>
-        <PluginIntegrationFixtureRepositoryRoot
-        >$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)', '..', '..', '..'))</PluginIntegrationFixtureRepositoryRoot>
+        <PluginIntegrationFixtureRepositoryRoot>$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)', '..', '..', '..'))</PluginIntegrationFixtureRepositoryRoot>
     </PropertyGroup>
 
     <ItemGroup>
@@ -64,9 +57,7 @@
         />
 
         <!-- The props those fixtures inherit from the fixture tree they sit in. -->
-        <PluginStagedFixtureInput
-            Include="$(PluginIntegrationFixtureRepositoryRoot)plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Directory.Build.props;$(PluginIntegrationFixtureRepositoryRoot)plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Directory.Packages.props"
-        />
+        <PluginStagedFixtureInput Include="$(PluginIntegrationFixtureRepositoryRoot)plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Directory.Build.props;$(PluginIntegrationFixtureRepositoryRoot)plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Directory.Packages.props" />
 
         <!--
             Every production project the fixtures reference, directly or through another of them: the
@@ -88,9 +79,7 @@
             package versions the fixture tree's own props chain to, and the NuGet configuration a restore
             of any of them reads.
         -->
-        <PluginStagedFixtureInput
-            Include="$(PluginIntegrationFixtureRepositoryRoot)Directory.Packages.props;$(PluginIntegrationFixtureRepositoryRoot)nuget.config;$(PluginIntegrationFixtureRepositoryRoot)plugins/Directory.Build.props;$(PluginIntegrationFixtureRepositoryRoot)dms/Directory.Build.props;$(PluginIntegrationFixtureRepositoryRoot)dms/Directory.Build.targets"
-        />
+        <PluginStagedFixtureInput Include="$(PluginIntegrationFixtureRepositoryRoot)Directory.Packages.props;$(PluginIntegrationFixtureRepositoryRoot)nuget.config;$(PluginIntegrationFixtureRepositoryRoot)plugins/Directory.Build.props;$(PluginIntegrationFixtureRepositoryRoot)dms/Directory.Build.props;$(PluginIntegrationFixtureRepositoryRoot)dms/Directory.Build.targets" />
     </ItemGroup>
 
     <Import Project="$(MSBuildThisFileDirectory)../../PluginFixtureStaging.targets" />
