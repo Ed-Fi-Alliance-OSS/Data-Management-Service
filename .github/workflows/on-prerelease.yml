@@ -8,6 +8,20 @@ on:
   release:
     types:
       - prereleased
+  # A dispatch is a dry run of the two contract chains, and only ever that. It runs pack-plugins
+  # and pack-custom-validation and, through their needs, the two SBOM jobs and the two SLSA
+  # provenance jobs, so a branch can prove it produces both nupkgs, both SPDX 2.2 manifests and
+  # both provenance files with the real generator before a release ever fires this workflow.
+  #
+  # Nothing is published on a dispatch. The two contract publish jobs test event_name and skip,
+  # which is where the package pushes and the Prerelease-view membership live. Every other job here
+  # is either gated on github.event.release.tag_name, which a dispatch does not carry, or follows by
+  # needs from a job that is, so pack-dms, pack-schema-tools, pack-cs and everything downstream of
+  # them - the EdFi.Api, SchemaTools and Configuration Service pushes, both image publications,
+  # both release-asset uploads and the host assembly manifest - are skipped rather than run against
+  # a branch. The version steps still run: minver computes a height-based version from the nearest
+  # v* tag, which is the deliberately wrong release version the contract assertions prove is ignored.
+  workflow_dispatch:
 
 env:
   ARTIFACTS_API_KEY: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
@@ -390,7 +404,9 @@ jobs:
   # so the same version is offered to the feed again and again.
   pack-plugins:
     name: Build and Pack Plugins Contract
-    if: startsWith(github.event.release.tag_name, 'dms-')
+    # A dispatch reaches this job as well as a dms- prerelease: the dispatch is the dry run the
+    # trigger comment describes, and this pack, its SBOM and its provenance are what it exercises.
+    if: ${{ github.event_name == 'workflow_dispatch' || startsWith(github.event.release.tag_name, 'dms-') }}
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -478,7 +494,8 @@ jobs:
 
   pack-custom-validation:
     name: Build and Pack Custom Validation Contract
-    if: startsWith(github.event.release.tag_name, 'dms-')
+    # Same as pack-plugins: a dispatch is the dry run, and this is one of the two chains it runs.
+    if: ${{ github.event_name == 'workflow_dispatch' || startsWith(github.event.release.tag_name, 'dms-') }}
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -719,6 +736,10 @@ jobs:
   publish-package-plugins:
     name: Publish Plugins Contract NuGet Package
     needs: pack-plugins
+    # Not on a dispatch. The pack job above does run on one, so without this the dry run would push
+    # the package and promote it into the Prerelease view; both of those live in this job and
+    # nowhere else, so skipping it is what makes the dispatch a dry run.
+    if: ${{ github.event_name != 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -802,6 +823,9 @@ jobs:
   publish-package-custom-validation:
     name: Publish Custom Validation Contract NuGet Package
     needs: pack-custom-validation
+    # Not on a dispatch, for the reason publish-package-plugins records: the push and the
+    # Prerelease-view membership are here, and a dry run must do neither.
+    if: ${{ github.event_name != 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     defaults:
       run:
