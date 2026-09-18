@@ -33,7 +33,15 @@ public class IdentityModule : IEndpointModule
         endpoints.MapPost("connect/register/{**contextPath}", RegisterClient).DisableAntiforgery();
         endpoints.MapPost("connect/token/{**contextPath}", GetClientAccessToken).DisableAntiforgery();
         endpoints.MapPost("connect/introspect/{**contextPath}", IntrospectToken).DisableAntiforgery();
-        endpoints.MapPost("connect/revoke/{**contextPath}", RevokeToken).DisableAntiforgery();
+        // Revocation requires an authenticated caller: the handler can only decide whether the
+        // caller owns the token being revoked if it knows who the caller is. A bare
+        // RequireAuthorization() (no named policy) is deliberate — SecurityConstants.ServicePolicy
+        // demands the config-service role claim, which an ordinary client-credentials token minted
+        // by /connect/token does not carry, so it would lock clients out of revoking their own tokens.
+        endpoints
+            .MapPost("connect/revoke/{**contextPath}", RevokeToken)
+            .DisableAntiforgery()
+            .RequireAuthorization();
     }
 
     private async Task<IResult> RegisterClient(
