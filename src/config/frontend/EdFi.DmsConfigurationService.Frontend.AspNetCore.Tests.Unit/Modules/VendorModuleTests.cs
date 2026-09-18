@@ -1728,6 +1728,33 @@ public class VendorModuleTests
             _lockManager.Handles.Should().OnlyContain(handle => handle.Disposed);
 
         /// <summary>
+        /// The refusal a vendor above the lock cap receives. It carries the conflict status and
+        /// type of the retriable conflict, but its detail states the deterministic condition,
+        /// because no retry can bring the vendor under the cap.
+        /// </summary>
+        protected static async Task AssertApplicationLockCapConflictContract(HttpResponseMessage response)
+        {
+            response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+            JsonNode actualResponse = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
+            string correlationId = actualResponse["correlationId"]!.GetValue<string>();
+            correlationId.Should().NotBeNullOrWhiteSpace();
+            JsonNode expectedResponse = JsonNode.Parse(
+                $$"""
+                {
+                  "detail": "The clients of this vendor span more than the {{MaximumLockedApplications}} applications a single vendor update may lock. This request cannot succeed until fewer applications own this vendor's clients.",
+                  "type": "urn:ed-fi:api:conflict",
+                  "title": "Conflict",
+                  "status": 409,
+                  "correlationId": "{correlationId}",
+                  "validationErrors": {},
+                  "errors": []
+                }
+                """.Replace("{correlationId}", correlationId)
+            )!;
+            JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
+        }
+
+        /// <summary>
         /// Compensation is only safe while the aggregates are still serialized, so every
         /// identity-provider call must precede the release of the locks.
         /// </summary>
@@ -1995,7 +2022,8 @@ public class VendorModuleTests
     /// A vendor whose clients span more applications than one update may lock. Every lock holds
     /// its own dedicated connection until the workflow, the provider calls included, finishes, so
     /// the request is refused before a single lock is taken rather than allowed to drain the
-    /// connection pool.
+    /// connection pool. The refusal is deterministic — the same vendor fails the same way on every
+    /// attempt — so it must not carry the retriable conflict's invitation to retry.
     /// </summary>
     [TestFixture]
     public class Given_a_vendor_above_the_application_lock_cap : VendorLockTestBase
@@ -2009,8 +2037,12 @@ public class VendorModuleTests
         }
 
         [Test]
-        public async Task It_returns_the_retriable_conflict_contract() =>
-            await AssertLockConflictContract(_response);
+        public async Task It_returns_the_deterministic_cap_conflict_contract() =>
+            await AssertApplicationLockCapConflictContract(_response);
+
+        [Test]
+        public async Task It_does_not_invite_a_retry() =>
+            (await _response.Content.ReadAsStringAsync()).Should().NotContain("Retry the request");
 
         [Test]
         public void It_acquires_no_lock() => _lockManager.AcquiredApplicationIds.Should().BeEmpty();

@@ -370,10 +370,12 @@ public class VendorModule : IEndpointModule
                     if (reportedClientUuid != client.ClientUuid)
                     {
                         // The provider replaced the client and no row references the
-                        // replacement, so it is removed rather than left orphaned.
-                        await TryDeleteClientAsync(client, reportedClientUuid);
+                        // replacement, so it is removed rather than left orphaned. A replacement
+                        // that cannot be removed is failed cleanup, not a silent success.
+                        bool replacementDeleted = await TryDeleteClientAsync(client, reportedClientUuid);
                         return await FinishCompensationAsync(
-                            FailureResults.Unknown(httpContext.TraceIdentifier)
+                            FailureResults.Unknown(httpContext.TraceIdentifier),
+                            currentClientClean: replacementDeleted
                         );
                     }
 
@@ -528,11 +530,17 @@ public class VendorModule : IEndpointModule
 
         // Restores every client this request changed before the failure. A failure here is a
         // KNOWN inconsistency — the client was definitely changed and definitely not restored —
-        // so it replaces the original classification with the sanitized server error.
-        async Task<IResult> FinishCompensationAsync(IResult originalFailure) =>
-            await RollbackMutatedClientsAsync(acceptMissing: false)
+        // so it replaces the original classification with the sanitized server error. A caller
+        // that already failed to clean up the client it was working on passes
+        // currentClientClean: false; the clients changed before it are still restored, and the
+        // same known inconsistency is reported.
+        async Task<IResult> FinishCompensationAsync(IResult originalFailure, bool currentClientClean = true)
+        {
+            bool priorClientsRestored = await RollbackMutatedClientsAsync(acceptMissing: false);
+            return currentClientClean && priorClientsRestored
                 ? originalFailure
                 : FailureResults.Unknown(httpContext.TraceIdentifier);
+        }
 
         // Every client is attempted even after one restoration fails, so the smallest possible
         // number of clients is left carrying prefixes the vendor row never received.
@@ -688,8 +696,9 @@ public class VendorModule : IEndpointModule
     /// changed while the locks were being acquired is retried a bounded number of times, and
     /// persistent drift is answered as a retriable concurrency conflict. A vendor that owns no
     /// clients mutates no provider client, so it takes no lock at all, and a vendor whose clients
-    /// span more applications than one update may lock is answered as the same retriable conflict
-    /// without acquiring any lock.
+    /// span more applications than one update may lock is refused without acquiring any lock, as a
+    /// deterministic conflict rather than the retriable one, because no retry can bring that vendor
+    /// under the cap.
     /// </summary>
     private static async Task<(
         IResult? Failure,
@@ -708,8 +717,9 @@ public class VendorModule : IEndpointModule
         // Every acquired application lock holds its own dedicated database connection until this
         // workflow releases it, which is after the provider calls have run, so an uncapped
         // fan-out lets one vendor update hold an unbounded share of the connection pool. A vendor
-        // above the cap takes no lock at all and is answered as the same retriable conflict a
-        // lock timeout receives.
+        // above the cap takes no lock at all and is refused deterministically: the fan-out is a
+        // property of the vendor rather than of concurrent activity, so the same request fails the
+        // same way until fewer applications own the vendor's clients.
         const int maxLockedApplications = 25;
 
         for (int attempt = 1; attempt <= maxAttempts; attempt++)
@@ -739,7 +749,7 @@ public class VendorModule : IEndpointModule
                     applicationIdsToLock.Length,
                     maxLockedApplications
                 );
-                return (RetriableConflict(httpContext), null, []);
+                return (ApplicationLockCapConflict(httpContext, maxLockedApplications), null, []);
             }
 
             List<IAsyncDisposable> heldLocks = [];
@@ -854,6 +864,22 @@ public class VendorModule : IEndpointModule
         Results.Json(
             FailureResponse.ForConflict(
                 "Unable to process the request due to a concurrent modification. Retry the request.",
+                httpContext.TraceIdentifier
+            ),
+            contentType: "application/problem+json",
+            statusCode: (int)HttpStatusCode.Conflict
+        );
+
+    /// <summary>
+    /// The refusal a vendor above the application-lock cap receives. It carries the same conflict
+    /// status and type as a concurrency conflict, but the condition is a property of the vendor
+    /// rather than of concurrent activity, so the detail states what has to change instead of
+    /// inviting a retry that would fail identically.
+    /// </summary>
+    private static IResult ApplicationLockCapConflict(HttpContext httpContext, int maximumApplications) =>
+        Results.Json(
+            FailureResponse.ForConflict(
+                $"The clients of this vendor span more than the {maximumApplications} applications a single vendor update may lock. This request cannot succeed until fewer applications own this vendor's clients.",
                 httpContext.TraceIdentifier
             ),
             contentType: "application/problem+json",

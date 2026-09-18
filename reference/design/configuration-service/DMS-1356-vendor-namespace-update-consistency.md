@@ -118,6 +118,7 @@ All bodies are `application/problem+json` through the existing `FailureResults`/
 | Situation | Status | `type` | Detail |
 |---|---|---|---|
 | Lock timeout; persistent drift | 409 | `urn:ed-fi:api:conflict` | `Unable to process the request due to a concurrent modification. Retry the request.` (identical to Application/ApiClient) |
+| Clients span more applications than one update may lock (§13 fan-out cap) | 409 | `urn:ed-fi:api:conflict` | `The clients of this vendor span more than the 25 applications a single vendor update may lock. This request cannot succeed until fewer applications own this vendor's clients.` The condition is deterministic, so the body carries no retry wording |
 | Provider `FailureIdentityProvider` after complete rollback | 502 | `urn:ed-fi:api:bad-gateway` | `FailureResults.BadGateway("Identity provider error during client update", trace)`; `errors[0]` is the INV-41 fixed fallback |
 | Stored provider client missing (`FailureNotFound`) | 500 | `urn:ed-fi:api:internal-server-error` | `FailureResults.Unknown` |
 | Internal consistency failure (stale sync, missing row, partial state, unresolvable outcome) | 500 | same | `FailureResults.Unknown`; the inconsistency is logged at Error with vendor id, ApiClient id, and the UUIDs involved |
@@ -419,7 +420,7 @@ Each step is one commit. After each commit: SHA, files, behavior, tests run with
 
 | Risk | Mitigation |
 |---|---|
-| A vendor with many applications holds many session locks for the duration of N provider calls | Each lock is one dedicated connection held until the workflow releases it, so `AcquireTimeout` does not bound the cost: the fan-out is explicitly capped instead. A vendor whose clients span more than the capped number of distinct applications acquires no lock at all and receives the retriable 409 conflict. Ordering is ascending so no cycle with Application/ApiClient workflows is possible. Document the connection cost and the cap in the as-implemented section. |
+| A vendor with many applications holds many session locks for the duration of N provider calls | Each lock is one dedicated connection held until the workflow releases it, so `AcquireTimeout` does not bound the cost: the fan-out is explicitly capped instead. A vendor whose clients span more than the capped number of distinct applications acquires no lock at all and receives a 409 conflict of its own: the fan-out is a property of the vendor rather than of concurrent activity, so its detail states the deterministic condition instead of inviting a retry that would fail identically. Ordering is ascending so no cycle with Application/ApiClient workflows is possible. Document the connection cost and the cap in the as-implemented section. |
 | Deadlock with a two-lock ApiClient move | Impossible under a total order; pinned by the inverse-move fixture on both backends. |
 | Keycloak representation from `GetClientAsync` carries fields the `PUT` interprets destructively | Same representation round-trip already used by `UpdateClientAsync` and probed in V-32. |
 | A non-participating writer changes a row mid-request | Detected by the sync guard (`FailureStaleState`), never overwritten, answered 500 with rollback of this request's own mutations. |
