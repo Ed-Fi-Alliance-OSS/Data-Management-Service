@@ -14,10 +14,27 @@
 // feed without resolving its references, and it is what keeps a candidate assembly's code from ever
 // running in the process that is inspecting it.
 //
-// What is emitted is what an implementer outside this assembly can bind to. private protected
-// (FamANDAssem) is deliberately absent: it is inaccessible outside the declaring assembly, so a
-// change to it cannot break anyone compiling against the package, and failing a publish over it
-// would fail over something no consumer can observe.
+// What is emitted is what an implementer outside this assembly can bind to, or is bound by.
+// private protected (FamANDAssem) members are excluded with one exception: an abstract one. A
+// consumer cannot call or override a private protected member, so adding, removing or changing a
+// non-abstract one changes nothing they compile against. An abstract private protected member is
+// different in kind: no type outside the assembly can satisfy it, so its presence closes the
+// hierarchy to every external deriver (CustomValidationFailure.EnsureClosed exists for exactly
+// that), and adding or removing it changes what an implementer may derive from. Widening a
+// private protected member to protected or public, or narrowing one the other way, was already
+// visible: the member's line appears or disappears.
+//
+// Nullability is part of the surface. The effective nullable annotation of every described
+// return, parameter, property, indexer parameter, field and event type is rendered as a vector
+// with one entry per position the compiler annotates, computed from NullableAttribute where the
+// compiler emitted one and from the effective NullableContextAttribute where it did not, so that
+// the same source compiled with the attribute placed differently renders identically. The
+// nullable-flow attributes from System.Diagnostics.CodeAnalysis (AllowNull, DisallowNull,
+// MaybeNull, NotNull, MaybeNullWhen, NotNullWhen, NotNullIfNotNull, DoesNotReturn,
+// DoesNotReturnIf) are rendered on the rows the compiler places them on. Outside this comparison,
+// deliberately: the nullability of a type's base type and interfaces, MemberNotNull and
+// MemberNotNullWhen, and every other attribute, such as [Obsolete]. This is a publish gate for two
+// specific contracts, not a general API-compatibility analyzer.
 
 // Add-Type compiles this file on its own rather than inside a project, so the nullable context the
 // repository's csproj files set through <Nullable>enable</Nullable> has to be declared here.
@@ -42,12 +59,31 @@ namespace EdFi.Verification;
 /// </summary>
 public sealed class GenericContext(
     ImmutableArray<string> typeParameters,
-    ImmutableArray<string> methodParameters
+    ImmutableArray<string> methodParameters,
+    ImmutableArray<bool> typeParameterIsValueType,
+    ImmutableArray<bool> methodParameterIsValueType
 )
 {
+    public GenericContext(ImmutableArray<string> typeParameters, ImmutableArray<string> methodParameters)
+        : this(
+            typeParameters,
+            methodParameters,
+            ImmutableArray.CreateRange(typeParameters.Select(_ => false)),
+            ImmutableArray.CreateRange(methodParameters.Select(_ => false))
+        ) { }
+
     public ImmutableArray<string> TypeParameters { get; } = typeParameters;
 
     public ImmutableArray<string> MethodParameters { get; } = methodParameters;
+
+    /// <summary>
+    /// Whether each type parameter carries the struct constraint. The compiler records a
+    /// struct-constrained parameter as a fixed-zero nullability position rather than an annotatable
+    /// one, so the shape provider needs the constraint, not only the name.
+    /// </summary>
+    public ImmutableArray<bool> TypeParameterIsValueType { get; } = typeParameterIsValueType;
+
+    public ImmutableArray<bool> MethodParameterIsValueType { get; } = methodParameterIsValueType;
 
     public static GenericContext Empty { get; } =
         new(ImmutableArray<string>.Empty, ImmutableArray<string>.Empty);
@@ -135,10 +171,190 @@ public sealed class ContractSignatureProvider(MetadataReader reader)
 }
 
 /// <summary>
+/// The nullability positions of one decoded type, in the preorder the compiler's NullableAttribute
+/// uses: one entry per position, true where the compiler records an annotation and false where it
+/// records a fixed 0.
+/// </summary>
+/// <remarks>
+/// The rules mirror what the compiler emits, checked against compiled probes. A reference type, an
+/// array or an unconstrained generic parameter is one annotatable position; a struct-constrained
+/// generic parameter is one fixed-zero position. A non-generic value type is no position at all: an
+/// int parameter carries no NullableAttribute under any context. A generic value-type instantiation
+/// is one fixed-zero position followed by its arguments, whatever they are (KeyValuePair&lt;string,
+/// int&gt; is [0,1], and Dictionary&lt;(int, int), string?&gt;? is [2,0,2]); when nothing in it is
+/// annotatable, as in a bare KeyValuePair&lt;int, int&gt;, the compiler writes no attribute and the
+/// vector is all zeros under every context. System.Nullable&lt;T&gt; is transparent: int? is no
+/// position and KeyValuePair&lt;string?, int&gt;? is [0,2]. By-ref, modified and pinned types are
+/// transparent. Pointers and function pointers are a fixed-zero position followed by their element
+/// or signature. Where a real assembly's explicit NullableAttribute array disagrees with a shape
+/// computed here, the reader throws rather than guessing.
+/// </remarks>
+public sealed class NullabilityShape
+{
+    private NullabilityShape(ImmutableArray<bool> positions, bool isValueType, bool isSystemNullable)
+    {
+        Positions = positions;
+        IsValueType = isValueType;
+        IsSystemNullable = isSystemNullable;
+    }
+
+    public ImmutableArray<bool> Positions { get; }
+
+    /// <summary>True for a bare value type definition or reference, which contributes no position.</summary>
+    public bool IsValueType { get; }
+
+    /// <summary>True for the bare System.Nullable`1 definition, whose instantiation is transparent.</summary>
+    public bool IsSystemNullable { get; }
+
+    public bool HasAnnotatablePosition => Positions.Contains(true);
+
+    public static NullabilityShape None { get; } = new(ImmutableArray<bool>.Empty, false, false);
+
+    public static NullabilityShape ValueType { get; } = new(ImmutableArray<bool>.Empty, true, false);
+
+    public static NullabilityShape SystemNullable { get; } = new(ImmutableArray<bool>.Empty, true, true);
+
+    public static NullabilityShape Annotatable { get; } = new([true], false, false);
+
+    public static NullabilityShape FixedZero { get; } = new([false], false, false);
+
+    public NullabilityShape Prepend(bool annotatable) => new([annotatable, .. Positions], false, false);
+
+    public static NullabilityShape Concat(IEnumerable<NullabilityShape> shapes) =>
+        new([.. shapes.SelectMany(shape => shape.Positions)], false, false);
+}
+
+/// <summary>
+/// Decodes signature blobs into their nullability positions.
+/// </summary>
+public sealed class NullabilityShapeProvider : ISignatureTypeProvider<NullabilityShape, GenericContext>
+{
+    // ELEMENT_TYPE_VALUETYPE and ELEMENT_TYPE_CLASS, the two codes a signature uses to introduce a
+    // type definition or reference. A signature never carries any other, so any other is corrupt.
+    private const byte ElementTypeValueType = 0x11;
+    private const byte ElementTypeClass = 0x12;
+
+    public NullabilityShape GetArrayType(NullabilityShape elementType, ArrayShape shape) =>
+        elementType.Prepend(true);
+
+    public NullabilityShape GetByReferenceType(NullabilityShape elementType) => elementType;
+
+    public NullabilityShape GetFunctionPointerType(MethodSignature<NullabilityShape> signature) =>
+        NullabilityShape.Concat([signature.ReturnType, .. signature.ParameterTypes]).Prepend(false);
+
+    public NullabilityShape GetGenericInstantiation(
+        NullabilityShape genericType,
+        ImmutableArray<NullabilityShape> typeArguments
+    )
+    {
+        NullabilityShape arguments = NullabilityShape.Concat(typeArguments);
+
+        if (genericType.IsSystemNullable)
+        {
+            return arguments;
+        }
+
+        // A generic value type occupies a fixed-zero position of its own, whatever its arguments
+        // hold: Dictionary<(int, int), string?>? is [2,0,2], with the tuple's slot present even
+        // though nothing inside it is annotatable. When the whole shape has no annotatable position
+        // the compiler emits no attribute, which the vector computation renders as zeros.
+        return arguments.Prepend(!genericType.IsValueType);
+    }
+
+    // A struct-constrained parameter is a value type to the compiler and gets a fixed 0; any other
+    // generic parameter is annotatable. An index past the context's knowledge is treated as
+    // annotatable, the same fallback the name provider takes for an unknown parameter.
+    public NullabilityShape GetGenericMethodParameter(GenericContext context, int index) =>
+        index < context.MethodParameterIsValueType.Length && context.MethodParameterIsValueType[index]
+            ? NullabilityShape.FixedZero
+            : NullabilityShape.Annotatable;
+
+    public NullabilityShape GetGenericTypeParameter(GenericContext context, int index) =>
+        index < context.TypeParameterIsValueType.Length && context.TypeParameterIsValueType[index]
+            ? NullabilityShape.FixedZero
+            : NullabilityShape.Annotatable;
+
+    public NullabilityShape GetModifiedType(
+        NullabilityShape modifier,
+        NullabilityShape unmodifiedType,
+        bool isRequired
+    ) => unmodifiedType;
+
+    public NullabilityShape GetPinnedType(NullabilityShape elementType) => elementType;
+
+    public NullabilityShape GetPointerType(NullabilityShape elementType) => elementType.Prepend(false);
+
+    public NullabilityShape GetPrimitiveType(PrimitiveTypeCode typeCode) =>
+        typeCode is PrimitiveTypeCode.String or PrimitiveTypeCode.Object
+            ? NullabilityShape.Annotatable
+            : NullabilityShape.ValueType;
+
+    public NullabilityShape GetSZArrayType(NullabilityShape elementType) => elementType.Prepend(true);
+
+    public NullabilityShape GetTypeFromDefinition(
+        MetadataReader reader,
+        TypeDefinitionHandle handle,
+        byte rawTypeKind
+    )
+    {
+        TypeDefinition type = reader.GetTypeDefinition(handle);
+
+        return Classify(rawTypeKind, reader.GetString(type.Namespace), reader.GetString(type.Name));
+    }
+
+    public NullabilityShape GetTypeFromReference(
+        MetadataReader reader,
+        TypeReferenceHandle handle,
+        byte rawTypeKind
+    )
+    {
+        TypeReference type = reader.GetTypeReference(handle);
+
+        return Classify(rawTypeKind, reader.GetString(type.Namespace), reader.GetString(type.Name));
+    }
+
+    public NullabilityShape GetTypeFromSpecification(
+        MetadataReader reader,
+        GenericContext context,
+        TypeSpecificationHandle handle,
+        byte rawTypeKind
+    ) => reader.GetTypeSpecification(handle).DecodeSignature(this, context);
+
+    private static NullabilityShape Classify(byte rawTypeKind, string typeNamespace, string typeName) =>
+        rawTypeKind switch
+        {
+            ElementTypeClass => NullabilityShape.Annotatable,
+            ElementTypeValueType => typeNamespace == "System" && typeName == "Nullable`1"
+                ? NullabilityShape.SystemNullable
+                : NullabilityShape.ValueType,
+            _ => throw new BadImageFormatException(
+                $"A signature introduces {typeNamespace}.{typeName} with element type 0x{rawTypeKind:X2}, which is neither CLASS nor VALUETYPE."
+            ),
+        };
+}
+
+/// <summary>
 /// Emits one assembly's externally consumable surface.
 /// </summary>
 public static class ContractSurfaceReader
 {
+    private static readonly NullabilityShapeProvider ShapeProvider = new();
+
+    // The nullable-flow attributes rendered on the rows the compiler places them on. Their argument
+    // shapes are fixed (none, one bool, or one string), and anything else is refused.
+    private static readonly ImmutableHashSet<string> FlowAttributeNames =
+    [
+        "AllowNullAttribute",
+        "DisallowNullAttribute",
+        "MaybeNullAttribute",
+        "NotNullAttribute",
+        "MaybeNullWhenAttribute",
+        "NotNullWhenAttribute",
+        "NotNullIfNotNullAttribute",
+        "DoesNotReturnAttribute",
+        "DoesNotReturnIfAttribute",
+    ];
+
     /// <summary>
     /// Reads <paramref name="assemblyPath"/> and returns its surface as ordinally sorted lines.
     /// </summary>
@@ -178,7 +394,12 @@ public static class ContractSurfaceReader
                 reader,
                 type.GetGenericParameters()
             );
-            GenericContext typeContext = new(typeParameters, ImmutableArray<string>.Empty);
+            GenericContext typeContext = new(
+                typeParameters,
+                ImmutableArray<string>.Empty,
+                GenericParameterValueTypeFlags(reader, type.GetGenericParameters()),
+                ImmutableArray<bool>.Empty
+            );
 
             lines.Add(DescribeType(reader, provider, handle, type, name, typeParameters, typeContext));
 
@@ -294,7 +515,7 @@ public static class ContractSurfaceReader
                 continue;
             }
 
-            yield return DescribeMethod(reader, provider, method, typeName, typeContext);
+            yield return DescribeMethod(reader, provider, handle, method, typeName, typeContext);
         }
 
         foreach (FieldDefinitionHandle handle in type.GetFields())
@@ -329,6 +550,7 @@ public static class ContractSurfaceReader
     private static string DescribeMethod(
         MetadataReader reader,
         ContractSignatureProvider provider,
+        MethodDefinitionHandle methodHandle,
         MethodDefinition method,
         string typeName,
         GenericContext typeContext
@@ -338,26 +560,58 @@ public static class ContractSurfaceReader
             reader,
             method.GetGenericParameters()
         );
-        GenericContext context = new(typeContext.TypeParameters, methodParameters);
+        GenericContext context = new(
+            typeContext.TypeParameters,
+            methodParameters,
+            typeContext.TypeParameterIsValueType,
+            GenericParameterValueTypeFlags(reader, method.GetGenericParameters())
+        );
         MethodSignature<string> signature = method.DecodeSignature(provider, context);
+        MethodSignature<NullabilityShape> shapes = method.DecodeSignature(ShapeProvider, context);
+        string methodName = reader.GetString(method.Name);
+        string owner = "method '" + typeName + "." + methodName + "'";
 
         List<string> rendered = DescribeSignatureParameters(
             reader,
             provider,
             signature.ParameterTypes,
-            method.GetParameters()
+            shapes.ParameterTypes,
+            method.GetParameters(),
+            methodHandle,
+            owner
         );
 
         StringBuilder builder = new();
-        builder.Append("METHOD ").Append(typeName).Append('.').Append(reader.GetString(method.Name));
+        builder.Append("METHOD ").Append(typeName).Append('.').Append(methodName);
         builder.Append('`').Append(signature.GenericParameterCount);
         builder.Append('(').Append(string.Join(", ", rendered)).Append(')');
         builder.Append(" : ").Append(signature.ReturnType);
+        builder
+            .Append(" nullable=")
+            .Append(
+                DescribeNullability(
+                    reader,
+                    provider,
+                    ReturnParameterAttributes(reader, method.GetParameters()),
+                    ContextChainForMethod(reader, methodHandle),
+                    shapes.ReturnType,
+                    "return of " + owner
+                )
+            );
+        AppendFlowAttributes(
+            builder,
+            " nullattrs=",
+            reader,
+            provider,
+            ReturnParameterAttributes(reader, method.GetParameters()),
+            "return of " + owner
+        );
         builder.Append(" accessibility=").Append(MemberAccessibility(method.Attributes));
         builder.Append(" modifiers=").Append(MethodModifiers(method.Attributes));
         builder
             .Append(" generics=")
             .Append(DescribeGenericParameters(reader, provider, method.GetGenericParameters(), context));
+        AppendFlowAttributes(builder, " methodattrs=", reader, provider, method.GetCustomAttributes(), owner);
 
         return builder.ToString();
     }
@@ -366,7 +620,10 @@ public static class ContractSurfaceReader
         MetadataReader reader,
         ContractSignatureProvider provider,
         string type,
-        Parameter? parameter
+        NullabilityShape shape,
+        Parameter? parameter,
+        IEnumerable<CustomAttributeHandleCollection> contextChain,
+        string owner
     )
     {
         StringBuilder builder = new();
@@ -417,10 +674,41 @@ public static class ContractSurfaceReader
                     );
             }
 
+            string parameterOwner = "parameter '" + name + "' of " + owner;
+
+            builder
+                .Append(" nullable=")
+                .Append(
+                    DescribeNullability(
+                        reader,
+                        provider,
+                        value.GetCustomAttributes(),
+                        contextChain,
+                        shape,
+                        parameterOwner
+                    )
+                );
+            AppendFlowAttributes(
+                builder,
+                " nullattrs=",
+                reader,
+                provider,
+                value.GetCustomAttributes(),
+                parameterOwner
+            );
+
             return builder.ToString();
         }
 
-        return type;
+        // A parameter with no metadata row carries no attribute, so its annotation is the context's.
+        builder.Append(type);
+        builder
+            .Append(" nullable=")
+            .Append(
+                DescribeNullability(reader, provider, null, contextChain, shape, "parameter of " + owner)
+            );
+
+        return builder.ToString();
     }
 
     private static string DescribeField(
@@ -433,9 +721,30 @@ public static class ContractSurfaceReader
     {
         FieldAttributes attributes = field.Attributes;
         StringBuilder builder = new();
+        string fieldOwner = "field '" + typeName + "." + reader.GetString(field.Name) + "'";
 
         builder.Append("FIELD ").Append(typeName).Append('.').Append(reader.GetString(field.Name));
         builder.Append(" : ").Append(field.DecodeSignature(provider, context));
+        builder
+            .Append(" nullable=")
+            .Append(
+                DescribeNullability(
+                    reader,
+                    provider,
+                    field.GetCustomAttributes(),
+                    ContextChainForType(reader, field.GetDeclaringType()),
+                    field.DecodeSignature(ShapeProvider, context),
+                    fieldOwner
+                )
+            );
+        AppendFlowAttributes(
+            builder,
+            " nullattrs=",
+            reader,
+            provider,
+            field.GetCustomAttributes(),
+            fieldOwner
+        );
         builder.Append(" accessibility=").Append(FieldAccessibility(attributes));
 
         List<string> modifiers = [];
@@ -499,32 +808,95 @@ public static class ContractSurfaceReader
         }
 
         MethodSignature<string> signature = property.DecodeSignature(provider, context);
+        MethodSignature<NullabilityShape> shapes = property.DecodeSignature(ShapeProvider, context);
+        string propertyName = reader.GetString(property.Name);
+        string owner = "property '" + typeName + "." + propertyName + "'";
+
+        // The accessor that exists, and both when both do. A property row has no parameter rows and
+        // carries no NullableContext of its own, so names, indexer annotations and the context all
+        // come from the accessors.
+        MethodDefinitionHandle source = accessors.Getter.IsNil ? accessors.Setter : accessors.Getter;
 
         StringBuilder builder = new();
-        builder.Append("PROPERTY ").Append(typeName).Append('.').Append(reader.GetString(property.Name));
+        builder.Append("PROPERTY ").Append(typeName).Append('.').Append(propertyName);
 
         if (signature.ParameterTypes.Length > 0)
         {
             // Indexer parameters carry names too, and a named argument binds to them exactly as it
-            // does on a method. The names come from whichever accessor exists, since a property row
-            // has no parameter rows of its own.
-            MethodDefinitionHandle source = accessors.Getter.IsNil ? accessors.Setter : accessors.Getter;
-
+            // does on a method. The names and annotations come from whichever accessor exists.
             builder
                 .Append('[')
                 .Append(
                     string.Join(
                         ", ",
-                        DescribeSignatureParameters(reader, provider, signature.ParameterTypes, source)
+                        DescribeSignatureParameters(
+                            reader,
+                            provider,
+                            signature.ParameterTypes,
+                            shapes.ParameterTypes,
+                            reader.GetMethodDefinition(source).GetParameters(),
+                            source,
+                            owner
+                        )
                     )
                 )
                 .Append(']');
         }
 
         builder.Append(" : ").Append(signature.ReturnType);
+
+        // The property row's own annotation is governed by the declaring type's context, not by an
+        // accessor's: NullableContextAttribute cannot target a property, and an accessor's context
+        // describes that accessor's parameters and return. An indexer whose getter chose context 2
+        // for its nullable index parameters still has a non-nullable property type under the type's
+        // context 1, with the getter's return row carrying an explicit 1 of its own.
+        builder
+            .Append(" nullable=")
+            .Append(
+                DescribeNullability(
+                    reader,
+                    provider,
+                    property.GetCustomAttributes(),
+                    ContextChainForType(reader, reader.GetMethodDefinition(source).GetDeclaringType()),
+                    shapes.ReturnType,
+                    owner
+                )
+            );
         builder.Append(" get=").Append(getter);
         builder.Append(" set=").Append(setter);
         builder.Append(" setkind=").Append(SetterKind(reader, provider, accessors.Setter, context));
+
+        // Flow annotations keep their roles. [NotNull] on the getter's return and [NotNull] on the
+        // setter's value parameter are different promises, so the getter return row, the setter
+        // value row and the property row are rendered as three labelled sets rather than one bag.
+        if (!accessors.Getter.IsNil)
+        {
+            AppendFlowAttributes(
+                builder,
+                " getattrs=",
+                reader,
+                provider,
+                ReturnParameterAttributes(
+                    reader,
+                    reader.GetMethodDefinition(accessors.Getter).GetParameters()
+                ),
+                "getter of " + owner
+            );
+        }
+
+        if (!accessors.Setter.IsNil)
+        {
+            AppendFlowAttributes(
+                builder,
+                " setattrs=",
+                reader,
+                provider,
+                SetterValueParameterAttributes(reader, accessors.Setter),
+                "setter of " + owner
+            );
+        }
+
+        AppendFlowAttributes(builder, " propattrs=", reader, provider, property.GetCustomAttributes(), owner);
 
         line = builder.ToString();
 
@@ -532,27 +904,67 @@ public static class ContractSurfaceReader
     }
 
     /// <summary>
-    /// Renders one signature's parameters, taking names and modifiers from the owning method when
-    /// there is one.
+    /// The attributes on a method's return parameter row (sequence 0), or an empty collection when
+    /// the compiler emitted no such row, which it does only when nothing is attached to the return.
+    /// </summary>
+    private static CustomAttributeHandleCollection? ReturnParameterAttributes(
+        MetadataReader reader,
+        ParameterHandleCollection parameters
+    )
+    {
+        foreach (ParameterHandle handle in parameters)
+        {
+            Parameter parameter = reader.GetParameter(handle);
+
+            if (parameter.SequenceNumber == 0)
+            {
+                return parameter.GetCustomAttributes();
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// The attributes on a setter's value parameter row, which is its last parameter; the compiler
+    /// places a property's [AllowNull] and [DisallowNull] there.
+    /// </summary>
+    private static CustomAttributeHandleCollection? SetterValueParameterAttributes(
+        MetadataReader reader,
+        MethodDefinitionHandle setter
+    )
+    {
+        MethodDefinition method = reader.GetMethodDefinition(setter);
+        int valueSequence = method.GetParameters().Count;
+        CustomAttributeHandleCollection? result = null;
+        int highest = 0;
+
+        foreach (ParameterHandle handle in method.GetParameters())
+        {
+            Parameter parameter = reader.GetParameter(handle);
+
+            if (parameter.SequenceNumber > highest && parameter.SequenceNumber <= valueSequence)
+            {
+                highest = parameter.SequenceNumber;
+                result = parameter.GetCustomAttributes();
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Renders one signature's parameters, taking names, modifiers and annotations from the owning
+    /// method's parameter rows, and the nullable context from that method outward.
     /// </summary>
     private static List<string> DescribeSignatureParameters(
         MetadataReader reader,
         ContractSignatureProvider provider,
         ImmutableArray<string> parameterTypes,
-        MethodDefinitionHandle owner
-    ) =>
-        DescribeSignatureParameters(
-            reader,
-            provider,
-            parameterTypes,
-            owner.IsNil ? default : reader.GetMethodDefinition(owner).GetParameters()
-        );
-
-    private static List<string> DescribeSignatureParameters(
-        MetadataReader reader,
-        ContractSignatureProvider provider,
-        ImmutableArray<string> parameterTypes,
-        ParameterHandleCollection owned
+        ImmutableArray<NullabilityShape> parameterShapes,
+        ParameterHandleCollection owned,
+        MethodDefinitionHandle contextOwner,
+        string owner
     )
     {
         Dictionary<int, Parameter> parameters = [];
@@ -569,6 +981,13 @@ public static class ContractSurfaceReader
             }
         }
 
+        if (parameterShapes.Length != parameterTypes.Length)
+        {
+            throw new BadImageFormatException(
+                $"The signature of {owner} decoded to {parameterTypes.Length} parameter types and {parameterShapes.Length} nullability shapes."
+            );
+        }
+
         List<string> rendered = [];
 
         for (int index = 0; index < parameterTypes.Length; index++)
@@ -578,7 +997,10 @@ public static class ContractSurfaceReader
                     reader,
                     provider,
                     parameterTypes[index],
-                    parameters.TryGetValue(index + 1, out Parameter parameter) ? parameter : null
+                    parameterShapes[index],
+                    parameters.TryGetValue(index + 1, out Parameter parameter) ? parameter : null,
+                    ContextChainForMethod(reader, contextOwner),
+                    owner
                 )
             );
         }
@@ -641,14 +1063,432 @@ public static class ContractSurfaceReader
         }
 
         StringBuilder builder = new();
-        builder.Append("EVENT ").Append(typeName).Append('.').Append(reader.GetString(eventDefinition.Name));
+        string eventName = reader.GetString(eventDefinition.Name);
+        builder.Append("EVENT ").Append(typeName).Append('.').Append(eventName);
         builder.Append(" : ").Append(TypeName(reader, provider, eventDefinition.Type, context));
+
+        // An event's type is a delegate, so a definition or reference handle is one annotatable
+        // position; a constructed delegate type arrives as a specification and is decoded.
+        NullabilityShape shape =
+            eventDefinition.Type.Kind == HandleKind.TypeSpecification
+                ? reader
+                    .GetTypeSpecification((TypeSpecificationHandle)eventDefinition.Type)
+                    .DecodeSignature(ShapeProvider, context)
+                : NullabilityShape.Annotatable;
+
+        // The event row, like a property row, is governed by the declaring type's context.
+        MethodDefinitionHandle eventAccessor = accessors.Adder.IsNil ? accessors.Remover : accessors.Adder;
+
+        builder
+            .Append(" nullable=")
+            .Append(
+                DescribeNullability(
+                    reader,
+                    provider,
+                    eventDefinition.GetCustomAttributes(),
+                    ContextChainForType(reader, reader.GetMethodDefinition(eventAccessor).GetDeclaringType()),
+                    shape,
+                    "event '" + typeName + "." + eventName + "'"
+                )
+            );
         builder.Append(" add=").Append(adder);
         builder.Append(" remove=").Append(remover);
 
         line = builder.ToString();
 
         return true;
+    }
+
+    /// <summary>
+    /// The effective nullability of one type as a vector with one entry per annotatable-or-fixed
+    /// position, computed so that the same source renders identically however the compiler packed
+    /// its attributes.
+    /// </summary>
+    /// <remarks>
+    /// An explicit NullableAttribute byte[] is the vector itself, and must have exactly as many
+    /// entries as the shape has positions, with 0 at every fixed position. An explicit byte applies
+    /// to every annotatable position. No attribute means the effective NullableContext, resolved
+    /// outward through <paramref name="contextChain"/>, at every annotatable position, or 0
+    /// everywhere when the type has no annotatable position, which is why an int parameter reads
+    /// the same under every context. A single byte and an elided attribute both mean "every
+    /// annotatable position agrees", so explicit and elided encodings of one annotation are equal.
+    /// </remarks>
+    private static string DescribeNullability(
+        MetadataReader reader,
+        ContractSignatureProvider provider,
+        CustomAttributeHandleCollection? ownRow,
+        IEnumerable<CustomAttributeHandleCollection> contextChain,
+        NullabilityShape shape,
+        string owner
+    )
+    {
+        int count = shape.Positions.Length;
+        byte[] vector = new byte[count];
+
+        if (
+            ownRow is { } row
+            && TryReadNullableFlags(
+                reader,
+                provider,
+                row,
+                owner,
+                out byte single,
+                out ImmutableArray<byte>? explicitFlags
+            )
+        )
+        {
+            if (explicitFlags is { } flags)
+            {
+                if (flags.Length != count)
+                {
+                    throw new BadImageFormatException(
+                        $"NullableAttribute on {owner} carries {flags.Length} flag(s) for a type with {count} nullability position(s)."
+                    );
+                }
+
+                for (int index = 0; index < count; index++)
+                {
+                    if (!shape.Positions[index] && flags[index] != 0)
+                    {
+                        throw new BadImageFormatException(
+                            $"NullableAttribute on {owner} annotates position {index} with {flags[index]}, but that position is a value type or pointer and can only be 0."
+                        );
+                    }
+
+                    vector[index] = flags[index];
+                }
+            }
+            else
+            {
+                for (int index = 0; index < count; index++)
+                {
+                    vector[index] = shape.Positions[index] ? single : (byte)0;
+                }
+            }
+        }
+        else
+        {
+            byte context = shape.HasAnnotatablePosition
+                ? EffectiveNullableContext(reader, provider, contextChain, owner)
+                : (byte)0;
+
+            for (int index = 0; index < count; index++)
+            {
+                vector[index] = shape.Positions[index] ? context : (byte)0;
+            }
+        }
+
+        return "["
+            + string.Join(
+                ",",
+                vector.Select(flag => flag.ToString(System.Globalization.CultureInfo.InvariantCulture))
+            )
+            + "]";
+    }
+
+    /// <summary>
+    /// The first NullableContextAttribute found walking <paramref name="contextChain"/>, or 0
+    /// (oblivious) when none of the entities carries one.
+    /// </summary>
+    private static byte EffectiveNullableContext(
+        MetadataReader reader,
+        ContractSignatureProvider provider,
+        IEnumerable<CustomAttributeHandleCollection> contextChain,
+        string owner
+    )
+    {
+        foreach (CustomAttributeHandleCollection attributes in contextChain)
+        {
+            if (
+                TryReadNullableByte(
+                    reader,
+                    provider,
+                    attributes,
+                    "NullableContextAttribute",
+                    owner,
+                    out byte value
+                )
+            )
+            {
+                return value;
+            }
+        }
+
+        return 0;
+    }
+
+    /// <summary>
+    /// The entities whose NullableContextAttribute can govern a method's parameters and return,
+    /// nearest first: the method, its declaring type, and every enclosing type outward.
+    /// </summary>
+    private static IEnumerable<CustomAttributeHandleCollection> ContextChainForMethod(
+        MetadataReader reader,
+        MethodDefinitionHandle handle
+    )
+    {
+        if (handle.IsNil)
+        {
+            yield break;
+        }
+
+        MethodDefinition method = reader.GetMethodDefinition(handle);
+        yield return method.GetCustomAttributes();
+
+        foreach (
+            CustomAttributeHandleCollection attributes in ContextChainForType(
+                reader,
+                method.GetDeclaringType()
+            )
+        )
+        {
+            yield return attributes;
+        }
+    }
+
+    /// <summary>
+    /// The declaring type and every enclosing type outward. This is the whole chain for a property,
+    /// event or field row, since NullableContextAttribute cannot target those.
+    /// </summary>
+    private static IEnumerable<CustomAttributeHandleCollection> ContextChainForType(
+        MetadataReader reader,
+        TypeDefinitionHandle handle
+    )
+    {
+        while (!handle.IsNil)
+        {
+            TypeDefinition type = reader.GetTypeDefinition(handle);
+            yield return type.GetCustomAttributes();
+            handle = type.GetDeclaringType();
+        }
+    }
+
+    /// <summary>
+    /// Reads a NullableAttribute in either of its two forms. The byte[] form's element count is
+    /// validated against the blob and every flag against the three values the compiler defines.
+    /// </summary>
+    private static bool TryReadNullableFlags(
+        MetadataReader reader,
+        ContractSignatureProvider provider,
+        CustomAttributeHandleCollection attributes,
+        string owner,
+        out byte single,
+        out ImmutableArray<byte>? explicitFlags
+    )
+    {
+        const string AttributeName = "NullableAttribute";
+
+        single = 0;
+        explicitFlags = null;
+
+        foreach (CustomAttributeHandle handle in attributes)
+        {
+            CustomAttribute attribute = reader.GetCustomAttribute(handle);
+
+            if (!TryGetAttributeTypeName(reader, attribute, out string attributeNamespace, out string name))
+            {
+                continue;
+            }
+
+            if (attributeNamespace != "System.Runtime.CompilerServices" || name != AttributeName)
+            {
+                continue;
+            }
+
+            ImmutableArray<string> parameterTypes = AttributeConstructorParameterTypes(
+                reader,
+                provider,
+                attribute,
+                AttributeName,
+                owner
+            );
+
+            if (
+                parameterTypes.Length != 1
+                || (parameterTypes[0] != "System.Byte" && parameterTypes[0] != "System.Byte[]")
+            )
+            {
+                throw new BadImageFormatException(
+                    $"{AttributeName} on {owner} has constructor ({string.Join(", ", parameterTypes)}); this reader supports the byte and byte[] forms."
+                );
+            }
+
+            BlobReader blob = ReadAttributeProlog(reader, attribute, AttributeName, owner);
+
+            if (parameterTypes[0] == "System.Byte")
+            {
+                RequireArgumentBytes(ref blob, sizeof(byte), AttributeName, owner);
+                single = RequireNullableFlag(blob.ReadByte(), AttributeName, owner);
+                RequireNoNamedArguments(ref blob, AttributeName, owner);
+
+                return true;
+            }
+
+            // The array form: a 32-bit element count, then one byte per position. 0xFFFFFFFF is
+            // how a null array is encoded, and a null array is not an annotation.
+            RequireArgumentBytes(ref blob, sizeof(uint), AttributeName, owner);
+            uint length = blob.ReadUInt32();
+
+            if (length == uint.MaxValue)
+            {
+                throw new BadImageFormatException($"{AttributeName} on {owner} carries a null flag array.");
+            }
+
+            if (length > int.MaxValue || length > (uint)blob.RemainingBytes)
+            {
+                throw new BadImageFormatException(
+                    $"{AttributeName} on {owner} declares {length} flag(s) but only {blob.RemainingBytes} argument byte(s) remain."
+                );
+            }
+
+            ImmutableArray<byte>.Builder flags = ImmutableArray.CreateBuilder<byte>((int)length);
+
+            for (uint index = 0; index < length; index++)
+            {
+                flags.Add(RequireNullableFlag(blob.ReadByte(), AttributeName, owner));
+            }
+
+            RequireNoNamedArguments(ref blob, AttributeName, owner);
+            explicitFlags = flags.MoveToImmutable();
+
+            return true;
+        }
+
+        return false;
+    }
+
+    // 0 (oblivious), 1 (not annotated) and 2 (annotated) are the only values the compiler defines
+    // for a nullability flag; anything else is a corrupt or foreign encoding, not a fourth state.
+    private static byte RequireNullableFlag(byte value, string attributeName, string owner)
+    {
+        if (value > 2)
+        {
+            throw new BadImageFormatException(
+                $"{attributeName} on {owner} carries flag {value}; only 0, 1 and 2 are defined."
+            );
+        }
+
+        return value;
+    }
+
+    /// <summary>
+    /// Appends the nullable-flow attributes found on one row, rendered as a sorted list under the
+    /// given label, or nothing when the row carries none.
+    /// </summary>
+    private static void AppendFlowAttributes(
+        StringBuilder builder,
+        string label,
+        MetadataReader reader,
+        ContractSignatureProvider provider,
+        CustomAttributeHandleCollection? attributes,
+        string owner
+    )
+    {
+        if (attributes is not { } row)
+        {
+            return;
+        }
+
+        string rendered = DescribeFlowAttributes(reader, provider, row, owner);
+
+        if (rendered.Length > 0)
+        {
+            builder.Append(label).Append(rendered);
+        }
+    }
+
+    /// <summary>
+    /// The System.Diagnostics.CodeAnalysis nullable-flow attributes on one row, as
+    /// <c>[Name,Name:value,...]</c> sorted ordinally, or an empty string.
+    /// </summary>
+    /// <remarks>
+    /// Each of these constructors takes nothing, one bool or one string, and that is checked
+    /// against the constructor's own signature before the blob is read; another shape, a bool
+    /// that is not 0 or 1, a null string or named arguments are refused. These attributes are
+    /// written explicitly in source and the compiler never elides or relocates them, so their
+    /// rendering cannot differ for one source compiled twice.
+    /// </remarks>
+    private static string DescribeFlowAttributes(
+        MetadataReader reader,
+        ContractSignatureProvider provider,
+        CustomAttributeHandleCollection attributes,
+        string owner
+    )
+    {
+        List<string> rendered = [];
+
+        foreach (CustomAttributeHandle handle in attributes)
+        {
+            CustomAttribute attribute = reader.GetCustomAttribute(handle);
+
+            if (!TryGetAttributeTypeName(reader, attribute, out string attributeNamespace, out string name))
+            {
+                continue;
+            }
+
+            if (attributeNamespace != "System.Diagnostics.CodeAnalysis" || !FlowAttributeNames.Contains(name))
+            {
+                continue;
+            }
+
+            string shortName = name[..^"Attribute".Length];
+            ImmutableArray<string> parameterTypes = AttributeConstructorParameterTypes(
+                reader,
+                provider,
+                attribute,
+                name,
+                owner
+            );
+            BlobReader blob = ReadAttributeProlog(reader, attribute, name, owner);
+            string value;
+
+            switch (parameterTypes.Length)
+            {
+                case 0:
+                    value = string.Empty;
+
+                    break;
+
+                case 1 when parameterTypes[0] == "System.Boolean":
+                    RequireArgumentBytes(ref blob, sizeof(byte), name, owner);
+                    value = blob.ReadByte() switch
+                    {
+                        0 => "false",
+                        1 => "true",
+                        byte other => throw new BadImageFormatException(
+                            $"{name} on {owner} carries boolean value {other}; only 0 and 1 are defined."
+                        ),
+                    };
+
+                    break;
+
+                case 1 when parameterTypes[0] == "System.String":
+                    RequireArgumentBytes(ref blob, sizeof(byte), name, owner);
+                    value =
+                        blob.ReadSerializedString()
+                        ?? throw new BadImageFormatException(
+                            $"{name} on {owner} carries a null string argument."
+                        );
+
+                    break;
+
+                default:
+                    throw new BadImageFormatException(
+                        $"{name} on {owner} has constructor ({string.Join(", ", parameterTypes)}); this reader supports (), (bool) and (string)."
+                    );
+            }
+
+            RequireNoNamedArguments(ref blob, name, owner);
+            rendered.Add(value.Length == 0 ? shortName : shortName + ":" + value);
+        }
+
+        if (rendered.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        rendered.Sort(StringComparer.Ordinal);
+
+        return "[" + string.Join(",", rendered) + "]";
     }
 
     private static string DescribeGenericParameters(
@@ -810,11 +1650,16 @@ public static class ContractSurfaceReader
         return false;
     }
 
+    // FamANDAssem (private protected) is admitted only when abstract: see the file header. The
+    // accessibility rendering below names it, so a member that moves between private protected
+    // abstract and protected abstract is a change too.
     private static bool IsVisible(MethodAttributes attributes) =>
-        (attributes & MethodAttributes.MemberAccessMask)
-            is MethodAttributes.Public
-                or MethodAttributes.Family
-                or MethodAttributes.FamORAssem;
+        (attributes & MethodAttributes.MemberAccessMask) switch
+        {
+            MethodAttributes.Public or MethodAttributes.Family or MethodAttributes.FamORAssem => true,
+            MethodAttributes.FamANDAssem => attributes.HasFlag(MethodAttributes.Abstract),
+            _ => false,
+        };
 
     private static bool IsVisible(FieldAttributes attributes) =>
         (attributes & FieldAttributes.FieldAccessMask)
@@ -838,6 +1683,7 @@ public static class ContractSurfaceReader
             MethodAttributes.Public => "public",
             MethodAttributes.Family => "protected",
             MethodAttributes.FamORAssem => "protected internal",
+            MethodAttributes.FamANDAssem => "private protected",
             _ => "other",
         };
 
@@ -972,6 +1818,27 @@ public static class ContractSurfaceReader
         }
 
         return names.ToImmutable();
+    }
+
+    // Whether each generic parameter carries the struct constraint (NotNullableValueTypeConstraint,
+    // which `where T : struct` and `where T : unmanaged` both set), in declaration order.
+    private static ImmutableArray<bool> GenericParameterValueTypeFlags(
+        MetadataReader reader,
+        GenericParameterHandleCollection handles
+    )
+    {
+        ImmutableArray<bool>.Builder flags = ImmutableArray.CreateBuilder<bool>(handles.Count);
+
+        foreach (GenericParameterHandle handle in handles)
+        {
+            flags.Add(
+                reader
+                    .GetGenericParameter(handle)
+                    .Attributes.HasFlag(GenericParameterAttributes.NotNullableValueTypeConstraint)
+            );
+        }
+
+        return flags.ToImmutable();
     }
 
     private static void AddAccessor(HashSet<int> accessors, MethodDefinitionHandle handle)
@@ -1247,36 +2114,16 @@ public static class ContractSurfaceReader
     private static IEnumerable<CustomAttributeHandleCollection> ContextAttributeChain(
         MetadataReader reader,
         GenericParameter parameter
-    )
-    {
-        EntityHandle parent = parameter.Parent;
-        TypeDefinitionHandle declaringType = default;
-
-        switch (parent.Kind)
+    ) =>
+        parameter.Parent.Kind switch
         {
-            case HandleKind.MethodDefinition:
-                MethodDefinition method = reader.GetMethodDefinition((MethodDefinitionHandle)parent);
-                yield return method.GetCustomAttributes();
-                declaringType = method.GetDeclaringType();
-
-                break;
-
-            case HandleKind.TypeDefinition:
-                declaringType = (TypeDefinitionHandle)parent;
-
-                break;
-
-            default:
-                yield break;
-        }
-
-        while (!declaringType.IsNil)
-        {
-            TypeDefinition type = reader.GetTypeDefinition(declaringType);
-            yield return type.GetCustomAttributes();
-            declaringType = type.GetDeclaringType();
-        }
-    }
+            HandleKind.MethodDefinition => ContextChainForMethod(
+                reader,
+                (MethodDefinitionHandle)parameter.Parent
+            ),
+            HandleKind.TypeDefinition => ContextChainForType(reader, (TypeDefinitionHandle)parameter.Parent),
+            _ => [],
+        };
 
     private static bool TryReadNullableByte(
         MetadataReader reader,
@@ -1337,7 +2184,7 @@ public static class ContractSurfaceReader
 
             BlobReader blob = ReadAttributeProlog(reader, attribute, attributeName, owner);
             RequireArgumentBytes(ref blob, sizeof(byte), attributeName, owner);
-            value = blob.ReadByte();
+            value = RequireNullableFlag(blob.ReadByte(), attributeName, owner);
             RequireNoNamedArguments(ref blob, attributeName, owner);
 
             return true;

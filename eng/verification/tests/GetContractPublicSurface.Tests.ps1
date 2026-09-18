@@ -786,3 +786,463 @@ Describe "Get-ContractPublicSurface ignores what an implementer cannot bind to" 
             Should -BeFalse
     }
 }
+
+Describe "Get-ContractPublicSurface nullability" {
+    # A consumer building with warnings as errors, which both scratch consumers in this repository
+    # do, stops compiling when a parameter it passes null to becomes non-nullable or a value it
+    # dereferences becomes nullable. Both directions are a changed contract at an unchanged version.
+    It "sees a parameter changed from string to string?" {
+        Test-SurfaceChange -Namespace "ParamNullable" `
+            -Before '    public class Contract { public void Apply(string value) { } }' `
+            -After '    public class Contract { public void Apply(string? value) { } }' |
+            Should -BeTrue
+    }
+
+    It "sees a parameter changed from string? to string" {
+        Test-SurfaceChange -Namespace "ParamNotNullable" `
+            -Before '    public class Contract { public void Apply(string? value) { } }' `
+            -After '    public class Contract { public void Apply(string value) { } }' |
+            Should -BeTrue
+    }
+
+    It "sees a return type changed from string? to string" {
+        Test-SurfaceChange -Namespace "ReturnNullable" `
+            -Before '    public class Contract { public string? Read() => null; }' `
+            -After '    public class Contract { public string Read() => ""; }' |
+            Should -BeTrue
+    }
+
+    It "sees a property type changed from string to string?" {
+        Test-SurfaceChange -Namespace "PropertyNullable" `
+            -Before '    public class Contract { public string Name { get; set; } = ""; }' `
+            -After '    public class Contract { public string? Name { get; set; } }' |
+            Should -BeTrue
+    }
+
+    It "sees a field type changed from string to string?" {
+        Test-SurfaceChange -Namespace "FieldNullable" `
+            -Before '    public class Contract { public string Name = ""; }' `
+            -After '    public class Contract { public string? Name; }' |
+            Should -BeTrue
+    }
+
+    It "sees an event's delegate argument nullability changed" {
+        Test-SurfaceChange -Namespace "EventNullable" `
+            -Before '    public class Contract { public event Action<string?>? Changed; }' `
+            -After '    public class Contract { public event Action<string>? Changed; }' |
+            Should -BeTrue
+    }
+
+    It "sees an indexer parameter changed from string? to string" {
+        Test-SurfaceChange -Namespace "IndexerNullable" `
+            -Before '    public class Contract { public string this[string? key] => ""; }' `
+            -After '    public class Contract { public string this[string key] => ""; }' |
+            Should -BeTrue
+    }
+
+    # The compiler encodes these as a byte[] with one entry per position, so the outer type and
+    # each argument are read as separate positions.
+    It "sees a nested generic argument changed from string to string?" {
+        Test-SurfaceChange -Namespace "NestedNullable" `
+            -Before '    public class Contract { public List<string> Items() => new(); }' `
+            -After '    public class Contract { public List<string?> Items() => new(); }' |
+            Should -BeTrue
+    }
+
+    It "sees a reference argument of a generic value type changed" {
+        Test-SurfaceChange -Namespace "MixedNullable" `
+            -Before '    public class Contract { public KeyValuePair<string, int> Pair() => default; }' `
+            -After '    public class Contract { public KeyValuePair<string?, int> Pair() => default; }' |
+            Should -BeTrue
+    }
+
+    It "sees a nullable array of non-nullable elements as different from a non-nullable array of nullable elements" {
+        Test-SurfaceChange -Namespace "ArrayNullable" `
+            -Before '    public class Contract { public string?[] Names() => new string?[0]; }' `
+            -After '    public class Contract { public string[]? Names() => null; }' |
+            Should -BeTrue
+    }
+
+    It "sees T? changed to T on an unconstrained generic parameter" {
+        Test-SurfaceChange -Namespace "GenericParameterNullable" `
+            -Before '    public class Contract<T> { public T? Get() => default; }' `
+            -After '    public class Contract<T> { public T Get() => default!; }' |
+            Should -BeTrue
+    }
+
+    # Which entity carries NullableContext, and whether NullableAttribute is written out or elided,
+    # are compiler packing decisions that private members can change. The same public signatures
+    # must read the same however they were packed, or the skip-when-unchanged policy breaks.
+    It "ignores private members that repack the nullable context around a nested generic signature" {
+        Test-SurfaceChange -Namespace "NestedRepacked" `
+            -Before '    public class Contract { public Dictionary<string, List<string?>> Map(string key) => new(); }' `
+            -After @"
+    public class Contract
+    {
+        public Dictionary<string, List<string?>> Map(string key) => new();
+        private string? Hidden(string? a, string? b) => a;
+        private string? Other(string? a, string? b, string? c) => a;
+        private List<string?>? Third(string? a) => null;
+    }
+"@ | Should -BeFalse
+    }
+
+    It "ignores private members that repack the nullable context around a mixed value and reference signature" {
+        Test-SurfaceChange -Namespace "MixedRepacked" `
+            -Before '    public class Contract { public KeyValuePair<string, int> Pair(int count, string name) => default; }' `
+            -After @"
+    public class Contract
+    {
+        public KeyValuePair<string, int> Pair(int count, string name) => default;
+        private string? Hidden(string? a, string? b) => a;
+        private string? Other(string? a, string? b, string? c) => a;
+    }
+"@ | Should -BeFalse
+    }
+
+    It "ignores private members that repack the nullable context around a value-type-only signature" {
+        Test-SurfaceChange -Namespace "ValueOnlyRepacked" `
+            -Before '    public class Contract { public int Sum(int a, int b) => a + b; public int? Maybe(int? x) => x; }' `
+            -After @"
+    public class Contract
+    {
+        public int Sum(int a, int b) => a + b;
+        public int? Maybe(int? x) => x;
+        private string? Hidden(string? a, string? b) => a;
+        private string? Other(string? a, string? b, string? c) => a;
+    }
+"@ | Should -BeFalse
+    }
+
+    It "reads explicit and elided annotations of one signature as the same" {
+        # The single public method reads string -> string. Alone, its annotations equal the type's
+        # context and are elided; beside members whose annotations outnumber it, the type's context
+        # flips and the compiler writes the public method's annotations out explicitly.
+        Test-SurfaceChange -Namespace "ExplicitVersusElided" `
+            -Before '    public class Contract { public string Name(string s) => s; }' `
+            -After @"
+    public class Contract
+    {
+        public string Name(string s) => s;
+        private string? A(string? o) => o;
+        private string? B(string? o) => o;
+        private string? C(string? o) => o;
+    }
+"@ | Should -BeFalse
+    }
+
+    # A generic value type keeps its fixed-zero slot even when nothing inside it is annotatable:
+    # the compiler writes [2,0,2] for both of these, so a shape that dropped the slot would refuse
+    # valid metadata as a length mismatch.
+    It "keeps a nested all-value tuple argument's slot" {
+        $surface = Get-FixtureSurface -Namespace "NestedTupleSlot" `
+            -Body '    public class Contract { public Dictionary<(int, int), string?>? Map() => null; }'
+
+        ($surface -join "`n").Contains('nullable=[2,0,2]', [System.StringComparison]::Ordinal) | Should -BeTrue
+    }
+
+    It "keeps a nested all-value generic struct argument's slot" {
+        $surface = Get-FixtureSurface -Namespace "NestedStructSlot" `
+            -Body '    public class Contract { public Dictionary<KeyValuePair<int, int>, string?>? Map() => null; }'
+
+        ($surface -join "`n").Contains('nullable=[2,0,2]', [System.StringComparison]::Ordinal) | Should -BeTrue
+    }
+
+    It "ignores private members that repack the context around a bare all-value generic struct" {
+        Test-SurfaceChange -Namespace "BareStructRepacked" `
+            -Before '    public class Contract { public KeyValuePair<int, int> Pair() => default; }' `
+            -After @"
+    public class Contract
+    {
+        public KeyValuePair<int, int> Pair() => default;
+        private string? Hidden(string? a, string? b) => a;
+        private string? Other(string? a, string? b, string? c) => a;
+    }
+"@ | Should -BeFalse
+    }
+
+    # A struct-constrained generic parameter is a value type to the compiler and gets a fixed 0
+    # where an unconstrained one is annotatable: List<T>? is [2,0] under `where T : struct` and
+    # [2,1] without the constraint.
+    It "reads a struct-constrained generic parameter as a fixed-zero position" {
+        $surface = Get-FixtureSurface -Namespace "StructConstrainedSlot" `
+            -Body '    public class Contract { public List<T>? Items<T>() where T : struct => null; }'
+
+        ($surface -join "`n").Contains('nullable=[2,0]', [System.StringComparison]::Ordinal) | Should -BeTrue
+    }
+
+    It "reads an unconstrained generic parameter as an annotatable position" {
+        $surface = Get-FixtureSurface -Namespace "UnconstrainedSlot" `
+            -Body '    public class Contract { public List<T>? Items<T>() => null; }'
+
+        ($surface -join "`n").Contains('nullable=[2,1]', [System.StringComparison]::Ordinal) | Should -BeTrue
+    }
+
+    It "ignores private members that repack the context around a struct-constrained identity signature" {
+        Test-SurfaceChange -Namespace "StructConstrainedRepacked" `
+            -Before '    public class Contract { public T Echo<T>(T value) where T : struct => value; }' `
+            -After @"
+    public class Contract
+    {
+        public T Echo<T>(T value) where T : struct => value;
+        private string? Hidden(string? a, string? b) => a;
+        private string? Other(string? a, string? b, string? c) => a;
+    }
+"@ | Should -BeFalse
+    }
+
+    # The property row's annotation is governed by the type's context, not the accessor's: this
+    # getter chooses context 2 for its nullable index parameters and writes an explicit 1 on its
+    # return row, while the property type stays a non-nullable string under the type's context 1.
+    It "resolves an indexer's property type against the type context, not the getter's" {
+        $surface = Get-FixtureSurface -Namespace "IndexerTypeContext" -Body @"
+    public class Contract
+    {
+        public string Name(string a, string b, string c) => a;
+        public string Other(string a, string b, string c) => a;
+        public string this[string? a, string? b, string? c] => "";
+    }
+"@
+
+        ($surface -join "`n").Contains(
+            'PROPERTY IndexerTypeContext.Contract.Item[System.String a nullable=[2], System.String b nullable=[2], System.String c nullable=[2]] : System.String nullable=[1]',
+            [System.StringComparison]::Ordinal
+        ) | Should -BeTrue
+    }
+
+    It "sees that indexer's property type changed to string?" {
+        Test-SurfaceChange -Namespace "IndexerTypeChanged" `
+            -Before @"
+    public class Contract
+    {
+        public string Name(string a, string b, string c) => a;
+        public string Other(string a, string b, string c) => a;
+        public string this[string? a, string? b, string? c] => "";
+    }
+"@ `
+            -After @"
+    public class Contract
+    {
+        public string Name(string a, string b, string c) => a;
+        public string Other(string a, string b, string c) => a;
+        public string? this[string? a, string? b, string? c] => null;
+    }
+"@ | Should -BeTrue
+    }
+
+    It "ignores private members that repack the context around an unchanged property" {
+        Test-SurfaceChange -Namespace "PropertyRepacked" `
+            -Before '    public class Contract { public string Name { get; set; } = ""; public string? Label { get; set; } }' `
+            -After @"
+    public class Contract
+    {
+        public string Name { get; set; } = "";
+        public string? Label { get; set; }
+        private string? Hidden(string? a, string? b) => a;
+        private string? Other(string? a, string? b, string? c) => a;
+        private string? Third(string? a, string? b, string? c) => a;
+    }
+"@ | Should -BeFalse
+    }
+
+    It "renders the vector with one entry per position" {
+        $surface = Get-FixtureSurface -Namespace "VectorRendered" `
+            -Body '    public class Contract { public Dictionary<string, List<string?>> Map(int count, string? name) => new(); }'
+
+        # Contains rather than -like: brackets are wildcard classes to -like, and the backtick in
+        # the arity suffix is its escape character.
+        ($surface -join "`n").Contains(
+            'METHOD VectorRendered.Contract.Map`0(System.Int32 count nullable=[], System.String name nullable=[2]) : System.Collections.Generic.Dictionary`2<System.String,System.Collections.Generic.List`1<System.String>> nullable=[1,1,1,2] accessibility=public',
+            [System.StringComparison]::Ordinal
+        ) | Should -BeTrue
+    }
+}
+
+Describe "Get-ContractPublicSurface nullable-flow attributes" {
+    It "sees [AllowNull] added to a property, on the setter's value parameter" {
+        Test-SurfaceChange -Namespace "AllowNullAdded" `
+            -Before '    public class Contract { public string Name { get; set; } = ""; }' `
+            -After '    public class Contract { [System.Diagnostics.CodeAnalysis.AllowNull] public string Name { get; set; } = ""; }' |
+            Should -BeTrue
+    }
+
+    It "sees [NotNullWhen(true)] changed to [NotNullWhen(false)]" {
+        Test-SurfaceChange -Namespace "NotNullWhenChanged" `
+            -Before '    public class Contract { public bool Try([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out string? value) { value = ""; return true; } }' `
+            -After '    public class Contract { public bool Try([System.Diagnostics.CodeAnalysis.NotNullWhen(false)] out string? value) { value = ""; return true; } }' |
+            Should -BeTrue
+    }
+
+    # [NotNull] on the getter's return promises the consumer a value; [NotNull] on the setter's
+    # value demands one of them. The same attribute on the other accessor is a different contract,
+    # so the two rows are rendered under different labels rather than merged.
+    It "distinguishes the same annotation on the getter's return from the setter's value" {
+        Test-SurfaceChange -Namespace "AccessorRoles" `
+            -Before '    public class Contract { public string? Name { [return: System.Diagnostics.CodeAnalysis.NotNull] get => ""; set { } } }' `
+            -After '    public class Contract { public string? Name { get => ""; [param: System.Diagnostics.CodeAnalysis.NotNull] set { } } }' |
+            Should -BeTrue
+    }
+
+    It "renders accessor annotations under their own labels" {
+        $surface = Get-FixtureSurface -Namespace "AccessorLabels" `
+            -Body '    public class Contract { public string? Name { [return: System.Diagnostics.CodeAnalysis.NotNull] get => ""; [param: System.Diagnostics.CodeAnalysis.AllowNull] set { } } }'
+
+        ($surface -join "`n").Contains(
+            'PROPERTY AccessorLabels.Contract.Name : System.String nullable=[2] get=public:none set=public:none setkind=set getattrs=[NotNull] setattrs=[AllowNull]',
+            [System.StringComparison]::Ordinal
+        ) | Should -BeTrue
+    }
+
+    It "sees [DoesNotReturn] added to a method" {
+        Test-SurfaceChange -Namespace "DoesNotReturnAdded" `
+            -Before '    public class Contract { public void Fail() { } }' `
+            -After '    public class Contract { [System.Diagnostics.CodeAnalysis.DoesNotReturn] public void Fail() => throw new Exception(); }' |
+            Should -BeTrue
+    }
+
+    It "sees [NotNullIfNotNull] renamed to another parameter" {
+        Test-SurfaceChange -Namespace "NotNullIfNotNullChanged" `
+            -Before '    public class Contract { [return: System.Diagnostics.CodeAnalysis.NotNullIfNotNull("first")] public string? Pick(string? first, string? second) => first; }' `
+            -After '    public class Contract { [return: System.Diagnostics.CodeAnalysis.NotNullIfNotNull("second")] public string? Pick(string? first, string? second) => second; }' |
+            Should -BeTrue
+    }
+}
+
+Describe "Get-ContractPublicSurface hierarchy closure" {
+    # An abstract private protected member cannot be satisfied outside the assembly, so it closes
+    # the hierarchy to every external deriver. Adding one turns a derivable abstract type into a
+    # closed one, and removing one opens it, at an unchanged version either way.
+    It "sees an abstract private protected member added" {
+        Test-SurfaceChange -Namespace "ClosureAdded" `
+            -Before '    public abstract class Contract { public abstract void Apply(); }' `
+            -After '    public abstract class Contract { public abstract void Apply(); private protected abstract void Close(); }' |
+            Should -BeTrue
+    }
+
+    It "sees an abstract private protected member removed" {
+        Test-SurfaceChange -Namespace "ClosureRemoved" `
+            -Before '    public abstract class Contract { public abstract void Apply(); private protected abstract void Close(); }' `
+            -After '    public abstract class Contract { public abstract void Apply(); }' |
+            Should -BeTrue
+    }
+
+    It "renders the closing member as private protected and abstract" {
+        $surface = Get-FixtureSurface -Namespace "ClosureRendered" `
+            -Body '    public abstract class Contract { private protected abstract void Close(); }'
+
+        ($surface -join "`n").Contains(
+            'METHOD ClosureRendered.Contract.Close`0() : System.Void nullable=[] accessibility=private protected modifiers=abstract,virtual',
+            [System.StringComparison]::Ordinal
+        ) | Should -BeTrue
+    }
+
+    It "still ignores a non-abstract private protected member" {
+        Test-SurfaceChange -Namespace "PrivateProtectedConcrete" `
+            -Before '    public abstract class Contract { public abstract void Apply(); }' `
+            -After '    public abstract class Contract { public abstract void Apply(); private protected void Hook() { } private protected virtual void Extend() { } }' |
+            Should -BeFalse
+    }
+
+    It "reads the custom-validation contract's own closing member" {
+        $customValidation = Join-Path $script:repositoryRoot "src/dms/core/EdFi.DataManagementService.CustomValidation/bin/Release/net10.0/EdFi.DataManagementService.CustomValidation.dll"
+
+        if (-not (Test-Path -LiteralPath $customValidation)) {
+            Set-ItResult -Inconclusive -Because "the custom-validation contract has not been built in Release; run ./build-dms.ps1 -Command Build -Configuration Release"
+        }
+
+        $surface = [string[]] @(& $script:reader -AssemblyPath $customValidation)
+
+        ($surface -join "`n").Contains(
+            'METHOD EdFi.DataManagementService.CustomValidation.CustomValidationFailure.EnsureClosed`0() : System.Void nullable=[] accessibility=private protected modifiers=abstract,virtual',
+            [System.StringComparison]::Ordinal
+        ) | Should -BeTrue
+    }
+}
+
+Describe "Get-ContractPublicSurface refuses malformed nullability metadata" {
+    # Compiles a fixture whose one public member carries a NullableAttribute in the byte[] form
+    # with a distinctive flag sequence, then corrupts one byte of that blob. Dictionary<string,
+    # List<string?>> is [1,1,1,2]: the blob is prolog 01 00, count 04 00 00 00, flags 01 01 01 02,
+    # named-argument count 00 00.
+    BeforeAll {
+        function New-CorruptedNullableFixture {
+            [CmdletBinding(SupportsShouldProcess)]
+            [OutputType([string])]
+            param(
+                [Parameter(Mandatory)][string] $Namespace,
+                [Parameter(Mandatory)][int] $Offset,
+                [Parameter(Mandatory)][byte] $Value
+            )
+
+            $path = Join-Path $script:fixtureRoot "$Namespace-corrupt-$([guid]::NewGuid().ToString('N')).dll"
+
+            if (-not $PSCmdlet.ShouldProcess($path, "Corrupt fixture")) {
+                return $null
+            }
+
+            Add-Type -OutputAssembly $path -OutputType Library -TypeDefinition @"
+#nullable enable
+using System.Collections.Generic;
+namespace $Namespace
+{
+    public class Contract
+    {
+        public Dictionary<string, List<string?>> Map() => new();
+    }
+}
+"@
+
+            $anchor = [byte[]] @(0x01, 0x00, 0x04, 0x00, 0x00, 0x00, 0x01, 0x01, 0x01, 0x02, 0x00, 0x00)
+            $bytes = [System.IO.File]::ReadAllBytes($path)
+            $blobMatches = @()
+
+            for ($index = 0; $index -le $bytes.Length - $anchor.Length; $index++) {
+                $found = $true
+
+                for ($position = 0; $position -lt $anchor.Length; $position++) {
+                    if ($bytes[$index + $position] -ne $anchor[$position]) {
+                        $found = $false
+                        break
+                    }
+                }
+
+                if ($found) {
+                    $blobMatches += $index
+                }
+            }
+
+            if ($blobMatches.Count -ne 1) {
+                throw "Expected exactly one NullableAttribute byte[] blob in the fixture and found $($blobMatches.Count)."
+            }
+
+            $bytes[$blobMatches[0] + $Offset] = $Value
+            [System.IO.File]::WriteAllBytes($path, $bytes)
+
+            return $path
+        }
+    }
+
+    It "reads the uncorrupted fixture as [1,1,1,2]" {
+        $surface = Get-FixtureSurface -Namespace "NullableIntact" -Body '    public class Contract { public Dictionary<string, List<string?>> Map() => new(); }'
+
+        ($surface -join "`n").Contains('nullable=[1,1,1,2]', [System.StringComparison]::Ordinal) | Should -BeTrue
+    }
+
+    It "refuses a byte[] NullableAttribute whose prolog is not 0x0001" {
+        $path = New-CorruptedNullableFixture -Namespace "NullablePrologCorrupt" -Offset 0 -Value 0x02
+
+        { & $script:reader -AssemblyPath $path } | Should -Throw -ExpectedMessage "*prolog*"
+    }
+
+    It "refuses a byte[] NullableAttribute whose declared count exceeds its bytes" {
+        $path = New-CorruptedNullableFixture -Namespace "NullableCountCorrupt" -Offset 2 -Value 0x09
+
+        { & $script:reader -AssemblyPath $path } | Should -Throw -ExpectedMessage "*declares 9 flag(s)*"
+    }
+
+    It "refuses a nullability flag outside 0, 1 and 2" {
+        $path = New-CorruptedNullableFixture -Namespace "NullableFlagCorrupt" -Offset 9 -Value 0x03
+
+        { & $script:reader -AssemblyPath $path } | Should -Throw -ExpectedMessage "*carries flag 3*"
+    }
+}
