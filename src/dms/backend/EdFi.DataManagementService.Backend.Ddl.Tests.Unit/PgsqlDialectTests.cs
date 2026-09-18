@@ -512,6 +512,66 @@ public class Given_PgsqlDialect_Create_Index_If_Not_Exists
 }
 
 [TestFixture]
+public class Given_PgsqlDialect_Create_Filtered_Index_If_Not_Exists
+{
+    private string _ddl = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var dialect = new PgsqlDialect(new PgsqlDialectRules());
+        var table = new DbTableName(new DbSchemaName("dms"), "Document");
+        var columns = new[] { new DbColumnName("CreatedByOwnershipTokenId") };
+        _ddl = dialect.CreateIndexIfNotExists(
+            table,
+            "IX_Document_CreatedByOwnershipTokenId",
+            columns,
+            notNullFilterColumn: new DbColumnName("CreatedByOwnershipTokenId")
+        );
+    }
+
+    [Test]
+    public void It_should_render_the_filtered_index_statement()
+    {
+        _ddl.Should()
+            .Be(
+                "CREATE INDEX IF NOT EXISTS \"IX_Document_CreatedByOwnershipTokenId\" ON \"dms\".\"Document\" (\"CreatedByOwnershipTokenId\") WHERE \"CreatedByOwnershipTokenId\" IS NOT NULL;"
+            );
+    }
+}
+
+[TestFixture]
+public class Given_PgsqlDialect_Create_Index_With_Include_Columns_And_Filter
+{
+    private string _ddl = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var dialect = new PgsqlDialect(new PgsqlDialectRules());
+        var table = new DbTableName(new DbSchemaName("edfi"), "School");
+        var columns = new[] { new DbColumnName("SchoolId") };
+        var includeColumns = new[] { new DbColumnName("LocalEducationAgencyId") };
+        _ddl = dialect.CreateIndexIfNotExists(
+            table,
+            "IX_School_SchoolId",
+            columns,
+            includeColumns: includeColumns,
+            notNullFilterColumn: new DbColumnName("IsActive")
+        );
+    }
+
+    [Test]
+    public void It_should_render_include_before_where_in_that_order()
+    {
+        _ddl.Should()
+            .Be(
+                "CREATE INDEX IF NOT EXISTS \"IX_School_SchoolId\" ON \"edfi\".\"School\" (\"SchoolId\") INCLUDE (\"LocalEducationAgencyId\") WHERE \"IsActive\" IS NOT NULL;"
+            );
+    }
+}
+
+[TestFixture]
 public class Given_PgsqlDialect_Create_Unique_Index_If_Not_Exists
 {
     private string _ddl = default!;
