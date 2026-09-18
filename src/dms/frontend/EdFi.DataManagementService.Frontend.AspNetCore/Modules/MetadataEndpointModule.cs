@@ -268,7 +268,7 @@ public partial class MetadataEndpointModule(IOptions<FrontendAppSettings> appSet
         }
 
         // These routes would otherwise match the fully-qualified discovery route with
-        // "metadata" and, for deeper paths, the endpoint name as route qualifier values. Metadata endpoints
+        // "metadata" and, for deeper paths, the endpoint name as route qualifier values. Metadata endpoints.
         // require all configured route qualifiers, so reserve the tenant-only forms as 404.
         endpoints.MapGet("/{tenant}/metadata", () => Results.NotFound());
         endpoints.MapGet("/{tenant}/metadata/dependencies", () => Results.NotFound());
