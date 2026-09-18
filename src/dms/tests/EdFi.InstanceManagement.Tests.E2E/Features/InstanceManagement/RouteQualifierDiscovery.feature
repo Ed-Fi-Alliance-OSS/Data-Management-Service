@@ -42,6 +42,7 @@ Feature: Route Qualifier Discovery API
 
         Examples:
           | metadataPath                             |
+          | Tenant_255901/metadata                    |
           | Tenant_255901/metadata/dependencies       |
           | Tenant_255901/metadata/specifications     |
 
