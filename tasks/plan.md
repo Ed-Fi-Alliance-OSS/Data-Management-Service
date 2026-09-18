@@ -1,5 +1,12 @@
 # Implementation Plan: Authorize and Authenticate `/connect/revoke`
 
+> **Checkbox legend**
+> `- [ ]` not done &nbsp;·&nbsp; `- [x]` done and verified &nbsp;·&nbsp; `- [~]` **partially met** —
+> the intent is satisfied by a documented substitute rather than as literally written (typically a
+> manual/curl step that needed a running service, covered by an automated test instead, or a
+> PR-description step the implementation agent could not perform). Every `[~]` item names its
+> substitute inline.
+
 ## Overview
 
 `POST /connect/revoke` (`IdentityModule.RevokeToken`,

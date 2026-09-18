@@ -214,7 +214,7 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Extensions
         /// </summary>
         public static string? GetClientId(this ClaimsPrincipal principal)
         {
-            return principal.FindFirst("client_id")?.Value;
+            return principal.FindFirst(DataModel.SecurityConstants.ClientIdClaimType)?.Value;
         }
 
         /// <summary>

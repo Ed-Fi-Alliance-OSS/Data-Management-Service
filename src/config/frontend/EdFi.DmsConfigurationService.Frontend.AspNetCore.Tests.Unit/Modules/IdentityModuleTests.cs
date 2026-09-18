@@ -1316,6 +1316,14 @@ public class OAuthEndpointErrorTests
 /// against a faked token repository, so the route's authorization requirement, the caller-claim
 /// wiring, the target token's signature verification and the ownership decision are all exercised
 /// together. Non-fixture container; the runnable fixtures are the nested <c>Given_…</c> classes.
+///
+/// Note the test-double strategy differs from the rest of this file. Elsewhere
+/// <c>IdentityModuleTests</c> fakes <see cref="ITokenManager"/> outright, which is right when the
+/// assertion is about the HTTP contract. Here it would defeat the point: a faked manager would
+/// have to re-implement the ownership rule to answer, so the tests would assert against the fake
+/// rather than the production decision. Registering the real manager over a faked
+/// <see cref="IOpenIddictTokenRepository"/> keeps the signature verification and ownership
+/// comparison genuine while still letting the repository call be observed.
 /// </summary>
 public class RevocationOwnershipTests
 {
@@ -1503,6 +1511,54 @@ public class RevocationOwnershipTests
         [Test]
         public void It_revokes_its_own_token() =>
             A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti)).MustHaveHappenedOnceExactly();
+    }
+
+    /// <summary>
+    /// Arms the canary above. That fixture only means something if <c>X-Test-OmitRoleClaim</c>
+    /// genuinely suppresses the role claim — if the header were misspelled or silently ignored,
+    /// the canary would keep passing while testing nothing. This fixture drives the same header
+    /// against a route that really is gated by <c>SecurityConstants.ServicePolicy</c>
+    /// (<c>MapSecuredGet</c> on <c>/v3/vendors</c>) and observes the contrast: the role-less
+    /// caller is rejected, the role-bearing one is not. Without that contrast the canary's
+    /// precondition would be a comment rather than an observation.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_role_claim_is_omitted_at_a_service_policy_route
+    {
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpResponseMessage _roleLessResponse = null!;
+        private HttpResponseMessage _roleBearingResponse = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.ConfigureServices(collection => collection.AddTestAuthentication());
+            });
+
+            using var roleLessClient = _factory.CreateClient();
+            roleLessClient.DefaultRequestHeaders.Add("X-Test-Scope", AuthorizationScopes.AdminScope.Name);
+            roleLessClient.DefaultRequestHeaders.Add(TestAuthHandler.OmitRoleClaimHeaderName, "true");
+            _roleLessResponse = await roleLessClient.GetAsync("/v3/vendors?offset=0&limit=25");
+
+            // The same request through the same harness, with only the opt-out header removed.
+            using var roleBearingClient = _factory.CreateClient();
+            roleBearingClient.DefaultRequestHeaders.Add("X-Test-Scope", AuthorizationScopes.AdminScope.Name);
+            _roleBearingResponse = await roleBearingClient.GetAsync("/v3/vendors?offset=0&limit=25");
+        }
+
+        [TearDown]
+        public void TearDown() => _factory?.Dispose();
+
+        [Test]
+        public void It_rejects_the_role_less_caller() =>
+            _roleLessResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+        [Test]
+        public void It_does_not_reject_the_same_caller_when_the_role_claim_is_present() =>
+            _roleBearingResponse.StatusCode.Should().NotBe(HttpStatusCode.Forbidden);
     }
 
     [TestFixture]
@@ -1704,5 +1760,74 @@ public class IdentityProviderErrorParsingTests
         [Test]
         public void It_does_not_leak_the_partial_error_description() =>
             _content.Should().NotContain("Realm does not exist");
+    }
+}
+
+/// <summary>
+/// Regression guard for the blast radius of adding <c>RequireAuthorization()</c> to
+/// <c>/connect/revoke</c>. Its three sibling endpoints must stay anonymous: <c>/connect/token</c>
+/// in particular cannot require a bearer token, since it is where a bearer token comes from —
+/// requiring one would be unrecoverable for every client. The existing tests for these routes
+/// never install an authentication scheme at all, so none of them would notice an authorization
+/// requirement leaking onto a shared route group. These drive the same <c>AddTestAuthentication</c>
+/// harness that revoke now uses, with no credentials presented, and assert the responses are
+/// whatever each endpoint normally says — but never 401.
+/// Non-fixture container; the runnable fixture is the nested <c>Given_…</c> class.
+/// </summary>
+public class TokenEndpointAnonymityTests
+{
+    [TestFixture]
+    public class Given_an_unauthenticated_request_to_the_sibling_token_endpoints
+    {
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _registerResponse = null!;
+        private HttpResponseMessage _tokenResponse = null!;
+        private HttpResponseMessage _introspectResponse = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.ConfigureServices(collection => collection.AddTestAuthentication());
+            });
+
+            // No Authorization header and no X-Test-Scope, so the harness authenticates nobody.
+            _client = _factory.CreateClient();
+
+            _registerResponse = await _client.PostAsync(
+                "/connect/register",
+                new FormUrlEncodedContent(Array.Empty<KeyValuePair<string, string>>())
+            );
+            _tokenResponse = await _client.PostAsync(
+                "/connect/token",
+                new FormUrlEncodedContent(Array.Empty<KeyValuePair<string, string>>())
+            );
+            _introspectResponse = await _client.PostAsync(
+                "/connect/introspect",
+                new FormUrlEncodedContent(Array.Empty<KeyValuePair<string, string>>())
+            );
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _client?.Dispose();
+            _factory?.Dispose();
+        }
+
+        [Test]
+        public void It_does_not_require_authentication_for_register() =>
+            _registerResponse.StatusCode.Should().NotBe(HttpStatusCode.Unauthorized);
+
+        [Test]
+        public void It_does_not_require_authentication_for_token() =>
+            _tokenResponse.StatusCode.Should().NotBe(HttpStatusCode.Unauthorized);
+
+        [Test]
+        public void It_does_not_require_authentication_for_introspect() =>
+            _introspectResponse.StatusCode.Should().NotBe(HttpStatusCode.Unauthorized);
     }
 }
