@@ -100,6 +100,12 @@ api-schema-tools ddl provision \
 bounds DDL execution. For SQL Server, provisioning configures Read Committed Snapshot
 Isolation (and `ALLOW_SNAPSHOT_ISOLATION`) on newly created databases.
 
+`IX_Document_CreatedByOwnershipTokenId` is a filtered index, so SQL Server requires the indexed-view SET option set (`ANSI_NULLS`, `ANSI_PADDING`, `ANSI_WARNINGS`, `ARITHABORT`, `CONCAT_NULL_YIELDS_NULL`, `QUOTED_IDENTIFIER` ON; `NUMERIC_ROUNDABORT` OFF) for the provisioning session and for every session that writes `dms.Document`.
+At compatibility level 90 or above, `ANSI_WARNINGS` ON implies `ARITHABORT` ON for this purpose, so `Microsoft.Data.SqlClient` sessions, which open with `ARITHABORT` OFF, are fine.
+`DBCC USEROPTIONS` omits `arithabort` from its output unless a session has explicitly set it ON, so it will not show the option is satisfied even when it is.
+`QUOTED_IDENTIFIER` is the one that commonly differs in practice: go-sqlcmd and `Microsoft.Data.SqlClient` default it ON, but ODBC `sqlcmd` needs `-I` to match.
+A write against `dms.Document` under the wrong options fails with `Msg 1934`; a read raises nothing and silently stops using the index.
+
 ### Always-provisioned DocumentCache inventory
 
 Full relational provisioning always creates the fixed `dms` inventory needed by the
