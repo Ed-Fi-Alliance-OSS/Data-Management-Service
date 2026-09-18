@@ -86,48 +86,59 @@ per-mode branching is needed for this.
 
 ### Phase 1: Foundation — require authentication
 
-- [ ] Task 1: Add authorization requirement to the route
-- [ ] Task 2: Make the test auth harness support a configurable caller `client_id`
+- [x] Task 1: Add authorization requirement to the route
+- [x] Task 2: Make the test auth harness support a configurable caller `client_id`
 
 **Checkpoint: Foundation**
-- [ ] Build succeeds
-- [ ] Full existing test suite still passes except the anonymous-`RevokeToken` tests, which are
+- [x] Build succeeds
+- [x] Full existing test suite still passes except the anonymous-`RevokeToken` tests, which are
       expected to now fail with 401 (to be fixed in Phase 3, not silently skipped)
-- [ ] Manual/curl check: `POST /connect/revoke` with no `Authorization` header returns `401`
+- [~] Manual/curl check: `POST /connect/revoke` with no `Authorization` header returns `401`
+      — no running service was available in the implementation environment; covered instead by
+      `IdentityModuleTests.Given_a_revocation_request_with_a_token_from_an_unauthenticated_caller`,
+      which asserts `401`
 
 ### Phase 2: Core feature — client_id ownership validation
 
-- [ ] Task 3: Verify the target token's signature and enforce `client_id` ownership in the token manager
-- [ ] Task 4: Wire the caller's `client_id` from the authenticated principal into the handler
+- [x] Task 3: Verify the target token's signature and enforce `client_id` ownership in the token manager
+- [x] Task 4: Wire the caller's `client_id` from the authenticated principal into the handler
 
 **Checkpoint: Core feature**
-- [ ] Build succeeds
-- [ ] Manual/curl check, self-contained mode: token issued to client A, revoke call authenticated as
+- [x] Build succeeds
+- [~] Manual/curl check, self-contained mode: token issued to client A, revoke call authenticated as
       client A → `200 OK`, token subsequently rejected as revoked
-- [ ] Manual/curl check, self-contained mode: token issued to client A, revoke call authenticated as
+      — no running service was available; covered instead by
+      `RevocationOwnershipTests.Given_a_revocation_request_for_a_token_the_caller_owns`
+      (200 OK plus the repository revocation call)
+- [~] Manual/curl check, self-contained mode: token issued to client A, revoke call authenticated as
       client B → `200 OK`, but token is still valid afterward (not revoked)
+      — covered instead by
+      `RevocationOwnershipTests.Given_a_revocation_request_for_a_token_owned_by_another_client`
+      (200 OK, repository revocation asserted not called)
 
 ### Phase 3: Tests
 
-- [ ] Task 5: Update and extend `IdentityModuleTests.cs` for `/connect/revoke`
-- [ ] Task 6: Add/extend unit tests for `OpenIddictTokenManager.RevokeTokenAsync`
+- [x] Task 5: Update and extend `IdentityModuleTests.cs` for `/connect/revoke`
+- [x] Task 6: Add/extend unit tests for `OpenIddictTokenManager.RevokeTokenAsync`
 
 **Checkpoint: Tests**
-- [ ] `dotnet test` passes for the full solution (or the Configuration Service test projects at
+- [x] `dotnet test` passes for the full solution (or the Configuration Service test projects at
       minimum, per repo convention)
-- [ ] No test was deleted or weakened to make it pass — mismatches were fixed by updating expected
+- [x] No test was deleted or weakened to make it pass — mismatches were fixed by updating expected
       behavior, not by removing coverage
 
 ### Phase 4: Documentation
 
-- [ ] Task 7: Document the new auth model for `/connect/revoke`
+- [x] Task 7: Document the new auth model for `/connect/revoke`
 
 **Checkpoint: Complete**
-- [ ] All acceptance criteria above met
-- [ ] `docs/parking-lot.md` exists and is non-empty only if adjacent issues were actually found;
+- [x] All acceptance criteria above met
+- [x] `docs/parking-lot.md` exists and is non-empty only if adjacent issues were actually found;
       otherwise it does not exist
-- [ ] PR description includes the parking-lot reminder (see below) only if the file exists
-- [ ] Ready for human review
+- [x] PR description includes the parking-lot reminder (see below) only if the file exists
+      — not applicable: no adjacent issues were found, so no parking-lot file exists. No PR was
+      opened by the implementation agent.
+- [x] Ready for human review
 
 ## PR Description Requirements
 

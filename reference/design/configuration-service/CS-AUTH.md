@@ -22,14 +22,40 @@ role defined in `IdentitySettings:ConfigServiceRole`.
 
 The CMS exposes standard OAuth 2.0 endpoints:
 
-| Endpoint | Purpose |
-|---|---|
-| `POST /connect/token` | Issue an access token (client credentials grant only) |
-| `POST /connect/introspect` | Introspect a token (RFC 7662) |
-| `POST /connect/revoke` | Revoke a token (RFC 7009) |
+| Endpoint | Purpose | Caller authentication |
+|---|---|---|
+| `POST /connect/token` | Issue an access token (client credentials grant only) | Anonymous (client credentials in the request) |
+| `POST /connect/introspect` | Introspect a token (RFC 7662) | Anonymous |
+| `POST /connect/revoke` | Revoke a token (RFC 7009) | Required — `Authorization: Bearer <token>` |
 
 In `self-contained` mode, `/connect/token` also accepts credentials via HTTP
 Basic authentication in addition to the form body.
+
+### Revocation Is Authenticated and Ownership-Checked
+
+`POST /connect/revoke` requires an authenticated caller. The requirement is a
+bare "must be authenticated" check, not one of the scope or role policies below:
+an ordinary client-credentials token issued by `/connect/token` does not carry
+the `IdentitySettings:ConfigServiceRole` claim that `SecurityConstants.ServicePolicy`
+demands, so requiring that policy would stop clients from revoking their own
+tokens. A request with no `Authorization` header, or with an invalid or expired
+bearer token, returns `401 Unauthorized`.
+
+A caller may only revoke a token that belongs to it. The token named in the
+`token` form field is first verified for signature, issuer and audience, and its
+`client_id` claim is then compared to the `client_id` claim of the caller's own
+bearer token. Verification comes first on purpose: trusting an unverified
+`client_id` would let a caller forge a token naming itself while embedding
+another client's `jti`.
+
+When the token cannot be verified, carries no `client_id`, or belongs to a
+different client, nothing is revoked and the response is still `200 OK`. Per
+RFC 7009 this is indistinguishable from revoking an unknown token, so the
+response reveals nothing about whether the token exists or who owns it. Only a
+missing `token` form field returns `400 Bad Request`.
+
+The `client_id` claim name is the same for self-contained and Keycloak-issued
+tokens, so this check needs no per-provider branching.
 
 ## Scopes
 
