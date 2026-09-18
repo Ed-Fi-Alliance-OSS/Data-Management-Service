@@ -9,6 +9,7 @@ using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
+using EdFi.DataManagementService.Frontend.AspNetCore.Modules;
 using EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.Content;
 using FakeItEasy;
 using FluentAssertions;
@@ -21,6 +22,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NUnit.Framework;
 using CoreAppSettings = EdFi.DataManagementService.Core.Configuration.AppSettings;
+using FrontendAppSettings = EdFi.DataManagementService.Frontend.AspNetCore.Configuration.AppSettings;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.Modules;
 
@@ -28,6 +30,397 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.Modules;
 [NonParallelizable]
 public class MetadataModuleTests
 {
+    [TestFixture]
+    public class When_Requesting_Tenant_Only_Metadata_With_Required_Route_Qualifiers
+    {
+        [TestCase("/tenant1/metadata")]
+        [TestCase("/tenant1/metadata/dependencies")]
+        [TestCase("/tenant1/metadata/specifications")]
+        public async Task It_returns_not_found_instead_of_matching_discovery(string requestPath)
+        {
+            // Arrange
+            await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.ConfigureServices(collection =>
+                {
+                    TestMockHelper.AddEssentialMocks(collection);
+                    collection.Configure<FrontendAppSettings>(options =>
+                    {
+                        options.MultiTenancy = true;
+                        options.RouteQualifierSegments = "districtId,schoolYear";
+                    });
+                });
+            });
+            using var client = factory.CreateClient();
+
+            // Act
+            var response = await client.GetAsync(requestPath);
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        }
+    }
+
+    [TestFixture]
+    public class When_Mapping_Qualified_Metadata_Routes
+    {
+        private sealed class RejectingMetadataRouteValidator : IMetadataRouteValidator
+        {
+            public int CallCount { get; private set; }
+
+            public Task<bool> ValidateAsync(
+                HttpContext httpContext,
+                CancellationToken cancellationToken = default
+            )
+            {
+                CallCount++;
+                httpContext.Response.StatusCode = (int)HttpStatusCode.NotFound;
+                return Task.FromResult(false);
+            }
+        }
+
+        [TestCase("/tenant1/255901/2024/metadata")]
+        [TestCase("/tenant1/255901/2024/metadata/dependencies")]
+        [TestCase("/tenant1/255901/2024/metadata/specifications")]
+        [TestCase("/tenant1/255901/2024/metadata/specifications/resources-spec.json")]
+        [TestCase("/tenant1/255901/2024/metadata/specifications/descriptors-spec.json")]
+        [TestCase("/tenant1/255901/2024/metadata/changequeries/v1/swagger.json")]
+        [TestCase("/tenant1/255901/2024/metadata/specifications/discovery-spec.json")]
+        [TestCase("/tenant1/255901/2024/metadata/specifications/profiles/StudentProfile/resources-spec.json")]
+        public async Task It_short_circuits_invalid_qualified_metadata_requests(string requestPath)
+        {
+            // Arrange
+            var metadataRouteValidator = new RejectingMetadataRouteValidator();
+            var apiService = A.Fake<IApiService>();
+            var contentProvider = A.Fake<IContentProvider>();
+
+            await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.ConfigureServices(collection =>
+                {
+                    TestMockHelper.AddEssentialMocks(collection);
+                    collection.AddTransient(_ => apiService);
+                    collection.AddTransient(_ => contentProvider);
+                    collection.AddTransient<IMetadataRouteValidator>(_ => metadataRouteValidator);
+                    collection.Configure<FrontendAppSettings>(options =>
+                    {
+                        options.MultiTenancy = true;
+                        options.RouteQualifierSegments = "districtId,schoolYear";
+                    });
+                });
+            });
+            using var client = factory.CreateClient();
+
+            // Act
+            var response = await client.GetAsync(requestPath);
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            metadataRouteValidator.CallCount.Should().Be(1);
+        }
+
+        [Test]
+        public async Task It_preserves_the_unqualified_metadata_root_without_route_validation()
+        {
+            // Arrange
+            var metadataRouteValidator = new RejectingMetadataRouteValidator();
+            var apiService = A.Fake<IApiService>();
+
+            await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.ConfigureServices(collection =>
+                {
+                    TestMockHelper.AddEssentialMocks(collection);
+                    collection.AddTransient(_ => apiService);
+                    collection.AddTransient<IMetadataRouteValidator>(_ => metadataRouteValidator);
+                    collection.Configure<FrontendAppSettings>(options =>
+                    {
+                        options.MultiTenancy = true;
+                        options.RouteQualifierSegments = "districtId,schoolYear";
+                    });
+                });
+            });
+            using var client = factory.CreateClient();
+
+            // Act
+            var response = await client.GetAsync("/metadata");
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            metadataRouteValidator.CallCount.Should().Be(0);
+        }
+    }
+
+    [TestFixture]
+    public class When_Validating_Qualified_Metadata_Routes
+    {
+        private static IOptions<FrontendAppSettings> RouteOptions(params string[] routeQualifierSegments)
+        {
+            return Options.Create(
+                new FrontendAppSettings
+                {
+                    AuthenticationService = "http://localhost/oauth",
+                    CorrelationIdHeader = "X-Correlation-Id",
+                    Datastore = "postgresql",
+                    RouteQualifierSegments = string.Join(',', routeQualifierSegments),
+                }
+            );
+        }
+
+        private static DataStore DataStoreWithRouteContext(
+            long id,
+            params (string Key, string Value)[] routeContext
+        )
+        {
+            return new DataStore(
+                id,
+                "Test",
+                $"TestInstance{id}",
+                "test-connection-string",
+                routeContext.ToDictionary(
+                    item => new RouteQualifierName(item.Key),
+                    item => new RouteQualifierValue(item.Value)
+                )
+            );
+        }
+
+        [Test]
+        public async Task It_allows_unqualified_metadata_requests()
+        {
+            // Arrange
+            var httpContext = new DefaultHttpContext();
+            var tenantValidator = A.Fake<ITenantValidator>();
+            var dataStoreProvider = A.Fake<IDataStoreProvider>();
+            var validator = new MetadataRouteValidator(tenantValidator, dataStoreProvider, RouteOptions());
+
+            // Act
+            bool result = await validator.ValidateAsync(httpContext);
+
+            // Assert
+            result.Should().BeTrue();
+            A.CallTo(() => tenantValidator.ValidateTenantAsync(A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestCase("tenant", "")]
+        [TestCase("tenant", " ")]
+        [TestCase("tenant", null)]
+        [TestCase("districtId", "")]
+        [TestCase("districtId", " ")]
+        [TestCase("districtId", null)]
+        public async Task It_rejects_present_but_blank_route_values(string key, string? value)
+        {
+            var httpContext = new DefaultHttpContext();
+            httpContext.Request.RouteValues[key] = value;
+            var tenantValidator = A.Fake<ITenantValidator>();
+            A.CallTo(() => tenantValidator.ValidateTenantAsync(A<string>._)).Returns(true);
+            var dataStoreProvider = A.Fake<IDataStoreProvider>();
+            var validator = new MetadataRouteValidator(
+                tenantValidator,
+                dataStoreProvider,
+                RouteOptions(key == "tenant" ? [] : ["districtId"])
+            );
+
+            bool result = await validator.ValidateAsync(httpContext);
+
+            result.Should().BeFalse();
+            httpContext.Response.StatusCode.Should().Be((int)HttpStatusCode.NotFound);
+        }
+
+        [TestCase("tenant")]
+        [TestCase("districtId")]
+        [TestCase("schoolYear")]
+        public async Task It_rejects_incomplete_qualified_contexts(string missingKey)
+        {
+            var httpContext = new DefaultHttpContext();
+            httpContext.Request.RouteValues["tenant"] = "Tenant_255901";
+            httpContext.Request.RouteValues["districtId"] = "255901";
+            httpContext.Request.RouteValues["schoolYear"] = "2024";
+            httpContext.Request.RouteValues.Remove(missingKey);
+            var tenantValidator = A.Fake<ITenantValidator>();
+            A.CallTo(() => tenantValidator.ValidateTenantAsync(A<string>._)).Returns(true);
+            var dataStoreProvider = A.Fake<IDataStoreProvider>();
+            var options = RouteOptions("districtId", "schoolYear");
+            options.Value.MultiTenancy = true;
+            var validator = new MetadataRouteValidator(tenantValidator, dataStoreProvider, options);
+
+            bool result = await validator.ValidateAsync(httpContext);
+
+            result.Should().BeFalse();
+            httpContext.Response.StatusCode.Should().Be((int)HttpStatusCode.NotFound);
+        }
+
+        [Test]
+        public async Task It_allows_unqualified_metadata_with_dynamic_values_and_configured_qualifiers()
+        {
+            var httpContext = new DefaultHttpContext();
+            httpContext.Request.RouteValues["section"] = "ed-fi";
+            httpContext.Request.RouteValues["fileName"] = "Ed-Fi-Core";
+            var options = RouteOptions("districtId", "schoolYear");
+            options.Value.MultiTenancy = true;
+            var validator = new MetadataRouteValidator(
+                A.Fake<ITenantValidator>(),
+                A.Fake<IDataStoreProvider>(),
+                options
+            );
+
+            bool result = await validator.ValidateAsync(httpContext);
+
+            result.Should().BeTrue();
+        }
+
+        [Test]
+        public async Task It_allows_matching_tenant_and_route_context()
+        {
+            // Arrange
+            var httpContext = new DefaultHttpContext();
+            httpContext.Request.RouteValues["tenant"] = "Tenant_255901";
+            httpContext.Request.RouteValues["districtId"] = "255901";
+            httpContext.Request.RouteValues["schoolYear"] = "2024";
+
+            var tenantValidator = A.Fake<ITenantValidator>();
+            A.CallTo(() => tenantValidator.ValidateTenantAsync("Tenant_255901")).Returns(true);
+
+            var dataStoreProvider = A.Fake<IDataStoreProvider>();
+            A.CallTo(() => dataStoreProvider.GetAll("Tenant_255901"))
+                .Returns([DataStoreWithRouteContext(1, ("districtId", "255901"), ("schoolYear", "2024"))]);
+
+            var validator = new MetadataRouteValidator(
+                tenantValidator,
+                dataStoreProvider,
+                RouteOptions("districtId", "schoolYear")
+            );
+
+            // Act
+            bool result = await validator.ValidateAsync(httpContext);
+
+            // Assert
+            result.Should().BeTrue();
+        }
+
+        [Test]
+        public async Task It_rejects_route_context_when_the_cached_tenant_has_no_match()
+        {
+            // Arrange
+            var httpContext = new DefaultHttpContext();
+            httpContext.Request.RouteValues["tenant"] = "Tenant_255901";
+            httpContext.Request.RouteValues["districtId"] = "255901";
+            httpContext.Request.RouteValues["schoolYear"] = "2024";
+
+            var tenantValidator = A.Fake<ITenantValidator>();
+            A.CallTo(() => tenantValidator.ValidateTenantAsync("Tenant_255901")).Returns(true);
+
+            var dataStoreProvider = A.Fake<IDataStoreProvider>();
+            A.CallTo(() => dataStoreProvider.GetAll("Tenant_255901")).Returns([]);
+
+            var validator = new MetadataRouteValidator(
+                tenantValidator,
+                dataStoreProvider,
+                RouteOptions("districtId", "schoolYear")
+            );
+
+            // Act
+            bool result = await validator.ValidateAsync(httpContext);
+
+            // Assert
+            result.Should().BeFalse();
+            httpContext.Response.StatusCode.Should().Be((int)HttpStatusCode.NotFound);
+            A.CallTo(() =>
+                    dataStoreProvider.RefreshInstancesIfExpiredAsync("Tenant_255901", A<CancellationToken>._)
+                )
+                .MustHaveHappenedOnceExactly();
+            A.CallTo(() => dataStoreProvider.LoadDataStores("Tenant_255901", A<CancellationToken>._))
+                .MustNotHaveHappened();
+        }
+
+        [Test]
+        public async Task It_rejects_unknown_tenant()
+        {
+            // Arrange
+            var httpContext = new DefaultHttpContext();
+            httpContext.Request.RouteValues["tenant"] = "UnknownTenant";
+
+            var tenantValidator = A.Fake<ITenantValidator>();
+            A.CallTo(() => tenantValidator.ValidateTenantAsync("UnknownTenant")).Returns(false);
+
+            var dataStoreProvider = A.Fake<IDataStoreProvider>();
+            var validator = new MetadataRouteValidator(tenantValidator, dataStoreProvider, RouteOptions());
+
+            // Act
+            bool result = await validator.ValidateAsync(httpContext);
+
+            // Assert
+            result.Should().BeFalse();
+            httpContext.Response.StatusCode.Should().Be((int)HttpStatusCode.NotFound);
+        }
+
+        [Test]
+        public async Task It_rejects_non_matching_route_context()
+        {
+            // Arrange
+            var httpContext = new DefaultHttpContext();
+            httpContext.Request.RouteValues["tenant"] = "Tenant_255901";
+            httpContext.Request.RouteValues["districtId"] = "999999";
+            httpContext.Request.RouteValues["schoolYear"] = "2024";
+
+            var tenantValidator = A.Fake<ITenantValidator>();
+            A.CallTo(() => tenantValidator.ValidateTenantAsync("Tenant_255901")).Returns(true);
+
+            var dataStoreProvider = A.Fake<IDataStoreProvider>();
+            A.CallTo(() => dataStoreProvider.GetAll("Tenant_255901"))
+                .Returns([DataStoreWithRouteContext(1, ("districtId", "255901"), ("schoolYear", "2024"))]);
+
+            var validator = new MetadataRouteValidator(
+                tenantValidator,
+                dataStoreProvider,
+                RouteOptions("districtId", "schoolYear")
+            );
+
+            // Act
+            bool result = await validator.ValidateAsync(httpContext);
+
+            // Assert
+            result.Should().BeFalse();
+            httpContext.Response.StatusCode.Should().Be((int)HttpStatusCode.NotFound);
+        }
+
+        [TestCase("section", "discovery")]
+        [TestCase("profileName", "StudentProfile")]
+        public async Task It_ignores_dynamic_metadata_route_values(
+            string dynamicRouteValueName,
+            string dynamicRouteValue
+        )
+        {
+            // Arrange
+            var httpContext = new DefaultHttpContext();
+            httpContext.Request.RouteValues["tenant"] = "Tenant_255901";
+            httpContext.Request.RouteValues["districtId"] = "255901";
+            httpContext.Request.RouteValues["schoolYear"] = "2024";
+            httpContext.Request.RouteValues[dynamicRouteValueName] = dynamicRouteValue;
+
+            var tenantValidator = A.Fake<ITenantValidator>();
+            A.CallTo(() => tenantValidator.ValidateTenantAsync("Tenant_255901")).Returns(true);
+
+            var dataStoreProvider = A.Fake<IDataStoreProvider>();
+            A.CallTo(() => dataStoreProvider.GetAll("Tenant_255901"))
+                .Returns([DataStoreWithRouteContext(1, ("districtId", "255901"), ("schoolYear", "2024"))]);
+
+            var validator = new MetadataRouteValidator(
+                tenantValidator,
+                dataStoreProvider,
+                RouteOptions("districtId", "schoolYear")
+            );
+
+            // Act
+            bool result = await validator.ValidateAsync(httpContext);
+
+            // Assert
+            result.Should().BeTrue();
+        }
+    }
+
     [TestFixture]
     public class When_Getting_Profiles_Endpoint
     {
@@ -807,6 +1200,52 @@ public class MetadataModuleTests
             A.CallTo(() => apiService.HasChangeQueriesOpenApiSpecification()).MustHaveHappenedOnceExactly();
             A.CallTo(() => apiService.GetChangeQueriesOpenApiSpecification(A<JsonArray>._))
                 .MustNotHaveHappened();
+        }
+
+        [TestCase("/tenant1/255901/2024/metadata/specifications", "", "/tenant1/255901/2024/metadata")]
+        [TestCase(
+            "/tenant1/255901/2024/MeTaDaTa/SpEcIfIcAtIoNs/",
+            "/dms",
+            "/dms/tenant1/255901/2024/MeTaDaTa"
+        )]
+        [TestCase("/metadata/SPECIFICATIONS/", "", "/metadata")]
+        [TestCase("/metadata/specifications", "/dms", "/dms/metadata")]
+        [TestCase("", "", "/metadata")]
+        [TestCase("/", "/dms", "/dms/metadata")]
+        [TestCase("/other", "/dms", "/dms/metadata")]
+        public async Task It_preserves_the_metadata_prefix_for_Change_Queries(
+            string path,
+            string pathBase,
+            string expectedPrefix
+        )
+        {
+            // Arrange
+            var apiService = A.Fake<IApiService>();
+            A.CallTo(() => apiService.HasChangeQueriesOpenApiSpecification()).Returns(true);
+            A.CallTo(() => apiService.GetProfileNamesAsync(A<string?>._))
+                .Returns(Task.FromResult<IReadOnlyList<string>>([]));
+
+            var httpContext = new DefaultHttpContext();
+            httpContext.Request.Scheme = "http";
+            httpContext.Request.Host = new HostString("localhost");
+            httpContext.Request.Path = path;
+            httpContext.Request.PathBase = pathBase;
+            httpContext.Response.Body = new MemoryStream();
+
+            // Act
+            await MetadataEndpointModule.GetSections(httpContext, apiService);
+            httpContext.Response.Body.Position = 0;
+            var content = await new StreamReader(httpContext.Response.Body).ReadToEndAsync();
+            var jsonArray = JsonNode.Parse(content) as JsonArray;
+            var changeQueries = jsonArray!.Single(node =>
+                node!["name"]!.GetValue<string>() == "Change-Queries"
+            );
+
+            // Assert
+            changeQueries!["endpointUri"]!
+                .GetValue<string>()
+                .Should()
+                .Be($"http://localhost{expectedPrefix}/changequeries/v1/swagger.json");
         }
 
         [Test]

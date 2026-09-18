@@ -14,12 +14,14 @@ using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
+using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure.Extensions;
 using Microsoft.Extensions.Options;
+using FrontendAppSettings = EdFi.DataManagementService.Frontend.AspNetCore.Configuration.AppSettings;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Modules;
 
-public partial class MetadataEndpointModule : IEndpointModule
+public partial class MetadataEndpointModule(IOptions<FrontendAppSettings> appSettings) : IEndpointModule
 {
     private const string DataOpenApiRouteBase = "data";
     private const string ChangeQueriesOpenApiRouteBase = "changeQueries/v1";
@@ -30,7 +32,7 @@ public partial class MetadataEndpointModule : IEndpointModule
     private static JsonArray GetServers(
         HttpContext httpContext,
         IDataStoreProvider dataStoreProvider,
-        IOptions<Configuration.AppSettings> appSettings,
+        IOptions<FrontendAppSettings> appSettings,
         string openApiRouteBase
     )
     {
@@ -243,11 +245,67 @@ public partial class MetadataEndpointModule : IEndpointModule
 
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapGet("/metadata", GetMetadata);
+        MapMetadataEndpoints(endpoints, string.Empty, validateRoute: false);
+
+        MapTenantOnlyMetadataRejections(endpoints);
+
+        string routePattern = FixedRoutePattern.Build(
+            appSettings.Value.GetRouteQualifierSegmentsArray(),
+            appSettings.Value.MultiTenancy
+        );
+
+        if (!string.IsNullOrEmpty(routePattern))
+        {
+            MapMetadataEndpoints(endpoints, routePattern, validateRoute: true);
+        }
+    }
+
+    private void MapTenantOnlyMetadataRejections(IEndpointRouteBuilder endpoints)
+    {
+        if (!appSettings.Value.MultiTenancy || appSettings.Value.GetRouteQualifierSegmentsArray().Length == 0)
+        {
+            return;
+        }
+
+        // These routes would otherwise match the fully-qualified discovery route with
+        // "metadata" and, for deeper paths, the endpoint name as route qualifier values. Metadata endpoints.
+        // require all configured route qualifiers, so reserve the tenant-only forms as 404.
+        endpoints.MapGet("/{tenant}/metadata", () => Results.NotFound());
+        endpoints.MapGet("/{tenant}/metadata/dependencies", () => Results.NotFound());
+        endpoints.MapGet("/{tenant}/metadata/specifications", () => Results.NotFound());
+    }
+
+    private static void MapMetadataEndpoints(
+        IEndpointRouteBuilder endpoints,
+        string routePattern,
+        bool validateRoute
+    )
+    {
         endpoints.MapGet(
-            "/metadata/dependencies",
-            async (HttpContext httpContext, IApiService apiService) =>
+            $"{routePattern}/metadata",
+            async (HttpContext httpContext, IMetadataRouteValidator metadataRouteValidator) =>
             {
+                if (!await ValidateMetadataRouteAsync(httpContext, metadataRouteValidator, validateRoute))
+                {
+                    return;
+                }
+
+                await GetMetadata(httpContext);
+            }
+        );
+        endpoints.MapGet(
+            $"{routePattern}/metadata/dependencies",
+            async (
+                HttpContext httpContext,
+                IMetadataRouteValidator metadataRouteValidator,
+                IApiService apiService
+            ) =>
+            {
+                if (!await ValidateMetadataRouteAsync(httpContext, metadataRouteValidator, validateRoute))
+                {
+                    return;
+                }
+
                 var acceptHeader = httpContext.Request.Headers["Accept"].ToString();
 
                 if (acceptHeader.Contains("application/graphml", StringComparison.OrdinalIgnoreCase))
@@ -260,16 +318,128 @@ public partial class MetadataEndpointModule : IEndpointModule
                 }
             }
         );
-        endpoints.MapGet("/metadata/specifications", GetSections);
-        endpoints.MapGet("/metadata/specifications/resources-spec.json", GetResourceOpenApiSpec);
-        endpoints.MapGet("/metadata/specifications/descriptors-spec.json", GetDescriptorOpenApiSpec);
-        endpoints.MapGet("/metadata/changequeries/v1/swagger.json", GetChangeQueriesOpenApiSpec);
-        endpoints.MapGet("/metadata/specifications/{section}-spec.json", GetSectionMetadata);
-
         endpoints.MapGet(
-            $"/metadata/specifications/profiles/{{profileName}}/resources-spec.json",
-            GetProfileResourceOpenApiSpec
+            $"{routePattern}/metadata/specifications",
+            async (
+                HttpContext httpContext,
+                IMetadataRouteValidator metadataRouteValidator,
+                IApiService apiService
+            ) =>
+            {
+                if (!await ValidateMetadataRouteAsync(httpContext, metadataRouteValidator, validateRoute))
+                {
+                    return;
+                }
+
+                await GetSections(httpContext, apiService);
+            }
         );
+        endpoints.MapGet(
+            $"{routePattern}/metadata/specifications/resources-spec.json",
+            async (
+                HttpContext httpContext,
+                IMetadataRouteValidator metadataRouteValidator,
+                IApiService apiService,
+                IDataStoreProvider dataStoreProvider,
+                IOptions<FrontendAppSettings> options
+            ) =>
+            {
+                if (!await ValidateMetadataRouteAsync(httpContext, metadataRouteValidator, validateRoute))
+                {
+                    return;
+                }
+
+                await GetResourceOpenApiSpec(httpContext, apiService, dataStoreProvider, options);
+            }
+        );
+        endpoints.MapGet(
+            $"{routePattern}/metadata/specifications/descriptors-spec.json",
+            async (
+                HttpContext httpContext,
+                IMetadataRouteValidator metadataRouteValidator,
+                IApiService apiService,
+                IDataStoreProvider dataStoreProvider,
+                IOptions<FrontendAppSettings> options
+            ) =>
+            {
+                if (!await ValidateMetadataRouteAsync(httpContext, metadataRouteValidator, validateRoute))
+                {
+                    return;
+                }
+
+                await GetDescriptorOpenApiSpec(httpContext, apiService, dataStoreProvider, options);
+            }
+        );
+        endpoints.MapGet(
+            $"{routePattern}/metadata/changequeries/v1/swagger.json",
+            async (
+                HttpContext httpContext,
+                IMetadataRouteValidator metadataRouteValidator,
+                IApiService apiService,
+                IDataStoreProvider dataStoreProvider,
+                IOptions<FrontendAppSettings> options
+            ) =>
+            {
+                if (!await ValidateMetadataRouteAsync(httpContext, metadataRouteValidator, validateRoute))
+                {
+                    return;
+                }
+
+                await GetChangeQueriesOpenApiSpec(httpContext, apiService, dataStoreProvider, options);
+            }
+        );
+        endpoints.MapGet(
+            $"{routePattern}/metadata/specifications/{{section}}-spec.json",
+            async (
+                HttpContext httpContext,
+                IMetadataRouteValidator metadataRouteValidator,
+                IContentProvider contentProvider,
+                IOptions<FrontendAppSettings> options,
+                IDataStoreProvider dataStoreProvider
+            ) =>
+            {
+                if (!await ValidateMetadataRouteAsync(httpContext, metadataRouteValidator, validateRoute))
+                {
+                    return;
+                }
+
+                await GetSectionMetadata(httpContext, contentProvider, options, dataStoreProvider);
+            }
+        );
+        endpoints.MapGet(
+            $"{routePattern}/metadata/specifications/profiles/{{profileName}}/resources-spec.json",
+            async (
+                HttpContext httpContext,
+                string profileName,
+                IMetadataRouteValidator metadataRouteValidator,
+                IDataStoreProvider dataStoreProvider,
+                IApiService apiService,
+                IOptions<FrontendAppSettings> options
+            ) =>
+            {
+                if (!await ValidateMetadataRouteAsync(httpContext, metadataRouteValidator, validateRoute))
+                {
+                    return;
+                }
+
+                await GetProfileResourceOpenApiSpec(
+                    httpContext,
+                    profileName,
+                    dataStoreProvider,
+                    apiService,
+                    options
+                );
+            }
+        );
+    }
+
+    private static Task<bool> ValidateMetadataRouteAsync(
+        HttpContext httpContext,
+        IMetadataRouteValidator metadataRouteValidator,
+        bool validateRoute
+    )
+    {
+        return validateRoute ? metadataRouteValidator.ValidateAsync(httpContext) : Task.FromResult(true);
     }
 
     internal static async Task GetMetadata(HttpContext httpContext)
@@ -334,7 +504,7 @@ public partial class MetadataEndpointModule : IEndpointModule
         HttpContext httpContext,
         IApiService apiService,
         IDataStoreProvider dataStoreProvider,
-        IOptions<Configuration.AppSettings> appSettings
+        IOptions<FrontendAppSettings> appSettings
     )
     {
         JsonArray servers = GetServers(httpContext, dataStoreProvider, appSettings, DataOpenApiRouteBase);
@@ -346,7 +516,7 @@ public partial class MetadataEndpointModule : IEndpointModule
         HttpContext httpContext,
         IApiService apiService,
         IDataStoreProvider dataStoreProvider,
-        IOptions<Configuration.AppSettings> appSettings
+        IOptions<FrontendAppSettings> appSettings
     )
     {
         JsonArray servers = GetServers(httpContext, dataStoreProvider, appSettings, DataOpenApiRouteBase);
@@ -358,7 +528,7 @@ public partial class MetadataEndpointModule : IEndpointModule
         HttpContext httpContext,
         IApiService apiService,
         IDataStoreProvider dataStoreProvider,
-        IOptions<Configuration.AppSettings> appSettings
+        IOptions<FrontendAppSettings> appSettings
     )
     {
         JsonArray servers = GetServers(
@@ -386,7 +556,7 @@ public partial class MetadataEndpointModule : IEndpointModule
         string profileName,
         IDataStoreProvider dataStoreProvider,
         IApiService apiService,
-        IOptions<Configuration.AppSettings> appSettings
+        IOptions<FrontendAppSettings> appSettings
     )
     {
         string? tenant = ExtractTenantFromRoute(httpContext);
@@ -424,10 +594,18 @@ public partial class MetadataEndpointModule : IEndpointModule
 
         if (apiService.HasChangeQueriesOpenApiSpecification())
         {
+            const string specificationsSuffix = "/specifications";
+            string requestPath = httpContext.Request.Path.ToString().TrimEnd('/');
+            string metadataPrefix = requestPath.EndsWith(
+                "/metadata/specifications",
+                StringComparison.OrdinalIgnoreCase
+            )
+                ? baseUrl[..^specificationsSuffix.Length]
+                : $"{httpContext.Request.RootUrl()}/metadata";
             sections.Add(
                 new RouteInformation(
                     "Change-Queries",
-                    $"{httpContext.Request.RootUrl()}/metadata/changequeries/v1/swagger.json",
+                    $"{metadataPrefix}/changequeries/v1/swagger.json",
                     "Other"
                 )
             );
@@ -452,7 +630,7 @@ public partial class MetadataEndpointModule : IEndpointModule
     internal static async Task GetSectionMetadata(
         HttpContext httpContext,
         IContentProvider contentProvider,
-        IOptions<Configuration.AppSettings> options,
+        IOptions<FrontendAppSettings> options,
         IDataStoreProvider dataStoreProvider
     )
     {
