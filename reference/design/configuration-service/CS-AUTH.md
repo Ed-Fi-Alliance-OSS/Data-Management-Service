@@ -26,10 +26,21 @@ The CMS exposes standard OAuth 2.0 endpoints:
 |---|---|
 | `POST /connect/token` | Issue an access token (client credentials grant only) |
 | `POST /connect/introspect` | Introspect a token (RFC 7662) |
-| `POST /connect/revoke` | Revoke a token (RFC 7009) |
+| `POST /connect/revoke` | Revoke a token (RFC 7009). Requires an authenticated caller; a client may only revoke a token whose `client_id` matches its own (see note below) |
 
 In `self-contained` mode, `/connect/token` also accepts credentials via HTTP
 Basic authentication in addition to the form body.
+
+Unlike `/connect/token` and `/connect/introspect`, `/connect/revoke` requires the
+caller to present a valid bearer token (`Authorization: ******; an
+unauthenticated request returns `401 Unauthorized`. The endpoint only revokes a
+token whose verified `client_id` claim matches the caller's own `client_id`. A
+mismatch (or a token whose signature/issuer/audience cannot be verified) is a
+silent no-op that still returns `200 OK`, so the endpoint never reveals whether a
+token exists or who owns it. The target token's signature is verified before its
+`client_id` claim is trusted. This ownership check uses the same `client_id` claim
+name for both `self-contained` and Keycloak-issued tokens, so no per-mode
+branching is needed.
 
 ## Scopes
 

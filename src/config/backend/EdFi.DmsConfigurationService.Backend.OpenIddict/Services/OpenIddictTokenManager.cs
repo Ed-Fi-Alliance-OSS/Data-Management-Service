@@ -394,14 +394,60 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
         }
 
         /// <summary>
-        /// Revokes a token by setting its status to 'revoked'
+        /// Revokes a token by setting its status to 'revoked', but only when the caller owns it.
+        /// The target token's signature/issuer/audience is verified before its <c>client_id</c>
+        /// claim is trusted, and the token is revoked only when that claim matches
+        /// <paramref name="callerClientId"/>. A mismatch, an unverifiable token, or a missing claim
+        /// is treated as a harmless no-op (returns false without touching the repository).
         /// </summary>
-        public async Task<bool> RevokeTokenAsync(string token)
+        public async Task<bool> RevokeTokenAsync(string token, string? callerClientId)
         {
             try
             {
-                var tokenHandler = new JwtSecurityTokenHandler();
-                var jwtToken = tokenHandler.ReadJwtToken(token);
+                if (string.IsNullOrEmpty(callerClientId))
+                {
+                    return false;
+                }
+
+                string audience = _identityOptions.Value.Audience;
+                string issuer = _identityOptions.Value.Authority;
+                var publicKeys = await GetPublicKeysAsync();
+                var signingKeys = publicKeys.ToDictionary(
+                    k => k.KeyId,
+                    k => (SecurityKey)new RsaSecurityKey(k.RsaParameters)
+                );
+
+                // Verify signature/issuer/audience before trusting any claim on the token.
+                // Note: JwtTokenValidator.ValidateToken (not ValidateTokenAsync) is used deliberately
+                // so an already-revoked token is still a harmless no-op rather than a validation gate.
+                if (
+                    !JwtTokenValidator.ValidateToken(
+                        token,
+                        signingKeys,
+                        issuer,
+                        audience,
+                        out var jwtToken,
+                        _logger
+                    ) || jwtToken is null
+                )
+                {
+                    _logger.LogWarning(
+                        "Token revocation skipped: token failed signature, issuer, or audience validation"
+                    );
+                    return false;
+                }
+
+                string? tokenClientId = jwtToken.Claims.FirstOrDefault(x => x.Type == "client_id")?.Value;
+                if (
+                    string.IsNullOrEmpty(tokenClientId)
+                    || !string.Equals(tokenClientId, callerClientId, StringComparison.Ordinal)
+                )
+                {
+                    // Ownership mismatch: do not reveal whether the token exists; treat as no-op.
+                    _logger.LogInformation("Token revocation skipped: caller does not own the token");
+                    return false;
+                }
+
                 var jti = jwtToken.Claims.FirstOrDefault(x => x.Type == JwtRegisteredClaimNames.Jti)?.Value;
 
                 if (!string.IsNullOrEmpty(jti))

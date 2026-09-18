@@ -28,9 +28,16 @@ public class TestAuthHandler(
             return Task.FromResult(AuthenticateResult.Fail("Scope header is missing."));
         }
 
+        // Allow a test to simulate a caller with a client_id different from the default, e.g. to
+        // exercise ownership checks. When the header is absent, behavior is unchanged.
+        var clientIdHeader = Context.Request.Headers["X-Test-ClientId"].ToString();
+        var clientId = string.IsNullOrEmpty(clientIdHeader)
+            ? identitySettings.Value.ClientId
+            : clientIdHeader;
+
         var claims = new[]
         {
-            new Claim("client_id", identitySettings.Value.ClientId),
+            new Claim("client_id", clientId),
             new Claim(identitySettings.Value.RoleClaimType, identitySettings.Value.ConfigServiceRole),
             new Claim("scope", scopeHeader),
         };

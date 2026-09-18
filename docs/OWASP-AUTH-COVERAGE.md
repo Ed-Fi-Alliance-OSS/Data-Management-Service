@@ -69,7 +69,15 @@ For self-contained tokens, CMS issues a token with a GUID `jti`, persists it in 
 token's status by `jti` after standard validation. A request is authorized only when
 the stored status is `valid`. CMS exposes:
 
-- `POST /connect/revoke` (RFC 7009) — sets the token status to `revoked`.
+- `POST /connect/revoke` (RFC 7009) — sets the token status to `revoked`. The
+  endpoint **requires an authenticated caller** (an unauthenticated request returns
+  `401`) and only revokes a token whose verified `client_id` claim matches the
+  caller's own `client_id`. A mismatch — or a target token whose
+  signature/issuer/audience cannot be verified — is a silent no-op that still
+  returns `200 OK`, so the endpoint never discloses whether a token exists or who
+  owns it. The target token's signature is verified before its `client_id` claim is
+  trusted, and the same `client_id` claim name applies to both self-contained and
+  Keycloak-issued tokens, so the ownership check needs no per-mode branching.
 - `POST /connect/introspect` (RFC 7662) — reports active/inactive status.
 
 This is **not** one-time-use enforcement (a valid token remains reusable until it
@@ -136,7 +144,10 @@ externally-issued tokens), the following compensating controls bound the risk:
   tokens already in circulation on these paths.
 - **Server-side revocation (CMS self-contained only).** The per-request `jti`
   status check plus `/connect/revoke` provide immediate revocation for
-  self-contained tokens.
+  self-contained tokens. `/connect/revoke` requires an authenticated caller and
+  only revokes a token whose verified `client_id` matches the caller's own, so a
+  client cannot revoke another client's tokens; ownership mismatches are silent
+  no-ops returning `200 OK`.
 - **No sensitive-detail leakage on failure.** DMS authentication failures return
   a fixed `application/problem+json` `401` body — `type`
   `urn:ed-fi:api:security:authentication`, `title` `Authentication Failed`,
@@ -164,8 +175,13 @@ The behaviors above are exercised by automated tests:
   `ValidateTokenAsync` accepts a token whose status is `valid` on repeated
   presentation (reusable while valid) and **rejects** expired (lifetime check, before
   the status lookup), revoked, unknown-`jti`, missing-`jti`, and malformed-`jti`
-  tokens; `RevokeTokenAsync` delegates revocation for a valid `jti` and is a no-op
-  for missing/malformed `jti`.
+  tokens; `RevokeTokenAsync` verifies the target token's signature and revokes it
+  only when the token's `client_id` matches the caller's own, and is a no-op for a
+  mismatched `client_id`, an unverifiable signature, or a missing/malformed `jti`.
+- CMS — `EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit/Modules/IdentityModuleTests.cs`:
+  `/connect/revoke` rejects an unauthenticated request with `401`, forwards the
+  authenticated caller's own `client_id` (not the token's) to the revocation
+  manager, and still returns `200 OK` for a missing/unverifiable token.
 
 **End-to-end tests**
 

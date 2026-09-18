@@ -33,7 +33,10 @@ public class IdentityModule : IEndpointModule
         endpoints.MapPost("connect/register/{**contextPath}", RegisterClient).DisableAntiforgery();
         endpoints.MapPost("connect/token/{**contextPath}", GetClientAccessToken).DisableAntiforgery();
         endpoints.MapPost("connect/introspect/{**contextPath}", IntrospectToken).DisableAntiforgery();
-        endpoints.MapPost("connect/revoke/{**contextPath}", RevokeToken).DisableAntiforgery();
+        endpoints
+            .MapPost("connect/revoke/{**contextPath}", RevokeToken)
+            .DisableAntiforgery()
+            .RequireAuthorization();
     }
 
     private async Task<IResult> RegisterClient(
@@ -341,12 +344,17 @@ public class IdentityModule : IEndpointModule
             return FailureResults.BadRequest("The token parameter is missing.", httpContext.TraceIdentifier);
         }
 
+        // The caller is authenticated (see RequireAuthorization on the route). A caller may only
+        // revoke a token whose client_id claim matches their own; the ownership comparison happens
+        // inside the revocation manager, which also verifies the target token's signature.
+        string? callerClientId = httpContext.User.FindFirst("client_id")?.Value;
+
         // Check if token manager supports revocation via interface
         if (tokenManager is ITokenRevocationManager revocationManager)
         {
             try
             {
-                await revocationManager.RevokeTokenAsync(model.Token);
+                await revocationManager.RevokeTokenAsync(model.Token, callerClientId);
                 return Results.Ok(); // RFC 7009: Always return 200 OK for revocation
             }
             catch

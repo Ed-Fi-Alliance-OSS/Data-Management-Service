@@ -438,8 +438,21 @@ public class OpenIddictTokenManagerTests
         }
     }
 
+    // Registers the given signing key's public key so the configured manager can verify tokens
+    // signed with it during revocation.
+    private void RegisterPublicKey(string keyId, byte[] publicKeySpki) =>
+        A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync())
+            .Returns(
+                new[]
+                {
+                    new PublicKeyInfo { KeyId = keyId, PublicKey = publicKeySpki },
+                }
+            );
+
+    private const string OwnerClientId = "owner-client";
+
     [TestFixture]
-    public class Given_RevokeTokenAsync_WithAValidJti : OpenIddictTokenManagerTests
+    public class Given_RevokeTokenAsync_WithAMatchingClientIdAndValidJti : OpenIddictTokenManagerTests
     {
         private bool _result;
         private Guid _jti;
@@ -447,16 +460,22 @@ public class OpenIddictTokenManagerTests
         [SetUp]
         public async Task Act()
         {
-            var (_, _, signingKey) = CreateSigningKey();
+            var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
+            RegisterPublicKey(keyId, publicKeySpki);
+
             _jti = Guid.NewGuid();
             A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti)).Returns(true);
 
             string token = CreateSignedToken(
                 signingKey,
-                new[] { new Claim(JwtRegisteredClaimNames.Jti, _jti.ToString()) }
+                new[]
+                {
+                    new Claim(JwtRegisteredClaimNames.Jti, _jti.ToString()),
+                    new Claim("client_id", OwnerClientId),
+                }
             );
 
-            _result = await _tokenManager.RevokeTokenAsync(token);
+            _result = await CreateConfiguredTokenManager().RevokeTokenAsync(token, OwnerClientId);
         }
 
         [Test]
@@ -473,6 +492,151 @@ public class OpenIddictTokenManagerTests
     }
 
     [TestFixture]
+    public class Given_RevokeTokenAsync_WithAMismatchedClientId : OpenIddictTokenManagerTests
+    {
+        private bool _result;
+
+        [SetUp]
+        public async Task Act()
+        {
+            var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
+            RegisterPublicKey(keyId, publicKeySpki);
+
+            string token = CreateSignedToken(
+                signingKey,
+                new[]
+                {
+                    new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+                    new Claim("client_id", OwnerClientId),
+                }
+            );
+
+            // A different client attempts to revoke a token it does not own.
+            _result = await CreateConfiguredTokenManager().RevokeTokenAsync(token, "other-client");
+        }
+
+        [Test]
+        public void It_returns_false()
+        {
+            _result.Should().BeFalse();
+        }
+
+        [Test]
+        public void It_does_not_call_the_repository()
+        {
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+        }
+    }
+
+    [TestFixture]
+    public class Given_RevokeTokenAsync_WithAnUnverifiableSignature : OpenIddictTokenManagerTests
+    {
+        private bool _result;
+
+        [SetUp]
+        public async Task Act()
+        {
+            // The repository advertises one key, but the token is signed with a different,
+            // unregistered key, so signature verification must fail.
+            var (keyId, publicKeySpki, _) = CreateSigningKey();
+            RegisterPublicKey(keyId, publicKeySpki);
+
+            var (_, _, foreignSigningKey) = CreateSigningKey();
+            string token = CreateSignedToken(
+                foreignSigningKey,
+                new[]
+                {
+                    new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+                    new Claim("client_id", OwnerClientId),
+                }
+            );
+
+            _result = await CreateConfiguredTokenManager().RevokeTokenAsync(token, OwnerClientId);
+        }
+
+        [Test]
+        public void It_returns_false()
+        {
+            _result.Should().BeFalse();
+        }
+
+        [Test]
+        public void It_does_not_call_the_repository()
+        {
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+        }
+    }
+
+    [TestFixture]
+    public class Given_RevokeTokenAsync_WithoutAClientIdClaim : OpenIddictTokenManagerTests
+    {
+        private bool _result;
+
+        [SetUp]
+        public async Task Act()
+        {
+            var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
+            RegisterPublicKey(keyId, publicKeySpki);
+
+            string token = CreateSignedToken(
+                signingKey,
+                new[] { new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()) }
+            );
+
+            _result = await CreateConfiguredTokenManager().RevokeTokenAsync(token, OwnerClientId);
+        }
+
+        [Test]
+        public void It_returns_false()
+        {
+            _result.Should().BeFalse();
+        }
+
+        [Test]
+        public void It_does_not_call_the_repository()
+        {
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+        }
+    }
+
+    [TestFixture]
+    public class Given_RevokeTokenAsync_WithoutACallerClientId : OpenIddictTokenManagerTests
+    {
+        private bool _result;
+
+        [SetUp]
+        public async Task Act()
+        {
+            var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
+            RegisterPublicKey(keyId, publicKeySpki);
+
+            string token = CreateSignedToken(
+                signingKey,
+                new[]
+                {
+                    new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+                    new Claim("client_id", OwnerClientId),
+                }
+            );
+
+            // An unauthenticated / client_id-less caller must never revoke anything.
+            _result = await CreateConfiguredTokenManager().RevokeTokenAsync(token, null);
+        }
+
+        [Test]
+        public void It_returns_false()
+        {
+            _result.Should().BeFalse();
+        }
+
+        [Test]
+        public void It_does_not_call_the_repository()
+        {
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+        }
+    }
+
+    [TestFixture]
     public class Given_RevokeTokenAsync_WithoutAJti : OpenIddictTokenManagerTests
     {
         private bool _result;
@@ -480,10 +644,12 @@ public class OpenIddictTokenManagerTests
         [SetUp]
         public async Task Act()
         {
-            var (_, _, signingKey) = CreateSigningKey();
-            string token = CreateSignedToken(signingKey, Array.Empty<Claim>());
+            var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
+            RegisterPublicKey(keyId, publicKeySpki);
 
-            _result = await _tokenManager.RevokeTokenAsync(token);
+            string token = CreateSignedToken(signingKey, new[] { new Claim("client_id", OwnerClientId) });
+
+            _result = await CreateConfiguredTokenManager().RevokeTokenAsync(token, OwnerClientId);
         }
 
         [Test]
@@ -507,13 +673,19 @@ public class OpenIddictTokenManagerTests
         [SetUp]
         public async Task Act()
         {
-            var (_, _, signingKey) = CreateSigningKey();
+            var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
+            RegisterPublicKey(keyId, publicKeySpki);
+
             string token = CreateSignedToken(
                 signingKey,
-                new[] { new Claim(JwtRegisteredClaimNames.Jti, "not-a-valid-guid") }
+                new[]
+                {
+                    new Claim(JwtRegisteredClaimNames.Jti, "not-a-valid-guid"),
+                    new Claim("client_id", OwnerClientId),
+                }
             );
 
-            _result = await _tokenManager.RevokeTokenAsync(token);
+            _result = await CreateConfiguredTokenManager().RevokeTokenAsync(token, OwnerClientId);
         }
 
         [Test]

@@ -11,10 +11,16 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Token
     public interface ITokenRevocationManager
     {
         /// <summary>
-        /// Revokes a token by setting its status to 'revoked'
+        /// Revokes a token by setting its status to 'revoked', but only when the token's
+        /// <c>client_id</c> claim matches the caller's own <c>client_id</c>.
         /// </summary>
         /// <param name="token">The token to revoke</param>
+        /// <param name="callerClientId">
+        /// The authenticated caller's <c>client_id</c>. The token is revoked only if its verified
+        /// <c>client_id</c> claim matches this value; a mismatch (or unverifiable token) is a
+        /// silent no-op.
+        /// </param>
         /// <returns>True if the token was successfully revoked, false otherwise</returns>
-        Task<bool> RevokeTokenAsync(string token);
+        Task<bool> RevokeTokenAsync(string token, string? callerClientId);
     }
 }

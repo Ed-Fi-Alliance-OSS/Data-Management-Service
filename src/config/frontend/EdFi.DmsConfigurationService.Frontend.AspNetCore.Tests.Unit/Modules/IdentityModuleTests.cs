@@ -6,11 +6,13 @@
 using System.Net;
 using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.Backend;
+using EdFi.DmsConfigurationService.Backend.OpenIddict.Token;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel.Configuration;
 using EdFi.DmsConfigurationService.DataModel.Model.Register;
 using EdFi.DmsConfigurationService.DataModel.Model.Token;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Infrastructure;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
@@ -1183,9 +1185,42 @@ public class OAuthEndpointErrorTests
     }
 
     [TestFixture]
-    public class Given_a_revocation_request_without_a_token
+    public class Given_a_revocation_request_without_authentication
     {
-        private readonly ITokenManager _tokenManager = A.Fake<ITokenManager>();
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _factory = CreateFactory(collection => collection.AddTestAuthentication());
+            _client = _factory.CreateClient();
+            // No X-Test-Scope header => TestAuthHandler fails authentication, so the now-secured
+            // endpoint must reject the request before any revocation logic runs.
+            _response = await _client.PostAsync(
+                "/connect/revoke",
+                new FormUrlEncodedContent(new[] { new KeyValuePair<string, string>("token", "opaque-token") })
+            );
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _client?.Dispose();
+            _factory?.Dispose();
+        }
+
+        [Test]
+        public void It_returns_401() => _response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [TestFixture]
+    public class Given_an_authenticated_revocation_request_without_a_token
+    {
+        private readonly ITokenManager _tokenManager = A.Fake<ITokenManager>(x =>
+            x.Implements<ITokenRevocationManager>()
+        );
         private WebApplicationFactory<Program> _factory = null!;
         private HttpClient _client = null!;
         private HttpResponseMessage _response = null!;
@@ -1194,8 +1229,13 @@ public class OAuthEndpointErrorTests
         [SetUp]
         public async Task Setup()
         {
-            _factory = CreateFactory(collection => collection.AddTransient(_ => _tokenManager));
+            _factory = CreateFactory(collection =>
+            {
+                collection.AddTestAuthentication();
+                collection.AddTransient(_ => _tokenManager);
+            });
             _client = _factory.CreateClient();
+            _client.DefaultRequestHeaders.Add("X-Test-Scope", "edfi_admin_api/full_access");
             _response = await _client.PostAsync(
                 "/connect/revoke",
                 new FormUrlEncodedContent(Array.Empty<KeyValuePair<string, string>>())
@@ -1213,12 +1253,21 @@ public class OAuthEndpointErrorTests
         [Test]
         public void It_returns_the_ed_fi_bad_request_contract() =>
             AssertBadRequestContract(_response, _content, "The token parameter is missing.");
+
+        [Test]
+        public void It_does_not_attempt_revocation() =>
+            A.CallTo(() =>
+                    ((ITokenRevocationManager)_tokenManager).RevokeTokenAsync(A<string>._, A<string?>._)
+                )
+                .MustNotHaveHappened();
     }
 
     [TestFixture]
-    public class Given_a_revocation_request_with_a_token
+    public class Given_an_authenticated_revocation_request_for_the_callers_own_token
     {
-        private readonly ITokenManager _tokenManager = A.Fake<ITokenManager>();
+        private readonly ITokenManager _tokenManager = A.Fake<ITokenManager>(x =>
+            x.Implements<ITokenRevocationManager>()
+        );
         private WebApplicationFactory<Program> _factory = null!;
         private HttpClient _client = null!;
         private HttpResponseMessage _response = null!;
@@ -1226,12 +1275,125 @@ public class OAuthEndpointErrorTests
         [SetUp]
         public async Task Setup()
         {
-            _factory = CreateFactory(collection => collection.AddTransient(_ => _tokenManager));
+            _factory = CreateFactory(collection =>
+            {
+                collection.AddTestAuthentication();
+                collection.AddTransient(_ => _tokenManager);
+            });
             _client = _factory.CreateClient();
-            // RFC 7009 requires 200 OK for revocation regardless of the token; this success is unchanged.
+            _client.DefaultRequestHeaders.Add("X-Test-Scope", "edfi_admin_api/full_access");
+            // No X-Test-ClientId header => the authenticated caller's client_id is the default
+            // "test_client" configured in appsettings.Test.
             _response = await _client.PostAsync(
                 "/connect/revoke",
-                new FormUrlEncodedContent(new[] { new KeyValuePair<string, string>("token", "opaque-token") })
+                new FormUrlEncodedContent(new[] { new KeyValuePair<string, string>("token", "caller-token") })
+            );
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _client?.Dispose();
+            _factory?.Dispose();
+        }
+
+        [Test]
+        public void It_returns_200() => _response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        [Test]
+        public void It_passes_the_token_and_the_callers_own_client_id_to_the_manager() =>
+            A.CallTo(() =>
+                    ((ITokenRevocationManager)_tokenManager).RevokeTokenAsync("caller-token", "test_client")
+                )
+                .MustHaveHappenedOnceExactly();
+    }
+
+    [TestFixture]
+    public class Given_an_authenticated_revocation_request_for_another_clients_token
+    {
+        private readonly ITokenManager _tokenManager = A.Fake<ITokenManager>(x =>
+            x.Implements<ITokenRevocationManager>()
+        );
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _factory = CreateFactory(collection =>
+            {
+                collection.AddTestAuthentication();
+                collection.AddTransient(_ => _tokenManager);
+            });
+            _client = _factory.CreateClient();
+            _client.DefaultRequestHeaders.Add("X-Test-Scope", "edfi_admin_api/full_access");
+            // Simulate a different authenticated caller. The endpoint must forward *this* caller's
+            // client_id (not the token's) so the manager can enforce ownership and no-op on mismatch.
+            _client.DefaultRequestHeaders.Add("X-Test-ClientId", "other_client");
+            _response = await _client.PostAsync(
+                "/connect/revoke",
+                new FormUrlEncodedContent(new[] { new KeyValuePair<string, string>("token", "victim-token") })
+            );
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _client?.Dispose();
+            _factory?.Dispose();
+        }
+
+        [Test]
+        public void It_returns_200() => _response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        [Test]
+        public void It_forwards_the_calling_clients_id_not_the_default() =>
+            A.CallTo(() =>
+                    ((ITokenRevocationManager)_tokenManager).RevokeTokenAsync("victim-token", "other_client")
+                )
+                .MustHaveHappenedOnceExactly();
+
+        [Test]
+        public void It_never_forwards_a_different_callers_client_id() =>
+            A.CallTo(() =>
+                    ((ITokenRevocationManager)_tokenManager).RevokeTokenAsync(A<string>._, "test_client")
+                )
+                .MustNotHaveHappened();
+    }
+
+    [TestFixture]
+    public class Given_an_authenticated_revocation_request_with_an_unverifiable_token
+    {
+        private readonly ITokenManager _tokenManager = A.Fake<ITokenManager>(x =>
+            x.Implements<ITokenRevocationManager>()
+        );
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            // The manager treats an unverifiable/malformed token as a harmless no-op (false); the
+            // HTTP layer must still return 200 OK per RFC 7009.
+            A.CallTo(() =>
+                    ((ITokenRevocationManager)_tokenManager).RevokeTokenAsync(A<string>._, A<string?>._)
+                )
+                .Returns(false);
+
+            _factory = CreateFactory(collection =>
+            {
+                collection.AddTestAuthentication();
+                collection.AddTransient(_ => _tokenManager);
+            });
+            _client = _factory.CreateClient();
+            _client.DefaultRequestHeaders.Add("X-Test-Scope", "edfi_admin_api/full_access");
+            _response = await _client.PostAsync(
+                "/connect/revoke",
+                new FormUrlEncodedContent(
+                    new[] { new KeyValuePair<string, string>("token", "not-a-real-jwt") }
+                )
             );
         }
 
