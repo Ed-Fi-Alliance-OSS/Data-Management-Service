@@ -357,17 +357,28 @@ public interface IIdentityService
     /// <item>
     /// <see cref="IdentityResultStatus.JobFailed"/> is returned only after the provider establishes that
     /// the accepted job has failed permanently; it requires no payload, and DMS ignores any payload or
-    /// errors supplied with it, emitting its own fixed, sanitized terminal problem instead. The provider
-    /// retains the terminal state for its documented retention period and returns the same terminal
-    /// classification on repeated authorized polls while it remains retrievable, subject to the same
-    /// ownership and expiry checks as a complete job.
+    /// errors supplied with it, emitting its own fixed, sanitized terminal problem instead: a <c>502</c>
+    /// <c>application/problem+json</c> carrying <c>type: urn:ed-fi:api:identities:job-failed</c>, with no
+    /// provider payload, error message, token, or <c>Location</c> header.
+    /// That <c>type</c>, rather than the status code, is the portable terminal signal. An upstream
+    /// failure and a provider-contract violation are <c>502</c> as well, so a client switching on the
+    /// status alone cannot tell a permanently failed job from a poll that simply did not reach an
+    /// answer. The terminal problem tells the client to stop polling this job; it is not an instruction
+    /// to resubmit the original find or search automatically.
+    /// The provider retains the terminal state for its documented retention period and returns the same
+    /// terminal classification on repeated authorized polls while it remains retrievable, subject to the
+    /// same ownership and expiry checks as a complete job.
     /// </item>
     /// <item>
     /// an exception thrown while polling means that poll did not obtain an answer, not that the job
-    /// failed: DMS returns the ordinary sanitized upstream-failure problem, and the job - including an
-    /// already-terminal one whose own record could not be read during the failure - remains retrievable,
-    /// unmodified, once the dependency recovers. Only a call that itself establishes permanent failure
-    /// may return <see cref="IdentityResultStatus.JobFailed"/>.
+    /// failed: DMS returns the ordinary sanitized upstream-failure problem - also a <c>502</c>, but
+    /// carrying <c>type: urn:ed-fi:api:identities:upstream-failure</c> - and the job, including an
+    /// already-terminal one whose own record could not be read during the failure, remains retrievable
+    /// and unmodified once the dependency recovers. Only a call that itself establishes permanent
+    /// failure may return <see cref="IdentityResultStatus.JobFailed"/>. A client may retry the poll
+    /// under its own bounded retry policy, but this problem guarantees neither that the failure is
+    /// temporary nor that a later poll will succeed, and it never makes resubmitting the original find
+    /// or search safe: the job it failed to read may still be running.
     /// </item>
     /// </list>
     /// DMS applies no timeout to this call and never retries it, under the host-wide rule above; the
