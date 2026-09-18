@@ -21,7 +21,9 @@ add the scheme name if it turns out to be required).
 - [x] `connect/register`, `connect/token`, and `connect/introspect` are untouched — this task only
       changes `connect/revoke`.
 - [x] A `POST /connect/revoke` request with no `Authorization` header (or an invalid/expired
-      bearer token) returns `401 Unauthorized`.
+      bearer token) returns `401 Unauthorized`. Both halves are covered by automated tests:
+      `Given_a_revocation_request_with_a_token_from_an_unauthenticated_caller` and
+      `Given_a_revocation_request_with_an_invalid_bearer_token`.
 
 **Verification:**
 - [x] Build succeeds: `dotnet build`
@@ -75,7 +77,10 @@ existing hardcoded value), so no existing test is affected.
 ## Checkpoint: Foundation (after Tasks 1-2)
 - [x] `dotnet build` succeeds
 - [x] `dotnet test` passes except the anonymous-`RevokeToken` tests noted in Task 1 (tracked, not ignored)
-- [x] Manual 401 check from Task 1 passes
+- [~] Manual 401 check from Task 1 — no running service was available; covered by the automated
+      fixtures `Given_a_revocation_request_with_a_token_from_an_unauthenticated_caller` (no
+      `Authorization` header) and `Given_a_revocation_request_with_an_invalid_bearer_token`
+      (invalid bearer token), both asserting `401`.
 - [x] Nothing surprising: the self-contained and Keycloak branches are mutually exclusive and each
       sets `JwtBearerDefaults.AuthenticationScheme` as the default authenticate/challenge scheme;
       the existing `MapSecured*` helpers already rely on that default. No review needed.
@@ -270,5 +275,7 @@ self-contained and Keycloak-issued tokens, since both use the same claim name.
 ## Checkpoint: Complete (after Task 7)
 - [x] All acceptance criteria across Tasks 1-7 met
 - [x] `docs/parking-lot.md` exists only if adjacent bugs were actually found during this work
-- [x] Not applicable — `docs/parking-lot.md` was not created because no adjacent bugs were found.
+- [~] `docs/parking-lot.md` exists with one entry, so the PR description must remind the reviewer
+      to read it and to delete it before merge. Not yet done: no PR was opened by the
+      implementation agent.
 - [x] Ready for human review

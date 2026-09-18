@@ -25,6 +25,15 @@ public class TestAuthHandler(
     /// </summary>
     public const string ClientIdHeaderName = "X-Test-ClientId";
 
+    /// <summary>
+    /// Optional request header that suppresses the service-role claim. The resulting principal is
+    /// shaped like an ordinary client-credentials token from <c>/connect/token</c>: authenticated,
+    /// but without the <c>IdentitySettings:ConfigServiceRole</c> claim that
+    /// <c>SecurityConstants.ServicePolicy</c> requires. Absent the header the role claim is
+    /// emitted exactly as before.
+    /// </summary>
+    public const string OmitRoleClaimHeaderName = "X-Test-OmitRoleClaim";
+
     protected override Task<AuthenticateResult> HandleAuthenticateAsync()
     {
         // Extract scope from the request header for testing
@@ -42,12 +51,16 @@ public class TestAuthHandler(
             ? identitySettings.Value.ClientId
             : clientIdHeader;
 
-        var claims = new[]
+        List<Claim> claims = [new Claim("client_id", clientId), new Claim("scope", scopeHeader)];
+
+        // Only tests that deliberately need a role-less caller set this header, so the claim set
+        // is unchanged for every other test.
+        if (string.IsNullOrEmpty(Context.Request.Headers[OmitRoleClaimHeaderName].ToString()))
         {
-            new Claim("client_id", clientId),
-            new Claim(identitySettings.Value.RoleClaimType, identitySettings.Value.ConfigServiceRole),
-            new Claim("scope", scopeHeader),
-        };
+            claims.Add(
+                new Claim(identitySettings.Value.RoleClaimType, identitySettings.Value.ConfigServiceRole)
+            );
+        }
 
         var identity = new ClaimsIdentity(claims, JwtBearerDefaults.AuthenticationScheme);
         var principal = new ClaimsPrincipal(identity);

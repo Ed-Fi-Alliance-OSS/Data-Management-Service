@@ -77,9 +77,12 @@ the stored status is `valid`. CMS exposes:
   caller could carry a victim's `jti`. A token that fails verification, carries no
   `client_id`, or belongs to another client is a **silent no-op that still returns
   `200 OK`** — per RFC 7009 the outcome is indistinguishable from revoking an
-  unknown token, so nothing leaks about the token's existence or owner. This
-  `client_id` check is uniform across self-contained and Keycloak-issued tokens,
-  which use the same claim name.
+  unknown token, so nothing leaks about the token's existence or owner. A target
+  token past its `exp` (plus the validator's clock skew) is likewise a no-op rather
+  than being revoked by `jti`, since verification includes the lifetime check.
+  Because the `client_id` claim name is the same for self-contained and
+  Keycloak-issued tokens, the comparison needs no per-mode branching — but see the
+  Keycloak note below for where it actually runs.
 - `POST /connect/introspect` (RFC 7662) — reports active/inactive status.
 
 This is **not** one-time-use enforcement (a valid token remains reusable until it
@@ -97,6 +100,15 @@ session management, and any `jti`/introspection semantics are owned by the IdP. 
 practical constraint: an externally-issued token revoked at the IdP is still
 **accepted by these paths until it expires**. This is an **IdP-dependent gap**
 bounded (not closed) by the compensating controls below.
+
+In Keycloak mode CMS registers no `ITokenRevocationManager` — only the MSSQL and
+Postgres OpenIddict extensions do, and `KeycloakTokenManager` implements
+`ITokenManager` alone — so `POST /connect/revoke` does not reach the
+ownership-checked revocation path at all: it falls through to a bare `200 OK` and
+**revokes nothing**. The ownership comparison described above therefore only
+executes in `self-contained` mode. What *did* change for Keycloak mode is the
+authentication requirement: `/connect/revoke` now answers `401` to an
+unauthenticated caller, where it previously returned a `200 OK` no-op.
 
 ## `jti` handling matrix
 

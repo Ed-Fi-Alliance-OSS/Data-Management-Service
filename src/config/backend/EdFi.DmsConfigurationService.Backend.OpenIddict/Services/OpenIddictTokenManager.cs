@@ -444,7 +444,11 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                 {
                     // A token owned by someone else is deliberately indistinguishable from an
                     // unknown token, so the caller learns nothing about who owns it.
-                    _logger.LogWarning(
+                    //
+                    // Logged at Debug, not Warning: this is an expected, by-design no-op that any
+                    // authenticated caller can trigger at will, so a higher level would let a
+                    // caller flood the log at a severity operators alert on.
+                    _logger.LogDebug(
                         "Revocation ignored: the supplied token does not belong to the calling client {CallerClientId}",
                         LoggingUtility.SanitizeForLog(callerClientId)
                     );
