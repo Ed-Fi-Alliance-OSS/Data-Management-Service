@@ -491,7 +491,7 @@ public class VendorModule : IEndpointModule
         // than known wrong.
         async Task<IResult> CompensateAmbiguousClientAsync(VendorApiClient client, IResult originalFailure)
         {
-            if (!await RestoreClientAsync(client, client.ClientUuid, acceptMissing: false))
+            if (!await RestoreClientAsync(client, client.ClientUuid, client.ClientUuid, acceptMissing: false))
             {
                 logger.LogError(
                     "Could not restore the namespace claim of ApiClient {ApiClientId} of Vendor {Id} after its update failed; stored client state may be inconsistent",
@@ -504,15 +504,17 @@ public class VendorModule : IEndpointModule
         }
 
         // The provider applied the claim but the database did not accept the UUID, so the
-        // provider client this request mutated is restored; its row is left to whichever writer
-        // owns it.
+        // provider client this request mutated — the one the provider reported, which a
+        // replacing provider has already made the live client — is restored, guarded by the UUID
+        // the row still holds because the forward sync did not persist the reported one. Its row
+        // is left to whichever writer owns it.
         async Task<IResult> CompensateUnpersistedClientAsync(
             VendorApiClient client,
             Guid reportedClientUuid,
             bool acceptMissing = false
         )
         {
-            if (!await RestoreClientAsync(client, reportedClientUuid, acceptMissing))
+            if (!await RestoreClientAsync(client, reportedClientUuid, client.ClientUuid, acceptMissing))
             {
                 logger.LogError(
                     "Could not restore the namespace claim of ApiClient {ApiClientId} of Vendor {Id} after its UUID could not be persisted; stored client state may be inconsistent",
@@ -540,7 +542,9 @@ public class VendorModule : IEndpointModule
             for (int index = mutatedClients.Count - 1; index >= 0; index--)
             {
                 (VendorApiClient client, Guid currentUuid) = mutatedClients[index];
-                if (!await RestoreClientAsync(client, currentUuid, acceptMissing))
+                // The forward sync succeeded for these, so the row holds the UUID the provider
+                // client already carries.
+                if (!await RestoreClientAsync(client, currentUuid, currentUuid, acceptMissing))
                 {
                     allRestored = false;
                     logger.LogError(
@@ -556,10 +560,14 @@ public class VendorModule : IEndpointModule
         }
 
         // Re-applies the vendor's stored prefixes to one provider client and persists whatever
-        // UUID the rollback reports, guarded by the UUID this request last observed for it.
+        // UUID the rollback reports. The provider client this request mutated and the UUID its
+        // row still holds are not always the same one: a provider that replaced the client
+        // reports the replacement before the forward sync persists it, so the rollback must
+        // address the replacement while the guard states the UUID the row is expected to carry.
         async Task<bool> RestoreClientAsync(
             VendorApiClient client,
-            Guid currentClientUuid,
+            Guid providerClientUuid,
+            Guid expectedStoredUuid,
             bool acceptMissing
         )
         {
@@ -567,7 +575,7 @@ public class VendorModule : IEndpointModule
             try
             {
                 rollbackResult = await clientRepository.UpdateClientNamespaceClaimAsync(
-                    currentClientUuid.ToString(),
+                    providerClientUuid.ToString(),
                     state.NamespacePrefixes
                 );
             }
@@ -599,7 +607,7 @@ public class VendorModule : IEndpointModule
             {
                 syncResult = await apiClientRepository.SyncApiClientUuid(
                     client.Id,
-                    currentClientUuid,
+                    expectedStoredUuid,
                     rollbackSuccess.ClientUuid
                 );
             }
@@ -624,7 +632,7 @@ public class VendorModule : IEndpointModule
                     // removed survives as an orphaned provider client, which is never a clean
                     // outcome whatever became of the row.
                     if (
-                        rollbackSuccess.ClientUuid != currentClientUuid
+                        rollbackSuccess.ClientUuid != providerClientUuid
                         && !await TryDeleteClientAsync(client, rollbackSuccess.ClientUuid)
                     )
                     {
@@ -679,7 +687,9 @@ public class VendorModule : IEndpointModule
     /// workflow that committed while this one waited. A vendor whose set of owning applications
     /// changed while the locks were being acquired is retried a bounded number of times, and
     /// persistent drift is answered as a retriable concurrency conflict. A vendor that owns no
-    /// clients mutates no provider client, so it takes no lock at all.
+    /// clients mutates no provider client, so it takes no lock at all, and a vendor whose clients
+    /// span more applications than one update may lock is answered as the same retriable conflict
+    /// without acquiring any lock.
     /// </summary>
     private static async Task<(
         IResult? Failure,
@@ -694,6 +704,14 @@ public class VendorModule : IEndpointModule
     )
     {
         const int maxAttempts = 3;
+
+        // Every acquired application lock holds its own dedicated database connection until this
+        // workflow releases it, which is after the provider calls have run, so an uncapped
+        // fan-out lets one vendor update hold an unbounded share of the connection pool. A vendor
+        // above the cap takes no lock at all and is answered as the same retriable conflict a
+        // lock timeout receives.
+        const int maxLockedApplications = 25;
+
         for (int attempt = 1; attempt <= maxAttempts; attempt++)
         {
             (IResult? preReadFailure, VendorUpdateState? preReadState) = await ReadVendorUpdateStateAsync(
@@ -711,6 +729,17 @@ public class VendorModule : IEndpointModule
             if (applicationIdsToLock.Length == 0)
             {
                 return (null, preReadState, []);
+            }
+
+            if (applicationIdsToLock.Length > maxLockedApplications)
+            {
+                logger.LogWarning(
+                    "The clients of Vendor {Id} span {ApplicationCount} applications, more than the {MaximumApplicationCount} this update may lock; no lock was acquired",
+                    id,
+                    applicationIdsToLock.Length,
+                    maxLockedApplications
+                );
+                return (RetriableConflict(httpContext), null, []);
             }
 
             List<IAsyncDisposable> heldLocks = [];

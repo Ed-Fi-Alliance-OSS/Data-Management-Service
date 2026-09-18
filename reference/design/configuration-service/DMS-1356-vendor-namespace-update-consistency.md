@@ -419,7 +419,7 @@ Each step is one commit. After each commit: SHA, files, behavior, tests run with
 
 | Risk | Mitigation |
 |---|---|
-| A vendor with many applications holds many session locks for the duration of N provider calls | Bounded by the same `AcquireTimeout` contract; each lock is one pooled-free dedicated connection as today for two-lock moves. Ordering is ascending so no cycle with Application/ApiClient workflows is possible. Document the connection cost in the as-implemented section. |
+| A vendor with many applications holds many session locks for the duration of N provider calls | Each lock is one dedicated connection held until the workflow releases it, so `AcquireTimeout` does not bound the cost: the fan-out is explicitly capped instead. A vendor whose clients span more than the capped number of distinct applications acquires no lock at all and receives the retriable 409 conflict. Ordering is ascending so no cycle with Application/ApiClient workflows is possible. Document the connection cost and the cap in the as-implemented section. |
 | Deadlock with a two-lock ApiClient move | Impossible under a total order; pinned by the inverse-move fixture on both backends. |
 | Keycloak representation from `GetClientAsync` carries fields the `PUT` interprets destructively | Same representation round-trip already used by `UpdateClientAsync` and probed in V-32. |
 | A non-participating writer changes a row mid-request | Detected by the sync guard (`FailureStaleState`), never overwritten, answered 500 with rollback of this request's own mutations. |

@@ -341,7 +341,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
             catch (Exception ex)
             {
                 logger.LogError(ex, "Update vendor failure");
-                await transaction.RollbackAsync();
+                await RollbackSafelyAsync(transaction);
                 return new VendorUpdateResult.FailureUnknown(ex.Message);
             }
         }

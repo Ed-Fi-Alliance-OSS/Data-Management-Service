@@ -297,7 +297,7 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.Repositories
 
             await using var connection = new SqlConnection(databaseOptions.Value.DatabaseConnection);
             await connection.OpenAsync();
-            await using var transaction = await connection.BeginTransactionAsync();
+            await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync();
             try
             {
                 var affectedRows = await connection.ExecuteAsync(
@@ -349,7 +349,7 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.Repositories
             catch (Exception ex)
             {
                 logger.LogError(ex, "Update vendor failure");
-                await transaction.RollbackAsync();
+                await RollbackSafelyAsync(transaction);
                 return new VendorUpdateResult.FailureUnknown(ex.Message);
             }
         }

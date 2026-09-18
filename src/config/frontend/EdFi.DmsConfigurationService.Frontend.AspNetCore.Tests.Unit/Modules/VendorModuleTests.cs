@@ -1684,6 +1684,12 @@ public class VendorModuleTests
         protected const int HigherApplicationId = 30;
         protected const int DriftedApplicationId = 40;
 
+        /// <summary>
+        /// The most applications one vendor update may lock, mirroring the cap in
+        /// <c>VendorModule.AcquireVendorLocksAsync</c>.
+        /// </summary>
+        protected const int MaximumLockedApplications = 25;
+
         [SetUp]
         public void SetUpLockDefaults()
         {
@@ -1694,6 +1700,26 @@ public class VendorModuleTests
                 new VendorApiClient(53, "client-53", Guid.NewGuid(), HigherApplicationId),
                 new VendorApiClient(51, "client-51", Guid.NewGuid(), LowerApplicationId),
                 new VendorApiClient(52, "client-52", Guid.NewGuid(), HigherApplicationId),
+            ];
+            _storedUuids = _clients.ToDictionary(client => client.Id, client => client.ClientUuid);
+        }
+
+        /// <summary>
+        /// Gives the vendor one client in each of <paramref name="applicationCount" /> distinct
+        /// applications, so a fixture can sit exactly at or just above the lock cap.
+        /// </summary>
+        protected void SpreadClientsAcrossApplications(int applicationCount)
+        {
+            _clients =
+            [
+                .. Enumerable
+                    .Range(1, applicationCount)
+                    .Select(offset => new VendorApiClient(
+                        100 + offset,
+                        $"client-{100 + offset}",
+                        Guid.NewGuid(),
+                        100 + offset
+                    )),
             ];
             _storedUuids = _clients.ToDictionary(client => client.Id, client => client.ClientUuid);
         }
@@ -1928,6 +1954,66 @@ public class VendorModuleTests
 
         [Test]
         public void It_releases_every_lock() => AssertEveryLockReleased();
+
+        [Test]
+        public void It_mutates_nothing() => AssertNoProviderCallOrVendorUpdate();
+    }
+
+    /// <summary>
+    /// A vendor whose clients span exactly as many applications as one update may lock still
+    /// runs, so the cap refuses only the fan-out above it and not an ordinary multi-application
+    /// vendor.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_vendor_at_the_application_lock_cap : VendorLockTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            SpreadClientsAcrossApplications(MaximumLockedApplications);
+            using var client = SetUpClient();
+            await ActUpdateAsync(client);
+        }
+
+        [Test]
+        public void It_returns_no_content() => _response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        [Test]
+        public void It_locks_every_application_in_ascending_order() =>
+            _lockManager
+                .AcquiredApplicationIds.Should()
+                .Equal(_clients.Select(client => client.ApplicationId));
+
+        [Test]
+        public void It_releases_every_lock() => AssertEveryLockReleased();
+
+        [Test]
+        public void It_updates_every_client() => UpdateCalls.Should().HaveCount(MaximumLockedApplications);
+    }
+
+    /// <summary>
+    /// A vendor whose clients span more applications than one update may lock. Every lock holds
+    /// its own dedicated connection until the workflow, the provider calls included, finishes, so
+    /// the request is refused before a single lock is taken rather than allowed to drain the
+    /// connection pool.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_vendor_above_the_application_lock_cap : VendorLockTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            SpreadClientsAcrossApplications(MaximumLockedApplications + 1);
+            using var client = SetUpClient();
+            await ActUpdateAsync(client);
+        }
+
+        [Test]
+        public async Task It_returns_the_retriable_conflict_contract() =>
+            await AssertLockConflictContract(_response);
+
+        [Test]
+        public void It_acquires_no_lock() => _lockManager.AcquiredApplicationIds.Should().BeEmpty();
 
         [Test]
         public void It_mutates_nothing() => AssertNoProviderCallOrVendorUpdate();
@@ -2229,6 +2315,67 @@ public class VendorModuleTests
                 .Select(call => call.TargetedUuid)
                 .Should()
                 .BeEquivalentTo(_clients[1].ClientUuid.ToString(), _clients[0].ClientUuid.ToString());
+    }
+
+    /// <summary>
+    /// A provider that replaces the client reports the replacement before anything has re-pointed
+    /// the row at it. When that forward sync fails, the client the provider now serves is the
+    /// replacement while the row still holds the UUID from the snapshot, so the rollback has to
+    /// address the replacement and guard against the stored UUID. Addressing the stored UUID
+    /// would restore a client this request never mutated; guarding with the replacement would
+    /// classify a provider restore that worked as a stale-state inconsistency.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_rotated_client_whose_forward_sync_fails : VendorNamespaceUpdateTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            _rotateClientUuids = true;
+            // Only the forward sync is scripted; the rollback's own sync falls back to the
+            // fixture's guarded store, so whether the compensation is accepted is that store's
+            // verdict rather than a scripted one.
+            A.CallTo(() =>
+                    _apiClientRepository.SyncApiClientUuid(_clients[0].Id, A<Guid>.Ignored, A<Guid>.Ignored)
+                )
+                .Returns(new ApiClientUuidSyncResult.FailureUnknown("the row could not be written"))
+                .Once();
+
+            using var client = SetUpClient();
+            await ActUpdateAsync(client);
+        }
+
+        [Test]
+        public void It_returns_a_sanitized_server_error() =>
+            _response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+
+        [Test]
+        public void It_restores_the_replacement_client_the_request_actually_mutated() =>
+            RollbackCalls
+                .Select(call => call.TargetedUuid)
+                .Should()
+                .Equal(UpdateCalls[0].ReportedUuid.ToString());
+
+        [Test]
+        public void It_guards_the_rollback_sync_with_the_uuid_the_row_still_holds() =>
+            _syncCalls
+                .Should()
+                .Equal(new SyncCall(_clients[0].Id, _clients[0].ClientUuid, RollbackCalls[0].ReportedUuid));
+
+        [Test]
+        public void It_leaves_the_row_pointing_at_the_client_that_carries_the_stored_prefixes() =>
+            _storedUuids[_clients[0].Id].Should().Be(RollbackCalls[0].ReportedUuid);
+
+        [Test]
+        public void It_stops_before_the_remaining_clients() => UpdateCalls.Should().HaveCount(1);
+
+        [Test]
+        public void It_deletes_nothing() => _deletedClientUuids.Should().BeEmpty();
+
+        [Test]
+        public void It_does_not_update_the_vendor() =>
+            A.CallTo(() => _vendorRepository.UpdateVendor(A<VendorUpdateCommand>.Ignored))
+                .MustNotHaveHappened();
     }
 
     [TestFixture]
