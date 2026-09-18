@@ -917,6 +917,14 @@ jobs:
       - provenance-create-plugins
       - sbom-create-custom-validation
       - provenance-create-custom-validation
+      # The two contract publish jobs, and deliberately not the two release-stamped ones. A contract
+      # publish job can refuse the package it was handed - a changed surface, documentation or
+      # dependency list at a version already on the feed - and an SBOM and provenance describing a
+      # refused package must not be attached to the release. The EdFi.Api and SchemaTools publish
+      # jobs push a version that is new every release, so a failure there is an infrastructure
+      # fault rather than a rejected package, and this job never waited on them.
+      - publish-package-plugins
+      - publish-package-custom-validation
     if: ${{ startsWith(github.event.release.tag_name, 'dms-') && !contains(github.event.release.tag_name, 'alpha') }}
     permissions:
       contents: write
