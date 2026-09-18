@@ -312,8 +312,12 @@ The approved intentional ODS differences are:
   resources declare a query field of that name depends on the extensions loaded at runtime, so the
   parity harness can exercise this difference only against a schema that declares one. The general
   problem — DMS reserving query keys that model validation does not protect against a colliding
-  resource property, which predates this epic in `minChangeVersion` and `maxChangeVersion` — is
-  raised as DMS-1442 for team triage rather than resolved here;
+  resource property, which predates this epic in `minChangeVersion` and `maxChangeVersion` — was
+  raised as DMS-1442 and resolved upstream rather than here. MetaEd's `NoPagingPropertyNames`
+  validator now refuses all eight reserved names as property names for a model targeting Ed-Fi API
+  8.1 or later, so a conforming extension can no longer declare one. The DMS behavior described
+  above is unchanged, and remains reachable for a schema built against an earlier target or with an
+  older MetaEd;
 - return `Number of partitions must be between 1 and 200.` for a non-numeric
   `/partitions?number=abc`, where ODS's `[FromQuery] int? number` binding fails before its
   controller body runs. `PartitionsController` is an `[ApiController]`, and
