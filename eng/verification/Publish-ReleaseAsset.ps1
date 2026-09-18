@@ -134,12 +134,19 @@ if ($null -eq $GetAssets) {
         do {
             $url = "$ApiBaseUrl/repos/$Repository/releases/$ReleaseId/assets?per_page=100&page=$page"
 
+            # Assigned before it is wrapped. Invoke-RestMethod emits a JSON array as one pipeline
+            # object, so @(Invoke-RestMethod ...) would collect that one object into a one-element
+            # array: every page would read as a single nested item, no existing asset would ever
+            # match, and the page count would never reach 100. Assigning first gives the array
+            # itself, and @() of an array is that array, whether it holds zero, one or many assets.
             try {
-                $batch = @(Invoke-RestMethod -Uri $url -Headers $headers -Method Get)
+                $response = Invoke-RestMethod -Uri $url -Headers $headers -Method Get
             }
             catch {
                 throw "The release's assets could not be listed from $url : $($_.Exception.Message)"
             }
+
+            $batch = @($response)
 
             foreach ($asset in $batch) {
                 $assets.Add($asset)

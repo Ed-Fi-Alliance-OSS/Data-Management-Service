@@ -199,8 +199,10 @@ BeforeAll {
             [switch] $FeedServesOtherBytes,
             [switch] $FeedAbsent,
             [switch] $DuplicateSbomArtifact,
+            [switch] $ConfusableSbomArtifact,
             [switch] $SbomArtifactFromOtherRun,
             [switch] $ProvenanceExpired,
+            [switch] $UnsignedProvenance,
             [scriptblock] $Publish
         )
 
@@ -226,7 +228,18 @@ BeforeAll {
             -RepositoryUri $StatementRepositoryUri -SourceSha $StatementSourceSha -EntryPoint $StatementEntryPoint -BuilderId $StatementBuilderId
 
         Write-Fixture -Path (Join-Path $root "artifacts/2/content/manifest.spdx.json") -Content (Get-Manifest -Sha256 $manifestSha -RootName $ManifestRootName -DocumentDescribes $ManifestDocumentDescribes) | Out-Null
-        Write-Fixture -Path (Join-Path $root "artifacts/3/content/$($script:provenanceName)") -Content (Get-Envelope -Statement $statement) | Out-Null
+        $envelope = if ($UnsignedProvenance) {
+            # payloadType and a valid statement, but no signatures member at all.
+            [ordered]@{
+                payloadType = "application/vnd.in-toto+json"
+                payload     = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($statement))
+            } | ConvertTo-Json -Compress
+        }
+        else {
+            Get-Envelope -Statement $statement
+        }
+
+        Write-Fixture -Path (Join-Path $root "artifacts/3/content/$($script:provenanceName)") -Content $envelope | Out-Null
 
         $artifacts = [System.Collections.Generic.List[object]]::new()
         $artifacts.Add((Get-FakeArtifact -Id 1 -Name "$($script:packageId)-NuGet"))
@@ -238,6 +251,13 @@ BeforeAll {
             # can still succeed.
             Copy-Item -LiteralPath (Join-Path $root "artifacts/2") -Destination (Join-Path $root "artifacts/4") -Recurse
             $artifacts.Add((Get-FakeArtifact -Id 4 -Name "$($script:packageId)-SBOM"))
+        }
+
+        if ($ConfusableSbomArtifact) {
+            # A name that differs from the SBOM artifact's only by a soft hyphen. It serves a
+            # manifest for other bytes, so selecting it would fail loudly rather than pass by luck.
+            Write-Fixture -Path (Join-Path $root "artifacts/5/content/manifest.spdx.json") -Content (Get-Manifest -Sha256 ("22" * 32)) | Out-Null
+            $artifacts.Add((Get-FakeArtifact -Id 5 -Name "$($script:packageId)-SBOM$([char]0x00AD)"))
         }
 
         $run = [pscustomobject]@{
@@ -694,6 +714,18 @@ Describe "Invoke-ContractEvidenceBackfill attaches the original evidence" {
         $result.Sbom.Action | Should -BeExactly "uploaded"
         $scenario.Calls | Should -Contain "artifact:4"
     }
+
+    # An artifact whose name differs by a soft hyphen is another artifact: it is neither an
+    # ambiguity nor a candidate, and it is never downloaded.
+    It "selects the exact artifact name beside a confusable one" {
+        $scenario = Get-Scenario -ConfusableSbomArtifact
+
+        $result = Invoke-Backfill -Scenario $scenario
+
+        $result.Sbom.Action | Should -BeExactly "uploaded"
+        $scenario.Calls | Should -Contain "download:2"
+        $scenario.Calls | Should -Not -Contain "download:5"
+    }
 }
 
 Describe "Invoke-ContractEvidenceBackfill uploads nothing unless everything is proven" {
@@ -717,6 +749,14 @@ Describe "Invoke-ContractEvidenceBackfill uploads nothing unless everything is p
         $scenario = Get-Scenario -StatementSha ("00" * 32)
 
         { Invoke-Backfill -Scenario $scenario } | Should -Throw -ExpectedMessage "*does not describe this package*"
+
+        $scenario.Publications.Count | Should -Be 0
+    }
+
+    It "fails on an unsigned envelope and publishes nothing" {
+        $scenario = Get-Scenario -UnsignedProvenance
+
+        { Invoke-Backfill -Scenario $scenario } | Should -Throw -ExpectedMessage "*no signatures*"
 
         $scenario.Publications.Count | Should -Be 0
     }
