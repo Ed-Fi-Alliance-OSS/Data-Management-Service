@@ -394,15 +394,64 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
         }
 
         /// <summary>
-        /// Revokes a token by setting its status to 'revoked'
+        /// Revokes a token by setting its status to 'revoked', but only when the token belongs to
+        /// the calling client. Anything else is a no-op returning false.
         /// </summary>
-        public async Task<bool> RevokeTokenAsync(string token)
+        public async Task<bool> RevokeTokenAsync(string token, string callerClientId)
         {
             try
             {
-                var tokenHandler = new JwtSecurityTokenHandler();
-                var jwtToken = tokenHandler.ReadJwtToken(token);
-                var jti = jwtToken.Claims.FirstOrDefault(x => x.Type == JwtRegisteredClaimNames.Jti)?.Value;
+                if (string.IsNullOrEmpty(callerClientId))
+                {
+                    _logger.LogWarning("Revocation ignored: the caller presented no client_id claim");
+                    return false;
+                }
+
+                string audience = _identityOptions.Value.Audience;
+                string issuer = _identityOptions.Value.Authority;
+                var publicKeys = await GetPublicKeysAsync();
+                var signingKeys = publicKeys.ToDictionary(
+                    k => k.KeyId,
+                    k => (SecurityKey)new RsaSecurityKey(k.RsaParameters)
+                );
+
+                // The signature, issuer and audience must be verified before any claim on the
+                // target token is trusted: an unverified client_id could be forged to name the
+                // caller while carrying a victim's jti, which would defeat the ownership check.
+                // ValidateTokenAsync is deliberately not reused because it also requires the
+                // stored status to be "valid", which would turn re-revoking an already-revoked
+                // token into a failure instead of the idempotent no-op RFC 7009 expects.
+                if (
+                    !JwtTokenValidator.ValidateToken(
+                        token,
+                        signingKeys,
+                        issuer,
+                        audience,
+                        out var jwtToken,
+                        _logger
+                    )
+                )
+                {
+                    _logger.LogWarning(
+                        "Revocation ignored: the supplied token failed validation (signature, issuer, audience, or lifetime)"
+                    );
+                    return false;
+                }
+
+                string? tokenClientId = jwtToken?.Claims.FirstOrDefault(x => x.Type == "client_id")?.Value;
+
+                if (!string.Equals(tokenClientId, callerClientId, StringComparison.Ordinal))
+                {
+                    // A token owned by someone else is deliberately indistinguishable from an
+                    // unknown token, so the caller learns nothing about who owns it.
+                    _logger.LogWarning(
+                        "Revocation ignored: the supplied token does not belong to the calling client {CallerClientId}",
+                        LoggingUtility.SanitizeForLog(callerClientId)
+                    );
+                    return false;
+                }
+
+                var jti = jwtToken?.Claims.FirstOrDefault(x => x.Type == JwtRegisteredClaimNames.Jti)?.Value;
 
                 if (!string.IsNullOrEmpty(jti))
                 {
