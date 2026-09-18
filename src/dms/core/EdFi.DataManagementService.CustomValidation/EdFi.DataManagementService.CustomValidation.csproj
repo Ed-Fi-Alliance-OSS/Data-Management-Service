@@ -20,8 +20,12 @@
             implementer can act on.
 
             1.0.0 is the surface DMS-1432 shipped. Package, assembly and file versions are what is
-            decoupled here; InformationalVersion still records the release the assembly was built
-            in, and nothing compares it.
+            decoupled here. InformationalVersion is not declared, and what it carries depends on
+            the build: under the release lane's BuildAndPublish the build script regenerates
+            Directory.Build.props with a VersionPrefix only, so InformationalVersion follows this
+            Version plus the source revision; a plain local build against the committed
+            Directory.Build.props inherits that file's InformationalVersion instead. Nothing
+            compares it in either case.
         -->
         <Version>1.0.0</Version>
         <AssemblyVersion>1.0.0</AssemblyVersion>

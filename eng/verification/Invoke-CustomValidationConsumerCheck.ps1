@@ -12,9 +12,9 @@
     actually restore it and compile against it, which is the only check that exercises the package
     the way an implementer will.
 
-    Only the per-PR lane calls this today, because the package is deliberately built and never
-    published. Whoever wires the publishing lane calls it there too, so that no version can reach a
-    feed without an outside project having compiled against it first.
+    The per-PR lane calls this on every pull request; the prerelease lane does not. What it proves
+    about a contract version is therefore proven before the pull request that produced that version
+    merges, not in the job that publishes it.
 #>
 [CmdletBinding()]
 param(

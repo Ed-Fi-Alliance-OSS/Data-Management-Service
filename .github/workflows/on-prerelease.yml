@@ -14,7 +14,7 @@ on:
   # both provenance files with the real generator before a release ever fires this workflow.
   #
   # Nothing is published on a dispatch. The two contract publish jobs test event_name and skip,
-  # which is where the package pushes and the Prerelease-view membership live. Every other job here
+  # which is where the package pushes live. Every other job here
   # is either gated on github.event.release.tag_name, which a dispatch does not carry, or follows by
   # needs from a job that is, so pack-dms, pack-schema-tools, pack-cs and everything downstream of
   # them - the EdFi.Api, SchemaTools and Configuration Service pushes, both image publications,
@@ -737,8 +737,8 @@ jobs:
     name: Publish Plugins Contract NuGet Package
     needs: pack-plugins
     # Not on a dispatch. The pack job above does run on one, so without this the dry run would push
-    # the package and promote it into the Prerelease view; both of those live in this job and
-    # nowhere else, so skipping it is what makes the dispatch a dry run.
+    # the package; the push lives in this job and nowhere else, so skipping it is what makes the
+    # dispatch a dry run.
     if: ${{ github.event_name != 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     defaults:
@@ -804,32 +804,11 @@ jobs:
 
           ./build-dms.ps1 Push @arguments
 
-      # Whether the push happened or the version was already published unchanged, the version has to
-      # be a member of the Prerelease view: that is what the release lane asks later to tell a
-      # version that shipped from one that never did. Nothing else populates that view.
-      #
-      # Idempotent in both directions. A version already in the Release view is left there, and one
-      # already in Prerelease is not promoted again, so running this on every prerelease is safe.
-      - name: Ensure Plugins Contract Prerelease Membership
-        run: |
-          $ErrorActionPreference = "Stop"
-
-          Import-Module ./package-helpers.psm1
-
-          Invoke-ContractPrereleasePromotion `
-            -PackagesURL "${{ env.ARTIFACTS_PACKAGES_URL }}" `
-            -Username "${{ env.ARTIFACTS_USERNAME }}" `
-            -Password (ConvertTo-SecureString -String "${{ env.ARTIFACTS_API_KEY }}" -AsPlainText -Force) `
-            -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" `
-            -ApiKey "${{ env.ARTIFACTS_API_KEY }}" `
-            -PackageName "${{ env.PLUGINS_PACKAGE_NAME }}" `
-            -Version "${{ needs.pack-plugins.outputs.contract-version }}"
-
   publish-package-custom-validation:
     name: Publish Custom Validation Contract NuGet Package
     needs: pack-custom-validation
-    # Not on a dispatch, for the reason publish-package-plugins records: the push and the
-    # Prerelease-view membership are here, and a dry run must do neither.
+    # Not on a dispatch, for the reason publish-package-plugins records: the push is here, and a
+    # dry run must not push.
     if: ${{ github.event_name != 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     defaults:
@@ -888,27 +867,6 @@ jobs:
           }
 
           ./build-dms.ps1 Push @arguments
-
-      # Whether the push happened or the version was already published unchanged, the version has to
-      # be a member of the Prerelease view: that is what the release lane asks later to tell a
-      # version that shipped from one that never did. Nothing else populates that view.
-      #
-      # Idempotent in both directions. A version already in the Release view is left there, and one
-      # already in Prerelease is not promoted again, so running this on every prerelease is safe.
-      - name: Ensure Custom Validation Contract Prerelease Membership
-        run: |
-          $ErrorActionPreference = "Stop"
-
-          Import-Module ./package-helpers.psm1
-
-          Invoke-ContractPrereleasePromotion `
-            -PackagesURL "${{ env.ARTIFACTS_PACKAGES_URL }}" `
-            -Username "${{ env.ARTIFACTS_USERNAME }}" `
-            -Password (ConvertTo-SecureString -String "${{ env.ARTIFACTS_API_KEY }}" -AsPlainText -Force) `
-            -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" `
-            -ApiKey "${{ env.ARTIFACTS_API_KEY }}" `
-            -PackageName "${{ env.CUSTOM_VALIDATION_PACKAGE_NAME }}" `
-            -Version "${{ needs.pack-custom-validation.outputs.contract-version }}"
 
   # dms-pre and dms-*-alpha releases, will not have artifacts attached.
   # This step attach DMS artifacts to the release with tag vX.Y.Z without 'alpha' or 'pre' in the tag name.

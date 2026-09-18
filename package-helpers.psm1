@@ -319,12 +319,13 @@ function Get-CustomValidationContractVersion {
 The view-scoped form of a feed's NuGet v3 service index.
 
 Azure Artifacts addresses a feed's views by suffixing the feed name, so the Release view of
-.../_packaging/EdFi/nuget/v3/index.json is .../_packaging/EdFi@Release/nuget/v3/index.json. Asking
-the unscoped index instead would answer "is this version on the feed at all", which is a different
-question from "is it in this view" and is exactly the substitution the design rules out.
+.../_packaging/EdFi/nuget/v3/index.json is .../_packaging/EdFi@Release/nuget/v3/index.json, and the
+Local view, which holds every version pushed to the feed, is .../_packaging/EdFi@Local/.... Every
+lookup names its view this way, so the population a step asked is stated in the URL it used rather
+than left implicit in an unscoped address.
 
 A URL that does not carry a _packaging/<feed>/ segment is rejected rather than rewritten, because a
-silently unmodified URL would answer that different question without saying so.
+silently unmodified URL would leave the view implicit.
 
 .EXAMPLE
 Get-ViewScopedServiceIndexUrl -ServiceIndexUrl "https://pkgs.dev.azure.com/o/p/_packaging/EdFi/nuget/v3/index.json" -ViewName "Release"
@@ -364,10 +365,10 @@ function Get-ViewScopedServiceIndexUrl {
 .DESCRIPTION
 Whether a package version is a member of one feed view.
 
-Every failure here is fatal on purpose. This answer decides two different mutations: at release time
-an absence fails the release, and in the prerelease lane an absence promotes into a view. A feed
-that cannot be read, or that answers with something other than a version index, must never be read
-as "not a member".
+Every failure here is fatal on purpose. This answer decides a mutation: at release time an absence
+from the Release view leads to a promotion, and an absence from the Local view fails the release. A
+feed that cannot be read, or that answers with something other than a version index, must never be
+read as "not a member".
 
 The request seam is injectable so that every outcome is testable without a feed or a credential.
 The default mirrors the rules Invoke-ContractPublishCheck.ps1 applies: the service index must answer
@@ -527,15 +528,26 @@ function Get-FeedViewVersion {
 Promotes one contract package into the release view, with three outcomes and no fourth.
 
 A contract's version deliberately does not move with the release, so every release after the first
-offers a version that is already promoted. Absence from the prerelease view cannot be the test for
-that, because a version that was never published is absent from the prerelease view too: treating
-absence as "already promoted" would let a missed publish exit zero.
+offers a version that is already promoted. Absence from the feed cannot be the test for that,
+because a version that was never pushed is absent from the feed too: treating absence as "already
+promoted" would let a missed publish exit zero.
 
 So two views are asked:
 
-  present in the release view    -> already promoted, nothing to do
-  absent there, in prerelease    -> promote it
-  absent from both               -> fail, naming the package and the version
+  present in the release view          -> already promoted, nothing to do
+  absent there, present in Local       -> promote it
+  absent from both                     -> fail, naming the package and the version
+
+The Local view is the feed's own population: every version pushed to the feed is a member, and the
+prerelease lane pushes into it and promotes into nothing else. That is the sense in which this
+repository has always used "pre-release" for the unscoped feed (eng/Package-Management.psm1 reads
+the unscoped index as its pre-release source and the Release view as its release source), so it is
+the population a not-yet-released contract version is looked for in. Absence from it means the exact
+version is not on the feed to be promoted now, whether it was never pushed or has since been
+deleted; either way the release cannot proceed on that contract.
+
+The message is returned, not also written to the output stream: a caller that captured it would
+otherwise receive it twice.
 
 .EXAMPLE
 Invoke-ContractPromotion -PackagesURL $url -Username $user -Password $secret -ServiceIndexUrl $index -PackageName EdFi.Api.Plugins -Version 1.0.0
@@ -574,8 +586,9 @@ function Invoke-ContractPromotion {
         [String]
         $ReleaseViewName = "Release",
 
+        # The view that holds every version pushed to the feed, whether or not it has been released.
         [String]
-        $PrereleaseViewName = "Prerelease",
+        $PublishedViewName = "Local",
 
         [String]
         $ApiKey = "",
@@ -600,14 +613,11 @@ function Invoke-ContractPromotion {
     }
 
     if (Test-PackageInView @lookup -ViewName $ReleaseViewName) {
-        $message = "$PackageName $Version is already in the $ReleaseViewName view; nothing to do."
-        Write-Output $message
-
-        return $message
+        return "$PackageName $Version is already in the $ReleaseViewName view; nothing to do."
     }
 
-    if (-not (Test-PackageInView @lookup -ViewName $PrereleaseViewName)) {
-        throw "$PackageName $Version is in neither the $ReleaseViewName nor the $PrereleaseViewName view. A version that never reached the feed cannot be promoted; check that the prerelease published it."
+    if (-not (Test-PackageInView @lookup -ViewName $PublishedViewName)) {
+        throw "$PackageName $Version is in neither the $ReleaseViewName nor the $PublishedViewName view. A version that is not on the feed cannot be promoted; check that the prerelease published it and that it has not been deleted."
     }
 
     if ($null -eq $Promote) {
@@ -630,120 +640,7 @@ function Invoke-ContractPromotion {
         }
     }
 
-    $promoted = "$PackageName $Version promoted to the $ReleaseViewName view."
-    Write-Output $promoted
-
-    return $promoted
-}
-
-<#
-.DESCRIPTION
-Puts one contract package into the prerelease view, idempotently.
-
-The prerelease lane offers the same contract version on every prerelease, and the release lane later
-asks the prerelease view whether that version ever reached the feed. Nothing else populates that
-view, so without this step the release-time lookup would find the version in neither view and fail
-every release.
-
-Idempotent in both directions that matter: a version already in the release view is left alone,
-because promoting a released version backwards is not what this is for, and a version already in the
-prerelease view is left alone rather than promoted a second time. That is what makes it safe to run
-after a push and after a clean unchanged skip alike.
-#>
-function Invoke-ContractPrereleasePromotion {
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'Passed through to Invoke-Promote in a splat the rule does not follow.')]
-    [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Medium')]
-    [OutputType([string])]
-    param(
-        [Parameter(Mandatory)]
-        [String]
-        $PackagesURL,
-
-        [Parameter(Mandatory)]
-        [String]
-        $Username,
-
-        [Parameter(Mandatory)]
-        [SecureString]
-        $Password,
-
-        [Parameter(Mandatory)]
-        [String]
-        $ServiceIndexUrl,
-
-        [Parameter(Mandatory)]
-        [String]
-        $PackageName,
-
-        [Parameter(Mandatory)]
-        [String]
-        $Version,
-
-        [String]
-        $ReleaseViewName = "Release",
-
-        [String]
-        $PrereleaseViewName = "Prerelease",
-
-        [String]
-        $ApiKey = "",
-
-        [scriptblock]
-        $GetViewVersions,
-
-        [scriptblock]
-        $Promote
-    )
-
-    $lookup = @{
-        ServiceIndexUrl = $ServiceIndexUrl
-        PackageName     = $PackageName
-        Version         = $Version
-        ApiKey          = $ApiKey
-    }
-
-    if ($null -ne $GetViewVersions) {
-        $lookup.GetViewVersions = $GetViewVersions
-    }
-
-    if (Test-PackageInView @lookup -ViewName $ReleaseViewName) {
-        $message = "$PackageName $Version is already in the $ReleaseViewName view; leaving it there."
-        Write-Output $message
-
-        return $message
-    }
-
-    if (Test-PackageInView @lookup -ViewName $PrereleaseViewName) {
-        $message = "$PackageName $Version is already in the $PrereleaseViewName view; nothing to do."
-        Write-Output $message
-
-        return $message
-    }
-
-    if ($null -eq $Promote) {
-        $Promote = {
-            param($Arguments)
-
-            Invoke-Promote @Arguments
-        }
-    }
-
-    if ($PSCmdlet.ShouldProcess("$PackageName $Version", "Promote to the $PrereleaseViewName view")) {
-        & $Promote @{
-            PackagesURL = $PackagesURL
-            Username    = $Username
-            Password    = $Password
-            ViewId      = $PrereleaseViewName.ToLowerInvariant()
-            ReleaseRef  = $Version
-            Version     = $Version
-            PackageName = $PackageName
-        }
-    }
-
-    $promoted = "$PackageName $Version promoted to the $PrereleaseViewName view."
-    Write-Output $promoted
-
-    return $promoted
+    return "$PackageName $Version promoted to the $ReleaseViewName view."
 }
 
 Export-ModuleMember -Function `
@@ -756,5 +653,4 @@ Export-ModuleMember -Function `
     Get-ViewScopedServiceIndexUrl, `
     Test-PackageInView, `
     Get-FeedViewVersion, `
-    Invoke-ContractPromotion, `
-    Invoke-ContractPrereleasePromotion
+    Invoke-ContractPromotion

@@ -14,8 +14,9 @@ implementer guide for it.
 > Registering one is not inert at startup: a startup guard audits every registration and aborts
 > startup if a validator is registered in a shape DMS would not resolve, so a registration mistake
 > fails the process rather than passing silently.
-> The release notes of a Data Management Service release state which contract versions that release
-> carries, which is what tells you the version of this package to build against for a given host.
+> The host assembly manifest attached to a Data Management Service release states which contract
+> versions that release carries, which is what tells you the version of this package to build against
+> for a given host.
 >
 > **Links out of this readme point at the current documentation on `main`**, not at the
 > documentation for the package version you resolved.
@@ -714,8 +715,8 @@ declares its version in its own project file and the plugin contract declares it
 with the Data Management Service release.
 
 Pin the version exactly, in brackets, as above; a bare version is a minimum rather than a pin. The
-release notes of the Data Management Service release you are targeting state which contract versions
-that release carries.
+host assembly manifest attached to the Data Management Service release you are targeting states
+which contract versions that release carries.
 
 ## Versioning
 
@@ -724,7 +725,9 @@ the assembly's public and protected surface, the XML documentation that ships be
 package's declared dependencies. The rules below live only in `///` comments, so a rule rewritten
 there is a changed contract even though no signature moved; the publish lane compares all three
 against the version already on the feed and refuses to republish a version whose contract differs.
-A changed readme is not one of them.
+A changed readme is not one of them. A version that is on the feed is never overwritten: an
+unchanged contract at that version is skipped and a changed one is refused, so the bytes you restore
+for a version are the bytes everyone restores for it.
 
 ## Dependencies
 

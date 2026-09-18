@@ -17,8 +17,9 @@ This guide is about packaging and delivering a plugin. For the custom-validation
 what a validator receives and what it returns — see
 [CUSTOM-VALIDATION.md](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/src/dms/core/EdFi.DataManagementService.CustomValidation/CUSTOM-VALIDATION.md).
 
-The release notes of a Data Management Service release state which contract versions that release
-carries. That is what tells you which version of this package to build against for a given host.
+The host assembly manifest attached to a Data Management Service release states which contract
+versions that release carries. That is what tells you which version of this package to build against
+for a given host.
 
 > **Links out of this readme point at the current documentation on `main`**, not at the
 > documentation for the package version you resolved. Where the two could differ — a rule this
@@ -381,7 +382,9 @@ than one:
 
 The publish lane enforces that. It compares those three against the version already on the feed and
 refuses to republish a version whose contract differs, naming which of the three changed. A changed
-readme is not one of them: prose can be fixed without a bump.
+readme is not one of them: prose can be fixed without a bump. A version that is on the feed is never
+overwritten: an unchanged contract at that version is skipped and a changed one is refused, so the
+bytes you restore for a version are the bytes everyone restores for it.
 
 A breaking change to this contract is not a version bump; it is a **new package id**, with a new base
 class the host discovers alongside the old one for as long as both are supported.
@@ -404,8 +407,8 @@ its own source - `src/plugins/Directory.Build.props` for this one, the project f
 so their numbers move independently of each other and of the Data Management Service release.
 
 Pin the version exactly, in brackets, as above. A bare version is a minimum rather than a pin, and
-the release notes of the Data Management Service release you are targeting state which contract
-versions that release carries.
+the host assembly manifest attached to the Data Management Service release you are targeting states
+which contract versions that release carries.
 
 ## License
 
