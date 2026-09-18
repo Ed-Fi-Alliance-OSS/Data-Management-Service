@@ -303,6 +303,14 @@ Describe "Invoke-ContractPublishCheck skips when the published version is unchan
         (Invoke-Check -PackageFile $packed -Feed $feed).ShouldPush | Should -BeFalse
     }
 
+    It "skips when only the indentation around block documentation elements differs" {
+        $published = New-ContractPackage -Documentation "<summary>Applies <c>value</c>.</summary><remarks>Never throws.</remarks>"
+        $packed = New-ContractPackage -Documentation "`n            <summary>`n            Applies <c>value</c>.`n            </summary>`n            <remarks>Never throws.</remarks>`n        "
+        $feed = Get-FakeFeed -Versions @("1.0.0") -PublishedPackage $published
+
+        (Invoke-Check -PackageFile $packed -Feed $feed).ShouldPush | Should -BeFalse
+    }
+
     # Both spellings declare one dependency set, and calling them different would fail a publish
     # over a packaging detail rather than a contract change.
     It "skips when the same dependency is declared grouped and ungrouped" {
@@ -360,6 +368,26 @@ Describe "Invoke-ContractPublishCheck fails when the published version changed" 
     It "fails on a documentation change that is only a change of case" {
         $published = New-ContractPackage -Documentation "<summary>The value must not be null.</summary>"
         $packed = New-ContractPackage -Documentation "<summary>The value must not be NULL.</summary>"
+        $feed = Get-FakeFeed -Versions @("1.0.0") -PublishedPackage $published
+
+        { Invoke-Check -PackageFile $packed -Feed $feed } |
+            Should -Throw -ExpectedMessage "*XML documentation*"
+    }
+
+    # The same text under a different element kind is different documentation: a rule stated for
+    # a parameter is not the same rule stated for a type parameter.
+    It "fails when documented text moves from param to typeparam under one name" {
+        $published = New-ContractPackage -Documentation '<summary>Applies.</summary><param name="value">Must not be null.</param>'
+        $packed = New-ContractPackage -Documentation '<summary>Applies.</summary><typeparam name="value">Must not be null.</typeparam>'
+        $feed = Get-FakeFeed -Versions @("1.0.0") -PublishedPackage $published
+
+        { Invoke-Check -PackageFile $packed -Feed $feed } |
+            Should -Throw -ExpectedMessage "*XML documentation*"
+    }
+
+    It "fails when the space between two inline elements is removed" {
+        $published = New-ContractPackage -Documentation "<summary>Pass <c>a</c> <c>b</c>.</summary>"
+        $packed = New-ContractPackage -Documentation "<summary>Pass <c>a</c><c>b</c>.</summary>"
         $feed = Get-FakeFeed -Versions @("1.0.0") -PublishedPackage $published
 
         { Invoke-Check -PackageFile $packed -Feed $feed } |
