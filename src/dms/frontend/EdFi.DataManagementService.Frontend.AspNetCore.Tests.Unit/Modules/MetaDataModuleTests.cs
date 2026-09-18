@@ -33,6 +33,7 @@ public class MetadataModuleTests
     [TestFixture]
     public class When_Requesting_Tenant_Only_Metadata_With_Required_Route_Qualifiers
     {
+        [TestCase("/tenant1/metadata")]
         [TestCase("/tenant1/metadata/dependencies")]
         [TestCase("/tenant1/metadata/specifications")]
         public async Task It_returns_not_found_instead_of_matching_discovery(string requestPath)
