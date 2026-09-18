@@ -20,13 +20,20 @@
     that does not exist, rather than a quiet success against whatever was lying around.
 
       ./build-dms.ps1 Build -Configuration Release
-      ./build-dms.ps1 Package -PackageTarget CustomValidation -DMSVersion 0.0.0-local -Configuration Release
+      ./build-dms.ps1 Package -PackageTarget CustomValidation -Configuration Release
       ./build-dms.ps1 Package -PackageTarget Plugins -Configuration Release
 
-    The plugin contract's version is its own surface version, read from
-    src/plugins/Directory.Build.props by Get-PluginsContractVersion, and is not the DMS release
-    version. The custom-validation package is still release-stamped, so the two are passed
-    separately rather than derived from one another.
+      Import-Module ./package-helpers.psm1
+      ./eng/verification/Invoke-CustomValidatorPluginConsumerCheck.ps1 `
+        -CustomValidationPackageVersion (Get-CustomValidationContractVersion) `
+        -PluginsPackageVersion (Get-PluginsContractVersion) `
+        -NuGetPackagesDirectory (Join-Path ([System.IO.Path]::GetTempPath()) "nuget-verify-$([guid]::NewGuid().ToString('N'))")
+
+    Each contract's version is its own surface version and not the DMS release version: the plugin
+    contract declares it in src/plugins/Directory.Build.props and the custom-validation contract in
+    its own csproj, and the two readers above read those same files. Neither pack takes a
+    -DMSVersion; the custom-validation target ignores one. The two are passed separately because
+    they move independently of each other, not because either derives from the release.
 
     Both are pinned exactly, in [brackets]. A bare version is a floor, not a pin, so with more
     than one nupkg in the local folder feed NuGet resolves a different one and warns via NU1603

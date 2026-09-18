@@ -581,14 +581,15 @@ jobs:
           $ErrorActionPreference = "Stop"
 
           Import-Module ./package-helpers.psm1
-          $contractVersion = Get-PluginsContractVersion
-          $packageVersion = "${{ steps.versions.outputs.dms-semver }}" -replace "dms-v", ""
+          $pluginsContractVersion = Get-PluginsContractVersion
+          $customValidationContractVersion = Get-CustomValidationContractVersion
 
-          # Two versions from two sources, deliberately: the custom-validation package is still
-          # release-stamped, and the plugin contract is versioned on its own public surface.
+          # Two versions from two sources, deliberately: each contract declares its own version in
+          # its own file and neither moves with the release, so neither is derived from the other
+          # or from the release version. These are the versions the two pack steps above produced.
           ./eng/verification/Invoke-CustomValidatorPluginConsumerCheck.ps1 `
-            -CustomValidationPackageVersion $packageVersion `
-            -PluginsPackageVersion $contractVersion `
+            -CustomValidationPackageVersion $customValidationContractVersion `
+            -PluginsPackageVersion $pluginsContractVersion `
             -NuGetPackagesDirectory (Join-Path $env:RUNNER_TEMP "nuget-verify-validator-plugin-$([guid]::NewGuid().ToString('N'))")
 
       # Not preinstalled on the runner image, and this is the only Pester use in this job. The

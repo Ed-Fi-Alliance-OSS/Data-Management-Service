@@ -20,13 +20,16 @@
     startup guard accepts, that both documented options forms configure the options type, and that
     the rule behaves as described.
 
-    Neither package is published yet, so only the per-PR lane calls this today. Whoever wires a
-    publishing lane calls it there too, so that no version reaches a feed without the documented
-    samples having been compiled and run against it.
+    The per-PR lane calls this after packing both contracts, so every change to either contract or
+    to the guide's samples is compiled and run before it can merge. The prerelease lane packs each
+    contract in a job of its own and does not call this; what it publishes is what the merged pull
+    request already had compiled and run here.
 #>
 [CmdletBinding()]
 param(
-    # The EdFi.Api.CustomValidation version to restore, which must be the version just packed.
+    # The EdFi.Api.CustomValidation version to restore, which must be the version just packed. It
+    # is the contract's own declared version rather than the DMS release version, so callers read
+    # it with Get-CustomValidationContractVersion rather than passing a literal.
     [Parameter(Mandatory)]
     [string]
     $CustomValidationPackageVersion,
