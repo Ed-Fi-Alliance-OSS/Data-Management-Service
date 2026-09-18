@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Diagnostics;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -58,6 +59,50 @@ public abstract class ApplicationLockManagerTestBase : DatabaseTestBase
         returnValue.Direction = System.Data.ParameterDirection.ReturnValue;
         await command.ExecuteNonQueryAsync();
         return (int)returnValue.Value >= 0;
+    }
+
+    /// <summary>
+    /// Whether an independent session can take the resource right now; a probe that succeeds
+    /// gives the resource straight back so the probe itself never holds anything.
+    /// </summary>
+    private protected static async Task<bool> IsFreeAsync(SqlConnection connection, string resource)
+    {
+        if (!await TryApplockAsync(connection, resource))
+        {
+            return false;
+        }
+
+        await MssqlApplicationLockManager.UnlockAsync(connection, resource);
+        return true;
+    }
+
+    /// <summary>
+    /// A manager whose release seam records the session and resource of every unlock before
+    /// performing it, so a fixture can see which resources a lock set held and on how many
+    /// sessions.
+    /// </summary>
+    private protected static MssqlApplicationLockManager CreateRecordingManager(
+        List<(int SessionId, string Resource)> releases,
+        TimeSpan? acquireTimeout = null
+    ) =>
+        CreateManager(
+            acquireTimeout,
+            async (connection, resource) =>
+            {
+                lock (releases)
+                {
+                    releases.Add((connection.ServerProcessId, resource));
+                }
+
+                await MssqlApplicationLockManager.UnlockAsync(connection, resource);
+            }
+        );
+
+    private protected static async Task<SqlConnection> OpenIndependentSessionAsync()
+    {
+        var session = new SqlConnection(MssqlTestConfiguration.DatabaseConnectionString);
+        await session.OpenAsync();
+        return session;
     }
 }
 
@@ -425,4 +470,493 @@ public class Given_the_lock_resource_derivation : ApplicationLockManagerTestBase
     [Test]
     public void It_derives_the_expected_resource_name() =>
         _resourceForApplication1.Should().Be("dmscs:application:1");
+}
+
+/// <summary>
+/// A lock set over two applications, requested out of order and with a duplicate. Both locks
+/// are held for the caller on one session, in ascending resource order, and released together.
+/// </summary>
+[TestFixture]
+public class Given_a_lock_set_acquired_on_one_session : ApplicationLockManagerTestBase
+{
+    private const int LowerApplicationId = 9911;
+    private const int HigherApplicationId = 9912;
+
+    private ApplicationLockResult _result = null!;
+    private bool _lowerHeldWhileSetHeld;
+    private bool _higherHeldWhileSetHeld;
+    private (int SessionId, string Resource)[] _releases = [];
+    private bool _lowerFreeAfterRelease;
+    private bool _higherFreeAfterRelease;
+
+    [SetUp]
+    public async Task Act()
+    {
+        List<(int SessionId, string Resource)> releases = [];
+        MssqlApplicationLockManager manager = CreateRecordingManager(releases, TimeSpan.FromSeconds(1));
+        string lowerResource = MssqlApplicationLockManager.ComputeLockResource(LowerApplicationId);
+        string higherResource = MssqlApplicationLockManager.ComputeLockResource(HigherApplicationId);
+
+        _result = await manager.AcquireAllAsync(
+            [HigherApplicationId, LowerApplicationId, HigherApplicationId],
+            CancellationToken.None
+        );
+
+        await using SqlConnection independentSession = await OpenIndependentSessionAsync();
+        _lowerHeldWhileSetHeld = !await IsFreeAsync(independentSession, lowerResource);
+        _higherHeldWhileSetHeld = !await IsFreeAsync(independentSession, higherResource);
+
+        if (_result is ApplicationLockResult.Acquired acquired)
+        {
+            await acquired.Handle.DisposeAsync();
+        }
+
+        _releases = [.. releases];
+        _lowerFreeAfterRelease = await IsFreeAsync(independentSession, lowerResource);
+        _higherFreeAfterRelease = await IsFreeAsync(independentSession, higherResource);
+    }
+
+    [Test]
+    public void It_acquires_the_set() => _result.Should().BeOfType<ApplicationLockResult.Acquired>();
+
+    [Test]
+    public void It_holds_both_locks_against_an_independent_session()
+    {
+        _lowerHeldWhileSetHeld.Should().BeTrue();
+        _higherHeldWhileSetHeld.Should().BeTrue();
+    }
+
+    [Test]
+    public void It_holds_the_distinct_resources_in_ascending_order_on_one_session()
+    {
+        _releases
+            .Select(release => release.Resource)
+            .Should()
+            .Equal(
+                MssqlApplicationLockManager.ComputeLockResource(LowerApplicationId),
+                MssqlApplicationLockManager.ComputeLockResource(HigherApplicationId)
+            );
+        _releases.Select(release => release.SessionId).Distinct().Should().HaveCount(1);
+    }
+
+    [Test]
+    public void It_frees_both_locks_on_release()
+    {
+        _lowerFreeAfterRelease.Should().BeTrue();
+        _higherFreeAfterRelease.Should().BeTrue();
+    }
+}
+
+/// <summary>
+/// The higher application of a lock set is held elsewhere. Requested with the higher id first,
+/// the set must still take the lower lock first (ascending order) and, when the higher one
+/// times out, give the lower one back before reporting the timeout.
+/// </summary>
+[TestFixture]
+public class Given_a_lock_set_whose_higher_lock_is_held_elsewhere : ApplicationLockManagerTestBase
+{
+    private const int LowerApplicationId = 9921;
+    private const int HigherApplicationId = 9922;
+
+    private ApplicationLockResult _result = null!;
+    private (int SessionId, string Resource)[] _releases = [];
+    private bool _lowerFreeAfterTimeout;
+
+    [SetUp]
+    public async Task Act()
+    {
+        string lowerResource = MssqlApplicationLockManager.ComputeLockResource(LowerApplicationId);
+        string higherResource = MssqlApplicationLockManager.ComputeLockResource(HigherApplicationId);
+
+        await using SqlConnection holder = await OpenIndependentSessionAsync();
+        (await TryApplockAsync(holder, higherResource)).Should().BeTrue();
+
+        List<(int SessionId, string Resource)> releases = [];
+        MssqlApplicationLockManager manager = CreateRecordingManager(releases, TimeSpan.FromSeconds(1));
+        _result = await manager.AcquireAllAsync(
+            [HigherApplicationId, LowerApplicationId],
+            CancellationToken.None
+        );
+
+        _releases = [.. releases];
+        _lowerFreeAfterTimeout = await IsFreeAsync(holder, lowerResource);
+        await MssqlApplicationLockManager.UnlockAsync(holder, higherResource);
+    }
+
+    [Test]
+    public void It_times_out() => _result.Should().BeOfType<ApplicationLockResult.FailureTimeout>();
+
+    [Test]
+    public void It_took_the_lower_lock_first_and_released_only_that_one() =>
+        _releases
+            .Select(release => release.Resource)
+            .Should()
+            .Equal(MssqlApplicationLockManager.ComputeLockResource(LowerApplicationId));
+
+    [Test]
+    public void It_leaves_the_lower_lock_free_after_the_timeout() => _lowerFreeAfterTimeout.Should().BeTrue();
+}
+
+/// <summary>
+/// A lock set and a single-application lock over the same application share the lock resource,
+/// so each blocks the other for as long as it is held.
+/// </summary>
+[TestFixture]
+public class Given_a_lock_set_contending_with_a_single_application_lock : ApplicationLockManagerTestBase
+{
+    private const int SharedApplicationId = 9931;
+    private const int OtherApplicationId = 9932;
+
+    private ApplicationLockResult _setWhileSingleHeld = null!;
+    private ApplicationLockResult _setAfterSingleReleased = null!;
+    private ApplicationLockResult _singleWhileSetHeld = null!;
+    private ApplicationLockResult _singleAfterSetReleased = null!;
+
+    [SetUp]
+    public async Task Act()
+    {
+        MssqlApplicationLockManager manager = CreateManager(TimeSpan.FromSeconds(1));
+
+        IAsyncDisposable single = await AcquireOrFailAsync(manager, SharedApplicationId);
+        _setWhileSingleHeld = await manager.AcquireAllAsync(
+            [SharedApplicationId, OtherApplicationId],
+            CancellationToken.None
+        );
+        await single.DisposeAsync();
+
+        _setAfterSingleReleased = await manager.AcquireAllAsync(
+            [SharedApplicationId, OtherApplicationId],
+            CancellationToken.None
+        );
+        _singleWhileSetHeld = await manager.AcquireAsync(OtherApplicationId, CancellationToken.None);
+        if (_setAfterSingleReleased is ApplicationLockResult.Acquired set)
+        {
+            await set.Handle.DisposeAsync();
+        }
+
+        _singleAfterSetReleased = await manager.AcquireAsync(OtherApplicationId, CancellationToken.None);
+        if (_singleAfterSetReleased is ApplicationLockResult.Acquired reacquired)
+        {
+            await reacquired.Handle.DisposeAsync();
+        }
+    }
+
+    [Test]
+    public void It_blocks_the_set_while_a_single_lock_holds_one_of_its_applications() =>
+        _setWhileSingleHeld.Should().BeOfType<ApplicationLockResult.FailureTimeout>();
+
+    [Test]
+    public void It_grants_the_set_once_the_single_lock_is_released() =>
+        _setAfterSingleReleased.Should().BeOfType<ApplicationLockResult.Acquired>();
+
+    [Test]
+    public void It_blocks_a_single_lock_while_the_set_holds_its_application() =>
+        _singleWhileSetHeld.Should().BeOfType<ApplicationLockResult.FailureTimeout>();
+
+    [Test]
+    public void It_grants_the_single_lock_once_the_set_is_released() =>
+        _singleAfterSetReleased.Should().BeOfType<ApplicationLockResult.Acquired>();
+}
+
+/// <summary>
+/// A lock set cancelled while waiting for its second lock propagates the cancellation and gives
+/// back the first lock it already held.
+/// </summary>
+[TestFixture]
+public class Given_a_cancelled_lock_set_acquisition_while_contending : ApplicationLockManagerTestBase
+{
+    private const int LowerApplicationId = 9941;
+    private const int HigherApplicationId = 9942;
+
+    private Exception? _caught;
+    private (int SessionId, string Resource)[] _releases = [];
+    private bool _lowerFreeAfterCancellation;
+
+    [SetUp]
+    public async Task Act()
+    {
+        string lowerResource = MssqlApplicationLockManager.ComputeLockResource(LowerApplicationId);
+        string higherResource = MssqlApplicationLockManager.ComputeLockResource(HigherApplicationId);
+
+        await using SqlConnection holder = await OpenIndependentSessionAsync();
+        (await TryApplockAsync(holder, higherResource)).Should().BeTrue();
+
+        List<(int SessionId, string Resource)> releases = [];
+        MssqlApplicationLockManager manager = CreateRecordingManager(releases, TimeSpan.FromSeconds(30));
+        using var cancellationSource = new CancellationTokenSource();
+        Task<ApplicationLockResult> contending = manager.AcquireAllAsync(
+            [LowerApplicationId, HigherApplicationId],
+            cancellationSource.Token
+        );
+        await Task.Delay(300);
+        await cancellationSource.CancelAsync();
+        _caught = Assert.CatchAsync(async () => await contending);
+
+        _releases = [.. releases];
+        _lowerFreeAfterCancellation = await IsFreeAsync(holder, lowerResource);
+        await MssqlApplicationLockManager.UnlockAsync(holder, higherResource);
+    }
+
+    [Test]
+    public void It_propagates_the_cancellation() =>
+        _caught.Should().BeAssignableTo<OperationCanceledException>();
+
+    [Test]
+    public void It_releases_the_lock_it_already_held() =>
+        _releases
+            .Select(release => release.Resource)
+            .Should()
+            .Equal(MssqlApplicationLockManager.ComputeLockResource(LowerApplicationId));
+
+    [Test]
+    public void It_leaves_that_lock_free() => _lowerFreeAfterCancellation.Should().BeTrue();
+}
+
+/// <summary>
+/// The lock managers build their sessions' connection string from the configured database
+/// connection by renaming and bounding the pool, so lock sessions are pooled apart from
+/// repository connections.
+/// </summary>
+[TestFixture]
+public class Given_the_lock_connection_string : ApplicationLockManagerTestBase
+{
+    private SqlConnectionStringBuilder _lockConnection = null!;
+    private SqlConnectionStringBuilder _databaseConnection = null!;
+
+    [SetUp]
+    public void Act()
+    {
+        _databaseConnection = new SqlConnectionStringBuilder(MssqlTestConfiguration.DatabaseConnectionString);
+        _lockConnection = new SqlConnectionStringBuilder(
+            MssqlApplicationLockManager.BuildLockConnectionString(
+                MssqlTestConfiguration.DatabaseConnectionString
+            )
+        );
+    }
+
+    [Test]
+    public void It_names_the_dedicated_pool() =>
+        _lockConnection.ApplicationName.Should().Be(ApplicationLockConnectionPool.ApplicationName);
+
+    [Test]
+    public void It_bounds_the_dedicated_pool()
+    {
+        _lockConnection.Pooling.Should().BeTrue();
+        _lockConnection.MinPoolSize.Should().Be(0);
+        _lockConnection.MaxPoolSize.Should().Be(ApplicationLockConnectionPool.MaxPoolSize);
+    }
+
+    [Test]
+    public void It_targets_the_same_database()
+    {
+        _lockConnection.DataSource.Should().Be(_databaseConnection.DataSource);
+        _lockConnection.InitialCatalog.Should().Be(_databaseConnection.InitialCatalog);
+        _lockConnection.UserID.Should().Be(_databaseConnection.UserID);
+    }
+}
+
+/// <summary>
+/// Every session of the lock pool is held by a lock. The repository pool, given the same size
+/// so that a shared pool would be exhausted too, still opens a connection at once; each lock is
+/// held on a session of the dedicated pool; and a lock beyond the bound is refused rather than
+/// taking a repository connection.
+/// </summary>
+[TestFixture]
+public class Given_the_lock_pool_saturated_by_lock_sessions : ApplicationLockManagerTestBase
+{
+    private const int FirstApplicationId = 9951;
+
+    private readonly List<IAsyncDisposable> _held = [];
+    private int _acquiredCount;
+    private bool _repositoryQuerySucceeded;
+    private int _lockHoldingSessionsInDedicatedPool;
+    private ApplicationLockResult _beyondBound = null!;
+
+    [SetUp]
+    public async Task Act()
+    {
+        // The repository connection string of this fixture: bounded to exactly the lock pool's
+        // size and with a short connect timeout, so a lock manager that drew its sessions from
+        // this pool would leave it empty and the repository query below would fail.
+        string repositoryConnectionString = new SqlConnectionStringBuilder(
+            MssqlTestConfiguration.DatabaseConnectionString
+        )
+        {
+            ApplicationName = "EdFi.DmsConfigurationService.PoolSeparationProbe",
+            MinPoolSize = 0,
+            MaxPoolSize = ApplicationLockConnectionPool.MaxPoolSize,
+            ConnectTimeout = 3,
+        }.ConnectionString;
+
+        var manager = new MssqlApplicationLockManager(
+            Options.Create(
+                new DatabaseOptions
+                {
+                    DatabaseConnection = repositoryConnectionString,
+                    EncryptionKey = MssqlTestConfiguration.DatabaseOptions.Value.EncryptionKey,
+                }
+            ),
+            Options.Create(new ApplicationLockOptions { AcquireTimeout = TimeSpan.FromSeconds(1) }),
+            NullLogger<MssqlApplicationLockManager>.Instance
+        );
+
+        try
+        {
+            for (int offset = 0; offset < ApplicationLockConnectionPool.MaxPoolSize; offset++)
+            {
+                ApplicationLockResult result = await manager.AcquireAsync(
+                    FirstApplicationId + offset,
+                    CancellationToken.None
+                );
+                if (result is ApplicationLockResult.Acquired acquired)
+                {
+                    _held.Add(acquired.Handle);
+                }
+            }
+
+            _acquiredCount = _held.Count;
+
+            try
+            {
+                await using var repositoryConnection = new SqlConnection(repositoryConnectionString);
+                await repositoryConnection.OpenAsync();
+                using var probe = new SqlCommand(
+                    """
+                    SELECT COUNT(DISTINCT l.request_session_id)
+                    FROM sys.dm_tran_locks l
+                    JOIN sys.dm_exec_sessions s ON s.session_id = l.request_session_id
+                    WHERE l.resource_type = 'APPLICATION' AND s.program_name = @name;
+                    """,
+                    repositoryConnection
+                );
+                probe.Parameters.AddWithValue("@name", ApplicationLockConnectionPool.ApplicationName);
+                _lockHoldingSessionsInDedicatedPool = (int)(await probe.ExecuteScalarAsync())!;
+                _repositoryQuerySucceeded = true;
+            }
+            catch (Exception)
+            {
+                _repositoryQuerySucceeded = false;
+            }
+
+            _beyondBound = await manager.AcquireAsync(
+                FirstApplicationId + ApplicationLockConnectionPool.MaxPoolSize,
+                CancellationToken.None
+            );
+            if (_beyondBound is ApplicationLockResult.Acquired unexpected)
+            {
+                _held.Add(unexpected.Handle);
+            }
+        }
+        finally
+        {
+            foreach (IAsyncDisposable handle in _held)
+            {
+                await handle.DisposeAsync();
+            }
+
+            _held.Clear();
+            SqlConnection.ClearPool(
+                new SqlConnection(
+                    MssqlApplicationLockManager.BuildLockConnectionString(repositoryConnectionString)
+                )
+            );
+            SqlConnection.ClearPool(new SqlConnection(repositoryConnectionString));
+        }
+    }
+
+    [Test]
+    public void It_holds_a_lock_on_every_session_of_the_bounded_pool() =>
+        _acquiredCount.Should().Be(ApplicationLockConnectionPool.MaxPoolSize);
+
+    [Test]
+    public void It_leaves_the_repository_pool_available() => _repositoryQuerySucceeded.Should().BeTrue();
+
+    [Test]
+    public void It_holds_every_lock_on_a_session_of_the_dedicated_pool() =>
+        _lockHoldingSessionsInDedicatedPool.Should().Be(ApplicationLockConnectionPool.MaxPoolSize);
+
+    [Test]
+    public void It_refuses_a_lock_session_beyond_the_bound() =>
+        _beyondBound.Should().BeOfType<ApplicationLockResult.FailureUnknown>();
+}
+
+/// <summary>
+/// One acquisition attempt gets one contention budget, shared by every lock of the set. Here the
+/// lower lock is held elsewhere for most of the budget and then given up, so the set takes it
+/// late and has only the remainder left to offer <c>@LockTimeout</c> for the higher lock, which
+/// is held for the whole fixture. Passing the full timeout per lock — the defect this pins —
+/// would let the set wait another full <c>AcquireTimeout</c> on the higher lock while it kept
+/// the lower one held, which is what the upper bound below rejects. A fixture whose second lock
+/// is simply held from the outset cannot tell the two behaviors apart.
+/// </summary>
+[TestFixture]
+public class Given_a_lock_set_whose_earlier_lock_consumes_most_of_the_budget : ApplicationLockManagerTestBase
+{
+    private const int LowerApplicationId = 9961;
+    private const int HigherApplicationId = 9962;
+
+    private static readonly TimeSpan _budget = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan _lowerHeldFor = TimeSpan.FromMilliseconds(1500);
+
+    // Generous enough for scheduling, still far below the two budgets a per-lock window would
+    // spend (about 3.5 s).
+    private static readonly TimeSpan _oneBudgetUpperBound = _budget + TimeSpan.FromMilliseconds(800);
+
+    private ApplicationLockResult _result = null!;
+    private TimeSpan _elapsed;
+    private (int SessionId, string Resource)[] _releases = [];
+    private bool _lowerFreeAfterTimeout;
+
+    [SetUp]
+    public async Task Act()
+    {
+        string lowerResource = MssqlApplicationLockManager.ComputeLockResource(LowerApplicationId);
+        string higherResource = MssqlApplicationLockManager.ComputeLockResource(HigherApplicationId);
+
+        await using SqlConnection lowerHolder = await OpenIndependentSessionAsync();
+        await using SqlConnection higherHolder = await OpenIndependentSessionAsync();
+        (await TryApplockAsync(lowerHolder, lowerResource)).Should().BeTrue();
+        (await TryApplockAsync(higherHolder, higherResource)).Should().BeTrue();
+
+        List<(int SessionId, string Resource)> releases = [];
+        MssqlApplicationLockManager manager = CreateRecordingManager(releases, _budget);
+
+        Task releaseLower = Task.Run(async () =>
+        {
+            await Task.Delay(_lowerHeldFor);
+            await MssqlApplicationLockManager.UnlockAsync(lowerHolder, lowerResource);
+        });
+
+        var elapsed = Stopwatch.StartNew();
+        _result = await manager.AcquireAllAsync(
+            [LowerApplicationId, HigherApplicationId],
+            CancellationToken.None
+        );
+        _elapsed = elapsed.Elapsed;
+        await releaseLower;
+
+        _releases = [.. releases];
+        _lowerFreeAfterTimeout = await IsFreeAsync(higherHolder, lowerResource);
+        await MssqlApplicationLockManager.UnlockAsync(higherHolder, higherResource);
+    }
+
+    [Test]
+    public void It_times_out() => _result.Should().BeOfType<ApplicationLockResult.FailureTimeout>();
+
+    [Test]
+    public void It_spends_one_budget_on_the_whole_set() => _elapsed.Should().BeLessThan(_oneBudgetUpperBound);
+
+    [Test]
+    public void It_spends_the_budget_rather_than_giving_up_when_the_first_lock_is_taken() =>
+        _elapsed.Should().BeGreaterThan(_lowerHeldFor);
+
+    [Test]
+    public void It_releases_the_lock_it_took_before_the_budget_ran_out() =>
+        _releases
+            .Select(release => release.Resource)
+            .Should()
+            .Equal(MssqlApplicationLockManager.ComputeLockResource(LowerApplicationId));
+
+    [Test]
+    public void It_leaves_that_lock_free_after_the_timeout() => _lowerFreeAfterTimeout.Should().BeTrue();
 }

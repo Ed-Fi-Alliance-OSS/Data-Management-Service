@@ -11,3 +11,4 @@ Detailed design notes:
 * [Claimset Management](./CLAIMSET-MGMT.md)
 * [Expired Access Token Cleanup](./TOKEN-CLEANUP.md)
 * [Secret Management](./SECRET-MANAGEMENT.md)
+* [Vendor Namespace-Prefix Update Consistency (DMS-1356)](./DMS-1356-vendor-namespace-update-consistency.md)

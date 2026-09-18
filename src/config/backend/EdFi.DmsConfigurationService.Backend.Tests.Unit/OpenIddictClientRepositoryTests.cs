@@ -520,4 +520,336 @@ public class OpenIddictClientRepositoryTests
             success.ClientSecret.Should().NotContainAny("+", "%", "=", "&", " ");
         }
     }
+
+    /// <summary>
+    /// Regression cover for the OpenIddict namespace-claim update, which DMS-1356 leaves
+    /// unchanged. Its in-place behavior is the contract the Vendor workflow relies on for the
+    /// self-contained provider: the stored application row is updated under its existing
+    /// identifier and <see cref="ClientUpdateResult.Success"/> carries that same identifier back,
+    /// so the guarded UUID synchronization resolves as already applied rather than rewriting the
+    /// row. These fixtures fail if the provider is ever changed to recreate the application.
+    /// </summary>
+    public abstract class NamespaceClaimUpdateTestBase : OpenIddictClientRepositoryTests
+    {
+        protected const string NewPrefixes = "uri://ed-fi.org,uri://new.org";
+
+        protected Guid _clientUuid;
+        protected IDbConnection _connection = null!;
+        protected IDbTransaction _transaction = null!;
+        protected ClientUpdateResult _result = null!;
+        protected string? _capturedProtocolMappers;
+        protected Guid _updatedApplicationId;
+
+        [SetUp]
+        public void SetUpNamespaceClaimDefaults()
+        {
+            _clientUuid = Guid.NewGuid();
+            _capturedProtocolMappers = null;
+            _updatedApplicationId = Guid.Empty;
+
+            _connection = A.Fake<IDbConnection>();
+            _transaction = A.Fake<IDbTransaction>();
+            A.CallTo(() => _dataRepository.CreateConnectionAsync()).Returns(_connection);
+            A.CallTo(() => _dataRepository.BeginTransactionAsync(_connection)).Returns(_transaction);
+
+            StoreProtocolMappers(
+                JsonSerializer.Serialize(
+                    new List<Dictionary<string, string>>
+                    {
+                        new() { { "claim.name", "namespacePrefixes" }, { "claim.value", "uri://ed-fi.org" } },
+                        new() { { "claim.name", "educationOrganizationIds" }, { "claim.value", "100" } },
+                        new() { { "claim.name", "dataStoreIds" }, { "claim.value", "7,8" } },
+                    }
+                )
+            );
+
+            A.CallTo(() =>
+                    _dataRepository.UpdateApplicationProtocolMappersAsync(
+                        A<Guid>._,
+                        A<string>._,
+                        A<IDbConnection>._,
+                        A<IDbTransaction>._
+                    )
+                )
+                .Invokes(call =>
+                {
+                    _updatedApplicationId = call.GetArgument<Guid>(0);
+                    _capturedProtocolMappers = call.GetArgument<string>(1);
+                })
+                .Returns(1);
+        }
+
+        [TearDown]
+        public void DisposeDatabaseFakes()
+        {
+            _transaction.Dispose();
+            _connection.Dispose();
+        }
+
+        protected void StoreProtocolMappers(string protocolMappers) =>
+            A.CallTo(() =>
+                    _dataRepository.GetApplicationByIdAsync(
+                        A<Guid>._,
+                        A<IDbConnection>._,
+                        A<IDbTransaction>._
+                    )
+                )
+                .Returns(
+                    new ApplicationInfo
+                    {
+                        Id = _clientUuid,
+                        ClientId = "test-client",
+                        DisplayName = "Test Client",
+                        ProtocolMappers = protocolMappers,
+                    }
+                );
+
+        protected async Task ActUpdateAsync(string? clientUuid = null) =>
+            _result = await _repository.UpdateClientNamespaceClaimAsync(
+                clientUuid ?? _clientUuid.ToString(),
+                NewPrefixes
+            );
+
+        protected List<Dictionary<string, string>> AppliedMappers() =>
+            JsonSerializer.Deserialize<List<Dictionary<string, string>>>(_capturedProtocolMappers!)!;
+
+        protected static List<Dictionary<string, string>> ClaimsNamed(
+            List<Dictionary<string, string>> mappers,
+            string claimName
+        ) => mappers.FindAll(mapper => mapper.GetValueOrDefault("claim.name") == claimName);
+
+        protected static string? ClaimValue(List<Dictionary<string, string>> mappers, string claimName) =>
+            ClaimsNamed(mappers, claimName).FirstOrDefault()?.GetValueOrDefault("claim.value");
+
+        protected void AssertNoRowWasUpdated() =>
+            A.CallTo(() =>
+                    _dataRepository.UpdateApplicationProtocolMappersAsync(
+                        A<Guid>._,
+                        A<string>._,
+                        A<IDbConnection>._,
+                        A<IDbTransaction>._
+                    )
+                )
+                .MustNotHaveHappened();
+    }
+
+    [TestFixture]
+    public class Given_UpdateClientNamespaceClaimAsync_For_An_Existing_Client : NamespaceClaimUpdateTestBase
+    {
+        [SetUp]
+        public async Task Act() => await ActUpdateAsync();
+
+        [Test]
+        public void It_returns_success_carrying_the_unchanged_client_uuid()
+        {
+            _result.Should().BeOfType<ClientUpdateResult.Success>();
+            ((ClientUpdateResult.Success)_result).ClientUuid.Should().Be(_clientUuid);
+        }
+
+        [Test]
+        public void It_updates_the_stored_application_in_place() =>
+            _updatedApplicationId.Should().Be(_clientUuid);
+
+        [Test]
+        public void It_applies_the_requested_namespace_prefixes() =>
+            ClaimValue(AppliedMappers(), "namespacePrefixes").Should().Be(NewPrefixes);
+
+        [Test]
+        public void It_leaves_exactly_one_namespace_claim() =>
+            ClaimsNamed(AppliedMappers(), "namespacePrefixes").Should().ContainSingle();
+
+        [Test]
+        public void It_preserves_the_education_organization_and_data_store_claims()
+        {
+            ClaimValue(AppliedMappers(), "educationOrganizationIds").Should().Be("100");
+            ClaimValue(AppliedMappers(), "dataStoreIds").Should().Be("7,8");
+        }
+
+        [Test]
+        public void It_commits_the_transaction()
+        {
+            A.CallTo(() => _transaction.Commit()).MustHaveHappenedOnceExactly();
+            A.CallTo(() => _transaction.Rollback()).MustNotHaveHappened();
+        }
+    }
+
+    [TestFixture]
+    public class Given_UpdateClientNamespaceClaimAsync_For_A_Client_Without_The_Claim
+        : NamespaceClaimUpdateTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            StoreProtocolMappers(
+                JsonSerializer.Serialize(
+                    new List<Dictionary<string, string>>
+                    {
+                        new() { { "claim.name", "educationOrganizationIds" }, { "claim.value", "100" } },
+                    }
+                )
+            );
+
+            await ActUpdateAsync();
+        }
+
+        [Test]
+        public void It_returns_success() => _result.Should().BeOfType<ClientUpdateResult.Success>();
+
+        [Test]
+        public void It_adds_the_namespace_claim()
+        {
+            Dictionary<string, string> added = ClaimsNamed(AppliedMappers(), "namespacePrefixes")
+                .Should()
+                .ContainSingle()
+                .Subject;
+            added["claim.value"].Should().Be(NewPrefixes);
+            added["jsonType.label"].Should().Be("String");
+        }
+
+        [Test]
+        public void It_preserves_the_existing_claim() =>
+            ClaimValue(AppliedMappers(), "educationOrganizationIds").Should().Be("100");
+    }
+
+    [TestFixture]
+    public class Given_UpdateClientNamespaceClaimAsync_With_Malformed_Stored_Mappers
+        : NamespaceClaimUpdateTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            StoreProtocolMappers("not-valid-json");
+
+            await ActUpdateAsync();
+        }
+
+        [Test]
+        public void It_returns_success() => _result.Should().BeOfType<ClientUpdateResult.Success>();
+
+        [Test]
+        public void It_writes_only_the_namespace_claim()
+        {
+            AppliedMappers().Should().ContainSingle();
+            ClaimValue(AppliedMappers(), "namespacePrefixes").Should().Be(NewPrefixes);
+        }
+    }
+
+    [TestFixture]
+    public class Given_UpdateClientNamespaceClaimAsync_For_A_Missing_Application
+        : NamespaceClaimUpdateTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() =>
+                    _dataRepository.GetApplicationByIdAsync(
+                        A<Guid>._,
+                        A<IDbConnection>._,
+                        A<IDbTransaction>._
+                    )
+                )
+                .Returns(Task.FromResult<ApplicationInfo?>(null));
+
+            await ActUpdateAsync();
+        }
+
+        [Test]
+        public void It_returns_failure_not_found() =>
+            _result.Should().BeOfType<ClientUpdateResult.FailureNotFound>();
+
+        [Test]
+        public void It_updates_no_row() => AssertNoRowWasUpdated();
+
+        [Test]
+        public void It_rolls_the_transaction_back()
+        {
+            A.CallTo(() => _transaction.Rollback()).MustHaveHappenedOnceExactly();
+            A.CallTo(() => _transaction.Commit()).MustNotHaveHappened();
+        }
+    }
+
+    [TestFixture]
+    public class Given_UpdateClientNamespaceClaimAsync_Whose_Update_Affects_No_Rows
+        : NamespaceClaimUpdateTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() =>
+                    _dataRepository.UpdateApplicationProtocolMappersAsync(
+                        A<Guid>._,
+                        A<string>._,
+                        A<IDbConnection>._,
+                        A<IDbTransaction>._
+                    )
+                )
+                .Returns(0);
+
+            await ActUpdateAsync();
+        }
+
+        [Test]
+        public void It_returns_failure_not_found() =>
+            _result.Should().BeOfType<ClientUpdateResult.FailureNotFound>();
+
+        [Test]
+        public void It_rolls_the_transaction_back()
+        {
+            A.CallTo(() => _transaction.Rollback()).MustHaveHappenedOnceExactly();
+            A.CallTo(() => _transaction.Commit()).MustNotHaveHappened();
+        }
+    }
+
+    [TestFixture]
+    public class Given_UpdateClientNamespaceClaimAsync_Whose_Update_Throws : NamespaceClaimUpdateTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() =>
+                    _dataRepository.UpdateApplicationProtocolMappersAsync(
+                        A<Guid>._,
+                        A<string>._,
+                        A<IDbConnection>._,
+                        A<IDbTransaction>._
+                    )
+                )
+                .Throws(new InvalidOperationException("the connection dropped"));
+
+            await ActUpdateAsync();
+        }
+
+        [Test]
+        public void It_returns_failure_unknown() =>
+            _result.Should().BeOfType<ClientUpdateResult.FailureUnknown>();
+
+        [Test]
+        public void It_does_not_commit() => A.CallTo(() => _transaction.Commit()).MustNotHaveHappened();
+    }
+
+    [TestFixture]
+    public class Given_UpdateClientNamespaceClaimAsync_With_An_Invalid_Client_Uuid
+        : NamespaceClaimUpdateTestBase
+    {
+        [SetUp]
+        public async Task Act() => await ActUpdateAsync("not-a-uuid");
+
+        [Test]
+        public void It_returns_failure_unknown() =>
+            _result.Should().BeOfType<ClientUpdateResult.FailureUnknown>();
+
+        [Test]
+        public void It_never_reads_the_application() =>
+            A.CallTo(() =>
+                    _dataRepository.GetApplicationByIdAsync(
+                        A<Guid>._,
+                        A<IDbConnection>._,
+                        A<IDbTransaction>._
+                    )
+                )
+                .MustNotHaveHappened();
+
+        [Test]
+        public void It_updates_no_row() => AssertNoRowWasUpdated();
+    }
 }

@@ -390,8 +390,8 @@ public class ApiClientModule : IEndpointModule
 
         await validator.GuardAsync(command);
 
-        // A parent move must hold both aggregate locks; the helper acquires them in ascending
-        // application id order and rereads the client under the locks.
+        // A parent move must hold both aggregate locks; the helper takes them as one lock set
+        // on one session, in ascending application id order, and rereads the client under them.
         var (lockFailure, lockedApiClient, heldLocks) = await AcquireApiClientLocksAsync(
             id,
             command.ApplicationId,
@@ -833,10 +833,10 @@ public class ApiClientModule : IEndpointModule
 
     /// <summary>
     /// Acquires the aggregate lock for an ApiClient workflow: the client's current parent
-    /// application and, when an update moves the client, the target application, always in
-    /// ascending application id order. The client is reread under the held locks, and the
-    /// acquisition retries when the parent changed while waiting; a persistent change is a
-    /// retriable concurrency conflict.
+    /// application and, when an update moves the client, the target application, as one lock set
+    /// on one session, in ascending application id order. The client is reread under the held
+    /// locks, and the acquisition retries when the parent changed while waiting; a persistent
+    /// change is a retriable concurrency conflict.
     /// </summary>
     private static async Task<(
         IResult? Failure,
@@ -891,20 +891,25 @@ public class ApiClientModule : IEndpointModule
             List<IAsyncDisposable> heldLocks = [];
             try
             {
-                foreach (int applicationIdToLock in applicationIdsToLock)
+                // One set acquisition, not one call per application. Taking a move's two locks
+                // separately made each attempt hold its first lock session while waiting for a
+                // second from the bounded lock pool, so concurrent moves over disjoint
+                // application pairs could starve that pool (hold-and-wait) until the driver's
+                // connect timeout broke the wait and failed the requests. Ascending id order
+                // does not prevent that, because the contended resource is the pool, not the
+                // locks. The set is acquired on one session, so a move holds one connection.
+                ApplicationLockResult lockResult = await lockManager.AcquireAllAsync(
+                    applicationIdsToLock,
+                    httpContext.RequestAborted
+                );
+                if (LockFailureResult(lockResult, httpContext, logger) is { } lockFailure)
                 {
-                    var lockResult = await lockManager.AcquireAsync(
-                        applicationIdToLock,
-                        httpContext.RequestAborted
-                    );
-                    if (LockFailureResult(lockResult, httpContext, logger) is { } lockFailure)
-                    {
-                        await DisposeLocksAsync(heldLocks);
-                        return (lockFailure, null, []);
-                    }
-
-                    heldLocks.Add(((ApplicationLockResult.Acquired)lockResult).Handle);
+                    // A partially acquired set is released by the manager before it reports the
+                    // failure, so there is nothing held here to give back.
+                    return (lockFailure, null, []);
                 }
+
+                heldLocks.Add(((ApplicationLockResult.Acquired)lockResult).Handle);
 
                 var underLock = await apiClientRepository.GetApiClientById(id);
                 if (underLock is ApiClientGetResult.FailureUnknown underLockFailure)

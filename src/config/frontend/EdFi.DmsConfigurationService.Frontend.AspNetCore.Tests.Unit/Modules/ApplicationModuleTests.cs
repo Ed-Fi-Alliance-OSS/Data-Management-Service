@@ -4042,9 +4042,14 @@ public class ApplicationModuleTests
         public Task<ApplicationLockResult> AcquireAsync(
             int applicationId,
             CancellationToken cancellationToken
+        ) => AcquireAllAsync([applicationId], cancellationToken);
+
+        public Task<ApplicationLockResult> AcquireAllAsync(
+            IReadOnlyCollection<int> applicationIds,
+            CancellationToken cancellationToken
         )
         {
-            AcquiredApplicationIds.Add(applicationId);
+            AcquiredApplicationIds.AddRange(applicationIds);
             onAcquire?.Invoke();
             return Task.FromResult<ApplicationLockResult>(new ApplicationLockResult.Acquired(Handle));
         }
