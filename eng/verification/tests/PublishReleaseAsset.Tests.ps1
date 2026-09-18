@@ -224,18 +224,22 @@ AfterAll {
 
 Describe "Publish-ReleaseAsset's GitHub defaults" {
     # The injected seams above hand the script an array they built; these cases hand it what
-    # Invoke-RestMethod really returns, so the listing's shape and its pagination are exercised.
+    # Invoke-RestMethod really returns. The cmdlet emits a JSON array as ONE pipeline object, not as
+    # enumerated items, so every listing mock below writes its array with -NoEnumerate. A mock that
+    # returned @(...) from a script block would enumerate, and the nested-array defect this suite
+    # exists to pin would pass unseen.
     It "finds the asset among several on one page and compares it" {
         $file = New-FixtureFile -Name "a.txt" -Content "evidence"
         Copy-Item -LiteralPath $file -Destination (Get-RemoteFixturePath) -Force
 
         Mock Invoke-RestMethod {
             if ($Uri -like "*/releases/123/assets?per_page=100&page=1") {
-                return @(
+                Write-Output -NoEnumerate -InputObject @(
                     (Get-HttpAsset -Id 1 -Name "EdFi.Api-SBOM.zip"),
                     (Get-HttpAsset -Id 2 -Name "EdFi.Api.TestContract-SBOM.zip"),
                     (Get-HttpAsset -Id 3 -Name "edfiApi.intoto.jsonl")
                 )
+                return
             }
 
             throw "unexpected request: $Uri"
@@ -251,17 +255,64 @@ Describe "Publish-ReleaseAsset's GitHub defaults" {
         Should -Invoke Invoke-WebRequest -Times 1 -Exactly -ParameterFilter { $Uri -like "*/releases/assets/2" }
     }
 
+    It "finds the asset when it is the only one on the page" {
+        $file = New-FixtureFile -Name "a.txt" -Content "evidence"
+        Copy-Item -LiteralPath $file -Destination (Get-RemoteFixturePath) -Force
+
+        Mock Invoke-RestMethod {
+            if ($Uri -like "*/releases/123/assets?per_page=100&page=1") {
+                Write-Output -NoEnumerate -InputObject @((Get-HttpAsset -Id 4 -Name "EdFi.Api.TestContract-SBOM.zip"))
+                return
+            }
+
+            throw "unexpected request: $Uri"
+        }
+        Mock Invoke-WebRequest {
+            Copy-Item -LiteralPath (Get-RemoteFixturePath) -Destination $OutFile
+        }
+
+        $result = Invoke-DefaultPublish -FilePath $file
+
+        $result.Action | Should -BeExactly "skipped"
+        $result.AssetId | Should -Be 4
+    }
+
+    It "uploads when the release has no assets at all" {
+        $file = New-FixtureFile -Name "a.txt" -Content "evidence"
+
+        Mock Invoke-RestMethod {
+            if ($Uri -like "*/releases/123/assets?per_page=100&page=1") {
+                Write-Output -NoEnumerate -InputObject @()
+                return
+            }
+
+            if ($Method -eq "Post") {
+                return [pscustomobject]@{ id = 700; name = "EdFi.Api.TestContract-SBOM.zip"; state = "uploaded" }
+            }
+
+            throw "unexpected request: $Uri"
+        }
+
+        $result = Invoke-DefaultPublish -FilePath $file
+
+        $result.Action | Should -BeExactly "uploaded"
+        $result.AssetId | Should -Be 700
+        Should -Invoke Invoke-RestMethod -Times 0 -ParameterFilter { $Method -eq "Delete" }
+    }
+
     It "reads every page of assets before deciding" {
         $file = New-FixtureFile -Name "a.txt" -Content "evidence"
         Copy-Item -LiteralPath $file -Destination (Get-RemoteFixturePath) -Force
 
         Mock Invoke-RestMethod {
             if ($Uri -like "*/releases/123/assets?per_page=100&page=1") {
-                return @(1..100 | ForEach-Object { Get-HttpAsset -Id $_ -Name "other-$_.txt" })
+                Write-Output -NoEnumerate -InputObject @(1..100 | ForEach-Object { Get-HttpAsset -Id $_ -Name "other-$_.txt" })
+                return
             }
 
             if ($Uri -like "*/releases/123/assets?per_page=100&page=2") {
-                return @((Get-HttpAsset -Id 555 -Name "EdFi.Api.TestContract-SBOM.zip"))
+                Write-Output -NoEnumerate -InputObject @((Get-HttpAsset -Id 555 -Name "EdFi.Api.TestContract-SBOM.zip"))
+                return
             }
 
             throw "unexpected request: $Uri"
@@ -274,7 +325,35 @@ Describe "Publish-ReleaseAsset's GitHub defaults" {
 
         $result.Action | Should -BeExactly "skipped"
         $result.AssetId | Should -Be 555
+        Should -Invoke Invoke-RestMethod -Times 1 -Exactly -ParameterFilter { $Uri -like "*page=1" }
         Should -Invoke Invoke-RestMethod -Times 1 -Exactly -ParameterFilter { $Uri -like "*page=2" }
+    }
+
+    It "stops paging after a full page is followed by an empty one" {
+        $file = New-FixtureFile -Name "a.txt" -Content "evidence"
+
+        Mock Invoke-RestMethod {
+            if ($Uri -like "*/releases/123/assets?per_page=100&page=1") {
+                Write-Output -NoEnumerate -InputObject @(1..100 | ForEach-Object { Get-HttpAsset -Id $_ -Name "other-$_.txt" })
+                return
+            }
+
+            if ($Uri -like "*/releases/123/assets?per_page=100&page=2") {
+                Write-Output -NoEnumerate -InputObject @()
+                return
+            }
+
+            if ($Method -eq "Post") {
+                return [pscustomobject]@{ id = 701; name = "EdFi.Api.TestContract-SBOM.zip"; state = "uploaded" }
+            }
+
+            throw "unexpected request: $Uri"
+        }
+
+        $result = Invoke-DefaultPublish -FilePath $file
+
+        $result.Action | Should -BeExactly "uploaded"
+        Should -Invoke Invoke-RestMethod -Times 0 -ParameterFilter { $Uri -like "*page=3" }
     }
 
     It "uploads through the uploads endpoint when no page lists the asset" {
@@ -282,7 +361,8 @@ Describe "Publish-ReleaseAsset's GitHub defaults" {
 
         Mock Invoke-RestMethod {
             if ($Uri -like "*/releases/123/assets?per_page=100&page=1") {
-                return @((Get-HttpAsset -Id 1 -Name "EdFi.Api-SBOM.zip"))
+                Write-Output -NoEnumerate -InputObject @((Get-HttpAsset -Id 1 -Name "EdFi.Api-SBOM.zip"))
+                return
             }
 
             if ($Method -eq "Post" -and $Uri -like "https://uploads.github.com/repos/Ed-Fi-Alliance-OSS/Data-Management-Service/releases/123/assets?name=EdFi.Api.TestContract-SBOM.zip") {
@@ -304,7 +384,8 @@ Describe "Publish-ReleaseAsset's GitHub defaults" {
 
         Mock Invoke-RestMethod {
             if ($Uri -like "*/releases/123/assets?per_page=100&page=1") {
-                return @((Get-HttpAsset -Id 9 -Name "EdFi.Api.TestContract-SBOM.zip" -State "starter"))
+                Write-Output -NoEnumerate -InputObject @((Get-HttpAsset -Id 9 -Name "EdFi.Api.TestContract-SBOM.zip" -State "starter"))
+                return
             }
 
             if ($Method -eq "Delete" -and $Uri -like "*/releases/assets/9") {
@@ -322,6 +403,35 @@ Describe "Publish-ReleaseAsset's GitHub defaults" {
 
         $result.Action | Should -BeExactly "replaced-starter"
         Should -Invoke Invoke-RestMethod -Times 1 -Exactly -ParameterFilter { $Method -eq "Delete" -and $Uri -like "*/releases/assets/9" }
+    }
+
+    # The confusable name carries a soft hyphen. A culture comparison would call it the target;
+    # the exact one is the asset that is downloaded and compared.
+    It "selects the exact name among confusable names through the real listing" {
+        $file = New-FixtureFile -Name "a.txt" -Content "evidence"
+        Copy-Item -LiteralPath $file -Destination (Get-RemoteFixturePath) -Force
+
+        Mock Invoke-RestMethod {
+            if ($Uri -like "*/releases/123/assets?per_page=100&page=1") {
+                Write-Output -NoEnumerate -InputObject @(
+                    (Get-HttpAsset -Id 21 -Name "EdFi.Api.TestContract-SBOM$([char]0x00AD).zip"),
+                    (Get-HttpAsset -Id 22 -Name "EdFi.Api.TestContract-SBOM.zip")
+                )
+                return
+            }
+
+            throw "unexpected request: $Uri"
+        }
+        Mock Invoke-WebRequest {
+            Copy-Item -LiteralPath (Get-RemoteFixturePath) -Destination $OutFile
+        }
+
+        $result = Invoke-DefaultPublish -FilePath $file
+
+        $result.Action | Should -BeExactly "skipped"
+        $result.AssetId | Should -Be 22
+        Should -Invoke Invoke-WebRequest -Times 1 -Exactly -ParameterFilter { $Uri -like "*/releases/assets/22" }
+        Should -Invoke Invoke-WebRequest -Times 0 -ParameterFilter { $Uri -like "*/releases/assets/21" }
     }
 }
 
@@ -415,6 +525,21 @@ Describe "Publish-ReleaseAsset decides from what the release already carries" {
 
         $result.Action | Should -BeExactly "uploaded"
         ($fake.Calls -join ",") | Should -BeExactly "list,upload:EdFi.Api.TestContract-SBOM.zip"
+    }
+
+    It "selects the exact name when a confusable uploaded asset sits beside it" {
+        $file = New-FixtureFile -Name "a.txt" -Content "evidence"
+        $lookalike = "EdFi.Api.TestContract-SBOM$([char]0x00AD).zip"
+        $fake = Get-FakeGitHub -Assets @(
+            (Get-FakeAsset -Id 11 -Name $lookalike),
+            (Get-FakeAsset -Id 12 -Name "EdFi.Api.TestContract-SBOM.zip")
+        ) -RemoteFile $file
+
+        $result = Invoke-Publish -FilePath $file -Fake $fake
+
+        $result.Action | Should -BeExactly "skipped"
+        $result.AssetId | Should -Be 12
+        ($fake.Calls -join ",") | Should -BeExactly "list,download:12"
     }
 
     It "propagates an upload failure and deletes nothing" {
