@@ -42,9 +42,9 @@ tokens. A request with no `Authorization` header, or with an invalid or expired
 bearer token, returns `401 Unauthorized`.
 
 A caller may only revoke a token that belongs to it. The token named in the
-`token` form field is first verified for signature, issuer and audience, and its
-`client_id` claim is then compared to the `client_id` claim of the caller's own
-bearer token. Verification comes first on purpose: trusting an unverified
+`token` form field is first verified for signature, issuer, audience and lifetime,
+and its `client_id` claim is then compared to the `client_id` claim of the caller's
+own bearer token. Verification comes first on purpose: trusting an unverified
 `client_id` would let a caller forge a token naming itself while embedding
 another client's `jti`.
 
@@ -54,8 +54,27 @@ RFC 7009 this is indistinguishable from revoking an unknown token, so the
 response reveals nothing about whether the token exists or who owns it. Only a
 missing `token` form field returns `400 Bad Request`.
 
-The `client_id` claim name is the same for self-contained and Keycloak-issued
-tokens, so this check needs no per-provider branching.
+Because verification includes the lifetime check, a target token already past its
+`exp` (plus the validator's clock-skew allowance) is also a no-op. This is a
+deliberate narrowing: revocation previously parsed the target token without
+verifying it and would revoke an expired token by `jti`. An expired token is
+already rejected everywhere else, so there is nothing left to revoke.
+
+### Which provider modes actually perform the check
+
+The `client_id` claim name is identical for self-contained and Keycloak-issued
+tokens, so the comparison itself needs no per-provider branching. It does not
+follow that both modes perform ownership-checked revocation:
+
+- **`self-contained`** — the OpenIddict store registers an `ITokenRevocationManager`,
+  so the endpoint authenticates the caller, verifies the target token, compares
+  `client_id`, and revokes by `jti` on a match.
+- **`keycloak`** — no `ITokenRevocationManager` is registered (`KeycloakTokenManager`
+  implements `ITokenManager` only), so the handler's revocation branch is never
+  entered. The request returns `200 OK` and **nothing is revoked**, ownership
+  comparison included. Token revocation remains the IdP's responsibility in this
+  mode. The one behavior that did change here is authentication: an unauthenticated
+  caller now gets `401` instead of a `200 OK` no-op.
 
 ## Scopes
 

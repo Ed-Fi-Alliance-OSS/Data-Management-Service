@@ -135,9 +135,11 @@ per-mode branching is needed for this.
 - [x] All acceptance criteria above met
 - [x] `docs/parking-lot.md` exists and is non-empty only if adjacent issues were actually found;
       otherwise it does not exist
-- [x] PR description includes the parking-lot reminder (see below) only if the file exists
-      — not applicable: no adjacent issues were found, so no parking-lot file exists. No PR was
-      opened by the implementation agent.
+- [~] PR description includes the parking-lot reminder (see below) only if the file exists
+      — `docs/parking-lot.md` DOES exist (one entry: the minted-`client_id` casing defect found in
+      QA correction round 1), so the PR description must tell the reviewer to read it and to delete
+      it before merging to `main`. No PR was opened by the implementation agent, so this is
+      outstanding for whoever opens it.
 - [x] Ready for human review
 
 ## PR Description Requirements

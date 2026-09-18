@@ -1438,6 +1438,45 @@ public class OAuthEndpointErrorTests
         [Test]
         public void It_returns_401() => _response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
+
+    /// <summary>
+    /// The other half of Task 1's acceptance criterion: an invalid bearer token is rejected the
+    /// same way a missing one is. The token here is not a well-formed JWT, so the bearer handler
+    /// rejects it while reading the token format, before any signing-key resolution that would
+    /// need an OIDC metadata fetch from the configured authority. That keeps the outcome
+    /// deterministic and independent of whether the authority is reachable.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_revocation_request_with_an_invalid_bearer_token
+    {
+        private readonly ITokenManager _tokenManager = A.Fake<ITokenManager>();
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _factory = CreateFactory(collection => collection.AddTransient(_ => _tokenManager));
+            _client = _factory.CreateClient();
+            _client.DefaultRequestHeaders.Authorization =
+                new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", "not-a-valid-token");
+            _response = await _client.PostAsync(
+                "/connect/revoke",
+                new FormUrlEncodedContent(new[] { new KeyValuePair<string, string>("token", "opaque-token") })
+            );
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _client?.Dispose();
+            _factory?.Dispose();
+        }
+
+        [Test]
+        public void It_returns_401() => _response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
 }
 
 /// <summary>
@@ -1563,6 +1602,77 @@ public class RevocationOwnershipTests
 
         [Test]
         public void It_revokes_the_token() =>
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti)).MustHaveHappenedOnceExactly();
+    }
+
+    /// <summary>
+    /// Guards the "bare authorization requirement, no named policy" decision in
+    /// <c>tasks/plan.md</c>. The caller here is an ordinary client-credentials principal — a
+    /// <c>client_id</c> and a non-admin scope, no service-role claim — which is what a token minted
+    /// by <c>/connect/token</c> actually carries. If the route were ever tightened to
+    /// <c>RequireAuthorization(SecurityConstants.ServicePolicy)</c> or to the admin-scope policy,
+    /// this caller would get 403 and this fixture would fail, whereas the other revocation fixtures
+    /// would all stay green because their principals happen to satisfy both policies.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_revocation_request_from_a_caller_without_the_service_role
+    {
+        private readonly IOpenIddictTokenRepository _tokenRepository = A.Fake<IOpenIddictTokenRepository>();
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+        private Guid _jti;
+
+        /// <summary>
+        /// A principal looking like an ordinary client-credentials token from
+        /// <c>/connect/token</c>: a <c>client_id</c> and a non-admin scope, but no service-role
+        /// claim. Such a caller satisfies neither <c>SecurityConstants.ServicePolicy</c> nor the
+        /// admin-scope policy, which is what lets this fixture detect a named policy on the route.
+        /// </summary>
+        private static HttpClient CreateOrdinaryClientFor(
+            WebApplicationFactory<Program> factory,
+            string callerClientId
+        )
+        {
+            var client = factory.CreateClient();
+            client.DefaultRequestHeaders.Add("X-Test-Scope", AuthorizationScopes.ReadOnlyScope.Name);
+            client.DefaultRequestHeaders.Add(TestAuthHandler.ClientIdHeaderName, callerClientId);
+            client.DefaultRequestHeaders.Add(TestAuthHandler.OmitRoleClaimHeaderName, "true");
+            return client;
+        }
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
+            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync())
+                .Returns(
+                    new[]
+                    {
+                        new PublicKeyInfo { KeyId = keyId, PublicKey = publicKeySpki },
+                    }
+                );
+
+            _jti = Guid.NewGuid();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti)).Returns(true);
+
+            _factory = CreateFactory(CreateTokenManager(_tokenRepository));
+            _client = CreateOrdinaryClientFor(_factory, OwnerClientId);
+            _response = await PostRevocation(_client, CreateSignedToken(signingKey, OwnerClientId, _jti));
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _client?.Dispose();
+            _factory?.Dispose();
+        }
+
+        [Test]
+        public void It_is_not_rejected_by_a_policy() => _response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        [Test]
+        public void It_revokes_its_own_token() =>
             A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti)).MustHaveHappenedOnceExactly();
     }
 
