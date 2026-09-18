@@ -15,8 +15,9 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql;
 /// <summary>
 /// SQL Server session-owned application locks per Application aggregate, held on one dedicated
 /// connection per acquisition for the lifetime of the returned handle. A lock set is acquired on
-/// a single session, in ascending application id order, so a workflow spanning many
-/// applications holds one connection. The connection is held across the owning workflow's
+/// a single session, in ascending application id order and within one shared
+/// <see cref="ApplicationLockOptions.AcquireTimeout"/> contention budget, so a workflow spanning
+/// many applications holds one connection and waits for one timeout. The connection is held across the owning workflow's
 /// identity-provider calls, so the hold duration is bounded by those calls, not by the acquire
 /// timeout; lock sessions therefore come from their own bounded pool
 /// (<see cref="ApplicationLockConnectionPool"/>) and never occupy the repositories' pool.
@@ -75,9 +76,10 @@ internal sealed class MssqlApplicationLockManager : IApplicationLockManager
         }.ConnectionString;
 
     /// <summary>
-    /// Acquires every resource on one session, each within its own acquire window. Any outcome
-    /// other than the whole set being held (a timeout, a failure, a cancellation) releases the
-    /// resources already taken and closes the session before the result leaves this method.
+    /// Acquires every resource on one session, all of them inside one shared contention budget.
+    /// Any outcome other than the whole set being held (a timeout, a failure, a cancellation)
+    /// releases the resources already taken and closes the session before the result leaves this
+    /// method.
     /// </summary>
     private async Task<ApplicationLockResult> AcquireOrderedAsync(
         int[] applicationIds,
@@ -91,11 +93,26 @@ internal sealed class MssqlApplicationLockManager : IApplicationLockManager
             connection = new SqlConnection(_lockConnectionString);
             await connection.OpenAsync(cancellationToken);
 
+            // One contention budget for the whole attempt. It starts once the session is open,
+            // so establishing the connection is not charged to it, and it is never restarted for
+            // a later resource: without that, a set of N resources could spend N AcquireTimeout
+            // windows contending while the resources taken earlier stayed held. Releasing the
+            // set is outside the budget too. This bounds contention, not the request.
+            TimeSpan budget = _lockOptions.Value.AcquireTimeout;
+            var spent = Stopwatch.StartNew();
+
             foreach (int applicationId in applicationIds)
             {
                 string resource = ComputeLockResource(applicationId);
                 if (
-                    await TryGetApplockAsync(connection, resource, applicationId, cancellationToken) is
+                    await TryGetApplockAsync(
+                        connection,
+                        resource,
+                        applicationId,
+                        budget,
+                        spent,
+                        cancellationToken
+                    ) is
                     { } failure
                 )
                 {
@@ -146,27 +163,40 @@ internal sealed class MssqlApplicationLockManager : IApplicationLockManager
 
     /// <summary>
     /// Returns null once the resource is held by this session; otherwise the classified failure.
+    /// Only what is left of the attempt's shared contention budget is offered to
+    /// <c>@LockTimeout</c>, the SQL Server wait mechanism, so a later resource never opens a
+    /// fresh window. <paramref name="spent"/> is what the attempt has already consumed,
+    /// including on the resources taken before this one.
     /// </summary>
     private async Task<ApplicationLockResult?> TryGetApplockAsync(
         SqlConnection connection,
         string resource,
         int applicationId,
+        TimeSpan budget,
+        Stopwatch spent,
         CancellationToken cancellationToken
     )
     {
-        TimeSpan timeout = _lockOptions.Value.AcquireTimeout;
-        var elapsed = Stopwatch.StartNew();
+        TimeSpan remaining = budget - spent.Elapsed;
+        if (remaining <= TimeSpan.Zero)
+        {
+            // A negative @LockTimeout means "wait indefinitely" to sp_getapplock, so an
+            // exhausted budget is answered here rather than handed to the server.
+            LogTimeout();
+            return new ApplicationLockResult.FailureTimeout();
+        }
+
         using var command = new SqlCommand("sp_getapplock", connection)
         {
             CommandType = CommandType.StoredProcedure,
             // sp_getapplock itself waits up to @LockTimeout; the command timeout only needs
             // to outlast that wait.
-            CommandTimeout = (int)timeout.TotalSeconds + 30,
+            CommandTimeout = (int)remaining.TotalSeconds + 30,
         };
         command.Parameters.AddWithValue("@Resource", resource);
         command.Parameters.AddWithValue("@LockMode", "Exclusive");
         command.Parameters.AddWithValue("@LockOwner", "Session");
-        command.Parameters.AddWithValue("@LockTimeout", (int)timeout.TotalMilliseconds);
+        command.Parameters.AddWithValue("@LockTimeout", (int)remaining.TotalMilliseconds);
         SqlParameter returnValue = command.Parameters.Add("@ReturnValue", SqlDbType.Int);
         returnValue.Direction = ParameterDirection.ReturnValue;
 
@@ -176,9 +206,9 @@ internal sealed class MssqlApplicationLockManager : IApplicationLockManager
         if (status >= 0)
         {
             _logger.LogDebug(
-                "Acquired the application lock for Application {ApplicationId} after waiting {LockWaitMilliseconds} ms",
+                "Acquired the application lock for Application {ApplicationId} {LockWaitMilliseconds} ms into the acquisition budget",
                 applicationId,
-                elapsed.ElapsedMilliseconds
+                spent.ElapsedMilliseconds
             );
             return null;
         }
@@ -186,14 +216,17 @@ internal sealed class MssqlApplicationLockManager : IApplicationLockManager
         ApplicationLockResult failure = ClassifyFailedLockStatus(status, cancellationToken);
         if (failure is ApplicationLockResult.FailureTimeout)
         {
-            _logger.LogWarning(
-                "Timed out acquiring the application lock for Application {ApplicationId} after {LockWaitMilliseconds} ms",
-                applicationId,
-                elapsed.ElapsedMilliseconds
-            );
+            LogTimeout();
         }
 
         return failure;
+
+        void LogTimeout() =>
+            _logger.LogWarning(
+                "Timed out acquiring the application lock for Application {ApplicationId} after spending {LockWaitMilliseconds} ms of the acquisition budget",
+                applicationId,
+                spent.ElapsedMilliseconds
+            );
     }
 
     /// <summary>

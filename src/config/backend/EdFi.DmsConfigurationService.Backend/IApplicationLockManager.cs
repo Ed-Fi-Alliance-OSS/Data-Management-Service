@@ -29,10 +29,12 @@ public interface IApplicationLockManager
     /// per application. The ids are deduplicated and acquired in ascending order, the same total
     /// order every single-application caller follows, on the same lock resources, so a lock-set
     /// holder and a single-application holder contend with each other and no cycle between them
-    /// is possible. A failure to acquire any lock in the set releases the locks already taken on
-    /// the session before the failure result is returned. Disposing the handle releases the whole
-    /// set. Cancellation propagates as <see cref="OperationCanceledException"/>. The set must not
-    /// be empty.
+    /// is possible. The whole acquisition shares one
+    /// <see cref="ApplicationLockOptions.AcquireTimeout"/> contention budget (see that member),
+    /// so a set of N ids waits for one timeout in total, not N of them. A failure to acquire any
+    /// lock in the set releases the locks already taken on the session before the failure result
+    /// is returned. Disposing the handle releases the whole set. Cancellation propagates as
+    /// <see cref="OperationCanceledException"/>. The set must not be empty.
     /// </summary>
     Task<ApplicationLockResult> AcquireAllAsync(
         IReadOnlyCollection<int> applicationIds,
@@ -92,6 +94,15 @@ public record ApplicationLockResult
 
 public class ApplicationLockOptions
 {
+    /// <summary>
+    /// How long one acquisition attempt may spend contending for the locks it needs. It is a
+    /// contention budget, not a request deadline: the managers start it once the lock session is
+    /// open, so establishing the connection is not charged to it, and they stop charging it once
+    /// the whole set is held, so releasing the locks is not charged to it either. Within an
+    /// attempt the budget is shared by every id in the set and is never restarted for a later
+    /// one; an attempt that exhausts it reports <see cref="ApplicationLockResult.FailureTimeout"/>
+    /// after releasing whatever it already holds.
+    /// </summary>
     public TimeSpan AcquireTimeout { get; set; } = TimeSpan.FromSeconds(5);
 }
 

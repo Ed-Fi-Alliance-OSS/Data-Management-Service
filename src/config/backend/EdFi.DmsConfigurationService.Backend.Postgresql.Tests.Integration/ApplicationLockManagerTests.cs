@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Diagnostics;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -808,4 +809,85 @@ public class Given_the_lock_pool_saturated_by_lock_sessions : ApplicationLockMan
     [Test]
     public void It_refuses_a_lock_session_beyond_the_bound() =>
         _beyondBound.Should().BeOfType<ApplicationLockResult.FailureUnknown>();
+}
+
+/// <summary>
+/// One acquisition attempt gets one contention budget, shared by every lock of the set. Here the
+/// lower lock is held elsewhere for most of the budget and then given up, so the set takes it
+/// late and has only the remainder left to contend for the higher lock, which is held for the
+/// whole fixture. Restarting the window per lock — the defect this pins — would let the set wait
+/// another full <c>AcquireTimeout</c> on the higher lock while it kept the lower one held, which
+/// is what the upper bound below rejects. A fixture whose second lock is simply held from the
+/// outset cannot tell the two behaviors apart.
+/// </summary>
+[TestFixture]
+public class Given_a_lock_set_whose_earlier_lock_consumes_most_of_the_budget : ApplicationLockManagerTestBase
+{
+    private const int LowerApplicationId = 9961;
+    private const int HigherApplicationId = 9962;
+
+    private static readonly TimeSpan _budget = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan _lowerHeldFor = TimeSpan.FromMilliseconds(1500);
+
+    // Generous enough for scheduling and poll granularity, still far below the two budgets a
+    // per-lock window would spend (about 3.5 s).
+    private static readonly TimeSpan _oneBudgetUpperBound = _budget + TimeSpan.FromMilliseconds(800);
+
+    private ApplicationLockResult _result = null!;
+    private TimeSpan _elapsed;
+    private (int ProcessId, long Key)[] _releases = [];
+    private bool _lowerFreeAfterTimeout;
+
+    [SetUp]
+    public async Task Act()
+    {
+        long lowerKey = PostgresqlApplicationLockManager.ComputeLockKey(LowerApplicationId);
+        long higherKey = PostgresqlApplicationLockManager.ComputeLockKey(HigherApplicationId);
+
+        await using NpgsqlConnection lowerHolder = await OpenIndependentSessionAsync();
+        await using NpgsqlConnection higherHolder = await OpenIndependentSessionAsync();
+        (await TryAdvisoryLockAsync(lowerHolder, lowerKey)).Should().BeTrue();
+        (await TryAdvisoryLockAsync(higherHolder, higherKey)).Should().BeTrue();
+
+        List<(int ProcessId, long Key)> releases = [];
+        PostgresqlApplicationLockManager manager = CreateRecordingManager(releases, _budget);
+
+        Task releaseLower = Task.Run(async () =>
+        {
+            await Task.Delay(_lowerHeldFor);
+            await PostgresqlApplicationLockManager.UnlockAsync(lowerHolder, lowerKey);
+        });
+
+        var elapsed = Stopwatch.StartNew();
+        _result = await manager.AcquireAllAsync(
+            [LowerApplicationId, HigherApplicationId],
+            CancellationToken.None
+        );
+        _elapsed = elapsed.Elapsed;
+        await releaseLower;
+
+        _releases = [.. releases];
+        _lowerFreeAfterTimeout = await IsFreeAsync(higherHolder, lowerKey);
+        await PostgresqlApplicationLockManager.UnlockAsync(higherHolder, higherKey);
+    }
+
+    [Test]
+    public void It_times_out() => _result.Should().BeOfType<ApplicationLockResult.FailureTimeout>();
+
+    [Test]
+    public void It_spends_one_budget_on_the_whole_set() => _elapsed.Should().BeLessThan(_oneBudgetUpperBound);
+
+    [Test]
+    public void It_spends_the_budget_rather_than_giving_up_when_the_first_lock_is_taken() =>
+        _elapsed.Should().BeGreaterThan(_lowerHeldFor);
+
+    [Test]
+    public void It_releases_the_lock_it_took_before_the_budget_ran_out() =>
+        _releases
+            .Select(release => release.Key)
+            .Should()
+            .Equal(PostgresqlApplicationLockManager.ComputeLockKey(LowerApplicationId));
+
+    [Test]
+    public void It_leaves_that_lock_free_after_the_timeout() => _lowerFreeAfterTimeout.Should().BeTrue();
 }

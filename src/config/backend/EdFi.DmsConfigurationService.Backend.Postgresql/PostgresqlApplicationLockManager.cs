@@ -17,8 +17,9 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql;
 /// <summary>
 /// PostgreSQL session advisory locks per Application aggregate, held on one dedicated connection
 /// per acquisition for the lifetime of the returned handle. A lock set is acquired on a single
-/// session, in ascending application id order, so a workflow spanning many applications holds
-/// one connection. The connection is held across the owning workflow's identity-provider calls,
+/// session, in ascending application id order and within one shared
+/// <see cref="ApplicationLockOptions.AcquireTimeout"/> contention budget, so a workflow spanning
+/// many applications holds one connection and waits for one timeout. The connection is held across the owning workflow's identity-provider calls,
 /// so the hold duration is bounded by those calls, not by the acquire timeout; lock sessions
 /// therefore come from their own bounded pool (<see cref="ApplicationLockConnectionPool"/>) and
 /// never occupy the repositories' pool. Session termination releases the locks unconditionally,
@@ -78,9 +79,10 @@ internal sealed class PostgresqlApplicationLockManager : IApplicationLockManager
         }.ConnectionString;
 
     /// <summary>
-    /// Acquires every key on one session, each within its own acquire window. Any outcome other
-    /// than the whole set being held (a timeout, a failure, a cancellation) releases the keys
-    /// already taken and closes the session before the result leaves this method.
+    /// Acquires every key on one session, all of them inside one shared contention budget. Any
+    /// outcome other than the whole set being held (a timeout, a failure, a cancellation)
+    /// releases the keys already taken and closes the session before the result leaves this
+    /// method.
     /// </summary>
     private async Task<ApplicationLockResult> AcquireOrderedAsync(
         int[] applicationIds,
@@ -94,10 +96,27 @@ internal sealed class PostgresqlApplicationLockManager : IApplicationLockManager
             connection = new NpgsqlConnection(_lockConnectionString);
             await connection.OpenAsync(cancellationToken);
 
+            // One contention budget for the whole attempt. It starts once the session is open,
+            // so establishing the connection is not charged to it, and it is never restarted for
+            // a later key: without that, a set of N keys could spend N AcquireTimeout windows
+            // contending while the keys taken earlier stayed held. Releasing the set is outside
+            // the budget too. This bounds contention, not the request.
+            TimeSpan budget = _lockOptions.Value.AcquireTimeout;
+            var spent = Stopwatch.StartNew();
+
             foreach (int applicationId in applicationIds)
             {
                 long key = ComputeLockKey(applicationId);
-                if (!await TryAcquireWithinTimeoutAsync(connection, key, applicationId, cancellationToken))
+                if (
+                    !await TryAcquireWithinBudgetAsync(
+                        connection,
+                        key,
+                        applicationId,
+                        budget,
+                        spent,
+                        cancellationToken
+                    )
+                )
                 {
                     return new ApplicationLockResult.FailureTimeout();
                 }
@@ -142,52 +161,59 @@ internal sealed class PostgresqlApplicationLockManager : IApplicationLockManager
         }
     }
 
-    private async Task<bool> TryAcquireWithinTimeoutAsync(
+    /// <summary>
+    /// Takes one key within whatever is left of the attempt's shared contention budget.
+    /// <paramref name="spent"/> is what the attempt has already consumed, including on the keys
+    /// taken before this one, so a later key never opens a fresh window; polling delays are
+    /// clipped to the remaining budget for the same reason.
+    /// </summary>
+    private async Task<bool> TryAcquireWithinBudgetAsync(
         NpgsqlConnection connection,
         long key,
         int applicationId,
+        TimeSpan budget,
+        Stopwatch spent,
         CancellationToken cancellationToken
     )
     {
-        TimeSpan timeout = _lockOptions.Value.AcquireTimeout;
-        var elapsed = Stopwatch.StartNew();
         while (true)
         {
+            // Checked before the first attempt as well as before every retry: a budget already
+            // exhausted by an earlier key times out here rather than waiting again, and a holder
+            // releasing after the deadline cannot hand the lock to a caller whose wait expired.
+            if (spent.Elapsed >= budget)
+            {
+                return Timeout();
+            }
+
             await using var command = new NpgsqlCommand("SELECT pg_try_advisory_lock(@key);", connection);
             command.Parameters.AddWithValue("key", key);
             bool acquired = (bool)(await command.ExecuteScalarAsync(cancellationToken))!;
             if (acquired)
             {
                 _logger.LogDebug(
-                    "Acquired the application lock for Application {ApplicationId} after waiting {LockWaitMilliseconds} ms",
+                    "Acquired the application lock for Application {ApplicationId} {LockWaitMilliseconds} ms into the acquisition budget",
                     applicationId,
-                    elapsed.ElapsedMilliseconds
+                    spent.ElapsedMilliseconds
                 );
                 return true;
             }
 
-            TimeSpan remaining = timeout - elapsed.Elapsed;
+            TimeSpan remaining = budget - spent.Elapsed;
             if (remaining <= TimeSpan.Zero)
             {
                 return Timeout();
             }
 
             await Task.Delay(remaining < _pollInterval ? remaining : _pollInterval, cancellationToken);
-
-            // The deadline is re-checked before every retry so a holder releasing after the
-            // deadline cannot hand the lock to a caller whose wait already expired.
-            if (elapsed.Elapsed >= timeout)
-            {
-                return Timeout();
-            }
         }
 
         bool Timeout()
         {
             _logger.LogWarning(
-                "Timed out acquiring the application lock for Application {ApplicationId} after {LockWaitMilliseconds} ms",
+                "Timed out acquiring the application lock for Application {ApplicationId} after spending {LockWaitMilliseconds} ms of the acquisition budget",
                 applicationId,
-                elapsed.ElapsedMilliseconds
+                spent.ElapsedMilliseconds
             );
             return false;
         }

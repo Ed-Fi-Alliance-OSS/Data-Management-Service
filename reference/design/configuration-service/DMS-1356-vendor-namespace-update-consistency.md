@@ -479,6 +479,7 @@ gate. The identifiers are the ones the branch carries after it was rebased onto 
 | 6.2 | `2aca69dcc` | `VendorUpdateResult.Success.AffectedClientUuids` and the unlocked post-commit client query removed from both repositories (Q-2) |
 | R1 | `9263922fb` | First review round: the 25-application fan-out cap (retriable 409), `RollbackSafelyAsync` in both `UpdateVendor` catch blocks, and the provider-target / stored-guard UUID split in `RestoreClientAsync` |
 | R2 | `a35a31ce4` | Second review round: the cap refusal became its own deterministic 409 body; the replacement-client delete result flowed into compensation through an (inert, see R4) `currentClientClean` flag |
+| 7.2 (R5) | 2026-09-18, fourth review round | Fourth review round (§21): the ApiClient parent-move acquisition became one `AcquireAllAsync` set call per attempt, and both lock managers gave each acquisition attempt one shared contention budget instead of one `AcquireTimeout` window per id |
 | 7.1 (R4) | 2026-09-18, third review round | Third review round (§20): `IApplicationLockManager.AcquireAllAsync` — one lock set per vendor workflow on one database session, deduplicated and ascending, on the existing lock keys/resources — implemented by both lock managers, whose sessions now come from the dedicated bounded pool `ApplicationLockConnectionPool`; the fan-out cap and `ApplicationLockCapConflict` removed; the inert `currentClientClean` parameter removed without changing any failure classification |
 
 **Deviations from the plan, and why.**
@@ -489,7 +490,7 @@ gate. The identifiers are the ones the branch carries after it was rebased onto 
 
 **No implementation steps remain.** Every phase of the approved plan has landed, including the Q-2 cleanup in Step 6.2, and the R4 correction of the review-round cap (Step 7.1).
 
-**How Step 7.1 preserves the approved contract.** The single-application `AcquireAsync` is unchanged for the Application and ApiClient workflows and is now the one-element case of the set operation. Per key, the lock set keeps the per-lock `AcquireTimeout` window, the deadline re-check, and cancellation propagation of the single operation; a timeout, failure, or cancellation part way through the set releases the keys the session already holds through the same release path a handle uses (release each, evict the session from the lock pool if a release fails, then dispose), so a partial acquisition never rides a pooled connection. The vendor workflow keeps the pre-read, the authoritative reread under the set, the bounded drift retry (a new set per attempt), the lock hold through UUID persistence, vendor persistence, and compensation, and D-3 always-re-sync; the only change in `VendorModule` is that one `AcquireAllAsync` call replaces the per-application loop and the cap check.
+**How Step 7.1 preserves the approved contract.** The single-application `AcquireAsync` is unchanged for the Application and ApiClient workflows and is now the one-element case of the set operation. Per key, the lock set keeps the deadline re-check and cancellation propagation of the single operation. ~~Per key it also keeps the per-lock `AcquireTimeout` window.~~ **[Corrected 2026-09-18, R5]** Each *acquisition attempt*, not each key, now gets one `AcquireTimeout` contention budget, so a set of N ids waits one timeout rather than N (§21); the one-element case — every `AcquireAsync` caller — is unchanged, because one key spending one budget is exactly the old per-lock window. A timeout, failure, or cancellation part way through the set releases the keys the session already holds through the same release path a handle uses (release each, evict the session from the lock pool if a release fails, then dispose), so a partial acquisition never rides a pooled connection. The vendor workflow keeps the pre-read, the authoritative reread under the set, the bounded drift retry (a new set per attempt), the lock hold through UUID persistence, vendor persistence, and compensation, and D-3 always-re-sync; the only change in `VendorModule` is that one `AcquireAllAsync` call replaces the per-application loop and the cap check.
 
 ## 18. Verification table (executable)
 
@@ -578,7 +579,7 @@ These are recorded because each one bounds what the evidence above actually prov
 * **`-SkipDockerBuild` runs the previously built image.** An E2E run after a code change without rebuilding the image tests the old code and can produce false evidence in either direction. The pre-fix comparison in the mutation table was rerun with the image rebuilt for exactly this reason, after a first attempt silently tested the fixed code.
 * **Pre-existing stranded rows are not repaired.** A row already pointing at a client deleted by an earlier vendor update cannot be recovered by CMS, which has no `clientId`-based provider re-resolution. Operators delete and recreate such ApiClients.
 * **Non-participating writers remain excluded**, as recorded in §4 D-2: ApiClient and Application inserts read the vendor's stored prefixes without taking the aggregate locks, so a client created during a vendor update receives the stored prefixes and is not repaired by that request. **Deferred, not fixed** (third review, §20).
-* **The lock pool bound is a constant, not a setting.** `ApplicationLockConnectionPool.MaxPoolSize` is 20 sessions per CMS process. A burst of more than 20 concurrent lock-holding or lock-waiting workflows makes the 21st acquisition wait for the driver's connect timeout and then fail as `FailureUnknown`, which the modules answer with the sanitized 500 they already use for lock-infrastructure failures; the repository pool is unaffected. The Application and ApiClient workflows still take one single-application lock per acquisition (a parent-changing ApiClient move takes two sessions), unchanged and out of this ticket's scope.
+* **The lock pool bound is a constant, not a setting.** `ApplicationLockConnectionPool.MaxPoolSize` is 20 sessions per CMS process. A burst of more than 20 concurrent lock-holding or lock-waiting workflows makes the 21st acquisition wait for the driver's connect timeout and then fail as `FailureUnknown`, which the modules answer with the sanitized 500 they already use for lock-infrastructure failures; the repository pool is unaffected. The Application workflows still take one single-application lock per acquisition, unchanged. ~~A parent-changing ApiClient move takes two sessions, unchanged and out of this ticket's scope.~~ **[Corrected 2026-09-18, R5]** It took two, and that was this ticket's problem to finish: the move held its first lock session while waiting for a second from the pool this ticket introduced, so 20 concurrent moves over disjoint application pairs could starve it. The move now takes both applications as one set on one session (§21).
 * **Ordering is proven through the release seam, not observed live.** The integration fixture that requests a set with the higher id first while the higher lock is held elsewhere proves the lower lock was taken first because the release seam records exactly that key on the timeout; a fixture watching the two acquisitions in flight would need timing assumptions.
 
 ## 20. Third review (2026-09-18) — findings and dispositions
@@ -594,3 +595,85 @@ The third review was checked against `a35a31ce4`, Jira, the repository, the exis
 | Keycloak `PUT` does not delete omitted mappers | **Rejected; contradicted by upstream source.** Keycloak 26.1 `RepresentationToModel.updateClientProtocolMappers` removes existing mappers omitted from the representation, and `ClientResource.update` invokes it; the local stack pins Keycloak 26.1 (V-32 probed the same behavior). No mapper handling changed. |
 | Rollback UUID inequality guard (`rollbackSuccess.ClientUuid != providerClientUuid`) | **Kept.** Provider UUID replacement is covered by Jira and exercised by the rotating-provider fixtures; the guard is not dead because the current providers preserve UUIDs. |
 | Concurrent Application/ApiClient insertion keeps old prefixes | **Deferred (documented exclusion, D-2 / §12 / §19).** Not expanded into creation-workflow serialization. |
+
+## 21. Fourth review (2026-09-18) — findings and dispositions
+
+Both findings were raised against `aece7f055` by code inspection, and both are consequences of
+what R4 introduced rather than new design questions. The architecture R4 settled is kept: one
+lock set per workflow on one session, a dedicated bounded lock pool, no cap, no new setting, no
+raised pool limit.
+
+| Finding | Disposition |
+|---|---|
+| The ApiClient parent move still acquires two locks in two calls | **Fixed (integration defect of the R4 pool).** `ApiClientModule.AcquireApiClientLocksAsync` looped over the source and target application ids calling `AcquireAsync` for each and retaining both handles. With the dedicated pool bounded at 20 sessions, 20 concurrent moves over disjoint application pairs can each hold their first lock session and wait for a second from the exhausted pool. This is connection-resource hold-and-wait, not a database deadlock: the locks themselves are taken in ascending id order and never cycle, and the driver's connect timeout eventually breaks the wait, so the symptom is pool starvation answered as failed requests (`FailureUnknown`, sanitized 500), not an indefinite block. Ascending order cannot prevent it, because the contended resource is the pool rather than the locks. Correction: one `AcquireAllAsync(applicationIdsToLock, …)` call per attempt, so a move holds one session. The helper keeps its `List<IAsyncDisposable>` return shape, now carrying the single set handle, and keeps the pre-read, the authoritative reread under the locks, the bounded parent-drift retry with disposal before each retry, cancellation propagation, the existing 409/500 mapping, and lock retention through persistence and compensation. Genuinely single-application callers — the three `ApplicationModule` acquisitions — are untouched; `DeleteApiClient` and `ResetCredential` reach the same helper with a one-element set. §19's "out of this ticket's scope" note on the two-session move is corrected above. |
+| Each id of a lock set gets its own `AcquireTimeout` window | **Fixed (small bounded correction, not a required one).** PostgreSQL started a new stopwatch and read the full `AcquireTimeout` inside `TryAcquireWithinTimeoutAsync` for every id; SQL Server passed the full timeout to every `sp_getapplock` call through `@LockTimeout`. Under staggered contention, N locks can therefore consume about N timeout windows while the locks taken earlier stay held. That behavior is confirmed. Its status is worth stating precisely: it is what §17 of this document explicitly described, and Jira nowhere requires a set-wide timeout — the acceptance criteria speak to ordering, retention, and failure outcomes, all of which held. The correction is taken because the set operation is new in R4 and its contention cost should be bounded the same way on both backends, not because an acceptance criterion was unmet. Correction: one monotonic budget per acquisition attempt, started after the session opens and shared by every id. PostgreSQL checks the remaining budget before each attempt and each retry and clips its poll delay to it; SQL Server passes only the remaining milliseconds to `@LockTimeout` and answers an exhausted budget as `FailureTimeout` directly, because a negative `@LockTimeout` means "wait indefinitely" to `sp_getapplock`. Neither backend opens a fresh window for a later id. Partial-acquisition cleanup, release-failure eviction, cancellation semantics, and the existing failure classification are unchanged. |
+
+**What the budget does and does not bound.** It is a contention budget, not a request deadline,
+and this ticket did not turn it into one. It starts once the lock session is open, so
+establishing the connection — including the driver connect timeout that answers an exhausted
+pool — is outside it, and it stops being charged once the whole set is held, so releasing the
+locks and everything the workflow does while holding them is outside it too. `AcquireTimeout`
+therefore bounds how long one acquisition attempt waits on other lock holders, and nothing else.
+`ApplicationLockOptions.AcquireTimeout` carries this statement in its doc comment. The
+single-application case is unaffected in every respect: one id spending one budget is the
+previous per-lock window.
+
+**Scope held.** No cap was restored, no pool limit raised, no configuration added, no provider,
+schema, or `RelationalMappingVersion` change made, and no helper consolidation attempted — the
+three private copies of `LockFailureResult`/`DisposeLocksAsync` remain the P3 follow-up recorded
+in §12. The deferred items of §19 and §20 are untouched and were not reopened.
+
+### 21.1 R5 verification, run on this revision (2026-09-18)
+
+New and adapted fixtures. `ApiClientModuleTests` — `RecordingLockManager` now records one entry
+per acquisition holding that acquisition's ids (`Acquisitions`), because flattening them made one
+set of two indistinguishable from two single acquisitions, which is why the previous
+higher/lower move assertions passed against the defective loop;
+`Given_an_api_client_update_moving_to_a_higher_application_id` and
+`..._to_a_lower_application_id` now assert exactly one set acquisition holding both ids in
+ascending order and exactly one disposed handle; `Given_an_api_client_update_whose_second_lock_times_out`
+and `..._whose_second_lock_acquisition_is_cancelled` — whose "second acquisition" mocks no longer
+describe the contract — became `Given_an_api_client_update_whose_move_lock_set_times_out` and
+`..._whose_move_lock_set_acquisition_is_cancelled`, asserting the single set request over both
+ids, the unchanged 409/500 answers, and that no single-application acquisition happens; the drift
+fixture asserts three attempts of one one-element set each. `ApplicationLockManagerTests` on both
+backends — `Given_a_lock_set_whose_earlier_lock_consumes_most_of_the_budget`: the lower lock is
+held elsewhere for 1.5 s of a 2 s budget and then released, so the set takes it late and contends
+for the higher lock, held throughout, on the remainder. A fixture whose second lock is merely held
+from the outset cannot distinguish the defect, which is why this one staggers the contention.
+
+| ID | Lane | Command shape | Result |
+|---|---|---|---|
+| R5-1 | CMS frontend unit (whole project) | `dotnet test frontend/…AspNetCore.Tests.Unit` | 1353 passed, 0 failed, 0 skipped |
+| R5-2 | CMS backend unit (whole project) | `dotnet test backend/…Backend.Tests.Unit` | 717 passed, 0 failed, 0 skipped |
+| R5-3 | PostgreSQL integration (whole project, incl. lock manager, vendor consistency, workflow concurrency, inverse move) | `dotnet test backend/…Postgresql.Tests.Integration` | 486 passed, 0 failed, 0 skipped |
+| R5-4 | SQL Server integration (whole project) | same with `ConnectionStrings__MssqlAdmin` exported | 500 passed, 0 failed, **0 skipped** |
+| R5-5 | E2E, Keycloak × PostgreSQL, ApiClients and Vendors features (44 scenarios, incl. scenario 19), image rebuilt from this revision | `./build-config.ps1 Build -Configuration Release`, teardown, then `E2ETest -Configuration Release -IdentityProvider keycloak -E2ETestFilter 'FullyQualifiedName~ApiClientsEndpointsFeature|FullyQualifiedName~VendorsEndpointsFeature'` | 43 passed, 0 failed, 1 skipped of 44 (the skip is the self-contained-only `_21`) |
+| R5-6 | E2E, self-contained (OpenIddict) × PostgreSQL, same features | same with `-IdentityProvider self-contained -SkipDockerBuild` (same image) | 44 passed, 0 failed, 0 skipped |
+| R5-7 | E2E, Keycloak × SQL Server, representative subset | same with `-EnvironmentFile './.env.config.mssql.e2e' -E2ETestFilter 'TestCategory=MssqlRepresentative'` | 23 passed, 0 failed, 0 skipped |
+| R5-8 | Formatting | `dotnet csharpier check .` from `src/config` | 439 files, clean (see §19 for the whole-tree note) |
+| R5-9 | Solution build | `dotnet build EdFi.DmsConfigurationService.sln --no-incremental` | succeeded, 0 warnings |
+
+The E2E lanes were scoped to the two features this revision can affect — the vendor workflow
+and every ApiClient operation that goes through the changed acquisition helper — plus the
+SQL Server representative subset. The remaining E2E scenarios are unchanged behavior and their
+whole-suite evidence stays V-5/V-6 (R3 revision). In both PostgreSQL lanes the ApiClients
+scenarios `_09` and `_15` print as skipped from their known undefined `Given` bindings and are
+not counted in the skipped tally; that is pre-existing and unrelated to this change.
+
+**A note on how the mutation runs were reverted.** The backups restore the original file
+timestamps, so an incremental build after a revert can leave mutated assemblies in place and a
+`--no-build` test run would then report the mutation's failures as if they were the revision's.
+Every number in the table above was taken after `dotnet build … --no-incremental` on the
+restored source, not from an incremental rebuild.
+
+**R5 mutation sensitivity.** Each mutation was applied to this revision, the named fixtures run,
+and the source restored from a byte-for-byte backup.
+
+| Mutation restored | Assertions that fail |
+|---|---|
+| `ApiClientModule` loops `AcquireAsync` over the two ids again | 10 of the 12 assertions in the four move fixtures: both `It_acquires_one_lock_set_holding_both_applications_in_ascending_order`, both `It_releases_the_one_set_handle`, both `It_asks_for_both_applications_in_one_acquisition`, both `It_never_acquires_a_single_application_lock`, and the 409 and 500 answers of the timeout and cancellation fixtures. The two `It_returns_no_content` assertions still pass, correctly: a move succeeds either way, which is why the acquisition shape needs its own assertions |
+| PostgreSQL starts a fresh stopwatch per key | `It_spends_one_budget_on_the_whole_set`: 3 s 689 ms against a 2 s 800 ms bound |
+| SQL Server passes the full timeout to each `sp_getapplock` | `It_spends_one_budget_on_the_whole_set`: 3 s 508 ms against a 2 s 800 ms bound |
+
+The R3 and R4 mutation tables still apply to every branch this revision did not touch.

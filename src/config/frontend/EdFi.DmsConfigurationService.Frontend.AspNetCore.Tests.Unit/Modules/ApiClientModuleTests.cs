@@ -41,6 +41,18 @@ public class ApiClientModuleTests
 
     public ApiClientModuleTests()
     {
+        A.CallTo(() =>
+                _lockManager.AcquireAllAsync(
+                    A<IReadOnlyCollection<int>>.Ignored,
+                    A<CancellationToken>.Ignored
+                )
+            )
+            .ReturnsLazily(_ =>
+                Task.FromResult<ApplicationLockResult>(
+                    new ApplicationLockResult.Acquired(A.Fake<IAsyncDisposable>())
+                )
+            );
+
         A.CallTo(() => _lockManager.AcquireAsync(A<int>.Ignored, A<CancellationToken>.Ignored))
             .ReturnsLazily(_ =>
                 Task.FromResult<ApplicationLockResult>(
@@ -3137,7 +3149,14 @@ public class ApiClientModuleTests
     private sealed class RecordingLockManager : IApplicationLockManager
     {
         public List<RecordingLockHandle> Handles { get; } = [];
-        public List<int> AcquiredApplicationIds { get; } = [];
+
+        /// <summary>
+        /// One entry per acquisition, holding that acquisition's ids. Flattening the ids would
+        /// make one set of two indistinguishable from two single-application acquisitions.
+        /// </summary>
+        public List<int[]> Acquisitions { get; } = [];
+
+        public List<int> AcquiredApplicationIds => [.. Acquisitions.SelectMany(ids => ids)];
 
         public Task<ApplicationLockResult> AcquireAsync(
             int applicationId,
@@ -3149,7 +3168,7 @@ public class ApiClientModuleTests
             CancellationToken cancellationToken
         )
         {
-            AcquiredApplicationIds.AddRange(applicationIds);
+            Acquisitions.Add([.. applicationIds]);
             var handle = new RecordingLockHandle();
             Handles.Add(handle);
             return Task.FromResult<ApplicationLockResult>(new ApplicationLockResult.Acquired(handle));
@@ -3308,7 +3327,12 @@ public class ApiClientModuleTests
         {
             _dependencyCalls = [];
             _databaseUpdates = [];
-            A.CallTo(() => _lockManager.AcquireAsync(A<int>.Ignored, A<CancellationToken>.Ignored))
+            A.CallTo(() =>
+                    _lockManager.AcquireAllAsync(
+                        A<IReadOnlyCollection<int>>.Ignored,
+                        A<CancellationToken>.Ignored
+                    )
+                )
                 .Returns(new ApplicationLockResult.FailureTimeout());
             A.CallTo(_identityProviderRepository).Invokes(call => _dependencyCalls.Add(call.Method.Name));
             A.CallTo(_applicationRepository).Invokes(call => _dependencyCalls.Add(call.Method.Name));
@@ -3352,12 +3376,12 @@ public class ApiClientModuleTests
             _updateResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
 
         [Test]
-        public void It_acquires_both_locks_in_ascending_order() =>
-            _recordingLockManager.AcquiredApplicationIds.Should().Equal(1, 2);
+        public void It_acquires_one_lock_set_holding_both_applications_in_ascending_order() =>
+            _recordingLockManager.Acquisitions.Should().ContainSingle().Which.Should().Equal(1, 2);
 
         [Test]
-        public void It_releases_every_lock() =>
-            _recordingLockManager.Handles.Should().OnlyContain(handle => handle.Disposed);
+        public void It_releases_the_one_set_handle() =>
+            _recordingLockManager.Handles.Should().ContainSingle().Which.Disposed.Should().BeTrue();
     }
 
     [TestFixture]
@@ -3395,40 +3419,53 @@ public class ApiClientModuleTests
             _updateResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
 
         [Test]
-        public void It_acquires_both_locks_in_ascending_order() =>
-            _recordingLockManager.AcquiredApplicationIds.Should().Equal(2, 5);
+        public void It_acquires_one_lock_set_holding_both_applications_in_ascending_order() =>
+            _recordingLockManager.Acquisitions.Should().ContainSingle().Which.Should().Equal(2, 5);
 
         [Test]
-        public void It_releases_every_lock() =>
-            _recordingLockManager.Handles.Should().OnlyContain(handle => handle.Disposed);
+        public void It_releases_the_one_set_handle() =>
+            _recordingLockManager.Handles.Should().ContainSingle().Which.Disposed.Should().BeTrue();
     }
 
+    /// <summary>
+    /// A move whose lock set cannot be taken. The workflow asks for both applications in one
+    /// acquisition — never a second one for the target while the source is held — and answers
+    /// the timeout as a retriable conflict. The manager releases any partially acquired set
+    /// itself, so the module retains no handle.
+    /// </summary>
     [TestFixture]
-    public class Given_an_api_client_update_whose_second_lock_times_out : UpdateUnderLockTestBase
+    public class Given_an_api_client_update_whose_move_lock_set_times_out : UpdateUnderLockTestBase
     {
-        private RecordingLockHandle _firstLockHandle = null!;
+        private List<int[]> _requestedSets = null!;
 
         [SetUp]
         public async Task Act()
         {
-            _firstLockHandle = new RecordingLockHandle();
-            A.CallTo(() => _lockManager.AcquireAsync(1, A<CancellationToken>.Ignored))
-                .Returns(new ApplicationLockResult.Acquired(_firstLockHandle));
-            A.CallTo(() => _lockManager.AcquireAsync(2, A<CancellationToken>.Ignored))
+            _requestedSets = [];
+            A.CallTo(() =>
+                    _lockManager.AcquireAllAsync(
+                        A<IReadOnlyCollection<int>>.Ignored,
+                        A<CancellationToken>.Ignored
+                    )
+                )
+                .Invokes(call => _requestedSets.Add([.. call.GetArgument<IReadOnlyCollection<int>>(0)!]))
                 .Returns(new ApplicationLockResult.FailureTimeout());
 
             await ActUpdateAsync(applicationId: 2);
         }
-
-        [TearDown]
-        public async Task TearDownHandle() => await _firstLockHandle.DisposeAsync();
 
         [Test]
         public async Task It_returns_the_retriable_conflict_contract() =>
             await AssertLockConflictContract(_updateResponse);
 
         [Test]
-        public void It_releases_the_first_lock() => _firstLockHandle.Disposed.Should().BeTrue();
+        public void It_asks_for_both_applications_in_one_acquisition() =>
+            _requestedSets.Should().ContainSingle().Which.Should().Equal(1, 2);
+
+        [Test]
+        public void It_never_acquires_a_single_application_lock() =>
+            A.CallTo(() => _lockManager.AcquireAsync(A<int>.Ignored, A<CancellationToken>.Ignored))
+                .MustNotHaveHappened();
     }
 
     [TestFixture]
@@ -3473,7 +3510,10 @@ public class ApiClientModuleTests
 
         [Test]
         public void It_retries_the_bounded_number_of_times() =>
-            _recordingLockManager.AcquiredApplicationIds.Should().Equal(1, 1, 1);
+            _recordingLockManager
+                .Acquisitions.Should()
+                .HaveCount(3)
+                .And.OnlyContain(acquisition => acquisition.SequenceEqual(new[] { 1 }));
 
         [Test]
         public void It_releases_every_lock() =>
@@ -3902,7 +3942,12 @@ public class ApiClientModuleTests
         public async Task Act()
         {
             _dependencyCalls = [];
-            A.CallTo(() => _lockManager.AcquireAsync(A<int>.Ignored, A<CancellationToken>.Ignored))
+            A.CallTo(() =>
+                    _lockManager.AcquireAllAsync(
+                        A<IReadOnlyCollection<int>>.Ignored,
+                        A<CancellationToken>.Ignored
+                    )
+                )
                 .Returns(new ApplicationLockResult.FailureTimeout());
             A.CallTo(_identityProviderRepository).Invokes(call => _dependencyCalls.Add(call.Method.Name));
             A.CallTo(_applicationRepository).Invokes(call => _dependencyCalls.Add(call.Method.Name));
@@ -3938,33 +3983,45 @@ public class ApiClientModuleTests
         public void It_calls_nothing_beyond_the_pre_read() => _dependencyCalls.Should().BeEmpty();
     }
 
+    /// <summary>
+    /// Cancellation during a move's lock-set acquisition propagates out of the manager, and the
+    /// workflow answers it with the server error it already returned for that case without
+    /// retaining a handle.
+    /// </summary>
     [TestFixture]
-    public class Given_an_api_client_update_whose_second_lock_acquisition_is_cancelled
+    public class Given_an_api_client_update_whose_move_lock_set_acquisition_is_cancelled
         : UpdateUnderLockTestBase
     {
-        private RecordingLockHandle _firstLockHandle = null!;
+        private List<int[]> _requestedSets = null!;
 
         [SetUp]
         public async Task Act()
         {
-            _firstLockHandle = new RecordingLockHandle();
-            A.CallTo(() => _lockManager.AcquireAsync(1, A<CancellationToken>.Ignored))
-                .Returns(new ApplicationLockResult.Acquired(_firstLockHandle));
-            A.CallTo(() => _lockManager.AcquireAsync(2, A<CancellationToken>.Ignored))
+            _requestedSets = [];
+            A.CallTo(() =>
+                    _lockManager.AcquireAllAsync(
+                        A<IReadOnlyCollection<int>>.Ignored,
+                        A<CancellationToken>.Ignored
+                    )
+                )
+                .Invokes(call => _requestedSets.Add([.. call.GetArgument<IReadOnlyCollection<int>>(0)!]))
                 .Throws(new OperationCanceledException());
 
             await ActUpdateAsync(applicationId: 2);
         }
-
-        [TearDown]
-        public async Task TearDownHandle() => await _firstLockHandle.DisposeAsync();
 
         [Test]
         public void It_returns_a_server_error() =>
             _updateResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
 
         [Test]
-        public void It_releases_the_first_lock() => _firstLockHandle.Disposed.Should().BeTrue();
+        public void It_asks_for_both_applications_in_one_acquisition() =>
+            _requestedSets.Should().ContainSingle().Which.Should().Equal(1, 2);
+
+        [Test]
+        public void It_never_acquires_a_single_application_lock() =>
+            A.CallTo(() => _lockManager.AcquireAsync(A<int>.Ignored, A<CancellationToken>.Ignored))
+                .MustNotHaveHappened();
     }
 
     [TestFixture]
