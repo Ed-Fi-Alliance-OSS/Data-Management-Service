@@ -1083,6 +1083,22 @@ Describe "Get-ContractPublicSurface nullable-flow attributes" {
             Should -BeTrue
     }
 
+    # An accessor nobody outside the assembly can call is not part of the surface, and neither is an
+    # analysis promise attached to it: the property line already reads get=none for it.
+    It "ignores an annotation added to a private getter" {
+        Test-SurfaceChange -Namespace "PrivateGetterAnnotation" `
+            -Before '    public class Contract { public string? Value { private get => null!; set { } } }' `
+            -After '    public class Contract { public string? Value { [return: System.Diagnostics.CodeAnalysis.NotNull] private get => null!; set { } } }' |
+            Should -BeFalse
+    }
+
+    It "ignores an annotation added to a private setter" {
+        Test-SurfaceChange -Namespace "PrivateSetterAnnotation" `
+            -Before '    public class Contract { public string? Value { get => null; private set { } } }' `
+            -After '    public class Contract { public string? Value { get => null; [param: System.Diagnostics.CodeAnalysis.DisallowNull] private set { } } }' |
+            Should -BeFalse
+    }
+
     It "renders accessor annotations under their own labels" {
         $surface = Get-FixtureSurface -Namespace "AccessorLabels" `
             -Body '    public class Contract { public string? Name { [return: System.Diagnostics.CodeAnalysis.NotNull] get => ""; [param: System.Diagnostics.CodeAnalysis.AllowNull] set { } } }'
