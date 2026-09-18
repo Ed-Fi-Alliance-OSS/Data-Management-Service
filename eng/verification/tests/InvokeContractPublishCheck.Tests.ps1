@@ -936,3 +936,48 @@ Describe "Invoke-ContractPublishCheck confirms a publication" {
         $delay.Waits.Count | Should -Be 0
     }
 }
+
+Describe "Invoke-ContractPublishCheck compares nullability" {
+    # The originally reported gap: a published string? parameter repacked as string at the same
+    # version read as unchanged and would have been republished silently.
+    It "fails when a published string? parameter is packed as string at the unchanged version" {
+        $published = New-ContractPackage -Body "        public void Apply(string? value) { }"
+        $packed = New-ContractPackage -Body "        public void Apply(string value) { }"
+        $feed = Get-FakeFeed -Versions @("1.0.0") -PublishedPackage $published
+
+        { Invoke-Check -PackageFile $packed -Feed $feed } |
+            Should -Throw -ExpectedMessage "*public surface*"
+
+        { Invoke-Check -PackageFile $packed -Feed $feed } |
+            Should -Throw -ExpectedMessage "*Bump the contract's declared version*"
+    }
+
+    It "fails when a published string parameter is packed as string? at the unchanged version" {
+        $published = New-ContractPackage -Body "        public void Apply(string value) { }"
+        $packed = New-ContractPackage -Body "        public void Apply(string? value) { }"
+        $feed = Get-FakeFeed -Versions @("1.0.0") -PublishedPackage $published
+
+        { Invoke-Check -PackageFile $packed -Feed $feed } |
+            Should -Throw -ExpectedMessage "*public surface*"
+    }
+
+    # Private members move the compiler's NullableContext and turn elided annotations into explicit
+    # ones without changing what a consumer sees; a reader that compared the encoding rather than
+    # the effective annotation would demand a version bump here.
+    It "skips when private members only repack the nullable context" {
+        $published = New-ContractPackage -Body @"
+        public void Apply<T>(T value) where T : notnull { }
+        public string Name(string s) => s;
+"@
+        $packed = New-ContractPackage -Body @"
+        public void Apply<T>(T value) where T : notnull { }
+        public string Name(string s) => s;
+        private string? Hidden(string? a, string? b) => a;
+        private string? Other(string? a, string? b, string? c) => a;
+        private string? Third(string? a) => a;
+"@
+        $feed = Get-FakeFeed -Versions @("1.0.0") -PublishedPackage $published
+
+        (Invoke-Check -PackageFile $packed -Feed $feed).ShouldPush | Should -BeFalse
+    }
+}

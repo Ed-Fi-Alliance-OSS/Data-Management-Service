@@ -12,10 +12,18 @@
     the feed. Two assemblies whose surfaces are identical produce identical output.
 
     What moves the output is a change to a declared type or member: its accessibility, its
-    signature, its generic constraints, or a declared default or constant value, including the
-    forms of those the compiler encodes as attributes. Attributes that encode none of those, such
-    as [Obsolete] or the nullable annotations on ordinary parameters and return types, are outside
-    this comparison; so it is not a claim that every externally observable change is caught.
+    signature, its generic constraints, a declared default or constant value, including the forms
+    of those the compiler encodes as attributes, the effective nullable annotation of every return,
+    parameter, property, indexer parameter, field and event type (rendered as a vector with one
+    entry per annotated position and computed so that the same source reads identically however
+    the compiler placed NullableAttribute and NullableContextAttribute), and the nullable-flow
+    attributes from System.Diagnostics.CodeAnalysis (AllowNull, DisallowNull, MaybeNull, NotNull,
+    MaybeNullWhen, NotNullWhen, NotNullIfNotNull, DoesNotReturn, DoesNotReturnIf) on the rows the
+    compiler places them on. An abstract private protected member counts too, because it closes the
+    hierarchy to every external deriver; a non-abstract one does not. Outside this comparison,
+    deliberately: the nullability of a type's base type and interfaces, MemberNotNull and
+    MemberNotNullWhen, and every other attribute, such as [Obsolete]; so it is not a claim that
+    every externally observable change is caught.
 
     This exists because the assertion the packed-package scripts make is narrower than "public
     surface" suggests: they select T: members out of the shipped XML documentation, so they compare
