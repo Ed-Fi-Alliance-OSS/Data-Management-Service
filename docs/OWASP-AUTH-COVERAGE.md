@@ -69,7 +69,20 @@ For self-contained tokens, CMS issues a token with a GUID `jti`, persists it in 
 token's status by `jti` after standard validation. A request is authorized only when
 the stored status is `valid`. CMS exposes:
 
-- `POST /connect/revoke` (RFC 7009) — sets the token status to `revoked`.
+- `POST /connect/revoke` (RFC 7009) — sets the token status to `revoked`. The caller
+  must be authenticated (`401` without a valid bearer token) and may only revoke a
+  token whose `client_id` claim matches the caller's own, so one client cannot
+  revoke another's tokens. The target token's signature, issuer and audience are
+  verified before its `client_id` is trusted; otherwise a forged token naming the
+  caller could carry a victim's `jti`. A token that fails verification, carries no
+  `client_id`, or belongs to another client is a **silent no-op that still returns
+  `200 OK`** — per RFC 7009 the outcome is indistinguishable from revoking an
+  unknown token, so nothing leaks about the token's existence or owner. A target
+  token past its `exp` (plus the validator's clock skew) is likewise a no-op rather
+  than being revoked by `jti`, since verification includes the lifetime check.
+  Because the `client_id` claim name is the same for self-contained and
+  Keycloak-issued tokens, the comparison needs no per-mode branching — but see the
+  Keycloak note below for where it actually runs.
 - `POST /connect/introspect` (RFC 7662) — reports active/inactive status.
 
 This is **not** one-time-use enforcement (a valid token remains reusable until it
@@ -77,6 +90,31 @@ expires or is revoked), but it does provide **immediate, server-side revocation*
 once a token is revoked, every subsequent use is rejected. This is the strongest
 replay control available in the platform and applies only to the self-contained
 provider scheme.
+
+#### A `200 OK` from `/connect/revoke` does not confirm revocation
+
+Every outcome of the revocation endpoint is an identical bodyless `200 OK` —
+success, wrong owner, unverifiable token, expired token, and (in Keycloak mode) not
+attempted at all. RFC 7009 requires this, and it is what stops the endpoint from
+becoming an oracle for token existence and ownership, but it also means the status
+code carries no confirmation. **Incident response must not treat `200 OK` as proof
+that a leaked credential was contained.**
+
+Confirm with introspection instead: `POST /connect/introspect` with the same token
+reports `{"active": false}` once revocation has taken effect, and `{"active": true}`
+if it has not. Only the introspection result is evidence.
+
+The gap is reachable, not hypothetical. A target token whose `client_id` differs
+from the caller's only by letter case fails the case-sensitive ownership comparison
+even though both tokens were issued to the same registered client — see
+`docs/parking-lot.md` for the upstream minting defect that makes such a pair
+possible. An operator relying on the `200` would wrongly believe a live credential
+had been revoked.
+
+Note also that an expired target token is left with its stored status untouched
+rather than being marked `revoked`, so a `revoked`/`valid` reading taken straight
+from `dmscs.OpenIddictToken` or an admin status view does not by itself indicate
+whether a token is still usable.
 
 ### Keycloak / external IdP — delegated to the IdP
 
@@ -87,6 +125,15 @@ session management, and any `jti`/introspection semantics are owned by the IdP. 
 practical constraint: an externally-issued token revoked at the IdP is still
 **accepted by these paths until it expires**. This is an **IdP-dependent gap**
 bounded (not closed) by the compensating controls below.
+
+In Keycloak mode CMS registers no `ITokenRevocationManager` — only the MSSQL and
+Postgres OpenIddict extensions do, and `KeycloakTokenManager` implements
+`ITokenManager` alone — so `POST /connect/revoke` does not reach the
+ownership-checked revocation path at all: it falls through to a bare `200 OK` and
+**revokes nothing**. The ownership comparison described above therefore only
+executes in `self-contained` mode. What *did* change for Keycloak mode is the
+authentication requirement: `/connect/revoke` now answers `401` to an
+unauthenticated caller, where it previously returned a `200 OK` no-op.
 
 ## `jti` handling matrix
 
@@ -136,7 +183,9 @@ externally-issued tokens), the following compensating controls bound the risk:
   tokens already in circulation on these paths.
 - **Server-side revocation (CMS self-contained only).** The per-request `jti`
   status check plus `/connect/revoke` provide immediate revocation for
-  self-contained tokens.
+  self-contained tokens. Revocation is itself an authenticated, ownership-checked
+  operation: a client can revoke only its own tokens, so the control cannot be
+  turned into a denial-of-service against other clients.
 - **No sensitive-detail leakage on failure.** DMS authentication failures return
   a fixed `application/problem+json` `401` body — `type`
   `urn:ed-fi:api:security:authentication`, `title` `Authentication Failed`,
@@ -164,8 +213,17 @@ The behaviors above are exercised by automated tests:
   `ValidateTokenAsync` accepts a token whose status is `valid` on repeated
   presentation (reusable while valid) and **rejects** expired (lifetime check, before
   the status lookup), revoked, unknown-`jti`, missing-`jti`, and malformed-`jti`
-  tokens; `RevokeTokenAsync` delegates revocation for a valid `jti` and is a no-op
-  for missing/malformed `jti`.
+  tokens; `RevokeTokenAsync` delegates revocation for a valid `jti` owned by the
+  calling client and is a no-op — repository never called — for a missing/malformed
+  `jti`, a token owned by another client, a token carrying no `client_id`, an absent
+  caller `client_id`, and a token forged to name the caller while embedding another
+  `jti`. The owned-token case also asserts the stored status is never queried,
+  pinning revocation as idempotent for an already-revoked token.
+- CMS — `EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit/Modules/IdentityModuleTests.cs`:
+  `/connect/revoke` returns `401` to an unauthenticated caller, `400` when the
+  `token` form field is missing, and `200 OK` for an owned token (revoked), a token
+  owned by another client (not revoked), a forged token (not revoked), and a
+  malformed token (not revoked).
 
 **End-to-end tests**
 
@@ -180,7 +238,8 @@ The behaviors above are exercised by automated tests:
   unit test above.)
 - CMS — `EdFi.DmsConfigurationService.Tests.E2E/Features/OwaspCriticalPaths.feature`:
   a revoked self-contained token is rejected on reuse (token issued → revoked via
-  `/connect/revoke` → reused → `401`).
+  `/connect/revoke`, authenticated with that same token so the caller owns it →
+  reused → `401`).
 
 ## Dynamic scanning
 

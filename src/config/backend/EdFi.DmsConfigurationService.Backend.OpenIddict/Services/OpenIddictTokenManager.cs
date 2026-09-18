@@ -349,36 +349,52 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
         }
 
         /// <summary>
+        /// Verifies a token's signature, issuer, audience and lifetime against the currently
+        /// active public keys, returning the parsed token, or <c>null</c> when it fails.
+        ///
+        /// This is the shared front half of <see cref="ValidateTokenAsync"/> and
+        /// <see cref="RevokeTokenAsync"/>. It deliberately stops short of the database status
+        /// lookup, and that omission is load-bearing: authentication additionally requires the
+        /// stored status to be "valid", whereas revocation must still accept an already-revoked
+        /// token so that re-revoking stays the idempotent no-op RFC 7009 expects. Each caller
+        /// applies whatever status gate it needs — do not move a status check in here.
+        /// </summary>
+        private async Task<JwtSecurityToken?> VerifyTokenAsync(string rawToken)
+        {
+            var publicKeys = await GetPublicKeysAsync();
+            var signingKeys = publicKeys.ToDictionary(
+                k => k.KeyId,
+                k => (SecurityKey)new RsaSecurityKey(k.RsaParameters)
+            );
+
+            return JwtTokenValidator.ValidateToken(
+                rawToken,
+                signingKeys,
+                _identityOptions.Value.Authority,
+                _identityOptions.Value.Audience,
+                out var jwtToken,
+                _logger
+            )
+                ? jwtToken
+                : null;
+        }
+
+        /// <summary>
         /// Validates a JWT token and checks its status in the database
         /// </summary>
         public async Task<bool> ValidateTokenAsync(string rawToken)
         {
             try
             {
-                string audience = _identityOptions.Value.Audience;
-                string issuer = _identityOptions.Value.Authority;
-                var publicKeys = await GetPublicKeysAsync();
-                var signingKeys = publicKeys.ToDictionary(
-                    k => k.KeyId,
-                    k => (SecurityKey)new RsaSecurityKey(k.RsaParameters)
-                );
-                if (
-                    !JwtTokenValidator.ValidateToken(
-                        rawToken,
-                        signingKeys,
-                        issuer,
-                        audience,
-                        out var jwtToken,
-                        _logger
-                    )
-                )
+                var jwtToken = await VerifyTokenAsync(rawToken);
+                if (jwtToken is null)
                 {
                     _logger.LogWarning("Token validation failed (signature, issuer, audience, or lifetime)");
                     return false;
                 }
 
                 // Check token status in repository
-                var jti = jwtToken?.Claims?.FirstOrDefault(x => x.Type == JwtRegisteredClaimNames.Jti)?.Value;
+                var jti = jwtToken.Claims?.FirstOrDefault(x => x.Type == JwtRegisteredClaimNames.Jti)?.Value;
                 if (!string.IsNullOrEmpty(jti))
                 {
                     var status = await _tokenRepository.GetTokenStatusAsync(Guid.Parse(jti));
@@ -394,14 +410,58 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
         }
 
         /// <summary>
-        /// Revokes a token by setting its status to 'revoked'
+        /// Revokes a token by setting its status to 'revoked', but only when the token belongs to
+        /// the calling client. Anything else is a no-op returning false.
         /// </summary>
-        public async Task<bool> RevokeTokenAsync(string token)
+        public async Task<bool> RevokeTokenAsync(string token, string callerClientId)
         {
             try
             {
-                var tokenHandler = new JwtSecurityTokenHandler();
-                var jwtToken = tokenHandler.ReadJwtToken(token);
+                if (string.IsNullOrEmpty(callerClientId))
+                {
+                    _logger.LogWarning("Revocation ignored: the caller presented no client_id claim");
+                    return false;
+                }
+
+                // The signature, issuer and audience must be verified before any claim on the
+                // target token is trusted: an unverified client_id could be forged to name the
+                // caller while carrying a victim's jti, which would defeat the ownership check.
+                // ValidateTokenAsync is deliberately not reused because it also requires the
+                // stored status to be "valid", which would turn re-revoking an already-revoked
+                // token into a failure instead of the idempotent no-op RFC 7009 expects.
+                var jwtToken = await VerifyTokenAsync(token);
+                if (jwtToken is null)
+                {
+                    _logger.LogWarning(
+                        "Revocation ignored: the supplied token failed validation (signature, issuer, audience, or lifetime)"
+                    );
+                    return false;
+                }
+
+                string? tokenClientId = jwtToken
+                    .Claims.FirstOrDefault(x => x.Type == SecurityConstants.ClientIdClaimType)
+                    ?.Value;
+
+                // Ordinal (case-sensitive) on purpose. A case-insensitive comparison would make
+                // the ownership boundary depend on the deployed database engine's collation —
+                // Postgres is case-sensitive, SQL Server is not by default — so the same token
+                // would be revocable on one engine and not the other. Pinned by
+                // Given_RevokeTokenAsync_WithATokenWhoseClientIdDiffersOnlyByCase.
+                if (!string.Equals(tokenClientId, callerClientId, StringComparison.Ordinal))
+                {
+                    // A token owned by someone else is deliberately indistinguishable from an
+                    // unknown token, so the caller learns nothing about who owns it.
+                    //
+                    // Logged at Debug, not Warning: this is an expected, by-design no-op that any
+                    // authenticated caller can trigger at will, so a higher level would let a
+                    // caller flood the log at a severity operators alert on.
+                    _logger.LogDebug(
+                        "Revocation ignored: the supplied token does not belong to the calling client {CallerClientId}",
+                        LoggingUtility.SanitizeForLog(callerClientId)
+                    );
+                    return false;
+                }
+
                 var jti = jwtToken.Claims.FirstOrDefault(x => x.Type == JwtRegisteredClaimNames.Jti)?.Value;
 
                 if (!string.IsNullOrEmpty(jti))

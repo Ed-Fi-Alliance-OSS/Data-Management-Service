@@ -11,10 +11,18 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Token
     public interface ITokenRevocationManager
     {
         /// <summary>
-        /// Revokes a token by setting its status to 'revoked'
+        /// Revokes a token by setting its status to 'revoked', provided the token belongs to the
+        /// calling client. A token the caller does not own is left untouched: callers must not be
+        /// able to revoke each other's tokens, and per RFC 7009 the outcome is reported to the
+        /// HTTP caller the same way as "token not found", so nothing is leaked about the token's
+        /// existence or owner.
         /// </summary>
         /// <param name="token">The token to revoke</param>
+        /// <param name="callerClientId">
+        /// The <c>client_id</c> claim of the authenticated caller. Revocation proceeds only when the
+        /// target token carries the same <c>client_id</c>.
+        /// </param>
         /// <returns>True if the token was successfully revoked, false otherwise</returns>
-        Task<bool> RevokeTokenAsync(string token);
+        Task<bool> RevokeTokenAsync(string token, string callerClientId);
     }
 }

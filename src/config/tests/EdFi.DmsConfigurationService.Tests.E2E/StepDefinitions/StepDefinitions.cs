@@ -365,9 +365,13 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
         var content = new FormUrlEncodedContent(new Dictionary<string, string> { { "token", _token } });
         APIRequestContextOptions options = new()
         {
+            // /connect/revoke requires an authenticated caller and only revokes tokens carrying
+            // the caller's own client_id. Here the caller revokes the very token it is
+            // presenting, so it is the owner and revocation proceeds.
             Headers = new Dictionary<string, string>
             {
                 { "Content-Type", "application/x-www-form-urlencoded" },
+                { "Authorization", $"Bearer {_token}" },
             },
             Data = await content.ReadAsStringAsync(),
         };

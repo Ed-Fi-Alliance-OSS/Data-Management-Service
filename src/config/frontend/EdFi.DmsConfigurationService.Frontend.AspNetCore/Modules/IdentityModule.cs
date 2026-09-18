@@ -5,9 +5,11 @@
 
 using System.Text.Json;
 using EdFi.DmsConfigurationService.Backend;
+using EdFi.DmsConfigurationService.Backend.OpenIddict.Extensions;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Token;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Validation;
 using EdFi.DmsConfigurationService.Backend.Repositories;
+using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.DataModel.Infrastructure;
 using EdFi.DmsConfigurationService.DataModel.Model.Authorization;
 using EdFi.DmsConfigurationService.DataModel.Model.Register;
@@ -33,7 +35,15 @@ public class IdentityModule : IEndpointModule
         endpoints.MapPost("connect/register/{**contextPath}", RegisterClient).DisableAntiforgery();
         endpoints.MapPost("connect/token/{**contextPath}", GetClientAccessToken).DisableAntiforgery();
         endpoints.MapPost("connect/introspect/{**contextPath}", IntrospectToken).DisableAntiforgery();
-        endpoints.MapPost("connect/revoke/{**contextPath}", RevokeToken).DisableAntiforgery();
+        // Revocation requires an authenticated caller: the handler can only decide whether the
+        // caller owns the token being revoked if it knows who the caller is. A bare
+        // RequireAuthorization() (no named policy) is deliberate — SecurityConstants.ServicePolicy
+        // demands the config-service role claim, which an ordinary client-credentials token minted
+        // by /connect/token does not carry, so it would lock clients out of revoking their own tokens.
+        endpoints
+            .MapPost("connect/revoke/{**contextPath}", RevokeToken)
+            .DisableAntiforgery()
+            .RequireAuthorization();
     }
 
     private async Task<IResult> RegisterClient(
@@ -306,7 +316,7 @@ public class IdentityModule : IEndpointModule
         var response = new
         {
             active = true,
-            client_id = validationResult.Principal.FindFirst("client_id")?.Value,
+            client_id = validationResult.Principal.GetClientId(),
             scope = string.Join(" ", validationResult.Principal.FindAll("scope").Select(c => c.Value)),
             exp = validationResult.Principal.FindFirst("exp")?.Value,
             iat = validationResult.Principal.FindFirst("iat")?.Value,
@@ -321,6 +331,7 @@ public class IdentityModule : IEndpointModule
 
     private static async Task<IResult> RevokeToken(
         [FromServices] ITokenManager tokenManager,
+        [FromServices] ILogger<IdentityModule> logger,
         HttpContext httpContext
     )
     {
@@ -341,17 +352,32 @@ public class IdentityModule : IEndpointModule
             return FailureResults.BadRequest("The token parameter is missing.", httpContext.TraceIdentifier);
         }
 
-        // Check if token manager supports revocation via interface
+        // The route requires authentication, so the caller's own client_id is available here. It is
+        // read by the same claim name IntrospectToken uses above, which a real Keycloak-issued JWT
+        // was verified to carry as well, so no per-provider branching is needed.
+        string callerClientId = httpContext.User.GetClientId() ?? string.Empty;
+
+        // Check if token manager supports revocation via interface. In Keycloak mode no
+        // ITokenRevocationManager is registered, so this falls through to the bare 200 OK below
+        // and nothing is revoked — revocation is the external IdP's responsibility there.
         if (tokenManager is ITokenRevocationManager revocationManager)
         {
             try
             {
-                await revocationManager.RevokeTokenAsync(model.Token);
+                // A token belonging to another client is left alone by the manager and still
+                // reported as 200 OK, so nothing is leaked about whether it exists or who owns it.
+                await revocationManager.RevokeTokenAsync(model.Token, callerClientId);
                 return Results.Ok(); // RFC 7009: Always return 200 OK for revocation
             }
-            catch
+            catch (Exception ex)
             {
-                // Even if revocation fails, return 200 OK (RFC 7009 requirement)
+                // Even if revocation fails, return 200 OK (RFC 7009 requirement). The 200 hides
+                // the failure from the caller by design, so log it here or it is lost entirely.
+                logger.LogError(
+                    ex,
+                    "Revocation failed for client {CallerClientId}; returning 200 OK per RFC 7009",
+                    LoggingUtility.SanitizeForLog(callerClientId)
+                );
                 return Results.Ok();
             }
         }

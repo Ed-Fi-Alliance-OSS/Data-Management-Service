@@ -19,6 +19,21 @@ public class TestAuthHandler(
     IOptions<IdentitySettings> identitySettings
 ) : AuthenticationHandler<AuthenticationSchemeOptions>(options, loggerFactory, encoder)
 {
+    /// <summary>
+    /// Optional request header that overrides the authenticated principal's <c>client_id</c> claim,
+    /// letting a single test run simulate more than one calling client.
+    /// </summary>
+    public const string ClientIdHeaderName = "X-Test-ClientId";
+
+    /// <summary>
+    /// Optional request header that suppresses the service-role claim. The resulting principal is
+    /// shaped like an ordinary client-credentials token from <c>/connect/token</c>: authenticated,
+    /// but without the <c>IdentitySettings:ConfigServiceRole</c> claim that
+    /// <c>SecurityConstants.ServicePolicy</c> requires. Absent the header the role claim is
+    /// emitted exactly as before.
+    /// </summary>
+    public const string OmitRoleClaimHeaderName = "X-Test-OmitRoleClaim";
+
     protected override Task<AuthenticateResult> HandleAuthenticateAsync()
     {
         // Extract scope from the request header for testing
@@ -28,12 +43,24 @@ public class TestAuthHandler(
             return Task.FromResult(AuthenticateResult.Fail("Scope header is missing."));
         }
 
-        var claims = new[]
+        // Tests that need to act as a caller other than the configured client (for example, to
+        // prove that /connect/revoke refuses to revoke another client's token) set this header.
+        // Absent the header the previous hardcoded client_id is used, so existing tests are unaffected.
+        var clientIdHeader = Context.Request.Headers[ClientIdHeaderName].ToString();
+        string clientId = string.IsNullOrEmpty(clientIdHeader)
+            ? identitySettings.Value.ClientId
+            : clientIdHeader;
+
+        List<Claim> claims = [new Claim("client_id", clientId), new Claim("scope", scopeHeader)];
+
+        // Only tests that deliberately need a role-less caller set this header, so the claim set
+        // is unchanged for every other test.
+        if (string.IsNullOrEmpty(Context.Request.Headers[OmitRoleClaimHeaderName].ToString()))
         {
-            new Claim("client_id", identitySettings.Value.ClientId),
-            new Claim(identitySettings.Value.RoleClaimType, identitySettings.Value.ConfigServiceRole),
-            new Claim("scope", scopeHeader),
-        };
+            claims.Add(
+                new Claim(identitySettings.Value.RoleClaimType, identitySettings.Value.ConfigServiceRole)
+            );
+        }
 
         var identity = new ClaimsIdentity(claims, JwtBearerDefaults.AuthenticationScheme);
         var principal = new ClaimsPrincipal(identity);
