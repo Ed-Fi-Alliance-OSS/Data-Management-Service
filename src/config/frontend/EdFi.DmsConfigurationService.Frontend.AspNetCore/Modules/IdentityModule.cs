@@ -347,6 +347,13 @@ public class IdentityModule : IEndpointModule
         // The caller is authenticated (see RequireAuthorization on the route). A caller may only
         // revoke a token whose client_id claim matches their own; the ownership comparison happens
         // inside the revocation manager, which also verifies the target token's signature.
+        //
+        // The "client_id" claim is read by the same name IntrospectToken already relies on. It is
+        // safe to read unremapped because "client_id" is not in
+        // JwtSecurityTokenHandler.DefaultInboundClaimTypeMap, so the JwtBearer handler surfaces it
+        // verbatim on httpContext.User for both self-contained and Keycloak-issued tokens. If a
+        // future change enables a custom inbound claim map that renames it, this read (and
+        // IntrospectToken's) must be revisited.
         string? callerClientId = httpContext.User.FindFirst("client_id")?.Value;
 
         // Check if token manager supports revocation via interface

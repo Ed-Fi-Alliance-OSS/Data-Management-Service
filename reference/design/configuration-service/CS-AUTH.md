@@ -40,7 +40,9 @@ silent no-op that still returns `200 OK`, so the endpoint never reveals whether 
 token exists or who owns it. The target token's signature is verified before its
 `client_id` claim is trusted. This ownership check uses the same `client_id` claim
 name for both `self-contained` and Keycloak-issued tokens, so no per-mode
-branching is needed.
+branching is needed. Actual server-side revocation only occurs in `self-contained`
+mode; in Keycloak mode revocation is delegated to the IdP, so an authenticated
+`/connect/revoke` call returns `200 OK` without revoking anything locally.
 
 ## Scopes
 
