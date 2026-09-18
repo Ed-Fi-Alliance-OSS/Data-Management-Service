@@ -4,6 +4,8 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.RegularExpressions;
 
 namespace EdFi.DataManagementService.Backend.Cdc.Tests.Integration;
@@ -22,6 +24,13 @@ internal sealed record CdcSqlServerStartupLogEvidence(
 )
 {
     public bool LsaInitializationTimeout { get; init; }
+    public bool InjectedFailure { get; init; }
+    public IReadOnlyList<string> StatusCodes { get; init; } = [];
+    public IReadOnlyList<string> Parameters { get; init; } = [];
+    public IReadOnlyList<string> StackFrames { get; init; } = [];
+    public string MessageKind { get; init; } = "NotObserved";
+    public string MessageSha256 { get; init; } = string.Empty;
+    public string BuildStamp { get; init; } = string.Empty;
 
     internal static CdcSqlServerStartupLogEvidence Empty(string state) =>
         new(state, false, false, false, false, [], [], [], []);
@@ -88,8 +97,101 @@ internal static partial class CdcSqlServerStartupLogClassifier
         )
         {
             LsaInitializationTimeout = HasExactLsaInitializationTimeout(text),
+            InjectedFailure = text.Split('\n', StringSplitOptions.TrimEntries)
+                .Contains("CDC_SQL_STARTUP_INJECTED_FAILURE", StringComparer.Ordinal),
+            StatusCodes = Statuses()
+                .Matches(text)
+                .Select(m => m.Groups[1].Value.ToUpperInvariant())
+                .Distinct()
+                .Take(8)
+                .ToArray(),
+            Parameters = ParameterValues()
+                .Matches(text)
+                .Select(m => m.Groups[1].Value.ToUpperInvariant())
+                .Take(8)
+                .ToArray(),
+            StackFrames = Frames()
+                .Matches(text)
+                .Select(m =>
+                    m.Groups[1].Value.ToLowerInvariant() + "+" + m.Groups[2].Value.ToUpperInvariant()
+                )
+                .Take(16)
+                .ToArray(),
+            MessageKind = ClassifyMessage(text),
+            MessageSha256 = HashMessage(text),
+            BuildStamp = BuildStamps().Match(text).Groups[1].Value.ToLowerInvariant(),
         };
     }
+
+    private static string ClassifyMessage(string text)
+    {
+        string message = Messages().Match(text).Groups[1].Value;
+        if (message.Length == 0)
+        {
+            return "NotObserved";
+        }
+        if (message.Contains("ASSERT:", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Assertion";
+        }
+        if (message.StartsWith("Termination of ", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Termination";
+        }
+        if (message.Contains("Kernel bug check", StringComparison.OrdinalIgnoreCase))
+        {
+            return "KernelBugCheck";
+        }
+        if (message.Contains("Resource temporarily unavailable", StringComparison.OrdinalIgnoreCase))
+        {
+            return "ResourceTemporarilyUnavailable";
+        }
+        return "Other";
+    }
+
+    // The digest correlates unknown messages without publishing arbitrary log prose.
+    private static string HashMessage(string text)
+    {
+        string message = Messages().Match(text).Groups[1].Value;
+        return message.Length == 0
+            ? string.Empty
+            : Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(message)));
+    }
+
+    [GeneratedRegex(
+        @"^\s*Message:[ \t]*([^\r\n]+)",
+        RegexOptions.Multiline | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant,
+        100
+    )]
+    private static partial Regex Messages();
+
+    [GeneratedRegex(
+        @"^\s*Status:[ \t]*(0x[0-9a-f]{8})\b",
+        RegexOptions.Multiline | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant,
+        100
+    )]
+    private static partial Regex Statuses();
+
+    [GeneratedRegex(
+        @"^\s*\[[0-7]\][ \t]+(0x[0-9a-f]{1,16})\b",
+        RegexOptions.Multiline | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant,
+        100
+    )]
+    private static partial Regex ParameterValues();
+
+    [GeneratedRegex(
+        @"^\s*file:///?(?:package[0-9]+/)?(?:windows/)?(?:system32/)?(?:binn/)?(sqlpal\.dll|sqlservr|sqllang\.dll|sqldk\.dll|ntdll\.dll|kernel32\.dll|lsasrv\.dll|samsrv\.dll|lsass\.exe|apploader\.exe)\+(0x[0-9a-f]{1,16})\b",
+        RegexOptions.Multiline | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant,
+        100
+    )]
+    private static partial Regex Frames();
+
+    [GeneratedRegex(
+        @"^\s*Build stamp:[ \t]*([0-9a-f]{64})\b",
+        RegexOptions.Multiline | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant,
+        100
+    )]
+    private static partial Regex BuildStamps();
 
     private static bool HasExactLsaInitializationTimeout(string text)
     {
