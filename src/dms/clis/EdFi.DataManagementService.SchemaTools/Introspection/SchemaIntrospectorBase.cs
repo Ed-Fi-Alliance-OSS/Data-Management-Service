@@ -293,7 +293,13 @@ public abstract class SchemaIntrospectorBase : ISchemaIntrospector
             .ToList();
     }
 
-    private sealed record RawIndex(string SchemaName, string TableName, string IndexName, bool IsUnique);
+    private sealed record RawIndex(
+        string SchemaName,
+        string TableName,
+        string IndexName,
+        bool IsUnique,
+        string? Filter
+    );
 
     private sealed record RawIndexColumn(
         string SchemaName,
@@ -317,7 +323,8 @@ public abstract class SchemaIntrospectorBase : ISchemaIntrospector
                 r.GetString(r.GetOrdinal("schema_name")),
                 r.GetString(r.GetOrdinal("table_name")),
                 r.GetString(r.GetOrdinal("index_name")),
-                r.GetBoolean(r.GetOrdinal("is_unique"))
+                r.GetBoolean(r.GetOrdinal("is_unique")),
+                ReadNullableString(r, "filter_definition")
             )
         );
 
@@ -354,7 +361,9 @@ public abstract class SchemaIntrospectorBase : ISchemaIntrospector
         {
             var key = (idx.SchemaName, idx.TableName, idx.IndexName);
             var cols = columnLookup.GetValueOrDefault(key, []);
-            results.Add(new IndexEntry(idx.SchemaName, idx.TableName, idx.IndexName, idx.IsUnique, cols));
+            results.Add(
+                new IndexEntry(idx.SchemaName, idx.TableName, idx.IndexName, idx.IsUnique, idx.Filter, cols)
+            );
         }
         return results
             .OrderBy(x => x.SchemaName, StringComparer.Ordinal)

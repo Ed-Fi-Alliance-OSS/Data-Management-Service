@@ -171,7 +171,8 @@ public class MssqlSchemaIntrospector : SchemaIntrospectorBase
             s.name AS schema_name,
             t.name AS table_name,
             i.name AS index_name,
-            i.is_unique
+            i.is_unique,
+            i.filter_definition
         FROM sys.indexes i
         JOIN sys.tables t ON t.object_id = i.object_id
         JOIN sys.schemas s ON s.schema_id = t.schema_id

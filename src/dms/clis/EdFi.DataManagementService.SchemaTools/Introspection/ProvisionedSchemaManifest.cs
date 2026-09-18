@@ -56,6 +56,7 @@ public sealed record IndexEntry(
     string TableName,
     string IndexName,
     bool IsUnique,
+    string? Filter,
     IReadOnlyList<string> Columns
 );
 
