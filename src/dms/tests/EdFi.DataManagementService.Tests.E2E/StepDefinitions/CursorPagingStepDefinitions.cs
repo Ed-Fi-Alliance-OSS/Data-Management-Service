@@ -570,7 +570,9 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 
         private async Task<JsonObject> ServedPathsAsync()
         {
-            string body = await _apiResponse.TextAsync();
+            // Resolved through the scenario context so these steps also work in features whose request
+            // step lives in another binding class.
+            string body = await CurrentApiResponse().TextAsync();
             JsonNode? document = JsonNode.Parse(body);
 
             document.Should().NotBeNull("a served OpenAPI document must be JSON");

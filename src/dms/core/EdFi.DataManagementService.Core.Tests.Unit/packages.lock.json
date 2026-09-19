@@ -36,11 +36,35 @@
         "resolved": "1.0.335",
         "contentHash": "cEJOD63KUG7BrIVN8Eq44hsougfJErhb9/fd5NIuJG2TZid0vAK5gNLgC/U040GexpGTVF5N3JxohFdXBMmkxQ=="
       },
+      "EdFi.DataStandard52.Homograph.ApiSchema": {
+        "type": "Direct",
+        "requested": "[1.0.335, )",
+        "resolved": "1.0.335",
+        "contentHash": "bi6R0tZ+kUodpKJ1mchwvZMWyRoC5yZgEfpktfIzh9VTjyAKYp/pvKw9RiXZEiQXYQp1BtS4/GLw7Mvy80EdqA=="
+      },
+      "EdFi.DataStandard52.Sample.ApiSchema": {
+        "type": "Direct",
+        "requested": "[1.0.335, )",
+        "resolved": "1.0.335",
+        "contentHash": "rzX23/Vsk/JATQlxttp+Pn4cPo8L/pMqKrdqxNaoLG5DLKxb2FhT/kRwxJElMV63id7Os42XG5US7kPQPFv8lQ=="
+      },
       "EdFi.DataStandard61.ApiSchema": {
         "type": "Direct",
         "requested": "[1.0.335, )",
         "resolved": "1.0.335",
         "contentHash": "8+oVpyyrX6+51NbBpKTpSh1LzoY5IgxNdzF14q/EewUTT7EoWoPLaEskF7kAAfBQasnaLfmANzTRYk/trwlIDQ=="
+      },
+      "EdFi.DataStandard61.Homograph.ApiSchema": {
+        "type": "Direct",
+        "requested": "[1.0.335, )",
+        "resolved": "1.0.335",
+        "contentHash": "silHo0dhMCooCjeeetG9mKUI2DPhZlCwfMQrjOslM8kCNi6RX9AdrUQMD5+ZkcdW4ZqTC0zdr4GBYYosXu4VRA=="
+      },
+      "EdFi.DataStandard61.Sample.ApiSchema": {
+        "type": "Direct",
+        "requested": "[1.0.335, )",
+        "resolved": "1.0.335",
+        "contentHash": "GD8XkX7B+1mEd57qQnzHZFQnQz2KeQW0SeK5eY1u9VLHnXsAXHTR77bZSZSstGYECRa0l/9vyAks/+u8XW0qGQ=="
       },
       "FakeItEasy": {
         "type": "Direct",
