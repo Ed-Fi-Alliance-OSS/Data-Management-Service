@@ -153,9 +153,7 @@ namespace EdFi.Api.TestContract
     function Invoke-DefaultCheck {
         [CmdletBinding()]
         param(
-            [Parameter(Mandatory)][string] $PackageFile,
-            [switch] $ConfirmPublished,
-            [scriptblock] $Delay
+            [Parameter(Mandatory)][string] $PackageFile
         )
 
         # Only PackageFile, PackageId, PackageVersion, WorkingDirectory and the service index are
@@ -168,50 +166,7 @@ namespace EdFi.Api.TestContract
             ServiceIndexUrl  = (Get-ServiceIndexUrl)
         }
 
-        if ($ConfirmPublished) {
-            $arguments.ConfirmPublished = $true
-            $arguments.SettleTimeoutSeconds = 3
-            $arguments.SettleIntervalSeconds = 1
-        }
-
-        if ($null -ne $Delay) {
-            $arguments.Delay = $Delay
-        }
-
         return & $script:checker @arguments
-    }
-
-    # A poll counter a mock body can reach. Mock bodies run in the scope of the script under test,
-    # so a $script: variable of this file is not visible there; a file is.
-    function Get-PollCounterPath {
-        [CmdletBinding()]
-        [OutputType([string])]
-        param()
-
-        return Join-Path ([System.IO.Path]::GetTempPath()) "dms1501-feed-defaults-polls-$PID.txt"
-    }
-
-    function Reset-PollCounter {
-        [CmdletBinding(SupportsShouldProcess)]
-        param()
-
-        if ($PSCmdlet.ShouldProcess((Get-PollCounterPath), "Reset poll counter")) {
-            [System.IO.File]::WriteAllText((Get-PollCounterPath), "0")
-        }
-    }
-
-    function Add-Poll {
-        [CmdletBinding(SupportsShouldProcess)]
-        [OutputType([int])]
-        param()
-
-        $count = [int] (Get-Content -LiteralPath (Get-PollCounterPath) -Raw) + 1
-
-        if ($PSCmdlet.ShouldProcess((Get-PollCounterPath), "Record poll")) {
-            [System.IO.File]::WriteAllText((Get-PollCounterPath), [string] $count)
-        }
-
-        return $count
     }
 }
 
@@ -419,55 +374,4 @@ Describe "The default feed implementations" {
         $result.Reason | Should -BeExactly "unchanged"
     }
 
-    # Azure Artifacts indexes a fresh push asynchronously, so the first reads after a push can answer
-    # 404 from a perfectly healthy feed. Confirm mode waits those out, and only those.
-    It "confirm mode polls a healthy 404 package index until the version is listed" {
-        Set-PublishedFixture -Path (New-MinimalPackage)
-        $packed = Join-Path $script:fixtureRoot "identical-$([guid]::NewGuid().ToString('N')).nupkg"
-        Copy-Item -LiteralPath (Get-PublishedFixturePath) -Destination $packed
-        Reset-PollCounter
-
-        Mock Invoke-RestMethod {
-            if ($Uri -eq (Get-ServiceIndexUrl)) {
-                return Get-HealthyServiceIndex
-            }
-
-            if ((Add-Poll) -le 2) {
-                throw (Get-HttpError -StatusCode 404)
-            }
-
-            return [pscustomobject]@{ versions = @("1.0.0") }
-        }
-        Mock Invoke-WebRequest {
-            Copy-Item -LiteralPath (Get-PublishedFixturePath) -Destination $OutFile
-        }
-
-        $waits = [System.Collections.Generic.List[int]]::new()
-        $delay = { param([int] $Seconds) $waits.Add($Seconds) }.GetNewClosure()
-
-        $result = Invoke-DefaultCheck -PackageFile $packed -ConfirmPublished -Delay $delay
-
-        $result.Reason | Should -BeExactly "confirmed"
-        $result.PublishedBytesIdentical | Should -BeTrue
-        $result.AttachEvidence | Should -BeTrue
-        ($waits -join ",") | Should -BeExactly "1,1"
-    }
-
-    It "confirm mode does not poll a package index that answers 401" {
-        Mock Invoke-RestMethod {
-            if ($Uri -eq (Get-ServiceIndexUrl)) {
-                return Get-HealthyServiceIndex
-            }
-
-            throw (Get-HttpError -StatusCode 401)
-        }
-
-        $waits = [System.Collections.Generic.List[int]]::new()
-        $delay = { param([int] $Seconds) $waits.Add($Seconds) }.GetNewClosure()
-
-        { Invoke-DefaultCheck -PackageFile (New-MinimalPackage) -ConfirmPublished -Delay $delay } |
-            Should -Throw -ExpectedMessage "*401*"
-
-        $waits.Count | Should -Be 0
-    }
 }

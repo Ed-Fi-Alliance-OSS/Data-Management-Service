@@ -31,14 +31,6 @@
 
     This script decides; it does not push. The caller acts on ShouldPush.
 
-    With -ConfirmPublished the same script answers a second question after the caller has pushed, or
-    has skipped pushing: does the feed now serve exactly the bytes of the packed file? The version
-    must be listed - a healthy feed that has not yet indexed a fresh push is polled within a bounded
-    window, and any other failure is fatal at once - the three comparisons run as always, and the
-    downloaded archive's SHA-256 is compared with the packed file's. AttachEvidence is true only in
-    confirm mode and only when the bytes are identical; a decision to push is never reported as a
-    publication, because a push can fail after the decision was made.
-
 .NOTES
     Feed access is three injected script blocks so that every behaviour of this policy is testable
     without a network or a credential. The defaults perform the real requests.
@@ -54,9 +46,8 @@
 
 .OUTPUTS
     Exactly one object typed EdFi.ContractPublishDecision on the success stream, on every path, with
-    Mode (decide | confirm), ShouldPush, Reason (absent | unchanged | confirmed), PackageId,
-    PackageVersion, PublishedBytesIdentical, AttachEvidence and Comparisons. Status text goes to the
-    information stream.
+    ShouldPush, Reason (absent | unchanged), PackageId, PackageVersion and Comparisons. Status text
+    goes to the information stream.
 #>
 [CmdletBinding()]
 param(
@@ -104,26 +95,7 @@ param(
 
     # The target framework whose lib/ folder carries the contract assembly.
     [string]
-    $TargetFramework = "net10.0",
-
-    # Confirm mode: the version must be on the feed, and the result says whether the feed serves the
-    # packed file's exact bytes. See the description.
-    [switch]
-    $ConfirmPublished,
-
-    # How long confirm mode waits for a healthy feed to list a version it does not yet list, and the
-    # interval between polls.
-    [ValidateRange(1, 3600)]
-    [int]
-    $SettleTimeoutSeconds = 60,
-
-    [ValidateRange(1, 3600)]
-    [int]
-    $SettleIntervalSeconds = 10,
-
-    # Waits the given number of seconds. Injectable so the settle window is testable in no time.
-    [scriptblock]
-    $Delay
+    $TargetFramework = "net10.0"
 )
 
 $ErrorActionPreference = "Stop"
@@ -131,10 +103,6 @@ $ErrorActionPreference = "Stop"
 Import-Module (Join-Path $PSScriptRoot "ContractPackageComparison.psm1") -Force
 
 $surfaceReader = Join-Path $PSScriptRoot "Get-ContractPublicSurface.ps1"
-
-if ($null -eq $Delay) {
-    $Delay = { param([int] $Seconds) Start-Sleep -Seconds $Seconds }
-}
 
 function Get-FeedRequestHeader {
     [CmdletBinding()]
@@ -410,27 +378,16 @@ function Get-PublishDecision {
     param(
         [Parameter(Mandatory)][bool] $ShouldPush,
         [Parameter(Mandatory)][string] $Reason,
-        [Parameter(Mandatory)][bool] $PublishedBytesIdentical,
-        [Parameter(Mandatory)][bool] $AttachEvidence,
         [Parameter(Mandatory)][AllowEmptyCollection()] $Comparisons
     )
 
-    $mode = "decide"
-
-    if ($ConfirmPublished) {
-        $mode = "confirm"
-    }
-
     return [pscustomobject]@{
-        PSTypeName              = "EdFi.ContractPublishDecision"
-        Mode                    = $mode
-        ShouldPush              = $ShouldPush
-        Reason                  = $Reason
-        PackageId               = $PackageId
-        PackageVersion          = $normalizedVersion
-        PublishedBytesIdentical = $PublishedBytesIdentical
-        AttachEvidence          = $AttachEvidence
-        Comparisons             = $Comparisons
+        PSTypeName     = "EdFi.ContractPublishDecision"
+        ShouldPush     = $ShouldPush
+        Reason         = $Reason
+        PackageId      = $PackageId
+        PackageVersion = $normalizedVersion
+        Comparisons    = $Comparisons
     }
 }
 
@@ -501,30 +458,10 @@ function Test-VersionListed {
     return $publishedVersions -contains $normalizedVersion
 }
 
-$listed = Test-VersionListed
-
-if ($ConfirmPublished -and -not $listed) {
-    # A push that reported success is indexed by Azure Artifacts asynchronously, so a healthy feed
-    # may not list the version for a moment. Only that case is retried: every other failure has
-    # already thrown inside Test-VersionListed, because an unreadable or malformed feed is not a
-    # feed that has not caught up yet.
-    $polls = [int] [math]::Ceiling($SettleTimeoutSeconds / [double] $SettleIntervalSeconds)
-
-    for ($poll = 1; $poll -le $polls -and -not $listed; $poll++) {
-        Write-Information "$PackageId $normalizedVersion is not listed yet; waiting $SettleIntervalSeconds s (poll $poll of $polls)." -InformationAction Continue
-        & $Delay $SettleIntervalSeconds
-        $listed = Test-VersionListed
-    }
-
-    if (-not $listed) {
-        throw "$PackageId $normalizedVersion is not listed on the feed after $SettleTimeoutSeconds seconds ($polls polls). A push that reported success should be visible by now; the publication cannot be confirmed and no evidence may be attached for it."
-    }
-}
-
-if (-not $listed) {
+if (-not (Test-VersionListed)) {
     Write-Information "$PackageId $normalizedVersion is not on the feed; it will be published." -InformationAction Continue
 
-    return Get-PublishDecision -ShouldPush $true -Reason "absent" -PublishedBytesIdentical $false -AttachEvidence $false -Comparisons @()
+    return Get-PublishDecision -ShouldPush $true -Reason "absent" -Comparisons @()
 }
 
 $downloadPath = Join-Path $scratch "$normalizedId.$normalizedVersion.published.nupkg"
@@ -573,18 +510,6 @@ if ($changed.Count -gt 0) {
     )
 }
 
-# Semantic equality is not byte identity: a nupkg is not reproducible, so a rerun of the pack job
-# yields a different archive of the same contract. Whether the feed serves these exact bytes is what
-# decides whether this run's SBOM and provenance describe anything a consumer can restore.
-$publishedHash = (Get-FileHash -LiteralPath $downloadPath -Algorithm SHA256).Hash.ToLowerInvariant()
-$packedHash = (Get-FileHash -LiteralPath $PackageFile -Algorithm SHA256).Hash.ToLowerInvariant()
-$bytesIdentical = $publishedHash -ceq $packedHash
+Write-Information "$PackageId $normalizedVersion is already published, unchanged: public surface, XML documentation and declared dependencies all match." -InformationAction Continue
 
-Write-Information "$PackageId $normalizedVersion is already published, unchanged: public surface, XML documentation and declared dependencies all match. The feed's archive is $(if ($bytesIdentical) { 'byte-identical to' } else { 'a different archive from' }) the packed file (feed $publishedHash, packed $packedHash)." -InformationAction Continue
-
-return Get-PublishDecision `
-    -ShouldPush $false `
-    -Reason $(if ($ConfirmPublished) { "confirmed" } else { "unchanged" }) `
-    -PublishedBytesIdentical $bytesIdentical `
-    -AttachEvidence ($ConfirmPublished.IsPresent -and $bytesIdentical) `
-    -Comparisons $comparisons
+return Get-PublishDecision -ShouldPush $false -Reason "unchanged" -Comparisons $comparisons
