@@ -1142,14 +1142,53 @@ Describe "Get-ContractPublicSurface hierarchy closure" {
             Should -BeTrue
     }
 
-    It "renders the closing member as private protected and abstract" {
+    # The member's name and shape are invisible outside the assembly: no consumer can call, override
+    # or even name it. Only the fact of closure is part of the contract, so that is all that is
+    # rendered, and a rename or a changed parameter list at an unchanged version is not a change.
+    It "renders the closure as one marker rather than the member's signature" {
         $surface = Get-FixtureSurface -Namespace "ClosureRendered" `
             -Body '    public abstract class Contract { private protected abstract void Close(); }'
 
-        ($surface -join "`n").Contains(
-            'METHOD ClosureRendered.Contract.Close`0() : System.Void nullable=[] accessibility=private protected modifiers=abstract,virtual',
+        $joined = $surface -join "`n"
+
+        $joined.Contains(
+            'CLOSURE ClosureRendered.Contract by=private protected abstract member',
             [System.StringComparison]::Ordinal
         ) | Should -BeTrue
+        $joined.Contains('Contract.Close', [System.StringComparison]::Ordinal) | Should -BeFalse
+    }
+
+    It "does not see the closing member renamed" {
+        Test-SurfaceChange -Namespace "ClosureRenamed" `
+            -Before '    public abstract class Contract { public abstract void Apply(); private protected abstract void Close(); }' `
+            -After '    public abstract class Contract { public abstract void Apply(); private protected abstract void Seal(); }' |
+            Should -BeFalse
+    }
+
+    It "does not see the closing member's signature changed" {
+        Test-SurfaceChange -Namespace "ClosureReshaped" `
+            -Before '    public abstract class Contract { public abstract void Apply(); private protected abstract void Close(); }' `
+            -After '    public abstract class Contract { public abstract void Apply(); private protected abstract int Close(string reason); }' |
+            Should -BeFalse
+    }
+
+    It "renders one marker when two members close the hierarchy" {
+        $surface = Get-FixtureSurface -Namespace "ClosureTwice" `
+            -Body '    public abstract class Contract { private protected abstract void Close(); private protected abstract void Seal(); }'
+
+        @($surface | Where-Object { $_.StartsWith('CLOSURE ClosureTwice.Contract', [System.StringComparison]::Ordinal) }).Count |
+            Should -Be 1
+    }
+
+    It "reads an abstract private protected property accessor as a closure and not as a property" {
+        $surface = Get-FixtureSurface -Namespace "ClosureProperty" `
+            -Body '    public abstract class Contract { private protected abstract int Depth { get; } }'
+
+        $joined = $surface -join "`n"
+
+        $joined.Contains('CLOSURE ClosureProperty.Contract by=private protected abstract member', [System.StringComparison]::Ordinal) |
+            Should -BeTrue
+        $joined.Contains('Depth', [System.StringComparison]::Ordinal) | Should -BeFalse
     }
 
     It "still ignores a non-abstract private protected member" {
@@ -1168,10 +1207,13 @@ Describe "Get-ContractPublicSurface hierarchy closure" {
 
         $surface = [string[]] @(& $script:reader -AssemblyPath $customValidation)
 
-        ($surface -join "`n").Contains(
-            'METHOD EdFi.DataManagementService.CustomValidation.CustomValidationFailure.EnsureClosed`0() : System.Void nullable=[] accessibility=private protected modifiers=abstract,virtual',
+        $joined = $surface -join "`n"
+
+        $joined.Contains(
+            'CLOSURE EdFi.DataManagementService.CustomValidation.CustomValidationFailure by=private protected abstract member',
             [System.StringComparison]::Ordinal
         ) | Should -BeTrue
+        $joined.Contains('EnsureClosed', [System.StringComparison]::Ordinal) | Should -BeFalse
     }
 }
 

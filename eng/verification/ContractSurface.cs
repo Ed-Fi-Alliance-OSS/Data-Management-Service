@@ -15,14 +15,15 @@
 // running in the process that is inspecting it.
 //
 // What is emitted is what an implementer outside this assembly can bind to, or is bound by.
-// private protected (FamANDAssem) members are excluded with one exception: an abstract one. A
-// consumer cannot call or override a private protected member, so adding, removing or changing a
-// non-abstract one changes nothing they compile against. An abstract private protected member is
-// different in kind: no type outside the assembly can satisfy it, so its presence closes the
-// hierarchy to every external deriver (CustomValidationFailure.EnsureClosed exists for exactly
-// that), and adding or removing it changes what an implementer may derive from. Widening a
-// private protected member to protected or public, or narrowing one the other way, was already
-// visible: the member's line appears or disappears.
+// private protected (FamANDAssem) members are never described: a consumer cannot call, override or
+// name one, so its signature is not part of the contract. One fact about them is. An abstract
+// private protected member cannot be satisfied by any type outside the assembly, so its presence
+// closes the hierarchy to every external deriver (CustomValidationFailure.EnsureClosed exists for
+// exactly that), and adding or removing it changes what an implementer may derive from. That fact
+// is rendered as one CLOSURE line per type, without the member's name or shape, so a rename or a
+// changed parameter list on the closing member at an unchanged version is the non-change it is to
+// every consumer. Widening a private protected member to protected or public, or narrowing one the
+// other way, was already visible: the member's line appears or disappears.
 //
 // Nullability is part of the surface. The effective nullable annotation of every described
 // return, parameter, property, indexer parameter, field and event type is rendered as a vector
@@ -481,6 +482,11 @@ public static class ContractSurfaceReader
         GenericContext typeContext
     )
     {
+        if (ClosesHierarchy(reader, type))
+        {
+            yield return "CLOSURE " + typeName + " by=private protected abstract member";
+        }
+
         // Accessor methods are described through their property or event, where the member's own
         // name and any indexer parameters survive. get_Item alone does not name the indexer it
         // belongs to, and two indexers differing only in name would read identically.
@@ -1652,16 +1658,36 @@ public static class ContractSurfaceReader
         return false;
     }
 
-    // FamANDAssem (private protected) is admitted only when abstract: see the file header. The
-    // accessibility rendering below names it, so a member that moves between private protected
-    // abstract and protected abstract is a change too.
+    // FamANDAssem (private protected) is never visible; an abstract one is recorded by
+    // ClosesHierarchy instead, see the file header. A member that moves between private protected
+    // abstract and protected abstract is still a change: its own line appears, and the CLOSURE
+    // line disappears when it was the only closing member.
     private static bool IsVisible(MethodAttributes attributes) =>
-        (attributes & MethodAttributes.MemberAccessMask) switch
+        (attributes & MethodAttributes.MemberAccessMask)
+            is MethodAttributes.Public
+                or MethodAttributes.Family
+                or MethodAttributes.FamORAssem;
+
+    // True when any method of the type, accessors included, is private protected and abstract. No
+    // type outside the assembly can implement such a member, so the type cannot be derived from
+    // outside, whatever else it exposes.
+    private static bool ClosesHierarchy(MetadataReader reader, TypeDefinition type)
+    {
+        foreach (MethodDefinitionHandle handle in type.GetMethods())
         {
-            MethodAttributes.Public or MethodAttributes.Family or MethodAttributes.FamORAssem => true,
-            MethodAttributes.FamANDAssem => attributes.HasFlag(MethodAttributes.Abstract),
-            _ => false,
-        };
+            MethodAttributes attributes = reader.GetMethodDefinition(handle).Attributes;
+
+            if (
+                (attributes & MethodAttributes.MemberAccessMask) == MethodAttributes.FamANDAssem
+                && attributes.HasFlag(MethodAttributes.Abstract)
+            )
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     private static bool IsVisible(FieldAttributes attributes) =>
         (attributes & FieldAttributes.FieldAccessMask)
