@@ -13,7 +13,7 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Core.Tests.Unit.OpenApi;
 
 [TestFixture]
-public class ProfileOpenApiSpecificationFilterTests
+public partial class ProfileOpenApiSpecificationFilterTests
 {
     private static readonly string _baseOpenApiSpec = """
         {

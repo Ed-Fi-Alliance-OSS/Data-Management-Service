@@ -474,10 +474,12 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             var headers = GetWriteHeaders();
             headers[header] = value;
 
-            _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(
-                url,
-                new() { DataByte = System.Text.Encoding.UTF8.GetBytes(body), Headers = headers }
-            )!;
+            SetCurrentApiResponse(
+                await _playwrightContext.ApiRequestContext?.PostAsync(
+                    url,
+                    new() { DataByte = System.Text.Encoding.UTF8.GetBytes(body), Headers = headers }
+                )!
+            );
             _logger.log.Information(_apiResponse.TextAsync().Result);
 
             _id = extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
@@ -503,10 +505,12 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 [header] = value,
             };
 
-            _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(
-                url,
-                new() { DataByte = System.Text.Encoding.UTF8.GetBytes(body), Headers = headers }
-            )!;
+            SetCurrentApiResponse(
+                await _playwrightContext.ApiRequestContext?.PostAsync(
+                    url,
+                    new() { DataByte = System.Text.Encoding.UTF8.GetBytes(body), Headers = headers }
+                )!
+            );
             _logger.log.Information(await _apiResponse.TextAsync());
         }
 
@@ -526,27 +530,31 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             );
             var content = new FormUrlEncodedContent(formDataDictionary);
 
-            _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(
-                url,
-                new()
-                {
-                    Headers = new Dictionary<string, string>
+            SetCurrentApiResponse(
+                await _playwrightContext.ApiRequestContext?.PostAsync(
+                    url,
+                    new()
                     {
-                        ["Content-Type"] = "application/x-www-form-urlencoded",
-                    },
-                    Data = await content.ReadAsStringAsync(),
-                }
-            )!;
+                        Headers = new Dictionary<string, string>
+                        {
+                            ["Content-Type"] = "application/x-www-form-urlencoded",
+                        },
+                        Data = await content.ReadAsStringAsync(),
+                    }
+                )!
+            );
         }
 
         [When("a POST request is made for dependent resource {string} with")]
         public async Task WhenSendingAPOSTRequestForDependentResourceWithBody(string url, string body)
         {
             url = AddDataPrefixIfNecessary(url);
-            _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(
-                url,
-                new() { DataByte = System.Text.Encoding.UTF8.GetBytes(body), Headers = GetWriteHeaders() }
-            )!;
+            SetCurrentApiResponse(
+                await _playwrightContext.ApiRequestContext?.PostAsync(
+                    url,
+                    new() { DataByte = System.Text.Encoding.UTF8.GetBytes(body), Headers = GetWriteHeaders() }
+                )!
+            );
 
             _dependentId = extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
         }
@@ -567,14 +575,16 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             _logger.log.Information($"PUT body: {body}");
 
             ifMatch = ResolveEtagHeaderValue(ifMatch);
-            _apiResponse = await _playwrightContext.ApiRequestContext?.PutAsync(
-                url,
-                new()
-                {
-                    DataByte = System.Text.Encoding.UTF8.GetBytes(body),
-                    Headers = GetWriteHeadersWithIfMatch(ifMatch),
-                }
-            )!;
+            SetCurrentApiResponse(
+                await _playwrightContext.ApiRequestContext?.PutAsync(
+                    url,
+                    new()
+                    {
+                        DataByte = System.Text.Encoding.UTF8.GetBytes(body),
+                        Headers = GetWriteHeadersWithIfMatch(ifMatch),
+                    }
+                )!
+            );
 
             extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
         }
@@ -595,14 +605,16 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             _logger.log.Information($"PUT body: {body}");
 
             ifNoneMatch = ResolveEtagHeaderValue(ifNoneMatch);
-            _apiResponse = await _playwrightContext.ApiRequestContext?.PutAsync(
-                url,
-                new()
-                {
-                    DataByte = System.Text.Encoding.UTF8.GetBytes(body),
-                    Headers = GetWriteHeadersWithIfNoneMatch(ifNoneMatch),
-                }
-            )!;
+            SetCurrentApiResponse(
+                await _playwrightContext.ApiRequestContext?.PutAsync(
+                    url,
+                    new()
+                    {
+                        DataByte = System.Text.Encoding.UTF8.GetBytes(body),
+                        Headers = GetWriteHeadersWithIfNoneMatch(ifNoneMatch),
+                    }
+                )!
+            );
 
             extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
         }
@@ -699,10 +711,12 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             _logger.log.Information(url);
             body = body.Replace("{id}", _referencedResourceId);
             _logger.log.Information(body);
-            _apiResponse = await _playwrightContext.ApiRequestContext?.PutAsync(
-                url,
-                new() { DataByte = System.Text.Encoding.UTF8.GetBytes(body), Headers = GetWriteHeaders() }
-            )!;
+            SetCurrentApiResponse(
+                await _playwrightContext.ApiRequestContext?.PutAsync(
+                    url,
+                    new() { DataByte = System.Text.Encoding.UTF8.GetBytes(body), Headers = GetWriteHeaders() }
+                )!
+            );
 
             if (_apiResponse.Status != 204)
             {
@@ -732,10 +746,12 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 .Replace("{id}", _id)
                 .ReplacePlaceholdersWithDictionaryValues(_scenarioVariables.VariableByName);
 
-            _apiResponse = await _playwrightContext.ApiRequestContext?.DeleteAsync(
-                url,
-                new() { Headers = GetHeaders() }
-            )!;
+            SetCurrentApiResponse(
+                await _playwrightContext.ApiRequestContext?.DeleteAsync(
+                    url,
+                    new() { Headers = GetHeaders() }
+                )!
+            );
         }
 
         /// <summary>
@@ -767,10 +783,12 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             var baseUrl = $"data/ed-fi/";
             var id = _relationships[relationshipKey];
             var url = $"{baseUrl}{relationshipKey}/{id}";
-            _apiResponse = await _playwrightContext.ApiRequestContext?.DeleteAsync(
-                url,
-                new() { Headers = GetHeaders() }
-            )!;
+            SetCurrentApiResponse(
+                await _playwrightContext.ApiRequestContext?.DeleteAsync(
+                    url,
+                    new() { Headers = GetHeaders() }
+                )!
+            );
         }
 
         [When("a DELETE request is made to referenced resource {string}")]
@@ -778,10 +796,12 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         {
             url = AddDataPrefixIfNecessary(url).Replace("{id}", _referencedResourceId);
 
-            _apiResponse = await _playwrightContext.ApiRequestContext?.DeleteAsync(
-                url,
-                new() { Headers = GetHeaders() }
-            )!;
+            SetCurrentApiResponse(
+                await _playwrightContext.ApiRequestContext?.DeleteAsync(
+                    url,
+                    new() { Headers = GetHeaders() }
+                )!
+            );
         }
 
         [When("a GET request is made to {string}")]
@@ -913,9 +933,11 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 headers[row["Key"]] = row["Value"];
             }
 
-            _apiResponse = await _playwrightContext.ApiRequestContext!.FetchAsync(
-                url,
-                new() { Method = method, Headers = headers }
+            SetCurrentApiResponse(
+                await _playwrightContext.ApiRequestContext!.FetchAsync(
+                    url,
+                    new() { Method = method, Headers = headers }
+                )
             );
         }
 
@@ -934,9 +956,11 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 ["Accept"] = "*/*",
             };
 
-            _apiResponse = await _playwrightContext.ApiRequestContext!.FetchAsync(
-                url,
-                new() { Method = method, Headers = headers }
+            SetCurrentApiResponse(
+                await _playwrightContext.ApiRequestContext!.FetchAsync(
+                    url,
+                    new() { Method = method, Headers = headers }
+                )
             );
         }
 
@@ -999,10 +1023,12 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             _logger.log.Information($"DELETE url: {url}");
 
             ifMatch = ResolveEtagHeaderValue(ifMatch);
-            _apiResponse = await _playwrightContext.ApiRequestContext?.DeleteAsync(
-                url,
-                new() { Headers = GetHeadersWithIfMatch(ifMatch) }
-            )!;
+            SetCurrentApiResponse(
+                await _playwrightContext.ApiRequestContext?.DeleteAsync(
+                    url,
+                    new() { Headers = GetHeadersWithIfMatch(ifMatch) }
+                )!
+            );
 
             extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
         }
@@ -1025,10 +1051,12 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         [When("the current resource ETag and lastModifiedDate are stored")]
         public async Task WhenTheCurrentResourceEtagAndLastModifiedDateAreStored()
         {
-            _apiResponse = await _playwrightContext.ApiRequestContext?.GetAsync(
-                _location,
-                new() { Headers = GetHeaders() }
-            )!;
+            SetCurrentApiResponse(
+                await _playwrightContext.ApiRequestContext?.GetAsync(
+                    _location,
+                    new() { Headers = GetHeaders() }
+                )!
+            );
 
             _etag = StripEtagQuotes(_apiResponse.Headers["etag"]);
             _scenarioVariables.Add("restampOriginalEtag", _etag);
@@ -1322,16 +1350,18 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             var url = endpoint.StartsWith('/') ? endpoint[1..] : endpoint;
 
             _logger.log.Information($"DMS POST url: {url}");
-            _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(
-                url,
-                new APIRequestContextOptions
-                {
-                    Headers = new Dictionary<string, string>
+            SetCurrentApiResponse(
+                await _playwrightContext.ApiRequestContext?.PostAsync(
+                    url,
+                    new APIRequestContextOptions
                     {
-                        { "Authorization", $"Bearer {await SystemAdministrator.GetToken()}" },
-                    },
-                }
-            )!;
+                        Headers = new Dictionary<string, string>
+                        {
+                            { "Authorization", $"Bearer {await SystemAdministrator.GetToken()}" },
+                        },
+                    }
+                )!
+            );
 
             _logger.log.Information($"DMS POST Response Status: {_apiResponse.Status}");
             var responseBody = await _apiResponse.TextAsync();
@@ -1345,16 +1375,18 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             var url = endpoint.StartsWith('/') ? endpoint[1..] : endpoint;
 
             _logger.log.Information($"DMS GET url: {url}");
-            _apiResponse = await _playwrightContext.ApiRequestContext?.GetAsync(
-                url,
-                new APIRequestContextOptions
-                {
-                    Headers = new Dictionary<string, string>
+            SetCurrentApiResponse(
+                await _playwrightContext.ApiRequestContext?.GetAsync(
+                    url,
+                    new APIRequestContextOptions
                     {
-                        { "Authorization", $"Bearer {await SystemAdministrator.GetToken()}" },
-                    },
-                }
-            )!;
+                        Headers = new Dictionary<string, string>
+                        {
+                            { "Authorization", $"Bearer {await SystemAdministrator.GetToken()}" },
+                        },
+                    }
+                )!
+            );
 
             _logger.log.Information($"DMS GET Response Status: {_apiResponse.Status}");
             var responseBody = await _apiResponse.TextAsync();
@@ -1848,10 +1880,12 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         [Then("the record can be retrieved with a GET request")]
         public async Task ThenTheRecordCanBeRetrievedWithAGETRequest(string expectedBody)
         {
-            _apiResponse = await _playwrightContext.ApiRequestContext?.GetAsync(
-                _location,
-                new() { Headers = GetHeaders() }
-            )!;
+            SetCurrentApiResponse(
+                await _playwrightContext.ApiRequestContext?.GetAsync(
+                    _location,
+                    new() { Headers = GetHeaders() }
+                )!
+            );
 
             string responseJsonString = await _apiResponse.TextAsync();
             JsonDocument responseJsonDoc = JsonDocument.Parse(responseJsonString);
