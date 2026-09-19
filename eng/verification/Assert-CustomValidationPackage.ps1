@@ -13,9 +13,10 @@
     PackageReference would quietly widen every implementer's dependency closure; and an accidental
     public type would widen the surface the first published version commits to.
 
-    The per-PR lane calls this on every pull request, and the prerelease pack job calls it on the
-    packed artifact before that artifact is uploaded for publication: it is the check that decides
-    what a published version contains, and once published that content cannot be taken back.
+    The per-PR lane calls this on a pull request that is not a draft and changed a DMS-relevant
+    path, and the prerelease pack job calls it on the packed artifact before that artifact is
+    uploaded for publication: it is the check that decides what a published version contains, and
+    once published that content cannot be taken back.
 #>
 [CmdletBinding()]
 param(

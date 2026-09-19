@@ -12,9 +12,10 @@
     actually restore it and compile against it, which is the only check that exercises the package
     the way an implementer will.
 
-    The per-PR lane calls this on every pull request; the prerelease lane does not. What it proves
-    about a contract version is therefore proven before the pull request that produced that version
-    merges, not in the job that publishes it.
+    The per-PR lane calls this on a pull request that is not a draft and changed a DMS-relevant
+    path; the prerelease lane does not. A contract change is DMS-relevant, so what this proves about
+    a contract version is proven before the pull request that produced that version merges, not in
+    the job that publishes it.
 #>
 [CmdletBinding()]
 param(
