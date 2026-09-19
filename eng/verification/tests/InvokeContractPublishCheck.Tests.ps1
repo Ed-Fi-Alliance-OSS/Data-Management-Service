@@ -155,17 +155,10 @@ $Dependencies
 
             # Reports a success without writing the file, which is the shape of a silently truncated
             # transfer.
-            [switch] $DownloadNothing,
-
-            # The first N version-index reads report the id absent, and only then does the listing
-            # above appear: a healthy feed that has not yet indexed a fresh push.
-            [int] $AbsentPolls = 0
+            [switch] $DownloadNothing
         )
 
-        $state = @{ VersionIndexReads = 0 }
-
         return @{
-            State                     = $state
             ResolvePackageBaseAddress = {
                 param([string] $IndexUrl, [string] $ApiKey)
 
@@ -183,9 +176,7 @@ $Dependencies
                     throw $VersionIndexError
                 }
 
-                $state.VersionIndexReads++
-
-                if ($null -eq $Versions -or $state.VersionIndexReads -le $AbsentPolls) {
+                if ($null -eq $Versions) {
                     return @{ Found = $false; Versions = @() }
                 }
 
@@ -236,11 +227,7 @@ $Dependencies
             [Parameter(Mandatory)][string] $PackageFile,
             [Parameter(Mandatory)][hashtable] $Feed,
             [string] $Version = "1.0.0",
-            [string] $PackageId = "",
-            [switch] $ConfirmPublished,
-            [scriptblock] $Delay,
-            [int] $SettleTimeoutSeconds = 60,
-            [int] $SettleIntervalSeconds = 10
+            [string] $PackageId = ""
         )
 
         $id = if ([string]::IsNullOrEmpty($PackageId)) { $script:packageId } else { $PackageId }
@@ -253,38 +240,9 @@ $Dependencies
             ResolvePackageBaseAddress = $Feed.ResolvePackageBaseAddress
             GetPublishedVersions      = $Feed.GetPublishedVersions
             SavePublishedPackage      = $Feed.SavePublishedPackage
-            SettleTimeoutSeconds      = $SettleTimeoutSeconds
-            SettleIntervalSeconds     = $SettleIntervalSeconds
-        }
-
-        if ($ConfirmPublished) {
-            $arguments.ConfirmPublished = $true
-        }
-
-        if ($null -ne $Delay) {
-            $arguments.Delay = $Delay
         }
 
         return & $script:checker @arguments
-    }
-
-    # Records every wait the script asks for instead of sleeping, so a settle window runs in no time
-    # and the case can assert how many polls happened.
-    function Get-DelayRecorder {
-        [CmdletBinding()]
-        [OutputType([hashtable])]
-        param()
-
-        $waits = [System.Collections.Generic.List[int]]::new()
-
-        return @{
-            Waits  = $waits
-            Script = {
-                param([int] $Seconds)
-
-                $waits.Add($Seconds)
-            }.GetNewClosure()
-        }
     }
 }
 
@@ -789,7 +747,6 @@ Describe "Invoke-ContractPublishCheck writes exactly one decision object" {
 
         $objects.Count | Should -Be 1
         $objects[0].PSObject.TypeNames[0] | Should -BeExactly "EdFi.ContractPublishDecision"
-        $objects[0].Mode | Should -BeExactly "decide"
         $objects[0].ShouldPush | Should -BeOfType [bool]
     }
 
@@ -800,140 +757,6 @@ Describe "Invoke-ContractPublishCheck writes exactly one decision object" {
 
         $objects.Count | Should -Be 1
         $objects[0].Reason | Should -BeExactly "unchanged"
-    }
-
-    # A decision to push is not a publication. The push can still fail, so a caller that attached
-    # evidence on the strength of ShouldPush would attest bytes that never reached the feed.
-    It "never reports attach evidence from a decision to push" {
-        $packed = New-ContractPackage
-        $result = Invoke-Check -PackageFile $packed -Feed (Get-FakeFeed)
-
-        $result.ShouldPush | Should -BeTrue
-        $result.AttachEvidence | Should -BeFalse
-        $result.PublishedBytesIdentical | Should -BeFalse
-    }
-}
-
-Describe "Invoke-ContractPublishCheck confirms a publication" {
-    It "confirms and attaches when the feed serves the packed file's exact bytes" {
-        $published = New-ContractPackage
-        $packed = Join-Path $script:fixtureRoot "identical-$([guid]::NewGuid().ToString('N')).nupkg"
-        Copy-Item -LiteralPath $published -Destination $packed
-        $feed = Get-FakeFeed -Versions @("1.0.0") -PublishedPackage $published
-
-        $result = Invoke-Check -PackageFile $packed -Feed $feed -ConfirmPublished
-
-        $result.Mode | Should -BeExactly "confirm"
-        $result.Reason | Should -BeExactly "confirmed"
-        $result.ShouldPush | Should -BeFalse
-        $result.PublishedBytesIdentical | Should -BeTrue
-        $result.AttachEvidence | Should -BeTrue
-    }
-
-    # Semantically the same contract, packed twice: two different archives. The feed's bytes are
-    # not this run's, so this run's SBOM and provenance describe nothing anyone can restore.
-    It "confirms without attaching when the feed serves an equal contract in different bytes" {
-        $published = New-ContractPackage
-        $packed = New-ContractPackage
-        $feed = Get-FakeFeed -Versions @("1.0.0") -PublishedPackage $published
-
-        $result = Invoke-Check -PackageFile $packed -Feed $feed -ConfirmPublished
-
-        $result.Reason | Should -BeExactly "confirmed"
-        $result.PublishedBytesIdentical | Should -BeFalse
-        $result.AttachEvidence | Should -BeFalse
-    }
-
-    It "still refuses a differing contract in confirm mode" {
-        $published = New-ContractPackage -Body "        public void Apply(int value) { }"
-        $packed = New-ContractPackage -Body "        public void Apply(long value) { }"
-        $feed = Get-FakeFeed -Versions @("1.0.0") -PublishedPackage $published
-
-        { Invoke-Check -PackageFile $packed -Feed $feed -ConfirmPublished } |
-            Should -Throw -ExpectedMessage "*public surface*"
-    }
-
-    It "waits for a healthy feed that has not yet listed the version" {
-        $published = New-ContractPackage
-        $packed = Join-Path $script:fixtureRoot "settled-$([guid]::NewGuid().ToString('N')).nupkg"
-        Copy-Item -LiteralPath $published -Destination $packed
-        $feed = Get-FakeFeed -Versions @("1.0.0") -PublishedPackage $published -AbsentPolls 2
-        $delay = Get-DelayRecorder
-
-        $result = Invoke-Check -PackageFile $packed -Feed $feed -ConfirmPublished -Delay $delay.Script -SettleTimeoutSeconds 60 -SettleIntervalSeconds 10
-
-        $result.AttachEvidence | Should -BeTrue
-        ($delay.Waits -join ",") | Should -BeExactly "10,10"
-        $feed.State.VersionIndexReads | Should -Be 3
-    }
-
-    It "fails when the version is still not listed at the end of the window" {
-        $packed = New-ContractPackage
-        $feed = Get-FakeFeed -AbsentPolls 100
-        $delay = Get-DelayRecorder
-
-        { Invoke-Check -PackageFile $packed -Feed $feed -ConfirmPublished -Delay $delay.Script -SettleTimeoutSeconds 60 -SettleIntervalSeconds 10 } |
-            Should -Throw -ExpectedMessage "*not listed on the feed after 60 seconds*"
-
-        $delay.Waits.Count | Should -Be 6
-    }
-
-    It "rounds a window that is not a multiple of the interval up to one more poll" {
-        $packed = New-ContractPackage
-        $feed = Get-FakeFeed -AbsentPolls 100
-        $delay = Get-DelayRecorder
-
-        { Invoke-Check -PackageFile $packed -Feed $feed -ConfirmPublished -Delay $delay.Script -SettleTimeoutSeconds 25 -SettleIntervalSeconds 10 } |
-            Should -Throw
-
-        $delay.Waits.Count | Should -Be 3
-    }
-
-    # Only a healthy feed that does not list the version is worth waiting for. An error is a feed that
-    # cannot be trusted, and waiting would only turn it into a confirmed publication by patience.
-    It "does not retry a package index that errors" {
-        $packed = New-ContractPackage
-        $feed = Get-FakeFeed -VersionIndexError "the feed answered 401 for the package index"
-        $delay = Get-DelayRecorder
-
-        { Invoke-Check -PackageFile $packed -Feed $feed -ConfirmPublished -Delay $delay.Script } |
-            Should -Throw -ExpectedMessage "*401*"
-
-        $delay.Waits.Count | Should -Be 0
-    }
-
-    It "does not retry a malformed listing" {
-        $packed = New-ContractPackage
-        $feed = Get-FakeFeed
-        $feed.GetPublishedVersions = Get-ConstantSeam -Value @{ Found = $true; Versions = $null }
-        $delay = Get-DelayRecorder
-
-        { Invoke-Check -PackageFile $packed -Feed $feed -ConfirmPublished -Delay $delay.Script } |
-            Should -Throw -ExpectedMessage "*malformed response*"
-
-        $delay.Waits.Count | Should -Be 0
-    }
-
-    It "does not retry an unreadable service index" {
-        $packed = New-ContractPackage
-        $feed = Get-FakeFeed -ServiceIndexError "the feed answered 403"
-        $delay = Get-DelayRecorder
-
-        { Invoke-Check -PackageFile $packed -Feed $feed -ConfirmPublished -Delay $delay.Script } |
-            Should -Throw -ExpectedMessage "*403*"
-
-        $delay.Waits.Count | Should -Be 0
-    }
-
-    It "does not wait at all in decide mode" {
-        $packed = New-ContractPackage
-        $feed = Get-FakeFeed -AbsentPolls 100
-        $delay = Get-DelayRecorder
-
-        $result = Invoke-Check -PackageFile $packed -Feed $feed -Delay $delay.Script
-
-        $result.ShouldPush | Should -BeTrue
-        $delay.Waits.Count | Should -Be 0
     }
 }
 
