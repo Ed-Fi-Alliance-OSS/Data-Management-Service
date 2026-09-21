@@ -104,10 +104,11 @@ credential was contained** — confirm with `POST /connect/introspect`, which re
 The no-op conditions are all cases where the request was never entitled to revoke the
 token — a token belonging to another client, an unverifiable token, an expired one. A
 casing defect that previously produced a silent no-op for a *legitimate* client has been
-fixed (see
-[ADR: Canonical `client_id` casing](../reference/adr-client-id-casing.md)), but the
-confirmation step remains the only positive evidence of revocation. For the full list of
-no-op conditions and the confirmation procedure, see
+fixed on both database engines by minting the `client_id` claim from the stored canonical
+value (see [ADR: Canonical `client_id` casing](../reference/adr-client-id-casing.md)).
+The confirmation step below nonetheless remains the only positive evidence that a given
+revocation took effect. For the full list of no-op conditions and the confirmation
+procedure, see
 [CS-AUTH.md § Confirming that a revocation actually took effect](../reference/design/configuration-service/CS-AUTH.md#confirming-that-a-revocation-actually-took-effect),
 which is the canonical description.
 
@@ -225,7 +226,11 @@ The behaviors above are exercised by automated tests:
   stored status is never queried, pinning revocation as idempotent for an
   already-revoked token. Two further fixtures assert the **log severity** split:
   an expired token produces no `Warning` entry (Debug only), while an untrusted
-  token does, so routine expiry cannot bury forgery signal.
+  token does, so routine expiry cannot bury forgery signal. Two more cover
+  **canonical `client_id` minting**: a token obtained with non-canonical casing
+  carries the canonical `sub`, `client_id` and `azp`, and consequently a token
+  obtained under one casing is revocable by a caller authenticated under another —
+  the scenario that was previously a silent no-op.
 - CMS — `EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit/Modules/IdentityModuleTests.cs`:
   `/connect/revoke` returns `401` to an unauthenticated caller and to one presenting
   an invalid bearer token, `400` when the `token` form field is missing, and `200 OK`

@@ -113,17 +113,26 @@ containment as incomplete until introspection confirms it.
 ### Client id casing
 
 Tokens are minted with the **stored canonical** `client_id`, not the casing the caller
-supplied at `/connect/token`, and client lookup accepts any casing on both database
-engines. Together these mean every token issued to one registered client carries one
-identity, so the case-sensitive ownership comparison above always matches a client's
-own tokens.
+supplied at `/connect/token`. Every token issued to one registered client therefore
+carries one identity, whatever casing that client used on a given call, so the
+case-sensitive ownership comparison above always matches a client's own tokens.
 
 This was previously a live defect: a token minted under one casing could not be
 revoked by a caller authenticated under another, and the mismatch surfaced as the
-silent `200 OK` no-op described above. See
-[ADR: Canonical `client_id` casing in tokens, case-insensitive client lookup](../../adr-client-id-casing.md)
+silent `200 OK` no-op described above. Canonical minting closes it on **both**
+database engines. See
+[ADR: Canonical `client_id` casing in minted tokens](../../adr-client-id-casing.md)
 for the decision record, including why the ownership comparison itself deliberately
 remains case-sensitive.
+
+Client **lookup** is a separate matter and is unchanged: it is case-sensitive on
+PostgreSQL, which matches RFC 6749's rule that protocol parameter values are case
+sensitive. SQL Server's default collation makes its lookup case-insensitive, so the
+two engines currently differ and SQL Server departs from the RFC; that is a known
+issue tracked separately and out of scope here. It is a conformance and consistency
+concern only — because minting is canonical, a client that authenticates on SQL
+Server with non-canonical casing still receives a canonical token and can revoke
+normally.
 
 One residue remains: tokens minted **before** this change still carry the requested
 casing, so such a token may resist revocation by a canonically-cased caller until it

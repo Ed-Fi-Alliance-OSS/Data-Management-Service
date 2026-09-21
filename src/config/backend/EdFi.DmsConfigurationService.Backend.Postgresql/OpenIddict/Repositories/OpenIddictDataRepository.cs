@@ -7,8 +7,6 @@ using System.Data;
 using Dapper;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories;
-using EdFi.DmsConfigurationService.DataModel;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Npgsql;
 
@@ -18,13 +16,10 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict.Repositorie
     /// PostgreSQL implementation of IOpenIddictDataRepository.
     /// Handles all database operations for OpenIddict using PostgreSQL-specific connections and SQL.
     /// </summary>
-    public class OpenIddictDataRepository(
-        IOptions<DatabaseOptions> databaseOptions,
-        ILogger<OpenIddictDataRepository> logger
-    ) : IOpenIddictDataRepository
+    public class OpenIddictDataRepository(IOptions<DatabaseOptions> databaseOptions)
+        : IOpenIddictDataRepository
     {
         private readonly string _connectionString = databaseOptions.Value.DatabaseConnection;
-        private readonly ILogger<OpenIddictDataRepository> _logger = logger;
 
         /// <summary>
         /// How long a token grant waits for another grant's row lock on the same client before
@@ -312,13 +307,14 @@ UPDATE ""dmscs"".""OpenIddictApplication""
             );
         }
 
-        /// <summary>
-        /// Builds the application projection used by the client-id lookups. Only the WHERE
-        /// predicate varies, and every predicate passed in is a literal owned by this class —
-        /// never caller input — so there is no injection surface here.
-        /// </summary>
-        private static string ApplicationLookupSql(string predicate) =>
-            $@"SELECT a.""Id"", a.""ClientId"", a.""ClientSecret"", a.""DisplayName"", a.""RedirectUris"", a.""PostLogoutRedirectUris"",
+        // Methods used by OpenIddictTokenRepository
+        public async Task<ApplicationInfo?> GetApplicationByClientIdAsync(string clientId)
+        {
+            await using var connection = new NpgsqlConnection(_connectionString);
+            await connection.OpenAsync();
+
+            const string applicationSql =
+                @"SELECT a.""Id"", a.""ClientId"", a.""ClientSecret"", a.""DisplayName"", a.""RedirectUris"", a.""PostLogoutRedirectUris"",
                          a.""Permissions"", a.""Requirements"", a.""Type"", a.""CreatedAt"", a.""ProtocolMappers""::jsonb::text AS ""ProtocolMappers"",
                          COALESCE(array_agg(DISTINCT s.""Name"") FILTER (WHERE s.""Name"" IS NOT NULL), ARRAY[]::text[]) AS ""Scopes"",
                          COALESCE(array_agg(DISTINCT acd.""DataStoreId"") FILTER (WHERE acd.""DataStoreId"" IS NOT NULL), ARRAY[]::int[]) AS ""DataStoreIds"",
@@ -328,74 +324,14 @@ UPDATE ""dmscs"".""OpenIddictApplication""
                   LEFT JOIN ""dmscs"".""OpenIddictScope"" s ON aps.""ScopeId"" = s.""Id""
                   LEFT JOIN ""dmscs"".""ApiClient"" ac ON a.""ClientId"" = ac.""ClientId""
                   LEFT JOIN ""dmscs"".""ApiClientDataStore"" acd ON ac.""Id"" = acd.""ApiClientId""
-                  WHERE {predicate}
+                  WHERE a.""ClientId"" = @ClientId
                   GROUP BY a.""Id"", a.""ClientId"", a.""ClientSecret"", a.""DisplayName"", a.""RedirectUris"", a.""PostLogoutRedirectUris"",
                            a.""Permissions"", a.""Requirements"", a.""Type"", a.""CreatedAt"", a.""ProtocolMappers""";
 
-        // Methods used by OpenIddictTokenRepository
-
-        /// <summary>
-        /// Resolves a registered client by id, accepting any casing. SQL Server already matches
-        /// case-insensitively under its default collation; this brings PostgreSQL, whose default
-        /// collation is case-sensitive, to the same behaviour so a client is not silently rejected
-        /// (or issued a differently-cased identity) depending on which engine is deployed.
-        ///
-        /// An exact match is always preferred. The unique constraint on "ClientId" is
-        /// case-sensitive, so a pre-existing database may legitimately hold several rows differing
-        /// only by case; preferring the exact row keeps every currently-working credential working
-        /// exactly as before and confines the new behaviour to requests that would previously have
-        /// failed outright.
-        /// </summary>
-        public async Task<ApplicationInfo?> GetApplicationByClientIdAsync(string clientId)
-        {
-            await using var connection = new NpgsqlConnection(_connectionString);
-            await connection.OpenAsync();
-
-            // Exact match first. This is the path every correctly-cased credential takes, and it
-            // can use the UX_OpenIddictApplication_ClientId unique index.
-            var exactMatch = await connection.QuerySingleOrDefaultAsync<ApplicationInfo>(
-                ApplicationLookupSql(@"a.""ClientId"" = @ClientId"),
+            return await connection.QuerySingleOrDefaultAsync<ApplicationInfo>(
+                applicationSql,
                 new { ClientId = clientId }
             );
-
-            if (exactMatch is not null)
-            {
-                return exactMatch;
-            }
-
-            // Case-insensitive fallback. LOWER() on the column cannot use the unique index, so
-            // this is a sequential scan of OpenIddictApplication. That is accepted deliberately:
-            // the table holds one row per registered client, and this query only runs after an
-            // exact match has already missed, which for a correctly-cased credential never
-            // happens. A LOWER("ClientId") expression index would remove even that cost.
-            var caseInsensitiveMatches = (
-                await connection.QueryAsync<ApplicationInfo>(
-                    ApplicationLookupSql(@"LOWER(a.""ClientId"") = LOWER(@ClientId)"),
-                    new { ClientId = clientId }
-                )
-            ).ToList();
-
-            if (caseInsensitiveMatches.Count == 1)
-            {
-                return caseInsensitiveMatches[0];
-            }
-
-            if (caseInsensitiveMatches.Count > 1)
-            {
-                // Several distinct clients differ only by case and none matched exactly. Choosing
-                // one would make authentication depend on row order, so refuse instead. Returning
-                // null surfaces as a normal invalid_client failure rather than an exception, but
-                // an operator has to rename or remove the duplicates to make this client usable
-                // case-insensitively, so it is logged at Warning.
-                _logger.LogWarning(
-                    "Client id {ClientId} matches {MatchCount} registered clients differing only by letter case; "
-                        + "authentication refused as ambiguous. Resolve the duplicate registrations.",
-                    LoggingUtility.SanitizeForLog(clientId),
-                    caseInsensitiveMatches.Count
-                );
-            }
-
-            return null;
         }
 
         public async Task<ApplicationInfo?> GetApplicationByIdAsync(
