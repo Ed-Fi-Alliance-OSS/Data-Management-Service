@@ -249,6 +249,7 @@ jobs:
             "eng/docker-compose/tests/StockImagePinSelection.Tests.ps1",
             "eng/docker-compose/tests/StockImageProofDecisions.Tests.ps1",
             "eng/docker-compose/tests/StockImageProofOrchestration.Tests.ps1",
+            "eng/docker-compose/tests/StockImageProofEntryScript.Tests.ps1",
             "eng/docker-compose/tests/ProvisionE2EDatabaseReset.Tests.ps1",
             "eng/docker-compose/tests/AzureVmDeployment.Tests.ps1",
             "eng/docker-compose/tests/E2EEngineForwarding.Tests.ps1",
