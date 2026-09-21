@@ -12,6 +12,12 @@
 Describe 'Stock image proof orchestration' {
     BeforeAll {
         Import-Module (Join-Path $PSScriptRoot 'plugin-deployment/stock-image-proof.psm1') -Force
+        # After the module above, whose own nested import would otherwise unload this one from the
+        # caller's session. ReadValuesFromEnvFile is how the phase commands read the file, so the
+        # effective values below are read the way the deployment reads them.
+        Import-Module (Join-Path $PSScriptRoot '../env-utility.psm1') -DisableNameChecking
+
+        $script:composeRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 
         function script:New-Pin {
             return [pscustomobject]@{
@@ -93,6 +99,21 @@ Describe 'Stock image proof orchestration' {
         It 'refuses a bound port it needs, and ignores a bound port it does not' {
             (Get-OccupiedHostResource -RequiredPort @(18080) -BoundPort @(18080)).Available | Should -BeFalse
             (Get-OccupiedHostResource -RequiredPort @(18080) -BoundPort @(8080)).Available | Should -BeTrue
+        }
+
+        It 'refuses when an inventory could not be taken at all' {
+            # An empty result from a command that failed is not an empty inventory. Reading it as one
+            # is how a preflight reports a clear host because Docker was unreachable.
+            $result = Get-OccupiedHostResource -InventoryFailure @('docker ps -a exited 1')
+
+            $result.Available | Should -BeFalse
+            $result.Blocker -join ' ' | Should -Match 'not an empty one'
+        }
+
+        It 'refuses on a failed inventory even when everything else looks clear' {
+            (Get-OccupiedHostResource -ExistingContainerName @() -ProjectContainer @() `
+                    -InventoryFailure @('docker volume ls failed')).Available |
+                Should -BeFalse
         }
 
         It 'reports every blocker rather than only the first' {
@@ -193,61 +214,120 @@ Describe 'Stock image proof orchestration' {
         }
     }
 
+    Context 'the governed keys nothing else may decide' {
+        It 'governs both image variables, the schema set and every plugin input' {
+            $governed = Get-GovernedEnvironmentKey
+
+            foreach ($key in @(
+                    'DMS_STOCK_IMAGE_REFERENCE', 'DMS_CONFIG_DOCKER_IMAGE', 'DMS_IMAGE_TAG'
+                    'SCHEMA_PACKAGES', 'DMS_CONFIG_DATA_STANDARD_VERSION'
+                    'DMS_PLUGINS_COMPOSE_FILES', 'DMS_PLUGINS_ALLOWED', 'DMS_PLUGINS_MOUNT_SOURCE'
+                    'PLUGIN_FEED_SOURCE', 'PLUGIN_PACKAGE_URL', 'PLUGIN_PACKAGE_SHA256', 'PLUGIN_NAME')) {
+                $governed | Should -Contain $key
+            }
+        }
+
+        It 'reports an ambient <_>, which Compose would prefer over the env file' -ForEach @(
+            'SCHEMA_PACKAGES', 'DMS_CONFIG_DOCKER_IMAGE', 'DMS_IMAGE_TAG', 'PLUGIN_PACKAGE_SHA256'
+        ) {
+            # A process variable wins over --env-file, so an ambient one of these decides what the
+            # proof runs against and the pin becomes a description of something else.
+            Get-AmbientOverride -ProcessEnvironment @{ $_ = 'anything' } | Should -Contain $_
+        }
+
+        It 'reports an ambient key set to empty, which still wins' {
+            Get-AmbientOverride -ProcessEnvironment @{ 'SCHEMA_PACKAGES' = '' } | Should -Contain 'SCHEMA_PACKAGES'
+        }
+
+        It 'ignores ambient variables it does not govern' {
+            Get-AmbientOverride -ProcessEnvironment @{ 'PATH' = '/usr/bin'; 'POSTGRES_PASSWORD' = 'abc' } |
+                Should -HaveCount 0
+        }
+
+        It 'reports nothing for a clean environment' {
+            Get-AmbientOverride -ProcessEnvironment @{} | Should -HaveCount 0
+        }
+    }
+
     Context 'the environment file the deployment runs from' {
         BeforeAll {
+            # The real base file, not a stub: it already declares DMS_IMAGE_TAG and a MULTI-LINE
+            # SCHEMA_PACKAGES block, which is exactly the case an appended override would leave
+            # ambiguous.
+            $script:baseContent = Get-Content -Raw -LiteralPath (Join-Path $script:composeRoot '.env.e2e')
             $script:content = Get-StockProofEnvironmentContent -Pin (New-Pin) `
-                -BaseContent "POSTGRES_PASSWORD=abc`nDMS_HTTP_PORTS=8080" `
+                -BaseContent $script:baseContent `
                 -PluginComposeFiles 'plugins-dms.yml;tests/plugin-deployment/plugins-allowed-dms.yml' `
                 -PluginMountSource '/scratch/plugins' `
                 -AllowedPlugins 'Acme.CustomValidationProof'
-            $script:line = $script:content -split "`n"
+
+            # Read back the way the phase commands read it, so these are effective values rather
+            # than lines that happen to be present.
+            $script:effectiveFile = Join-Path ([IO.Path]::GetTempPath()) "dms1502-env-$([guid]::NewGuid().ToString('N')).env"
+            Set-Content -LiteralPath $script:effectiveFile -Value $script:content -Encoding utf8
+            $script:effective = ReadValuesFromEnvFile $script:effectiveFile
         }
 
-        It 'keeps what the base file already said' {
-            $script:line | Should -Contain 'POSTGRES_PASSWORD=abc'
+        AfterAll {
+            Remove-Item -LiteralPath $script:effectiveFile -Force -ErrorAction SilentlyContinue
+        }
+
+        It 'keeps what the base file said about everything it does not govern' {
+            $script:effective['POSTGRES_DB_NAME'] | Should -Not -BeNullOrEmpty
+            $script:effective.ContainsKey('ROUTE_QUALIFIER_SEGMENTS') | Should -BeTrue
         }
 
         It 'pins the two images independently, from their own repositories' {
-            $script:line | Should -Contain ('DMS_STOCK_IMAGE_REFERENCE=edfialliance/ed-fi-api:8.0.1-alpha.0.7@sha256:' + ('a' * 64))
-            $script:line | Should -Contain ('DMS_CONFIG_DOCKER_IMAGE=edfialliance/ed-fi-api-configuration-service@sha256:' + ('b' * 64))
+            $script:effective['DMS_STOCK_IMAGE_REFERENCE'] |
+                Should -BeExactly ('edfialliance/ed-fi-api:8.0.1-alpha.0.7@sha256:' + ('a' * 64))
+            $script:effective['DMS_CONFIG_DOCKER_IMAGE'] |
+                Should -BeExactly ('edfialliance/ed-fi-api-configuration-service@sha256:' + ('b' * 64))
         }
 
-        It 'never writes DMS_IMAGE_TAG, which would select both images at once' {
-            # A digest belongs to one repository, so the shared variable cannot express this pin.
-            $script:content | Should -Not -Match '(?m)^DMS_IMAGE_TAG='
+        It 'removes the base file''s DMS_IMAGE_TAG rather than leaving it to be preferred' {
+            # .env.e2e declares DMS_IMAGE_TAG=pre. A digest belongs to one repository, so nothing in
+            # this file may still be able to answer the image question.
+            $script:baseContent | Should -Match '(?m)^DMS_IMAGE_TAG='
+            $script:effective.ContainsKey('DMS_IMAGE_TAG') | Should -BeFalse
         }
 
-        It 'writes SCHEMA_PACKAGES exactly once, so preparation and the container agree' {
-            @($script:line | Where-Object { $_ -like 'SCHEMA_PACKAGES=*' }) | Should -HaveCount 1
+        It 'declares each governed key exactly once in the composed file' {
+            # The base declares some of them already, so "appended last" is not the same as "said
+            # once", and which one wins would depend on the reader.
+            foreach ($key in @('SCHEMA_PACKAGES', 'DMS_CONFIG_DOCKER_IMAGE', 'DMS_STOCK_IMAGE_REFERENCE', 'DMS_PLUGINS_ALLOWED')) {
+                @($script:content -split "`n" | Where-Object { $_ -match ('^' + [regex]::Escape($key) + '=') }) |
+                    Should -HaveCount 1 -Because "$key must be declared once"
+            }
         }
 
-        It 'writes the schema package set as a single-line quoted JSON array' {
-            $schema = @($script:line | Where-Object { $_ -like 'SCHEMA_PACKAGES=*' })[0]
-
-            $schema | Should -Match "^SCHEMA_PACKAGES='\["
-            $schema | Should -Match "\]'$"
-            $schema | Should -Match 'EdFi\.DataStandard52\.ApiSchema'
-            $schema | Should -Match '1\.0\.335'
+        It 'replaces the base file''s multi-line schema block with the pin''s set' {
+            # The base carries SCHEMA_PACKAGES as a quoted block spanning many lines. The effective
+            # value has to be the pin's, on one line, and none of the base's packages.
+            $script:baseContent | Should -Match "(?m)^SCHEMA_PACKAGES='\[\s*$"
+            $script:effective['SCHEMA_PACKAGES'] | Should -Match '^''\['
+            $script:effective['SCHEMA_PACKAGES'] | Should -Match '\]''$'
+            $script:effective['SCHEMA_PACKAGES'] | Should -Match 'EdFi\.DataStandard52\.ApiSchema'
+            $script:effective['SCHEMA_PACKAGES'] | Should -Not -Match 'TPDM'
         }
 
         It 'keeps a single schema package an array rather than an object' {
             # ConvertTo-Json renders a one-element set as an object, and SCHEMA_PACKAGES is always an
             # array, so a one-package pin is exactly where this would break.
-            $schema = @($script:line | Where-Object { $_ -like 'SCHEMA_PACKAGES=*' })[0]
-            $json = $schema -replace "^SCHEMA_PACKAGES='", '' -replace "'$", ''
+            $json = $script:effective['SCHEMA_PACKAGES'] -replace "^'", '' -replace "'$", ''
 
-            ($json | ConvertFrom-Json) | Should -HaveCount 1
+            @($json | ConvertFrom-Json) | Should -HaveCount 1
         }
 
         It 'carries the plugin overlay list and the allowlist through' {
-            $script:line | Should -Contain 'DMS_PLUGINS_COMPOSE_FILES=plugins-dms.yml;tests/plugin-deployment/plugins-allowed-dms.yml'
-            $script:line | Should -Contain 'DMS_PLUGINS_ALLOWED=Acme.CustomValidationProof'
+            $script:effective['DMS_PLUGINS_COMPOSE_FILES'] |
+                Should -BeExactly 'plugins-dms.yml;tests/plugin-deployment/plugins-allowed-dms.yml'
+            $script:effective['DMS_PLUGINS_ALLOWED'] | Should -BeExactly 'Acme.CustomValidationProof'
         }
 
         It 'writes the mount source it was given and omits the recipe 2 values it was not' {
-            $script:line | Should -Contain 'DMS_PLUGINS_MOUNT_SOURCE=/scratch/plugins'
-            $script:content | Should -Not -Match '(?m)^PLUGIN_PACKAGE_URL='
-            $script:content | Should -Not -Match '(?m)^PLUGIN_FEED_SOURCE='
+            $script:effective['DMS_PLUGINS_MOUNT_SOURCE'] | Should -BeExactly '/scratch/plugins'
+            $script:effective.ContainsKey('PLUGIN_PACKAGE_URL') | Should -BeFalse
+            $script:effective.ContainsKey('PLUGIN_FEED_SOURCE') | Should -BeFalse
         }
 
         It 'writes the recipe 2 values when they are supplied' {
@@ -265,8 +345,7 @@ Describe 'Stock image proof orchestration' {
         }
 
         It 'writes an empty allowlist rather than omitting it' {
-            # The disabled-plugin deployment asserts an otherwise identical boot, so the key has to
-            # be present and empty rather than absent.
+            # An allowlisted-nothing deployment has to differ from one that never set the key.
             $content = Get-StockProofEnvironmentContent -Pin (New-Pin) -BaseContent 'X=1' `
                 -PluginComposeFiles 'plugins-dms.yml' -PluginMountSource '/scratch/plugins'
 

@@ -22,6 +22,13 @@
 
 Set-StrictMode -Version Latest
 
+# Remove-EnvFileKeys, which understands both a scalar declaration and a multi-line quoted block.
+# Composing the deployment's environment file means removing what the base already says about a
+# governed key rather than appending over it, and that helper already knows both shapes.
+# Deliberately not -Force: this import binds into this module's scope, and forcing it would unload
+# the copy a caller had already imported into its own session.
+Import-Module (Join-Path $PSScriptRoot '../../env-utility.psm1') -DisableNameChecking
+
 # The container image reference the proof runs. Not a parameter: official stock acceptance is about
 # these two repositories, and making them configurable would only create a way to prove the claim
 # against something else.
@@ -689,13 +696,22 @@ function Get-OccupiedHostResource {
         [string[]] $NetworkAttachment = @(),
         [bool] $BootstrapPresent = $false,
         [int[]] $BoundPort = @(),
-        [int[]] $RequiredPort = @()
+        [int[]] $RequiredPort = @(),
+
+        # Inventories that could not be taken. An empty result from a command that failed is not an
+        # empty inventory, and reading it as one is how a preflight reports a clear host because
+        # Docker was unreachable. Each entry here is a blocker in its own right.
+        [string[]] $InventoryFailure = @()
     )
 
     # The names the compose files hard-code, which no project name can move.
     $reservedName = @('dms-postgresql', 'ed-fi-api-config-service', 'ed-fi-api-swagger-ui', 'dms-keycloak', 'ed-fi-api')
 
     $blocker = @()
+
+    foreach ($failure in $InventoryFailure) {
+        $blocker += "the host could not be inspected: $failure. A failed inventory is not an empty one, so this run stops rather than assuming nothing is in the way"
+    }
 
     foreach ($name in @($ExistingContainerName | Where-Object { $_ -in $reservedName })) {
         $blocker += "a container named '$name' already exists, and the compose files that declare it use that exact name regardless of project"
@@ -868,6 +884,53 @@ function Get-SchemaToolInstallArgument {
     )
 }
 
+function Get-GovernedEnvironmentKey {
+    <#
+    .SYNOPSIS
+    The environment keys the pin decides, and which nothing else may decide.
+
+    .DESCRIPTION
+    Two things read these: the base environment file, which declares some of them for an ordinary
+    local run, and the process environment, which Compose gives precedence over any file. Both would
+    silently replace a pinned value, so the composer strips them out of the base and the entry
+    script refuses to start when one is set ambiently.
+
+    DMS_IMAGE_TAG is on the list even though nothing is written in its place. It selects both
+    published images at once, so leaving a stale declaration behind would be one more thing that
+    could answer the image question.
+    #>
+    return @(
+        'DMS_STOCK_IMAGE_REFERENCE'
+        'DMS_CONFIG_DOCKER_IMAGE'
+        'DMS_IMAGE_TAG'
+        'DMS_CONFIG_DATA_STANDARD_VERSION'
+        'SCHEMA_PACKAGES'
+        'DMS_PLUGINS_COMPOSE_FILES'
+        'DMS_PLUGINS_ALLOWED'
+        'DMS_PLUGINS_MOUNT_SOURCE'
+        'PLUGIN_FEED_SOURCE'
+        'PLUGIN_PACKAGE_URL'
+        'PLUGIN_PACKAGE_SHA256'
+        'PLUGIN_NAME'
+    )
+}
+
+function Get-AmbientOverride {
+    <#
+    .SYNOPSIS
+    The governed keys that are already set in the process environment.
+
+    .DESCRIPTION
+    Compose reads a process variable in preference to the same key in an --env-file, so an ambient
+    SCHEMA_PACKAGES or DMS_CONFIG_DOCKER_IMAGE would decide what this proof runs against and the
+    pin would be a description of something else. Presence is what matters, not the value: an
+    ambient empty string still wins.
+    #>
+    param([hashtable] $ProcessEnvironment = @{})
+
+    return @(Get-GovernedEnvironmentKey | Where-Object { $ProcessEnvironment.ContainsKey($_) })
+}
+
 function Get-StockProofEnvironmentContent {
     <#
     .SYNOPSIS
@@ -875,11 +938,17 @@ function Get-StockProofEnvironmentContent {
 
     .DESCRIPTION
     One file, so the schema preparation phase and the container cannot disagree about anything. In
-    particular SCHEMA_PACKAGES is written exactly once, from the pin's own set, because that value
-    is what selects schema content on both sides.
+    particular SCHEMA_PACKAGES is what selects schema content on both sides, and it comes from the
+    pin's own set.
 
-    The two images are pinned independently. DMS_IMAGE_TAG is deliberately never written: it selects
-    both published images at once, and a digest belongs to one repository.
+    Every governed key is REMOVED from the base before the pinned values are appended, rather than
+    appended over. The base file declares some of them already - .env.e2e carries DMS_IMAGE_TAG and
+    a multi-line SCHEMA_PACKAGES block - and relying on a later declaration winning would leave the
+    effective value depending on which reader parsed the file and how it treated the earlier
+    multi-line one. Removing them first makes each governed key declared exactly once.
+
+    The two images are pinned independently, from their own repositories. DMS_IMAGE_TAG is never
+    written: it selects both published images at once, and a digest belongs to one repository.
     #>
     param(
         [Parameter(Mandatory)] $Pin,
@@ -894,7 +963,10 @@ function Get-StockProofEnvironmentContent {
     )
 
     $line = [System.Collections.Generic.List[string]]::new()
-    foreach ($existing in ($BaseContent -split "`r?`n")) {
+
+    # Remove-EnvFileKeys understands both a scalar declaration and a multi-line quoted block, which
+    # is the shape the base file's SCHEMA_PACKAGES takes.
+    foreach ($existing in (Remove-EnvFileKeys -Lines ($BaseContent -split "`r?`n") -Keys (Get-GovernedEnvironmentKey))) {
         $line.Add($existing)
     }
 
@@ -959,5 +1031,7 @@ Export-ModuleMember -Function @(
     'Get-ContractPackageReference'
     'Test-RestoredPackageVersion'
     'Get-SchemaToolInstallArgument'
+    'Get-GovernedEnvironmentKey'
+    'Get-AmbientOverride'
     'Get-StockProofEnvironmentContent'
 )
