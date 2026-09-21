@@ -618,11 +618,21 @@ so nobody holds usable credentials. For `POST /connect/register` the secret was
 **chosen by the caller**, so if the role assignment did take effect the client
 is a usable credential the caller still has. Treat that as the urgent case.
 
+**First check the phase.** When it is `client-identifier-parse`, the provider
+returned an identifier the service could not parse, so the value in the log is
+**not a UUID**. Do not use it to look a client up and do not use it to delete
+one: a `404` from that invalid address says nothing about whether the client
+this request created still exists. Follow situation 3 below instead, which
+searches by client id as investigation only and requires audit evidence or a
+recorded operator confirmation before anything is deleted. The numbered
+procedure that follows applies to every other phase, where the logged provider
+identifier is a well-formed UUID.
+
 1. Resolve the client by UUID: `GET {keycloak}/admin/realms/{realm}/clients/{clientUuid}`,
-   or open it by internal id in the admin console. A `404` means the deletion
-   completed; stop. If it is found, confirm its `clientId` equals the logged
-   `{clientId}`. A mismatch means the identifier is not what the log expects:
-   stop and investigate.
+   or open it by internal id in the admin console. A `404` means that client is
+   already absent, whichever operation removed it; stop. If it is found, confirm
+   its `clientId` equals the logged `{clientId}`. A mismatch means the
+   identifier is not what the log expects: stop and investigate.
 2. For the two insert endpoints, confirm no database row references it:
 
    ```sql
@@ -660,9 +670,11 @@ outcome: it has its role, its claim-set scope and its claims, and is enabled
 according to the request. Its secret was never returned, so it is unusable
 clutter rather than a live credential.
 
-Follow steps 1, 2 and 4 of situation 1. In step 2, a row that **does** exist
-after a `500` means the insert may have committed after all: do not delete the
-provider client. Treat the row as a live API client and let the caller reset its
+This situation always carries a well-formed UUID, because the workflow reached
+the database only after the provider reported a usable identifier. Follow steps
+1, 2 and 4 of situation 1. In step 2, a row that **does** exist after a `500`
+means the insert may have committed after all: do not delete the provider
+client. Treat the row as a live API client and let the caller reset its
 credentials or delete it through the API.
 
 ### Situation 3: the creation outcome itself is unconfirmed
