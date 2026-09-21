@@ -106,7 +106,10 @@ $EvidenceRoot = [IO.Path]::GetFullPath($EvidenceRoot)
 $composeProject = 'dms-published'
 $bootstrapPath = Join-Path $composeRoot '.bootstrap'
 $pluginName = 'Acme.CustomValidationProof'
-$fixtureProject = Join-Path $repositoryRoot "eng/fixtures/plugins/$pluginName/$pluginName.csproj"
+# Read from, never written to. The publish below runs against a copy in the run workspace, for
+# two reasons: this tree belongs to DMS-1436 and its integration tier, and its nuget.config binds
+# the two contract ids to a local folder feed that the stock proof must not resolve from.
+$fixtureSourceDirectory = Join-Path $repositoryRoot "eng/fixtures/plugins/$pluginName"
 
 if ([string]::IsNullOrWhiteSpace($BaseEnvironmentFile)) {
     $BaseEnvironmentFile = Join-Path $composeRoot '.env.e2e'
@@ -528,11 +531,54 @@ function Build-ProofFixture {
     $publishRoot = Join-Path $WorkspaceRoot 'plugins'
     $publishTarget = Join-Path $publishRoot $pluginName
     $nugetCache = Join-Path $WorkspaceRoot 'nuget-cache'
+    $fixtureSourceCopy = Join-Path $WorkspaceRoot "fixture-src/$pluginName"
+    $intermediatePath = Join-Path $WorkspaceRoot 'fixture-obj'
+    $outputPath = Join-Path $WorkspaceRoot 'fixture-bin'
 
     Add-ProofOwnership -Kind 'Directory' -Name $publishRoot
     Add-ProofOwnership -Kind 'Directory' -Name $nugetCache
+    Add-ProofOwnership -Kind 'Directory' -Name (Join-Path $WorkspaceRoot 'fixture-src')
+    Add-ProofOwnership -Kind 'Directory' -Name $intermediatePath
+    Add-ProofOwnership -Kind 'Directory' -Name $outputPath
     New-Item -ItemType Directory -Path $publishTarget -Force | Out-Null
     New-Item -ItemType Directory -Path $nugetCache -Force | Out-Null
+
+    # The sources, copied rather than built in place. bin/ and obj/ are excluded so a developer's
+    # previous build cannot travel into this run, and the copy is what carries any state the build
+    # produces.
+    New-Item -ItemType Directory -Path $fixtureSourceCopy -Force | Out-Null
+    Get-ChildItem -LiteralPath $fixtureSourceDirectory -Force |
+        Where-Object { $_.Name -notin @('bin', 'obj') } |
+        ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination $fixtureSourceCopy -Recurse -Force }
+
+    # The run's own NuGet configuration, replacing the copied one. The committed file declares
+    # <clear /> and then binds EdFi.Api.Plugins and EdFi.Api.CustomValidation exclusively to a local
+    # folder feed at ../.local-feed, which the integration tier fills by packing this worktree. The
+    # stock proof must consume the PUBLISHED packages the pin names instead, so a restore against
+    # that mapping would either fail or resolve a stale local nupkg - the version skew the pin
+    # exists to prevent.
+    $feedUrl = @($Pin.provisioning.schemaPackages)[0].feedUrl
+    Set-Content -LiteralPath (Join-Path $fixtureSourceCopy 'nuget.config') -Encoding utf8 -Value @"
+<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+    <packageSources>
+        <clear />
+        <add key="published-edfi" value="$feedUrl" />
+        <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
+    </packageSources>
+    <packageSourceMapping>
+        <packageSource key="published-edfi">
+            <package pattern="EdFi.Api.Plugins" />
+            <package pattern="EdFi.Api.CustomValidation" />
+        </packageSource>
+        <packageSource key="nuget.org">
+            <package pattern="*" />
+        </packageSource>
+    </packageSourceMapping>
+</configuration>
+"@
+
+    $fixtureProject = Join-Path $fixtureSourceCopy "$pluginName.csproj"
 
     # BARE identities, not bracketed. Acme.CustomValidationProof.csproj already writes
     # Version="[$(PluginsPackageVersion)]" for both contracts, so passing a bracketed value here
@@ -549,6 +595,9 @@ function Build-ProofFixture {
         # already-extracted package of the same version would silently satisfy this restore.
         $env:NUGET_PACKAGES = $nugetCache
 
+        # BaseIntermediateOutputPath and BaseOutputPath are given explicitly as well as the sources
+        # being a copy, so obj/ and bin/ land in run-owned space by instruction and not only by
+        # location. Both end in a separator, which MSBuild requires of a base path.
         Invoke-Recorded -FilePath 'dotnet' -ArgumentList @(
             'publish', $fixtureProject
             '--configuration', 'Release'
@@ -557,6 +606,8 @@ function Build-ProofFixture {
             '--output', $publishTarget
             "-p:PluginsPackageVersion=$pluginsVersion"
             "-p:CustomValidationPackageVersion=$customValidationVersion"
+            "-p:BaseIntermediateOutputPath=$intermediatePath$([IO.Path]::DirectorySeparatorChar)"
+            "-p:BaseOutputPath=$outputPath$([IO.Path]::DirectorySeparatorChar)"
             '--nologo'
         ) | Out-Null
     }
@@ -568,7 +619,7 @@ function Build-ProofFixture {
     # What the restore actually RESOLVED, read from the project's own assets file. A directory in
     # the package cache says a version was extracted at some point, not that this project resolved
     # it; project.assets.json is the record of what the build was given.
-    $assetsFile = Join-Path (Split-Path -Parent $fixtureProject) 'obj/project.assets.json'
+    $assetsFile = Join-Path $intermediatePath 'project.assets.json'
 
     if (-not (Test-Path -LiteralPath $assetsFile)) {
         throw "The fixture publish produced no $assetsFile, so what its contract restore resolved is unknown."
