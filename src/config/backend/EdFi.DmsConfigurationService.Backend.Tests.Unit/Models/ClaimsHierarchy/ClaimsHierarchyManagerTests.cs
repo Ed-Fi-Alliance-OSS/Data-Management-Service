@@ -324,4 +324,301 @@ public class ClaimsHierarchyManagerTests
         claims[0].ClaimSets.Should().ContainSingle(cs => cs.Name == "mixedcase-claimset");
         claims[0].ClaimSets[0].Actions.Should().ContainSingle(action => action.Name == "Read");
     }
+
+    [Test]
+    public void ReplaceClaimSetResourceActions_ShouldOnlyChangeTheTargetAssociation()
+    {
+        // Arrange
+        List<Claim> claims =
+        [
+            new()
+            {
+                Name = "claim-a",
+                ClaimSets =
+                [
+                    new()
+                    {
+                        Name = "SIS Vendor",
+                        Actions =
+                        [
+                            new()
+                            {
+                                Name = "Read",
+                                AuthorizationStrategyOverrides = [new() { Name = "NamespaceBased" }],
+                            },
+                            new() { Name = "Update" },
+                        ],
+                    },
+                    new() { Name = "Other", Actions = [new() { Name = "Read" }] },
+                ],
+            },
+            new()
+            {
+                Name = "claim-b",
+                ClaimSets = [new() { Name = "SIS Vendor", Actions = [new() { Name = "Delete" }] }],
+            },
+        ];
+
+        // Act
+        bool changed = _claimsHierarchyManager.ReplaceClaimSetResourceActions(
+            "SIS Vendor",
+            "claim-a",
+            ["Create", "Read"],
+            requireExistingAssociation: false,
+            claims
+        );
+
+        // Assert
+        changed.Should().BeTrue();
+        claims[0]
+            .ClaimSets.Single(claimSet => claimSet.Name == "SIS Vendor")
+            .Actions.Select(action => action.Name)
+            .Should()
+            .Equal("Create", "Read");
+        claims[0]
+            .ClaimSets.Single(claimSet => claimSet.Name == "Other")
+            .Actions.Select(action => action.Name)
+            .Should()
+            .Equal("Read");
+        claims[1]
+            .ClaimSets.Single(claimSet => claimSet.Name == "SIS Vendor")
+            .Actions.Select(action => action.Name)
+            .Should()
+            .Equal("Delete");
+    }
+
+    [Test]
+    public void ReplaceClaimSetResourceActions_ShouldAddAnOptionalMissingAssociation()
+    {
+        // Arrange
+        List<Claim> claims = [new() { Name = "parent", Claims = [new() { Name = "claim-a" }] }];
+
+        // Act
+        bool changed = _claimsHierarchyManager.ReplaceClaimSetResourceActions(
+            "sis vendor",
+            "CLAIM-A",
+            ["Create"],
+            requireExistingAssociation: false,
+            claims
+        );
+
+        // Assert
+        changed.Should().BeTrue();
+        claims[0].Claims[0].ClaimSets.Should().ContainSingle(claimSet => claimSet.Name == "sis vendor");
+        claims[0].Claims[0].ClaimSets.Single().Actions.Select(action => action.Name).Should().Equal("Create");
+    }
+
+    [Test]
+    public void ReplaceClaimSetResourceActions_ShouldNotAddARequiredMissingAssociation()
+    {
+        // Arrange
+        List<Claim> claims = [new() { Name = "claim-a", ClaimSets = [] }];
+
+        // Act
+        bool changed = _claimsHierarchyManager.ReplaceClaimSetResourceActions(
+            "SIS Vendor",
+            "claim-a",
+            ["Create"],
+            requireExistingAssociation: true,
+            claims
+        );
+
+        // Assert
+        changed.Should().BeFalse();
+        claims[0].ClaimSets.Should().BeEmpty();
+    }
+
+    [Test]
+    public void RemoveClaimSetResourceActions_ShouldRemoveOnlyTheTargetAssociation()
+    {
+        // Arrange
+        List<Claim> claims =
+        [
+            new()
+            {
+                Name = "claim-a",
+                ClaimSets =
+                [
+                    new()
+                    {
+                        Name = "SIS Vendor",
+                        Actions =
+                        [
+                            new()
+                            {
+                                Name = "Read",
+                                AuthorizationStrategyOverrides = [new() { Name = "NamespaceBased" }],
+                            },
+                        ],
+                    },
+                    new() { Name = "Other", Actions = [new() { Name = "Read" }] },
+                ],
+            },
+            new()
+            {
+                Name = "claim-b",
+                ClaimSets = [new() { Name = "SIS Vendor", Actions = [new() { Name = "Delete" }] }],
+            },
+        ];
+
+        // Act
+        bool changed = _claimsHierarchyManager.RemoveClaimSetResourceActions("SIS Vendor", "claim-a", claims);
+
+        // Assert
+        changed.Should().BeTrue();
+        claims[0].ClaimSets.Should().ContainSingle(claimSet => claimSet.Name == "Other");
+        claims[1]
+            .ClaimSets.Single(claimSet => claimSet.Name == "SIS Vendor")
+            .Actions.Select(action => action.Name)
+            .Should()
+            .Equal("Delete");
+    }
+
+    [Test]
+    public void OverrideClaimSetResourceActionStrategies_ShouldRejectDisabledActions()
+    {
+        // Arrange
+        List<Claim> claims =
+        [
+            new()
+            {
+                Name = "claim-a",
+                ClaimSets = [new() { Name = "SIS Vendor", Actions = [new() { Name = "Read" }] }],
+            },
+        ];
+
+        // Act
+        bool changed = _claimsHierarchyManager.OverrideClaimSetResourceActionStrategies(
+            "SIS Vendor",
+            "claim-a",
+            "Update",
+            ["NamespaceBased"],
+            claims
+        );
+
+        // Assert
+        changed.Should().BeFalse();
+        claims[0].ClaimSets[0].Actions.Single().AuthorizationStrategyOverrides.Should().BeEmpty();
+    }
+
+    [Test]
+    public void OverrideClaimSetResourceActionStrategies_ShouldReplaceOnlyTheTargetActionOverrides()
+    {
+        // Arrange
+        List<Claim> claims =
+        [
+            new()
+            {
+                Name = "claim-a",
+                ClaimSets =
+                [
+                    new()
+                    {
+                        Name = "SIS Vendor",
+                        Actions =
+                        [
+                            new()
+                            {
+                                Name = "Read",
+                                AuthorizationStrategyOverrides = [new() { Name = "Old" }],
+                            },
+                            new()
+                            {
+                                Name = "Update",
+                                AuthorizationStrategyOverrides = [new() { Name = "Preserve" }],
+                            },
+                        ],
+                    },
+                ],
+            },
+        ];
+
+        // Act
+        bool changed = _claimsHierarchyManager.OverrideClaimSetResourceActionStrategies(
+            "sis vendor",
+            "CLAIM-A",
+            "read",
+            ["NamespaceBased"],
+            claims
+        );
+
+        // Assert
+        changed.Should().BeTrue();
+        claims[0]
+            .ClaimSets.Single()
+            .Actions.Single(action => action.Name == "Read")
+            .AuthorizationStrategyOverrides.Select(strategy => strategy.Name)
+            .Should()
+            .Equal("NamespaceBased");
+        claims[0]
+            .ClaimSets.Single()
+            .Actions.Single(action => action.Name == "Update")
+            .AuthorizationStrategyOverrides.Select(strategy => strategy.Name)
+            .Should()
+            .Equal("Preserve");
+    }
+
+    [Test]
+    public void ResetClaimSetResourceActionStrategies_ShouldRemoveOverridesOnlyFromTargetAssociation()
+    {
+        // Arrange
+        List<Claim> claims =
+        [
+            new()
+            {
+                Name = "claim-a",
+                ClaimSets =
+                [
+                    new()
+                    {
+                        Name = "SIS Vendor",
+                        Actions =
+                        [
+                            new()
+                            {
+                                Name = "Read",
+                                AuthorizationStrategyOverrides = [new() { Name = "NamespaceBased" }],
+                            },
+                        ],
+                    },
+                ],
+            },
+            new()
+            {
+                Name = "claim-b",
+                ClaimSets =
+                [
+                    new()
+                    {
+                        Name = "SIS Vendor",
+                        Actions =
+                        [
+                            new()
+                            {
+                                Name = "Read",
+                                AuthorizationStrategyOverrides = [new() { Name = "Other" }],
+                            },
+                        ],
+                    },
+                ],
+            },
+        ];
+
+        // Act
+        bool changed = _claimsHierarchyManager.ResetClaimSetResourceActionStrategies(
+            "SIS Vendor",
+            "claim-a",
+            claims
+        );
+
+        // Assert
+        changed.Should().BeTrue();
+        claims[0].ClaimSets.Single().Actions.Single().AuthorizationStrategyOverrides.Should().BeEmpty();
+        claims[1]
+            .ClaimSets.Single()
+            .Actions.Single()
+            .AuthorizationStrategyOverrides.Select(strategy => strategy.Name)
+            .Should()
+            .Equal("Other");
+    }
 }
