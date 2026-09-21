@@ -217,7 +217,10 @@ public class ApiClientModule : IEndpointModule
         switch (clientCreateResult)
         {
             case ClientCreateResult.FailureUnknown failure:
-                logger.LogError("Failure creating client {Failure}", failure);
+                logger.LogError(
+                    "Failure creating client: {FailureMessage}",
+                    SanitizeForLog(failure.FailureMessage)
+                );
                 return FailureResults.Unknown(httpContext.TraceIdentifier);
             case ClientCreateResult.FailureIdentityProvider failureIdentityProvider:
                 logger.LogError(
@@ -262,7 +265,7 @@ public class ApiClientModule : IEndpointModule
                     }
                 );
             case ApiClientInsertResult.FailureApplicationNotFound:
-                await clientRepository.DeleteClientAsync(clientUuid.ToString());
+                await CleanUpProvisionedClientAsync(clientRepository, clientUuid, clientId, logger);
                 return Results.Json(
                     FailureResponse.ForUnresolvedReference(
                         $"Application with ID {command.ApplicationId} not found.",
@@ -272,7 +275,7 @@ public class ApiClientModule : IEndpointModule
                     statusCode: (int)HttpStatusCode.Conflict
                 );
             case ApiClientInsertResult.FailureDataStoreNotFound:
-                await clientRepository.DeleteClientAsync(clientUuid.ToString());
+                await CleanUpProvisionedClientAsync(clientRepository, clientUuid, clientId, logger);
                 return Results.Json(
                     FailureResponse.ForUnresolvedReference(
                         "Data store does not exist.",
@@ -282,13 +285,86 @@ public class ApiClientModule : IEndpointModule
                     statusCode: (int)HttpStatusCode.Conflict
                 );
             case ApiClientInsertResult.FailureUnknown failure:
-                logger.LogError("Failure creating client {Failure}", failure);
-                await clientRepository.DeleteClientAsync(clientUuid.ToString());
+                logger.LogError(
+                    "Failure inserting the API client row: {FailureMessage}",
+                    SanitizeForLog(failure.FailureMessage)
+                );
+                await CleanUpProvisionedClientAsync(clientRepository, clientUuid, clientId, logger);
                 return FailureResults.Unknown(httpContext.TraceIdentifier);
         }
 
         logger.LogError("Failure creating client");
         return FailureResults.Unknown(httpContext.TraceIdentifier);
+    }
+
+    /// <summary>
+    /// Removes the identity-provider client this request provisioned once the database insert has
+    /// failed, and reports what became of it. The caller's response stays the one the database
+    /// outcome dictates: the reference they have to correct is the actionable information, and a
+    /// cleanup an operator must finish by hand does not change it. A client that may remain is
+    /// therefore reported at Error with the identifiers needed to find it.
+    /// </summary>
+    private static async Task CleanUpProvisionedClientAsync(
+        IIdentityProviderRepository clientRepository,
+        Guid clientUuid,
+        string clientId,
+        ILogger logger
+    )
+    {
+        ClientDeleteResult cleanupResult;
+        try
+        {
+            cleanupResult = await clientRepository.DeleteClientAsync(clientUuid.ToString());
+        }
+        catch (Exception ex)
+        {
+            LogUnconfirmedCleanup(ex.GetType().Name, ex);
+            return;
+        }
+
+        switch (cleanupResult)
+        {
+            case ClientDeleteResult.Success:
+                logger.LogDebug(
+                    "Deleted provider client {ClientUuid} (client {ClientId}) after the database insert failed",
+                    clientUuid,
+                    SanitizeForLog(clientId)
+                );
+                return;
+
+            case ClientDeleteResult.FailureClientNotFound:
+                logger.LogWarning(
+                    "Provider client {ClientUuid} (client {ClientId}) was already absent when the database insert failed",
+                    clientUuid,
+                    SanitizeForLog(clientId)
+                );
+                return;
+
+            case ClientDeleteResult.FailureIdentityProvider failureIdentityProvider:
+                LogUnconfirmedCleanup(
+                    $"{nameof(ClientDeleteResult.FailureIdentityProvider)}: {SanitizeForLog(failureIdentityProvider.IdentityProviderError.FailureMessage)}"
+                );
+                return;
+
+            case ClientDeleteResult.FailureUnknown failureUnknown:
+                LogUnconfirmedCleanup(
+                    $"{nameof(ClientDeleteResult.FailureUnknown)}: {SanitizeForLog(failureUnknown.FailureMessage)}"
+                );
+                return;
+
+            default:
+                LogUnconfirmedCleanup(cleanupResult.GetType().Name);
+                return;
+        }
+
+        void LogUnconfirmedCleanup(string outcome, Exception? exception = null) =>
+            logger.LogError(
+                exception,
+                "Could not confirm deletion of provider client {ClientUuid} (client {ClientId}) after the database insert failed; cleanup outcome {Outcome}; the client may remain and must be reviewed manually",
+                clientUuid,
+                SanitizeForLog(clientId),
+                outcome
+            );
     }
 
     private static async Task<IResult> GetAll(

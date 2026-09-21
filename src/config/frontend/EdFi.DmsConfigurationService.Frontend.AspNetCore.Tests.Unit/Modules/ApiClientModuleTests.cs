@@ -17,12 +17,15 @@ using EdFi.DmsConfigurationService.DataModel.Model.Application;
 using EdFi.DmsConfigurationService.DataModel.Model.Authorization;
 using EdFi.DmsConfigurationService.DataModel.Model.Vendor;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Infrastructure;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Middleware;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Modules;
@@ -72,7 +75,10 @@ public class ApiClientModuleTests
     [TearDown]
     public void DisposeWebApplicationFactories() => _factoryTracker.DisposeTrackedFactories();
 
-    private HttpClient SetUpClient(int? clientSecretMinimumLength = null)
+    private HttpClient SetUpClient(
+        int? clientSecretMinimumLength = null,
+        Action<IServiceCollection>? configureServices = null
+    )
     {
         var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
@@ -107,6 +113,10 @@ public class ApiClientModuleTests
                     .AddTransient((_) => _vendorRepository)
                     .AddTransient((_) => _dataStoreRepository)
                     .AddTransient((_) => _identityProviderRepository);
+
+                // Registered last so a fixture can replace a closed-generic service the host
+                // already provides, such as the module's logger.
+                configureServices?.Invoke(collection);
             });
         });
         _factoryTracker.Track(factory);
@@ -5193,5 +5203,594 @@ public class ApiClientModuleTests
         [Test]
         public async Task It_does_not_leak_the_repository_failure_message() =>
             (await _response.Content.ReadAsStringAsync()).Should().NotContain(Sentinel);
+    }
+
+    /// <summary>
+    /// Shared arrangement for POST /v3/apiClients: a resolvable application, vendor and data
+    /// store, a provider that creates a client, and a recording module logger. Fixtures override
+    /// the one outcome under test.
+    /// </summary>
+    public abstract class InsertWorkflowTestBase : ApiClientModuleTests
+    {
+        /// <summary>
+        /// Appended to a sentinel so the sanitizer has something to remove. Only the sanitized
+        /// form may reach a log, and neither form may reach a response.
+        /// </summary>
+        protected const string RawSuffix = "\r\n<b>{raw}</b>";
+
+        protected const string SanitizedSuffix = "braw/b";
+
+        private const string RequestBody = """
+            {
+              "applicationId": 1,
+              "name": "Test Client",
+              "isApproved": false,
+              "dataStoreIds": [1]
+            }
+            """;
+
+        protected Guid _createdClientUuid;
+        protected string _createdClientId = null!;
+        protected string _createdClientSecret = null!;
+        protected string? _forwardedClientRole;
+        protected bool? _forwardedIsApproved;
+        protected List<string> _deletedClientUuids = null!;
+
+        // Internal because the recording logger type is: every fixture lives in this assembly.
+        internal TestLogger<ApiClientModule> _moduleLogger = null!;
+        protected HttpResponseMessage _insertResponse = null!;
+
+        [SetUp]
+        public void SetUpInsertWorkflow()
+        {
+            _createdClientUuid = Guid.NewGuid();
+            _deletedClientUuids = [];
+            _moduleLogger = new TestLogger<ApiClientModule>();
+
+            A.CallTo(() => _applicationRepository.GetApplication(A<int>.Ignored))
+                .Returns(
+                    new ApplicationGetResult.Success(
+                        new ApplicationResponse
+                        {
+                            Id = 1,
+                            ApplicationName = "Test Application",
+                            ClaimSetName = "TestClaimSet",
+                            VendorId = 1,
+                            EducationOrganizationIds = [1],
+                            DataStoreIds = [1],
+                        }
+                    )
+                );
+
+            A.CallTo(() => _vendorRepository.GetVendor(A<int>.Ignored))
+                .Returns(
+                    new VendorGetResult.Success(
+                        new VendorResponse
+                        {
+                            Company = "Test Company",
+                            ContactName = "Test Contact",
+                            ContactEmailAddress = "test@test.com",
+                            NamespacePrefixes = "uri://ed-fi.org",
+                        }
+                    )
+                );
+
+            A.CallTo(() => _dataStoreRepository.GetExistingDataStoreIds(A<int[]>.Ignored))
+                .Returns(new DataStoreIdsExistResult.Success([1]));
+
+            ArrangeProviderCreate(new ClientCreateResult.Success(_createdClientUuid));
+            ArrangeProviderCleanup(new ClientDeleteResult.Success());
+        }
+
+        [TearDown]
+        public void TearDownInsertResponse() => _insertResponse?.Dispose();
+
+        protected void ArrangeDatabaseInsert(ApiClientInsertResult result) =>
+            A.CallTo(() =>
+                    _apiClientRepository.InsertApiClient(
+                        A<ApiClientInsertCommand>.Ignored,
+                        A<ApiClientCommand>.Ignored
+                    )
+                )
+                .Returns(result);
+
+        protected void ArrangeProviderCreate(ClientCreateResult result) =>
+            A.CallTo(() =>
+                    _identityProviderRepository.CreateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<int[]?>.Ignored,
+                        A<bool>.Ignored
+                    )
+                )
+                .Invokes(call =>
+                {
+                    _createdClientId = call.GetArgument<string>(0)!;
+                    _createdClientSecret = call.GetArgument<string>(1)!;
+                    _forwardedClientRole = call.GetArgument<string>(2);
+                    _forwardedIsApproved = call.GetArgument<bool>(8);
+                })
+                .Returns(result);
+
+        protected void ArrangeProviderCleanup(ClientDeleteResult result) =>
+            A.CallTo(() => _identityProviderRepository.DeleteClientAsync(A<string>.Ignored))
+                .Invokes(call => _deletedClientUuids.Add(call.GetArgument<string>(0)!))
+                .Returns(result);
+
+        protected async Task ActInsertAsync(string? clientRole = null)
+        {
+            using var client = SetUpClient(configureServices: collection =>
+            {
+                collection.AddSingleton<ILogger<ApiClientModule>>(_moduleLogger);
+                if (clientRole is not null)
+                {
+                    collection.Configure<IdentitySettings>(options => options.ClientRole = clientRole);
+                }
+            });
+
+            _insertResponse = await client.PostAsync(
+                "/v3/apiClients",
+                new StringContent(RequestBody, Encoding.UTF8, "application/json")
+            );
+        }
+
+        /// <summary>
+        /// Each recorded entry at this level, as its formatted message together with the text of
+        /// any exception logged beside it.
+        /// </summary>
+        protected IReadOnlyList<string> LoggedAt(LogLevel level) =>
+            [
+                .. _moduleLogger
+                    .Entries.Where(entry => entry.Level == level)
+                    .Select(entry => $"{entry.State} {entry.Exception}"),
+            ];
+
+        /// <summary>
+        /// Inherited by every insert fixture: no module log entry may carry the secret this
+        /// request generated, in its message or in the text of an exception logged beside it. The
+        /// captured secret is asserted non-empty first, so an arrangement that never reached the
+        /// provider cannot make the check vacuous.
+        /// </summary>
+        [Test]
+        public void It_logs_no_secret()
+        {
+            _createdClientSecret
+                .Should()
+                .NotBeNullOrEmpty("the module should have generated a secret for the provider");
+            _moduleLogger
+                .Entries.Select(entry => $"{entry.State} {entry.Exception}")
+                .Should()
+                .OnlyContain(entry => !entry.Contains(_createdClientSecret));
+        }
+
+        protected void AssertNoDatabaseInsert() =>
+            A.CallTo(() =>
+                    _apiClientRepository.InsertApiClient(
+                        A<ApiClientInsertCommand>.Ignored,
+                        A<ApiClientCommand>.Ignored
+                    )
+                )
+                .MustNotHaveHappened();
+
+        protected void AssertNoProviderCleanup() =>
+            A.CallTo(() => _identityProviderRepository.DeleteClientAsync(A<string>.Ignored))
+                .MustNotHaveHappened();
+
+        /// <summary>
+        /// A failed request returns no credentials: neither member is present, and the secret the
+        /// module generated appears nowhere in the body.
+        /// </summary>
+        protected async Task AssertNoCredentialsInResponse()
+        {
+            string responseBody = await _insertResponse.Content.ReadAsStringAsync();
+            JsonNode actualResponse = JsonNode.Parse(responseBody)!;
+            actualResponse["key"].Should().BeNull();
+            actualResponse["secret"].Should().BeNull();
+            responseBody.Should().NotContain(_createdClientSecret);
+        }
+
+        protected void AssertCleanupReportedAsUnconfirmed(string outcome)
+        {
+            LoggedAt(LogLevel.Error)
+                .Should()
+                .Contain(entry =>
+                    entry.Contains("Could not confirm deletion of provider client")
+                    && entry.Contains(_createdClientUuid.ToString())
+                    && entry.Contains(_createdClientId)
+                    && entry.Contains(outcome)
+                );
+            AssertNoRawCharactersLogged();
+        }
+
+        protected void AssertNoRawCharactersLogged() =>
+            _moduleLogger
+                .Entries.Select(entry => $"{entry.State}")
+                .Should()
+                .OnlyContain(message =>
+                    !message.Contains('\r')
+                    && !message.Contains('\n')
+                    && !message.Contains('<')
+                    && !message.Contains('>')
+                );
+    }
+
+    /// <summary>
+    /// A provider failure during creation is answered with the structured bad-gateway contract,
+    /// and nothing is persisted. The module attempts no cleanup because a creation failure carries
+    /// no client identifier: whether a client was left behind, and its removal, belong to the
+    /// repository's own compensation.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_api_client_insert_whose_provider_creation_fails_at_the_identity_provider
+        : InsertWorkflowTestBase
+    {
+        private const string Sentinel = "SENTINEL_APICLIENT_INSERT_IDP_CREATE_must_not_leak";
+
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeProviderCreate(
+                new ClientCreateResult.FailureIdentityProvider(new IdentityProviderError(Sentinel))
+            );
+
+            await ActInsertAsync();
+        }
+
+        [Test]
+        public async Task It_returns_the_bad_gateway_contract()
+        {
+            _insertResponse.StatusCode.Should().Be(HttpStatusCode.BadGateway);
+            _insertResponse.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+            string responseBody = await _insertResponse.Content.ReadAsStringAsync();
+            responseBody.Should().NotContain(Sentinel);
+            JsonNode actualResponse = JsonNode.Parse(responseBody)!;
+            string correlationId = actualResponse["correlationId"]!.GetValue<string>();
+            correlationId.Should().NotBeNullOrWhiteSpace();
+            JsonNode expectedResponse = JsonNode.Parse(
+                """
+                {
+                  "detail": "The request could not be processed. See 'errors' for details.",
+                  "type": "urn:ed-fi:api:bad-gateway",
+                  "title": "Bad Gateway",
+                  "status": 502,
+                  "correlationId": "{correlationId}",
+                  "validationErrors": {},
+                  "errors": ["The identity provider returned an unexpected response."]
+                }
+                """.Replace("{correlationId}", correlationId)
+            )!;
+            JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
+        }
+
+        [Test]
+        public async Task It_returns_no_credentials() => await AssertNoCredentialsInResponse();
+
+        [Test]
+        public void It_persists_no_api_client() => AssertNoDatabaseInsert();
+
+        [Test]
+        public void It_attempts_no_cleanup() => AssertNoProviderCleanup();
+    }
+
+    [TestFixture]
+    public class Given_an_api_client_insert_whose_provider_creation_fails_unknown : InsertWorkflowTestBase
+    {
+        private const string Sentinel = "SENTINEL_APICLIENT_CREATE_UNKNOWN_must_not_leak";
+
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeProviderCreate(new ClientCreateResult.FailureUnknown(Sentinel + RawSuffix));
+
+            await ActInsertAsync();
+        }
+
+        [Test]
+        public async Task It_returns_the_internal_server_error_contract() =>
+            await AssertContract(
+                _insertResponse,
+                HttpStatusCode.InternalServerError,
+                "urn:ed-fi:api:internal-server-error",
+                "Internal Server Error",
+                ""
+            );
+
+        [Test]
+        public async Task It_does_not_leak_the_provider_failure_message() =>
+            (await _insertResponse.Content.ReadAsStringAsync()).Should().NotContain(Sentinel);
+
+        [Test]
+        public async Task It_returns_no_credentials() => await AssertNoCredentialsInResponse();
+
+        [Test]
+        public void It_persists_no_api_client() => AssertNoDatabaseInsert();
+
+        [Test]
+        public void It_attempts_no_cleanup() => AssertNoProviderCleanup();
+
+        [Test]
+        public void It_logs_the_sanitized_failure_message_and_not_the_result_record()
+        {
+            LoggedAt(LogLevel.Error).Should().Contain(entry => entry.Contains(Sentinel + SanitizedSuffix));
+            LoggedAt(LogLevel.Error).Should().NotContain(entry => entry.Contains("FailureUnknown {"));
+            AssertNoRawCharactersLogged();
+        }
+    }
+
+    [TestFixture]
+    public class Given_an_api_client_insert_whose_cleanup_succeeds : InsertWorkflowTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeDatabaseInsert(new ApiClientInsertResult.FailureApplicationNotFound());
+
+            await ActInsertAsync();
+        }
+
+        [Test]
+        public void It_keeps_the_unresolved_reference_conflict() =>
+            _insertResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+        [Test]
+        public void It_deletes_the_client_it_created() =>
+            _deletedClientUuids.Should().Equal(_createdClientUuid.ToString());
+
+        [Test]
+        public void It_records_the_deletion() =>
+            LoggedAt(LogLevel.Debug)
+                .Should()
+                .Contain(entry =>
+                    entry.Contains("Deleted provider client")
+                    && entry.Contains(_createdClientUuid.ToString())
+                    && entry.Contains(_createdClientId)
+                );
+
+        [Test]
+        public void It_reports_no_unconfirmed_cleanup() =>
+            LoggedAt(LogLevel.Error)
+                .Should()
+                .NotContain(entry => entry.Contains("Could not confirm deletion"));
+    }
+
+    [TestFixture]
+    public class Given_an_api_client_insert_whose_cleanup_client_is_already_absent : InsertWorkflowTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeDatabaseInsert(new ApiClientInsertResult.FailureApplicationNotFound());
+            ArrangeProviderCleanup(new ClientDeleteResult.FailureClientNotFound("Client not found"));
+
+            await ActInsertAsync();
+        }
+
+        [Test]
+        public void It_keeps_the_unresolved_reference_conflict() =>
+            _insertResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+        [Test]
+        public void It_records_the_absent_client_as_a_warning() =>
+            LoggedAt(LogLevel.Warning)
+                .Should()
+                .Contain(entry =>
+                    entry.Contains("was already absent")
+                    && entry.Contains(_createdClientUuid.ToString())
+                    && entry.Contains(_createdClientId)
+                );
+
+        [Test]
+        public void It_reports_no_unconfirmed_cleanup() =>
+            LoggedAt(LogLevel.Error)
+                .Should()
+                .NotContain(entry => entry.Contains("Could not confirm deletion"));
+    }
+
+    [TestFixture]
+    public class Given_an_api_client_insert_whose_cleanup_fails_at_the_identity_provider
+        : InsertWorkflowTestBase
+    {
+        private const string Sentinel = "SENTINEL_APICLIENT_CLEANUP_IDP_must_not_leak";
+
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeDatabaseInsert(new ApiClientInsertResult.FailureApplicationNotFound());
+            ArrangeProviderCleanup(
+                new ClientDeleteResult.FailureIdentityProvider(
+                    new IdentityProviderError(Sentinel + RawSuffix)
+                )
+            );
+
+            await ActInsertAsync();
+        }
+
+        [Test]
+        public async Task It_keeps_the_unresolved_reference_conflict_response()
+        {
+            await AssertContract(
+                _insertResponse,
+                HttpStatusCode.Conflict,
+                "urn:ed-fi:api:conflict:unresolved-reference",
+                "Unresolved Reference",
+                "Application with ID 1 not found."
+            );
+            (await _insertResponse.Content.ReadAsStringAsync()).Should().NotContain(Sentinel);
+        }
+
+        [Test]
+        public void It_deletes_the_client_it_created() =>
+            _deletedClientUuids.Should().Equal(_createdClientUuid.ToString());
+
+        [Test]
+        public void It_reports_the_client_as_possibly_remaining()
+        {
+            AssertCleanupReportedAsUnconfirmed(nameof(ClientDeleteResult.FailureIdentityProvider));
+            LoggedAt(LogLevel.Error).Should().Contain(entry => entry.Contains(Sentinel + SanitizedSuffix));
+        }
+    }
+
+    [TestFixture]
+    public class Given_an_api_client_insert_whose_cleanup_fails_unknown : InsertWorkflowTestBase
+    {
+        private const string DatabaseSentinel = "SENTINEL_APICLIENT_DB_UNKNOWN_must_not_leak";
+        private const string CleanupSentinel = "SENTINEL_APICLIENT_CLEANUP_UNKNOWN_must_not_leak";
+
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeDatabaseInsert(new ApiClientInsertResult.FailureUnknown(DatabaseSentinel + RawSuffix));
+            ArrangeProviderCleanup(new ClientDeleteResult.FailureUnknown(CleanupSentinel + RawSuffix));
+
+            await ActInsertAsync();
+        }
+
+        [Test]
+        public async Task It_returns_the_internal_server_error_contract()
+        {
+            await AssertContract(
+                _insertResponse,
+                HttpStatusCode.InternalServerError,
+                "urn:ed-fi:api:internal-server-error",
+                "Internal Server Error",
+                ""
+            );
+            string responseBody = await _insertResponse.Content.ReadAsStringAsync();
+            responseBody.Should().NotContain(DatabaseSentinel);
+            responseBody.Should().NotContain(CleanupSentinel);
+        }
+
+        [Test]
+        public async Task It_returns_no_credentials() => await AssertNoCredentialsInResponse();
+
+        [Test]
+        public void It_deletes_the_client_it_created() =>
+            _deletedClientUuids.Should().Equal(_createdClientUuid.ToString());
+
+        [Test]
+        public void It_reports_both_failures_sanitized()
+        {
+            AssertCleanupReportedAsUnconfirmed(nameof(ClientDeleteResult.FailureUnknown));
+            LoggedAt(LogLevel.Error)
+                .Should()
+                .Contain(entry => entry.Contains(DatabaseSentinel + SanitizedSuffix))
+                .And.Contain(entry => entry.Contains(CleanupSentinel + SanitizedSuffix));
+        }
+    }
+
+    [TestFixture]
+    public class Given_an_api_client_insert_whose_cleanup_returns_an_unrecognized_result
+        : InsertWorkflowTestBase
+    {
+        private sealed record UnrecognizedClientDeleteResult : ClientDeleteResult;
+
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeDatabaseInsert(new ApiClientInsertResult.FailureApplicationNotFound());
+            ArrangeProviderCleanup(new UnrecognizedClientDeleteResult());
+
+            await ActInsertAsync();
+        }
+
+        [Test]
+        public void It_keeps_the_unresolved_reference_conflict() =>
+            _insertResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+        [Test]
+        public void It_reports_the_unrecognized_outcome() =>
+            AssertCleanupReportedAsUnconfirmed(nameof(UnrecognizedClientDeleteResult));
+    }
+
+    /// <summary>
+    /// A cleanup that throws used to reach the global handler and replace the caller's conflict
+    /// with a generic server error. The reference the caller has to correct survives it.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_api_client_insert_whose_cleanup_throws : InsertWorkflowTestBase
+    {
+        private const string Sentinel = "SENTINEL_APICLIENT_CLEANUP_THROWN_must_not_leak";
+
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeDatabaseInsert(new ApiClientInsertResult.FailureDataStoreNotFound());
+            A.CallTo(() => _identityProviderRepository.DeleteClientAsync(A<string>.Ignored))
+                .Invokes(call => _deletedClientUuids.Add(call.GetArgument<string>(0)!))
+                .Throws(new InvalidOperationException(Sentinel));
+
+            await ActInsertAsync();
+        }
+
+        [Test]
+        public async Task It_keeps_the_unresolved_reference_conflict_response()
+        {
+            await AssertContract(
+                _insertResponse,
+                HttpStatusCode.Conflict,
+                "urn:ed-fi:api:conflict:unresolved-reference",
+                "Unresolved Reference",
+                "Data store does not exist."
+            );
+            (await _insertResponse.Content.ReadAsStringAsync()).Should().NotContain(Sentinel);
+        }
+
+        [Test]
+        public void It_attempted_the_deletion() =>
+            _deletedClientUuids.Should().Equal(_createdClientUuid.ToString());
+
+        [Test]
+        public void It_reports_the_thrown_cleanup_with_its_exception()
+        {
+            AssertCleanupReportedAsUnconfirmed(nameof(InvalidOperationException));
+            _moduleLogger
+                .Entries.Should()
+                .Contain(entry =>
+                    entry.Level == LogLevel.Error && entry.Exception is InvalidOperationException
+                );
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_successful_api_client_insert : InsertWorkflowTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeDatabaseInsert(new ApiClientInsertResult.Success(11));
+
+            await ActInsertAsync(clientRole: "role-under-test");
+        }
+
+        [Test]
+        public void It_forwards_the_configured_client_role() =>
+            _forwardedClientRole.Should().Be("role-under-test");
+
+        [Test]
+        public void It_forwards_the_requested_approval_state() => _forwardedIsApproved.Should().BeFalse();
+
+        [Test]
+        public async Task It_returns_the_created_credentials()
+        {
+            _insertResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+            JsonNode actualResponse = JsonNode.Parse(await _insertResponse.Content.ReadAsStringAsync())!;
+            actualResponse["id"]!.GetValue<int>().Should().Be(11);
+            actualResponse["applicationId"]!.GetValue<int>().Should().Be(1);
+            actualResponse["name"]!.GetValue<string>().Should().Be("Test Client");
+            actualResponse["key"]!.GetValue<string>().Should().Be(_createdClientId);
+            actualResponse["secret"]!.GetValue<string>().Should().Be(_createdClientSecret);
+        }
+
+        [Test]
+        public void It_reports_the_created_location() =>
+            _insertResponse.Headers.Location!.ToString().Should().EndWith("/v3/apiClients/11");
+
+        [Test]
+        public void It_performs_no_cleanup() => AssertNoProviderCleanup();
     }
 }
