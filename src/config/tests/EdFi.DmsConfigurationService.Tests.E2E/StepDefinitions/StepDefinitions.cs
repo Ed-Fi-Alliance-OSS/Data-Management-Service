@@ -282,6 +282,17 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
         await ExtractIdFromHeader(_apiResponse);
     }
 
+    [When("a POST request is made to {string} with no body")]
+    public async Task WhenSendingAPOSTRequestToWithNoBody(string url)
+    {
+        url = await ReplaceIdsAsync(url);
+        _apiResponse = await playwrightContext.ApiRequestContext?.PostAsync(
+            url,
+            new() { Headers = _authHeaders }
+        )!;
+        await ExtractIdFromHeader(_apiResponse);
+    }
+
     /// <summary>
     /// POSTs <paramref name="body"/> exactly as supplied. Unlike
     /// <see cref="WhenSendingAPOSTRequestToWithBody"/> this applies no placeholder substitution, so a

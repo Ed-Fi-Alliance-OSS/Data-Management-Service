@@ -39,26 +39,33 @@ public class ClaimSetModule : IEndpointModule
         endpoints.MapSecuredDelete($"/v3/claimSets/{{id}}", Delete);
         endpoints.MapSecuredPost("/v3/claimSets/copy", Copy);
         endpoints.MapSecuredPost("/v3/claimSets/import", Import);
-        endpoints.MapSecuredPost(
-            "/v3/claimSets/{claimSetId}/resourceClaimActions",
-            GrantResourceClaimActions
-        );
-        endpoints.MapSecuredPut(
-            "/v3/claimSets/{claimSetId}/resourceClaimActions/{resourceClaimId}",
-            ModifyResourceClaimActions
-        );
-        endpoints.MapSecuredDelete(
-            "/v3/claimSets/{claimSetId}/resourceClaimActions/{resourceClaimId}",
-            RevokeResourceClaimActions
-        );
-        endpoints.MapSecuredPost(
-            "/v3/claimSets/{claimSetId}/resourceClaimActions/{resourceClaimId}/overrideAuthorizationStrategy",
-            OverrideAuthorizationStrategy
-        );
-        endpoints.MapSecuredPost(
-            "/v3/claimSets/{claimSetId}/resourceClaimActions/{resourceClaimId}/resetAuthorizationStrategies",
-            ResetAuthorizationStrategies
-        );
+        endpoints
+            .MapSecuredPost("/v3/claimSets/{claimSetId}/resourceClaimActions", GrantResourceClaimActions)
+            .Produces(201);
+        endpoints
+            .MapSecuredPut(
+                "/v3/claimSets/{claimSetId}/resourceClaimActions/{resourceClaimId}",
+                ModifyResourceClaimActions
+            )
+            .Produces(204);
+        endpoints
+            .MapSecuredDelete(
+                "/v3/claimSets/{claimSetId}/resourceClaimActions/{resourceClaimId}",
+                RevokeResourceClaimActions
+            )
+            .Produces(204);
+        endpoints
+            .MapSecuredPost(
+                "/v3/claimSets/{claimSetId}/resourceClaimActions/{resourceClaimId}/overrideAuthorizationStrategy",
+                OverrideAuthorizationStrategy
+            )
+            .Produces(200);
+        endpoints
+            .MapSecuredPost(
+                "/v3/claimSets/{claimSetId}/resourceClaimActions/{resourceClaimId}/resetAuthorizationStrategies",
+                ResetAuthorizationStrategies
+            )
+            .Produces(200);
     }
 
     private static async Task<IResult> InsertClaimSet(

@@ -285,3 +285,77 @@ Feature: ClaimSets endpoints
                       "errors": []
                   }
                   """
+
+        Scenario: 12 Ensure clients can grant selected resource claim actions
+             When a POST request is made to "/v3/claimSets" with
+                  """
+                  {
+                      "claimSetName": "DMS-853 resource action grant {scenarioRunId}"
+                  }
+                  """
+             Then it should respond with 201
+             When a POST request is made to "/v3/claimSets/{claimSetId}/resourceClaimActions" with
+                  """
+                  {
+                      "claimSetId": {claimSetId},
+                      "resourceClaimId": 233,
+                      "resourceClaimActions": [
+                          { "name": "Read", "enabled": true },
+                          { "name": "Update", "enabled": false }
+                      ]
+                  }
+                  """
+             Then it should respond with 201
+
+        Scenario: 13 Ensure clients can override a resource claim action authorization strategy
+             When a POST request is made to "/v3/claimSets" with
+                  """
+                  {
+                      "claimSetName": "DMS-853 authorization strategy override {scenarioRunId}"
+                  }
+                  """
+             Then it should respond with 201
+             When a POST request is made to "/v3/claimSets/{claimSetId}/resourceClaimActions" with
+                  """
+                  {
+                      "claimSetId": {claimSetId},
+                      "resourceClaimId": 233,
+                      "resourceClaimActions": [
+                          { "name": "Read", "enabled": true }
+                      ]
+                  }
+                  """
+             Then it should respond with 201
+             When a POST request is made to "/v3/claimSets/{claimSetId}/resourceClaimActions/233/overrideAuthorizationStrategy" with
+                  """
+                  {
+                      "claimSetId": {claimSetId},
+                      "resourceClaimId": 233,
+                      "actionName": "Read",
+                      "authStrategyIds": [1],
+                      "authorizationStrategies": ["NoFurtherAuthorizationRequired"]
+                  }
+                  """
+             Then it should respond with 200
+
+        Scenario: 14 Ensure clients can reset resource claim action authorization strategies
+             When a POST request is made to "/v3/claimSets" with
+                  """
+                  {
+                      "claimSetName": "DMS-853 authorization strategy reset {scenarioRunId}"
+                  }
+                  """
+             Then it should respond with 201
+             When a POST request is made to "/v3/claimSets/{claimSetId}/resourceClaimActions" with
+                  """
+                  {
+                      "claimSetId": {claimSetId},
+                      "resourceClaimId": 233,
+                      "resourceClaimActions": [
+                          { "name": "Read", "enabled": true }
+                      ]
+                  }
+                  """
+             Then it should respond with 201
+             When a POST request is made to "/v3/claimSets/{claimSetId}/resourceClaimActions/233/resetAuthorizationStrategies" with no body
+             Then it should respond with 200
