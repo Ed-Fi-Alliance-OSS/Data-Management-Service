@@ -428,48 +428,13 @@ if (-not $databaseOnlyStartup) {
         $files += @("-f", $documentCacheComposeFilePath)
     }
 
-    # Plugin acquisition, and whatever else a deployment layers beside it. Semicolon-delimited and
-    # appended in the order written, because the two halves are separate files: one of the committed
-    # acquisition overlays, plus the deployment's own override naming Plugins:Allowed. Neither is
-    # required and an unset or whitespace value adds nothing, which is the shipped default.
-    #
-    # Every path is resolved and validated here, before anything touches Docker, so a typo fails
-    # while the stack is still untouched rather than halfway through a recreate. An empty segment in
-    # a non-empty list is refused rather than skipped: it is a stray or doubled separator, and
-    # silently dropping one would leave an operator with a deployment missing a file they wrote.
-    $pluginComposeFiles = Get-EnvValue `
-        -EnvValues $envValues `
-        -Name "DMS_PLUGINS_COMPOSE_FILES" `
-        -DefaultValue ""
-    if (-not [string]::IsNullOrWhiteSpace($pluginComposeFiles)) {
-        $resolvedPluginComposeFiles = @()
-
-        foreach ($pluginComposeFile in $pluginComposeFiles.Split(';')) {
-            $trimmedPluginComposeFile = $pluginComposeFile.Trim()
-
-            if ([string]::IsNullOrEmpty($trimmedPluginComposeFile)) {
-                throw "DMS_PLUGINS_COMPOSE_FILES contains an empty entry: '$pluginComposeFiles'"
-            }
-
-            $pluginComposeFilePath =
-                if ([System.IO.Path]::IsPathRooted($trimmedPluginComposeFile)) {
-                    $trimmedPluginComposeFile
-                }
-                else {
-                    Join-Path $PSScriptRoot $trimmedPluginComposeFile
-                }
-
-            if (-not (Test-Path -LiteralPath $pluginComposeFilePath -PathType Leaf)) {
-                throw "DMS_PLUGINS_COMPOSE_FILES does not identify a compose file: $pluginComposeFilePath"
-            }
-
-            $resolvedPluginComposeFiles += $pluginComposeFilePath
-        }
-
-        foreach ($resolvedPluginComposeFile in $resolvedPluginComposeFiles) {
-            Write-Output "Using plugin Docker Compose file '$resolvedPluginComposeFile'."
-            $files += @("-f", $resolvedPluginComposeFile)
-        }
+    # Plugin acquisition, and whatever else a deployment layers beside it. Resolution and validation
+    # live in Resolve-PluginComposeFile, which the published launcher calls too; see its help for the
+    # list's shape and why an empty entry is refused rather than skipped. It throws before anything
+    # here touches Docker, so a typo fails while the stack is still untouched.
+    foreach ($resolvedPluginComposeFile in (Resolve-PluginComposeFile -EnvValues $envValues -ScriptRoot $PSScriptRoot)) {
+        Write-Output "Using plugin Docker Compose file '$resolvedPluginComposeFile'."
+        $files += @("-f", $resolvedPluginComposeFile)
     }
 
     $enableDotnetDiagnostics = [string]::Equals(

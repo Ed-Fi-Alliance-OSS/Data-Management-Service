@@ -528,6 +528,77 @@ function Get-EnvValue {
 }
 
 
+function Resolve-PluginComposeFile {
+    <#
+    .SYNOPSIS
+    Resolves DMS_PLUGINS_COMPOSE_FILES into absolute compose file paths, in the order written.
+
+    .DESCRIPTION
+    Plugin acquisition, and whatever else a deployment layers beside it. Semicolon-delimited and
+    returned in the order written, because the two halves are separate files: one of the committed
+    acquisition overlays, plus the deployment's own override naming Plugins:Allowed. Neither is
+    required and an unset or whitespace value resolves to nothing, which is the shipped default.
+
+    Every path is resolved and validated here, before the caller touches Docker, so a typo fails
+    while the stack is still untouched rather than halfway through a recreate. An empty segment in
+    a non-empty list is refused rather than skipped: it is a stray or doubled separator, and
+    silently dropping one would leave an operator with a deployment missing a file they wrote.
+
+    One implementation rather than one per launcher. Both the local-image and published-image
+    launchers compose the same committed overlays, and the deployment proof in
+    eng/docker-compose/tests/plugin-deployment asserts on these exact diagnostic strings, so a
+    second copy would be a second set of messages to keep in step.
+
+    .PARAMETER EnvValues
+    The parsed environment file, as ReadValuesFromEnvFile returns it.
+
+    .PARAMETER ScriptRoot
+    The directory a relative entry resolves against, which is the calling launcher's own directory.
+    #>
+    param(
+        [hashtable]$EnvValues,
+
+        [Parameter(Mandatory)]
+        [string]$ScriptRoot
+    )
+
+    $pluginComposeFiles = Get-EnvValue -EnvValues $EnvValues -Name "DMS_PLUGINS_COMPOSE_FILES" -DefaultValue ""
+
+    if ([string]::IsNullOrWhiteSpace($pluginComposeFiles)) {
+        return @()
+    }
+
+    $resolved = @()
+
+    foreach ($pluginComposeFile in $pluginComposeFiles.Split(';')) {
+        $trimmed = $pluginComposeFile.Trim()
+
+        if ([string]::IsNullOrEmpty($trimmed)) {
+            throw "DMS_PLUGINS_COMPOSE_FILES contains an empty entry: '$pluginComposeFiles'"
+        }
+
+        $path =
+            if ([System.IO.Path]::IsPathRooted($trimmed)) {
+                $trimmed
+            }
+            else {
+                Join-Path $ScriptRoot $trimmed
+            }
+
+        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+            throw "DMS_PLUGINS_COMPOSE_FILES does not identify a compose file: $path"
+        }
+
+        $resolved += $path
+    }
+
+    # Returned unwrapped, so that a caller's @() or foreach sees the paths themselves. Wrapping the
+    # array in a comma would survive an @() as one nested array, and the caller would append that
+    # array to a compose argument vector as a single element.
+    return $resolved
+}
+
+
 function Resolve-BootstrapAdminClient {
     <#
     .SYNOPSIS
