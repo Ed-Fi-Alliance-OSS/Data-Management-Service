@@ -656,7 +656,290 @@ function Test-BuildCommandAbsent {
     }
 }
 
+# -------------------------------------------------------------------------------------------------
+# Orchestration decisions: what the harness is allowed to touch, and what it must put back.
+# -------------------------------------------------------------------------------------------------
+
+function Get-OccupiedHostResource {
+    <#
+    .SYNOPSIS
+    Lists everything that would make this deployment collide with something already on the host.
+
+    .DESCRIPTION
+    The published stack claims resources whose names are fixed, so a project rename buys nothing:
+    postgresql.yml declares container_name dms-postgresql, published-config.yml declares
+    ed-fi-api-config-service, swagger-ui.yml declares ed-fi-api-swagger-ui and keycloak.yml declares
+    dms-keycloak. It also claims a compose project, that project's named volumes, host ports, the
+    shared external dms network, and eng/docker-compose/.bootstrap, which is one fixed path shared
+    with the local stack.
+
+    Every one of those is refused when it is already there. There is no override: the harness is
+    destructive to what it does claim, and the only safe answer to "somebody else is using this" is
+    to stop, name the thing, and let a human decide.
+
+    The external network is deliberately NOT refused for existing. It is shared infrastructure that
+    other stacks join and that this run neither creates nor removes. What is refused is a container
+    attached to it that this run did not create, because that is a live neighbour rather than an
+    empty network.
+    #>
+    param(
+        [string[]] $ExistingContainerName = @(),
+        [string[]] $ProjectContainer = @(),
+        [string[]] $ProjectVolume = @(),
+        [string[]] $NetworkAttachment = @(),
+        [bool] $BootstrapPresent = $false,
+        [int[]] $BoundPort = @(),
+        [int[]] $RequiredPort = @()
+    )
+
+    # The names the compose files hard-code, which no project name can move.
+    $reservedName = @('dms-postgresql', 'ed-fi-api-config-service', 'ed-fi-api-swagger-ui', 'dms-keycloak', 'ed-fi-api')
+
+    $blocker = @()
+
+    foreach ($name in @($ExistingContainerName | Where-Object { $_ -in $reservedName })) {
+        $blocker += "a container named '$name' already exists, and the compose files that declare it use that exact name regardless of project"
+    }
+
+    foreach ($name in $ProjectContainer) {
+        $blocker += "the compose project already has a container '$name', so a previous run was not torn down"
+    }
+
+    foreach ($name in $ProjectVolume) {
+        $blocker += "the compose project already has a volume '$name', which would carry state into this run"
+    }
+
+    foreach ($name in $NetworkAttachment) {
+        $blocker += "container '$name' is attached to the shared external network and was not created by this run"
+    }
+
+    if ($BootstrapPresent) {
+        $blocker += 'eng/docker-compose/.bootstrap already exists, and it is one fixed path shared with the local stack rather than something this run can own'
+    }
+
+    foreach ($port in @($RequiredPort | Where-Object { $_ -in $BoundPort })) {
+        $blocker += "host port $port is already bound"
+    }
+
+    return [pscustomobject]@{
+        Available = ($blocker.Count -eq 0)
+        Blocker   = $blocker
+    }
+}
+
+function Get-StockProofOwnership {
+    <#
+    .SYNOPSIS
+    An empty record of what this run has taken responsibility for.
+    #>
+    return [pscustomobject]@{
+        Resource = [System.Collections.Generic.List[pscustomobject]]::new()
+    }
+}
+
+function Add-OwnedResource {
+    <#
+    .SYNOPSIS
+    Records ownership of a resource BEFORE the operation that may create it.
+
+    .DESCRIPTION
+    Ownership is claimed ahead of the attempt rather than after it succeeds. An operation that
+    creates a container and then fails waiting for it has created something, and a flag set only on
+    success would leave that behind. So the record is written first and the cleanup plan below
+    includes everything claimed, whether or not the attempt that claimed it returned.
+    #>
+    param(
+        [Parameter(Mandatory)] $Ownership,
+        [Parameter(Mandatory)] [ValidateSet('ComposeProject', 'Directory', 'Image')] [string] $Kind,
+        [Parameter(Mandatory)] [string] $Name
+    )
+
+    if (-not @($Ownership.Resource | Where-Object { $_.Kind -eq $Kind -and $_.Name -eq $Name })) {
+        $Ownership.Resource.Add([pscustomobject]@{ Kind = $Kind; Name = $Name })
+    }
+
+    return $Ownership
+}
+
+function Get-CleanupPlan {
+    <#
+    .SYNOPSIS
+    What to tear down, in order, given what this run claimed.
+
+    .DESCRIPTION
+    Only what was claimed. A run that refused at the preflight claimed nothing and therefore tears
+    down nothing, which is what stops a workflow's always() step from removing a stack it never
+    created. The compose project goes first, because it owns the containers that hold the
+    directories open.
+    #>
+    param($Ownership)
+
+    if ($null -eq $Ownership) {
+        return @()
+    }
+
+    $order = @{ ComposeProject = 0; Image = 1; Directory = 2 }
+
+    return @(
+        $Ownership.Resource |
+            Sort-Object -Property @{ Expression = { $order[$_.Kind] } } |
+            ForEach-Object { [pscustomobject]@{ Kind = $_.Kind; Name = $_.Name } }
+    )
+}
+
+function Get-ContractPackageReference {
+    <#
+    .SYNOPSIS
+    The version string to put in a PackageReference so NuGet resolves exactly the pinned version.
+
+    .DESCRIPTION
+    The pin records a version identity. NuGet reads a bare version in a PackageReference as a floor,
+    so the identity alone does not make the restore resolve it; the bracketed form does. This is the
+    one place that conversion happens, and Test-RestoredPackageVersion is the check that it worked.
+    #>
+    param([Parameter(Mandatory)] [ValidateNotNullOrEmpty()] [string] $Version)
+
+    if ($Version.StartsWith('[') -or $Version.StartsWith('(')) {
+        throw "The pinned version '$Version' is already NuGet range syntax. The pin records a version identity, so this would produce a doubly bracketed reference."
+    }
+
+    return "[$Version]"
+}
+
+function Test-RestoredPackageVersion {
+    <#
+    .SYNOPSIS
+    Decides whether what was actually restored is what the pin named.
+
+    .DESCRIPTION
+    Bracketing asks for an exact version; this establishes that the ask was honoured. A restore can
+    still produce something else - a floating dependency, a package the cache already held, a feed
+    that resolved differently - and the whole point of pinning is that the proof runs against the
+    artifact the pin names.
+    #>
+    param(
+        [Parameter(Mandatory)] [string] $PackageId,
+        [Parameter(Mandatory)] [string] $ExpectedVersion,
+        [string] $RestoredVersion
+    )
+
+    if ([string]::IsNullOrWhiteSpace($RestoredVersion)) {
+        return [pscustomobject]@{
+            Verified = $false
+            Reason   = "no restored version was observed for $PackageId, so what the restore produced is unknown"
+        }
+    }
+
+    if ($RestoredVersion -cne $ExpectedVersion) {
+        return [pscustomobject]@{
+            Verified = $false
+            Reason   = "$PackageId restored as $RestoredVersion but the pin names $ExpectedVersion"
+        }
+    }
+
+    return [pscustomobject]@{ Verified = $true; Reason = "$PackageId restored as $ExpectedVersion" }
+}
+
+function Get-SchemaToolInstallArgument {
+    <#
+    .SYNOPSIS
+    The dotnet tool install arguments that resolve exactly the pinned SchemaTools package.
+
+    .DESCRIPTION
+    EdFi.Api.SchemaTools is packed as a DotnetTool with the command name api-schema-tools, so the
+    released tool is installed rather than built. --tool-path keeps it out of the machine-wide tool
+    store, and the resolved executable is handed to the bootstrap through DMS_SCHEMA_TOOL_PATH,
+    which Resolve-DmsSchemaTool honours ahead of every path that would otherwise find this
+    worktree's build output.
+    #>
+    param(
+        [Parameter(Mandatory)] [ValidateNotNullOrEmpty()] [string] $Version,
+        [Parameter(Mandatory)] [ValidateNotNullOrEmpty()] [string] $ToolPath,
+        [Parameter(Mandatory)] [ValidateNotNullOrEmpty()] [string] $FeedUrl
+    )
+
+    return @(
+        'tool', 'install', 'EdFi.Api.SchemaTools'
+        '--tool-path', $ToolPath
+        # Exact, not a floor: dotnet tool install resolves the highest matching version otherwise,
+        # and "highest" is not "the one the pin names".
+        '--version', $Version
+        '--add-source', $FeedUrl
+    )
+}
+
+function Get-StockProofEnvironmentContent {
+    <#
+    .SYNOPSIS
+    The environment file the stock deployment runs from, composed out of the pin.
+
+    .DESCRIPTION
+    One file, so the schema preparation phase and the container cannot disagree about anything. In
+    particular SCHEMA_PACKAGES is written exactly once, from the pin's own set, because that value
+    is what selects schema content on both sides.
+
+    The two images are pinned independently. DMS_IMAGE_TAG is deliberately never written: it selects
+    both published images at once, and a digest belongs to one repository.
+    #>
+    param(
+        [Parameter(Mandatory)] $Pin,
+        [Parameter(Mandatory)] [string] $BaseContent,
+        [Parameter(Mandatory)] [string] $PluginComposeFiles,
+        [string] $PluginMountSource,
+        [string] $PluginPackageUrl,
+        [string] $PluginPackageSha256,
+        [string] $PluginName,
+        [string] $PluginFeedSource,
+        [string] $AllowedPlugins = ''
+    )
+
+    $line = [System.Collections.Generic.List[string]]::new()
+    foreach ($existing in ($BaseContent -split "`r?`n")) {
+        $line.Add($existing)
+    }
+
+    $line.Add('')
+    $line.Add('# Written by Invoke-StockImagePluginProof.ps1 from the stock image pin. Do not edit.')
+
+    $edFiApi = "$($Pin.edFiApi.repository):$($Pin.edFiApi.tag)@$($Pin.edFiApi.digest)"
+    $configurationService = "$($Pin.configurationService.repository)@$($Pin.configurationService.digest)"
+
+    $line.Add("DMS_STOCK_IMAGE_REFERENCE=$edFiApi")
+    $line.Add("DMS_CONFIG_DOCKER_IMAGE=$configurationService")
+    $line.Add("DMS_CONFIG_DATA_STANDARD_VERSION=$($Pin.provisioning.dataStandardVersion)")
+
+    # Single line and single quoted, which is the form .env.bootstrap.ds52 uses and the form Compose
+    # hands to the container verbatim.
+    $schemaPackages = ($Pin.provisioning.schemaPackages | ForEach-Object {
+            [ordered]@{ name = $_.name; version = $_.version; feedUrl = $_.feedUrl }
+        } | ConvertTo-Json -Depth 4 -Compress)
+
+    if ($schemaPackages -notmatch '^\[') {
+        # ConvertTo-Json renders a one-element set as an object; SCHEMA_PACKAGES is always an array.
+        $schemaPackages = "[$schemaPackages]"
+    }
+
+    $line.Add("SCHEMA_PACKAGES='$schemaPackages'")
+    $line.Add("DMS_PLUGINS_COMPOSE_FILES=$PluginComposeFiles")
+    $line.Add("DMS_PLUGINS_ALLOWED=$AllowedPlugins")
+
+    foreach ($optional in @(
+            @{ Key = 'DMS_PLUGINS_MOUNT_SOURCE'; Value = $PluginMountSource }
+            @{ Key = 'PLUGIN_FEED_SOURCE'; Value = $PluginFeedSource }
+            @{ Key = 'PLUGIN_PACKAGE_URL'; Value = $PluginPackageUrl }
+            @{ Key = 'PLUGIN_PACKAGE_SHA256'; Value = $PluginPackageSha256 }
+            @{ Key = 'PLUGIN_NAME'; Value = $PluginName }
+        )) {
+        if (-not [string]::IsNullOrWhiteSpace($optional.Value)) {
+            $line.Add("$($optional.Key)=$($optional.Value)")
+        }
+    }
+
+    return ($line -join "`n")
+}
+
 Export-ModuleMember -Function @(
+    # Decisions about recorded evidence.
     'Get-StockProofRepository'
     'Protect-StockProofText'
     'Test-FetchFailedOnChecksum'
@@ -667,4 +950,14 @@ Export-ModuleMember -Function @(
     'Get-RemoteImageDigest'
     'Test-RemoteImageDescriptor'
     'Test-BuildCommandAbsent'
+
+    # Decisions about what the run may touch, and what it must put back.
+    'Get-OccupiedHostResource'
+    'Get-StockProofOwnership'
+    'Add-OwnedResource'
+    'Get-CleanupPlan'
+    'Get-ContractPackageReference'
+    'Test-RestoredPackageVersion'
+    'Get-SchemaToolInstallArgument'
+    'Get-StockProofEnvironmentContent'
 )
