@@ -8,7 +8,6 @@ using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
-using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure.Extensions;
 using Microsoft.Extensions.Options;
 
@@ -104,10 +103,10 @@ public class XsdMetadataEndpointModule(IOptions<AppSettings> appSettings) : IEnd
             return;
         }
 
-        const string fileListSegment = "/files";
+        const string FileListSegment = "/files";
         var url = httpContext.Request.UrlWithPathSegment();
-        var baseUrl = url.EndsWith(fileListSegment, StringComparison.Ordinal)
-            ? $"{url[..^fileListSegment.Length]}/"
+        var baseUrl = url.EndsWith(FileListSegment, StringComparison.Ordinal)
+            ? $"{url[..^FileListSegment.Length]}/"
             : url;
 
         var withFullPath = new List<string>();

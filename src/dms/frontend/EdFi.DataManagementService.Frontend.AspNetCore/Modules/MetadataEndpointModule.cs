@@ -14,7 +14,6 @@ using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
-using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure.Extensions;
 using Microsoft.Extensions.Options;
 using FrontendAppSettings = EdFi.DataManagementService.Frontend.AspNetCore.Configuration.AppSettings;
@@ -594,13 +593,13 @@ public partial class MetadataEndpointModule(IOptions<FrontendAppSettings> appSet
 
         if (apiService.HasChangeQueriesOpenApiSpecification())
         {
-            const string specificationsSuffix = "/specifications";
+            const string SpecificationsSuffix = "/specifications";
             string requestPath = httpContext.Request.Path.ToString().TrimEnd('/');
             string metadataPrefix = requestPath.EndsWith(
                 "/metadata/specifications",
                 StringComparison.OrdinalIgnoreCase
             )
-                ? baseUrl[..^specificationsSuffix.Length]
+                ? baseUrl[..^SpecificationsSuffix.Length]
                 : $"{httpContext.Request.RootUrl()}/metadata";
             sections.Add(
                 new RouteInformation(
