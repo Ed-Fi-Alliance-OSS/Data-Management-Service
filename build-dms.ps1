@@ -875,24 +875,82 @@ function IntegrationTests {
     Invoke-Execute { RunTests -Filter "*.Tests.Integration" }
 }
 
+function Invoke-WithE2EIdentityEnvironment {
+    param(
+        [Parameter(Mandatory)]
+        [string] $EnvironmentFile,
+
+        [Parameter(Mandatory)]
+        [ValidateSet("keycloak", "self-contained")]
+        [string] $IdentityProvider,
+
+        [Parameter(Mandatory)]
+        [scriptblock] $Action
+    )
+
+    Import-Module -Name "$PSScriptRoot/eng/docker-compose/env-utility.psm1" -Force
+    $environmentValues = ReadValuesFromEnvFile $EnvironmentFile
+    $prefix = if ($IdentityProvider -eq "keycloak") { "KEYCLOAK" } else { "SELF_CONTAINED" }
+    # Match startup's provider-specific endpoint selection. Startup restores its temporary values;
+    # tests that recreate DMS with Compose must receive the selected identity settings explicitly.
+    $identityEnvironment = @{
+        DMS_CONFIG_IDENTITY_PROVIDER = $IdentityProvider
+        OAUTH_TOKEN_ENDPOINT = $environmentValues["${prefix}_OAUTH_TOKEN_ENDPOINT"]
+        DMS_JWT_AUTHORITY = $environmentValues["${prefix}_DMS_JWT_AUTHORITY"]
+        DMS_JWT_METADATA_ADDRESS = $environmentValues["${prefix}_DMS_JWT_METADATA_ADDRESS"]
+        DMS_CONFIG_IDENTITY_AUTHORITY = $environmentValues["${prefix}_DMS_JWT_AUTHORITY"]
+    }
+    $previousEnvironment = @{}
+    foreach ($name in $identityEnvironment.Keys) {
+        $previousEnvironment[$name] = @{
+            Exists = Test-Path -LiteralPath "Env:$name"
+            Value = [Environment]::GetEnvironmentVariable($name)
+        }
+    }
+
+    try {
+        foreach ($name in $identityEnvironment.Keys) {
+            Set-Item -LiteralPath "Env:$name" -Value $identityEnvironment[$name]
+        }
+        & $Action
+    }
+    finally {
+        foreach ($name in $identityEnvironment.Keys) {
+            $previous = $previousEnvironment[$name]
+            if ($previous.Exists) {
+                Set-Item -LiteralPath "Env:$name" -Value $previous.Value
+            }
+            else {
+                Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
+            }
+        }
+    }
+}
+
 function RunE2E {
     param(
         [string]
         $TestFilter,
 
         [pscustomobject]
-        $E2ETestSettings
+        $E2ETestSettings,
+
+        [Parameter(Mandatory)]
+        [ValidateSet("keycloak", "self-contained")]
+        [string] $IdentityProvider
     )
 
     # Run only the standard E2E tests, excluding instance management tests
     # Instance management tests require special setup (route qualifiers, additional databases)
     # and should be run separately using the instance management test scripts
-    Invoke-WithE2ETestProcessContext -E2ETestSettings $E2ETestSettings -Action {
-        Invoke-Execute {
-            RunTests `
-                -Filter "EdFi.DataManagementService.Tests.E2E" `
-                -TestFilter $TestFilter `
-                -ResultNameSuffix $E2ETestSettings.TestResultSuffix
+    Invoke-WithE2EIdentityEnvironment -EnvironmentFile $E2ETestSettings.EnvironmentFile -IdentityProvider $IdentityProvider -Action {
+        Invoke-WithE2ETestProcessContext -E2ETestSettings $E2ETestSettings -Action {
+            Invoke-Execute {
+                RunTests `
+                    -Filter "EdFi.DataManagementService.Tests.E2E" `
+                    -TestFilter $TestFilter `
+                    -ResultNameSuffix $E2ETestSettings.TestResultSuffix
+            }
         }
     }
 }
@@ -1359,7 +1417,7 @@ function E2ETests {
                 -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild `
                 -Configuration $Configuration -UsePrebuiltTools:$UsePrebuiltOutput -IdentityProvider $IdentityProvider
         }
-        Invoke-Step { RunE2E -TestFilter $TestFilter -E2ETestSettings $e2eTestSettings }
+        Invoke-Step { RunE2E -TestFilter $TestFilter -E2ETestSettings $e2eTestSettings -IdentityProvider $IdentityProvider }
         return
     }
     if ($CdcSettingsPath -or $CdcBindingStatePath) { throw 'CDC settings/state parameters require -EnableKafkaCdc.' }
@@ -1395,7 +1453,7 @@ function E2ETests {
             -StartDmsAfterProvisioning:$deferDmsStart
     }
 
-    Invoke-Step { RunE2E -TestFilter $TestFilter -E2ETestSettings $e2eTestSettings }
+    Invoke-Step { RunE2E -TestFilter $TestFilter -E2ETestSettings $e2eTestSettings -IdentityProvider $IdentityProvider }
 }
 
 function Wait-ForConfigServiceAndClientRegistration {
