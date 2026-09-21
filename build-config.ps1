@@ -327,6 +327,15 @@ function E2ETests {
             $env:POSTGRES_DB_NAME = $envValues["POSTGRES_DB_NAME"]
             $env:MSSQL_SA_PASSWORD = $envValues["MSSQL_SA_PASSWORD"]
             $env:MSSQL_PORT = $envValues["MSSQL_PORT"]
+            # The role-claim scenario compares a token's claim against the role and claim type the
+            # stack was started with, so it reads the same values the containers received. Assigned
+            # unconditionally, like the neighbours above, so a key absent from the env file clears
+            # a stale value rather than leaving the scenario comparing against another lane. The
+            # self-contained provider names its claim through Authentication:RoleClaimAttribute,
+            # which no checked-in environment sets; it is carried through for a lane that does.
+            $env:DMS_CONFIG_IDENTITY_ROLE_CLAIM_TYPE = $envValues["DMS_CONFIG_IDENTITY_ROLE_CLAIM_TYPE"]
+            $env:DMS_CONFIG_IDENTITY_CLIENT_ROLE = $envValues["DMS_CONFIG_IDENTITY_CLIENT_ROLE"]
+            $env:Authentication__RoleClaimAttribute = $envValues["Authentication__RoleClaimAttribute"]
         }
         finally {
             Pop-Location

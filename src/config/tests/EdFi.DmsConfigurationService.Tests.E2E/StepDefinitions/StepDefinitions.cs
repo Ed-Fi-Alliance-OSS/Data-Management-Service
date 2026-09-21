@@ -740,6 +740,34 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
         dataStoreIds.Should().BeEmpty("a client with no datastore assignment has no datastore ids");
     }
 
+    /// <summary>
+    /// Reads the role claim of the access token in the current response and compares it against
+    /// the role and claim type the running stack was configured with. A token that was merely
+    /// issued proves nothing here: the claim has to be present and carry the configured role,
+    /// which is what a client's authorization actually depends on.
+    /// </summary>
+    [Then("the token carries the configured client role claim")]
+    public async Task ThenTheTokenCarriesTheConfiguredClientRoleClaim()
+    {
+        JsonNode responseJson = JsonNode.Parse(await _apiResponse.TextAsync())!;
+        responseJson["access_token"].Should().NotBeNull("response should include an access_token");
+        string accessToken = responseJson["access_token"]!.GetValue<string>();
+
+        string claimType = RoleClaimConfiguration.ExpectedRoleClaimType();
+        string expectedRole = RoleClaimConfiguration.ExpectedClientRole();
+
+        JwtTokenValidator
+            .TryGetClaimValues(accessToken, claimType, out IReadOnlyList<string> roles)
+            .Should()
+            .BeTrue($"the token should carry a '{claimType}' claim ({RoleClaimConfiguration.Describe()})");
+        roles
+            .Should()
+            .Contain(
+                expectedRole,
+                $"the client's token should carry the configured role ({RoleClaimConfiguration.Describe()})"
+            );
+    }
+
     [When("a token request is attempted with the captured application credentials")]
     public async Task WhenATokenRequestIsAttemptedWithTheCapturedApplicationCredentials()
     {
