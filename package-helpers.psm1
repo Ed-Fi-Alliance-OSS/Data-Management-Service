@@ -11,7 +11,11 @@ $ErrorActionPreference = "Stop"
 # functions below compare feed-listed versions against a contract's declared version by exactly the
 # same rules. A second copy of "what makes two versions the same version" is how the release lane
 # and the publish lane would come to disagree.
-Import-Module (Join-Path $PSScriptRoot "eng/verification/ContractPackageComparison.psm1") -Force
+#
+# No -Force. Import-Module -Force removes the module from the session before re-importing it into
+# this one's scope, so importing package-helpers would strip ContractPackageComparison's commands
+# from a caller that had imported it directly.
+Import-Module (Join-Path $PSScriptRoot "eng/verification/ContractPackageComparison.psm1")
 
 <#
 .DESCRIPTION
@@ -548,7 +552,8 @@ version is not on the feed to be promoted now, whether it was never pushed or ha
 deleted; either way the release cannot proceed on that contract.
 
 The message is returned, not also written to the output stream: a caller that captured it would
-otherwise receive it twice.
+otherwise receive it twice. The promotion's own output is discarded for the same reason, and under
+-WhatIf the message says what would happen rather than reporting a promotion that did not run.
 
 .EXAMPLE
 Invoke-ContractPromotion -PackagesURL $url -Username $user -Password $secret -ServiceIndexUrl $index -PackageName EdFi.Api.Plugins -Version 1.0.0
@@ -629,17 +634,23 @@ function Invoke-ContractPromotion {
         }
     }
 
-    if ($PSCmdlet.ShouldProcess("$PackageName $Version", "Promote to the $ReleaseViewName view")) {
-        & $Promote @{
-            PackagesURL = $PackagesURL
-            Username    = $Username
-            Password    = $Password
-            ViewId      = $ReleaseViewName.ToLowerInvariant()
-            ReleaseRef  = $Version
-            Version     = $Version
-            PackageName = $PackageName
-        }
+    if (-not $PSCmdlet.ShouldProcess("$PackageName $Version", "Promote to the $ReleaseViewName view")) {
+        return "$PackageName $Version would be promoted to the $ReleaseViewName view."
     }
+
+    # Out-Null, because the promotion is performed for its effect and not for its output. The
+    # default seam is Invoke-Promote, which writes to the success stream, so an uncaptured call
+    # would put that on this function's output and make the returned message the second element of
+    # an array rather than the string the caller is told it gets.
+    & $Promote @{
+        PackagesURL = $PackagesURL
+        Username    = $Username
+        Password    = $Password
+        ViewId      = $ReleaseViewName.ToLowerInvariant()
+        ReleaseRef  = $Version
+        Version     = $Version
+        PackageName = $PackageName
+    } | Out-Null
 
     return "$PackageName $Version promoted to the $ReleaseViewName view."
 }

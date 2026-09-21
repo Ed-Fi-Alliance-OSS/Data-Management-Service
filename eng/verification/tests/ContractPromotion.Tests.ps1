@@ -245,6 +245,46 @@ Describe "Invoke-ContractPromotion at release time" {
         $recorder.Calls[0].PackageName | Should -BeExactly $script:packageName
     }
 
+    # The default seam, which every case above replaces. Only the HTTP cmdlet is mocked, so the
+    # real Invoke-Promote runs: it writes to the success stream, and an uncaptured call would put
+    # that on this function's output and make the message the second element of an array.
+    It "returns the message alone when the default promotion is used" {
+        Mock -ModuleName package-helpers Invoke-WebRequest { return [pscustomobject]@{ StatusCode = 200 } }
+
+        $result = Invoke-ContractPromotion `
+            -PackagesURL "https://packages.invalid" `
+            -Username "user" `
+            -Password $script:password `
+            -ServiceIndexUrl $script:serviceIndexUrl `
+            -PackageName $script:packageName `
+            -Version "1.0.0" `
+            -GetViewVersions (Get-ViewLookup -LocalVersions @("1.0.0"))
+
+        $result | Should -BeOfType ([string])
+        $result | Should -BeExactly "$($script:packageName) 1.0.0 promoted to the Release view."
+        Should -Invoke Invoke-WebRequest -ModuleName package-helpers -Times 1 -Exactly
+    }
+
+    # -WhatIf must not report a promotion it skipped: the message is the only thing the release
+    # step logs, so one that said "promoted" would describe a push that never happened.
+    It "reports what it would do under -WhatIf, and promotes nothing" {
+        $recorder = Get-PromotionRecorder
+
+        $result = Invoke-ContractPromotion `
+            -PackagesURL "https://packages.invalid" `
+            -Username "user" `
+            -Password $script:password `
+            -ServiceIndexUrl $script:serviceIndexUrl `
+            -PackageName $script:packageName `
+            -Version "1.0.0" `
+            -GetViewVersions (Get-ViewLookup -LocalVersions @("1.0.0")) `
+            -Promote $recorder.Script `
+            -WhatIf
+
+        $result | Should -BeExactly "$($script:packageName) 1.0.0 would be promoted to the Release view."
+        $recorder.Calls.Count | Should -Be 0
+    }
+
     # Without this branch a version that is not on the feed is indistinguishable from one already
     # promoted, and a missed publish would log "nothing to do" and exit zero.
     It "fails when the version is in neither view, naming the package and the version" {
