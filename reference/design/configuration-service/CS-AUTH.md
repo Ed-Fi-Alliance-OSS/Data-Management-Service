@@ -111,9 +111,11 @@ containment as incomplete until introspection confirms it.
 This matters because silent no-ops are reachable in practice, not just in theory:
 a target token whose `client_id` differs from the caller's only by letter case is
 rejected by the case-sensitive ownership comparison even though both tokens belong
-to the same registered client (see `docs/parking-lot.md`). An operator who assumed
-`200 OK` meant success would believe a leaked credential was contained when it was
-not.
+to the same registered client. Such a pair is possible because a token is minted
+with the `client_id` casing the client supplied at `/connect/token` rather than the
+stored canonical casing, while client lookup is case-insensitive under SQL Server's
+default collation. An operator who assumed `200 OK` meant success would believe a
+leaked credential was contained when it was not.
 
 ### Which provider modes actually perform the check
 
