@@ -32,6 +32,13 @@ Describe 'Stock image pin readiness' {
                 provisioning         = [ordered]@{
                     schemaToolsPackageVersion = '8.0.1-alpha.0.7'
                     dataStandardVersion       = '5.2'
+                    schemaPackages            = @(
+                        [ordered]@{
+                            name    = 'EdFi.DataStandard52.ApiSchema'
+                            version = '1.0.335'
+                            feedUrl = 'https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json'
+                        }
+                    )
                 }
                 contracts            = [ordered]@{
                     pluginsPackageVersion          = '1.0.0'
@@ -142,6 +149,11 @@ Describe 'Stock image pin readiness' {
             $filled.release.publicationRunUrl = 'https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/1'
             $filled.provisioning.schemaToolsPackageVersion = '8.0.1-alpha.0.7'
             $filled.provisioning.dataStandardVersion = '5.2'
+            $filled.provisioning.schemaPackages = @([pscustomobject]@{
+                    name    = 'EdFi.DataStandard52.ApiSchema'
+                    version = '1.0.335'
+                    feedUrl = 'https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json'
+                })
             $filled.contracts.pluginsPackageVersion = '1.0.0'
             $filled.contracts.customValidationPackageVersion = '1.0.0'
 
@@ -226,6 +238,7 @@ Describe 'Stock image pin readiness' {
             'release.publicationRunUrl'
             'provisioning.schemaToolsPackageVersion'
             'provisioning.dataStandardVersion'
+            'provisioning.schemaPackages'
             'contracts.pluginsPackageVersion'
             'contracts.customValidationPackageVersion'
         ) {
@@ -273,6 +286,84 @@ Describe 'Stock image pin readiness' {
         ) {
             { Invoke-Readiness -Pin (New-PublishedPin -Override @{ $Field = $Value }) } |
                 Should -Throw '*this proof is only about*'
+        }
+
+        It 'refuses a non-exact <Field>: <Case>' -ForEach @(
+            foreach ($field in @(
+                    'provisioning.schemaToolsPackageVersion'
+                    'contracts.pluginsPackageVersion'
+                    'contracts.customValidationPackageVersion')) {
+                @{ Field = $field; Case = 'a bracketed exact version'; Value = '[1.0.0]' }
+                @{ Field = $field; Case = 'a range'; Value = '[1.0.0,2.0.0)' }
+                @{ Field = $field; Case = 'a wildcard'; Value = '1.0.*' }
+                @{ Field = $field; Case = 'a two-part version'; Value = '1.0' }
+            }
+        ) {
+            # NuGet reads a bare version as a floor, so every one of these would let a restore
+            # resolve a package this pin does not name.
+            { Invoke-Readiness -Pin (New-PublishedPin -Override @{ $Field = $Value }) } |
+                Should -Throw '*does not match*'
+        }
+
+        It 'accepts an exact prerelease version, which is what a pinned alpha release carries' {
+            (Invoke-Readiness -Pin (New-PublishedPin -Override @{
+                        'contracts.pluginsPackageVersion' = '1.0.0-alpha.3'
+                    })).ready | Should -BeExactly 'true'
+        }
+
+        It 'refuses an empty schema package set rather than letting the catalog pick' {
+            { Invoke-Readiness -Pin (New-PublishedPin -Override @{ 'provisioning.schemaPackages' = @() }) } |
+                Should -Throw '*schemaPackages*'
+        }
+
+        It 'refuses a schema package missing <_>' -ForEach @('name', 'version', 'feedUrl') {
+            $package = [ordered]@{
+                name    = 'EdFi.DataStandard52.ApiSchema'
+                version = '1.0.335'
+                feedUrl = 'https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json'
+            }
+            $package.Remove($_)
+
+            { Invoke-Readiness -Pin (New-PublishedPin -Override @{ 'provisioning.schemaPackages' = @($package) }) } |
+                Should -Throw "*is missing $_*"
+        }
+
+        It 'refuses a schema package version that is not exact: <_>' -ForEach @('1.0.*', '[1.0.335,2.0.0)', '1.0') {
+            $package = [ordered]@{
+                name    = 'EdFi.DataStandard52.ApiSchema'
+                version = $_
+                feedUrl = 'https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json'
+            }
+
+            { Invoke-Readiness -Pin (New-PublishedPin -Override @{ 'provisioning.schemaPackages' = @($package) }) } |
+                Should -Throw '*not an exact version*'
+        }
+
+        It 'refuses a schema package feed that is not an https address' {
+            $package = [ordered]@{
+                name    = 'EdFi.DataStandard52.ApiSchema'
+                version = '1.0.335'
+                feedUrl = '../local-folder-feed'
+            }
+
+            { Invoke-Readiness -Pin (New-PublishedPin -Override @{ 'provisioning.schemaPackages' = @($package) }) } |
+                Should -Throw '*not an https feed address*'
+        }
+
+        It 'names the offending entry when more than one schema package is pinned' {
+            $good = [ordered]@{
+                name    = 'EdFi.DataStandard52.ApiSchema'
+                version = '1.0.335'
+                feedUrl = 'https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json'
+            }
+            $bad = [ordered]@{
+                name    = 'EdFi.DataStandard52.TPDM.ApiSchema'
+                version = '1.0.*'
+                feedUrl = $good.feedUrl
+            }
+
+            { Invoke-Readiness -Pin (New-PublishedPin -Override @{ 'provisioning.schemaPackages' = @($good, $bad) }) } |
+                Should -Throw '*schemaPackages`[1`]*'
         }
 
         It 'refuses a tag the pinned release does not publish' {

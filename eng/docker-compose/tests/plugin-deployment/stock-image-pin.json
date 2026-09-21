@@ -24,11 +24,21 @@
         "the Configuration Service still carries nothing but the moving 'pre' tag, and a bare digest",
         "is honest about that where a tag plus digest would imply a version-specific tag exists.",
         "",
-        "tooling and contracts pin what the harness consumes rather than builds: the released",
+        "provisioning and contracts pin what the harness consumes rather than builds: the released",
         "SchemaTools package that provisions the database the pinned runtime validates, and the two",
         "published contract packages the fixture plugin compiles against. Building the fixture from",
         "this branch against this branch's contracts would test version skew rather than plugin",
-        "loading, and would stop working the moment either contract surface moved."
+        "loading, and would stop working the moment either contract surface moved.",
+        "",
+        "schemaPackages is the whole of what selects schema content, and dataStandardVersion is only",
+        "a label. eng/docker-compose/.env.bootstrap.ds52 sets DMS_CONFIG_DATA_STANDARD_VERSION to",
+        "'5.2' and, quite separately, SCHEMA_PACKAGES to exact package identities; a pin carrying",
+        "only the label would take whichever versions this branch's overlay happened to name, which",
+        "is the current-worktree schema content this proof must not be running against. Each entry",
+        "carries name, an exact version, and the feed it came from, so a catalog default or an",
+        "ambient feed cannot substitute an input. The harness writes this set as the one",
+        "SCHEMA_PACKAGES value in the environment file, which is what both the schema preparation",
+        "phase and the container read, so the two cannot disagree."
     ],
     "status": "pending",
     "edFiApi": {
@@ -47,7 +57,8 @@
     },
     "provisioning": {
         "schemaToolsPackageVersion": null,
-        "dataStandardVersion": null
+        "dataStandardVersion": null,
+        "schemaPackages": null
     },
     "contracts": {
         "pluginsPackageVersion": null,

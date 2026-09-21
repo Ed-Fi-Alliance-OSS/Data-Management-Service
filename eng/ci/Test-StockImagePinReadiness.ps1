@@ -56,6 +56,14 @@ $digestPattern = '^sha256:[0-9a-f]{64}$'
 $commitPattern = '^[0-9a-f]{40}$'
 $movingTag = @('pre', 'latest')
 
+# One exact package version and nothing else. NuGet reads "1.0.0" as a floor, "[1.0.0,2.0.0)" as a
+# range and "1.0.*" as a wildcard, and any of the three would let the restore choose a package this
+# pin does not name. The bracketed exact form "[1.0.0]" is refused too: it means the right thing to
+# NuGet, but it is not what goes in a version field here, and accepting two spellings of one value
+# is how the harness and the pin end up disagreeing about what was pinned.
+$exactVersionPattern = '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?(\+[0-9A-Za-z][0-9A-Za-z.-]*)?$'
+$feedUrlPattern = '^https://'
+
 if (-not (Test-Path -LiteralPath $PinFile -PathType Leaf)) {
     throw "The stock image pin file does not exist: $PinFile"
 }
@@ -136,6 +144,7 @@ $requiredPath = @(
     , @('release', 'publicationRunUrl')
     , @('provisioning', 'schemaToolsPackageVersion')
     , @('provisioning', 'dataStandardVersion')
+    , @('provisioning', 'schemaPackages')
     , @('contracts', 'pluginsPackageVersion')
     , @('contracts', 'customValidationPackageVersion')
 )
@@ -182,10 +191,50 @@ else {
     $release = Assert-PinValue -Path @('release', 'githubRelease')
     Assert-PinValue -Path @('release', 'sourceCommit') -Pattern $commitPattern | Out-Null
     Assert-PinValue -Path @('release', 'publicationRunUrl') -Pattern '^https://' | Out-Null
-    Assert-PinValue -Path @('provisioning', 'schemaToolsPackageVersion') | Out-Null
+    Assert-PinValue -Path @('provisioning', 'schemaToolsPackageVersion') -Pattern $exactVersionPattern | Out-Null
     Assert-PinValue -Path @('provisioning', 'dataStandardVersion') | Out-Null
-    Assert-PinValue -Path @('contracts', 'pluginsPackageVersion') | Out-Null
-    Assert-PinValue -Path @('contracts', 'customValidationPackageVersion') | Out-Null
+    Assert-PinValue -Path @('contracts', 'pluginsPackageVersion') -Pattern $exactVersionPattern | Out-Null
+    Assert-PinValue -Path @('contracts', 'customValidationPackageVersion') -Pattern $exactVersionPattern | Out-Null
+
+    # The schema package set, which is what actually selects schema content: dataStandardVersion
+    # above is only the label the container reports. Each entry has to name the package, an exact
+    # version and the feed it came from, so neither a catalog default nor an ambient feed can
+    # substitute an input the pinned release was never verified against.
+    $schemaPackageValue = Get-PinValue -Path @('provisioning', 'schemaPackages')
+
+    if ($null -eq $schemaPackageValue) {
+        throw "The stock image pin is published but provisioning.schemaPackages is missing. A published pin must carry every field; publication is not partially recordable."
+    }
+
+    # Nulls filtered rather than tolerated: an array with a null hole names no package, and letting
+    # one through would reach the field loop below as an indexing failure instead of a diagnostic.
+    $schemaPackage = @($schemaPackageValue | Where-Object { $null -ne $_ })
+
+    if ($schemaPackage.Count -eq 0) {
+        throw "The stock image pin is published but provisioning.schemaPackages is empty. It has to name every schema package the pinned release was verified against; an empty set would let the catalog pick."
+    }
+
+    $index = 0
+    foreach ($package in $schemaPackage) {
+        $where = "provisioning.schemaPackages[$index]"
+
+        foreach ($field in @('name', 'version', 'feedUrl')) {
+            if ($null -eq $package.PSObject.Properties[$field] -or
+                [string]::IsNullOrWhiteSpace([string]$package.$field)) {
+                throw "The stock image pin's $where is missing $field. A schema package is identified by its name, an exact version and the feed it came from."
+            }
+        }
+
+        if ([string]$package.version -cnotmatch $exactVersionPattern) {
+            throw "The stock image pin's $where.version is '$($package.version)', which is not an exact version. A floor, a range or a wildcard would let the restore choose a package this pin does not name."
+        }
+
+        if ([string]$package.feedUrl -cnotmatch $feedUrlPattern) {
+            throw "The stock image pin's $where.feedUrl is '$($package.feedUrl)', which is not an https feed address."
+        }
+
+        $index++
+    }
 
     # The tag the recorded release actually publishes, computed by the rule the publication workflow
     # runs rather than restated here. A pin naming a release and a tag that release never produced
