@@ -313,6 +313,43 @@ Describe "ConvertTo-CanonicalXmlDocumentation keeps distinctions a reader can se
             Should -BeFalse
     }
 
+    # A re-wrap introduces line breaks, indentation and tabs; it never introduces a no-break space.
+    # So the collapsing is ASCII-only: [regex] \s and a bare Trim() are both Unicode-aware and would
+    # erase these, which is the soft-hyphen failure the ordinal comparison exists for, one step
+    # earlier. U+00A0 is the case an author actually writes, in a phrase like "API 8.0" that must
+    # not wrap; the other three are here because one Unicode-aware call erases all of them.
+    It "sees an ASCII space replaced by <Name>" -ForEach @(
+        @{ Name = "a no-break space"; Character = [char] 0x00A0 }
+        @{ Name = "a figure space"; Character = [char] 0x2007 }
+        @{ Name = "a narrow no-break space"; Character = [char] 0x202F }
+        @{ Name = "an ideographic space"; Character = [char] 0x3000 }
+    ) {
+        Test-DocumentationChanged `
+            -Left '<member name="M:X.Y"><summary>Ed-Fi API</summary></member>' `
+            -Right "<member name=`"M:X.Y`"><summary>Ed-Fi${Character}API</summary></member>" |
+            Should -BeTrue
+    }
+
+    # The trims at a run's outer edge have to hold the same line, or a no-break space written
+    # against a block boundary would still be erased.
+    It "sees a leading <Name> against a block boundary" -ForEach @(
+        @{ Name = "no-break space"; Character = [char] 0x00A0 }
+        @{ Name = "ideographic space"; Character = [char] 0x3000 }
+    ) {
+        Test-DocumentationChanged `
+            -Left '<member name="M:X.Y"><summary>Ed-Fi</summary></member>' `
+            -Right "<member name=`"M:X.Y`"><summary>${Character}Ed-Fi</summary></member>" |
+            Should -BeTrue
+    }
+
+    # Tab collapsing is load bearing for re-wrap tolerance and stays.
+    It "normalizes a tab written for indentation" {
+        Test-DocumentationChanged `
+            -Left "<member name=`"M:X.Y`"><summary>a b</summary></member>" `
+            -Right "<member name=`"M:X.Y`"><summary>a`tb</summary></member>" |
+            Should -BeFalse
+    }
+
     It "sees a word changed only in case" {
         Test-DocumentationChanged `
             -Left '<member name="M:X.Y"><summary>must not be null</summary></member>' `

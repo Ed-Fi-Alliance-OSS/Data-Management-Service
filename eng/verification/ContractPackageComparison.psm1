@@ -451,6 +451,10 @@ $script:inlineDocumentationElements = [System.Collections.Generic.HashSet[string
     [System.StringComparer]::Ordinal
 )
 
+# The whitespace a re-wrap of the source introduces, and the only whitespace ConvertTo-CanonicalXmlNode
+# collapses. It is the same set as the regex class used there, and both are deliberately ASCII.
+$script:collapsibleWhitespace = [char[]] @(' ', "`t", "`r", "`n", "`f", [char] 0x0B)
+
 <#
 .DESCRIPTION
 One node's children, serialized structurally so that no content can be mistaken for markup.
@@ -545,14 +549,20 @@ function ConvertTo-CanonicalXmlNode {
             $text = $item.Value
 
             if (-not $Preserve) {
-                $text = [regex]::Replace($text, '\s+', ' ')
+                # The ASCII set only, and never [regex] \s or a bare Trim(). Both of those are
+                # Unicode-aware and so erase U+00A0, U+2007, U+202F and U+3000, which are content an
+                # implementer reads rather than the line breaks and indentation a re-wrap
+                # introduces: replacing a space with a no-break space is a visible documentation
+                # change that would compare unchanged. Same failure as the soft hyphen the ordinal
+                # comparison exists for, one step earlier.
+                $text = [regex]::Replace($text, '[ \t\r\n\f\v]+', ' ')
 
                 if (-not (Test-InlineNeighbour -Items $items -Index ($index - 1))) {
-                    $text = $text.TrimStart()
+                    $text = $text.TrimStart($script:collapsibleWhitespace)
                 }
 
                 if (-not (Test-InlineNeighbour -Items $items -Index ($index + 1))) {
-                    $text = $text.TrimEnd()
+                    $text = $text.TrimEnd($script:collapsibleWhitespace)
                 }
 
                 # A run that was only formatting contributes nothing, so indentation outside a
