@@ -958,31 +958,56 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
         CancellationToken cancellationToken
     )
     {
-        string connectorName = request.ConnectorName.Value;
-        using HttpResponseMessage response = await _httpClient.PostAsync(
-            $"/connectors/{Uri.EscapeDataString(connectorName)}/restart?includeTasks=true&onlyFailed=false",
-            content: null,
-            cancellationToken
-        );
-
-        if (
-            response.StatusCode
-            is not (HttpStatusCode.Accepted or HttpStatusCode.NoContent or HttpStatusCode.OK)
-        )
+        List<CdcConnectorRestartAttempt> attempts = [];
+        string outcome = "Interrupted";
+        try
         {
-            CdcConnectorTemplatePinnedImageSmokeDiagnostics.Fail(
-                CdcConnectorTemplatePinnedImageSmokeDiagnostics.Build(
-                    code: CdcConnectorTemplateDiagnosticCodes.PinnedImageConnectorStatusFailure,
-                    category: CdcConnectorTemplateDiagnosticCategory.LiveReadBackMismatch,
-                    provider: request.Provider,
-                    propertyName: "kafkaConnect.connectorRestart",
-                    safeArtifactOrObjectName: request.ConnectorName,
-                    expectedValue: "Accepted, NoContent, or OK",
-                    observedValue: response.StatusCode.ToString(),
-                    redactionClassification: CdcConnectorTemplateRedactionClassification.Safe
-                ),
-                "Kafka Connect restart failed. Connector restart output is redacted."
+            HttpStatusCode status = await CdcConnectorFixtureRestart.RunAsync(
+                _httpClient,
+                request.ConnectorName.Value,
+                attempts.Add,
+                cancellationToken,
+                TimeSpan.FromSeconds(30),
+                TimeSpan.FromMilliseconds(250)
             );
+            if (status is not (HttpStatusCode.Accepted or HttpStatusCode.NoContent or HttpStatusCode.OK))
+            {
+                outcome = "Rejected";
+                CdcConnectorTemplatePinnedImageSmokeDiagnostics.Fail(
+                    CdcConnectorTemplatePinnedImageSmokeDiagnostics.Build(
+                        code: CdcConnectorTemplateDiagnosticCodes.PinnedImageConnectorStatusFailure,
+                        category: CdcConnectorTemplateDiagnosticCategory.LiveReadBackMismatch,
+                        provider: request.Provider,
+                        propertyName: "kafkaConnect.connectorRestart",
+                        safeArtifactOrObjectName: request.ConnectorName,
+                        expectedValue: "Accepted, NoContent, or OK",
+                        observedValue: status.ToString(),
+                        redactionClassification: CdcConnectorTemplateRedactionClassification.Safe
+                    ),
+                    "Kafka Connect restart failed. Connector restart output is redacted."
+                );
+            }
+            outcome = "Accepted";
+        }
+        finally
+        {
+            // Persist even on cancellation; qualification excludes raw assertion output.
+            string path = Path.Combine(
+                TestContext.CurrentContext.WorkDirectory,
+                "cdc-controller-restart-" + Guid.NewGuid().ToString("N") + ".json"
+            );
+            await File.WriteAllTextAsync(
+                path,
+                JsonSerializer.Serialize(
+                    new
+                    {
+                        Provider = request.Provider.ToString(),
+                        Outcome = outcome,
+                        Attempts = attempts,
+                    }
+                )
+            );
+            TestContext.AddTestAttachment(path, "Connector restart HTTP status and attempt evidence");
         }
     }
 
