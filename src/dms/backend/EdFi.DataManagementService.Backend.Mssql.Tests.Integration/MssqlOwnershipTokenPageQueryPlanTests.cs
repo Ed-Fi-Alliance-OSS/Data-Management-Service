@@ -164,13 +164,17 @@ public class Given_A_Mssql_Ownership_Token_Page_Query_Plan
     }
 
     /// <summary>
-    /// The one showplan operator that reads <c>dms.Document</c>, described by how it reached the table.
+    /// The one showplan operator that reaches <c>dms.Document</c> through an index, described by how it
+    /// got there.
     /// </summary>
     /// <remarks>
     /// Read structurally rather than by substring because the plan also reaches the root table through
     /// its primary key for the join, so the index name, the access method and the filtered flag all have
     /// to come off the same operator. Separate substring assertions over the whole plan are satisfied by
     /// a plan that scanned this index and sought a different one, which is the regression worth catching.
+    /// A key lookup back into the clustered index is left out of the count: it is a routine companion of
+    /// a nonclustered seek, it still means the filtered index was sought, and it is the seek that carries
+    /// the answer.
     /// </remarks>
     private static DocumentAccess SoleDocumentAccess(string plan)
     {
@@ -182,6 +186,7 @@ public class Given_A_Mssql_Ownership_Token_Page_Query_Plan
             .Where(o =>
                 (string?)o.Attribute("Schema") == "[dms]" && (string?)o.Attribute("Table") == "[Document]"
             )
+            .Where(o => !IsKeyLookup(o))
             .Select(o => new { Object = o, Operator = o.Ancestors(showplan + "RelOp").FirstOrDefault() })
             .Where(access => access.Operator is not null)
             .Select(access => new DocumentAccess(
@@ -194,8 +199,8 @@ public class Given_A_Mssql_Ownership_Token_Page_Query_Plan
         accesses
             .Should()
             .ContainSingle(
-                "the compiled page selection reads dms.Document once, so one operator carries the whole "
-                    + "answer about how the ownership predicate was served"
+                "the compiled page selection reaches dms.Document through one index, so one operator "
+                    + "carries the whole answer about how the ownership predicate was served"
             );
 
         return accesses[0];
@@ -207,6 +212,14 @@ public class Given_A_Mssql_Ownership_Token_Page_Query_Plan
     /// </summary>
     private static bool IsFilteredIndex(XElement showplanObject) =>
         (string?)showplanObject.Attribute("Filtered") is "1" or "true";
+
+    /// <summary>
+    /// Whether the showplan object is the target of a key lookup: a seek back into the clustered index
+    /// for columns the nonclustered index did not carry. Showplan marks it on the enclosing scan element,
+    /// and the boolean renders in either form depending on the engine version.
+    /// </summary>
+    private static bool IsKeyLookup(XElement showplanObject) =>
+        (string?)showplanObject.Parent?.Attribute("Lookup") is "1" or "true";
 
     /// <summary>How one showplan operator reached <c>dms.Document</c>.</summary>
     private sealed record DocumentAccess(string? PhysicalOp, string? Index, bool IsFiltered);
