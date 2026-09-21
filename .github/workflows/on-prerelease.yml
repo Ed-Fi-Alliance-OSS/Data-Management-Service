@@ -49,9 +49,10 @@ jobs:
   pack-dms:
     name: Build and Pack DMS
     # EdFi.Api ships both contract assemblies, so it is not built until both read-only contract
-    # checks have passed: a contract refused at its declared version must not reach a DMS package
-    # or, through publish-package-dms and docker-publish-dms, an image. A dispatch runs the checks
-    # and this job stays skipped by its own condition.
+    # checks have passed: a contract refused at its declared version must not reach a DMS package.
+    # That is the refusal half only. A contract that passed its check and then failed to push is
+    # caught one step later, by the needs on publish-package-dms. A dispatch runs the checks and
+    # this job stays skipped by its own condition.
     needs:
       - check-plugins-contract
       - check-custom-validation-contract
@@ -339,7 +340,14 @@ jobs:
 
   publish-package-dms:
     name: Publish DMS NuGet Package
-    needs: pack-dms
+    # The contract publish jobs, not only the checks pack-dms waited on. A check gates a contract
+    # that was refused; these gate one that was accepted and then failed to reach the feed. Without
+    # them a release could ship this package, and through docker-publish-dms an image, carrying a
+    # contract assembly at a version an implementer cannot restore.
+    needs:
+      - pack-dms
+      - publish-package-plugins
+      - publish-package-custom-validation
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -374,7 +382,12 @@ jobs:
 
   publish-package-schema-tools:
     name: Publish SchemaTools NuGet Package
-    needs: pack-schema-tools
+    # The tool package carries both contract assemblies, so it waits on the contract pushes for the
+    # reason publish-package-dms records.
+    needs:
+      - pack-schema-tools
+      - publish-package-plugins
+      - publish-package-custom-validation
     runs-on: ubuntu-latest
     defaults:
       run:
