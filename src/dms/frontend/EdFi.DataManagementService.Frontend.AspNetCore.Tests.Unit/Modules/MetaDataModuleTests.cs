@@ -1462,8 +1462,9 @@ public class Given_file_mode_discovery_spec_route
     public async Task It_returns_200_with_replaced_urls_for_discovery_spec()
     {
         var httpContext = MetadataModuleTests.CreateHttpContext(
-            "/metadata/specifications/discovery-spec.json"
+            "/specifications/metadata/specifications/discovery-spec.json"
         );
+        httpContext.Request.RouteValues["section"] = "discovery";
 
         await MetadataEndpointModule.GetSectionMetadata(
             httpContext,

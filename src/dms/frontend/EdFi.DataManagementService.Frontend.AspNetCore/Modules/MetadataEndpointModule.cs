@@ -9,7 +9,6 @@ using System.Linq;
 using System.Net;
 using System.Text;
 using System.Text.Json.Nodes;
-using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
@@ -212,9 +211,6 @@ public partial class MetadataEndpointModule(IOptions<FrontendAppSettings> appSet
     }
 
     private sealed record SpecificationSection(string name, string prefix);
-
-    [GeneratedRegex(@"specifications\/(?<section>[^-]+)-spec.json?")]
-    private static partial Regex PathExpression();
 
     private static readonly SpecificationSection[] _sections =
     [
@@ -633,17 +629,19 @@ public partial class MetadataEndpointModule(IOptions<FrontendAppSettings> appSet
         IDataStoreProvider dataStoreProvider
     )
     {
-        var request = httpContext.Request;
-        Match match = PathExpression().Match(request.Path);
-        if (!match.Success)
+        if (
+            !httpContext.Request.RouteValues.TryGetValue("section", out object? sectionValue)
+            || sectionValue is not string sectionValueString
+            || string.IsNullOrWhiteSpace(sectionValueString)
+        )
         {
             httpContext.Response.StatusCode = (int)HttpStatusCode.NotFound;
             await httpContext.Response.WriteAsync(_errorResourcePath);
             return;
         }
 
-        string section = match.Groups["section"].Value.ToLower();
-        string? rootUrl = request.RootUrl();
+        string section = sectionValueString.ToLowerInvariant();
+        string? rootUrl = httpContext.Request.RootUrl();
         string oAuthUrl = options.Value.AuthenticationService;
         if (
             Array.Exists(
