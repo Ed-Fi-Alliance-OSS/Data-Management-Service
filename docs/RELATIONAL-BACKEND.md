@@ -105,6 +105,10 @@ At compatibility level 90 or above, `ANSI_WARNINGS` ON implies `ARITHABORT` ON f
 `DBCC USEROPTIONS` omits `arithabort` from its output unless a session has explicitly set it ON, so it will not show the option is satisfied even when it is.
 `QUOTED_IDENTIFIER` is the one that commonly differs in practice: go-sqlcmd and `Microsoft.Data.SqlClient` default it ON, but ODBC `sqlcmd` needs `-I` to match.
 A write against `dms.Document` under the wrong options fails with `Msg 1934`; a read raises nothing and silently stops using the index.
+The provisioning session's setting also outlives the session: SQL Server captures `QUOTED_IDENTIFIER` and `ANSI_NULLS` per module when each `CREATE OR ALTER TRIGGER` runs, and the generated stamp triggers write `dms.Document` on every resource insert, update and delete, so a script applied under `QUOTED_IDENTIFIER` OFF bakes that setting into every stamp trigger and no correctly configured application session can override it afterwards.
+On a fresh database the filtered `CREATE INDEX` fails with `Msg 1934`; because `ddl emit` output is transaction-free, an ODBC `sqlcmd` apply without `-b` continues past the failure and leaves the database without the index while reporting success.
+On a rerun over a database that already has the index, the existence check skips the index, nothing fails, and the refreshed triggers carry the wrong setting, so every later resource write fails with `Msg 1934` from inside the trigger.
+Neither state is repairable by correcting the writing session; re-apply the script (or run `ddl provision`) under the correct options, which recreates the index if it is missing and re-creates every trigger with the right setting.
 
 ### Always-provisioned DocumentCache inventory
 
