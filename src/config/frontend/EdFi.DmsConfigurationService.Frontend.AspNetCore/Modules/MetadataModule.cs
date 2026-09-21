@@ -22,10 +22,15 @@ public class MetadataModule(IOptions<IdentitySettings> identitySettings) : IEndp
             "/metadata/specifications",
             async context =>
             {
+                // PathBase is required: the OpenAPI document is served relative to it, so omitting
+                // it requests a path that does not exist on any deployment that sets
+                // AppSettings:PathBase, and the 404 surfaces to the caller as a 500.
                 var openApiJson = await context
                     .RequestServices.GetRequiredService<IHttpClientFactory>()
                     .CreateClient()
-                    .GetStringAsync($"{context.Request.Scheme}://{context.Request.Host}/openapi/v1.json");
+                    .GetStringAsync(
+                        $"{context.Request.Scheme}://{context.Request.Host}{context.Request.PathBase}/openapi/v1.json"
+                    );
 
                 var document = JsonNode.Parse(openApiJson)!.AsObject();
 
