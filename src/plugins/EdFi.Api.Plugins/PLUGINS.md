@@ -391,7 +391,7 @@ class the host discovers alongside the old one for as long as both are supported
 
 ## Getting the package
 
-Both contract packages are published to the Ed-Fi Azure Artifacts feed:
+`EdFi.Api.Plugins` and `EdFi.Api.CustomValidation` are published to the Ed-Fi Azure Artifacts feed:
 
 ```text
 https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json

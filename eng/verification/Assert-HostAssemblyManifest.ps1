@@ -24,10 +24,14 @@
     records no shared-framework assembly at all, and it is one of the two in the plugin contract's own
     hook signature. Its absence is what a regression to that approach looks like.
 
-    Both contracts must be listed at the version their own project declares, and in **both** the
-    application section and the contract section. Those are the contracts a plugin binds to, and the
-    loader's skew preflight compares exactly these values, so a manifest stating a different one
-    would send an implementer to the wrong target. The contract section is a filtered view of the
+    EdFi.Api.Plugins and EdFi.DataManagementService.CustomValidation must be listed at the version
+    their own project declares, and in **both** the application section and the contract section.
+    Those are the published contracts a plugin takes a PackageReference on, and the loader's skew
+    preflight compares exactly these values, so a manifest stating a different one would send an
+    implementer to the wrong target. EdFi.DataManagementService.Identity is a third contract
+    assembly in the image as of DMS-1514 and is deliberately not published yet, so it is asserted
+    here only as one of the application rows; adding it to the contract section is part of
+    publishing it. The contract section is a filtered view of the
     application section rather than an independent sweep, so a row that appeared in one and not the
     other, or with a different version in each, means the generator's filter and its source have
     diverged; that is checked here rather than assumed.

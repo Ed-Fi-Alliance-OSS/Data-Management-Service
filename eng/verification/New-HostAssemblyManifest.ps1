@@ -694,6 +694,11 @@ try {
     # Emit.
     # -----------------------------------------------------------------------------------------
 
+    # The published contracts only. EdFi.DataManagementService.Identity (EdFi.Api.Identity) is a
+    # third contract assembly at the top level of /app as of DMS-1514 and is deliberately not
+    # published yet, so it is left to the application table below rather than listed here as
+    # something an implementer can take a PackageReference on. Adding it to this filter is part of
+    # publishing it.
     $contractRows = @(
         $applicationRows |
             Where-Object { $_.Assembly -eq "EdFi.Api.Plugins" -or $_.Assembly -eq "EdFi.DataManagementService.CustomValidation" }
@@ -742,11 +747,15 @@ try {
 
     $lines += @(
         "",
-        "Every value above is the ``AssemblyVersion`` observed in the image. Both contracts declare",
-        "their own version and move it only when their public surface moves, so neither states the",
-        "Data Management Service release version and neither changes because a release happened.",
-        "Read each against the versioning policy of the package it comes from: an observed assembly",
-        "version is not necessarily a contract package version.",
+        "Every value above is the ``AssemblyVersion`` observed in the image. Each contract listed",
+        "here declares its own version and moves it only when its public surface moves, so none of",
+        "them states the Data Management Service release version and none changes because a release",
+        "happened. Read each against the versioning policy of the package it comes from: an observed",
+        "assembly version is not necessarily a contract package version.",
+        "",
+        "This table is the contracts a plugin is expected to bind to, not every assembly in the",
+        "image whose name reads like a contract. **Application assemblies** below is the complete",
+        "list, and an assembly's version is the same in both.",
         "",
         "## Application assemblies",
         "",
