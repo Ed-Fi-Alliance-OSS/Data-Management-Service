@@ -162,7 +162,6 @@ jobs:
       - name: Run DMS End to End Tests - IdentityProvider (${{ matrix.identityprovider }})
         id: e2e
         if: success()
-        continue-on-error: true
         # This lane runs against the default DS 5.2 stack at the shipped MAXIMUM_PAGE_SIZE of 500,
         # so exclude the DS 6.1 version-coupled scenarios, the DocumentCache fixture, and the
         # partition sizing scenarios. DocumentCache runs below with its explicit overlay; partition
@@ -211,7 +210,6 @@ jobs:
       - name: Run DocumentCache End to End Tests - IdentityProvider (${{ matrix.identityprovider }})
         id: document_cache_e2e
         if: steps.e2e.outcome == 'success'
-        continue-on-error: true
         run: >-
           ./build-dms.ps1 E2ETest
           -Configuration ${{ env.CONFIGURATION }}
@@ -249,18 +247,6 @@ jobs:
           name: scheduled-build-document-cache-e2e-results-${{ matrix.identityprovider }}
           path: TestResults/EdFi.DataManagementService.Tests.E2E.e2e-document-cache.trx
           if-no-files-found: ignore
-
-      - name: Fail if DMS E2E failed
-        if: always() && steps.e2e.outcome == 'failure'
-        run: |
-          Write-Host "DMS E2E outcome: ${{ steps.e2e.outcome }}"
-          throw "DMS E2E failed."
-
-      - name: Fail if DocumentCache E2E failed
-        if: always() && steps.document_cache_e2e.outcome == 'failure'
-        run: |
-          Write-Host "DocumentCache E2E outcome: ${{ steps.document_cache_e2e.outcome }}"
-          throw "DocumentCache E2E failed."
 
   build-and-start-dms:
     name: Build and Start DMS, Download OpenAPI Specs
