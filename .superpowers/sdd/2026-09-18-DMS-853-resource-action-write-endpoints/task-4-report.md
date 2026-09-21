@@ -52,3 +52,19 @@ Implemented PostgreSQL claim-set resource-action mutations for grant, modify, re
 ## Commit
 
 `30f1be2f feat: add PostgreSQL claim-set resource action mutations`
+
+## Review Fixes
+
+Addressed Task 4 review findings without changing production code:
+
+- DMS-853-T4-001: the revoke test now requires override success and verifies the student `Read` override exists before revoke.
+- DMS-853-T4-002: the reset test now requires both setup overrides to succeed, verifies the target override before reset, resets twice with two success assertions, and verifies target clearing plus unrelated school override preservation.
+- DMS-853-T4-003: added a successful modify test that replaces student actions with `Create` while preserving the school `Read` association.
+
+Focused verification after the review fixes:
+
+```powershell
+dotnet test src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration/EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration.csproj --filter "FullyQualifiedName~ClaimSetResourceActionMutationTests" --no-restore
+```
+
+Result: `Passed: 12, Failed: 0, Skipped: 0` in 57 seconds against the available local PostgreSQL Docker container.

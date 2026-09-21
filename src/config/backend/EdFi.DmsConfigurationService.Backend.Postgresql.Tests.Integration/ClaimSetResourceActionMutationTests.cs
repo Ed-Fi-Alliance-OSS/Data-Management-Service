@@ -158,6 +158,22 @@ public class ClaimSetResourceActionMutationTests
     public class Given_modifying_resource_claim_actions : ClaimSetMutationTestBase
     {
         [Test]
+        public async Task It_replaces_target_actions_and_preserves_an_unrelated_association()
+        {
+            int claimSetId = await CreateVendorClaimSet();
+            await GrantRead(claimSetId, StudentResourceClaimId);
+            await GrantRead(claimSetId, SchoolResourceClaimId);
+
+            var result = await Repository.ModifyResourceClaimActions(
+                new ResourceClaimActionMutationCommand(claimSetId, StudentResourceClaimId, ["Create"])
+            );
+
+            result.Should().BeOfType<ClaimSetResourceActionMutationResult.Success>();
+            (await ExportEnabledActions(claimSetId, StudentClaimName)).Should().Equal("Create");
+            (await ExportEnabledActions(claimSetId, SchoolClaimName)).Should().Equal("Read");
+        }
+
+        [Test]
         public async Task It_requires_an_existing_target_association_without_mutating_other_associations()
         {
             int claimSetId = await CreateVendorClaimSet();
@@ -184,7 +200,7 @@ public class ClaimSetResourceActionMutationTests
             int claimSetId = await CreateVendorClaimSet();
             await GrantRead(claimSetId, StudentResourceClaimId);
             await GrantRead(claimSetId, SchoolResourceClaimId);
-            await Repository.OverrideAuthorizationStrategy(
+            var overrideResult = await Repository.OverrideAuthorizationStrategy(
                 new AuthorizationStrategyOverrideCommand(
                     claimSetId,
                     StudentResourceClaimId,
@@ -193,6 +209,14 @@ public class ClaimSetResourceActionMutationTests
                     []
                 )
             );
+            overrideResult.Should().BeOfType<ClaimSetResourceActionMutationResult.Success>();
+            (await ExportResourceClaim(claimSetId, StudentClaimName))
+                .AuthorizationStrategyOverrides.Should()
+                .ContainSingle(overrideAction =>
+                    overrideAction.ActionName == "Read"
+                    && overrideAction.AuthorizationStrategies!.Single().AuthorizationStrategyName
+                        == NoFurtherAuthorizationRequired
+                );
 
             var result = await Repository.RevokeResourceClaimActions(claimSetId, StudentResourceClaimId);
 
@@ -360,7 +384,7 @@ public class ClaimSetResourceActionMutationTests
             await GrantRead(claimSetId, StudentResourceClaimId);
             await GrantRead(claimSetId, SchoolResourceClaimId);
 
-            await Repository.OverrideAuthorizationStrategy(
+            var studentOverrideResult = await Repository.OverrideAuthorizationStrategy(
                 new AuthorizationStrategyOverrideCommand(
                     claimSetId,
                     StudentResourceClaimId,
@@ -369,7 +393,7 @@ public class ClaimSetResourceActionMutationTests
                     []
                 )
             );
-            await Repository.OverrideAuthorizationStrategy(
+            var schoolOverrideResult = await Repository.OverrideAuthorizationStrategy(
                 new AuthorizationStrategyOverrideCommand(
                     claimSetId,
                     SchoolResourceClaimId,
@@ -378,10 +402,27 @@ public class ClaimSetResourceActionMutationTests
                     []
                 )
             );
+            studentOverrideResult.Should().BeOfType<ClaimSetResourceActionMutationResult.Success>();
+            schoolOverrideResult.Should().BeOfType<ClaimSetResourceActionMutationResult.Success>();
+            (await ExportResourceClaim(claimSetId, StudentClaimName))
+                .AuthorizationStrategyOverrides.Should()
+                .ContainSingle(overrideAction =>
+                    overrideAction.ActionName == "Read"
+                    && overrideAction.AuthorizationStrategies!.Single().AuthorizationStrategyName
+                        == NoFurtherAuthorizationRequired
+                );
 
-            var result = await Repository.ResetAuthorizationStrategies(claimSetId, StudentResourceClaimId);
+            var firstResult = await Repository.ResetAuthorizationStrategies(
+                claimSetId,
+                StudentResourceClaimId
+            );
+            var secondResult = await Repository.ResetAuthorizationStrategies(
+                claimSetId,
+                StudentResourceClaimId
+            );
 
-            result.Should().BeOfType<ClaimSetResourceActionMutationResult.Success>();
+            firstResult.Should().BeOfType<ClaimSetResourceActionMutationResult.Success>();
+            secondResult.Should().BeOfType<ClaimSetResourceActionMutationResult.Success>();
             (await ExportResourceClaim(claimSetId, StudentClaimName))
                 .AuthorizationStrategyOverrides.Should()
                 .BeEmpty();
