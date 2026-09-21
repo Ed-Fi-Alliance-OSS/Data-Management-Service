@@ -1119,31 +1119,24 @@ jobs:
     needs:
       - publish-package-dms
     steps:
+      # Needed only by the tag step below, which runs a script out of this repository. The image is
+      # built from the remote context "{{defaultContext}}:src/dms", so nothing else in this job
+      # reads the working tree and a checkout does not change what is built.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
       - name: Wait 20s
         # Give Azure Artifacts caching a moment to catch up
         run: sleep 20
 
+      # A prerelease gets a version-specific tag as well as the moving "pre" tag, so a deployment
+      # that has to name one published image can pin it. The rule lives in eng/ci because it is
+      # driven by a test there. REF and IMAGE_NAME are read from the process environment the
+      # workflow-level env block exports; interpolating them into the script body would let a tag
+      # name become script.
       - name: Prepare DMS Tags
         id: prepare-tags
-        run: |
-          REF="${{ env.REF }}"
-          PACKAGEVERSION=${REF}
-
-          if [[ $PACKAGEVERSION =~ "alpha" ]]
-          then
-            # Pre-releases get the tag "pre"
-            DMSTAGS="${{ env.IMAGE_NAME }}:pre"
-          else
-            # Releases get the version, plus shortened form for minor release.
-            # We are not using shortened form for major or using "latest"
-            # because they are too imprecise.
-            MINOR=`echo ${PACKAGEVERSION} | awk -F"." '{print $1"."$2}'`
-            DMSTAGS="${{ env.IMAGE_NAME }}:${PACKAGEVERSION},${{ env.IMAGE_NAME }}:${MINOR}"
-          fi
-
-          SEMVERSION=${PACKAGEVERSION:8}  # strip off the leading 'dms-pre-'
-          echo "DMSTAGS=$DMSTAGS" >> $GITHUB_OUTPUT
-          echo "VERSION=$SEMVERSION" >> $GITHUB_OUTPUT
+        shell: pwsh
+        run: ./eng/ci/Get-DmsPrereleaseImageTag.ps1 -ReleaseRef $env:REF -ImageName $env:IMAGE_NAME
 
       - name: Set up DMS Docker Buildx
         uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
