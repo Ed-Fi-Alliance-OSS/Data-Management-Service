@@ -1405,9 +1405,8 @@ public class OAuthEndpointErrorTests
     }
 
     /// <summary>
-    /// Previously asserted that an anonymous caller got 200 OK. Revocation now requires an
-    /// authenticated caller — otherwise the endpoint cannot tell whether the caller owns the
-    /// token — so the expected outcome is updated in place to 401.
+    /// Revocation requires an authenticated caller, since otherwise the endpoint cannot tell
+    /// whether the caller owns the token. This previously expected 200 OK for an anonymous caller.
     /// </summary>
     [TestFixture]
     public class Given_a_revocation_request_with_a_token_from_an_unauthenticated_caller
@@ -1440,11 +1439,9 @@ public class OAuthEndpointErrorTests
     }
 
     /// <summary>
-    /// The other half of Task 1's acceptance criterion: an invalid bearer token is rejected the
-    /// same way a missing one is. The token here is not a well-formed JWT, so the bearer handler
-    /// rejects it while reading the token format, before any signing-key resolution that would
-    /// need an OIDC metadata fetch from the configured authority. That keeps the outcome
-    /// deterministic and independent of whether the authority is reachable.
+    /// An invalid bearer token is rejected the same way a missing one is. The token is not a
+    /// well-formed JWT, so the bearer handler rejects it on format before any signing-key
+    /// resolution, keeping the outcome independent of whether the authority is reachable.
     /// </summary>
     [TestFixture]
     public class Given_a_revocation_request_with_an_invalid_bearer_token
@@ -1480,15 +1477,11 @@ public class OAuthEndpointErrorTests
 }
 
 /// <summary>
-/// <c>POST /connect/revoke</c> requires an authenticated caller and only revokes a token whose
-/// <c>client_id</c> claim matches the caller's own. A token belonging to another client is a
-/// silent no-op that still answers 200 OK, so nothing leaks about whether the token exists or who
-/// owns it (RFC 7009). These fixtures drive the real <see cref="OpenIddictTokenManager"/> over HTTP
-/// against a faked token repository, so the route's authorization requirement, the caller-claim
-/// wiring, the target token's signature verification and the ownership decision are all exercised
-/// together. Non-fixture container; the runnable fixtures are the nested <c>Given_…</c> classes.
+/// Covers the authentication and <c>client_id</c> ownership rules for <c>POST /connect/revoke</c>
+/// described in reference/design/configuration-service/CS-AUTH.md. Non-fixture container; the
+/// runnable fixtures are the nested <c>Given_…</c> classes.
 ///
-/// Note the test-double strategy differs from the rest of this file. Elsewhere
+/// The test-double strategy differs from the rest of this file deliberately. Elsewhere
 /// <c>IdentityModuleTests</c> fakes <see cref="ITokenManager"/> outright, which is right when the
 /// assertion is about the HTTP contract. Here it would defeat the point: a faked manager would
 /// have to re-implement the ownership rule to answer, so the tests would assert against the fake
@@ -1614,13 +1607,11 @@ public class RevocationOwnershipTests
     }
 
     /// <summary>
-    /// Guards the "bare authorization requirement, no named policy" decision in
-    /// <c>tasks/plan.md</c>. The caller here is an ordinary client-credentials principal — a
-    /// <c>client_id</c> and a non-admin scope, no service-role claim — which is what a token minted
-    /// by <c>/connect/token</c> actually carries. If the route were ever tightened to
-    /// <c>RequireAuthorization(SecurityConstants.ServicePolicy)</c> or to the admin-scope policy,
-    /// this caller would get 403 and this fixture would fail, whereas the other revocation fixtures
-    /// would all stay green because their principals happen to satisfy both policies.
+    /// Guards the "bare authorization requirement, no named policy" decision. The caller is an
+    /// ordinary client-credentials principal — a <c>client_id</c> and a non-admin scope, no
+    /// service-role claim — matching what <c>/connect/token</c> actually mints. Tightening the
+    /// route to a named policy would give this caller 403 and fail here, while the other
+    /// revocation fixtures stayed green because their principals satisfy those policies.
     /// </summary>
     [TestFixture]
     public class Given_a_revocation_request_from_a_caller_without_the_service_role
@@ -1632,10 +1623,8 @@ public class RevocationOwnershipTests
         private Guid _jti;
 
         /// <summary>
-        /// A principal looking like an ordinary client-credentials token from
-        /// <c>/connect/token</c>: a <c>client_id</c> and a non-admin scope, but no service-role
-        /// claim. Such a caller satisfies neither <c>SecurityConstants.ServicePolicy</c> nor the
-        /// admin-scope policy, which is what lets this fixture detect a named policy on the route.
+        /// Builds the role-less, non-admin-scope principal described above, which satisfies
+        /// neither <c>SecurityConstants.ServicePolicy</c> nor the admin-scope policy.
         /// </summary>
         private static HttpClient CreateOrdinaryClientFor(
             WebApplicationFactory<Program> factory,
@@ -1685,13 +1674,11 @@ public class RevocationOwnershipTests
     }
 
     /// <summary>
-    /// Arms the canary above. That fixture only means something if <c>X-Test-OmitRoleClaim</c>
-    /// genuinely suppresses the role claim — if the header were misspelled or silently ignored,
-    /// the canary would keep passing while testing nothing. This fixture drives the same header
-    /// against a route that really is gated by <c>SecurityConstants.ServicePolicy</c>
-    /// (<c>MapSecuredGet</c> on <c>/v3/vendors</c>) and observes the contrast: the role-less
-    /// caller is rejected, the role-bearing one is not. Without that contrast the canary's
-    /// precondition would be a comment rather than an observation.
+    /// Arms the guard above, which is only meaningful if <c>X-Test-OmitRoleClaim</c> genuinely
+    /// suppresses the role claim — a misspelled or ignored header would leave it passing while
+    /// testing nothing. Drives the same header against a route actually gated by
+    /// <c>SecurityConstants.ServicePolicy</c> and observes the contrast: the role-less caller is
+    /// rejected, the role-bearing one is not.
     /// </summary>
     [TestFixture]
     public class Given_the_role_claim_is_omitted_at_a_service_policy_route
@@ -1780,7 +1767,7 @@ public class RevocationOwnershipTests
 
     /// <summary>
     /// The ownership check is only meaningful if the target token's signature is verified before
-    /// its <c>client_id</c> claim is trusted. This fixture forges a token naming the caller while
+    /// its <c>client_id</c> claim is trusted, so this forges a token naming the caller while
     /// embedding another client's <c>jti</c>.
     /// </summary>
     [TestFixture]
@@ -1935,15 +1922,12 @@ public class IdentityProviderErrorParsingTests
 }
 
 /// <summary>
-/// Regression guard for the blast radius of adding <c>RequireAuthorization()</c> to
-/// <c>/connect/revoke</c>. Its three sibling endpoints must stay anonymous: <c>/connect/token</c>
-/// in particular cannot require a bearer token, since it is where a bearer token comes from —
-/// requiring one would be unrecoverable for every client. The existing tests for these routes
-/// never install an authentication scheme at all, so none of them would notice an authorization
-/// requirement leaking onto a shared route group. These drive the same <c>AddTestAuthentication</c>
-/// harness that revoke now uses, with no credentials presented, and assert the responses are
-/// whatever each endpoint normally says — but never 401.
-/// Non-fixture container; the runnable fixture is the nested <c>Given_…</c> class.
+/// Guards against <c>RequireAuthorization()</c> on <c>/connect/revoke</c> leaking onto its
+/// sibling endpoints, which must stay anonymous — <c>/connect/token</c> especially, since it is
+/// where a bearer token comes from. The existing tests for those routes never install an
+/// authentication scheme, so they would not notice. These use the same harness revoke now uses,
+/// present no credentials, and assert the responses are never 401. Non-fixture container; the
+/// runnable fixture is the nested <c>Given_…</c> class.
 /// </summary>
 public class TokenEndpointAnonymityTests
 {

@@ -11,9 +11,8 @@ public static class SecurityConstants
 
     /// <summary>
     /// Claim type naming the OAuth client a token was issued to. Self-contained (OpenIddict) and
-    /// Keycloak-issued tokens both use this name, which is why the revocation ownership check in
-    /// <c>OpenIddictTokenManager.RevokeTokenAsync</c> needs no per-provider branching. Treat any
-    /// change here as a breaking change to that check.
+    /// Keycloak-issued tokens both use this name, so the revocation ownership check needs no
+    /// per-provider branching. Treat any change here as a breaking change to that check.
     /// </summary>
     public const string ClientIdClaimType = "client_id";
 }
