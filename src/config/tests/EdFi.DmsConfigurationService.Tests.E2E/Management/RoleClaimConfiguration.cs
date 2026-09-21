@@ -8,10 +8,14 @@ namespace EdFi.DmsConfigurationService.Tests.E2E.Management;
 /// <summary>
 /// The client role and role-claim type the running stack was configured with. The two identity
 /// providers read the claim type from different settings, so the expectation is derived from the
-/// provider under test rather than assumed to be one shared value. The fallbacks match the
-/// checked-in environment files, so a bare <c>dotnet test</c> against a standard stack still
-/// compares against the right values.
+/// provider under test rather than assumed to be one shared value.
 /// </summary>
+/// <remarks>
+/// <c>build-config.ps1</c> publishes these values by reading them back from the Configuration
+/// Service container, so they are what the running service actually received rather than what an
+/// environment file requested. The fallbacks below match the checked-in environment files, so a
+/// bare <c>dotnet test</c> against a standard stack still compares against the right values.
+/// </remarks>
 public static class RoleClaimConfiguration
 {
     private const string IdentityProviderVariable = "DMS_CONFIG_IDENTITY_PROVIDER";
@@ -24,8 +28,8 @@ public static class RoleClaimConfiguration
     /// <summary>
     /// The self-contained provider emits the claim named by
     /// <c>Authentication:RoleClaimAttribute</c>, falling back to the same URI Keycloak is
-    /// configured with. No checked-in environment sets that key, so the two lanes agree today by
-    /// default rather than by configuration; reading each provider's own setting keeps a
+    /// configured with. No compose file forwards that key to the container, so the two lanes agree
+    /// today by default rather than by configuration; reading each provider's own setting keeps a
     /// customized lane honest instead of comparing against the other provider's value.
     /// </summary>
     private const string SelfContainedClaimTypeVariable = "Authentication__RoleClaimAttribute";
