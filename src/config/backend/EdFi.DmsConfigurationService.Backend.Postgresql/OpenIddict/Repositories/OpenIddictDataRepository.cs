@@ -21,6 +21,36 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict.Repositorie
     {
         private readonly string _connectionString = databaseOptions.Value.DatabaseConnection;
 
+        /// <summary>
+        /// How long a token grant waits for another grant's row lock on the same client before
+        /// failing. Matches the default <c>ApplicationLockOptions.AcquireTimeout</c> so the two
+        /// lock paths in this service bound their waits alike.
+        /// </summary>
+        private const string LockTimeoutMilliseconds = "5000";
+
+        private const string SetLockTimeoutSql = $"SET LOCAL lock_timeout = '{LockTimeoutMilliseconds}ms'";
+
+        private const string LockApplicationSql =
+            @"SELECT ""Id"" FROM ""dmscs"".""OpenIddictApplication"" WHERE ""Id"" = @ApplicationId FOR UPDATE";
+
+        /// <summary>
+        /// Inserts the token only while the client holds fewer than @MaxActiveTokens active
+        /// tokens, where active means not revoked and not yet expired. Counting and inserting in
+        /// one statement leaves no window between the two.
+        /// </summary>
+        private const string ConditionalInsertSql =
+            @"
+                INSERT INTO ""dmscs"".""OpenIddictToken""
+                (""Id"", ""ApplicationId"", ""Subject"", ""Type"", ""CreationDate"", ""ExpirationDate"", ""Status"", ""ReferenceId"")
+                SELECT @Id, @ApplicationId, @Subject, @Type, @CreationDate, @ExpirationDate, @Status, @ReferenceId
+                WHERE (
+                    SELECT COUNT(*)
+                    FROM ""dmscs"".""OpenIddictToken""
+                    WHERE ""ApplicationId"" = @ApplicationId
+                      AND ""Status"" = 'valid'
+                      AND ""ExpirationDate"" > @ActiveAsOf
+                ) < @MaxActiveTokens";
+
         public async Task<T> ExecuteInTransactionAsync<T>(
             Func<IDbConnection, IDbTransaction, Task<T>> operation
         )
@@ -354,15 +384,17 @@ UPDATE ""dmscs"".""OpenIddictApplication""
             return await connection.QuerySingleOrDefaultAsync<TokenInfo>(sql, new { Id = tokenId });
         }
 
-        public async Task StoreTokenAsync(
+        public async Task<TokenStoreOutcome> StoreTokenAsync(
             Guid tokenId,
             Guid applicationId,
             string subject,
-            DateTimeOffset expiration
+            DateTimeOffset expiration,
+            int maxActiveTokens
         )
         {
             await using var connection = new NpgsqlConnection(_connectionString);
             await connection.OpenAsync();
+
             const string insertSql =
                 @"
                 INSERT INTO ""dmscs"".""OpenIddictToken""
@@ -370,8 +402,53 @@ UPDATE ""dmscs"".""OpenIddictApplication""
                 VALUES
                 (@Id, @ApplicationId, @Subject, @Type, @CreationDate, @ExpirationDate, @Status, @ReferenceId)";
 
-            await connection.ExecuteAsync(
-                insertSql,
+            // Enforcement disabled: the unconditional insert that ran before the limit existed,
+            // with no transaction and no lock.
+            if (maxActiveTokens < 1)
+            {
+                await connection.ExecuteAsync(
+                    insertSql,
+                    new
+                    {
+                        Id = tokenId,
+                        ApplicationId = applicationId,
+                        Subject = subject,
+                        Type = "access_token",
+                        CreationDate = DateTimeOffset.UtcNow,
+                        ExpirationDate = expiration,
+                        Status = "valid",
+                        ReferenceId = tokenId.ToString("N"),
+                    }
+                );
+
+                return TokenStoreOutcome.Stored;
+            }
+
+            // Grants for one client serialize on that client's OpenIddictApplication row, which
+            // makes the limit a strict ceiling rather than a best-effort one. The lock lives and
+            // dies with this transaction, so every path below releases it.
+            await using var transaction = await connection.BeginTransactionAsync();
+
+            await connection.ExecuteAsync(SetLockTimeoutSql, transaction: transaction);
+
+            Guid? lockedApplicationId = await connection.QuerySingleOrDefaultAsync<Guid?>(
+                LockApplicationSql,
+                new { ApplicationId = applicationId },
+                transaction
+            );
+
+            // A FOR UPDATE matching no row takes no lock at all on PostgreSQL, so without this
+            // guard concurrent grants for a client deleted mid-request would count and insert
+            // unserialized and could exceed the cap. OpenIddictToken has no foreign key to
+            // OpenIddictApplication, so nothing else would stop the insert either.
+            if (lockedApplicationId is null)
+            {
+                await transaction.RollbackAsync();
+                return TokenStoreOutcome.ClientNotFound;
+            }
+
+            int rowsAffected = await connection.ExecuteAsync(
+                ConditionalInsertSql,
                 new
                 {
                     Id = tokenId,
@@ -382,8 +459,20 @@ UPDATE ""dmscs"".""OpenIddictApplication""
                     ExpirationDate = expiration,
                     Status = "valid",
                     ReferenceId = tokenId.ToString("N"),
-                }
+                    // Passed exactly as ExpirationDate is, so the count and the stored value take
+                    // the identical session-time-zone conversion path.
+                    ActiveAsOf = DateTimeOffset.UtcNow,
+                    MaxActiveTokens = maxActiveTokens,
+                },
+                transaction
             );
+
+            await transaction.CommitAsync();
+
+            // Zero rows can only mean the count predicate was false. A lock-wait timeout
+            // (SQLSTATE 55P03), a deadlock victim, or any other fault throws from the statements
+            // above and is never reported here as a limit rejection.
+            return rowsAffected > 0 ? TokenStoreOutcome.Stored : TokenStoreOutcome.LimitExceeded;
         }
 
         public async Task<string?> GetTokenStatusAsync(Guid tokenId)

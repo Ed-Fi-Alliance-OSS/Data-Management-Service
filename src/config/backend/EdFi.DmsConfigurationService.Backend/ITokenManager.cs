@@ -25,5 +25,11 @@ public record TokenResult
 
     public record FailureIdentityProvider(IdentityProviderError IdentityProviderError) : TokenResult;
 
+    /// <summary>
+    /// The client already holds <paramref name="Limit"/> active access tokens, the configured
+    /// maximum, so no further token was issued.
+    /// </summary>
+    public record FailureTokenLimitExceeded(int Limit) : TokenResult;
+
     public record FailureUnknown(string FailureMessage) : TokenResult;
 }

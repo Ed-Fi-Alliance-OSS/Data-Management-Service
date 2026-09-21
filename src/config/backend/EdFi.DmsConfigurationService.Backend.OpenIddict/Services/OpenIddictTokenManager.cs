@@ -281,8 +281,36 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                     );
                 }
 
-                // Generate JWT token
-                var token = await GenerateJwtTokenAsync(applicationInfo, clientId, listOfScopes);
+                // Generate and store the JWT token. The limit is enforced by the same
+                // statement that stores the token, so the token is minted before the outcome is
+                // known; one that is not stored is never returned to the caller.
+                (TokenStoreOutcome outcome, string token) = await GenerateJwtTokenAsync(
+                    applicationInfo,
+                    clientId,
+                    listOfScopes
+                );
+
+                if (outcome == TokenStoreOutcome.LimitExceeded)
+                {
+                    int bearerTokenPerClientLimit = _identityOptions.Value.BearerTokenPerClientLimit;
+                    _logger.LogWarning(
+                        "Client {ClientId} already holds the maximum of {TokenLimit} active access tokens",
+                        LoggingUtility.SanitizeForLog(clientId),
+                        bearerTokenPerClientLimit
+                    );
+                    return new TokenResult.FailureTokenLimitExceeded(bearerTokenPerClientLimit);
+                }
+
+                if (outcome == TokenStoreOutcome.ClientNotFound)
+                {
+                    // The application row was deleted between the lookup above and the store, so
+                    // answer exactly as the unknown-client case above answers.
+                    return new TokenResult.FailureAuthentication(
+                        "invalid_client",
+                        "Invalid client or Invalid client credentials"
+                    );
+                }
+
                 int tokenExpirationMinutes = _identityOptions.Value.TokenExpirationMinutes;
                 // Calculate expires_in (seconds)
                 var expiresIn = tokenExpirationMinutes * 60;
@@ -307,7 +335,14 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
             }
         }
 
-        private async Task<string> GenerateJwtTokenAsync(
+        /// <summary>
+        /// Mints a JWT and attempts to store it, subject to the configured per-client token limit.
+        /// </summary>
+        /// <returns>
+        /// The outcome of storing the token, and the token itself, which is meaningful only when
+        /// the outcome is <see cref="TokenStoreOutcome.Stored"/>.
+        /// </returns>
+        private async Task<(TokenStoreOutcome Outcome, string Token)> GenerateJwtTokenAsync(
             ApplicationInfo applicationInfo,
             string clientId,
             string scope
@@ -342,10 +377,17 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                 dataStoreIds: applicationInfo.DataStoreIds
             );
 
-            // Store token in database
-            await _tokenRepository.StoreTokenAsync(tokenId, applicationInfo.Id, clientId, expiration);
+            // Store token in database. The repository owns the disable semantics of the limit,
+            // so a value below 1 is passed through rather than special-cased here.
+            TokenStoreOutcome outcome = await _tokenRepository.StoreTokenAsync(
+                tokenId,
+                applicationInfo.Id,
+                clientId,
+                expiration,
+                _identityOptions.Value.BearerTokenPerClientLimit
+            );
 
-            return tokenString;
+            return (outcome, tokenString);
         }
 
         /// <summary>

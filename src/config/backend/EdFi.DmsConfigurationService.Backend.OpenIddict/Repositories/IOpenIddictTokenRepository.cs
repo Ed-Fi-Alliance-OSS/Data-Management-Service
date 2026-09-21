@@ -20,13 +20,30 @@ public interface IOpenIddictTokenRepository
     Task<TokenInfo?> GetTokenByIdAsync(Guid tokenId);
 
     /// <summary>
-    /// Stores a new token in the repository.
+    /// Stores a new token in the repository, unless the application already holds the maximum
+    /// number of active tokens.
     /// </summary>
     /// <param name="tokenId">The unique identifier for the token.</param>
     /// <param name="applicationId">The application ID associated with the token.</param>
     /// <param name="subject">The subject of the token.</param>
     /// <param name="expiration">The token expiration date.</param>
-    Task StoreTokenAsync(Guid tokenId, Guid applicationId, string subject, DateTimeOffset expiration);
+    /// <param name="maxActiveTokens">
+    /// The maximum number of simultaneously active tokens the application may hold. Any value
+    /// below 1 disables enforcement and the token is always stored.
+    /// </param>
+    /// <returns>
+    /// <see cref="TokenStoreOutcome.Stored"/> when the token was written,
+    /// <see cref="TokenStoreOutcome.LimitExceeded"/> when the application already holds at least
+    /// <paramref name="maxActiveTokens"/> active tokens, or
+    /// <see cref="TokenStoreOutcome.ClientNotFound"/> when the application no longer exists.
+    /// </returns>
+    Task<TokenStoreOutcome> StoreTokenAsync(
+        Guid tokenId,
+        Guid applicationId,
+        string subject,
+        DateTimeOffset expiration,
+        int maxActiveTokens
+    );
 
     /// <summary>
     /// Gets the status of a token by its ID.

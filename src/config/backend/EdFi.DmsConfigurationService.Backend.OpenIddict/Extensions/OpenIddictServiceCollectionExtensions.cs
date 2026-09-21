@@ -63,6 +63,10 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Extensions
                     "IdentitySettings:TokenCleanupIntervalMinutes",
                     30
                 );
+                options.BearerTokenPerClientLimit = configuration.GetValue<int>(
+                    "IdentitySettings:BearerTokenPerClientLimit",
+                    5
+                );
             });
 
             return services;

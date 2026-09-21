@@ -81,5 +81,13 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Models
         /// Interval, in minutes, between expired-token cleanup sweeps.
         /// </summary>
         public int TokenCleanupIntervalMinutes { get; set; } = 30;
+
+        /// <summary>
+        /// Maximum number of simultaneously active access tokens a single API client may hold.
+        /// Any value below 1 disables enforcement, allowing an unlimited number of tokens.
+        /// Applies to the self-contained identity provider only: the Keycloak provider persists
+        /// no tokens, so the setting is inert there.
+        /// </summary>
+        public int BearerTokenPerClientLimit { get; set; } = 5;
     }
 }
