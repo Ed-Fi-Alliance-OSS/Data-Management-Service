@@ -3,7 +3,7 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
-name: Scheduled Build
+name: DMS Weekend Build
 
 on:
   workflow_dispatch:
@@ -472,7 +472,7 @@ jobs:
         with:
           payload: |
             {
-              "text": ":heavy_check_mark: DMS scheduled weekend build passed"
+              "text": ":heavy_check_mark: DMS Weekend Build passed"
             }
           webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
           webhook-type: incoming-webhook
@@ -489,7 +489,7 @@ jobs:
         with:
           payload: |
             {
-              "text": ":x: DMS scheduled weekend build failed: <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View run>"
+              "text": ":x: DMS Weekend Build failed: <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View run>"
             }
           webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
           webhook-type: incoming-webhook

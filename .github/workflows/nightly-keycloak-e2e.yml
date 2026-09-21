@@ -8,7 +8,7 @@ name: Nightly Keycloak DMS E2E
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 8 * * 0-5" # Sunday-Friday at 8 AM UTC; Saturday is covered by Scheduled Build
+    - cron: "0 8 * * 0-5" # Sunday-Friday at 8 AM UTC; Saturday is covered by DMS Weekend Build
 
 permissions: read-all
 
