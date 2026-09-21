@@ -30,6 +30,38 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.Modules;
 [NonParallelizable]
 public class MetadataModuleTests
 {
+    internal static DefaultHttpContext CreateHttpContext(string path, string pathBase = "")
+    {
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Scheme = "http";
+        httpContext.Request.Host = new HostString("localhost");
+        httpContext.Request.Path = path;
+        httpContext.Request.PathBase = pathBase;
+        httpContext.Response.Body = new MemoryStream();
+        return httpContext;
+    }
+
+    internal static async Task<JsonNode?> ReadJsonResponseAsync(HttpContext httpContext)
+    {
+        httpContext.Response.Body.Position = 0;
+        var content = await new StreamReader(httpContext.Response.Body).ReadToEndAsync();
+        return JsonNode.Parse(content);
+    }
+
+    internal static IOptions<FrontendAppSettings> FrontendOptions(
+        Action<FrontendAppSettings>? configure = null
+    )
+    {
+        var options = new FrontendAppSettings
+        {
+            AuthenticationService = "http://localhost/oauth",
+            CorrelationIdHeader = "X-Correlation-Id",
+            Datastore = "postgresql",
+        };
+        configure?.Invoke(options);
+        return Options.Create(options);
+    }
+
     [TestFixture]
     public class When_Requesting_Tenant_Only_Metadata_With_Required_Route_Qualifiers
     {
@@ -432,29 +464,18 @@ public class MetadataModuleTests
             A.CallTo(() => apiService.HasChangeQueriesOpenApiSpecification()).Returns(false);
             A.CallTo(() => apiService.GetProfileNamesAsync(A<string?>._))
                 .Returns(Task.FromResult<IReadOnlyList<string>>(["StudentProfile", "SchoolProfile"]));
-
-            await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-            {
-                builder.UseEnvironment("Test");
-                builder.ConfigureServices(collection =>
-                {
-                    TestMockHelper.AddEssentialMocks(collection);
-                    collection.AddTransient(x => apiService);
-                });
-            });
-            using var client = factory.CreateClient();
+            var httpContext = CreateHttpContext("/metadata/specifications");
 
             // Act
-            var response = await client.GetAsync("/metadata/specifications");
-            var content = await response.Content.ReadAsStringAsync();
-            var jsonArray = JsonNode.Parse(content) as JsonArray;
+            await MetadataEndpointModule.GetSections(httpContext, apiService);
+            var jsonArray = await ReadJsonResponseAsync(httpContext) as JsonArray;
 
             var profilesArray = jsonArray!
                 .Where(x => x!["prefix"]!.GetValue<string>() == "Profiles")
                 .ToArray();
 
             // Assert
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            httpContext.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
             jsonArray.Should().NotBeNull();
             profilesArray.Should().HaveCount(2);
             profilesArray[0]!["name"]!.GetValue<string>().Should().Be("StudentProfile");
@@ -469,29 +490,18 @@ public class MetadataModuleTests
             A.CallTo(() => apiService.HasChangeQueriesOpenApiSpecification()).Returns(false);
             A.CallTo(() => apiService.GetProfileNamesAsync(A<string?>._))
                 .Returns(Task.FromResult<IReadOnlyList<string>>([]));
-
-            await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-            {
-                builder.UseEnvironment("Test");
-                builder.ConfigureServices(collection =>
-                {
-                    TestMockHelper.AddEssentialMocks(collection);
-                    collection.AddTransient(x => apiService);
-                });
-            });
-            using var client = factory.CreateClient();
+            var httpContext = CreateHttpContext("/metadata/specifications");
 
             // Act
-            var response = await client.GetAsync("/metadata/specifications");
-            var content = await response.Content.ReadAsStringAsync();
-            var jsonArray = JsonNode.Parse(content) as JsonArray;
+            await MetadataEndpointModule.GetSections(httpContext, apiService);
+            var jsonArray = await ReadJsonResponseAsync(httpContext) as JsonArray;
 
             var profilesArray = jsonArray!
                 .Where(x => x!["prefix"]!.GetValue<string>() == "Profiles")
                 .ToArray();
 
             // Assert
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            httpContext.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
             jsonArray.Should().NotBeNull();
             profilesArray!.Should().HaveCount(0);
         }
@@ -525,27 +535,22 @@ public class MetadataModuleTests
                         )
                     )
                 );
-
-            await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-            {
-                builder.UseEnvironment("Test");
-                builder.ConfigureServices(collection =>
-                {
-                    TestMockHelper.AddEssentialMocks(collection);
-                    collection.AddTransient(x => apiService);
-                });
-            });
-            using var client = factory.CreateClient();
-
-            // Act
-            var response = await client.GetAsync(
+            var httpContext = CreateHttpContext(
                 "/metadata/specifications/profiles/StudentProfile/resources-spec.json"
             );
-            var content = await response.Content.ReadAsStringAsync();
-            var jsonContent = JsonNode.Parse(content);
+
+            // Act
+            await MetadataEndpointModule.GetProfileResourceOpenApiSpec(
+                httpContext,
+                "StudentProfile",
+                A.Fake<IDataStoreProvider>(),
+                apiService,
+                FrontendOptions()
+            );
+            var jsonContent = await ReadJsonResponseAsync(httpContext);
 
             // Assert
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            httpContext.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
             jsonContent.Should().NotBeNull();
             jsonContent!["openapi"]!.GetValue<string>().Should().Be("3.0.0");
             jsonContent["info"]!["title"]!.GetValue<string>().Should().Be("StudentProfile Resources");
@@ -564,23 +569,21 @@ public class MetadataModuleTests
                     )
                 )
                 .Returns(Task.FromResult<JsonNode?>(null));
-
-            await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-            {
-                builder.UseEnvironment("Test");
-                builder.ConfigureServices(collection =>
-                {
-                    TestMockHelper.AddEssentialMocks(collection);
-                    collection.AddTransient(x => apiService);
-                });
-            });
-            using var client = factory.CreateClient();
+            var httpContext = CreateHttpContext(
+                "/metadata/specifications/profiles/NonExistentProfile/resources-spec.json"
+            );
 
             // Act
-            var response = await client.GetAsync("/metadata/profiles/NonExistentProfile/resources-spec.json");
+            await MetadataEndpointModule.GetProfileResourceOpenApiSpec(
+                httpContext,
+                "NonExistentProfile",
+                A.Fake<IDataStoreProvider>(),
+                apiService,
+                FrontendOptions()
+            );
 
             // Assert
-            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            httpContext.Response.StatusCode.Should().Be((int)HttpStatusCode.NotFound);
         }
 
         [Test]
@@ -592,25 +595,21 @@ public class MetadataModuleTests
                     apiService.GetProfileOpenApiSpecificationAsync(A<string>._, A<string?>._, A<JsonArray>._)
                 )
                 .Returns(Task.FromResult<JsonNode?>(JsonNode.Parse("""{"openapi": "3.0.0"}""")));
-
-            await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-            {
-                builder.UseEnvironment("Test");
-                builder.ConfigureServices(collection =>
-                {
-                    TestMockHelper.AddEssentialMocks(collection);
-                    collection.AddTransient(x => apiService);
-                });
-            });
-            using var client = factory.CreateClient();
-
-            // Act
-            var response = await client.GetAsync(
+            var httpContext = CreateHttpContext(
                 "/metadata/specifications/profiles/studentprofile/resources-spec.json"
             );
 
+            // Act
+            await MetadataEndpointModule.GetProfileResourceOpenApiSpec(
+                httpContext,
+                "studentprofile",
+                A.Fake<IDataStoreProvider>(),
+                apiService,
+                FrontendOptions()
+            );
+
             // Assert
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            httpContext.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
             A.CallTo(() =>
                     apiService.GetProfileOpenApiSpecificationAsync(
                         "studentprofile",
@@ -626,43 +625,24 @@ public class MetadataModuleTests
     public class When_Getting_The_Base_Metadata_Endpoint
     {
         private JsonNode? _jsonContent;
-        private HttpResponseMessage? _response;
+        private DefaultHttpContext _httpContext = null!;
 
         [SetUp]
-        public void SetUp()
+        public async Task SetUp()
         {
             // Arrange
-            var apiService = A.Fake<IApiService>();
-
-            using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-            {
-                builder.UseEnvironment("Test");
-                builder.ConfigureServices(
-                    (collection) =>
-                    {
-                        TestMockHelper.AddEssentialMocks(collection);
-                        collection.AddTransient((x) => apiService);
-                    }
-                );
-            });
-            using var client = factory.CreateClient();
+            _httpContext = CreateHttpContext("/metadata");
 
             // Act
-            _response = client.GetAsync("/metadata").GetAwaiter().GetResult();
-            var content = _response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
-            _jsonContent = JsonNode.Parse(content) ?? throw new Exception("JSON parsing failed");
-        }
-
-        [TearDownAttribute]
-        public void TearDownAttribute()
-        {
-            _response?.Dispose();
+            await MetadataEndpointModule.GetMetadata(_httpContext);
+            _jsonContent =
+                await ReadJsonResponseAsync(_httpContext) ?? throw new Exception("JSON parsing failed");
         }
 
         [Test]
         public void Then_it_responds_with_status_OK()
         {
-            _response!.StatusCode.Should().Be(HttpStatusCode.OK);
+            _httpContext.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
         }
 
         [Test]
@@ -1102,25 +1082,19 @@ public class MetadataModuleTests
                         """
                     )
                 );
-
-            await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-            {
-                builder.UseEnvironment("Test");
-                builder.ConfigureServices(collection =>
-                {
-                    TestMockHelper.AddEssentialMocks(collection);
-                    collection.AddTransient(x => apiService);
-                });
-            });
-            using var client = factory.CreateClient();
+            var httpContext = CreateHttpContext("/metadata/changequeries/v1/swagger.json");
 
             // Act
-            var response = await client.GetAsync("/metadata/changequeries/v1/swagger.json");
-            var content = await response.Content.ReadAsStringAsync();
-            var jsonContent = JsonNode.Parse(content);
+            await MetadataEndpointModule.GetChangeQueriesOpenApiSpec(
+                httpContext,
+                apiService,
+                A.Fake<IDataStoreProvider>(),
+                FrontendOptions()
+            );
+            var jsonContent = await ReadJsonResponseAsync(httpContext);
 
             // Assert
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            httpContext.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
             jsonContent.Should().NotBeNull();
             jsonContent!["openapi"]!.GetValue<string>().Should().Be("3.0.0");
             jsonContent["info"]!["title"]!.GetValue<string>().Should().Be("Ed-Fi Change Queries API");
@@ -1136,23 +1110,18 @@ public class MetadataModuleTests
             var apiService = A.Fake<IApiService>();
             A.CallTo(() => apiService.GetChangeQueriesOpenApiSpecification(A<JsonArray>._))
                 .Returns((JsonNode?)null);
-
-            await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-            {
-                builder.UseEnvironment("Test");
-                builder.ConfigureServices(collection =>
-                {
-                    TestMockHelper.AddEssentialMocks(collection);
-                    collection.AddTransient(x => apiService);
-                });
-            });
-            using var client = factory.CreateClient();
+            var httpContext = CreateHttpContext("/metadata/changequeries/v1/swagger.json");
 
             // Act
-            var response = await client.GetAsync("/metadata/changequeries/v1/swagger.json");
+            await MetadataEndpointModule.GetChangeQueriesOpenApiSpec(
+                httpContext,
+                apiService,
+                A.Fake<IDataStoreProvider>(),
+                FrontendOptions()
+            );
 
             // Assert
-            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            httpContext.Response.StatusCode.Should().Be((int)HttpStatusCode.NotFound);
             A.CallTo(() => apiService.GetChangeQueriesOpenApiSpecification(A<JsonArray>._))
                 .MustHaveHappenedOnceExactly();
         }
@@ -1169,28 +1138,17 @@ public class MetadataModuleTests
             A.CallTo(() => apiService.HasChangeQueriesOpenApiSpecification()).Returns(true);
             A.CallTo(() => apiService.GetProfileNamesAsync(A<string?>._))
                 .Returns(Task.FromResult<IReadOnlyList<string>>([]));
-
-            await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-            {
-                builder.UseEnvironment("Test");
-                builder.ConfigureServices(collection =>
-                {
-                    TestMockHelper.AddEssentialMocks(collection);
-                    collection.AddTransient(x => apiService);
-                });
-            });
-            using var client = factory.CreateClient();
+            var httpContext = CreateHttpContext("/metadata/specifications");
 
             // Act
-            var response = await client.GetAsync("/metadata/specifications");
-            var content = await response.Content.ReadAsStringAsync();
-            var jsonArray = JsonNode.Parse(content) as JsonArray;
+            await MetadataEndpointModule.GetSections(httpContext, apiService);
+            var jsonArray = await ReadJsonResponseAsync(httpContext) as JsonArray;
             var changeQueries = jsonArray!.SingleOrDefault(node =>
                 node!["name"]!.GetValue<string>() == "Change-Queries"
             );
 
             // Assert
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            httpContext.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
             changeQueries.Should().NotBeNull();
             changeQueries!["prefix"]!.GetValue<string>().Should().Be("Other");
             changeQueries["endpointUri"]!
@@ -1256,28 +1214,17 @@ public class MetadataModuleTests
             A.CallTo(() => apiService.HasChangeQueriesOpenApiSpecification()).Returns(false);
             A.CallTo(() => apiService.GetProfileNamesAsync(A<string?>._))
                 .Returns(Task.FromResult<IReadOnlyList<string>>([]));
-
-            await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-            {
-                builder.UseEnvironment("Test");
-                builder.ConfigureServices(collection =>
-                {
-                    TestMockHelper.AddEssentialMocks(collection);
-                    collection.AddTransient(x => apiService);
-                });
-            });
-            using var client = factory.CreateClient();
+            var httpContext = CreateHttpContext("/metadata/specifications");
 
             // Act
-            var response = await client.GetAsync("/metadata/specifications");
-            var content = await response.Content.ReadAsStringAsync();
-            var jsonArray = JsonNode.Parse(content) as JsonArray;
+            await MetadataEndpointModule.GetSections(httpContext, apiService);
+            var jsonArray = await ReadJsonResponseAsync(httpContext) as JsonArray;
             var changeQueries = jsonArray!.SingleOrDefault(node =>
                 node!["name"]!.GetValue<string>() == "Change-Queries"
             );
 
             // Assert
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            httpContext.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
             changeQueries.Should().BeNull();
             A.CallTo(() => apiService.HasChangeQueriesOpenApiSpecification()).MustHaveHappenedOnceExactly();
             A.CallTo(() => apiService.GetChangeQueriesOpenApiSpecification(A<JsonArray>._))
@@ -1310,8 +1257,6 @@ public class MetadataModuleTests
     public async Task Metadata_Returns_Descriptors_Content()
     {
         // Arrange
-        var contentProvider = A.Fake<IContentProvider>();
-
         var apiService = A.Fake<IApiService>();
         A.CallTo(() => apiService.GetDescriptorOpenApiSpecification(A<JsonArray>._))
             .Returns(
@@ -1331,31 +1276,21 @@ public class MetadataModuleTests
                     """
                 )!
             );
-
-        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-        {
-            builder.UseEnvironment("Test");
-            builder.ConfigureServices(
-                (collection) =>
-                {
-                    TestMockHelper.AddEssentialMocks(collection);
-                    collection.AddTransient((x) => contentProvider);
-                    collection.AddTransient((x) => apiService);
-                }
-            );
-        });
-        using var client = factory.CreateClient();
+        var httpContext = CreateHttpContext("/metadata/specifications/descriptors-spec.json");
 
         // Act
-        var response = await client.GetAsync("/metadata/specifications/descriptors-spec.json");
-        var content = await response.Content.ReadAsStringAsync();
-
-        var jsonContent = JsonNode.Parse(content);
+        await MetadataEndpointModule.GetDescriptorOpenApiSpec(
+            httpContext,
+            apiService,
+            A.Fake<IDataStoreProvider>(),
+            FrontendOptions()
+        );
+        var jsonContent = await ReadJsonResponseAsync(httpContext);
         var openapiVersion = jsonContent?["openapi"]?.GetValue<string>();
         var paths = jsonContent?["paths"]?.AsObject();
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        httpContext.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
         jsonContent.Should().NotBeNull();
         openapiVersion.Should().Be("3.0.0");
         paths.Should().NotBeNull();
@@ -1389,8 +1324,6 @@ public class MetadataModuleTests
     public async Task Metadata_Returns_Dependencies()
     {
         // Arrange
-        var httpContext = A.Fake<HttpContext>();
-
         var apiService = A.Fake<IApiService>();
         var dependenciesJson = JsonNode
             .Parse(
@@ -1405,29 +1338,14 @@ public class MetadataModuleTests
             )!
             .AsArray();
         A.CallTo(() => apiService.GetDependencies()).Returns(dependenciesJson);
-
-        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-        {
-            builder.UseEnvironment("Test");
-            builder.ConfigureServices(
-                (collection) =>
-                {
-                    TestMockHelper.AddEssentialMocks(collection);
-                    collection.AddTransient(x => httpContext);
-                    collection.AddTransient((x) => apiService);
-                }
-            );
-        });
-        using var client = factory.CreateClient();
+        var requestContext = CreateHttpContext("/metadata/dependencies");
 
         // Act
-        var response = await client.GetAsync("/metadata/dependencies");
-        var content = await response.Content.ReadAsStringAsync();
-
-        var jsonContent = JsonNode.Parse(content);
+        await MetadataEndpointModule.GetDependencies(requestContext, apiService);
+        var jsonContent = await ReadJsonResponseAsync(requestContext);
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        requestContext.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
         jsonContent.Should().NotBeNull();
         jsonContent
             ?[0]!["resource"]
@@ -1472,27 +1390,19 @@ public class Given_file_mode_discovery_spec_route
     [Test]
     public async Task It_returns_200_with_replaced_urls_for_discovery_spec()
     {
-        var fileModeContentProvider = _fileModeContentProvider;
+        var httpContext = MetadataModuleTests.CreateHttpContext(
+            "/metadata/specifications/discovery-spec.json"
+        );
 
-        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-        {
-            builder.UseEnvironment("Test");
-            builder.ConfigureServices(collection =>
-            {
-                TestMockHelper.AddEssentialMocks(collection);
-                var apiService = A.Fake<IApiService>();
-                collection.AddTransient(x => apiService);
-                // Inject the pre-built file-mode ContentProvider; no AppSettings change.
-                collection.AddTransient(x => fileModeContentProvider);
-            });
-        });
-        using var client = factory.CreateClient();
+        await MetadataEndpointModule.GetSectionMetadata(
+            httpContext,
+            _fileModeContentProvider,
+            MetadataModuleTests.FrontendOptions(),
+            A.Fake<IDataStoreProvider>()
+        );
+        var json = await MetadataModuleTests.ReadJsonResponseAsync(httpContext);
 
-        var response = await client.GetAsync("/metadata/specifications/discovery-spec.json");
-        var content = await response.Content.ReadAsStringAsync();
-        var json = JsonNode.Parse(content);
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        httpContext.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
         json.Should().NotBeNull();
         // HOST_URL placeholders in the staged file should be replaced with the request base URL
         // The "host" field originally contains "HOST_URL/data/v3"

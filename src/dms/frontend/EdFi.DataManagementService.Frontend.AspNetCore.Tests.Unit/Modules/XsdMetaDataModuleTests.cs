@@ -11,6 +11,7 @@ using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
+using EdFi.DataManagementService.Frontend.AspNetCore.Modules;
 using EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.Content;
 using FakeItEasy;
 using FluentAssertions;
@@ -65,33 +66,53 @@ public class XsdMetaDataModuleTests
         A.CallTo(() => _contentProvider.ListXsdFiles("ed-fi")).Returns(files);
     }
 
+    internal static IMetadataRouteValidator AllowingMetadataRouteValidator()
+    {
+        var metadataRouteValidator = A.Fake<IMetadataRouteValidator>();
+        A.CallTo(() => metadataRouteValidator.ValidateAsync(A<HttpContext>._, A<CancellationToken>._))
+            .Returns(true);
+        return metadataRouteValidator;
+    }
+
+    internal static DefaultHttpContext CreateHttpContext(string path)
+    {
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Scheme = "http";
+        httpContext.Request.Host = new HostString("localhost");
+        httpContext.Request.Path = path;
+        var resultServices = new ServiceCollection().AddLogging().BuildServiceProvider();
+        httpContext.RequestServices = resultServices;
+        httpContext.Response.RegisterForDispose(resultServices);
+        httpContext.Response.Body = new MemoryStream();
+        return httpContext;
+    }
+
+    internal static async Task<JsonNode?> ReadJsonResponseAsync(HttpContext httpContext)
+    {
+        httpContext.Response.Body.Position = 0;
+        var content = await new StreamReader(httpContext.Response.Body).ReadToEndAsync();
+        return JsonNode.Parse(content);
+    }
+
     [Test]
     public async Task XsdMetaData_Endpoint_Returns_DataModel_Sections()
     {
         // Arrange
-        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-        {
-            builder.UseEnvironment("Test");
-            builder.ConfigureServices(
-                (collection) =>
-                {
-                    TestMockHelper.AddEssentialMocks(collection);
-                    collection.AddTransient((x) => _apiService!);
-                }
-            );
-        });
-        using var client = factory.CreateClient();
+        var httpContext = CreateHttpContext("/metadata/xsd");
 
         // Act
-        var response = await client.GetAsync("/metadata/xsd");
-        var content = await response.Content.ReadAsStringAsync();
+        await XsdMetadataEndpointModule.GetSections(
+            httpContext,
+            _apiService!,
+            AllowingMetadataRouteValidator()
+        );
 
-        var jsonContent = JsonNode.Parse(content);
+        var jsonContent = await ReadJsonResponseAsync(httpContext);
         var section1 = jsonContent?[0]?["name"]?.GetValue<string>();
         var section2 = jsonContent?[1]?["name"]?.GetValue<string>();
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        httpContext.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
         jsonContent.Should().NotBeNull();
         section1.Should().Contain("ed-fi");
         section2.Should().Contain("tpdm");
@@ -188,30 +209,21 @@ public class XsdMetaDataModuleTests
     public async Task XsdMetaData_Returns_Files()
     {
         // Arrange
-        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-        {
-            builder.UseEnvironment("Test");
-            builder.ConfigureServices(
-                (collection) =>
-                {
-                    TestMockHelper.AddEssentialMocks(collection);
-                    collection.AddTransient((x) => _apiService!);
-                    collection.AddTransient((x) => _contentProvider!);
-                }
-            );
-        });
-        using var client = factory.CreateClient();
+        var httpContext = CreateHttpContext("/metadata/xsd/ed-fi/files");
+        httpContext.Request.RouteValues["section"] = "ed-fi";
 
         // Act
-        var response = await client.GetAsync("/metadata/xsd/ed-fi/files");
-        var content = await response.Content.ReadAsStringAsync();
-
-        var files = JsonSerializer.Deserialize<List<string>>(content);
+        await XsdMetadataEndpointModule.GetXsdMetadataFiles(
+            httpContext,
+            _contentProvider!,
+            AllowingMetadataRouteValidator()
+        );
+        var files = (await ReadJsonResponseAsync(httpContext))?.AsArray();
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        httpContext.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
         files.Should().NotBeNull();
-        files?.Count().Should().Be(3);
+        files?.Count.Should().Be(3);
     }
 
     [Test]
@@ -221,76 +233,58 @@ public class XsdMetaDataModuleTests
         var files = new List<string> { "grand-bend.xsd" };
         A.CallTo(() => _contentProvider!.IsXsdSectionKnown("grand-bend")).Returns(true);
         A.CallTo(() => _contentProvider!.ListXsdFiles("grand-bend")).Returns(files);
-
-        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-        {
-            builder.UseEnvironment("Test");
-            builder.ConfigureServices(collection =>
-            {
-                TestMockHelper.AddEssentialMocks(collection);
-                collection.AddTransient(x => _apiService!);
-                collection.AddTransient(x => _contentProvider!);
-            });
-        });
-        using var client = factory.CreateClient();
+        var httpContext = CreateHttpContext("/metadata/xsd/grand-bend/files");
+        httpContext.Request.RouteValues["section"] = "grand-bend";
 
         // Act
-        var response = await client.GetAsync("/metadata/xsd/grand-bend/files");
-        var content = await response.Content.ReadAsStringAsync();
-
-        var returnedFiles = JsonSerializer.Deserialize<List<string>>(content);
+        await XsdMetadataEndpointModule.GetXsdMetadataFiles(
+            httpContext,
+            _contentProvider!,
+            AllowingMetadataRouteValidator()
+        );
+        var returnedFiles = (await ReadJsonResponseAsync(httpContext))!.AsArray();
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        returnedFiles.Should().Equal("http://localhost/metadata/xsd/grand-bend/grand-bend.xsd");
+        httpContext.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        returnedFiles
+            .Select(file => file!.GetValue<string>())
+            .Should()
+            .Equal("http://localhost/metadata/xsd/grand-bend/grand-bend.xsd");
     }
 
     [Test]
     public async Task XsdMetaData_Files_Returns_Invalid_Resource_If_Missing_Section()
     {
         // Arrange
-        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-        {
-            builder.UseEnvironment("Test");
-            builder.ConfigureServices(
-                (collection) =>
-                {
-                    TestMockHelper.AddEssentialMocks(collection);
-                }
-            );
-        });
-        using var client = factory.CreateClient();
+        var httpContext = CreateHttpContext("/metadata/xsd/test/test1/files");
 
         // Act
-        var response = await client.GetAsync("/metadata/xsd/test/test1/files");
+        await XsdMetadataEndpointModule.GetXsdMetadataFiles(
+            httpContext,
+            _contentProvider!,
+            AllowingMetadataRouteValidator()
+        );
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        httpContext.Response.StatusCode.Should().Be((int)HttpStatusCode.NotFound);
     }
 
     [Test]
     public async Task XsdMetaData_Files_Returns_Invalid_Resource_If_Wrong_Section()
     {
         // Arrange
-        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-        {
-            builder.UseEnvironment("Test");
-            builder.ConfigureServices(
-                (collection) =>
-                {
-                    TestMockHelper.AddEssentialMocks(collection);
-                    collection.AddTransient((x) => _apiService!);
-                    collection.AddTransient((x) => _contentProvider!);
-                }
-            );
-        });
-        using var client = factory.CreateClient();
+        var httpContext = CreateHttpContext("/metadata/xsd/wrong-section/files");
+        httpContext.Request.RouteValues["section"] = "wrong-section";
 
         // Act
-        var response = await client.GetAsync("/metadata/xsd/wrong-section/files");
+        await XsdMetadataEndpointModule.GetXsdMetadataFiles(
+            httpContext,
+            _contentProvider!,
+            AllowingMetadataRouteValidator()
+        );
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        httpContext.Response.StatusCode.Should().Be((int)HttpStatusCode.NotFound);
     }
 
     [Test]
@@ -305,27 +299,23 @@ public class XsdMetaDataModuleTests
         });
 
         A.CallTo(() => _contentProvider!.TryLoadXsdContent("test.xsd", "ed-fi")).Returns(_fileStream);
-
-        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-        {
-            builder.UseEnvironment("Test");
-            builder.ConfigureServices(
-                (collection) =>
-                {
-                    TestMockHelper.AddEssentialMocks(collection);
-                    collection.AddTransient((x) => _apiService!);
-                    collection.AddTransient((x) => _contentProvider!);
-                }
-            );
-        });
-        using var client = factory.CreateClient();
+        var httpContext = CreateHttpContext("/metadata/xsd/ed-fi/test.xsd");
+        httpContext.Request.RouteValues["section"] = "ed-fi";
+        httpContext.Request.RouteValues["fileName"] = "test";
 
         // Act
-        var response = await client.GetAsync("/metadata/xsd/ed-fi/test.xsd");
-        var content = await response.Content.ReadAsStringAsync();
+        var result = await XsdMetadataEndpointModule.GetXsdMetadataFileContent(
+            httpContext,
+            _contentProvider!,
+            AllowingMetadataRouteValidator()
+        );
+        await result.ExecuteAsync(httpContext);
+        httpContext.Response.Body.Position = 0;
+        var content = await new StreamReader(httpContext.Response.Body).ReadToEndAsync();
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        httpContext.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        httpContext.Response.ContentType.Should().Be("application/xml");
         content.Should().Contain("test-content");
     }
 
@@ -335,26 +325,20 @@ public class XsdMetaDataModuleTests
         // Arrange
         A.CallTo(() => _contentProvider!.TryLoadXsdContent("not-exists.xsd", "ed-fi"))
             .Returns((Lazy<Stream>?)null);
-
-        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-        {
-            builder.UseEnvironment("Test");
-            builder.ConfigureServices(
-                (collection) =>
-                {
-                    TestMockHelper.AddEssentialMocks(collection);
-                    collection.AddTransient((x) => _apiService!);
-                    collection.AddTransient((x) => _contentProvider!);
-                }
-            );
-        });
-        using var client = factory.CreateClient();
+        var httpContext = CreateHttpContext("/metadata/xsd/ed-fi/not-exists.xsd");
+        httpContext.Request.RouteValues["section"] = "ed-fi";
+        httpContext.Request.RouteValues["fileName"] = "not-exists";
 
         // Act
-        var response = await client.GetAsync("/metadata/xsd/ed-fi/not-exists.xsd");
+        var result = await XsdMetadataEndpointModule.GetXsdMetadataFileContent(
+            httpContext,
+            _contentProvider!,
+            AllowingMetadataRouteValidator()
+        );
+        await result.ExecuteAsync(httpContext);
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        httpContext.Response.StatusCode.Should().Be((int)HttpStatusCode.NotFound);
     }
 
     [Test]
@@ -541,43 +525,25 @@ public class XsdMetaDataModuleTests
         var files = new List<string> { "a.xsd" };
         A.CallTo(() => _contentProvider!.IsXsdSectionKnown("myfiles")).Returns(true);
         A.CallTo(() => _contentProvider!.ListXsdFiles("myfiles")).Returns(files);
-
-        var tenantValidator = A.Fake<ITenantValidator>();
-        A.CallTo(() => tenantValidator.ValidateTenantAsync(A<string>._)).Returns(true);
-
-        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-        {
-            builder.UseEnvironment("Test");
-            builder.ConfigureAppConfiguration(
-                (context, configuration) =>
-                {
-                    configuration.AddInMemoryCollection(
-                        new Dictionary<string, string?> { ["AppSettings:MultiTenancy"] = "true" }
-                    );
-                }
-            );
-            builder.ConfigureServices(
-                (collection) =>
-                {
-                    TestMockHelper.AddEssentialMocks(collection);
-                    collection.AddTransient((x) => _apiService!);
-                    collection.AddTransient((x) => _contentProvider!);
-                    collection.AddTransient((x) => tenantValidator);
-                }
-            );
-        });
-        using var client = factory.CreateClient();
+        var httpContext = CreateHttpContext("/tenantfiles1/metadata/xsd/myfiles/files");
+        httpContext.Request.RouteValues["tenant"] = "tenantfiles1";
+        httpContext.Request.RouteValues["section"] = "myfiles";
 
         // Act
-        var response = await client.GetAsync("/tenantfiles1/metadata/xsd/myfiles/files");
-        var content = await response.Content.ReadAsStringAsync();
-
-        var returnedFiles = JsonSerializer.Deserialize<List<string>>(content);
+        await XsdMetadataEndpointModule.GetXsdMetadataFiles(
+            httpContext,
+            _contentProvider!,
+            AllowingMetadataRouteValidator()
+        );
+        var returnedFiles = (await ReadJsonResponseAsync(httpContext))!.AsArray();
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        httpContext.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
         returnedFiles.Should().NotBeNull();
-        returnedFiles.Should().Equal("http://localhost/tenantfiles1/metadata/xsd/myfiles/a.xsd");
+        returnedFiles
+            .Select(file => file!.GetValue<string>())
+            .Should()
+            .Equal("http://localhost/tenantfiles1/metadata/xsd/myfiles/a.xsd");
     }
 
     [Test]
@@ -767,35 +733,19 @@ public class Given_file_mode_xsd_metadata_endpoint
         }
     }
 
-    private WebApplicationFactory<Program> CreateFactory()
-    {
-        var fileModeContentProvider = _fileModeContentProvider;
-        var apiService = _apiService;
-
-        return new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-        {
-            builder.UseEnvironment("Test");
-            builder.ConfigureServices(collection =>
-            {
-                TestMockHelper.AddEssentialMocks(collection);
-                collection.AddTransient(x => apiService);
-                // Inject the pre-built file-mode ContentProvider directly; no AppSettings change.
-                collection.AddTransient(x => fileModeContentProvider);
-            });
-        });
-    }
-
     [Test]
     public async Task It_returns_sections_including_core_and_extension()
     {
-        await using var factory = CreateFactory();
-        using var client = factory.CreateClient();
+        var httpContext = XsdMetaDataModuleTests.CreateHttpContext("/metadata/xsd");
 
-        var response = await client.GetAsync("/metadata/xsd");
-        var content = await response.Content.ReadAsStringAsync();
-        var jsonContent = JsonNode.Parse(content);
+        await XsdMetadataEndpointModule.GetSections(
+            httpContext,
+            _apiService,
+            XsdMetaDataModuleTests.AllowingMetadataRouteValidator()
+        );
+        var jsonContent = await XsdMetaDataModuleTests.ReadJsonResponseAsync(httpContext);
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        httpContext.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
         jsonContent.Should().NotBeNull();
         var names = jsonContent!.AsArray().Select(n => n!["name"]!.GetValue<string>()).ToList();
         names.Should().Contain("ed-fi");
@@ -805,16 +755,20 @@ public class Given_file_mode_xsd_metadata_endpoint
     [Test]
     public async Task It_returns_bare_staged_file_names_with_full_urls_for_core_section()
     {
-        await using var factory = CreateFactory();
-        using var client = factory.CreateClient();
+        var httpContext = XsdMetaDataModuleTests.CreateHttpContext("/metadata/xsd/ed-fi/files");
+        httpContext.Request.RouteValues["section"] = "ed-fi";
 
-        var response = await client.GetAsync("/metadata/xsd/ed-fi/files");
-        var content = await response.Content.ReadAsStringAsync();
-        var files = JsonSerializer.Deserialize<List<string>>(content);
+        await XsdMetadataEndpointModule.GetXsdMetadataFiles(
+            httpContext,
+            _fileModeContentProvider,
+            XsdMetaDataModuleTests.AllowingMetadataRouteValidator()
+        );
+        var files = (await XsdMetaDataModuleTests.ReadJsonResponseAsync(httpContext))!.AsArray();
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        httpContext.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
         files.Should().NotBeNull();
-        files!
+        files
+            .Select(file => file!.GetValue<string>())
             .Should()
             .Equal(
                 $"http://localhost/metadata/xsd/ed-fi/{FileModeWorkspaceBuilder.CoreXsdFile1}",
@@ -825,16 +779,20 @@ public class Given_file_mode_xsd_metadata_endpoint
     [Test]
     public async Task It_returns_blended_core_and_extension_files_for_extension_section()
     {
-        await using var factory = CreateFactory();
-        using var client = factory.CreateClient();
+        var httpContext = XsdMetaDataModuleTests.CreateHttpContext("/metadata/xsd/sample/files");
+        httpContext.Request.RouteValues["section"] = "sample";
 
-        var response = await client.GetAsync("/metadata/xsd/sample/files");
-        var content = await response.Content.ReadAsStringAsync();
-        var files = JsonSerializer.Deserialize<List<string>>(content);
+        await XsdMetadataEndpointModule.GetXsdMetadataFiles(
+            httpContext,
+            _fileModeContentProvider,
+            XsdMetaDataModuleTests.AllowingMetadataRouteValidator()
+        );
+        var files = (await XsdMetaDataModuleTests.ReadJsonResponseAsync(httpContext))!.AsArray();
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        httpContext.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
         files.Should().NotBeNull();
-        files!
+        files
+            .Select(file => file!.GetValue<string>())
             .Should()
             .Equal(
                 $"http://localhost/metadata/xsd/sample/{FileModeWorkspaceBuilder.CoreXsdFile1}",
@@ -846,46 +804,69 @@ public class Given_file_mode_xsd_metadata_endpoint
     [Test]
     public async Task It_returns_application_xml_stream_for_bare_xsd_file_name()
     {
-        await using var factory = CreateFactory();
-        using var client = factory.CreateClient();
-
         // Route: /metadata/xsd/{section}/{fileName}.xsd — bare staged name without extension in route
         var bareNameWithoutExtension = Path.GetFileNameWithoutExtension(
             FileModeWorkspaceBuilder.CoreXsdFile1
         );
-        var response = await client.GetAsync($"/metadata/xsd/ed-fi/{bareNameWithoutExtension}.xsd");
-        var content = await response.Content.ReadAsStringAsync();
+        var httpContext = XsdMetaDataModuleTests.CreateHttpContext(
+            $"/metadata/xsd/ed-fi/{bareNameWithoutExtension}.xsd"
+        );
+        httpContext.Request.RouteValues["section"] = "ed-fi";
+        httpContext.Request.RouteValues["fileName"] = bareNameWithoutExtension;
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
+        var result = await XsdMetadataEndpointModule.GetXsdMetadataFileContent(
+            httpContext,
+            _fileModeContentProvider,
+            XsdMetaDataModuleTests.AllowingMetadataRouteValidator()
+        );
+        await result.ExecuteAsync(httpContext);
+        httpContext.Response.Body.Position = 0;
+        var content = await new StreamReader(httpContext.Response.Body).ReadToEndAsync();
+
+        httpContext.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        httpContext.Response.ContentType.Should().Be("application/xml");
         content.Should().Be(FileModeWorkspaceBuilder.CoreXsdFile1Content);
     }
 
     [Test]
     public async Task It_returns_404_for_legacy_assembly_resource_prefixed_xsd_file_name()
     {
-        await using var factory = CreateFactory();
-        using var client = factory.CreateClient();
+        var fileName =
+            $"EdFi.DataStandard52.ApiSchema.xsd.{Path.GetFileNameWithoutExtension(FileModeWorkspaceBuilder.CoreXsdFile1)}";
+        var httpContext = XsdMetaDataModuleTests.CreateHttpContext($"/metadata/xsd/ed-fi/{fileName}.xsd");
+        httpContext.Request.RouteValues["section"] = "ed-fi";
+        httpContext.Request.RouteValues["fileName"] = fileName;
 
-        var response = await client.GetAsync(
-            $"/metadata/xsd/ed-fi/EdFi.DataStandard52.ApiSchema.xsd.{FileModeWorkspaceBuilder.CoreXsdFile1}"
+        var result = await XsdMetadataEndpointModule.GetXsdMetadataFileContent(
+            httpContext,
+            _fileModeContentProvider,
+            XsdMetaDataModuleTests.AllowingMetadataRouteValidator()
         );
+        await result.ExecuteAsync(httpContext);
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        httpContext.Response.StatusCode.Should().Be((int)HttpStatusCode.NotFound);
     }
 
     [Test]
     public async Task It_returns_404_when_existing_core_file_is_requested_from_unknown_section()
     {
-        await using var factory = CreateFactory();
-        using var client = factory.CreateClient();
-
         var bareNameWithoutExtension = Path.GetFileNameWithoutExtension(
             FileModeWorkspaceBuilder.CoreXsdFile1
         );
-        var response = await client.GetAsync($"/metadata/xsd/unknown/{bareNameWithoutExtension}.xsd");
+        var httpContext = XsdMetaDataModuleTests.CreateHttpContext(
+            $"/metadata/xsd/unknown/{bareNameWithoutExtension}.xsd"
+        );
+        httpContext.Request.RouteValues["section"] = "unknown";
+        httpContext.Request.RouteValues["fileName"] = bareNameWithoutExtension;
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        var result = await XsdMetadataEndpointModule.GetXsdMetadataFileContent(
+            httpContext,
+            _fileModeContentProvider,
+            XsdMetaDataModuleTests.AllowingMetadataRouteValidator()
+        );
+        await result.ExecuteAsync(httpContext);
+
+        httpContext.Response.StatusCode.Should().Be((int)HttpStatusCode.NotFound);
     }
 
     [Test]
@@ -904,31 +885,58 @@ public class Given_file_mode_xsd_metadata_endpoint
             FileModeWorkspaceBuilder.SecondDuplicateExtensionXsdContent
         );
 
-        await using var factory = CreateFactory();
-        using var client = factory.CreateClient();
-
         var bareNameWithoutExtension = Path.GetFileNameWithoutExtension(
             FileModeWorkspaceBuilder.DuplicateExtensionXsdFile
         );
-        var sampleResponse = await client.GetAsync($"/metadata/xsd/sample/{bareNameWithoutExtension}.xsd");
-        var secondResponse = await client.GetAsync($"/metadata/xsd/second/{bareNameWithoutExtension}.xsd");
-        var sampleContent = await sampleResponse.Content.ReadAsStringAsync();
-        var secondContent = await secondResponse.Content.ReadAsStringAsync();
+        var sampleHttpContext = XsdMetaDataModuleTests.CreateHttpContext(
+            $"/metadata/xsd/sample/{bareNameWithoutExtension}.xsd"
+        );
+        sampleHttpContext.Request.RouteValues["section"] = "sample";
+        sampleHttpContext.Request.RouteValues["fileName"] = bareNameWithoutExtension;
+        var secondHttpContext = XsdMetaDataModuleTests.CreateHttpContext(
+            $"/metadata/xsd/second/{bareNameWithoutExtension}.xsd"
+        );
+        secondHttpContext.Request.RouteValues["section"] = "second";
+        secondHttpContext.Request.RouteValues["fileName"] = bareNameWithoutExtension;
 
-        sampleResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var sampleResult = await XsdMetadataEndpointModule.GetXsdMetadataFileContent(
+            sampleHttpContext,
+            _fileModeContentProvider,
+            XsdMetaDataModuleTests.AllowingMetadataRouteValidator()
+        );
+        await sampleResult.ExecuteAsync(sampleHttpContext);
+        sampleHttpContext.Response.Body.Position = 0;
+        var sampleContent = await new StreamReader(sampleHttpContext.Response.Body).ReadToEndAsync();
+
+        var secondResult = await XsdMetadataEndpointModule.GetXsdMetadataFileContent(
+            secondHttpContext,
+            _fileModeContentProvider,
+            XsdMetaDataModuleTests.AllowingMetadataRouteValidator()
+        );
+        await secondResult.ExecuteAsync(secondHttpContext);
+        secondHttpContext.Response.Body.Position = 0;
+        var secondContent = await new StreamReader(secondHttpContext.Response.Body).ReadToEndAsync();
+
+        sampleHttpContext.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
         sampleContent.Should().Be(FileModeWorkspaceBuilder.SampleDuplicateExtensionXsdContent);
-        secondResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        secondHttpContext.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
         secondContent.Should().Be(FileModeWorkspaceBuilder.SecondDuplicateExtensionXsdContent);
     }
 
     [Test]
     public async Task It_returns_404_for_unknown_xsd_file()
     {
-        await using var factory = CreateFactory();
-        using var client = factory.CreateClient();
+        var httpContext = XsdMetaDataModuleTests.CreateHttpContext("/metadata/xsd/ed-fi/DoesNotExist.xsd");
+        httpContext.Request.RouteValues["section"] = "ed-fi";
+        httpContext.Request.RouteValues["fileName"] = "DoesNotExist";
 
-        var response = await client.GetAsync("/metadata/xsd/ed-fi/DoesNotExist.xsd");
+        var result = await XsdMetadataEndpointModule.GetXsdMetadataFileContent(
+            httpContext,
+            _fileModeContentProvider,
+            XsdMetaDataModuleTests.AllowingMetadataRouteValidator()
+        );
+        await result.ExecuteAsync(httpContext);
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        httpContext.Response.StatusCode.Should().Be((int)HttpStatusCode.NotFound);
     }
 }
