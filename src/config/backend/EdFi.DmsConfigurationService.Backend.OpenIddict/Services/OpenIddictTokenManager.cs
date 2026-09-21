@@ -281,15 +281,16 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                     );
                 }
 
-                // Mint from the stored client id, not the one the caller typed. Client lookup is
-                // case-insensitive, so the same registered client can authenticate as
-                // "acme-client" on one call and "Acme-Client" on the next; minting from the
-                // request would then stamp two different identities onto tokens belonging to one
-                // client, and anything comparing those claims exactly — the revocation ownership
-                // check above all — would treat them as strangers. This single argument feeds the
-                // "sub", "client_id" and "azp" claims plus the stored token's client id, so all
-                // four become canonical together. Falling back to the request value keeps a row
-                // with an empty ClientId from minting an empty subject.
+                // Mint from the stored client id, not the one the caller typed, so that every
+                // token issued to a client carries one identity. Where an engine resolves a
+                // mis-cased client id — SQL Server does, through its default collation; Postgres
+                // does not — minting from the request would otherwise stamp two identities onto
+                // tokens belonging to a single client, and anything comparing those claims
+                // exactly, the revocation ownership check above all, would treat them as
+                // strangers. This single argument feeds the "sub", "client_id" and "azp" claims
+                // plus the stored token's client id, so all four become canonical together.
+                // Falling back to the request value keeps a row with an empty ClientId from
+                // minting an empty subject.
                 string canonicalClientId = string.IsNullOrEmpty(applicationInfo.ClientId)
                     ? clientId
                     : applicationInfo.ClientId;
@@ -446,20 +447,32 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
         }
 
         /// <summary>
-        /// Routes a verification failure to a log level that matches what it actually means. An
-        /// expired token is an ordinary fact of life and goes to Debug; anything untrusted means
-        /// the token was not issued by this service and goes to Warning, so that signal is not
-        /// drowned out by routine expiry.
+        /// Routes a verification failure to a log level and message that match what it actually
+        /// means. An expired token is an ordinary fact of life and goes to Debug. The two
+        /// untrusted cases both go to Warning but say different things, because an
+        /// issuer/audience mismatch is usually a deployment misconfiguration that fails every
+        /// token at once, and letting that share a message with genuine forgery signal would
+        /// make the latter impossible to pick out.
         /// </summary>
         private void LogVerificationFailure(string context, TokenVerificationFailure failure)
         {
-            if (failure == TokenVerificationFailure.Expired)
+            switch (failure)
             {
-                _logger.LogDebug("{Context} the lifetime check (token expired)", context);
-            }
-            else
-            {
-                _logger.LogWarning("{Context} verification (signature, issuer, or audience)", context);
+                case TokenVerificationFailure.Expired:
+                    _logger.LogDebug("{Context} the lifetime check (token expired)", context);
+                    break;
+
+                case TokenVerificationFailure.UntrustedIssuerOrAudience:
+                    _logger.LogWarning(
+                        "{Context} the issuer or audience check; verify the configured Authority "
+                            + "and Audience if this affects every token",
+                        context
+                    );
+                    break;
+
+                default:
+                    _logger.LogWarning("{Context} verification (signature or key id)", context);
+                    break;
             }
         }
 
