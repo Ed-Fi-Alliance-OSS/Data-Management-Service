@@ -58,6 +58,25 @@ public sealed class MssqlDialect : SqlDialectBase
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// One batch on one session covers the whole script: <c>ddl provision</c> runs every GO-split batch
+    /// on a single connection, and sqlcmd does the same, so these settings govern the filtered
+    /// <c>CREATE INDEX</c> and are captured into every <c>CREATE OR ALTER TRIGGER</c> that follows.
+    /// </remarks>
+    public override string RenderScriptPrologue() =>
+        """
+            SET ANSI_NULLS ON;
+            SET QUOTED_IDENTIFIER ON;
+            SET ANSI_PADDING ON;
+            SET ANSI_WARNINGS ON;
+            SET CONCAT_NULL_YIELDS_NULL ON;
+            SET NUMERIC_ROUNDABORT OFF;
+            GO
+
+
+            """;
+
+    /// <inheritdoc />
     public override string CreateSchemaIfNotExists(DbSchemaName schema)
     {
         // SQL Server does not support IF NOT EXISTS for CREATE SCHEMA,

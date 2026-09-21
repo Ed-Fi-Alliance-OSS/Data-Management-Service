@@ -512,6 +512,16 @@ public class Given_PgsqlDialect_Create_Index_If_Not_Exists
 }
 
 [TestFixture]
+public class Given_PgsqlDialect_Script_Prologue
+{
+    [Test]
+    public void It_should_render_nothing_because_postgresql_has_no_session_option_dependency()
+    {
+        new PgsqlDialect(new PgsqlDialectRules()).RenderScriptPrologue().Should().BeEmpty();
+    }
+}
+
+[TestFixture]
 public class Given_PgsqlDialect_Create_Filtered_Index_If_Not_Exists
 {
     private string _ddl = default!;

@@ -100,15 +100,10 @@ api-schema-tools ddl provision \
 bounds DDL execution. For SQL Server, provisioning configures Read Committed Snapshot
 Isolation (and `ALLOW_SNAPSHOT_ISOLATION`) on newly created databases.
 
-`IX_Document_CreatedByOwnershipTokenId` is a filtered index, so SQL Server requires the indexed-view SET option set (`ANSI_NULLS`, `ANSI_PADDING`, `ANSI_WARNINGS`, `ARITHABORT`, `CONCAT_NULL_YIELDS_NULL`, `QUOTED_IDENTIFIER` ON; `NUMERIC_ROUNDABORT` OFF) for the provisioning session and for every session that writes `dms.Document`.
-At compatibility level 90 or above, `ANSI_WARNINGS` ON implies `ARITHABORT` ON for this purpose, so `Microsoft.Data.SqlClient` sessions, which open with `ARITHABORT` OFF, are fine.
-`DBCC USEROPTIONS` omits `arithabort` from its output unless a session has explicitly set it ON, so it will not show the option is satisfied even when it is.
-`QUOTED_IDENTIFIER` is the one that commonly differs in practice: go-sqlcmd and `Microsoft.Data.SqlClient` default it ON, but ODBC `sqlcmd` needs `-I` to match.
-A write against `dms.Document` under the wrong options fails with `Msg 1934`; a read raises nothing and silently stops using the index.
-The provisioning session's setting also outlives the session: SQL Server captures `QUOTED_IDENTIFIER` and `ANSI_NULLS` per module when each `CREATE OR ALTER TRIGGER` runs, and the generated stamp triggers write `dms.Document` on every resource insert, update and delete, so a script applied under `QUOTED_IDENTIFIER` OFF bakes that setting into every stamp trigger and no correctly configured application session can override it afterwards.
-On a fresh database the filtered `CREATE INDEX` fails with `Msg 1934`; because `ddl emit` output is transaction-free, an ODBC `sqlcmd` apply without `-b` continues past the failure and leaves the database without the index while reporting success.
-On a rerun over a database that already has the index, the existence check skips the index, nothing fails, and the refreshed triggers carry the wrong setting, so every later resource write fails with `Msg 1934` from inside the trigger.
-Neither state is repairable by correcting the writing session; re-apply the script (or run `ddl provision`) under the correct options, which recreates the index if it is missing and re-creates every trigger with the right setting.
+`IX_Document_CreatedByOwnershipTokenId` is a filtered index, so SQL Server requires the indexed-view SET option set (`ANSI_NULLS`, `ANSI_PADDING`, `ANSI_WARNINGS`, `ARITHABORT`, `CONCAT_NULL_YIELDS_NULL`, `QUOTED_IDENTIFIER` ON; `NUMERIC_ROUNDABORT` OFF) for the session that creates it and for every write to `dms.Document`, and it captures `QUOTED_IDENTIFIER` and `ANSI_NULLS` into each stamp trigger the script creates.
+The generated SQL Server script therefore opens with one `SET` batch that puts the session in that state, so applying it with any client, including ODBC `sqlcmd` without `-I`, provisions the index and bakes the right settings into the triggers.
+Sessions that write `dms.Document` directly still need `QUOTED_IDENTIFIER` ON: `Microsoft.Data.SqlClient` and go-sqlcmd default it ON, ODBC `sqlcmd` needs `-I`, and a write without it fails with `Msg 1934` while a read raises nothing and silently stops using the index.
+(`ARITHABORT` needs no attention: at compatibility level 90 or above `ANSI_WARNINGS` ON implies it for this purpose, which is why `SqlClient` sessions, which open with it OFF, are fine.)
 
 ### Always-provisioned DocumentCache inventory
 

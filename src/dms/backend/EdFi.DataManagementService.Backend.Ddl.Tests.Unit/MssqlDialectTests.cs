@@ -561,6 +561,35 @@ public class Given_MssqlDialect_Create_Index_If_Not_Exists
 }
 
 [TestFixture]
+public class Given_MssqlDialect_Script_Prologue
+{
+    private string _prologue = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _prologue = new MssqlDialect(new MssqlDialectRules()).RenderScriptPrologue();
+    }
+
+    [Test]
+    public void It_should_render_the_indexed_view_set_option_batch_terminated_by_go()
+    {
+        _prologue
+            .Should()
+            .Be(
+                "SET ANSI_NULLS ON;\n"
+                    + "SET QUOTED_IDENTIFIER ON;\n"
+                    + "SET ANSI_PADDING ON;\n"
+                    + "SET ANSI_WARNINGS ON;\n"
+                    + "SET CONCAT_NULL_YIELDS_NULL ON;\n"
+                    + "SET NUMERIC_ROUNDABORT OFF;\n"
+                    + "GO\n"
+                    + "\n"
+            );
+    }
+}
+
+[TestFixture]
 public class Given_MssqlDialect_Create_Filtered_Index_If_Not_Exists
 {
     private string _ddl = default!;

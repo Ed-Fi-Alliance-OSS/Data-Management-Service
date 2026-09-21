@@ -33,6 +33,9 @@ public abstract class SqlDialectBase : ISqlDialect
     public abstract string QualifyTable(DbTableName table);
 
     /// <inheritdoc />
+    public abstract string RenderScriptPrologue();
+
+    /// <inheritdoc />
     public abstract string CreateSchemaIfNotExists(DbSchemaName schema);
 
     /// <inheritdoc />

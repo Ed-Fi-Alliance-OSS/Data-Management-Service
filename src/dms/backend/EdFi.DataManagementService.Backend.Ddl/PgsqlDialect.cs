@@ -58,6 +58,9 @@ public sealed class PgsqlDialect : SqlDialectBase
     }
 
     /// <inheritdoc />
+    public override string RenderScriptPrologue() => "";
+
+    /// <inheritdoc />
     public override string CreateSchemaIfNotExists(DbSchemaName schema)
     {
         return $"CREATE SCHEMA IF NOT EXISTS {QuoteIdentifier(schema.Value)};";
