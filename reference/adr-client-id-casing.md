@@ -72,7 +72,7 @@ lets a client authenticate with non-canonical casing, the token it receives now 
 canonical `client_id`, so the ownership comparison matches the client's other tokens and revocation
 succeeds. No change to lookup behaviour is required to fix it.
 
-### Client lookup stays case-sensitive
+### Client lookup stays case-sensitive for PostgreSQL
 
 An earlier revision of this work made the PostgreSQL lookup case-insensitive, on Robustness
 Principle grounds, so that both engines would accept any casing. **That was reversed.** RFC 6749
@@ -85,9 +85,6 @@ PostgreSQL's case-sensitive default collation already does the right thing. Acce
 would have been a deliberate departure from the specification in order to be lenient, which is not
 a trade this service needs to make: the revocation defect that motivated the leniency is already
 closed by canonical minting.
-
-(The quoted sentence is from RFC 6749; the section number was not verified when writing this ADR
-and is deliberately omitted rather than guessed.)
 
 Consequences of keeping it strict are small and appropriate: a client that sends the wrong casing
 receives `invalid_client` and must correct its configuration.
@@ -112,17 +109,10 @@ resolves a client from a mis-cased `client_id` where PostgreSQL rejects it. The 
 therefore behave differently for the same request, and the SQL Server behaviour departs from the
 RFC 6749 case-sensitivity rule quoted above.
 
-**This is deliberately out of scope for this change and will be addressed under a separate
-ticket.** It is an RFC-conformance and cross-engine-consistency issue, **not** a revocation
+This is an RFC-conformance and cross-engine-consistency issue, **not** a revocation
 hazard: canonical minting means a client that authenticates on SQL Server with non-canonical
 casing still receives a token bearing the canonical `client_id`, so ownership-checked revocation
 works correctly for it. Nothing about this divergence reopens the silent no-op.
 
-## Consequences
+The RFC-conformance issue may be reconsidered at a later date, at which time this ADR should be amended.
 
-- Tokens minted after this change carry the canonical casing. Tokens minted **before** it still
-  carry whatever casing was requested, so a pre-existing token whose casing is non-canonical remains
-  unrevocable by a canonical caller until it expires. No migration is attempted; token lifetimes are
-  short and the population drains on its own.
-- PostgreSQL lookup behaviour is unchanged by this work, and a test now pins its case-sensitivity
-  so the property is deliberate rather than incidental.
