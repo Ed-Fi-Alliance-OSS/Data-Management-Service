@@ -50,6 +50,10 @@ public class Given_the_served_openapi_document
     private JsonNode RequestBodyExample(string path, string method) =>
         _document["paths"]![path]![method]!["requestBody"]!["content"]!["application/json"]!["example"]!;
 
+    private JsonNode Operation(string path, string method) => _document["paths"]![path]![method]!;
+
+    private JsonNode Schema(string schemaName) => _document["components"]!["schemas"]![schemaName]!;
+
     private JsonNode SingleItemGetOperation(string path) => _document["paths"]![path]!["get"]!;
 
     private JsonNode GetPathParameter(string path, string parameterName) =>
@@ -179,5 +183,48 @@ public class Given_the_served_openapi_document
         description.Should().Contain("wins whenever it exists");
         description.Should().Contain("Only when no client key matches");
         description.Should().Contain("32-bit integer");
+    }
+
+    [TestCase("/v3/claimSets/{claimSetId}/resourceClaimActions", "post", "201")]
+    [TestCase("/v3/claimSets/{claimSetId}/resourceClaimActions/{resourceClaimId}", "put", "204")]
+    [TestCase("/v3/claimSets/{claimSetId}/resourceClaimActions/{resourceClaimId}", "delete", "204")]
+    [TestCase(
+        "/v3/claimSets/{claimSetId}/resourceClaimActions/{resourceClaimId}/overrideAuthorizationStrategy",
+        "post",
+        "200"
+    )]
+    [TestCase(
+        "/v3/claimSets/{claimSetId}/resourceClaimActions/{resourceClaimId}/resetAuthorizationStrategies",
+        "post",
+        "200"
+    )]
+    public void It_documents_the_resource_claim_action_write_success_response(
+        string path,
+        string method,
+        string responseCode
+    )
+    {
+        Operation(path, method)["responses"]!.AsObject().Should().ContainKey(responseCode);
+    }
+
+    [TestCase(
+        "AddResourceClaimActionsOnClaimSetRequest",
+        "claimSetId",
+        "resourceClaimId",
+        "resourceClaimActions"
+    )]
+    [TestCase("EditResourceClaimActionsOnClaimSetRequest", "resourceClaimActions")]
+    [TestCase(
+        "OverrideAuthStategyOnClaimSetRequest",
+        "actionName",
+        "authStrategyIds",
+        "authorizationStrategies"
+    )]
+    public void It_documents_the_resource_claim_action_request_properties(
+        string schemaName,
+        params string[] propertyNames
+    )
+    {
+        Schema(schemaName)["properties"]!.AsObject().Should().ContainKeys(propertyNames);
     }
 }

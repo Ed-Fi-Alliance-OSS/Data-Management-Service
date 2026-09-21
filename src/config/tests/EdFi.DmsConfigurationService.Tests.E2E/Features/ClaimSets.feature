@@ -285,7 +285,6 @@ Feature: ClaimSets endpoints
                       "errors": []
                   }
                   """
-
         Scenario: 12 Verify copy rejects a claim set name with white space the same way insert does
              When a POST request is made to "/v3/claimSets/copy" with
                   """
@@ -383,5 +382,79 @@ Feature: ClaimSets endpoints
                       "_applications": [],
                       "resourceClaims": "{*}"
                   }
-                  """
+              """
               And the response body property "resourceClaims" equals the value captured as "sourceResourceClaims"
+
+        Scenario: 14 Ensure clients can grant selected resource claim actions
+             When a POST request is made to "/v3/claimSets" with
+                  """
+                  {
+                      "claimSetName": "DMS-853ResourceActionGrant{scenarioRunId}"
+                  }
+                  """
+             Then it should respond with 201
+             When a POST request is made to "/v3/claimSets/{claimSetId}/resourceClaimActions" with
+                  """
+                  {
+                      "claimSetId": {claimSetId},
+                      "resourceClaimId": 233,
+                      "resourceClaimActions": [
+                          { "name": "Read", "enabled": true },
+                          { "name": "Update", "enabled": false }
+                      ]
+                  }
+                  """
+             Then it should respond with 201
+
+        Scenario: 15 Ensure clients can override a resource claim action authorization strategy
+             When a POST request is made to "/v3/claimSets" with
+                  """
+                  {
+                      "claimSetName": "DMS-853AuthorizationStrategyOverride{scenarioRunId}"
+                  }
+                  """
+             Then it should respond with 201
+             When a POST request is made to "/v3/claimSets/{claimSetId}/resourceClaimActions" with
+                  """
+                  {
+                      "claimSetId": {claimSetId},
+                      "resourceClaimId": 233,
+                      "resourceClaimActions": [
+                          { "name": "Read", "enabled": true }
+                      ]
+                  }
+                  """
+             Then it should respond with 201
+             When a POST request is made to "/v3/claimSets/{claimSetId}/resourceClaimActions/233/overrideAuthorizationStrategy" with
+                  """
+                  {
+                      "claimSetId": {claimSetId},
+                      "resourceClaimId": 233,
+                      "actionName": "Read",
+                      "authStrategyIds": [1],
+                      "authorizationStrategies": ["NoFurtherAuthorizationRequired"]
+                  }
+                  """
+             Then it should respond with 200
+
+        Scenario: 16 Ensure clients can reset resource claim action authorization strategies
+             When a POST request is made to "/v3/claimSets" with
+                  """
+                  {
+                      "claimSetName": "DMS-853AuthorizationStrategyReset{scenarioRunId}"
+                  }
+                  """
+             Then it should respond with 201
+             When a POST request is made to "/v3/claimSets/{claimSetId}/resourceClaimActions" with
+                  """
+                  {
+                      "claimSetId": {claimSetId},
+                      "resourceClaimId": 233,
+                      "resourceClaimActions": [
+                          { "name": "Read", "enabled": true }
+                      ]
+                  }
+                  """
+             Then it should respond with 201
+             When a POST request is made to "/v3/claimSets/{claimSetId}/resourceClaimActions/233/resetAuthorizationStrategies" with no body
+             Then it should respond with 200
