@@ -6,6 +6,7 @@
 using System.Net;
 using EdFi.DmsConfigurationService.Backend.Keycloak;
 using EdFi.DmsConfigurationService.Backend.Repositories;
+using EdFi.DmsConfigurationService.Backend.Tests.Unit.TestHelpers;
 using EdFi.DmsConfigurationService.DataModel.Configuration;
 using FakeItEasy;
 using FluentAssertions;
@@ -13,6 +14,7 @@ using Flurl.Http;
 using Keycloak.Net.Models.Clients;
 using Keycloak.Net.Models.ClientScopes;
 using Keycloak.Net.Models.Roles;
+using Keycloak.Net.Models.Users;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -825,6 +827,11 @@ public class KeycloakClientRepositoryTests
         public void It_does_not_converge_the_scopes() => _scopeCallOrder.Should().BeEmpty();
     }
 
+    /// <summary>
+    /// The scope is absent, the provider reports its creation successful, and the follow-up
+    /// lookup still cannot find it: the update fails on the post-creation lookup, not on the
+    /// creation result.
+    /// </summary>
     [TestFixture]
     public class Given_an_update_whose_requested_scope_is_missing : InPlaceUpdateTestBase
     {
@@ -833,6 +840,8 @@ public class KeycloakClientRepositoryTests
         {
             A.CallTo(() => _keycloakClientFacade.GetClientScopesAsync("edfi"))
                 .Returns(Task.FromResult<IEnumerable<ClientScope>>([]));
+            A.CallTo(() => _keycloakClientFacade.CreateClientScopeAsync("edfi", A<ClientScope>.Ignored))
+                .Returns(true);
 
             await ActUpdateAsync();
         }
@@ -846,6 +855,48 @@ public class KeycloakClientRepositoryTests
 
         [Test]
         public void It_never_deletes_or_recreates_the_client() => AssertClientIdentityPreserved();
+    }
+
+    /// <summary>
+    /// Audit-contract fixture (DMS-1365 D-4): a scope creation the provider reports unsuccessful
+    /// fails the update immediately as a provider failure, before any mutation. The no-mutation
+    /// assertions are the behavioral guarantee; the single scope lookup documents the fail-fast
+    /// contract, which no longer consults the provider a second time.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_update_whose_scope_creation_is_rejected : InPlaceUpdateTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() => _keycloakClientFacade.GetClientScopesAsync("edfi"))
+                .Returns(Task.FromResult<IEnumerable<ClientScope>>([]));
+            A.CallTo(() => _keycloakClientFacade.CreateClientScopeAsync("edfi", A<ClientScope>.Ignored))
+                .Returns(false);
+
+            await ActUpdateAsync();
+        }
+
+        [Test]
+        public void It_returns_failure_identity_provider() =>
+            _result.Should().BeOfType<ClientUpdateResult.FailureIdentityProvider>();
+
+        [Test]
+        public void It_does_not_update_the_client() => _clientUpdates.Should().BeEmpty();
+
+        [Test]
+        public void It_does_not_converge_the_scopes() => _scopeCallOrder.Should().BeEmpty();
+
+        [Test]
+        public void It_never_deletes_or_recreates_the_client() => AssertClientIdentityPreserved();
+
+        [Test]
+        public void It_looks_the_scopes_up_only_once() =>
+            A.CallTo(() => _keycloakClientFacade.GetClientScopesAsync("edfi")).MustHaveHappenedOnceExactly();
+
+        [Test]
+        public void It_logs_the_rejected_scope_creation() =>
+            _logger.VerifyLogError("did not create the client scope");
     }
 
     [TestFixture]
@@ -1447,5 +1498,263 @@ public class KeycloakClientRepositoryTests
 
         [Test]
         public void It_performs_no_provider_mutation() => AssertNoProviderMutation();
+    }
+
+    /// <summary>
+    /// Shared arrangement for client creation, with a stateful provider fake: the set of clients
+    /// the provider holds, the role mappings it has recorded, and the order of every mutating
+    /// call. Defaults describe a realm where the role and the claim-set scope already exist and
+    /// every provider call succeeds; fixtures override the one call under test.
+    /// </summary>
+    public abstract class CreateClientTestBase : KeycloakClientRepositoryTests
+    {
+        protected const string RoleName = "dms-client";
+        protected const string RoleId = "dms-client-role-id";
+        protected const string ScopeName = "claim-set-scope";
+        protected const string ScopeId = "claim-set-scope-id";
+        protected const string ServiceAccountUserId = "service-account-user-id";
+        protected const string ClientKey = "generated-client-key";
+        protected const string ClientSecret = "GeneratedSecret1234567890!Abcdefghij";
+
+        protected ClientCreateResult _result = null!;
+        protected List<string> _providerClients = null!;
+        protected List<Client> _createdClients = null!;
+        protected List<(string UserId, string RoleName)> _roleMappings = null!;
+        protected List<string> _callOrder = null!;
+
+        [SetUp]
+        public void SetUpCreateDefaults()
+        {
+            _providerClients = [];
+            _createdClients = [];
+            _roleMappings = [];
+            _callOrder = [];
+
+            A.CallTo(() => _keycloakClientFacade.GetRolesAsync("edfi"))
+                .Returns(Task.FromResult<IEnumerable<Role>>([new Role { Id = RoleId, Name = RoleName }]));
+
+            A.CallTo(() => _keycloakClientFacade.CreateRoleAsync("edfi", A<Role>.Ignored))
+                .Invokes(_ => _callOrder.Add("create-role"))
+                .Returns(true);
+
+            A.CallTo(() => _keycloakClientFacade.GetRoleByNameAsync("edfi", RoleName))
+                .Returns(new Role { Id = RoleId, Name = RoleName });
+
+            A.CallTo(() => _keycloakClientFacade.GetClientScopesAsync("edfi"))
+                .Returns(
+                    Task.FromResult<IEnumerable<ClientScope>>([
+                        new ClientScope { Id = ScopeId, Name = ScopeName },
+                    ])
+                );
+
+            A.CallTo(() => _keycloakClientFacade.CreateClientScopeAsync("edfi", A<ClientScope>.Ignored))
+                .Invokes(_ => _callOrder.Add("create-scope"))
+                .Returns(true);
+
+            A.CallTo(() =>
+                    _keycloakClientFacade.CreateClientAndRetrieveClientIdAsync("edfi", A<Client>.Ignored)
+                )
+                .ReturnsLazily(call =>
+                {
+                    string createdUuid = Guid.NewGuid().ToString();
+                    _providerClients.Add(createdUuid);
+                    _createdClients.Add(call.GetArgument<Client>(1)!);
+                    _callOrder.Add("create-client");
+                    return Task.FromResult<string?>(createdUuid);
+                });
+
+            A.CallTo(() => _keycloakClientFacade.GetUserForServiceAccountAsync("edfi", A<string>.Ignored))
+                .Invokes(_ => _callOrder.Add("service-account"))
+                .Returns(new User { Id = ServiceAccountUserId });
+
+            A.CallTo(() =>
+                    _keycloakClientFacade.AddRealmRoleMappingsToUserAsync(
+                        "edfi",
+                        A<string>.Ignored,
+                        A<IEnumerable<Role>>.Ignored
+                    )
+                )
+                .ReturnsLazily(call =>
+                {
+                    string userId = call.GetArgument<string>(1)!;
+                    foreach (Role mapped in call.GetArgument<IEnumerable<Role>>(2)!)
+                    {
+                        _roleMappings.Add((userId, mapped.Name));
+                    }
+                    _callOrder.Add("role-mapping");
+                    return Task.FromResult(true);
+                });
+
+            A.CallTo(() => _keycloakClientFacade.DeleteClientAsync("edfi", A<string>.Ignored))
+                .ReturnsLazily(call =>
+                {
+                    _providerClients.Remove(call.GetArgument<string>(1)!);
+                    _callOrder.Add("delete-client");
+                    return Task.FromResult(true);
+                });
+        }
+
+        protected async Task ActCreateAsync(string clientId = ClientKey, bool isApproved = true) =>
+            _result = await _repository.CreateClientAsync(
+                clientId,
+                ClientSecret,
+                RoleName,
+                "Display Name",
+                ScopeName,
+                "uri://ed-fi.org",
+                "255901",
+                [2, 1],
+                isApproved
+            );
+
+        protected void AssertNoClientCreated()
+        {
+            A.CallTo(() =>
+                    _keycloakClientFacade.CreateClientAndRetrieveClientIdAsync(
+                        A<string>.Ignored,
+                        A<Client>.Ignored
+                    )
+                )
+                .MustNotHaveHappened();
+            _providerClients.Should().BeEmpty();
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_client_creation_whose_scope_already_exists : CreateClientTestBase
+    {
+        [SetUp]
+        public async Task Act() => await ActCreateAsync();
+
+        [Test]
+        public void It_returns_success() => _result.Should().BeOfType<ClientCreateResult.Success>();
+
+        [Test]
+        public void It_does_not_create_the_scope() =>
+            A.CallTo(() =>
+                    _keycloakClientFacade.CreateClientScopeAsync(A<string>.Ignored, A<ClientScope>.Ignored)
+                )
+                .MustNotHaveHappened();
+
+        [Test]
+        public void It_does_not_create_the_role() =>
+            A.CallTo(() => _keycloakClientFacade.CreateRoleAsync(A<string>.Ignored, A<Role>.Ignored))
+                .MustNotHaveHappened();
+    }
+
+    [TestFixture]
+    public class Given_a_client_creation_whose_role_is_created_on_demand : CreateClientTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() => _keycloakClientFacade.GetRolesAsync("edfi"))
+                .Returns(Task.FromResult<IEnumerable<Role>>([]));
+
+            await ActCreateAsync();
+        }
+
+        [Test]
+        public void It_returns_success() => _result.Should().BeOfType<ClientCreateResult.Success>();
+
+        [Test]
+        public void It_creates_the_role_before_the_client() =>
+            _callOrder.IndexOf("create-role").Should().BeLessThan(_callOrder.IndexOf("create-client"));
+
+        [Test]
+        public void It_maps_the_looked_up_role_to_the_service_account() =>
+            _roleMappings.Should().Equal((ServiceAccountUserId, RoleName));
+    }
+
+    /// <summary>
+    /// Fails against the implementation that discarded the role-creation result: that version
+    /// went on to look the role up by name.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_client_creation_whose_role_creation_is_rejected : CreateClientTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() => _keycloakClientFacade.GetRolesAsync("edfi"))
+                .Returns(Task.FromResult<IEnumerable<Role>>([]));
+            A.CallTo(() => _keycloakClientFacade.CreateRoleAsync("edfi", A<Role>.Ignored)).Returns(false);
+
+            await ActCreateAsync();
+        }
+
+        [Test]
+        public void It_returns_failure_identity_provider() =>
+            _result.Should().BeOfType<ClientCreateResult.FailureIdentityProvider>();
+
+        [Test]
+        public void It_does_not_look_the_role_up() =>
+            A.CallTo(() => _keycloakClientFacade.GetRoleByNameAsync(A<string>.Ignored, A<string>.Ignored))
+                .MustNotHaveHappened();
+
+        [Test]
+        public void It_creates_no_client() => AssertNoClientCreated();
+
+        [Test]
+        public void It_logs_the_role_creation_phase() => _logger.VerifyLogError("role-creation");
+    }
+
+    /// <summary>
+    /// Fails against the implementation that created the client before checking the role: that
+    /// version returned the same failure with a client left behind in the provider.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_client_creation_whose_role_cannot_be_found_after_creation : CreateClientTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() => _keycloakClientFacade.GetRolesAsync("edfi"))
+                .Returns(Task.FromResult<IEnumerable<Role>>([]));
+            A.CallTo(() => _keycloakClientFacade.GetRoleByNameAsync("edfi", RoleName))
+                .Returns(Task.FromResult<Role>(null!));
+
+            await ActCreateAsync();
+        }
+
+        [Test]
+        public void It_returns_failure_unknown() =>
+            _result.Should().BeOfType<ClientCreateResult.FailureUnknown>();
+
+        [Test]
+        public void It_creates_no_client() => AssertNoClientCreated();
+
+        [Test]
+        public void It_logs_the_role_lookup_phase() => _logger.VerifyLogError("role-lookup");
+    }
+
+    /// <summary>
+    /// Fails against the implementation that discarded the scope-creation result: that version
+    /// returned <see cref="ClientCreateResult.Success"/> for a client whose claim-set scope the
+    /// provider had refused to create.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_client_creation_whose_scope_creation_is_rejected : CreateClientTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() => _keycloakClientFacade.GetClientScopesAsync("edfi"))
+                .Returns(Task.FromResult<IEnumerable<ClientScope>>([]));
+            A.CallTo(() => _keycloakClientFacade.CreateClientScopeAsync("edfi", A<ClientScope>.Ignored))
+                .Returns(false);
+
+            await ActCreateAsync();
+        }
+
+        [Test]
+        public void It_returns_failure_identity_provider() =>
+            _result.Should().BeOfType<ClientCreateResult.FailureIdentityProvider>();
+
+        [Test]
+        public void It_creates_no_client() => AssertNoClientCreated();
+
+        [Test]
+        public void It_logs_the_scope_creation_phase() => _logger.VerifyLogError("scope-creation");
     }
 }

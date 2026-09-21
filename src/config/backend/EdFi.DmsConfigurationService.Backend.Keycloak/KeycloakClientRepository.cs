@@ -67,7 +67,10 @@ public class KeycloakClientRepository(
                 ProtocolMappers = protocolMappers,
             };
 
-            // Read role from the realm
+            // Preflight: the realm role and the claim-set scope are resolved before the client is
+            // created, so a failure in either leaves nothing behind to compensate. Each provider
+            // boolean is checked; a rejected creation is reported as a provider failure rather
+            // than being discovered later, or never, through a follow-up lookup.
             var realmRoles = await keycloakClientFacade.GetRolesAsync(_realm);
             Role? clientRole = realmRoles.FirstOrDefault(x =>
                 x.Name.Equals(role, StringComparison.InvariantCultureIgnoreCase)
@@ -75,12 +78,42 @@ public class KeycloakClientRepository(
 
             if (clientRole is null)
             {
-                await keycloakClientFacade.CreateRoleAsync(_realm, new Role() { Name = role });
+                if (!await keycloakClientFacade.CreateRoleAsync(_realm, new Role() { Name = role }))
+                {
+                    logger.LogError(
+                        "Client provisioning failed during role-creation for client {ClientId}: the identity provider did not create the realm role {Role}",
+                        SanitizeForLog(clientId),
+                        SanitizeForLog(role)
+                    );
+                    return new ClientCreateResult.FailureIdentityProvider(
+                        new IdentityProviderError("The identity provider did not create the realm role.")
+                    );
+                }
 
                 clientRole = await keycloakClientFacade.GetRoleByNameAsync(_realm, role);
             }
 
-            await CheckAndCreateClientScopeAsync(scope);
+            if (clientRole is null)
+            {
+                logger.LogError(
+                    "Client provisioning failed during role-lookup for client {ClientId}: realm role {Role} not found",
+                    SanitizeForLog(clientId),
+                    SanitizeForLog(role)
+                );
+                return new ClientCreateResult.FailureUnknown($"Role {role} not found.");
+            }
+
+            if (!await CheckAndCreateClientScopeAsync(scope))
+            {
+                logger.LogError(
+                    "Client provisioning failed during scope-creation for client {ClientId}: the identity provider did not create the client scope {Scope}",
+                    SanitizeForLog(clientId),
+                    SanitizeForLog(scope)
+                );
+                return new ClientCreateResult.FailureIdentityProvider(
+                    new IdentityProviderError("The identity provider did not create the client scope.")
+                );
+            }
 
             string? createdClientUuid = await keycloakClientFacade.CreateClientAndRetrieveClientIdAsync(
                 _realm,
@@ -88,26 +121,19 @@ public class KeycloakClientRepository(
             );
             if (!string.IsNullOrEmpty(createdClientUuid))
             {
-                if (clientRole != null)
-                {
-                    // Assign the service role to client's service account
-                    var serviceAccountUser = await keycloakClientFacade.GetUserForServiceAccountAsync(
-                        _realm,
-                        createdClientUuid
-                    );
+                // Assign the service role to client's service account
+                var serviceAccountUser = await keycloakClientFacade.GetUserForServiceAccountAsync(
+                    _realm,
+                    createdClientUuid
+                );
 
-                    _ = await keycloakClientFacade.AddRealmRoleMappingsToUserAsync(
-                        _realm,
-                        serviceAccountUser.Id,
-                        [clientRole]
-                    );
+                _ = await keycloakClientFacade.AddRealmRoleMappingsToUserAsync(
+                    _realm,
+                    serviceAccountUser.Id,
+                    [clientRole]
+                );
 
-                    return new ClientCreateResult.Success(Guid.Parse(createdClientUuid));
-                }
-                else
-                {
-                    return new ClientCreateResult.FailureUnknown($"Role {role} not found.");
-                }
+                return new ClientCreateResult.Success(Guid.Parse(createdClientUuid));
             }
 
             logger.LogError(
@@ -312,36 +338,42 @@ public class KeycloakClientRepository(
         }
     }
 
-    private async Task CheckAndCreateClientScopeAsync(string scope)
+    /// <summary>
+    /// Ensures the claim-set client scope exists. Returns <c>true</c> when it already exists or
+    /// the provider reports it created; <c>false</c> when the provider reports the creation
+    /// unsuccessful, so callers fail fast instead of proceeding against a scope that may be
+    /// absent.
+    /// </summary>
+    private async Task<bool> CheckAndCreateClientScopeAsync(string scope)
     {
-        bool scopeExists = await ClientScopeExistsAsync(scope);
-
-        if (!scopeExists)
+        if (await ClientScopeExistsAsync(scope))
         {
-            await keycloakClientFacade.CreateClientScopeAsync(
-                _realm,
-                new ClientScope()
-                {
-                    Name = scope,
-                    Protocol = "openid-connect",
-                    ProtocolMappers = new List<ProtocolMapper>([
-                        new ProtocolMapper()
-                        {
-                            Name = "audience resolve",
-                            Protocol = "openid-connect",
-                            _ProtocolMapper = "oidc-audience-resolve-mapper",
-                            ConsentRequired = false,
-                            Config = new Dictionary<string, string>
-                            {
-                                { "introspection.token.claim", "true" },
-                                { "access.token.claim", "true" },
-                            },
-                        },
-                    ]),
-                    Attributes = new Attributes() { IncludeInTokenScope = "true" },
-                }
-            );
+            return true;
         }
+
+        return await keycloakClientFacade.CreateClientScopeAsync(
+            _realm,
+            new ClientScope()
+            {
+                Name = scope,
+                Protocol = "openid-connect",
+                ProtocolMappers = new List<ProtocolMapper>([
+                    new ProtocolMapper()
+                    {
+                        Name = "audience resolve",
+                        Protocol = "openid-connect",
+                        _ProtocolMapper = "oidc-audience-resolve-mapper",
+                        ConsentRequired = false,
+                        Config = new Dictionary<string, string>
+                        {
+                            { "introspection.token.claim", "true" },
+                            { "access.token.claim", "true" },
+                        },
+                    },
+                ]),
+                Attributes = new Attributes() { IncludeInTokenScope = "true" },
+            }
+        );
     }
 
     private async Task<bool> ClientScopeExistsAsync(string scope) =>
@@ -420,7 +452,18 @@ public class KeycloakClientRepository(
         HashSet<string> realmDefaultScopeIds;
         try
         {
-            await CheckAndCreateClientScopeAsync(scope);
+            if (!await CheckAndCreateClientScopeAsync(scope))
+            {
+                logger.LogError(
+                    "Update client failure: the identity provider did not create the client scope {Scope} for client {ClientUuid}",
+                    SanitizeForLog(scope),
+                    SanitizeForLog(clientUuid)
+                );
+                return new ClientUpdateResult.FailureIdentityProvider(
+                    new IdentityProviderError("The identity provider did not create the client scope.")
+                );
+            }
+
             ClientScope? targetScope = await FindClientScopeAsync(scope);
             if (targetScope is null || string.IsNullOrEmpty(targetScope.Id))
             {
