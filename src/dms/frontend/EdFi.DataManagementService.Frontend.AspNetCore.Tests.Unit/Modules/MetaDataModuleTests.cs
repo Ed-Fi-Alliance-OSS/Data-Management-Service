@@ -184,6 +184,39 @@ public class MetadataModuleTests
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             metadataRouteValidator.CallCount.Should().Be(0);
         }
+
+        [Test]
+        public async Task It_maps_qualified_metadata_routes_when_qualifier_names_collide_with_metadata_parameters()
+        {
+            // Arrange
+            var metadataRouteValidator = A.Fake<IMetadataRouteValidator>();
+            A.CallTo(() => metadataRouteValidator.ValidateAsync(A<HttpContext>._, A<CancellationToken>._))
+                .Returns(true);
+
+            await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.ConfigureServices(collection =>
+                {
+                    TestMockHelper.AddEssentialMocks(collection);
+                    collection.AddTransient(_ => metadataRouteValidator);
+                    collection.Configure<FrontendAppSettings>(options =>
+                    {
+                        options.MultiTenancy = true;
+                        options.RouteQualifierSegments = "section,profileName,fileName";
+                    });
+                });
+            });
+            using var client = factory.CreateClient();
+
+            // Act
+            var response = await client.GetAsync("/tenant1/ed-fi/StudentProfile/Ed-Fi-Core/metadata");
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            A.CallTo(() => metadataRouteValidator.ValidateAsync(A<HttpContext>._, A<CancellationToken>._))
+                .MustHaveHappenedOnceExactly();
+        }
     }
 
     [TestFixture]
@@ -444,6 +477,44 @@ public class MetadataModuleTests
                 dataStoreProvider,
                 RouteOptions("districtId", "schoolYear")
             );
+
+            // Act
+            bool result = await validator.ValidateAsync(httpContext);
+
+            // Assert
+            result.Should().BeTrue();
+        }
+
+        [Test]
+        public async Task It_maps_internal_metadata_route_values_back_to_configured_qualifier_names()
+        {
+            // Arrange
+            var httpContext = new DefaultHttpContext();
+            httpContext.Request.RouteValues["tenant"] = "Tenant_255901";
+            httpContext.Request.RouteValues["__metadataRouteQualifier0"] = "ed-fi";
+            httpContext.Request.RouteValues["__metadataRouteQualifier1"] = "StudentProfile";
+            httpContext.Request.RouteValues["__metadataRouteQualifier2"] = "Ed-Fi-Core";
+            httpContext.Request.RouteValues["section"] = "dynamic-section";
+            httpContext.Request.RouteValues["profileName"] = "DynamicProfile";
+            httpContext.Request.RouteValues["fileName"] = "DynamicFile";
+
+            var tenantValidator = A.Fake<ITenantValidator>();
+            A.CallTo(() => tenantValidator.ValidateTenantAsync("Tenant_255901")).Returns(true);
+
+            var dataStoreProvider = A.Fake<IDataStoreProvider>();
+            A.CallTo(() => dataStoreProvider.GetAll("Tenant_255901"))
+                .Returns([
+                    DataStoreWithRouteContext(
+                        1,
+                        ("section", "ed-fi"),
+                        ("profileName", "StudentProfile"),
+                        ("fileName", "Ed-Fi-Core")
+                    ),
+                ]);
+
+            var options = RouteOptions("section", "profileName", "fileName");
+            options.Value.MultiTenancy = true;
+            var validator = new MetadataRouteValidator(tenantValidator, dataStoreProvider, options);
 
             // Act
             bool result = await validator.ValidateAsync(httpContext);

@@ -20,7 +20,7 @@ public class XsdMetadataEndpointModule(IOptions<AppSettings> appSettings) : IEnd
 
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
-        string routePattern = FixedRoutePattern.Build(
+        string routePattern = MetadataRouteValidator.BuildRoutePattern(
             appSettings.Value.GetRouteQualifierSegmentsArray(),
             appSettings.Value.MultiTenancy
         );
