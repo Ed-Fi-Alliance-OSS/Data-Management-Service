@@ -101,9 +101,13 @@ confirmation. **Incident response must not treat `200 OK` as proof that a leaked
 credential was contained** — confirm with `POST /connect/introspect`, which reports
 `{"active": false}` only once revocation has actually taken effect.
 
-This is a live operational concern rather than a theoretical one, because at least one
-known defect produces a silent no-op for a legitimate client. For the full list of no-op
-conditions, the confirmation procedure, and that defect, see
+The no-op conditions are all cases where the request was never entitled to revoke the
+token — a token belonging to another client, an unverifiable token, an expired one. A
+casing defect that previously produced a silent no-op for a *legitimate* client has been
+fixed (see
+[ADR: Canonical `client_id` casing](../reference/adr-client-id-casing.md)), but the
+confirmation step remains the only positive evidence of revocation. For the full list of
+no-op conditions and the confirmation procedure, see
 [CS-AUTH.md § Confirming that a revocation actually took effect](../reference/design/configuration-service/CS-AUTH.md#confirming-that-a-revocation-actually-took-effect),
 which is the canonical description.
 

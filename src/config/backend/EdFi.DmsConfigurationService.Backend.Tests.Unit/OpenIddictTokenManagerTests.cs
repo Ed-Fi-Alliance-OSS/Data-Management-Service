@@ -465,6 +465,97 @@ public class OpenIddictTokenManagerTests
     /// Registers the supplied public key as the only active key, so tokens signed with its
     /// private half pass verification.
     /// </summary>
+    private const string CanonicalClientId = "acme-client";
+    private const string NonCanonicalClientId = "Acme-Client";
+    private const string TestEncryptionKey = "TestEncryptionKey32CharactersLong1";
+
+    /// <summary>
+    /// Stubs one RSA key pair as both the active signing key (used when minting) and the active
+    /// public key (used when verifying), so a token minted through GetAccessTokenAsync can be
+    /// handed straight back to RevokeTokenAsync in the same test.
+    /// </summary>
+    private void StubActiveKeyPair()
+    {
+        var rsa = RSA.Create(2048);
+        string keyId = Guid.NewGuid().ToString();
+
+        A.CallTo(() => _tokenRepository.GetActivePrivateKeyAsync(TestEncryptionKey))
+            .Returns(
+                new PrivateKeyInfo
+                {
+                    KeyId = keyId,
+                    PrivateKey = Convert.ToBase64String(rsa.ExportPkcs8PrivateKey()),
+                }
+            );
+
+        A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync())
+            .Returns(
+                new[]
+                {
+                    new PublicKeyInfo { KeyId = keyId, PublicKey = rsa.ExportSubjectPublicKeyInfo() },
+                }
+            );
+    }
+
+    /// <summary>
+    /// A token manager that can actually mint, i.e. one that can reach a signing key.
+    /// </summary>
+    private OpenIddictTokenManager CreateMintingTokenManager() =>
+        new(
+            Options.Create(
+                new IdentityOptions
+                {
+                    Authority = TestIssuer,
+                    Audience = TestAudience,
+                    EncryptionKey = TestEncryptionKey,
+                }
+            ),
+            NullLogger<OpenIddictTokenManager>.Instance,
+            _secretHasher,
+            _tokenRepository
+        );
+
+    /// <summary>
+    /// Registers a client whose stored (canonical) id is <see cref="CanonicalClientId"/> and which
+    /// authenticates successfully under whatever casing the caller supplies.
+    /// </summary>
+    private void StubClientRegisteredAs(string suppliedClientId)
+    {
+        A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync(suppliedClientId))
+            .Returns(
+                new ApplicationInfo
+                {
+                    Id = Guid.NewGuid(),
+                    ClientId = CanonicalClientId,
+                    ClientSecret = "hashed-secret",
+                    IsApproved = true,
+                    Permissions = ["edfi_admin_api/full_access"],
+                }
+            );
+
+        A.CallTo(() => _secretHasher.VerifySecretAsync("plain-secret", "hashed-secret")).Returns(true);
+    }
+
+    /// <summary>
+    /// Mints an access token through the real GetAccessTokenAsync path and returns the raw JWT.
+    /// </summary>
+    private async Task<string> MintAccessTokenAsAsync(string suppliedClientId)
+    {
+        StubClientRegisteredAs(suppliedClientId);
+
+        var result = await CreateMintingTokenManager()
+            .GetAccessTokenAsync([
+                new KeyValuePair<string, string>("client_id", suppliedClientId),
+                new KeyValuePair<string, string>("client_secret", "plain-secret"),
+            ]);
+
+        string payload = ((TokenResult.Success)result).Token;
+        return System
+            .Text.Json.JsonDocument.Parse(payload)
+            .RootElement.GetProperty("access_token")
+            .GetString()!;
+    }
+
     private void StubActivePublicKey(string keyId, byte[] publicKeySpki) =>
         A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync())
             .Returns(
@@ -1009,6 +1100,92 @@ public class OpenIddictTokenManagerTests
         public void It_logs_a_warning()
         {
             LogCountAt(_fakeLogger, LogLevel.Warning).Should().BeGreaterThan(0);
+        }
+    }
+
+    // Client lookup is case-insensitive, so the same registered client can authenticate under
+    // different casings on different calls. The claims must not vary with it: they are minted
+    // from the stored canonical id, so every token for one client carries one identity.
+    [TestFixture]
+    public class Given_GetAccessTokenAsync_WhenTheClientUsesNonCanonicalCasing : OpenIddictTokenManagerTests
+    {
+        private JwtSecurityToken _minted = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            StubActiveKeyPair();
+            string rawToken = await MintAccessTokenAsAsync(NonCanonicalClientId);
+            _minted = new JwtSecurityTokenHandler().ReadJwtToken(rawToken);
+        }
+
+        private string? ClaimValue(string type) => _minted.Claims.FirstOrDefault(c => c.Type == type)?.Value;
+
+        [Test]
+        public void It_mints_the_canonical_client_id_claim()
+        {
+            ClaimValue("client_id").Should().Be(CanonicalClientId);
+        }
+
+        [Test]
+        public void It_mints_the_canonical_sub_claim()
+        {
+            ClaimValue(JwtRegisteredClaimNames.Sub).Should().Be(CanonicalClientId);
+        }
+
+        [Test]
+        public void It_mints_the_canonical_azp_claim()
+        {
+            ClaimValue("azp").Should().Be(CanonicalClientId);
+        }
+    }
+
+    // The end-to-end proof that the casing defect is fixed. Two tokens for one registered client,
+    // obtained under different casings, previously carried different client_id claims, so the
+    // holder of one could not revoke the other: the ownership comparison saw two strangers and
+    // returned a silent 200 OK no-op. Both tokens now carry the canonical id, so revocation works.
+    [TestFixture]
+    public class Given_RevokeTokenAsync_AcrossTwoCasingsOfOneClient : OpenIddictTokenManagerTests
+    {
+        private bool _result;
+        private string _callerClientId = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            StubActiveKeyPair();
+
+            // Token to be revoked, obtained using the canonical casing.
+            string targetToken = await MintAccessTokenAsAsync(CanonicalClientId);
+
+            // The caller obtained its own token using a different casing of the same client id.
+            string callerToken = await MintAccessTokenAsAsync(NonCanonicalClientId);
+            _callerClientId = new JwtSecurityTokenHandler()
+                .ReadJwtToken(callerToken)
+                .Claims.First(c => c.Type == "client_id")
+                .Value;
+
+            var targetJti = Guid.Parse(
+                new JwtSecurityTokenHandler()
+                    .ReadJwtToken(targetToken)
+                    .Claims.First(c => c.Type == JwtRegisteredClaimNames.Jti)
+                    .Value
+            );
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(targetJti)).Returns(true);
+
+            _result = await CreateMintingTokenManager().RevokeTokenAsync(targetToken, _callerClientId);
+        }
+
+        [Test]
+        public void It_revokes_the_token()
+        {
+            _result.Should().BeTrue();
+        }
+
+        [Test]
+        public void It_treats_both_casings_as_the_same_client()
+        {
+            _callerClientId.Should().Be(CanonicalClientId);
         }
     }
 

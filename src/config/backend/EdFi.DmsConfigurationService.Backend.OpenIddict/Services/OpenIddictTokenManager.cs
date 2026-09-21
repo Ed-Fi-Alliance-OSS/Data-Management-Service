@@ -281,12 +281,25 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                     );
                 }
 
+                // Mint from the stored client id, not the one the caller typed. Client lookup is
+                // case-insensitive, so the same registered client can authenticate as
+                // "acme-client" on one call and "Acme-Client" on the next; minting from the
+                // request would then stamp two different identities onto tokens belonging to one
+                // client, and anything comparing those claims exactly — the revocation ownership
+                // check above all — would treat them as strangers. This single argument feeds the
+                // "sub", "client_id" and "azp" claims plus the stored token's client id, so all
+                // four become canonical together. Falling back to the request value keeps a row
+                // with an empty ClientId from minting an empty subject.
+                string canonicalClientId = string.IsNullOrEmpty(applicationInfo.ClientId)
+                    ? clientId
+                    : applicationInfo.ClientId;
+
                 // Generate and store the JWT token. The limit is enforced by the same
                 // statement that stores the token, so the token is minted before the outcome is
                 // known; one that is not stored is never returned to the caller.
                 (TokenStoreOutcome outcome, string token) = await GenerateJwtTokenAsync(
                     applicationInfo,
-                    clientId,
+                    canonicalClientId,
                     listOfScopes
                 );
 
