@@ -106,10 +106,11 @@ if it has not. Only the introspection result is evidence.
 
 The gap is reachable, not hypothetical. A target token whose `client_id` differs
 from the caller's only by letter case fails the case-sensitive ownership comparison
-even though both tokens were issued to the same registered client — see
-`docs/parking-lot.md` for the upstream minting defect that makes such a pair
-possible. An operator relying on the `200` would wrongly believe a live credential
-had been revoked.
+even though both tokens were issued to the same registered client. Such a pair is
+possible because a token carries the `client_id` casing supplied by the client at
+`/connect/token` rather than the stored canonical casing, while client lookup is
+case-insensitive under SQL Server's default collation. An operator relying on the
+`200` would wrongly believe a live credential had been revoked.
 
 Note also that an expired target token is left with its stored status untouched
 rather than being marked `revoked`, so a `revoked`/`valid` reading taken straight
