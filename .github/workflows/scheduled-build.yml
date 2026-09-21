@@ -470,7 +470,10 @@ jobs:
           needs.validate-discovery-spec.result == 'success'
         uses: slackapi/slack-github-action@485a9d42d3a73031f12ec201c457e2162c45d02d #v2.0.0
         with:
-          payload: '{"text":"✅ Build and tests passed for the scheduled run!"}'
+          payload: |
+            {
+              "text": ":heavy_check_mark: DMS scheduled weekend build passed"
+            }
           webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
           webhook-type: incoming-webhook
 
@@ -486,16 +489,7 @@ jobs:
         with:
           payload: |
             {
-              "text": "❌ GitHub Action build result: failure\n${{ github.event.head_commit.url }}",
-              "blocks": [
-                {
-                  "type": "section",
-                  "text": {
-                    "type": "mrkdwn",
-                    "text": "❌ GitHub Action build result: failure\n*Repository:* ${{ github.repository }}\n*Branch:* ${{ github.ref }}\n*Commit Message:* ${{ github.event.head_commit.message || 'No commit message available' }}\n*Log URL:* ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-                  }
-                }
-              ]
+              "text": ":x: DMS scheduled weekend build failed: <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View run>"
             }
           webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
           webhook-type: incoming-webhook
