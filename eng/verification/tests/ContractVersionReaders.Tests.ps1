@@ -55,7 +55,7 @@ Describe "Get-CustomValidationContractVersion" {
         $csprojPath = Join-Path $script:repositoryRoot `
             "src/dms/core/EdFi.DataManagementService.CustomValidation/EdFi.DataManagementService.CustomValidation.csproj"
         $expected = ([xml] (Get-Content -LiteralPath $csprojPath -Raw)).SelectSingleNode(
-            "//PropertyGroup/Version"
+            "//PropertyGroup/VersionPrefix"
         ).InnerText.Trim()
 
         $declared | Should -BeExactly $expected
@@ -65,7 +65,7 @@ Describe "Get-CustomValidationContractVersion" {
         $path = New-FixtureFile -Name "declared.csproj" -Content @"
 <Project Sdk="Microsoft.NET.Sdk">
     <PropertyGroup>
-        <Version>2.3.4</Version>
+        <VersionPrefix>2.3.4</VersionPrefix>
     </PropertyGroup>
 </Project>
 "@
@@ -77,9 +77,9 @@ Describe "Get-CustomValidationContractVersion" {
         $path = New-FixtureFile -Name "padded.csproj" -Content @"
 <Project Sdk="Microsoft.NET.Sdk">
     <PropertyGroup>
-        <Version>
+        <VersionPrefix>
             1.0.0
-        </Version>
+        </VersionPrefix>
     </PropertyGroup>
 </Project>
 "@
@@ -94,7 +94,7 @@ Describe "Get-CustomValidationContractVersion" {
             Should -Throw -ExpectedMessage "*does not exist*"
     }
 
-    It "throws when the project declares no Version" {
+    It "throws when the project declares no VersionPrefix" {
         $path = New-FixtureFile -Name "undeclared.csproj" -Content @"
 <Project Sdk="Microsoft.NET.Sdk">
     <PropertyGroup>
@@ -104,20 +104,20 @@ Describe "Get-CustomValidationContractVersion" {
 "@
 
         { Get-CustomValidationContractVersion -ProjectPath $path } |
-            Should -Throw -ExpectedMessage "*declares no Version*"
+            Should -Throw -ExpectedMessage "*declares no VersionPrefix*"
     }
 
-    It "throws when the project declares an empty Version" {
+    It "throws when the project declares an empty VersionPrefix" {
         $path = New-FixtureFile -Name "empty.csproj" -Content @"
 <Project Sdk="Microsoft.NET.Sdk">
     <PropertyGroup>
-        <Version>   </Version>
+        <VersionPrefix>   </VersionPrefix>
     </PropertyGroup>
 </Project>
 "@
 
         { Get-CustomValidationContractVersion -ProjectPath $path } |
-            Should -Throw -ExpectedMessage "*declares no Version*"
+            Should -Throw -ExpectedMessage "*declares no VersionPrefix*"
     }
 
     # A second PropertyGroup is the shape that makes property access return an array and stringify
@@ -126,10 +126,10 @@ Describe "Get-CustomValidationContractVersion" {
         $path = New-FixtureFile -Name "duplicated.csproj" -Content @"
 <Project Sdk="Microsoft.NET.Sdk">
     <PropertyGroup>
-        <Version>1.0.0</Version>
+        <VersionPrefix>1.0.0</VersionPrefix>
     </PropertyGroup>
     <PropertyGroup>
-        <Version>2.0.0</Version>
+        <VersionPrefix>2.0.0</VersionPrefix>
     </PropertyGroup>
 </Project>
 "@

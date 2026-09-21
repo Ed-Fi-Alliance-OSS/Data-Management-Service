@@ -291,11 +291,12 @@ The same argument as the sibling above, one file further in. This contract used 
 -p:PackageVersion=$DMSVersion and to inherit its AssemblyVersion from the release-stamped
 src/dms/Directory.Build.props, so a validator built against one release's contract would be refused
 by an adjacent release whose contract surface was identical, naming two versions that differ in
-nothing an implementer can act on. The csproj declares Version, AssemblyVersion and FileVersion,
-which override the imported props, and every lane reads them through here.
+nothing an implementer can act on. The csproj declares VersionPrefix, AssemblyVersion, FileVersion
+and InformationalVersion, which override the imported props, and every lane reads them through here.
 
-The csproj is under src/dms rather than beside the plugin contract, so the element is Version rather
-than the VersionPrefix its sibling props declares. That is the only difference between the two.
+The element is VersionPrefix, the same one the plugin contract's props and EdFi.Api.Identity's csproj
+declare. A contract's version is read the same way wherever it is declared, so pointing -ProjectPath
+at any of the three works.
 
 .EXAMPLE
 Get-CustomValidationContractVersion
@@ -310,7 +311,7 @@ function Get-CustomValidationContractVersion {
 
     return Get-DeclaredVersionElement `
         -Path $ProjectPath `
-        -ElementName "Version" `
+        -ElementName "VersionPrefix" `
         -ContractDescription "custom-validation contract"
 }
 

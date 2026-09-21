@@ -19,17 +19,28 @@
             whose contract surface was identical, naming two versions that differ in nothing an
             implementer can act on.
 
-            1.0.0 is the surface DMS-1432 shipped. Package, assembly and file versions are what is
-            decoupled here. InformationalVersion is not declared, and what it carries depends on
-            the build: under the release lane's BuildAndPublish the build script regenerates
-            Directory.Build.props with a VersionPrefix only, so InformationalVersion follows this
-            Version plus the source revision; a plain local build against the committed
-            Directory.Build.props inherits that file's InformationalVersion instead. Nothing
-            compares it in either case.
+            1.0.0 is the surface DMS-1432 shipped.
+
+            VersionPrefix rather than Version, matching EdFi.Api.Identity and
+            src/plugins/Directory.Build.props: Get-DeclaredVersionElement (package-helpers.psm1)
+            reads one element name for every contract, so a fork here would mean a second reader
+            for an identical job. With no VersionSuffix anywhere, Version resolves to this.
+
+            InformationalVersion is declared because without it the packed DLL's ProductVersion
+            falls back to the committed Directory.Build.props value, currently 8.0.0, and an
+            operator reading the deployment results would see AssemblyVersion 1.0.0.0 beside
+            ProductVersion 8.0.x for this contract while the sibling contract matched.
+
+            None of this holds inside a Docker-built image: the Dockerfile passes global
+            /p:Version and /p:InformationalVersion when a release VERSION is supplied, and a global
+            property wins over one declared in a referenced project. AssemblyVersion and
+            FileVersion are deliberately not passed there, which is what the host assembly manifest
+            and the loader's skew preflight read.
         -->
-        <Version>1.0.0</Version>
+        <VersionPrefix>1.0.0</VersionPrefix>
         <AssemblyVersion>1.0.0</AssemblyVersion>
         <FileVersion>1.0.0</FileVersion>
+        <InformationalVersion>1.0.0</InformationalVersion>
         <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
         <PackageProjectUrl>https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service</PackageProjectUrl>
         <Title>Ed-Fi API Custom Validation Abstractions</Title>
