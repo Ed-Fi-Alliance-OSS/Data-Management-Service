@@ -1735,4 +1735,287 @@ public class OAuthManagerTests
                 .Be("error=invalid_client, error_description=null");
         }
     }
+
+    /// <summary>
+    /// The canonical CMS token-limit body, and the pieces tests vary to walk away from it.
+    /// </summary>
+    /// <remarks>
+    /// The message is written out here rather than obtained from CMS's factory: this test project
+    /// has no reference to <c>src/config</c>, and no cross-tree project reference exists anywhere
+    /// in the repository. The two copies are held together by comments on both sides, not by a
+    /// shared artifact - see <c>FailureResponse.ForTooManyTokens</c> in the configuration service.
+    /// </remarks>
+    private static class TooManyTokensUpstream
+    {
+        public const string Type = "urn:ed-fi:api:security:authentication:too-many-tokens";
+
+        public static string MessageWithLimit(string limit) =>
+            $"Too many access tokens have been requested (limit is {limit}). Access tokens should "
+            + "be reused until they expire.";
+
+        public static string BodyWithMessage(string message) =>
+            $$"""
+                {
+                  "detail": "The caller has authenticated too many times in too short of a time period.",
+                  "type": "{{Type}}",
+                  "title": "Too Many Tokens",
+                  "status": 429,
+                  "correlationId": "upstream-correlation-id",
+                  "validationErrors": {},
+                  "errors": [{{System.Text.Json.JsonSerializer.Serialize(message)}}]
+                }
+                """;
+
+        public static string BodyWithLimit(string limit) => BodyWithMessage(MessageWithLimit(limit));
+    }
+
+    /// <summary>
+    /// Drives an upstream 429 and returns the parsed response body.
+    /// </summary>
+    private static async Task<(HttpStatusCode Status, string Raw, JsonNode Body)> UpstreamRejectsWith(
+        string upstreamBody
+    )
+    {
+        (HttpResponseMessage response, _) = await UpstreamResponds(
+            HttpStatusCode.TooManyRequests,
+            upstreamBody
+        );
+        string raw = await response.Content.ReadAsStringAsync();
+        return (response.StatusCode, raw, JsonNode.Parse(raw)!);
+    }
+
+    /// <summary>
+    /// The generic rate-limit contract every deviating upstream 429 falls back to. It is still a
+    /// 429 because the upstream <em>status</em> is trustworthy even when its body is not, and it
+    /// is the honest answer when the 429 came from a gateway limiter rather than the token limit.
+    /// </summary>
+    private static void ShouldBeTheGenericRateLimitContract(JsonNode body)
+    {
+        body["type"]!.ToString().Should().Be("urn:ed-fi:api:too-many-requests");
+        body["title"]!.ToString().Should().Be("Too Many Requests");
+        body["status"]!.GetValue<int>().Should().Be(429);
+        body["errors"]!.AsArray().Count.Should().Be(0);
+        body["correlationId"]!.ToString().Should().Be(CorrelationId);
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_An_Upstream_Token_Limit_Rejection
+    {
+        private HttpStatusCode _status;
+        private JsonNode _body = default!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            (_status, _, _body) = await UpstreamRejectsWith(TooManyTokensUpstream.BodyWithLimit("5"));
+        }
+
+        [Test]
+        public void It_responds_with_too_many_requests()
+        {
+            _status.Should().Be(HttpStatusCode.TooManyRequests);
+        }
+
+        [Test]
+        public void It_has_the_too_many_tokens_type()
+        {
+            _body["type"]!.ToString().Should().Be(TooManyTokensUpstream.Type);
+        }
+
+        [Test]
+        public void It_has_the_too_many_tokens_title()
+        {
+            _body["title"]!.ToString().Should().Be("Too Many Tokens");
+        }
+
+        [Test]
+        public void It_has_the_tickets_detail()
+        {
+            _body["detail"]!
+                .ToString()
+                .Should()
+                .Be("The caller has authenticated too many times in too short of a time period.");
+        }
+
+        [Test]
+        public void It_reconstructs_an_errors_entry_carrying_the_upstream_limit()
+        {
+            _body["errors"]!.AsArray().Count.Should().Be(1);
+            _body["errors"]![0]!.ToString().Should().Be(TooManyTokensUpstream.MessageWithLimit("5"));
+        }
+
+        // The upstream body carries its own correlationId. Echoing it would point the caller at a
+        // log entry in a service they cannot reach.
+        [Test]
+        public void It_carries_the_dms_trace_id_not_the_upstream_one()
+        {
+            _body["correlationId"]!.ToString().Should().Be(CorrelationId);
+        }
+    }
+
+    /// <summary>
+    /// A limit other than the default, so the parser is shown to read the number rather than to
+    /// recognize one canonical sentence.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_An_Upstream_Token_Limit_Rejection_With_A_Different_Limit
+    {
+        private JsonNode _body = default!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            (_, _, _body) = await UpstreamRejectsWith(TooManyTokensUpstream.BodyWithLimit("37"));
+        }
+
+        [Test]
+        public void It_reconstructs_the_message_with_that_limit()
+        {
+            _body["errors"]![0]!.ToString().Should().Be(TooManyTokensUpstream.MessageWithLimit("37"));
+        }
+    }
+
+    /// <summary>
+    /// The test that proves local reconstruction rather than assuming it: the upstream message is
+    /// canonical in shape but carries extra text, so a parser that relayed the entry verbatim
+    /// would leak it.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_An_Upstream_Token_Limit_Rejection_Embedding_A_Secret
+    {
+        private const string Sentinel = "idp-internal-07.corp.local/secret=hunter2";
+
+        private string _raw = default!;
+        private JsonNode _body = default!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            string tampered = TooManyTokensUpstream.MessageWithLimit("5") + " " + Sentinel;
+            (_, _raw, _body) = await UpstreamRejectsWith(TooManyTokensUpstream.BodyWithMessage(tampered));
+        }
+
+        [Test]
+        public void It_does_not_disclose_the_upstream_text()
+        {
+            _raw.Should().NotContain(Sentinel);
+        }
+
+        // A trailing suffix makes the message non-canonical, so the limit is not believed either.
+        [Test]
+        public void It_falls_back_to_the_generic_rate_limit_contract()
+        {
+            ShouldBeTheGenericRateLimitContract(_body);
+        }
+    }
+
+    /// <summary>
+    /// Every way an upstream 429 body can deviate from the canonical one. All of them answer 429
+    /// with the generic rate-limit contract rather than a partially believed token-limit body.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_An_Upstream_429_Whose_Body_Deviates
+    {
+        private static string BodyOfType(string type) =>
+            $$"""
+                {
+                  "type": "{{type}}",
+                  "title": "Too Many Tokens",
+                  "status": 429,
+                  "errors": ["{{"Too many access tokens have been requested (limit is 5). Access tokens should be reused until they expire."}}"]
+                }
+                """;
+
+        private static string BodyWithStatus(int status) =>
+            $$"""
+                {
+                  "type": "{{TooManyTokensUpstream.Type}}",
+                  "status": {{status}},
+                  "errors": ["Too many access tokens have been requested (limit is 5). Access tokens should be reused until they expire."]
+                }
+                """;
+
+        private static string BodyWithErrors(string errorsJson) =>
+            $$"""
+                {
+                  "type": "{{TooManyTokensUpstream.Type}}",
+                  "status": 429,
+                  "errors": {{errorsJson}}
+                }
+                """;
+
+        private static IEnumerable<TestCaseData> DeviatingBodies()
+        {
+            yield return new TestCaseData("not json at all").SetName("Unparseable body");
+            yield return new TestCaseData("\"a bare string\"").SetName("Body is not a JSON object");
+            yield return new TestCaseData("null").SetName("Body is the JSON literal null");
+            yield return new TestCaseData(BodyOfType("urn:ed-fi:api:too-many-requests")).SetName(
+                "Valid problem details of a different type"
+            );
+            yield return new TestCaseData(BodyWithStatus(503)).SetName("Body declares another status");
+            yield return new TestCaseData(BodyWithErrors("[]")).SetName("Empty errors array");
+            yield return new TestCaseData(
+                BodyWithErrors(
+                    """["Too many access tokens have been requested (limit is 5). Access tokens should be reused until they expire.", "and another"]"""
+                )
+            ).SetName("Multi-element errors array");
+            yield return new TestCaseData(BodyWithErrors("[5]")).SetName("Errors entry is not a string");
+            yield return new TestCaseData(BodyWithErrors("""[{"message": "nested"}]""")).SetName(
+                "Errors entry is an object"
+            );
+            yield return new TestCaseData(BodyWithErrors("""["Rate limit reached."]""")).SetName(
+                "Unrecognized message"
+            );
+            yield return new TestCaseData(TooManyTokensUpstream.BodyWithLimit("many")).SetName(
+                "Non-numeric limit"
+            );
+            yield return new TestCaseData(TooManyTokensUpstream.BodyWithLimit("")).SetName("Absent limit");
+            yield return new TestCaseData(TooManyTokensUpstream.BodyWithLimit("0")).SetName("Zero limit");
+            yield return new TestCaseData(TooManyTokensUpstream.BodyWithLimit("-5")).SetName(
+                "Negative limit"
+            );
+            yield return new TestCaseData(TooManyTokensUpstream.BodyWithLimit("2147483648")).SetName(
+                "Limit overflowing int"
+            );
+            yield return new TestCaseData(TooManyTokensUpstream.BodyWithLimit(" 5")).SetName(
+                "Limit padded with whitespace"
+            );
+        }
+
+        [TestCaseSource(nameof(DeviatingBodies))]
+        public async Task It_falls_back_to_the_generic_rate_limit_contract(string upstreamBody)
+        {
+            (HttpStatusCode status, _, JsonNode body) = await UpstreamRejectsWith(upstreamBody);
+
+            status.Should().Be(HttpStatusCode.TooManyRequests);
+            ShouldBeTheGenericRateLimitContract(body);
+        }
+    }
+
+    /// <summary>
+    /// The new 429 arm must not have widened the default arm, which keeps arbitrary upstream
+    /// content away from an unauthenticated caller.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_An_Upstream_Status_The_New_Arm_Does_Not_Claim
+    {
+        [TestCase(HttpStatusCode.ServiceUnavailable)]
+        [TestCase(HttpStatusCode.Forbidden)]
+        public async Task It_still_responds_with_the_bad_gateway_contract(HttpStatusCode upstreamStatus)
+        {
+            (HttpResponseMessage response, _) = await UpstreamResponds(
+                upstreamStatus,
+                TooManyTokensUpstream.BodyWithLimit("5")
+            );
+            JsonNode body = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadGateway);
+            body["type"]!.ToString().Should().Be("urn:ed-fi:api:bad-gateway");
+        }
+    }
 }

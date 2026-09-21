@@ -74,6 +74,13 @@ public static class FailureResponse
     /// 429 response for a client that already holds the configured maximum number of active access
     /// tokens. The limit is named in <c>errors</c> so the caller can see what it is up against.
     /// </summary>
+    /// <remarks>
+    /// The <c>errors</c> message text is a cross-service contract, not merely wording: the DMS
+    /// <c>/oauth/token</c> proxy's 429 parser (<c>OAuthManager</c> in <c>src/dms</c>) reads the limit
+    /// back out of it and rebuilds its own message from the number. Changing the text here without
+    /// changing that parser leaves DMS answering a generic rate-limit 429 instead of the token-limit
+    /// one. Each side's tests assert this sentence by value, so the two change together.
+    /// </remarks>
     public static JsonNode ForTooManyTokens(int limit, string correlationId) =>
         CreateBaseJsonObject(
             detail: "The caller has authenticated too many times in too short of a time period.",
