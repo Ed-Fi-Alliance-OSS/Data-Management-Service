@@ -111,6 +111,41 @@ Describe 'E2E identity settings survive startup cleanup and reach test child pro
         }
     }
 
+    It 'rejects <State> <Prefix>_<Key> before changing the environment or running tests' -ForEach @(
+        foreach ($provider in 'keycloak', 'self-contained') {
+            foreach ($key in 'OAUTH_TOKEN_ENDPOINT', 'DMS_JWT_AUTHORITY', 'DMS_JWT_METADATA_ADDRESS') {
+                foreach ($state in 'missing', 'empty', 'whitespace') {
+                    @{
+                        Provider = $provider
+                        Prefix = if ($provider -eq 'keycloak') { 'KEYCLOAK' } else { 'SELF_CONTAINED' }
+                        Key = $key
+                        State = $state
+                    }
+                }
+            }
+        }
+    ) {
+        $sourceKey = "${Prefix}_$Key"
+        $invalidFile = Join-Path $TestDrive '.env.invalid'
+        $lines = @(Get-Content -LiteralPath $script:environmentFile | Where-Object { -not $_.StartsWith("$sourceKey=") })
+        if ($State -eq 'empty') { $lines += "$sourceKey=" }
+        if ($State -eq 'whitespace') { $lines += "$sourceKey=   " }
+        $lines | Set-Content -LiteralPath $invalidFile
+        foreach ($name in $script:identityNames) { Set-Item -LiteralPath "Env:$name" -Value 'original' }
+        Mock Set-Item { Microsoft.PowerShell.Management\Set-Item @PSBoundParameters }
+        Mock RunTests {}
+
+        {
+            Invoke-WithE2EIdentityEnvironment -EnvironmentFile $invalidFile -IdentityProvider $Provider -Action { RunTests }
+        } | Should -Throw "*${sourceKey}*${invalidFile}*${Provider}*"
+
+        Should -Invoke Set-Item -Times 0 -Exactly
+        Should -Invoke RunTests -Times 0 -Exactly
+        foreach ($name in $script:identityNames) {
+            [Environment]::GetEnvironmentVariable($name) | Should -BeExactly 'original'
+        }
+    }
+
     It 'overrides stale values and restores each prior <State> state when the action fails' -ForEach @(
         @{ State = 'absent'; Exists = $false; Value = $null },
         @{ State = 'empty'; Exists = $true; Value = '' },

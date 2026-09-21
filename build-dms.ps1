@@ -891,6 +891,12 @@ function Invoke-WithE2EIdentityEnvironment {
     Import-Module -Name "$PSScriptRoot/eng/docker-compose/env-utility.psm1" -Force
     $environmentValues = ReadValuesFromEnvFile $EnvironmentFile
     $prefix = if ($IdentityProvider -eq "keycloak") { "KEYCLOAK" } else { "SELF_CONTAINED" }
+    foreach ($key in 'OAUTH_TOKEN_ENDPOINT', 'DMS_JWT_AUTHORITY', 'DMS_JWT_METADATA_ADDRESS') {
+        $sourceKey = "${prefix}_$key"
+        if ([string]::IsNullOrWhiteSpace($environmentValues[$sourceKey])) {
+            throw "Required identity setting '$sourceKey' is missing or blank in '$EnvironmentFile' for provider '$IdentityProvider'."
+        }
+    }
     # Match startup's provider-specific endpoint selection. Startup restores its temporary values;
     # tests that recreate DMS with Compose must receive the selected identity settings explicitly.
     $identityEnvironment = @{
